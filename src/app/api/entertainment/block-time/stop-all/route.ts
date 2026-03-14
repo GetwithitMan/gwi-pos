@@ -3,10 +3,11 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { calculateCharge, calculateBlockTimeOvertime, getActiveRate, type EntertainmentPricing, type HappyHourConfig, type OvertimeConfig } from '@/lib/entertainment-pricing'
 import { recalculatePercentDiscounts } from '@/lib/order-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+
+import { stopAllSessions } from '@/lib/domain/entertainment'
 
 // POST - Force-stop all active entertainment sessions (closing time)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -29,7 +30,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const now = new Date()
 
     // Find all active entertainment sessions at this location.
-    // An active session = MenuItem with entertainmentStatus 'in_use' and a currentOrderItemId
     const activeMenuItems = await db.menuItem.findMany({
       where: {
         locationId,
@@ -93,168 +93,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Process all sessions in a single transaction for atomicity
     const txResult = await db.$transaction(async (tx) => {
-      const results: Array<{
-        orderItemId: string
-        menuItemId: string
-        menuItemName: string
-        orderId: string
-        actualMinutes: number
-        charge: number
-      }> = []
-
-      for (const mi of activeMenuItems) {
-        const oi = orderItemMap.get(mi.currentOrderItemId!)
-        if (!oi) continue
-
-        // Calculate actual minutes used
-        const startedAt = oi.blockTimeStartedAt
-        const actualMinutes = startedAt
-          ? Math.ceil((now.getTime() - startedAt.getTime()) / 1000 / 60)
-          : 0
-
-        // Calculate charge based on actual usage (up to now, not up to original expiry)
-        let calculatedCharge = Number(mi.price || 0)
-
-        // Build overtime config
-        const otConfig: OvertimeConfig | undefined = mi.overtimeEnabled
-          ? {
-              enabled: true,
-              mode: (mi.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
-              multiplier: mi.overtimeMultiplier ? Number(mi.overtimeMultiplier) : undefined,
-              perMinuteRate: mi.overtimePerMinuteRate ? Number(mi.overtimePerMinuteRate) : undefined,
-              flatFee: mi.overtimeFlatFee ? Number(mi.overtimeFlatFee) : undefined,
-              graceMinutes: mi.overtimeGraceMinutes ?? undefined,
-            }
-          : undefined
-
-        if (Number(mi.ratePerMinute || 0) > 0) {
-          const pricing: EntertainmentPricing = {
-            ratePerMinute: Number(mi.ratePerMinute),
-            minimumCharge: Number(mi.minimumCharge || 0),
-            incrementMinutes: mi.incrementMinutes || 15,
-            graceMinutes: mi.graceMinutes || 0,
-          }
-
-          let happyHour: HappyHourConfig | undefined
-          if (mi.happyHourEnabled) {
-            happyHour = {
-              enabled: true,
-              discount: mi.happyHourDiscount || 0,
-              start: mi.happyHourStart || '00:00',
-              end: mi.happyHourEnd || '23:59',
-              days: (Array.isArray(mi.happyHourDays) ? mi.happyHourDays : []) as string[],
-            }
-          }
-
-          const sessionStart = startedAt || now
-          const { rate: activeRate } = getActiveRate(pricing.ratePerMinute, happyHour, sessionStart)
-          const effectivePricing: EntertainmentPricing = {
-            ...pricing,
-            ratePerMinute: activeRate,
-            overtime: otConfig,
-          }
-
-          const bookedMinutes = oi.blockTimeMinutes || undefined
-          const breakdown = calculateCharge(actualMinutes, effectivePricing, bookedMinutes)
-          calculatedCharge = breakdown.totalCharge
-        } else if (mi.timedPricing && typeof mi.timedPricing === 'object') {
-          const tp = mi.timedPricing as Record<string, unknown>
-          const purchasedMinutes = oi.blockTimeMinutes || 0
-          if (purchasedMinutes <= 15 && tp.per15Min) {
-            calculatedCharge = Number(tp.per15Min)
-          } else if (purchasedMinutes <= 30 && tp.per30Min) {
-            calculatedCharge = Number(tp.per30Min)
-          } else if (purchasedMinutes <= 60 && tp.perHour) {
-            calculatedCharge = Number(tp.perHour)
-          } else if (tp.perHour) {
-            calculatedCharge = (purchasedMinutes / 60) * Number(tp.perHour)
-          }
-
-          if (otConfig && purchasedMinutes > 0 && actualMinutes > purchasedMinutes) {
-            const tierBaseRate = calculatedCharge / purchasedMinutes
-            const incrementMin = mi.incrementMinutes || 15
-            const otBreakdown = calculateBlockTimeOvertime(
-              actualMinutes,
-              purchasedMinutes,
-              otConfig,
-              tierBaseRate,
-              incrementMin
-            )
-            calculatedCharge += otBreakdown.overtimeCharge
-          }
-        } else if (otConfig && oi.blockTimeMinutes && actualMinutes > oi.blockTimeMinutes) {
-          const flatBaseRate = calculatedCharge / oi.blockTimeMinutes
-          const incrementMin = mi.incrementMinutes || 15
-          const otBreakdown = calculateBlockTimeOvertime(
-            actualMinutes,
-            oi.blockTimeMinutes,
-            otConfig,
-            flatBaseRate,
-            incrementMin
-          )
-          calculatedCharge += otBreakdown.overtimeCharge
-        }
-
-        // Update order item — stop session, apply final charge
-        await tx.orderItem.update({
-          where: { id: oi.id },
-          data: {
-            blockTimeStartedAt: null,
-            blockTimeExpiresAt: now,
-            price: calculatedCharge,
-            itemTotal: calculatedCharge,
-          },
-        })
-
-        // Reset menu item status
-        await tx.menuItem.update({
-          where: { id: mi.id },
-          data: {
-            entertainmentStatus: 'available',
-            currentOrderId: null,
-            currentOrderItemId: null,
-          },
-        })
-
-        results.push({
-          orderItemId: oi.id,
-          menuItemId: mi.id,
-          menuItemName: mi.name,
-          orderId: oi.order.id,
-          actualMinutes,
-          charge: calculatedCharge,
-        })
-      }
-
-      // Reset all floor plan elements for entertainment items at this location to available
-      const menuItemIds = activeMenuItems.map(mi => mi.id)
-      await tx.floorPlanElement.updateMany({
-        where: {
-          linkedMenuItemId: { in: menuItemIds },
-          deletedAt: null,
-        },
-        data: {
-          status: 'available',
-          currentOrderId: null,
-          sessionStartedAt: null,
-          sessionExpiresAt: null,
-        },
+      return stopAllSessions(tx, {
+        locationId,
+        now,
+        activeMenuItems,
+        orderItemMap,
       })
-
-      // Cancel all active waitlist entries for this location
-      const cancelledWaitlist = await tx.entertainmentWaitlist.updateMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: { in: ['waiting', 'notified'] },
-        },
-        data: {
-          status: 'cancelled',
-          deletedAt: now,
-        },
-      })
-
-      return { results, waitlistCancelled: cancelledWaitlist.count }
     })
 
     const totalCharges = txResult.results.reduce((sum, r) => sum + r.charge, 0)
@@ -288,9 +132,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Fire-and-forget: emit order events for each stopped session
     for (const r of txResult.results) {
-      const oi = orderItemMap.get(r.orderItemId)
-      if (!oi) continue
-
       void emitOrderEvent(locationId, r.orderId, 'ITEM_UPDATED', {
         lineItemId: r.orderItemId,
         price: r.charge,

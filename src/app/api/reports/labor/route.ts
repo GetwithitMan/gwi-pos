@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
-import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { REVENUE_ORDER_STATUSES, calculateLaborCost, roundMoney } from '@/lib/domain/reports'
 
 // GET labor report - hours worked, costs, overtime
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -144,10 +144,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const breakMins = entry.breakMinutes || 0
       const totalHours = regularHours + overtimeHours
 
-      // Calculate cost (overtime is 1.5x)
-      const regularCost = regularHours * hourlyRate
-      const overtimeCost = overtimeHours * hourlyRate * 1.5
-      const entryCost = regularCost + overtimeCost
+      // Calculate cost (overtime is 1.5x via domain module)
+      const entryCost = calculateLaborCost(regularHours, overtimeHours, hourlyRate)
 
       // Update totals
       totalRegularHours += regularHours
@@ -186,7 +184,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         regularHours,
         overtimeHours,
         breakMinutes: breakMins,
-        cost: Math.round(entryCost * 100) / 100,
+        cost: roundMoney(entryCost),
       })
 
       // Daily stats
@@ -258,12 +256,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeReport = Object.values(employeeStats)
       .map(emp => ({
         ...emp,
-        regularHours: Math.round(emp.regularHours * 100) / 100,
-        overtimeHours: Math.round(emp.overtimeHours * 100) / 100,
-        totalHours: Math.round(emp.totalHours * 100) / 100,
-        laborCost: Math.round(emp.laborCost * 100) / 100,
+        regularHours: roundMoney(emp.regularHours),
+        overtimeHours: roundMoney(emp.overtimeHours),
+        totalHours: roundMoney(emp.totalHours),
+        laborCost: roundMoney(emp.laborCost),
         avgHoursPerShift: emp.shifts > 0
-          ? Math.round((emp.totalHours / emp.shifts) * 100) / 100
+          ? roundMoney(emp.totalHours / emp.shifts)
           : 0,
       }))
       .sort((a, b) => b.totalHours - a.totalHours)
@@ -271,20 +269,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const dailyReport = Object.values(dailyStats)
       .map(day => ({
         ...day,
-        regularHours: Math.round(day.regularHours * 100) / 100,
-        overtimeHours: Math.round(day.overtimeHours * 100) / 100,
-        totalHours: Math.round((day.regularHours + day.overtimeHours) * 100) / 100,
-        laborCost: Math.round(day.laborCost * 100) / 100,
+        regularHours: roundMoney(day.regularHours),
+        overtimeHours: roundMoney(day.overtimeHours),
+        totalHours: roundMoney(day.regularHours + day.overtimeHours),
+        laborCost: roundMoney(day.laborCost),
       }))
       .sort((a, b) => b.date.localeCompare(a.date))
 
     const roleReport = Object.values(roleStats)
       .map(role => ({
         ...role,
-        totalHours: Math.round(role.totalHours * 100) / 100,
-        laborCost: Math.round(role.laborCost * 100) / 100,
+        totalHours: roundMoney(role.totalHours),
+        laborCost: roundMoney(role.laborCost),
         avgHoursPerShift: role.shifts > 0
-          ? Math.round((role.totalHours / role.shifts) * 100) / 100
+          ? roundMoney(role.totalHours / role.shifts)
           : 0,
       }))
       .sort((a, b) => b.totalHours - a.totalHours)
@@ -317,18 +315,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: {
       summary: {
         totalShifts,
-        totalRegularHours: Math.round(totalRegularHours * 100) / 100,
-        totalOvertimeHours: Math.round(totalOvertimeHours * 100) / 100,
-        totalHours: Math.round((totalRegularHours + totalOvertimeHours) * 100) / 100,
+        totalRegularHours: roundMoney(totalRegularHours),
+        totalOvertimeHours: roundMoney(totalOvertimeHours),
+        totalHours: roundMoney(totalRegularHours + totalOvertimeHours),
         totalBreakMinutes,
-        totalBreakHours: Math.round((totalBreakMinutes / 60) * 100) / 100,
-        totalLaborCost: Math.round(totalLaborCost * 100) / 100,
+        totalBreakHours: roundMoney(totalBreakMinutes / 60),
+        totalLaborCost: roundMoney(totalLaborCost),
         laborCostPercent,
         avgHoursPerShift: totalShifts > 0
-          ? Math.round(((totalRegularHours + totalOvertimeHours) / totalShifts) * 100) / 100
+          ? roundMoney((totalRegularHours + totalOvertimeHours) / totalShifts)
           : 0,
         avgCostPerHour: (totalRegularHours + totalOvertimeHours) > 0
-          ? Math.round((totalLaborCost / (totalRegularHours + totalOvertimeHours)) * 100) / 100
+          ? roundMoney(totalLaborCost / (totalRegularHours + totalOvertimeHours))
           : 0,
       },
       byEmployee: employeeReport,

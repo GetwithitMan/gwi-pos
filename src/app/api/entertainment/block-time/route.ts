@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { calculateCharge, calculateBlockTimeOvertime, getActiveRate, type EntertainmentPricing, type HappyHourConfig, type ChargeBreakdown, type OvertimeConfig } from '@/lib/entertainment-pricing'
+import type { OvertimeConfig } from '@/lib/entertainment-pricing'
 
 import { recalculatePercentDiscounts } from '@/lib/order-calculations'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -12,31 +12,33 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 
+import {
+  validateStartRequest,
+  validateSessionStart,
+  validateExtendRequest,
+  validateExtension,
+  validateTimeOverrideRequest,
+  validateTimeOverride,
+  validateStopRequest,
+  validateStopSession,
+  calculateInitialBlockPrice,
+  calculateTimeOverridePrice,
+  buildOvertimeConfig,
+  startSession,
+  stopSession,
+  extendSession,
+  overrideSessionTime,
+} from '@/lib/domain/entertainment'
+
 // POST - Start block time for an order item
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { orderItemId, minutes, locationId, employeeId } = body
 
-    if (!orderItemId) {
-      return NextResponse.json(
-        { error: 'Order item ID is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!minutes || minutes < 1) {
-      return NextResponse.json(
-        { error: 'Minutes must be a positive number' },
-        { status: 400 }
-      )
+    const validationError = validateStartRequest({ orderItemId, locationId, minutes })
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 })
     }
 
     // Permission check
@@ -90,26 +92,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Verify locationId matches
-    if (orderItem.order.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Location ID mismatch' },
-        { status: 403 }
-      )
-    }
-
-    if (orderItem.menuItem.itemType !== 'timed_rental') {
-      return NextResponse.json(
-        { error: 'This item is not an entertainment rental' },
-        { status: 400 }
-      )
-    }
-
-    if (orderItem.order.status === 'paid' || orderItem.order.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Cannot modify a paid or closed order' },
-        { status: 400 }
-      )
+    const sessionError = validateSessionStart({
+      itemType: orderItem.menuItem.itemType,
+      orderStatus: orderItem.order.status,
+      orderLocationId: orderItem.order.locationId,
+      requestLocationId: locationId,
+    })
+    if (sessionError) {
+      const status = sessionError === 'Location ID mismatch' ? 403 : 400
+      return NextResponse.json({ error: sessionError }, { status })
     }
 
     // Calculate expiration time
@@ -117,129 +108,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const expiresAt = new Date(now.getTime() + minutes * 60 * 1000)
 
     // Build overtime config from MenuItem fields (included in response so client knows pricing)
-    const overtimeConfig: OvertimeConfig | undefined = orderItem.menuItem.overtimeEnabled
-      ? {
-          enabled: true,
-          mode: (orderItem.menuItem.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
-          multiplier: orderItem.menuItem.overtimeMultiplier ? Number(orderItem.menuItem.overtimeMultiplier) : undefined,
-          perMinuteRate: orderItem.menuItem.overtimePerMinuteRate ? Number(orderItem.menuItem.overtimePerMinuteRate) : undefined,
-          flatFee: orderItem.menuItem.overtimeFlatFee ? Number(orderItem.menuItem.overtimeFlatFee) : undefined,
-          graceMinutes: orderItem.menuItem.overtimeGraceMinutes ?? undefined,
-        }
-      : undefined
+    const overtimeConfig: OvertimeConfig | undefined = buildOvertimeConfig(orderItem.menuItem)
 
     // Calculate initial block price based on selected duration
-    const mi = orderItem.menuItem
-    let initialPrice = Number(mi.price || 0)
-
-    // Check timedPricing JSON tiers first
-    if (mi.timedPricing && typeof mi.timedPricing === 'object') {
-      const tp = mi.timedPricing as Record<string, unknown>
-      if (minutes <= 15 && tp.per15Min) {
-        initialPrice = Number(tp.per15Min)
-      } else if (minutes <= 30 && tp.per30Min) {
-        initialPrice = Number(tp.per30Min)
-      } else if (minutes <= 60 && tp.perHour) {
-        initialPrice = Number(tp.perHour)
-      } else if (tp.perHour) {
-        // Proportional for durations > 60 min
-        initialPrice = (minutes / 60) * Number(tp.perHour)
-      }
-    } else if (Number(mi.ratePerMinute || 0) > 0) {
-      // Per-minute pricing: calculate expected charge for the block duration
-      const pricing: EntertainmentPricing = {
-        ratePerMinute: Number(mi.ratePerMinute),
-        minimumCharge: Number(mi.minimumCharge || 0),
-        incrementMinutes: mi.incrementMinutes || 15,
-        graceMinutes: mi.graceMinutes || 0,
-      }
-      const breakdown = calculateCharge(minutes, pricing)
-      initialPrice = breakdown.totalCharge
-    }
-    // Otherwise keep MenuItem.price as fallback
+    const initialPrice = calculateInitialBlockPrice(minutes, orderItem.menuItem)
 
     // Wrap all writes in a transaction with FOR UPDATE lock to prevent double-booking
     const result = await db.$transaction(async (tx) => {
-      // Lock the MenuItem row and check status
-      const [lockedItem] = await tx.$queryRaw<Array<{ entertainmentStatus: string | null }>>`
-        SELECT "entertainmentStatus" FROM "MenuItem" WHERE "id" = ${orderItem.menuItemId} FOR UPDATE
-      `
-
-      if (lockedItem?.entertainmentStatus === 'in_use') {
-        return { conflict: true as const, waitlistConflict: false as const, updatedItem: null, notifiedCustomer: null }
-      }
-
-      // Check if a waitlisted customer has been notified for this item
-      const floorPlanElement = await tx.floorPlanElement.findFirst({
-        where: { linkedMenuItemId: orderItem.menuItemId, deletedAt: null },
-        select: { id: true, visualType: true },
+      return startSession(tx, {
+        orderItemId,
+        menuItemId: orderItem.menuItemId,
+        orderId: orderItem.orderId,
+        locationId,
+        minutes,
+        initialPrice,
+        now,
+        expiresAt,
       })
-
-      if (floorPlanElement) {
-        const notifiedEntry = await tx.entertainmentWaitlist.findFirst({
-          where: {
-            deletedAt: null,
-            status: 'notified',
-            OR: [
-              { elementId: floorPlanElement.id },
-              { visualType: floorPlanElement.visualType },
-            ],
-          },
-          select: { id: true, customerName: true },
-        })
-
-        if (notifiedEntry) {
-          return { conflict: false as const, waitlistConflict: true as const, updatedItem: null, notifiedCustomer: notifiedEntry.customerName }
-        }
-      }
-
-      // 1. Update the order item with block time info and initial price
-      const updatedItem = await tx.orderItem.update({
-        where: { id: orderItemId },
-        data: {
-          blockTimeMinutes: minutes,
-          blockTimeStartedAt: now,
-          blockTimeExpiresAt: expiresAt,
-          price: initialPrice,
-          itemTotal: initialPrice,
-        },
-        select: {
-          id: true,
-          name: true,
-          blockTimeMinutes: true,
-          blockTimeStartedAt: true,
-          blockTimeExpiresAt: true,
-          menuItemId: true,
-        },
-      })
-
-      // 2. Update the menu item status to in_use
-      await tx.menuItem.update({
-        where: { id: orderItem.menuItemId },
-        data: {
-          entertainmentStatus: 'in_use',
-          currentOrderId: orderItem.orderId,
-          currentOrderItemId: orderItemId,
-        },
-      })
-
-      // 3. Update floor plan element if exists
-      if (orderItem.menuItem.id) {
-        await tx.floorPlanElement.updateMany({
-          where: {
-            linkedMenuItemId: orderItem.menuItem.id,
-            deletedAt: null,
-          },
-          data: {
-            status: 'in_use',
-            currentOrderId: orderItem.orderId,
-            sessionStartedAt: now,
-            sessionExpiresAt: expiresAt,
-          },
-        })
-      }
-
-      return { conflict: false as const, waitlistConflict: false as const, updatedItem, notifiedCustomer: null }
     })
 
     if (result.conflict) {
@@ -356,25 +241,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     const body = await request.json()
     const { orderItemId, additionalMinutes, locationId, employeeId } = body
 
-    if (!orderItemId) {
-      return NextResponse.json(
-        { error: 'Order item ID is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!additionalMinutes || additionalMinutes < 1) {
-      return NextResponse.json(
-        { error: 'Additional minutes must be a positive number' },
-        { status: 400 }
-      )
+    const validationError = validateExtendRequest({ orderItemId, locationId, additionalMinutes })
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 })
     }
 
     // Permission check
@@ -427,26 +296,15 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    // Verify locationId matches
-    if (orderItem.order.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Location ID mismatch' },
-        { status: 403 }
-      )
-    }
-
-    if (orderItem.order.status === 'paid' || orderItem.order.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Cannot modify a paid or closed order' },
-        { status: 400 }
-      )
-    }
-
-    if (!orderItem.blockTimeExpiresAt) {
-      return NextResponse.json(
-        { error: 'This item does not have active block time' },
-        { status: 400 }
-      )
+    const extendError = validateExtension({
+      orderLocationId: orderItem.order.locationId,
+      requestLocationId: locationId,
+      orderStatus: orderItem.order.status,
+      hasActiveBlockTime: !!orderItem.blockTimeExpiresAt,
+    })
+    if (extendError) {
+      const status = extendError === 'Location ID mismatch' ? 403 : 400
+      return NextResponse.json({ error: extendError }, { status })
     }
 
     // Check if extending is blocked when customers are on the waitlist
@@ -479,96 +337,13 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     }
 
     // Wrap extend in a transaction with FOR UPDATE to prevent concurrent extends
-    const mi = orderItem.menuItem
     const txResult = await db.$transaction(async (tx) => {
-      // Lock the OrderItem row to prevent concurrent extends from clobbering each other
-      const [lockedRow] = await tx.$queryRaw<Array<{
-        blockTimeExpiresAt: Date | null
-        blockTimeMinutes: number | null
-        price: unknown
-      }>>`
-        SELECT "blockTimeExpiresAt", "blockTimeMinutes", "price"
-        FROM "OrderItem"
-        WHERE "id" = ${orderItemId}
-        FOR UPDATE
-      `
-
-      if (!lockedRow?.blockTimeExpiresAt) {
-        return { error: 'This item does not have active block time' } as const
-      }
-
-      const now = new Date()
-      const currentExpires = new Date(lockedRow.blockTimeExpiresAt)
-      const oldMinutes = lockedRow.blockTimeMinutes || 0
-      const oldPrice = Number(lockedRow.price || 0)
-
-      // If already expired, extend from now; otherwise extend from current expiration
-      const baseTime = currentExpires > now ? currentExpires : now
-      const newExpiresAt = new Date(baseTime.getTime() + additionalMinutes * 60 * 1000)
-      const newTotalMinutes = oldMinutes + additionalMinutes
-
-      // Calculate the INCREMENTAL charge for the extension only (not total reprice).
-      // This preserves any discounts, comps, or happy hour rates on the original block.
-      let additionalCharge = 0
-
-      if (mi.timedPricing && typeof mi.timedPricing === 'object') {
-        const tp = mi.timedPricing as Record<string, unknown>
-        // Calculate what the new total WOULD cost and what the old total WOULD cost at tier rates,
-        // then charge the difference as the incremental extension cost
-        const calcTierPrice = (mins: number): number => {
-          if (mins <= 15 && tp.per15Min) return Number(tp.per15Min)
-          if (mins <= 30 && tp.per30Min) return Number(tp.per30Min)
-          if (mins <= 60 && tp.perHour) return Number(tp.perHour)
-          if (tp.perHour) return (mins / 60) * Number(tp.perHour)
-          return Number(mi.price || 0)
-        }
-        const newTotalTierPrice = calcTierPrice(newTotalMinutes)
-        const oldTotalTierPrice = calcTierPrice(oldMinutes)
-        additionalCharge = Math.max(0, newTotalTierPrice - oldTotalTierPrice)
-      } else if (Number(mi.ratePerMinute || 0) > 0) {
-        // Per-minute pricing: calculate charge for ONLY the additional minutes
-        const pricing: EntertainmentPricing = {
-          ratePerMinute: Number(mi.ratePerMinute),
-          minimumCharge: 0, // No minimum for extensions — already past minimum
-          incrementMinutes: mi.incrementMinutes || 15,
-          graceMinutes: 0, // No grace for extensions
-        }
-        const breakdown = calculateCharge(additionalMinutes, pricing)
-        additionalCharge = breakdown.totalCharge
-      } else {
-        // Flat-rate fallback: proportional extension based on MenuItem base duration
-        const basePrice = Number(mi.price || 0)
-        const baseMinutes = mi.blockTimeMinutes || 60
-        additionalCharge = (additionalMinutes / baseMinutes) * basePrice
-      }
-
-      const newPrice = oldPrice + additionalCharge
-
-      // Update the order item with new duration and incremental price
-      const updatedItem = await tx.orderItem.update({
-        where: { id: orderItemId },
-        data: {
-          blockTimeMinutes: newTotalMinutes,
-          blockTimeExpiresAt: newExpiresAt,
-          price: newPrice,
-          itemTotal: newPrice,
-        },
-        select: {
-          id: true,
-          name: true,
-          blockTimeMinutes: true,
-          blockTimeStartedAt: true,
-          blockTimeExpiresAt: true,
-        },
+      return extendSession(tx, {
+        orderItemId,
+        menuItemId: orderItem.menuItemId,
+        additionalMinutes,
+        menuItem: orderItem.menuItem,
       })
-
-      // Update FloorPlanElement expiration to match (keeps dispatchEntertainmentStatusChanged in sync)
-      await tx.floorPlanElement.updateMany({
-        where: { linkedMenuItemId: orderItem.menuItemId, deletedAt: null },
-        data: { sessionExpiresAt: newExpiresAt },
-      })
-
-      return { updatedItem, newExpiresAt, newTotalMinutes, newPrice } as const
     })
 
     if ('error' in txResult) {
@@ -678,25 +453,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const body = await request.json()
     const { orderItemId, newExpiresAt, reason, locationId, employeeId } = body
 
-    if (!orderItemId) {
-      return NextResponse.json(
-        { error: 'Order item ID is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!newExpiresAt) {
-      return NextResponse.json(
-        { error: 'New expiration time is required' },
-        { status: 400 }
-      )
+    const validationError = validateTimeOverrideRequest({ orderItemId, locationId, newExpiresAt })
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 })
     }
 
     // Permission check — manager override requires entertainment permission
@@ -704,12 +463,6 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const parsedExpiresAt = new Date(newExpiresAt)
-    if (isNaN(parsedExpiresAt.getTime())) {
-      return NextResponse.json(
-        { error: 'Invalid expiration time format' },
-        { status: 400 }
-      )
-    }
 
     // Get the order item with menuItem for price recalculation
     const orderItem = await db.orderItem.findUnique({
@@ -745,87 +498,36 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       )
     }
 
-    if (orderItem.order.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Location ID mismatch' },
-        { status: 403 }
-      )
+    const overrideError = validateTimeOverride({
+      orderLocationId: orderItem.order.locationId,
+      requestLocationId: locationId,
+      orderStatus: orderItem.order.status,
+      hasStartedAt: !!orderItem.blockTimeStartedAt,
+      parsedExpiresAt,
+    })
+    if (overrideError) {
+      const status = overrideError === 'Location ID mismatch' ? 403 : 400
+      return NextResponse.json({ error: overrideError }, { status })
     }
 
-    if (orderItem.order.status === 'paid' || orderItem.order.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Cannot modify a paid or closed order' },
-        { status: 400 }
-      )
-    }
-
-    if (!orderItem.blockTimeStartedAt) {
-      return NextResponse.json(
-        { error: 'This item does not have active block time' },
-        { status: 400 }
-      )
-    }
-
-    const startedAt = orderItem.blockTimeStartedAt
+    const startedAt = orderItem.blockTimeStartedAt!
     const newDurationMinutes = Math.max(1, Math.ceil((parsedExpiresAt.getTime() - startedAt.getTime()) / 1000 / 60))
 
     // Recalculate price based on new duration
-    const mi = orderItem.menuItem
-    let newPrice = Number(mi.price || 0)
-
-    if (mi.timedPricing && typeof mi.timedPricing === 'object') {
-      const tp = mi.timedPricing as Record<string, unknown>
-      if (newDurationMinutes <= 15 && tp.per15Min) {
-        newPrice = Number(tp.per15Min)
-      } else if (newDurationMinutes <= 30 && tp.per30Min) {
-        newPrice = Number(tp.per30Min)
-      } else if (newDurationMinutes <= 60 && tp.perHour) {
-        newPrice = Number(tp.perHour)
-      } else if (tp.perHour) {
-        newPrice = (newDurationMinutes / 60) * Number(tp.perHour)
-      }
-    } else if (Number(mi.ratePerMinute || 0) > 0) {
-      const pricing: EntertainmentPricing = {
-        ratePerMinute: Number(mi.ratePerMinute),
-        minimumCharge: Number(mi.minimumCharge || 0),
-        incrementMinutes: mi.incrementMinutes || 15,
-        graceMinutes: mi.graceMinutes || 0,
-      }
-      const breakdown = calculateCharge(newDurationMinutes, pricing)
-      newPrice = breakdown.totalCharge
-    }
-    // Otherwise keep MenuItem.price as flat-rate fallback
+    const newPrice = calculateTimeOverridePrice(newDurationMinutes, orderItem.menuItem as any)
 
     const oldExpiresAt = orderItem.blockTimeExpiresAt
     const oldMinutes = orderItem.blockTimeMinutes
 
     // Wrap in transaction
     const txResult = await db.$transaction(async (tx) => {
-      const updatedItem = await tx.orderItem.update({
-        where: { id: orderItemId },
-        data: {
-          blockTimeMinutes: newDurationMinutes,
-          blockTimeExpiresAt: parsedExpiresAt,
-          price: newPrice,
-          itemTotal: newPrice,
-        },
-        select: {
-          id: true,
-          name: true,
-          blockTimeMinutes: true,
-          blockTimeStartedAt: true,
-          blockTimeExpiresAt: true,
-          menuItemId: true,
-        },
+      return overrideSessionTime(tx, {
+        orderItemId,
+        menuItemId: orderItem.menuItemId,
+        parsedExpiresAt,
+        startedAt,
+        newPrice,
       })
-
-      // Update FloorPlanElement expiration
-      await tx.floorPlanElement.updateMany({
-        where: { linkedMenuItemId: orderItem.menuItemId, deletedAt: null },
-        data: { sessionExpiresAt: parsedExpiresAt },
-      })
-
-      return updatedItem
     })
 
     // Fire-and-forget discount recalculation
@@ -930,24 +632,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 export const DELETE = withVenue(async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const orderItemId = searchParams.get('orderItemId')
-    const locationId = searchParams.get('locationId')
+    const orderItemIdParam = searchParams.get('orderItemId')
+    const locationIdParam = searchParams.get('locationId')
     const employeeId = searchParams.get('employeeId')
     const reason = (searchParams.get('reason') || 'normal') as 'normal' | 'comp' | 'void' | 'force'
 
-    if (!orderItemId) {
-      return NextResponse.json(
-        { error: 'Order item ID is required' },
-        { status: 400 }
-      )
+    const validationError = validateStopRequest({ orderItemId: orderItemIdParam, locationId: locationIdParam })
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 })
     }
 
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
+    // After validation, these are guaranteed non-null
+    const orderItemId = orderItemIdParam!
+    const locationId = locationIdParam!
 
     // Permission check
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
@@ -998,222 +695,27 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       )
     }
 
-    // Verify locationId matches
-    if (orderItem.order.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Location ID mismatch' },
-        { status: 403 }
-      )
+    const stopError = validateStopSession({
+      orderLocationId: orderItem.order.locationId,
+      requestLocationId: locationId,
+    })
+    if (stopError) {
+      return NextResponse.json({ error: stopError }, { status: 403 })
     }
 
     // Use an interactive transaction with FOR UPDATE to prevent race conditions
-    // with the cron expiry job. Both cron and manual stop compete for the same
-    // OrderItem + MenuItem rows — the loser sees "already available" and returns idempotent success.
     const now = new Date()
     const menuItem = orderItem.menuItem
     const itemName = menuItem.name
 
     const txResult = await db.$transaction(async (tx) => {
-      // Lock the OrderItem row to prevent concurrent modification
-      const [lockedRow] = await tx.$queryRaw<Array<{
-        blockTimeStartedAt: Date | null
-        blockTimeMinutes: number | null
-      }>>`
-        SELECT "blockTimeStartedAt", "blockTimeMinutes"
-        FROM "OrderItem"
-        WHERE "id" = ${orderItemId}
-        FOR UPDATE
-      `
-
-      // Lock the MenuItem row
-      const [lockedMenuItem] = await tx.$queryRaw<Array<{
-        entertainmentStatus: string | null
-        currentOrderItemId: string | null
-      }>>`
-        SELECT "entertainmentStatus", "currentOrderItemId"
-        FROM "MenuItem"
-        WHERE "id" = ${orderItem.menuItemId}
-        FOR UPDATE
-      `
-
-      // Idempotency: if already stopped (cron won the race), return success without re-charging
-      // For 'force' reason, skip idempotency — force-stop should always proceed
-      if (reason !== 'force') {
-        if (!lockedRow?.blockTimeStartedAt ||
-            lockedMenuItem?.entertainmentStatus === 'available' ||
-            (lockedMenuItem?.currentOrderItemId && lockedMenuItem.currentOrderItemId !== orderItemId)) {
-          return { alreadyProcessed: true as const }
-        }
-      }
-
-      // Calculate actual minutes used
-      const startedAt = lockedRow?.blockTimeStartedAt
-      const actualMinutes = startedAt
-        ? Math.ceil((now.getTime() - startedAt.getTime()) / 1000 / 60)
-        : 0
-
-      // Calculate the charge based on actual usage and reason
-      let calculatedCharge = Number(menuItem.price || 0)
-      let breakdown: ChargeBreakdown | null = null
-      let overtimeBreakdown: { overtimeMinutes: number; overtimeCharge: number } | null = null
-
-      // For comp and void: charge is zero
-      if (reason === 'comp' || reason === 'void') {
-        calculatedCharge = 0
-      } else {
-        // Normal or force: calculate based on actual usage
-        // Build overtime config from MenuItem fields
-        const deleteOvertimeConfig: OvertimeConfig | undefined = menuItem.overtimeEnabled
-          ? {
-              enabled: true,
-              mode: (menuItem.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
-              multiplier: menuItem.overtimeMultiplier ? Number(menuItem.overtimeMultiplier) : undefined,
-              perMinuteRate: menuItem.overtimePerMinuteRate ? Number(menuItem.overtimePerMinuteRate) : undefined,
-              flatFee: menuItem.overtimeFlatFee ? Number(menuItem.overtimeFlatFee) : undefined,
-              graceMinutes: menuItem.overtimeGraceMinutes ?? undefined,
-            }
-          : undefined
-
-        if (Number(menuItem.ratePerMinute || 0) > 0) {
-          // Per-minute pricing engine
-          const pricing: EntertainmentPricing = {
-            ratePerMinute: Number(menuItem.ratePerMinute),
-            minimumCharge: Number(menuItem.minimumCharge || 0),
-            incrementMinutes: menuItem.incrementMinutes || 15,
-            graceMinutes: menuItem.graceMinutes || 0,
-          }
-
-          // Check happy hour
-          let happyHour: HappyHourConfig | undefined
-          if (menuItem.happyHourEnabled) {
-            happyHour = {
-              enabled: true,
-              discount: menuItem.happyHourDiscount || 0,
-              start: menuItem.happyHourStart || '00:00',
-              end: menuItem.happyHourEnd || '23:59',
-              days: (Array.isArray(menuItem.happyHourDays) ? menuItem.happyHourDays : []) as string[],
-            }
-          }
-
-          // Apply happy hour rate if active (use session start time for consistency)
-          const sessionStart = startedAt || now
-          const { rate: activeRate } = getActiveRate(pricing.ratePerMinute, happyHour, sessionStart)
-          const effectivePricing: EntertainmentPricing = {
-            ...pricing,
-            ratePerMinute: activeRate,
-            overtime: deleteOvertimeConfig,
-          }
-
-          // Pass bookedMinutes so calculateCharge applies overtime if session exceeded booked time
-          const bookedMinutes = lockedRow?.blockTimeMinutes || undefined
-          breakdown = calculateCharge(actualMinutes, effectivePricing, bookedMinutes)
-          calculatedCharge = breakdown.totalCharge
-          if (breakdown.overtimeMinutes > 0) {
-            overtimeBreakdown = { overtimeMinutes: breakdown.overtimeMinutes, overtimeCharge: breakdown.overtimeCharge }
-          }
-        } else if (menuItem.timedPricing && typeof menuItem.timedPricing === 'object') {
-          // Tier-based pricing from timedPricing JSON
-          const tp = menuItem.timedPricing as Record<string, unknown>
-          const purchasedMinutes = lockedRow?.blockTimeMinutes || 0
-          if (purchasedMinutes <= 15 && tp.per15Min) {
-            calculatedCharge = Number(tp.per15Min)
-          } else if (purchasedMinutes <= 30 && tp.per30Min) {
-            calculatedCharge = Number(tp.per30Min)
-          } else if (purchasedMinutes <= 60 && tp.perHour) {
-            calculatedCharge = Number(tp.perHour)
-          } else if (tp.perHour) {
-            calculatedCharge = (purchasedMinutes / 60) * Number(tp.perHour)
-          }
-
-          // Apply overtime for tier-based pricing if session exceeded booked duration
-          if (deleteOvertimeConfig && purchasedMinutes > 0 && actualMinutes > purchasedMinutes) {
-            const tierBaseRate = calculatedCharge / purchasedMinutes
-            const incrementMin = menuItem.incrementMinutes || 15
-            overtimeBreakdown = calculateBlockTimeOvertime(
-              actualMinutes,
-              purchasedMinutes,
-              deleteOvertimeConfig,
-              tierBaseRate,
-              incrementMin
-            )
-            calculatedCharge += overtimeBreakdown.overtimeCharge
-          }
-        } else if (deleteOvertimeConfig && lockedRow?.blockTimeMinutes && actualMinutes > lockedRow.blockTimeMinutes) {
-          // Flat-rate fallback with overtime
-          const flatBaseRate = calculatedCharge / lockedRow.blockTimeMinutes
-          const incrementMin = menuItem.incrementMinutes || 15
-          overtimeBreakdown = calculateBlockTimeOvertime(
-            actualMinutes,
-            lockedRow.blockTimeMinutes,
-            deleteOvertimeConfig,
-            flatBaseRate,
-            incrementMin
-          )
-          calculatedCharge += overtimeBreakdown.overtimeCharge
-        }
-      }
-
-      // Build order item update data based on reason
-      const orderItemData: Record<string, unknown> = {
-        blockTimeStartedAt: null,
-        blockTimeExpiresAt: now,
-        price: calculatedCharge,
-        itemTotal: calculatedCharge,
-      }
-
-      if (reason === 'comp') {
-        orderItemData.status = 'comped'
-        orderItemData.voidReason = 'Entertainment session comped by manager'
-      } else if (reason === 'void') {
-        orderItemData.status = 'voided'
-        orderItemData.voidReason = 'Entertainment session voided by manager'
-      }
-
-      // Update the order item - clear startedAt, set expiration to now, apply calculated charge
-      await tx.orderItem.update({
-        where: { id: orderItemId },
-        data: orderItemData,
+      return stopSession(tx, {
+        orderItemId,
+        menuItemId: orderItem.menuItemId,
+        reason,
+        now,
+        menuItem: menuItem as any,
       })
-
-      // Reset the menu item status
-      const updatedMenuItem = await tx.menuItem.update({
-        where: { id: orderItem.menuItemId },
-        data: {
-          entertainmentStatus: 'available',
-          currentOrderId: null,
-          currentOrderItemId: null,
-        },
-        select: {
-          id: true,
-          name: true,
-          entertainmentStatus: true,
-          currentOrderId: true,
-          currentOrderItemId: true,
-        },
-      })
-
-      // Reset floor plan element
-      await tx.floorPlanElement.updateMany({
-        where: {
-          linkedMenuItemId: orderItem.menuItemId,
-          deletedAt: null,
-        },
-        data: {
-          status: 'available',
-          currentOrderId: null,
-          sessionStartedAt: null,
-          sessionExpiresAt: null,
-        },
-      })
-
-      return {
-        alreadyProcessed: false as const,
-        actualMinutes,
-        calculatedCharge,
-        breakdown,
-        overtimeBreakdown,
-        updatedMenuItem,
-      }
     })
 
     // If already processed by cron or another terminal, return idempotent success

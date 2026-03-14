@@ -135,6 +135,17 @@ async function createSegment(
   const now = new Date()
   const memberIds = activeMembers.map((m) => m.employeeId)
 
+  // Guard: empty memberIds would produce an empty splitJson `{}`, causing tips
+  // allocated against this segment to be silently lost. This should never happen
+  // in normal operation (startTipGroup always includes the creator), but defend
+  // against it explicitly.
+  if (memberIds.length === 0) {
+    throw new Error(
+      `[tip-groups] Cannot create segment with zero members for group ${groupId}. ` +
+        `This would produce an empty splitJson and cause tip loss.`
+    )
+  }
+
   let splitJson: Record<string, number>
 
   if (splitMode === 'role_weighted' && memberIds.length > 0) {
@@ -147,10 +158,18 @@ async function createSegment(
       },
     })
 
-    const weightedMembers = employees.map(emp => ({
-      employeeId: emp.id,
-      weight: Number(emp.role?.tipWeight ?? 1),
-    }))
+    const weightedMembers = employees.map(emp => {
+      if (!emp.role?.tipWeight) {
+        console.warn('[tip-groups] Employee has no role/tipWeight, defaulting to weight=1 (equal split)', {
+          employeeId: emp.id,
+          groupId,
+        })
+      }
+      return {
+        employeeId: emp.id,
+        weight: Number(emp.role?.tipWeight ?? 1),
+      }
+    })
 
     splitJson = buildWeightedSplitJson(weightedMembers)
   } else {

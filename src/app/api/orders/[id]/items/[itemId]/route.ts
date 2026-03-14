@@ -3,11 +3,18 @@ import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
-import { calculateOrderTotals, calculateOrderSubtotal, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { isModifiable } from '@/lib/domain/order-status'
+import {
+  validateOrderModifiable,
+  validateUpdateQuantity,
+  validateItemDeletable,
+  fetchLiveModifierTotal,
+  calculateUpdatedItemTotal,
+  softDeleteOrderItem,
+  recalculateOrderTotals,
+} from '@/lib/domain/order-items'
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
 export const PUT = withVenue(async function PUT(
@@ -38,26 +45,16 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
-    // Status guard: only modifiable statuses allowed
-    if (!isModifiable(order.status)) {
-      return NextResponse.json(
-        { error: `Cannot modify items on order in '${order.status}' status` },
-        { status: 400 }
-      );
-    }
-
-    // Block modifications if any completed payment exists
-    const hasCompletedPayment = order.payments?.some(p => p.status === 'completed') || false
-    if (hasCompletedPayment) {
-      return NextResponse.json(
-        { error: 'Cannot modify an order with existing payments. Void the payment first.' },
-        { status: 400 }
-      )
+    // Status + payment guard via domain
+    const modCheck = validateOrderModifiable(order.status, order.payments)
+    if (!modCheck.valid) {
+      return NextResponse.json({ error: modCheck.error }, { status: modCheck.status })
     }
 
     // Validate quantity if provided (Bug 18)
-    if (body.quantity !== undefined && body.quantity < 1) {
-      return NextResponse.json({ error: 'Quantity must be at least 1' }, { status: 400 })
+    const qtyCheck = validateUpdateQuantity(body.quantity)
+    if (!qtyCheck.valid) {
+      return NextResponse.json({ error: qtyCheck.error }, { status: qtyCheck.status })
     }
 
     // Verify item exists
@@ -208,12 +205,7 @@ export const PUT = withVenue(async function PUT(
     // Fetch active modifiers for fresh modifierTotal (stale item.modifierTotal can cause penny drift)
     let liveModifierTotal = Number(item.modifierTotal)
     if (quantityChanged) {
-      const activeModifiers = await db.orderItemModifier.findMany({
-        where: { orderItemId: itemId, deletedAt: null },
-      })
-      liveModifierTotal = activeModifiers.reduce(
-        (sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0
-      )
+      liveModifierTotal = await fetchLiveModifierTotal(db as any, itemId)
     }
 
     const updated = await db.orderItem.update({
@@ -228,63 +220,30 @@ export const PUT = withVenue(async function PUT(
         ...(quantityChanged ? {
           quantity: updateData.quantity,
           modifierTotal: liveModifierTotal,
-          itemTotal: (Number(item.price) + liveModifierTotal) * updateData.quantity,
+          itemTotal: calculateUpdatedItemTotal(Number(item.price), liveModifierTotal, updateData.quantity),
         } : {}),
       },
       include: { modifiers: true },
     })
 
-    // If quantity changed, recalculate order totals (mirrors DELETE recalculation)
+    // If quantity changed, recalculate order totals via domain
     if (quantityChanged) {
       const fullOrder = await db.order.findUniqueOrThrow({
         where: { id: orderId },
         include: {
           location: { select: { settings: true } },
-          items: {
-            where: { deletedAt: null, status: 'active' },
-            include: {
-              modifiers: { where: { deletedAt: null } },
-              ingredientModifications: true,
-            },
-          },
         },
       })
 
-      const itemsForCalc = fullOrder.items.map(i => ({
-        ...i,
-        price: Number(i.price),
-        itemTotal: Number(i.itemTotal),
-        commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
-        weight: i.weight ? Number(i.weight) : undefined,
-        unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
-        soldByWeight: i.soldByWeight ?? false,
-        modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
-        ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
-      }))
-
-      const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
-      const updatedDiscountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotalForDiscounts)
-
-      const totals = calculateOrderTotals(
-        itemsForCalc,
-        fullOrder.location.settings as LocationTaxSettings | null,
-        updatedDiscountTotal,
-        Number(fullOrder.tipTotal) || 0,
-        undefined,
-        'card',
-        fullOrder.isTaxExempt
+      const totals = await recalculateOrderTotals(
+        db as any, orderId, fullOrder.location.settings,
+        Number(fullOrder.tipTotal) || 0, fullOrder.isTaxExempt
       )
 
       await db.order.update({
         where: { id: orderId },
         data: {
-          subtotal: totals.subtotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-          commissionTotal: totals.commissionTotal,
-          itemCount: fullOrder.items.reduce((sum, i) => sum + i.quantity, 0),
+          ...totals,
           version: { increment: 1 },
         },
       })
@@ -381,21 +340,10 @@ export const DELETE = withVenue(async function DELETE(
         return NextResponse.json({ error: 'Order not found' }, { status: 404 })
       }
 
-      // Only allow item deletion on modifiable orders (not paid/closed/voided/cancelled)
-      if (!isModifiable(order.status)) {
-        return NextResponse.json(
-          { error: `Cannot delete items on a ${order.status} order` },
-          { status: 400 }
-        )
-      }
-
-      // Block deletion if any completed payment exists
-      const hasCompletedPaymentDel = order.payments?.some(p => p.status === 'completed') || false
-      if (hasCompletedPaymentDel) {
-        return NextResponse.json(
-          { error: 'Cannot modify an order with existing payments. Void the payment first.' },
-          { status: 400 }
-        )
+      // Status + payment guard via domain
+      const modCheck = validateOrderModifiable(order.status, order.payments)
+      if (!modCheck.valid) {
+        return NextResponse.json({ error: modCheck.error }, { status: modCheck.status })
       }
 
       // Verify item exists and belongs to this order
@@ -408,20 +356,10 @@ export const DELETE = withVenue(async function DELETE(
         return NextResponse.json({ error: 'Item not found' }, { status: 404 })
       }
 
-      // Don't allow deleting items already sent to kitchen — use comp/void
-      if (item.kitchenStatus !== 'pending') {
-        return NextResponse.json(
-          { error: 'Cannot delete an item that has been sent to the kitchen. Use comp/void instead.' },
-          { status: 400 }
-        )
-      }
-
-      // Don't allow deleting voided/comped items
-      if (item.status !== 'active') {
-        return NextResponse.json(
-          { error: `Cannot delete a ${item.status} item` },
-          { status: 400 }
-        )
+      // Validate item is deletable (pending kitchen status, active status) via domain
+      const delCheck = validateItemDeletable(item)
+      if (!delCheck.valid) {
+        return NextResponse.json({ error: delCheck.error }, { status: delCheck.status })
       }
 
       // Permission check — require POS access to delete items
@@ -449,16 +387,8 @@ export const DELETE = withVenue(async function DELETE(
         },
       }).catch(err => console.error('[AuditLog] Failed to log item removal:', err))
 
-      // Soft delete modifiers and the item (preserve audit trail)
-      const now = new Date()
-      await tx.orderItemModifier.updateMany({
-        where: { orderItemId: itemId },
-        data: { deletedAt: now },
-      })
-      await tx.orderItem.update({
-        where: { id: itemId },
-        data: { deletedAt: now, status: 'removed' },
-      })
+      // Soft delete modifiers and the item via domain
+      await softDeleteOrderItem(tx, itemId)
 
       console.log(`[AUDIT] ORDER_ITEM_DELETED: orderId=${orderId}, itemId=${itemId}, itemName="${item.menuItem?.name || item.name}", qty=${item.quantity}, amount=$${Number(item.itemTotal)}, by employee ${employeeId}`)
 
@@ -467,56 +397,23 @@ export const DELETE = withVenue(async function DELETE(
         lineItemId: itemId,
       })
 
-      // Recalculate totals from remaining active items
+      // Recalculate totals from remaining active items via domain
       const fullOrder = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         include: {
           location: { select: { settings: true } },
-          items: {
-            where: { deletedAt: null, status: 'active' },
-            include: {
-              modifiers: { where: { deletedAt: null } },
-              ingredientModifications: true,
-            },
-          },
         },
       })
 
-      const itemsForCalc = fullOrder.items.map(i => ({
-        ...i,
-        price: Number(i.price),
-        itemTotal: Number(i.itemTotal),
-        commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
-        weight: i.weight ? Number(i.weight) : undefined,
-        unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
-        soldByWeight: i.soldByWeight ?? false,
-        modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
-        ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
-      }))
-
-      const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
-      const updatedDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotalForDiscounts)
-
-      const totals = calculateOrderTotals(
-        itemsForCalc,
-        fullOrder.location.settings as LocationTaxSettings | null,
-        updatedDiscountTotal,
-        Number(fullOrder.tipTotal) || 0,
-        undefined,
-        'card',
-        fullOrder.isTaxExempt
+      const totals = await recalculateOrderTotals(
+        tx, orderId, fullOrder.location.settings,
+        Number(fullOrder.tipTotal) || 0, fullOrder.isTaxExempt
       )
 
       await tx.order.update({
         where: { id: orderId },
         data: {
-          subtotal: totals.subtotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-          commissionTotal: totals.commissionTotal,
-          itemCount: fullOrder.items.reduce((sum, i) => sum + i.quantity, 0),
+          ...totals,
           version: { increment: 1 },
         },
       })

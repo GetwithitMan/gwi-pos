@@ -6,6 +6,12 @@ import { withVenue } from '@/lib/with-venue'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import {
+  validateEntertainmentStatus,
+  calculateMinutesRemaining,
+  calculateMinutesElapsed,
+  isExpiringSoon,
+} from '@/lib/domain/entertainment'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -155,7 +161,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         // Time info: prefer FloorPlanElement session times, fallback to OrderItem block times
         if (fpe?.sessionExpiresAt) {
           const expiresAt = new Date(fpe.sessionExpiresAt)
-          const remaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60))
+          const remaining = calculateMinutesRemaining(expiresAt, now)
 
           timeInfo = {
             type: 'block',
@@ -163,24 +169,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             expiresAt: fpe.sessionExpiresAt.toISOString(),
             minutesRemaining: remaining,
             isExpired: remaining <= 0,
-            isExpiringSoon: remaining > 0 && remaining <= 10,
+            isExpiringSoon: isExpiringSoon(expiresAt, now),
           }
         } else if (fpe?.sessionStartedAt) {
           // Per-minute billing from FloorPlanElement
-          const startedAt = fpe.sessionStartedAt
-          const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000 / 60)
-
           timeInfo = {
             type: 'per_minute',
-            startedAt: startedAt.toISOString(),
-            minutesElapsed: elapsed,
+            startedAt: fpe.sessionStartedAt.toISOString(),
+            minutesElapsed: calculateMinutesElapsed(fpe.sessionStartedAt, now),
           }
         } else if (!fpe && menuItem.currentOrderItemId) {
           // Fallback: get timing from OrderItem for items without FloorPlanElement
           const orderItem = orderItemMap.get(menuItem.currentOrderItemId)
           if (orderItem?.blockTimeExpiresAt) {
             const expiresAt = new Date(orderItem.blockTimeExpiresAt)
-            const remaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60))
+            const remaining = calculateMinutesRemaining(expiresAt, now)
 
             timeInfo = {
               type: 'block',
@@ -188,16 +191,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               expiresAt: orderItem.blockTimeExpiresAt.toISOString(),
               minutesRemaining: remaining,
               isExpired: remaining <= 0,
-              isExpiringSoon: remaining > 0 && remaining <= 10,
+              isExpiringSoon: isExpiringSoon(expiresAt, now),
             }
           } else if (orderItem?.blockTimeStartedAt) {
-            const startedAt = orderItem.blockTimeStartedAt
-            const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000 / 60)
-
             timeInfo = {
               type: 'per_minute',
-              startedAt: startedAt.toISOString(),
-              minutesElapsed: elapsed,
+              startedAt: orderItem.blockTimeStartedAt.toISOString(),
+              minutesElapsed: calculateMinutesElapsed(orderItem.blockTimeStartedAt, now),
             }
           }
         }
@@ -287,10 +287,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    const validStatuses = ['available', 'in_use', 'reserved', 'maintenance']
-    if (status && !validStatuses.includes(status)) {
+    if (status && !validateEntertainmentStatus(status)) {
       return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+        { error: `Invalid status. Must be one of: available, in_use, reserved, maintenance` },
         { status: 400 }
       )
     }

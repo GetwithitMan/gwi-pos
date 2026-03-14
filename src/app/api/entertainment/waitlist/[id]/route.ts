@@ -8,6 +8,7 @@ import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { calculateWaitMinutes, validateWaitlistStatus } from '@/lib/domain/entertainment'
 
 // GET - Get a specific waitlist entry
 export const GET = withVenue(async function GET(
@@ -44,7 +45,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    const waitMinutes = Math.floor((new Date().getTime() - entry.requestedAt.getTime()) / 1000 / 60)
+    const waitMinutes = calculateWaitMinutes(entry.requestedAt)
 
     return NextResponse.json({ data: {
       entry: {
@@ -141,10 +142,9 @@ export const PATCH = withVenue(async function PATCH(
       )
     }
 
-    const validStatuses = ['waiting', 'notified', 'seated', 'cancelled', 'expired']
-    if (status && !validStatuses.includes(status)) {
+    if (status && !validateWaitlistStatus(status)) {
       return NextResponse.json(
-        { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
+        { error: `Invalid status. Must be one of: waiting, notified, seated, cancelled, expired` },
         { status: 400 }
       )
     }

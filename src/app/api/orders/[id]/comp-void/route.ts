@@ -3,7 +3,6 @@ import { db } from '@/lib/db'
 import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventoryForRestoredItem, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { recalculatePercentDiscounts, getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
@@ -16,7 +15,22 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
-import { isModifiable, isClosed } from '@/lib/domain/order-status'
+import { isClosed } from '@/lib/domain/order-status'
+import {
+  calculateItemTotal,
+  isEmployeeMealReason,
+  validateOrderForCompVoid,
+  validateVersion,
+  validateItemForCompVoid,
+  validateItemForRestore,
+  validateVoidApproval,
+  validateVoid2FA,
+  validateSplitParent,
+  validateRemoteApproval,
+  validateReasonPreset,
+  applyCompVoid,
+  applyRestore,
+} from '@/lib/domain/comp-void'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -58,36 +72,11 @@ export const POST = withVenue(async function POST(
     }
 
     // If remote approval code is provided, validate it
-    let remoteApproval = null
-    if (remoteApprovalCode) {
-      remoteApproval = await db.remoteVoidApproval.findFirst({
-        where: {
-          approvalCode: remoteApprovalCode,
-          status: 'approved',
-          orderId,
-          approvalCodeExpiry: { gt: new Date() },
-        },
-        include: {
-          manager: {
-            select: { id: true, displayName: true, firstName: true, lastName: true },
-          },
-        },
-      })
-
-      if (!remoteApproval) {
-        return NextResponse.json(
-          { error: 'Invalid or expired approval code' },
-          { status: 400 }
-        )
-      }
-
-      // Check if code was for this specific item (if item-level void)
-      if (remoteApproval.orderItemId && remoteApproval.orderItemId !== itemId) {
-        return NextResponse.json(
-          { error: 'Approval code is for a different item' },
-          { status: 400 }
-        )
-      }
+    const { approval: remoteApproval, error: approvalError } = await validateRemoteApproval(
+      db as any, remoteApprovalCode, orderId, itemId,
+    )
+    if (approvalError) {
+      return NextResponse.json({ error: approvalError.error }, { status: approvalError.status })
     }
 
     // Get the order and item
@@ -116,22 +105,20 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Block modifications if any completed payment exists
-    const hasCompletedPayment = order.payments?.some(p => p.status === 'completed') || false
-    if (hasCompletedPayment) {
-      return NextResponse.json(
-        { error: 'Cannot void/comp item on order with recorded payments. Void the payment first.' },
-        { status: 400 }
-      )
+    // Validate order state
+    const orderError = validateOrderForCompVoid(order)
+    if (orderError) {
+      return NextResponse.json({ error: orderError.error }, { status: orderError.status })
     }
 
-    // Concurrency check: if client sent a version, verify it matches
-    if (version != null && order.version !== version) {
+    // Concurrency check
+    const versionError = validateVersion(order.version, version)
+    if (versionError) {
       return NextResponse.json({
-        error: 'Order was modified on another terminal',
+        error: versionError.error,
         conflict: true,
         currentVersion: order.version,
-      }, { status: 409 })
+      }, { status: versionError.status })
     }
 
     // Server-side permission check: requesting employee needs basic POS access
@@ -152,418 +139,75 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Validate reason against allowed presets (backward compatible — only if presets exist)
-    const reasonType = action === 'comp' ? 'comp_reason' : 'void_reason'
-    const reasonPresets = reasonType === 'void_reason'
-      ? await db.voidReason.findMany({ where: { locationId: order.locationId, isActive: true, deletedAt: null }, select: { id: true, name: true } })
-      : await db.compReason.findMany({ where: { locationId: order.locationId, isActive: true, deletedAt: null }, select: { id: true, name: true } })
-
-    if (reasonPresets.length > 0) {
-      // Presets are configured — validate the reason matches one
-      const reasonMatch = reasonPresets.find(
-        r => r.id === reason || r.name.toLowerCase() === reason.toLowerCase()
-      )
-      if (!reasonMatch) {
-        return NextResponse.json(
-          { error: `Invalid ${action} reason. Must be one of the configured presets.` },
-          { status: 400 }
-        )
-      }
-
-      // Check employee access rules (only if access rules exist for this reason type)
-      const { resolveAllowedReasonIds } = await import('@/app/api/settings/reason-access/allowed/route')
-      const { ids: allowedIds, hasRules } = await resolveAllowedReasonIds(order.locationId, employeeId, reasonType)
-      if (hasRules && !allowedIds.includes(reasonMatch.id)) {
-        return NextResponse.json(
-          { error: `You do not have access to use this ${action} reason` },
-          { status: 403 }
-        )
-      }
+    // Validate reason against allowed presets (backward compatible)
+    const reasonError = await validateReasonPreset(db as any, action, reason, order.locationId, employeeId)
+    if (reasonError) {
+      return NextResponse.json({ error: reasonError.error }, { status: reasonError.status })
     }
 
     // W4-1: Enforce configurable void approval from location settings
     const settings = parseSettings(order.location.settings)
-    const approvalSettings = settings.approvals
 
-    if (action === 'void' && approvalSettings.requireVoidApproval) {
-      // Calculate item total to check against threshold
-      const itemForCheck = order.items[0]
-      if (itemForCheck) {
-        const modsTotalCheck = itemForCheck.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-        const itemTotalCheck = (Number(itemForCheck.price) + modsTotalCheck) * itemForCheck.quantity
-
-        // If threshold is 0, all voids require approval; otherwise only above threshold
-        // Compare in integer cents to avoid float precision issues
-        const itemCents = Math.round(itemTotalCheck * 100)
-        const thresholdCents = Math.round(approvalSettings.voidApprovalThreshold * 100)
-        const needsApproval = thresholdCents === 0
-          || itemCents > thresholdCents
-
-        if (needsApproval && !approvedById && !remoteApprovalCode) {
-          return NextResponse.json(
-            { error: 'Manager approval required for void', requiresApproval: true },
-            { status: 403 }
-          )
-        }
-      }
+    const item = order.items[0]
+    const itemError = validateItemForCompVoid(item)
+    if (itemError) {
+      return NextResponse.json({ error: itemError.error }, { status: itemError.status })
     }
 
-    // W5-11: 2FA enforcement for large voids — requires remote SMS approval specifically
-    const securitySettings = settings.security
-    if (action === 'void' && securitySettings.require2FAForLargeVoids) {
-      const itemForCheck = order.items[0]
-      if (itemForCheck) {
-        const modsTotalCheck = itemForCheck.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-        const itemTotalCheck = (Number(itemForCheck.price) + modsTotalCheck) * itemForCheck.quantity
+    // Calculate the item total (price + modifiers) * quantity
+    const itemTotal = calculateItemTotal(item!.price, item!.modifiers, item!.quantity)
 
-        // Compare in integer cents to avoid float precision issues
-        if (Math.round(itemTotalCheck * 100) > Math.round(securitySettings.void2FAThreshold * 100) && !remoteApprovalCode) {
-          return NextResponse.json(
-            { error: `Remote manager approval required for void over $${securitySettings.void2FAThreshold}`, requiresRemoteApproval: true },
-            { status: 403 }
-          )
-        }
+    if (action === 'void') {
+      const approvalError = validateVoidApproval(
+        itemTotal, settings.approvals, !!approvedById, !!remoteApprovalCode,
+      )
+      if (approvalError) {
+        return NextResponse.json(
+          { error: approvalError.error, requiresApproval: approvalError.requiresApproval },
+          { status: approvalError.status }
+        )
+      }
+
+      // W5-11: 2FA enforcement for large voids
+      const twoFAError = validateVoid2FA(itemTotal, settings.security, !!remoteApprovalCode)
+      if (twoFAError) {
+        return NextResponse.json(
+          { error: twoFAError.error, requiresRemoteApproval: twoFAError.requiresRemoteApproval },
+          { status: twoFAError.status }
+        )
       }
     }
 
     // Guard: cannot void/cancel a split parent with unpaid children
-    if (order.status === 'split') {
-      const unpaidChildren = await db.order.count({
-        where: {
-          parentOrderId: order.id,
-          status: { notIn: ['paid', 'closed', 'voided', 'cancelled'] },
-          deletedAt: null,
-        },
-      });
-      if (unpaidChildren > 0) {
-        return NextResponse.json(
-          { error: `Cannot void split parent with ${unpaidChildren} unpaid split children. Void or pay children first.` },
-          { status: 400 }
-        );
-      }
+    const splitError = await validateSplitParent(db as any, order)
+    if (splitError) {
+      return NextResponse.json({ error: splitError.error }, { status: splitError.status })
     }
-
-    if (!isModifiable(order.status)) {
-      return NextResponse.json(
-        { error: `Cannot comp/void items on order in '${order.status}' status` },
-        { status: 400 }
-      )
-    }
-
-    const item = order.items[0]
-    if (!item) {
-      return NextResponse.json(
-        { error: 'Item not found on this order' },
-        { status: 404 }
-      )
-    }
-
-    if (item.status !== 'active') {
-      return NextResponse.json(
-        { error: `Item is already ${item.status}` },
-        { status: 400 }
-      )
-    }
-
-    // Calculate the item total (price + modifiers) * quantity
-    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-    const itemTotal = (Number(item.price) + modifiersTotal) * item.quantity
-
-    // Update the item status
-    const newStatus = action === 'comp' ? 'comped' : 'voided'
-    const itemWasMade = action === 'comp' ? true : (wasMade ?? false)
 
     // Determine the approving manager (from remote approval or direct)
     const effectiveApprovedById = remoteApproval?.manager.id || approvedById || null
     const effectiveApprovedAt = remoteApproval?.approvedAt || (approvedById ? new Date() : null)
 
+    const newStatus = action === 'comp' ? 'comped' : 'voided'
+
     // Wrap all critical writes in a single transaction
-    const { activeItems, totals, shouldAutoClose, parentTotals, cardPayments } = await db.$transaction(async (tx) => {
-      // 0. Acquire row-level lock to prevent void-during-payment race condition
-      const [lockedOrder] = await tx.$queryRaw<any[]>`
-        SELECT "status" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE
-      `
-
-      if (!lockedOrder) {
-        throw new Error('ORDER_NOT_FOUND')
-      }
-
-      if (['paid', 'closed', 'voided'].includes(lockedOrder.status)) {
-        throw new Error('ORDER_ALREADY_SETTLED')
-      }
-
-      // Re-check item status inside the lock to prevent double comp/void.
-      // Use FOR UPDATE to serialize concurrent comp/void on the same item row.
-      const [freshItem] = await tx.$queryRawUnsafe<Array<{ id: string; status: string }>>(
-        `SELECT "id", "status" FROM "OrderItem" WHERE "id" = $1 AND "orderId" = $2 FOR UPDATE`,
-        itemId,
+    const { activeItemCount, totals, shouldAutoClose, parentTotals, cardPayments } = await db.$transaction(async (tx) => {
+      return applyCompVoid(tx, {
         orderId,
-      )
-      if (!freshItem || freshItem.status !== 'active') {
-        throw new Error('ITEM_ALREADY_SETTLED')
-      }
-
-      // W1-P1: Collect card payment info for potential Datacap reversal
-      // Instead of blocking voids on paid orders, allow the void and attempt card reversal afterward
-      const txCardPayments = await tx.payment.findMany({
-        where: { orderId, status: 'completed', deletedAt: null },
-        select: {
-          id: true,
-          datacapRecordNo: true,
-          paymentReaderId: true,
-          totalAmount: true,
-          refundedAmount: true,
-          cardLast4: true,
-          paymentMethod: true,
-        },
-      })
-
-      // 1. Update item status
-      await tx.orderItem.update({
-        where: { id: itemId },
-        data: {
-          status: newStatus,
-          voidReason: reason,
-          wasMade: itemWasMade,
-          lastMutatedBy: 'local',
-        },
-      })
-
-      // 1b. Soft-delete any OrderItemDiscount records for the voided/comped item
-      // Without this, orphaned discount records remain and corrupt totals
-      await tx.orderItemDiscount.updateMany({
-        where: { orderItemId: itemId, deletedAt: null },
-        data: { deletedAt: new Date() },
-      })
-
-      // 2. Create void log entry
-      // NOTE: VoidLog has no `voidAction` field to distinguish comp vs void.
-      // The action is tracked in AuditLog (item_voided/item_comped) and OrderItem.status (voided/comped),
-      // but VoidLog itself only has voidType=item|order. A Prisma migration adding `voidAction String?`
-      // to VoidLog would allow direct querying. For now, the action can be inferred from the item status.
-      await tx.voidLog.create({
-        data: {
-          locationId: order.locationId,
-          orderId,
-          employeeId,
-          voidType: 'item',
-          itemId,
-          amount: itemTotal,
-          reason: `[${action}] ${reason}`, // Prefix reason with action for traceability until voidAction field is added
-          wasMade: action === 'comp' ? true : (wasMade ?? false),
-          approvedById: effectiveApprovedById,
-          approvedAt: effectiveApprovedAt,
-          remoteApprovalId: remoteApproval?.id || null,
-        },
-      })
-
-      // 2b. W4-1: Log void/comp to AuditLog (in addition to VoidLog)
-      // Query previous comp/void audit entries for this order+item to create
-      // a linked paper trail (e.g. "item comped by A at 10:00, then voided by B at 10:05")
-      const previousAuditActions = await tx.auditLog.findMany({
-        where: {
-          entityType: 'order',
-          entityId: orderId,
-          action: { in: ['item_voided', 'item_comped'] },
-          details: { path: ['itemId'], equals: itemId },
-        },
-        select: { id: true, action: true, employeeId: true, createdAt: true },
-        orderBy: { createdAt: 'asc' },
-      })
-
-      await tx.auditLog.create({
-        data: {
-          locationId: order.locationId,
-          employeeId,
-          action: action === 'void' ? 'item_voided' : 'item_comped',
-          entityType: 'order',
-          entityId: orderId,
-          details: {
-            itemId,
-            itemName: item.name,
-            quantity: item.quantity,
-            amount: itemTotal,
-            reason,
-            wasMade: itemWasMade,
-            approvedBy: effectiveApprovedById,
-            remoteApproval: !!remoteApproval,
-            relatedAuditActions: previousAuditActions.length > 0
-              ? previousAuditActions.map(a => ({
-                  auditLogId: a.id,
-                  action: a.action,
-                  employeeId: a.employeeId,
-                  at: a.createdAt.toISOString(),
-                }))
-              : undefined,
-          },
-        },
-      })
-
-      // W4-1: Log manager override if approval was provided
-      if (effectiveApprovedById && effectiveApprovedById !== employeeId) {
-        await tx.auditLog.create({
-          data: {
-            locationId: order.locationId,
-            employeeId: effectiveApprovedById,
-            action: 'manager_override',
-            entityType: 'order',
-            entityId: orderId,
-            details: {
-              overrideType: action,
-              itemId,
-              itemName: item.name,
-              amount: itemTotal,
-              requestedBy: employeeId,
-              approvedBy: effectiveApprovedById,
-              reason,
-            },
-          },
-        })
-      }
-
-      // 3. If remote approval was used, mark it as used
-      if (remoteApproval) {
-        await tx.remoteVoidApproval.update({
-          where: { id: remoteApproval.id },
-          data: {
-            status: 'used',
-            usedAt: new Date(),
-          },
-        })
-      }
-
-      // 4. Recalculate order totals — get all active items
-      // H-FIN-7: Include isTaxInclusive to handle tax-inclusive pricing correctly
-      const txActiveItems = await tx.orderItem.findMany({
-        where: {
-          orderId,
-          status: 'active',
-        },
-        include: { modifiers: true },
-      })
-
-      // H-FIN-7: Split items into tax-inclusive vs tax-exclusive subtotals
-      let inclusiveSubtotal = 0
-      let exclusiveSubtotal = 0
-      txActiveItems.forEach(activeItem => {
-        const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-        const itemTotal = (Number(activeItem.price) + mods) * activeItem.quantity
-        if ((activeItem as any).isTaxInclusive) {
-          inclusiveSubtotal += itemTotal
-        } else {
-          exclusiveSubtotal += itemTotal
-        }
-      })
-      inclusiveSubtotal = roundToCents(inclusiveSubtotal)
-      exclusiveSubtotal = roundToCents(exclusiveSubtotal)
-      const newSubtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
-
-      // Recalculate percent-based order-level discounts against new subtotal
-      const orderLevelDiscount = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
-
-      // Sum item-level discounts from active (non-deleted) OrderItemDiscount records
-      const activeItemDiscounts = await tx.orderItemDiscount.findMany({
-        where: { orderId, deletedAt: null },
-        select: { amount: true },
-      })
-      const itemLevelDiscount = activeItemDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
-      const discountTotal = roundToCents(orderLevelDiscount + itemLevelDiscount)
-
-      // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
-      const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
-      const splitTax = calculateSplitTax(inclusiveSubtotal, exclusiveSubtotal, taxRate)
-      const effectiveDiscount = Math.min(discountTotal, newSubtotal)
-      // Inclusive items already contain tax; exclusive items get taxFromExclusive added on top
-      const txTotals = {
-        subtotal: newSubtotal,
-        discountTotal: effectiveDiscount,
-        taxTotal: splitTax.totalTax,
-        total: roundToCents(inclusiveSubtotal + exclusiveSubtotal + splitTax.taxFromExclusive - effectiveDiscount),
-      }
-
-      // If all items are voided/comped (total is $0 with no active items), auto-close the order
-      const txShouldAutoClose = txActiveItems.length === 0
-
-      // 5. Update order with recalculated totals + increment version
-      const txItemCount = txActiveItems.reduce((sum, i) => sum + i.quantity, 0)
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          ...txTotals,
-          itemCount: txItemCount,
-          ...(order.isBottleService ? { bottleServiceCurrentSpend: txTotals.subtotal } : {}),
-          ...(txShouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
-          version: { increment: 1 },
-          lastMutatedBy: 'local',
-        },
-      })
-
-      // 5b. Recalculate commission from active items only (voided item's commission must not persist)
-      const activeCommissionItems = await tx.orderItem.findMany({
-        where: { orderId, status: 'active', deletedAt: null },
-        include: { menuItem: { select: { commissionType: true, commissionValue: true } } },
-      })
-      let newCommission = 0
-      for (const ci of activeCommissionItems) {
-        if (!ci.menuItem?.commissionType || !ci.menuItem?.commissionValue) continue
-        const val = Number(ci.menuItem.commissionValue)
-        const qty = ci.quantity || 1
-        const ciTotal = Number(ci.itemTotal ?? 0)
-        newCommission += ci.menuItem.commissionType === 'percent'
-          ? roundToCents(ciTotal * (val / 100))
-          : roundToCents(val * qty)
-      }
-      await tx.order.update({ where: { id: orderId }, data: { commissionTotal: newCommission } })
-      // Zero the voided/comped item's own commission
-      await tx.orderItem.update({ where: { id: itemId }, data: { commissionAmount: 0 } })
-
-      // 6. If this is a split child, update parent order totals to match sum of siblings
-      let txParentTotals: { subtotal: number; taxTotal: number; total: number; discountTotal: number; itemCount: number } | null = null
-      if (order.parentOrderId) {
-        // Bug 4: Also select discountTotal for parent recalculation
-        // Bug 10: Include items to count active items across siblings
-        const siblings = await tx.order.findMany({
-          where: { parentOrderId: order.parentOrderId, deletedAt: null },
-          select: {
-            subtotal: true,
-            taxTotal: true,
-            total: true,
-            discountTotal: true,
-            items: {
-              where: { status: 'active', deletedAt: null },
-              select: { quantity: true },
-            },
-          },
-        })
-        const parentSubtotal = siblings.reduce((sum, s) => sum + Number(s.subtotal), 0)
-        const parentTaxTotal = siblings.reduce((sum, s) => sum + Number(s.taxTotal), 0)
-        const parentTotal = siblings.reduce((sum, s) => sum + Number(s.total), 0)
-        const parentDiscountTotal = siblings.reduce((sum, s) => sum + Number(s.discountTotal), 0)
-        const parentItemCount = siblings.reduce(
-          (sum, s) => sum + s.items.reduce((iSum, i) => iSum + i.quantity, 0), 0
-        )
-
-        await tx.order.update({
-          where: { id: order.parentOrderId },
-          data: {
-            subtotal: parentSubtotal,
-            taxTotal: parentTaxTotal,
-            total: parentTotal,
-            discountTotal: parentDiscountTotal,
-            itemCount: parentItemCount,
-          },
-        })
-
-        txParentTotals = {
-          subtotal: parentSubtotal,
-          taxTotal: parentTaxTotal,
-          total: parentTotal,
-          discountTotal: parentDiscountTotal,
-          itemCount: parentItemCount,
-        }
-      }
-
-      return { activeItems: txActiveItems, totals: txTotals, shouldAutoClose: txShouldAutoClose, parentTotals: txParentTotals, cardPayments: txCardPayments }
+        itemId,
+        action,
+        reason,
+        employeeId,
+        wasMade,
+        approvedById: effectiveApprovedById,
+        approvedAt: effectiveApprovedAt,
+        remoteApprovalId: remoteApproval?.id || null,
+        locationId: order.locationId,
+        itemName: item!.name,
+        itemQuantity: item!.quantity,
+        itemTotal,
+        isBottleService: order.isBottleService,
+      }, order.location.settings as { tax?: { defaultRate?: number } })
     })
 
     // W1-P1: Attempt Datacap reversal for card payments (outside transaction)
@@ -697,10 +341,7 @@ export const POST = withVenue(async function POST(
 
     // Fire-and-forget: Track employee meal if comp reason is employee_meal
     if (action === 'comp') {
-      const normalizedMealReason = reason.toLowerCase().replace(/[\s_-]+/g, '_')
-      const isEmployeeMeal = normalizedMealReason === 'employee_meal' || normalizedMealReason === 'emp_meal'
-        || reason.toLowerCase() === 'employee meal' || reason.toLowerCase() === 'emp meal'
-      if (isEmployeeMeal && settings.employeeMeals?.enabled) {
+      if (isEmployeeMealReason(reason) && settings.employeeMeals?.enabled) {
         void db.auditLog.create({
           data: {
             locationId: order.locationId,
@@ -710,7 +351,7 @@ export const POST = withVenue(async function POST(
             entityId: orderId,
             details: {
               itemId,
-              itemName: item.name,
+              itemName: item!.name,
               amount: itemTotal,
               source: 'comp_void',
               approvedBy: effectiveApprovedById || null,
@@ -726,9 +367,9 @@ export const POST = withVenue(async function POST(
 
     // BUG #378: Reset entertainment status when voiding a timed_rental item
     // Only void — comp means customer plays for free but is still using the item
-    if (action === 'void' && item.menuItem?.itemType === 'timed_rental') {
+    if (action === 'void' && item!.menuItem?.itemType === 'timed_rental') {
       void db.menuItem.update({
-        where: { id: item.menuItem.id },
+        where: { id: item!.menuItem.id },
         data: {
           entertainmentStatus: 'available',
           currentOrderId: null,
@@ -737,7 +378,7 @@ export const POST = withVenue(async function POST(
       }).then(() => {
         // Also reset the floor plan element linked to this menu item
         return db.floorPlanElement.updateMany({
-          where: { linkedMenuItemId: item.menuItem!.id, deletedAt: null },
+          where: { linkedMenuItemId: item!.menuItem!.id, deletedAt: null },
           data: {
             status: 'available',
             currentOrderId: null,
@@ -752,13 +393,13 @@ export const POST = withVenue(async function POST(
       })
 
       void dispatchEntertainmentStatusChanged(order.locationId, {
-        itemId: item.menuItem!.id,
+        itemId: item!.menuItem!.id,
         entertainmentStatus: 'available',
         currentOrderId: null,
         expiresAt: null,
       }, { async: true }).catch(() => {})
 
-      void notifyNextWaitlistEntry(order.locationId, item.menuItem.id, item.menuItem.name).catch(() => {})
+      void notifyNextWaitlistEntry(order.locationId, item!.menuItem.id, item!.menuItem.name).catch(() => {})
     }
 
     // Deduct inventory for voids where food was made
@@ -803,10 +444,10 @@ export const POST = withVenue(async function POST(
       reason: reason || null,
       amount: itemTotal,
       items: [{
-        id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: Number(item.price),
+        id: item!.id,
+        name: item!.name,
+        quantity: item!.quantity,
+        price: Number(item!.price),
       }],
     }).catch(console.error)
 
@@ -832,7 +473,7 @@ export const POST = withVenue(async function POST(
     // M6: Notify mobile tab clients that items changed (comp/void updates item count)
     dispatchTabItemsUpdated(order.locationId, {
       orderId,
-      itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
+      itemCount: activeItemCount,
     })
 
     // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
@@ -850,7 +491,7 @@ export const POST = withVenue(async function POST(
       discountTotalCents: Math.round(totals.discountTotal * 100),
       tipTotalCents: Math.round(Number(order.tipTotal) * 100),
       totalCents: Math.round(totals.total * 100),
-      itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
+      itemCount: activeItemCount,
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(() => {})
@@ -945,8 +586,8 @@ export const POST = withVenue(async function POST(
       action,
       orderAutoClosed: shouldAutoClose,
       item: {
-        id: item.id,
-        name: item.name,
+        id: item!.id,
+        name: item!.name,
         amount: itemTotal,
         newStatus,
       },
@@ -1027,104 +668,26 @@ export const PUT = withVenue(async function PUT(
     }
 
     const item = order.items[0]
-    if (!item) {
-      return NextResponse.json(
-        { error: 'Item not found' },
-        { status: 404 }
-      )
-    }
-
-    if (item.status === 'active') {
-      return NextResponse.json(
-        { error: 'Item is already active' },
-        { status: 400 }
-      )
+    const restoreError = validateItemForRestore(item)
+    if (restoreError) {
+      return NextResponse.json({ error: restoreError.error }, { status: restoreError.status })
     }
 
     // Wrap item restore + order total recalculation in a single transaction for atomicity.
-    // Without this, a concurrent payment or void could see inconsistent state between
-    // the item status change and the order total update.
     const { totals } = await db.$transaction(async (tx) => {
-      // 1. Restore the item
-      await tx.orderItem.update({
-        where: { id: itemId },
-        data: {
-          status: 'active',
-          voidReason: null,
-        },
-      })
-
-      // 1b. Restore any OrderItemDiscount records that were soft-deleted when the item was voided/comped
-      await tx.orderItemDiscount.updateMany({
-        where: { orderItemId: itemId, deletedAt: { not: null } },
-        data: { deletedAt: null },
-      })
-
-      // 2. Recalculate order totals
-      // H-FIN-7: Include isTaxInclusive to handle tax-inclusive pricing correctly
-      const activeItems = await tx.orderItem.findMany({
-        where: {
-          orderId,
-          status: 'active',
-        },
-        include: { modifiers: true },
-      })
-
-      let restoreInclusiveSubtotal = 0
-      let restoreExclusiveSubtotal = 0
-      activeItems.forEach(activeItem => {
-        const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-        const total = (Number(activeItem.price) + mods) * activeItem.quantity
-        if ((activeItem as any).isTaxInclusive) {
-          restoreInclusiveSubtotal += total
-        } else {
-          restoreExclusiveSubtotal += total
-        }
-      })
-      restoreInclusiveSubtotal = roundToCents(restoreInclusiveSubtotal)
-      restoreExclusiveSubtotal = roundToCents(restoreExclusiveSubtotal)
-      const newSubtotal = roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal)
-
-      // Recalculate percent-based order-level discounts against new subtotal
-      const orderLevelDiscount = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
-
-      // Sum item-level discounts from active (non-deleted) OrderItemDiscount records (includes restored ones)
-      const restoreItemDiscounts = await tx.orderItemDiscount.findMany({
-        where: { orderId, deletedAt: null },
-        select: { amount: true },
-      })
-      const restoreItemLevelDiscount = restoreItemDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
-      const discountTotal = roundToCents(orderLevelDiscount + restoreItemLevelDiscount)
-
-      // H-FIN-7: Use split tax calculation for tax-inclusive pricing support
-      const restoreTaxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
-      const restoreSplitTax = calculateSplitTax(restoreInclusiveSubtotal, restoreExclusiveSubtotal, restoreTaxRate)
-      const restoreEffectiveDiscount = Math.min(discountTotal, newSubtotal)
-      const txTotals = {
-        subtotal: newSubtotal,
-        discountTotal: restoreEffectiveDiscount,
-        taxTotal: restoreSplitTax.totalTax,
-        total: roundToCents(restoreInclusiveSubtotal + restoreExclusiveSubtotal + restoreSplitTax.taxFromExclusive - restoreEffectiveDiscount),
-      }
-
-      // 3. Update order with recalculated totals
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          ...txTotals,
-          itemCount: activeItems.reduce((sum, i) => sum + i.quantity, 0),
-          ...(order.isBottleService ? { bottleServiceCurrentSpend: txTotals.subtotal } : {}),
-          version: { increment: 1 },
-        },
-      })
-
-      return { totals: txTotals }
+      return applyRestore(
+        tx,
+        orderId,
+        itemId,
+        order.location.settings as { tax?: { defaultRate?: number } },
+        order.isBottleService,
+      )
     })
 
     // Emit order event for item restore (fire-and-forget)
     void emitOrderEvent(order.locationId, orderId, 'COMP_VOID_APPLIED', {
       lineItemId: itemId,
-      action: item.status === 'comped' ? 'uncomp' : 'unvoid',
+      action: item!.status === 'comped' ? 'uncomp' : 'unvoid',
       reason: null,
       employeeId,
       approvedById: null,
@@ -1138,9 +701,9 @@ export const PUT = withVenue(async function PUT(
     })
 
     // BUG #379: Restore entertainment status when un-voiding a timed_rental item
-    if (item.menuItem?.itemType === 'timed_rental') {
+    if (item!.menuItem?.itemType === 'timed_rental') {
       void db.menuItem.update({
-        where: { id: item.menuItem.id },
+        where: { id: item!.menuItem.id },
         data: {
           entertainmentStatus: 'in_use',
           currentOrderId: orderId,
@@ -1148,12 +711,12 @@ export const PUT = withVenue(async function PUT(
         },
       }).then(() => {
         return db.floorPlanElement.updateMany({
-          where: { linkedMenuItemId: item.menuItem!.id, deletedAt: null },
+          where: { linkedMenuItemId: item!.menuItem!.id, deletedAt: null },
           data: {
             status: 'in_use',
             currentOrderId: orderId,
-            sessionStartedAt: item.blockTimeStartedAt || null,
-            sessionExpiresAt: item.blockTimeExpiresAt || null,
+            sessionStartedAt: item!.blockTimeStartedAt || null,
+            sessionExpiresAt: item!.blockTimeExpiresAt || null,
           },
         })
       }).then(() => {
@@ -1166,8 +729,8 @@ export const PUT = withVenue(async function PUT(
     return NextResponse.json({ data: {
       success: true,
       item: {
-        id: item.id,
-        name: item.name,
+        id: item!.id,
+        name: item!.name,
         restored: true,
       },
       orderTotals: totals,

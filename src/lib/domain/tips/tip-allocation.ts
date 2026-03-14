@@ -197,6 +197,35 @@ export async function allocateTipsForOrder(params: {
     tipBankSettings: providedSettings,
   } = params
 
+  // Primary employee existence guard: if the employee doesn't exist in the DB,
+  // downstream ledger inserts will fail on FK constraint and the tip is silently lost.
+  // Validate early and log a warning so ops can investigate.
+  const primaryEmployee = await db.employee.findFirst({
+    where: { id: primaryEmployeeId, deletedAt: null },
+    select: { id: true },
+  })
+  if (!primaryEmployee) {
+    console.warn(
+      `[tip-allocation] primaryEmployeeId ${primaryEmployeeId} not found in DB. ` +
+        `Skipping tip allocation for order ${orderId} to prevent FK constraint failure.`
+    )
+    const txn = await db.tipTransaction.create({
+      data: {
+        locationId,
+        orderId,
+        paymentId,
+        amountCents: tipAmountCents,
+        sourceType,
+        kind,
+        collectedAt,
+        // primaryEmployeeId is nullable in schema, so omit it when employee doesn't exist
+        ccFeeAmountCents: ccFeeAmountCents ?? 0,
+        idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
+      },
+    })
+    return { tipTransactionId: txn.id, allocations: [] }
+  }
+
   // Zero-tip guard: nothing to allocate
   if (tipAmountCents <= 0) {
     // Still record the transaction for audit trail, but no ledger entries

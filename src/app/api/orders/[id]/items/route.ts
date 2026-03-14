@@ -3,8 +3,6 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
-import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, calculateOrderSubtotal, isItemTaxInclusive, recalculatePercentDiscounts, type LocationTaxSettings } from '@/lib/order-calculations'
-import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
@@ -16,12 +14,22 @@ import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
-
-// Helper to check if a string is a valid CUID (for real modifier IDs)
-function isValidModifierId(modId: string) {
-  // CUIDs are typically 25 chars starting with 'c', combo IDs start with 'combo-'
-  return modId && !modId.startsWith('combo-') && modId.length >= 20
-}
+import {
+  type AddItemInput,
+  validateAddItemsInput,
+  validateOrderStatusForAdd,
+  validateNoActivePayments,
+  validateMenuItemAvailability,
+  prepareAllItemsData,
+  deriveTaxInclusiveSettings,
+  hasOpenPricedItems,
+  overrideModifierPrices,
+  createOrderItem,
+  validateComboComponents,
+  fetchModifierPrices,
+  recalculateOrderTotalsForAdd,
+  recalculateParentOrderTotals,
+} from '@/lib/domain/order-items'
 
 /**
  * Calculate cost-at-sale for a single order item (fire-and-forget).
@@ -111,75 +119,6 @@ async function calculateCostAtSale(
   return baseCost > 0 ? baseCost : null
 }
 
-type NewItem = {
-  menuItemId: string
-  name: string
-  price: number
-  quantity: number
-  pourSize?: string       // T-006: "shot", "double", "tall", "short"
-  pourMultiplier?: number // T-006: 1.0, 2.0, 1.5, 0.75
-  correlationId?: string // Client-provided ID for matching response items
-  modifiers: {
-    modifierId: string
-    name: string
-    price: number
-    preModifier?: string
-    depth?: number
-    spiritTier?: string
-    linkedBottleProductId?: string
-  }[]
-  ingredientModifications?: {
-    ingredientId: string
-    name: string
-    modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
-    priceAdjustment: number
-    swappedTo?: {
-      modifierId: string
-      name: string
-      price: number
-    }
-  }[]
-  specialNotes?: string
-  seatNumber?: number | null
-  courseNumber?: number | null
-  isHeld?: boolean
-  delayMinutes?: number | null
-  // Pizza configuration
-  pizzaConfig?: {
-    sizeId: string
-    crustId: string
-    sauceId?: string
-    cheeseId?: string
-    sauceAmount?: 'none' | 'light' | 'regular' | 'extra'
-    cheeseAmount?: 'none' | 'light' | 'regular' | 'extra'
-    toppings?: unknown[]
-    sauces?: unknown[]
-    cheeses?: unknown[]
-    cookingInstructions?: string
-    cutStyle?: string
-    totalPrice: number
-    priceBreakdown: {
-      sizePrice: number
-      crustPrice: number
-      saucePrice: number
-      cheesePrice: number
-      toppingsPrice: number
-    }
-  }
-  // Entertainment/timed rental fields
-  blockTimeMinutes?: number
-  // Weight-based pricing
-  soldByWeight?: boolean
-  weight?: number       // NET weight (post-tare)
-  weightUnit?: string   // "lb" | "kg" | "oz" | "g"
-  unitPrice?: number    // Price per weight unit
-  grossWeight?: number  // Weight before tare subtracted
-  tareWeight?: number   // Container weight
-  // Pricing option (size/variant selection)
-  pricingOptionId?: string
-  pricingOptionLabel?: string
-}
-
 /**
  * POST /api/orders/[id]/items
  *
@@ -197,15 +136,12 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { items, idempotencyKey, requestingEmployeeId } = body as { items: NewItem[], idempotencyKey?: string, requestingEmployeeId?: string }
+    const { items, idempotencyKey, requestingEmployeeId } = body as { items: AddItemInput[], idempotencyKey?: string, requestingEmployeeId?: string }
 
-    if (!items || items.length === 0) {
-      return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
-    }
-
-    // Cap items per request to prevent abuse (500 items is already generous)
-    if (items.length > 500) {
-      return apiError.badRequest('Too many items in a single request (max 500)', ERROR_CODES.VALIDATION_ERROR)
+    // Validate items input (count, prices, quantities, weights, modifiers, pizza)
+    const inputValidation = validateAddItemsInput(items)
+    if (!inputValidation.valid) {
+      return apiError.badRequest(inputValidation.error, ERROR_CODES.VALIDATION_ERROR)
     }
 
     // Auth checks — fetch order metadata once for all permission guards
@@ -224,13 +160,13 @@ export const POST = withVenue(async function POST(
       // Guard: custom-priced items require manager.open_items
       // Skip for weight-based, pizza, and timed-rental items whose prices are inherently dynamic
       if (orderMeta) {
-        const pricableItems = items.filter(i => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
+        const pricableItems = items.filter((i: AddItemInput) => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
         if (pricableItems.length > 0) {
-          const pricingOptionIds = pricableItems.filter(i => i.pricingOptionId).map(i => i.pricingOptionId!)
+          const pricingOptionIds = pricableItems.filter((i: AddItemInput) => i.pricingOptionId).map((i: AddItemInput) => i.pricingOptionId!)
           // Parallelize independent DB lookups
-          const [menuItems, pricingOptions] = await Promise.all([
+          const [menuItemsForPrice, pricingOptions] = await Promise.all([
             db.menuItem.findMany({
-              where: { id: { in: pricableItems.map(i => i.menuItemId) } },
+              where: { id: { in: pricableItems.map((i: AddItemInput) => i.menuItemId) } },
               select: { id: true, price: true },
             }),
             pricingOptionIds.length > 0
@@ -240,116 +176,13 @@ export const POST = withVenue(async function POST(
                 })
               : Promise.resolve([]),
           ])
-          const menuItemMap = new Map(menuItems.map(m => [m.id, m]))
-          const pricingOptionMap = new Map(pricingOptions.map(p => [p.id, p]))
+          const menuItemPrices = new Map(menuItemsForPrice.map(m => [m.id, Number(m.price)]))
+          const pricingOptionPrices = new Map(pricingOptions.map(p => [p.id, Number(p.price)]))
 
-          let hasOpenItem = false
-          for (const item of pricableItems) {
-            const menuItem = menuItemMap.get(item.menuItemId)
-            if (!menuItem) continue
-            let expectedPrice = Number(menuItem.price)
-            if (item.pricingOptionId) {
-              const opt = pricingOptionMap.get(item.pricingOptionId)
-              if (opt?.price != null) expectedPrice = Number(opt.price)
-            }
-            if (item.pourMultiplier && item.pourMultiplier !== 1) {
-              expectedPrice = Math.round(expectedPrice * item.pourMultiplier * 100) / 100
-            }
-            if (Math.abs(Math.round(item.price * 100) - Math.round(expectedPrice * 100)) > 1) {
-              hasOpenItem = true
-              break
-            }
-          }
-
-          if (hasOpenItem) {
+          if (hasOpenPricedItems(items, menuItemPrices, pricingOptionPrices)) {
             const auth = await requirePermission(requestingEmployeeId, orderMeta.locationId, PERMISSIONS.MGR_OPEN_ITEMS)
             if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
           }
-        }
-      }
-    }
-
-    // Bug 13 fix: Validate quantity on each item (must be >= 1)
-    for (const item of items) {
-      if (item.price < 0) {
-        return apiError.badRequest(
-          `Item price cannot be negative for "${item.name || item.menuItemId}"`,
-          ERROR_CODES.VALIDATION_ERROR
-        )
-      }
-      if (!item.quantity || item.quantity < 1) {
-        return apiError.badRequest(
-          `Invalid quantity for item "${item.name || item.menuItemId}": must be at least 1`,
-          ERROR_CODES.VALIDATION_ERROR
-        )
-      }
-      if (item.quantity > 999) {
-        return apiError.badRequest(
-          `Quantity ${item.quantity} exceeds maximum (999) for item "${item.name || item.menuItemId}"`,
-          ERROR_CODES.VALIDATION_ERROR
-        )
-      }
-      // Validate weight-based items: weight and unitPrice must be > 0, weight <= 999
-      if (item.soldByWeight) {
-        if (!item.weight || item.weight <= 0) {
-          return apiError.badRequest(
-            `Weight is required for sold-by-weight item "${item.name || item.menuItemId}"`,
-            ERROR_CODES.VALIDATION_ERROR
-          )
-        }
-        if (item.weight > 999) {
-          return apiError.badRequest(
-            `Weight ${item.weight} exceeds maximum allowed (999) for item "${item.name || item.menuItemId}"`,
-            ERROR_CODES.VALIDATION_ERROR
-          )
-        }
-        if (!item.unitPrice || item.unitPrice <= 0) {
-          return apiError.badRequest(
-            `Unit price is required for sold-by-weight item "${item.name || item.menuItemId}"`,
-            ERROR_CODES.VALIDATION_ERROR
-          )
-        }
-      }
-
-      // Fix 1: Cap modifier count to prevent abuse
-      if (item.modifiers && item.modifiers.length > 100) {
-        return apiError.badRequest(
-          `Too many modifiers (${item.modifiers.length}) for item "${item.name || item.menuItemId}": max 100`,
-          ERROR_CODES.VALIDATION_ERROR
-        )
-      }
-
-      // Fix 2: Validate ingredient price adjustments are within bounds
-      for (const ing of item.ingredientModifications || []) {
-        const adj = Number(ing.priceAdjustment ?? 0)
-        if (adj < -50 || adj > 50) {
-          return apiError.badRequest(
-            `Ingredient price adjustment $${adj} is outside allowed range (-$50 to $50) for item "${item.name || item.menuItemId}"`,
-            ERROR_CODES.VALIDATION_ERROR
-          )
-        }
-      }
-
-      // Fix 3: Pizza price sanity checks
-      if (item.pizzaConfig) {
-        const breakdown = item.pizzaConfig.priceBreakdown || {} as any
-        const componentSum = Number(breakdown.sizePrice ?? 0) + Number(breakdown.crustPrice ?? 0) +
-          Number(breakdown.saucePrice ?? 0) + Number(breakdown.cheesePrice ?? 0) + Number(breakdown.toppingsPrice ?? 0)
-
-        // Sanity check: total must match components (0.05 tolerance for floating-point serialization)
-        if (Math.abs(componentSum - Number(item.pizzaConfig.totalPrice ?? 0)) > 0.05) {
-          return apiError.badRequest(
-            `Pizza price breakdown does not match total for item "${item.name || item.menuItemId}"`,
-            ERROR_CODES.VALIDATION_ERROR
-          )
-        }
-
-        // Cap total at reasonable max
-        if (Number(item.pizzaConfig.totalPrice) > 500) {
-          return apiError.badRequest(
-            `Pizza price exceeds maximum ($500) for item "${item.name || item.menuItemId}"`,
-            ERROR_CODES.VALIDATION_ERROR
-          )
         }
       }
     }
@@ -402,9 +235,9 @@ export const POST = withVenue(async function POST(
         throw new Error('Order not found')
       }
 
-      if (!['open', 'draft', 'in_progress', 'sent'].includes(lockedOrder.status)) {
-        throw new Error('ORDER_NOT_MODIFIABLE')
-      }
+      // Validate order status via domain
+      const statusCheck = validateOrderStatusForAdd(lockedOrder.status)
+      if (!statusCheck.valid) throw new Error(statusCheck.error)
 
       // Get full order data with includes (row is already locked within this tx)
       const existingOrder = await tx.order.findUnique({
@@ -429,12 +262,8 @@ export const POST = withVenue(async function POST(
       }
 
       // Block modifications if any active (pending or completed) payment exists
-      const hasActivePayment = existingOrder.payments?.some(
-        p => p.status === 'completed' || p.status === 'pending'
-      ) || false
-      if (hasActivePayment) {
-        throw new Error('ORDER_HAS_PAYMENTS')
-      }
+      const paymentCheck = validateNoActivePayments(existingOrder.payments)
+      if (!paymentCheck.valid) throw new Error(paymentCheck.error)
 
       // Promote businessDayDate to current business day when items are added
       try {
@@ -463,77 +292,22 @@ export const POST = withVenue(async function POST(
         i => i.kitchenStatus === 'sent' || i.kitchenStatus === 'cooking' || i.kitchenStatus === 'ready'
       )
 
-      // Validate menu item availability (86 check)
-      for (const mi of menuItemsWithCommission) {
-        if (mi.deletedAt) {
-          throw new Error(`ITEM_DELETED:${mi.name}`)
-        }
-        if (!mi.isActive) {
-          throw new Error(`ITEM_INACTIVE:${mi.name}`)
-        }
-        if (!mi.isAvailable) {
-          throw new Error(`ITEM_86D:${mi.name}`)
-        }
-      }
+      // Validate menu item availability (86 check) via domain
+      const availCheck = validateMenuItemAvailability(menuItemsWithCommission)
+      if (!availCheck.valid) throw new Error(availCheck.error)
 
-      // For combo items, validate component availability
+      // For combo items, validate component availability via domain
       const comboMenuItems = menuItemsWithCommission.filter(mi => mi.itemType === 'combo')
-      if (comboMenuItems.length > 0) {
-        const comboTemplates = await tx.comboTemplate.findMany({
-          where: {
-            menuItemId: { in: comboMenuItems.map(c => c.id) },
-            deletedAt: null,
-          },
-          include: {
-            components: {
-              where: { deletedAt: null },
-              include: {
-                menuItem: {
-                  select: { id: true, name: true, isAvailable: true, isActive: true },
-                },
-              },
-            },
-          },
-        })
-
-        for (const template of comboTemplates) {
-          for (const comp of template.components) {
-            if (comp.menuItem && !comp.menuItem.isAvailable) {
-              throw new Error(`COMBO_COMPONENT_86D:${comp.menuItem.name}`)
-            }
-            if (comp.menuItem && !comp.menuItem.isActive) {
-              throw new Error(`COMBO_COMPONENT_INACTIVE:${comp.menuItem.name}`)
-            }
-          }
-        }
+      const comboError = await validateComboComponents(tx, comboMenuItems.map(c => c.id))
+      if (comboError) {
+        throw new Error(`${comboError.type}:${comboError.name}`)
       }
 
-      // Fix 1: Server-side modifier price validation — override client prices with DB prices
-      // EXCEPTION: Pizza items have computed modifier prices (coverage-based topping pricing,
-      // free topping quotas, fractional coverage). The pizzaConfig.priceBreakdown is the
-      // authoritative source for pizza pricing — do NOT override those modifier prices.
-      const nonPizzaItems = items.filter(item => !item.pizzaConfig)
-      const allModifierIds = nonPizzaItems
-        .flatMap(item => (item.modifiers || []).map(m => m.modifierId))
-        .filter(id => id && isValidModifierId(id))
-      if (allModifierIds.length > 0) {
-        const dbModifiers = await tx.modifier.findMany({
-          where: { id: { in: allModifierIds } },
-          select: { id: true, price: true, name: true },
-        })
-        const modifierPriceMap = new Map(dbModifiers.map(m => [m.id, Number(m.price ?? 0)]))
+      // Server-side modifier price validation via domain
+      const modifierPriceMap = await fetchModifierPrices(tx, items)
+      overrideModifierPrices(items, modifierPriceMap)
 
-        // Override client-supplied prices with server-authoritative prices (non-pizza items only)
-        for (const item of nonPizzaItems) {
-          for (const mod of item.modifiers || []) {
-            if (mod.modifierId && isValidModifierId(mod.modifierId) && modifierPriceMap.has(mod.modifierId)) {
-              mod.price = modifierPriceMap.get(mod.modifierId)!
-            }
-          }
-        }
-      }
-
-      // Derive tax-inclusive flags + dual pricing settings
+      // Derive tax-inclusive flags + dual pricing settings via domain
       const locSettings = existingOrder.location.settings
       const parsedSettings = locSettings ? parseSettings(locSettings) : null
       const dualPricingEnabled = parsedSettings?.dualPricing?.enabled ?? false
@@ -544,265 +318,39 @@ export const POST = withVenue(async function POST(
         getCachedInclusiveTaxRules(existingOrder.locationId),
         getCachedCategories(existingOrder.locationId),
       ])
-      let taxInclusiveLiquor = false
-      let taxInclusiveFood = false
-      for (const rule of taxRules) {
-        if (rule.appliesTo === 'all') { taxInclusiveLiquor = true; taxInclusiveFood = true; break }
-        if (rule.appliesTo === 'category' && rule.categoryIds) {
-          for (const cat of allCategories) {
-            if ((rule.categoryIds as string[]).includes(cat.id)) {
-              if (cat.categoryType && ['liquor', 'drinks'].includes(cat.categoryType)) taxInclusiveLiquor = true
-              if (cat.categoryType && ['food', 'pizza', 'combos'].includes(cat.categoryType)) taxInclusiveFood = true
-            }
-          }
-        }
-      }
-      const taxIncSettings = { taxInclusiveLiquor, taxInclusiveFood }
+      const taxIncSettings = deriveTaxInclusiveSettings(taxRules, allCategories)
 
-      // Pre-compute all item data (pure computation, no DB calls)
-      const itemPrepData = items.map(item => {
-        const effectivePrice = (item.soldByWeight && item.weight && item.unitPrice)
-          ? roundToCents(item.unitPrice * item.weight)
-          : item.price
+      // Pre-compute all item data (pure computation via domain)
+      const { itemPrepData } = prepareAllItemsData(items, menuItemMap, taxIncSettings)
 
-        const fullItemTotal = calculateItemTotal({
-          ...item,
-          price: effectivePrice,
-        })
-
-        const menuItem = menuItemMap.get(item.menuItemId)
-        const itemCommission = calculateItemCommission(
-          fullItemTotal,
-          item.quantity,
-          menuItem?.commissionType || null,
-          menuItem?.commissionValue ? Number(menuItem.commissionValue) : null
-        )
-
-        const catType = menuItem?.category?.categoryType ?? null
-        const itemTaxInclusive = isItemTaxInclusive(catType ?? undefined, taxIncSettings)
-
-        return { item, effectivePrice, fullItemTotal, itemCommission, menuItem, catType, itemTaxInclusive }
-      })
-
-      let newItemsSubtotal = 0
-      let newItemsCommission = 0
-      for (const d of itemPrepData) {
-        newItemsSubtotal += d.fullItemTotal
-        newItemsCommission += d.itemCommission
-      }
-
-      // Create all order items in parallel (N+1 fix — concurrent creates within transaction)
-      const createdItemResults = await Promise.all(
-        itemPrepData.map(async ({ item, effectivePrice, fullItemTotal, itemCommission, menuItem, catType, itemTaxInclusive }) => {
-          const createdItem = await tx.orderItem.create({
-            data: {
-              orderId,
-              locationId: existingOrder.locationId,
-              menuItemId: item.menuItemId,
-              name: item.name || menuItem?.name || item.menuItemId,
-              price: effectivePrice,
-              cardPrice: dualPricingEnabled ? calculateCardPrice(effectivePrice, cashDiscountPct) : null,
-              isTaxInclusive: itemTaxInclusive,
-              categoryType: catType,
-              quantity: item.quantity,
-              pourSize: item.pourSize ?? null,
-              pourMultiplier: item.pourMultiplier ?? null,
-              itemTotal: fullItemTotal,
-              commissionAmount: itemCommission,
-              addedByEmployeeId: requestingEmployeeId || null, // Track who added each item
-              specialNotes: item.specialNotes || null,
-              seatNumber: item.seatNumber || null,
-              courseNumber: item.courseNumber || null,
-              isHeld: item.isHeld || false,
-              delayMinutes: item.delayMinutes || null,
-              // H9: Explicitly set kitchenStatus — 'pending' when order already sent so KDS can pick it up
-              kitchenStatus: hasSentItems ? 'pending' : undefined,
-              // Entertainment/timed rental fields
-              blockTimeMinutes: item.blockTimeMinutes || null,
-              // Idempotency key for duplicate prevention
-              idempotencyKey: idempotencyKey || null,
-              // Weight-based pricing fields
-              soldByWeight: item.soldByWeight || false,
-              weight: item.weight ?? null,
-              weightUnit: item.weightUnit ?? null,
-              unitPrice: item.unitPrice ?? null,
-              grossWeight: item.grossWeight ?? null,
-              tareWeight: item.tareWeight ?? null,
-              // Pricing option (size/variant selection)
-              pricingOptionId: item.pricingOptionId ?? null,
-              pricingOptionLabel: item.pricingOptionLabel ?? null,
-              lastMutatedBy: 'local',
-              // Modifiers
-              modifiers: item.modifiers?.length ? {
-                create: item.modifiers.map(mod => ({
-                  locationId: existingOrder.locationId,
-                  modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
-                  name: mod.name,
-                  price: mod.price,
-                  quantity: 1,
-                  preModifier: mod.preModifier || null,
-                  depth: mod.depth || 0,
-                  spiritTier: mod.spiritTier || null,
-                  linkedBottleProductId: mod.linkedBottleProductId || null,
-                })),
-              } : undefined,
-              // Ingredient modifications
-              ingredientModifications: item.ingredientModifications && item.ingredientModifications.length > 0
-                ? {
-                    create: item.ingredientModifications.map(ing => ({
-                      locationId: existingOrder.locationId,
-                      ingredientId: ing.ingredientId,
-                      ingredientName: ing.name,
-                      modificationType: ing.modificationType,
-                      priceAdjustment: ing.priceAdjustment || 0,
-                      swappedToModifierId: ing.swappedTo?.modifierId || null,
-                      swappedToModifierName: ing.swappedTo?.name || null,
-                    })),
-                  }
-                : undefined,
-              // Pizza data — resolve modifier IDs to Pizza* table IDs
-              // Android sends modifier IDs (e.g. "mod-mg-size-pizza-custom-medium")
-              // but OrderItemPizza FK requires PizzaSize/PizzaCrust/etc. table IDs
-              pizzaData: item.pizzaConfig
-                ? await (async () => {
-                    const pc = item.pizzaConfig!
-                    const loc = existingOrder.locationId
-                    const normalize = (s: string) => s.toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim()
-                    const resolvePizzaId = async (
-                      clientId: string | undefined | null,
-                      table: 'pizzaSize' | 'pizzaCrust' | 'pizzaSauce' | 'pizzaCheese'
-                    ): Promise<string | null> => {
-                      if (!clientId) return null
-                      // Try direct match first (client sent a Pizza* table ID)
-                      const direct = await (tx[table] as any).findUnique({ where: { id: clientId }, select: { id: true } })
-                      if (direct) return direct.id
-                      // Fall back: resolve via Modifier name → Pizza* name match
-                      const mod = await tx.modifier.findUnique({ where: { id: clientId }, select: { name: true } })
-                      if (!mod?.name) return null
-                      // Get all records for this location and fuzzy-match
-                      const allRecords = await (tx[table] as any).findMany({
-                        where: { locationId: loc },
-                        select: { id: true, name: true },
-                      })
-                      const modNorm = normalize(mod.name)
-                      const modBase = modNorm.replace(/\s*\(.*\)$/, '').replace(/\s+(crust|sauce|cheese)$/, '')
-                      for (const rec of allRecords) {
-                        const recNorm = normalize(rec.name)
-                        // Exact normalized match
-                        if (modNorm === recNorm || modBase === recNorm) return rec.id
-                        // Pizza* name contained in modifier name
-                        if (modNorm.includes(recNorm) || modBase.includes(recNorm)) return rec.id
-                        // Modifier base contained in Pizza* name
-                        if (recNorm.includes(modBase) && modBase.length >= 3) return rec.id
-                      }
-                      return null
-                    }
-                    const resolvedSizeId = await resolvePizzaId(pc.sizeId, 'pizzaSize')
-                    const resolvedCrustId = await resolvePizzaId(pc.crustId, 'pizzaCrust')
-                    const resolvedSauceId = await resolvePizzaId(pc.sauceId, 'pizzaSauce')
-                    const resolvedCheeseId = await resolvePizzaId(pc.cheeseId, 'pizzaCheese')
-                    if (!resolvedSizeId || !resolvedCrustId) {
-                      console.warn(`[Pizza] Could not resolve size(${pc.sizeId}→${resolvedSizeId}) or crust(${pc.crustId}→${resolvedCrustId}) — skipping pizzaData`)
-                      return undefined
-                    }
-                    return {
-                    create: {
-                      location: { connect: { id: loc } },
-                      size: { connect: { id: resolvedSizeId } },
-                      crust: { connect: { id: resolvedCrustId } },
-                      sauce: resolvedSauceId ? { connect: { id: resolvedSauceId } } : undefined,
-                      cheese: resolvedCheeseId ? { connect: { id: resolvedCheeseId } } : undefined,
-                      sauceAmount: pc.sauceAmount || 'regular',
-                      cheeseAmount: pc.cheeseAmount || 'regular',
-                      // Store full config in toppingsData JSON for easy retrieval
-                      toppingsData: {
-                        toppings: pc.toppings,
-                        sauces: pc.sauces,
-                        cheeses: pc.cheeses,
-                      } as object,
-                      cookingInstructions: pc.cookingInstructions || null,
-                      cutStyle: pc.cutStyle || null,
-                      totalPrice: pc.totalPrice,
-                      sizePrice: pc.priceBreakdown.sizePrice,
-                      crustPrice: pc.priceBreakdown.crustPrice,
-                      saucePrice: pc.priceBreakdown.saucePrice,
-                      cheesePrice: pc.priceBreakdown.cheesePrice,
-                      toppingsPrice: pc.priceBreakdown.toppingsPrice,
-                    },
-                  }
-                  })()
-                : undefined,
-            },
-            include: {
-              modifiers: true,
-              ingredientModifications: true,
-              pizzaData: true,
-            },
+      // Create all order items in parallel via domain (N+1 fix — concurrent creates)
+      const createdItems = await Promise.all(
+        itemPrepData.map(prepData =>
+          createOrderItem(tx, {
+            orderId,
+            locationId: existingOrder.locationId,
+            prepData,
+            dualPricingEnabled,
+            cashDiscountPct,
+            requestingEmployeeId: requestingEmployeeId || null,
+            hasSentItems,
+            idempotencyKey: idempotencyKey || null,
           })
-
-          // NOTE: Do NOT set entertainmentStatus here. The block-time POST
-          // endpoint handles the 'in_use' transition atomically when the timer
-          // starts. Setting it here caused a 409 conflict on block-time POST.
-
-          return { ...createdItem, correlationId: item.correlationId }
-        })
+        )
       )
 
-      const createdItems = createdItemResults
-
-      // Recalculate order totals from current database state
-      // This ensures accuracy even if other items were added concurrently
-      const allItems = await tx.orderItem.findMany({
-        where: { orderId, deletedAt: null },
-        include: {
-          modifiers: { where: { deletedAt: null } },
-          ingredientModifications: true,
-        },
-      })
-
-      // Map Prisma Decimal types to numbers for calculation
-      const itemsForCalc = allItems.map(i => ({
-        ...i,
-        price: Number(i.price),
-        itemTotal: Number(i.itemTotal),
-        commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
-        weight: i.weight ? Number(i.weight) : undefined,
-        unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
-        soldByWeight: i.soldByWeight ?? false,
-        modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
-        ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
-      }))
-
-      // Recalculate percent-based discounts against new subtotal
-      const newSubtotalForDiscounts = calculateOrderSubtotal(itemsForCalc)
-      const updatedDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotalForDiscounts)
-
-      // Use centralized calculation function (single source of truth)
-      const locationParsed = parseSettings(existingOrder.location.settings)
-      const totals = calculateOrderTotals(
-        itemsForCalc,
-        existingOrder.location.settings as LocationTaxSettings | null,
-        updatedDiscountTotal,
-        Number(existingOrder.tipTotal) || 0,
-        locationParsed?.priceRounding ?? undefined,
-        'card',
-        existingOrder.isTaxExempt
+      // Recalculate order totals from current database state via domain
+      const totals = await recalculateOrderTotalsForAdd(
+        tx, orderId, existingOrder.location.settings,
+        Number(existingOrder.tipTotal) || 0, existingOrder.isTaxExempt
       )
-
-      const { subtotal: newSubtotal, taxTotal: newTaxTotal, taxFromInclusive: newTaxFromInc, taxFromExclusive: newTaxFromExc, total: newTotal, commissionTotal: newCommissionTotal } = totals
 
       // Update order totals + bump version for concurrency control
       const updatedOrder = await tx.order.update({
         where: { id: orderId },
         data: {
-          subtotal: newSubtotal,
-          taxTotal: newTaxTotal,
-          taxFromInclusive: newTaxFromInc,
-          taxFromExclusive: newTaxFromExc,
-          total: newTotal,
-          commissionTotal: newCommissionTotal,
-          itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
-          ...(existingOrder.isBottleService ? { bottleServiceCurrentSpend: newSubtotal } : {}),
+          ...totals,
+          ...(existingOrder.isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
           version: { increment: 1 },
           lastMutatedBy: 'local',
         },
@@ -835,46 +383,9 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      // BUG 3 FIX: If this is a split child order, recalculate parent totals
+      // BUG 3 FIX: If this is a split child order, recalculate parent totals via domain
       if (existingOrder.parentOrderId) {
-        // Sum totals across all children of this parent
-        const siblings = await tx.order.findMany({
-          where: {
-            parentOrderId: existingOrder.parentOrderId,
-            status: { not: 'voided' },
-          },
-          select: {
-            subtotal: true,
-            taxTotal: true,
-            total: true,
-            discountTotal: true,
-            tipTotal: true,
-            commissionTotal: true,
-            itemCount: true,
-          },
-        })
-
-        const parentSubtotal = siblings.reduce((sum, s) => sum + Number(s.subtotal), 0)
-        const parentTax = siblings.reduce((sum, s) => sum + Number(s.taxTotal), 0)
-        const parentTotal = siblings.reduce((sum, s) => sum + Number(s.total), 0)
-        const parentDiscount = siblings.reduce((sum, s) => sum + Number(s.discountTotal), 0)
-        const parentTip = siblings.reduce((sum, s) => sum + Number(s.tipTotal), 0)
-        const parentCommission = siblings.reduce((sum, s) => sum + Number(s.commissionTotal || 0), 0)
-        const parentItemCount = siblings.reduce((sum, s) => sum + (s.itemCount || 0), 0)
-
-        await tx.order.update({
-          where: { id: existingOrder.parentOrderId },
-          data: {
-            subtotal: parentSubtotal,
-            taxTotal: parentTax,
-            total: parentTotal,
-            discountTotal: parentDiscount,
-            tipTotal: parentTip,
-            commissionTotal: parentCommission,
-            itemCount: parentItemCount,
-            version: { increment: 1 },
-          },
-        })
+        await recalculateParentOrderTotals(tx, existingOrder.parentOrderId)
       }
 
       return { updatedOrder, createdItems, menuItemMap }

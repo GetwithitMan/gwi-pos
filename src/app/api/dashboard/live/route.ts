@@ -7,7 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
-import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { REVENUE_ORDER_STATUSES, roundMoney } from '@/lib/domain/reports'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -216,19 +216,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     return NextResponse.json({
       data: {
-        netSalesToday: Math.round(netSalesToday * 100) / 100,
-        netSalesLastWeekSameDay: Math.round(netSalesLastWeekSameTime * 100) / 100,
+        netSalesToday: roundMoney(netSalesToday),
+        netSalesLastWeekSameDay: roundMoney(netSalesLastWeekSameTime),
         salesPacingPct: Math.round(salesPacingPct * 10) / 10,
         checksToday,
-        avgCheckSize: Math.round(avgCheckSize * 100) / 100,
+        avgCheckSize: roundMoney(avgCheckSize),
         openTicketCount,
-        openTicketValue: Math.round(openTicketValue * 100) / 100,
-        voidsTotalToday: Math.round(voidsTotalToday * 100) / 100,
-        compsTotalToday: Math.round(compsTotalToday * 100) / 100,
-        discountsTotalToday: Math.round(discountsTotalToday * 100) / 100,
-        paidInTotal: Math.round(paidInTotal * 100) / 100,
-        paidOutTotal: Math.round(paidOutTotal * 100) / 100,
-        paidNetTotal: Math.round((paidInTotal - paidOutTotal) * 100) / 100,
+        openTicketValue: roundMoney(openTicketValue),
+        voidsTotalToday: roundMoney(voidsTotalToday),
+        compsTotalToday: roundMoney(compsTotalToday),
+        discountsTotalToday: roundMoney(discountsTotalToday),
+        paidInTotal: roundMoney(paidInTotal),
+        paidOutTotal: roundMoney(paidOutTotal),
+        paidNetTotal: roundMoney(paidInTotal - paidOutTotal),
         pendingDeductionsFailed,
         dayFraction: Math.round(dayFraction * 1000) / 1000,
         businessDate: current.date,

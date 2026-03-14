@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { formatWaitTime, calculateWaitMinutes } from '@/lib/domain/entertainment'
 
 // GET - List waitlist entries for floor plan elements
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -58,7 +59,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const now = new Date()
 
     const enrichedWaitlist = waitlist.map(entry => {
-      const waitMinutes = Math.floor((now.getTime() - entry.requestedAt.getTime()) / 1000 / 60)
+      const waitMinutes = calculateWaitMinutes(entry.requestedAt, now)
 
       return {
         id: entry.id,
@@ -321,16 +322,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 })
 
-function formatWaitTime(minutes: number): string {
-  if (minutes < 1) return 'Just now'
-  if (minutes === 1) return '1 min'
-  if (minutes < 60) return `${minutes} mins`
-
-  const hours = Math.floor(minutes / 60)
-  const mins = minutes % 60
-
-  if (hours === 1 && mins === 0) return '1 hour'
-  if (hours === 1) return `1 hr ${mins} min`
-  if (mins === 0) return `${hours} hours`
-  return `${hours} hrs ${mins} min`
-}
+// formatWaitTime moved to @/lib/domain/entertainment/validation.ts

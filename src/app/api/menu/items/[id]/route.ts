@@ -228,6 +228,14 @@ export const PUT = withVenue(async function PUT(
       soldByWeight,
       weightUnit,
       pricePerWeightUnit,
+      // Entertainment / timed rental fields
+      timedPricing,
+      ratePerMinute,
+      minimumCharge,
+      incrementMinutes,
+      graceMinutes,
+      blockTimeMinutes,
+      entertainmentStatus,
       // Overtime pricing for block-time entertainment
       overtimeEnabled,
       overtimeMode,
@@ -271,7 +279,7 @@ export const PUT = withVenue(async function PUT(
     const item = await db.menuItem.update({
       where: { id },
       data: {
-        ...(categoryId !== undefined && { categoryId }),
+        ...(categoryId !== undefined && categoryId !== null && { categoryId }),
         ...(name !== undefined && { name }),
         ...(displayName !== undefined && { displayName: displayName || null }),
         ...(price !== undefined && { price }),
@@ -333,6 +341,14 @@ export const PUT = withVenue(async function PUT(
         ...(soldByWeight !== undefined && { soldByWeight }),
         ...(weightUnit !== undefined && { weightUnit: weightUnit || null }),
         ...(pricePerWeightUnit !== undefined && { pricePerWeightUnit: pricePerWeightUnit !== null ? new Prisma.Decimal(pricePerWeightUnit) : null }),
+        // Entertainment / timed rental fields
+        ...(timedPricing !== undefined && { timedPricing: timedPricing || Prisma.DbNull }),
+        ...(ratePerMinute !== undefined && { ratePerMinute: ratePerMinute !== null ? new Prisma.Decimal(ratePerMinute) : null }),
+        ...(minimumCharge !== undefined && { minimumCharge: minimumCharge !== null ? new Prisma.Decimal(minimumCharge) : null }),
+        ...(incrementMinutes !== undefined && { incrementMinutes: incrementMinutes ?? null }),
+        ...(graceMinutes !== undefined && { graceMinutes: graceMinutes ?? null }),
+        ...(blockTimeMinutes !== undefined && { blockTimeMinutes: blockTimeMinutes ?? null }),
+        ...(entertainmentStatus !== undefined && { entertainmentStatus: entertainmentStatus || null }),
         // Overtime pricing for block-time entertainment
         ...(overtimeEnabled !== undefined && { overtimeEnabled }),
         ...(overtimeMode !== undefined && { overtimeMode: overtimeMode || null }),
