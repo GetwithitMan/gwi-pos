@@ -7,6 +7,7 @@ import { calculateOrderTotals, calculateOrderSubtotal, recalculatePercentDiscoun
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { isModifiable } from '@/lib/domain/order-status'
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
 export const PUT = withVenue(async function PUT(
@@ -38,8 +39,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Status guard: only modifiable statuses allowed
-    const MODIFIABLE_STATUSES = ['open', 'in_progress', 'sent', 'draft'];
-    if (!MODIFIABLE_STATUSES.includes(order.status)) {
+    if (!isModifiable(order.status)) {
       return NextResponse.json(
         { error: `Cannot modify items on order in '${order.status}' status` },
         { status: 400 }
@@ -381,9 +381,8 @@ export const DELETE = withVenue(async function DELETE(
         return NextResponse.json({ error: 'Order not found' }, { status: 404 })
       }
 
-      // Only allow item deletion on open/draft/sent orders (not paid/closed/voided/cancelled)
-      const deletableStatuses = ['open', 'sent', 'draft']
-      if (!deletableStatuses.includes(order.status)) {
+      // Only allow item deletion on modifiable orders (not paid/closed/voided/cancelled)
+      if (!isModifiable(order.status)) {
         return NextResponse.json(
           { error: `Cannot delete items on a ${order.status} order` },
           { status: 400 }

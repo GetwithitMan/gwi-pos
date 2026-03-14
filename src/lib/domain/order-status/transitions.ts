@@ -38,6 +38,9 @@ export const SPLITTABLE_STATUSES: readonly string[] = ['open', 'in_progress', 's
 /** Statuses that allow order metadata modifications (items, notes, guest count, etc.) */
 export const MODIFIABLE_STATUSES: readonly string[] = ['open', 'draft', 'sent', 'in_progress', 'split'] as const
 
+/** Statuses that allow discounts — excludes 'split' because split parents must be discounted on individual splits */
+export const DISCOUNTABLE_STATUSES: readonly string[] = ['open', 'draft', 'sent', 'in_progress'] as const
+
 /** Statuses representing an open order (visible in open orders list, blocks shift close) */
 export const OPEN_ORDER_STATUSES: readonly string[] = ['open', 'sent', 'in_progress', 'split'] as const
 
@@ -62,6 +65,11 @@ export function isSplittable(status: string): boolean {
 /** Can this order's metadata be modified? */
 export function isModifiable(status: string): boolean {
   return (MODIFIABLE_STATUSES as readonly string[]).includes(status)
+}
+
+/** Can a discount be applied to this order? (split parents excluded — discount individual splits instead) */
+export function isDiscountable(status: string): boolean {
+  return (DISCOUNTABLE_STATUSES as readonly string[]).includes(status)
 }
 
 /** Is this a terminal status (no further transitions)? */

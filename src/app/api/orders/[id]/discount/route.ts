@@ -11,6 +11,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { dispatchAlert } from '@/lib/alert-service'
 import { getLocationSettings } from '@/lib/location-cache'
+import { isDiscountable } from '@/lib/domain/order-status'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -76,8 +77,7 @@ export const POST = withVenue(async function POST(
       const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-      const DISCOUNTABLE_STATUSES = ['draft', 'open', 'in_progress', 'sent'];
-      if (!DISCOUNTABLE_STATUSES.includes(order.status)) {
+      if (!isDiscountable(order.status)) {
         return NextResponse.json(
           { error: order.status === 'split'
             ? 'Cannot discount a split parent order — discount individual splits instead'

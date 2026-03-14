@@ -13,6 +13,8 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { OPEN_ORDER_STATUSES } from '@/lib/domain/order-status'
+import type { OrderStatus } from '@prisma/client'
 
 interface BulkTransferPayload {
   toEmployeeId: string
@@ -130,15 +132,13 @@ export const POST = withVenue(async function POST(
     }
 
     // ── Bulk transfer in a transaction ──────────────────────────────────
-    const openStatuses = ['open', 'sent', 'in_progress'] as const
-
     const result = await db.$transaction(async (tx) => {
       // Find all open orders for the shift employee
       const openOrders = await tx.order.findMany({
         where: {
           locationId: shift.locationId,
           employeeId: shift.employeeId,
-          status: { in: [...openStatuses] },
+          status: { in: OPEN_ORDER_STATUSES as unknown as OrderStatus[] },
           deletedAt: null,
         },
         select: {

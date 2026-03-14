@@ -12,6 +12,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { isOpen } from '@/lib/domain/order-status'
 
 interface TransferPayload {
   toEmployeeId: string
@@ -64,8 +65,7 @@ export const POST = withVenue(async function POST(
     }
 
     // ── Validate order is open ──────────────────────────────────────────
-    const openStatuses = ['open', 'sent', 'in_progress', 'split']
-    if (!openStatuses.includes(order.status)) {
+    if (!isOpen(order.status)) {
       return NextResponse.json(
         { error: 'Cannot transfer a closed, paid, or voided order' },
         { status: 400 }

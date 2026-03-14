@@ -17,6 +17,7 @@ import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { isModifiable } from '@/lib/domain/order-status'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -92,9 +93,8 @@ export const POST = withVenue(withTiming(async function POST(
       )
     }
 
-    // Status guard: only sendable statuses allowed
-    const SENDABLE_STATUSES = ['open', 'in_progress', 'sent', 'draft'];
-    if (!SENDABLE_STATUSES.includes(order.status)) {
+    // Status guard: only modifiable statuses allowed
+    if (!isModifiable(order.status)) {
       return NextResponse.json(
         { error: `Cannot send order in '${order.status}' status` },
         { status: 400 }
@@ -362,6 +362,7 @@ export const POST = withVenue(withTiming(async function POST(
           tableName: order.tabName || `Order #${order.orderNumber}`,
           action: 'started',
           expiresAt: sessionExpiresAt,
+          startedAt: now.toISOString(),
         }, { async: true }).catch((err) => {
           console.error('[API /orders/[id]/send] Entertainment dispatch failed:', err)
         })

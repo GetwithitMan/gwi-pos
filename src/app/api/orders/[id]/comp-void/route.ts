@@ -16,6 +16,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { isModifiable, isClosed } from '@/lib/domain/order-status'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -242,8 +243,7 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    const COMP_VOID_ALLOWED_STATUSES = ['open', 'in_progress', 'sent', 'draft'];
-    if (!COMP_VOID_ALLOWED_STATUSES.includes(order.status)) {
+    if (!isModifiable(order.status)) {
       return NextResponse.json(
         { error: `Cannot comp/void items on order in '${order.status}' status` },
         { status: 400 }
@@ -871,12 +871,11 @@ export const POST = withVenue(async function POST(
     if (shouldAutoClose && order.parentOrderId) {
       void (async () => {
         try {
-          const TERMINAL_STATUSES = ['paid', 'closed', 'cancelled', 'voided']
           const siblings = await db.order.findMany({
             where: { parentOrderId: order.parentOrderId!, deletedAt: null },
             select: { id: true, status: true },
           })
-          const allTerminal = siblings.length > 0 && siblings.every(s => TERMINAL_STATUSES.includes(s.status))
+          const allTerminal = siblings.length > 0 && siblings.every(s => isClosed(s.status))
           if (allTerminal) {
             await db.order.update({
               where: { id: order.parentOrderId! },
