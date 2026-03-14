@@ -142,7 +142,9 @@ export default function OrdersPage() {
   const { showDisplaySettings, setShowDisplaySettings, showReceiptModal, setShowReceiptModal,
     receiptOrderId, setReceiptOrderId, preloadedReceiptData, setPreloadedReceiptData,
     showTabNamePrompt, setShowTabNamePrompt, tabNameCallback, setTabNameCallback,
-    showItemTransferModal, setShowItemTransferModal, editingNotesItemId, setEditingNotesItemId,
+    showItemTransferModal, setShowItemTransferModal,
+    showTabTransferModal, setShowTabTransferModal,
+    editingNotesItemId, setEditingNotesItemId,
     editingNotesText, setEditingNotesText } = useOrderPageModals()
 
   const { showCompVoidModal, setShowCompVoidModal, resendModal, setResendModal,
@@ -710,6 +712,8 @@ export default function OrdersPage() {
       setTabCardInfo={setTabCardInfo as any}
       setIsSendingOrder={handlers.setIsSendingOrder}
       setTabsRefreshTrigger={setTabsRefreshTrigger}
+      onTransferItems={savedOrderId ? () => setShowItemTransferModal(true) : undefined}
+      onTransferOrder={savedOrderId ? () => setShowTabTransferModal(true) : undefined}
       bartenderDeselectTabRef={bartenderDeselectTabRef}
       floorPlanDeselectTableRef={floorPlanDeselectTableRef}
       orderReadyPromiseRef={orderReadyPromiseRef}
@@ -1286,6 +1290,8 @@ export default function OrdersPage() {
             console.error('Failed to reload order:', error)
           }
         }}
+        showTabTransferModal={showTabTransferModal}
+        setShowTabTransferModal={setShowTabTransferModal}
         showSplitTicketManager={showSplitTicketManager}
         setShowSplitTicketManager={setShowSplitTicketManager}
         splitManageMode={splitManageMode}

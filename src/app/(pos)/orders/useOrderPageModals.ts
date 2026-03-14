@@ -25,6 +25,9 @@ export function useOrderPageModals() {
   // Item Transfer modal state
   const [showItemTransferModal, setShowItemTransferModal] = useState(false)
 
+  // Tab/Order Transfer modal state (transfers entire order to another employee)
+  const [showTabTransferModal, setShowTabTransferModal] = useState(false)
+
   // Item notes modal state (for quick note editing)
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
   const [editingNotesText, setEditingNotesText] = useState('')
@@ -44,6 +47,9 @@ export function useOrderPageModals() {
 
     // Item Transfer
     showItemTransferModal, setShowItemTransferModal,
+
+    // Tab/Order Transfer
+    showTabTransferModal, setShowTabTransferModal,
 
     // Item notes editing
     editingNotesItemId, setEditingNotesItemId,

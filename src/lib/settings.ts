@@ -259,7 +259,11 @@ export interface PaymentSettings {
   // Pre-auth (bar tabs)
   enablePreAuth: boolean
   defaultPreAuthAmount: number
+  minPreAuthAmount?: number          // Minimum pre-auth amount to open a bar tab (0 or undefined = no minimum)
   preAuthExpirationDays: number
+
+  // CFD / device tip prompt
+  cfdTipTimeoutSeconds?: number      // Timeout for device tip prompt in seconds (default: 30)
 
   // Card processing
   processor: 'none' | 'datacap'  // datacap = Datacap Direct integration
@@ -355,6 +359,70 @@ export interface HappyHourSettings {
   // Display
   showBadge: boolean               // Show "Happy Hour" badge on items
   showOriginalPrice: boolean       // Show original price crossed out
+}
+
+// ─── Pricing Rules Engine ────────────────────────────────────────────────────
+
+export interface PricingRuleSchedule {
+  dayOfWeek: number[]    // 0-6 Sun-Sat. Refers to START day for cross-midnight.
+  startTime: string      // "HH:MM" 24h
+  endTime: string        // "HH:MM" 24h
+}
+
+export interface PricingRule {
+  id: string                    // crypto.randomUUID()
+  name: string                  // 1-50 chars
+  description?: string          // optional manager notes, max 200 chars
+  enabled: boolean
+  color: string                 // hex "#XXXXXX"
+
+  type: 'recurring' | 'one-time' | 'yearly-recurring'
+
+  // Weekly recurring (multiple windows per rule)
+  schedules: PricingRuleSchedule[]
+
+  // One-time: "YYYY-MM-DD", Yearly: "MM-DD"
+  startDate?: string
+  endDate?: string
+  startTime?: string            // "HH:MM" for date-based rules
+  endTime?: string
+
+  // 5 adjustment types
+  adjustmentType: 'percent-off' | 'percent-increase' | 'fixed-off' | 'fixed-increase' | 'override-price'
+  adjustmentValue: number
+
+  // Scope
+  appliesTo: 'all' | 'categories' | 'items'
+  categoryIds: string[]
+  itemIds: string[]
+
+  // Priority (auto by type, user-adjustable)
+  priority: number
+
+  // Display
+  showBadge: boolean
+  showOriginalPrice: boolean
+  badgeText?: string            // max 20 chars, defaults to rule name
+
+  // Lifecycle
+  autoDelete: boolean           // one-time events only
+  createdAt: string             // ISO date
+}
+
+// Engine output — used by both order creation AND POS display
+export interface PricingAdjustment {
+  version: 1                    // schema version
+  ruleId: string
+  ruleName: string
+  adjustmentType: PricingRule['adjustmentType']
+  adjustmentValue: number
+  originalPrice: number
+  adjustedPrice: number
+  // Display fields (for POS menu item indicators)
+  color: string                 // rule.color
+  showBadge: boolean
+  showOriginalPrice: boolean
+  badgeText?: string            // rule.badgeText || rule.name truncated to 20 chars
 }
 
 export interface BarTabSettings {
@@ -795,6 +863,7 @@ export interface LocationSettings {
   payments: PaymentSettings
   loyalty: LoyaltySettings
   happyHour: HappyHourSettings
+  pricingRules?: PricingRule[]   // New multi-rule pricing engine (optional for backward compat)
   barTabs: BarTabSettings
   posDisplay: POSDisplaySettings
   clockOut: ClockOutSettings
@@ -1586,6 +1655,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     showBadge: true,
     showOriginalPrice: true,
   },
+  pricingRules: [],
   barTabs: {
     requireCardForTab: false,        // Don't require card by default
     pullCustomerFromCard: true,      // Auto-fill name when card is used
@@ -1749,6 +1819,45 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
         ? partial.happyHour.schedules
         : DEFAULT_SETTINGS.happyHour.schedules,
     },
+    pricingRules: (() => {
+      // If pricingRules exists and is a valid non-empty array, use it (ignore legacy happyHour)
+      if (Array.isArray(partial.pricingRules) && partial.pricingRules.length > 0) {
+        return partial.pricingRules
+      }
+      // If pricingRules exists but is not an array, treat as empty and warn
+      if (partial.pricingRules !== undefined && !Array.isArray(partial.pricingRules)) {
+        console.warn('[PricingRules] pricingRules exists but is not an array, defaulting to []')
+        return []
+      }
+      // Migrate from legacy happyHour if enabled
+      const hh = partial.happyHour
+      if (hh?.enabled && hh.schedules?.length && hh.discountType && hh.discountValue > 0) {
+        try {
+          return [{
+            id: 'migrated-happy-hour',
+            name: hh.name || 'Happy Hour',
+            enabled: true,
+            color: '#10b981',
+            type: 'recurring' as const,
+            schedules: hh.schedules,
+            adjustmentType: (hh.discountType === 'percent' ? 'percent-off' : 'fixed-off') as PricingRule['adjustmentType'],
+            adjustmentValue: hh.discountValue,
+            appliesTo: hh.appliesTo || 'all',
+            categoryIds: hh.categoryIds || [],
+            itemIds: hh.itemIds || [],
+            priority: 10,
+            showBadge: hh.showBadge ?? true,
+            showOriginalPrice: hh.showOriginalPrice ?? true,
+            autoDelete: false,
+            createdAt: new Date().toISOString(),
+          }] as PricingRule[]
+        } catch {
+          console.warn('[PricingRules] Invalid legacy happyHour data, falling back to empty rules')
+          return []
+        }
+      }
+      return []
+    })(),
     barTabs: {
       ...DEFAULT_SETTINGS.barTabs,
       ...(partial.barTabs || {}),
@@ -1913,6 +2022,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
 /**
  * Get the active happy hour end time for the current schedule.
  * Returns null if happy hour is not active right now.
+ * @deprecated Use getPricingRuleEndTime() with the new pricing rules engine instead.
  */
 export function getHappyHourEndTime(settings: HappyHourSettings): Date | null {
   if (!settings.enabled) return null
@@ -1957,7 +2067,10 @@ export function getHappyHourEndTime(settings: HappyHourSettings): Date | null {
   return null
 }
 
-// Check if happy hour is currently active
+/**
+ * Check if happy hour is currently active.
+ * @deprecated Use isPricingRuleActive() with the new pricing rules engine instead.
+ */
 export function isHappyHourActive(settings: HappyHourSettings): boolean {
   if (!settings.enabled) return false
 
@@ -1991,7 +2104,10 @@ export function isHappyHourActive(settings: HappyHourSettings): boolean {
   return false
 }
 
-// Calculate happy hour price for an item
+/**
+ * Calculate happy hour price for an item.
+ * @deprecated Use getBestPricingRuleForItem() with the new pricing rules engine instead.
+ */
 export function getHappyHourPrice(
   originalPrice: number,
   settings: HappyHourSettings,
@@ -2028,6 +2144,557 @@ export function getHappyHourPrice(
     price: Math.round(discountedPrice * 100) / 100,
     isDiscounted: true,
   }
+}
+
+// ─── Pricing Rules Engine Functions ──────────────────────────────────────────
+
+/** Scope specificity for tie-breaking: items > categories > all */
+function getScopeSpecificity(appliesTo: PricingRule['appliesTo']): number {
+  if (appliesTo === 'items') return 3
+  if (appliesTo === 'categories') return 2
+  return 1
+}
+
+/** Parse "HH:MM" to total minutes since midnight */
+function parseTimeToMinutes(time: string): number {
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+
+/**
+ * Check if a pricing rule is currently active.
+ * Idempotent per order creation: same inputs yield same result.
+ */
+export function isPricingRuleActive(rule: PricingRule, now?: Date): boolean {
+  if (!rule.enabled) return false
+  const _now = now ?? new Date()
+
+  if (rule.type === 'recurring') {
+    return isRecurringRuleActive(rule, _now)
+  } else if (rule.type === 'one-time') {
+    return isOneTimeRuleActive(rule, _now)
+  } else if (rule.type === 'yearly-recurring') {
+    return isYearlyRecurringRuleActive(rule, _now)
+  }
+  return false
+}
+
+function isRecurringRuleActive(rule: PricingRule, now: Date): boolean {
+  const currentDay = now.getDay()
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+
+  for (const schedule of rule.schedules) {
+    const startMin = parseTimeToMinutes(schedule.startTime)
+    const endMin = parseTimeToMinutes(schedule.endTime)
+
+    if (startMin === endMin) continue // zero-length window, skip
+
+    const isCrossMidnight = endMin < startMin
+
+    if (isCrossMidnight) {
+      // Cross-midnight: dayOfWeek refers to the START day.
+      // Friday 22:00-02:00 → active Fri 22:00-23:59 AND Sat 00:00-01:59
+      // Before-midnight portion: current day must be in dayOfWeek, time >= start
+      if (schedule.dayOfWeek.includes(currentDay) && currentMinutes >= startMin) {
+        return true
+      }
+      // After-midnight portion: PREVIOUS day must be in dayOfWeek, time < end
+      const previousDay = (currentDay + 6) % 7
+      if (schedule.dayOfWeek.includes(previousDay) && currentMinutes < endMin) {
+        return true
+      }
+    } else {
+      // Normal same-day: start INCLUSIVE, end EXCLUSIVE
+      if (schedule.dayOfWeek.includes(currentDay) && currentMinutes >= startMin && currentMinutes < endMin) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function isOneTimeRuleActive(rule: PricingRule, now: Date): boolean {
+  if (!rule.startDate || !rule.endDate || !rule.startTime || !rule.endTime) return false
+
+  const startMin = parseTimeToMinutes(rule.startTime)
+  const endMin = parseTimeToMinutes(rule.endTime)
+  if (startMin === endMin) return false
+
+  // Build date boundaries (YYYY-MM-DD format)
+  const todayStr = formatLocalDate(now)
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+
+  const isCrossMidnight = endMin < startMin
+
+  if (isCrossMidnight) {
+    // Could be in the before-midnight portion (today is start day, time >= start)
+    if (todayStr >= rule.startDate && todayStr <= rule.endDate && currentMinutes >= startMin) {
+      return true
+    }
+    // Could be in the after-midnight portion (yesterday was a valid day, time < end)
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = formatLocalDate(yesterday)
+    if (yesterdayStr >= rule.startDate && yesterdayStr <= rule.endDate && currentMinutes < endMin) {
+      return true
+    }
+    return false
+  }
+
+  // Non-cross-midnight: today must be in range, time in [start, end)
+  if (todayStr >= rule.startDate && todayStr <= rule.endDate) {
+    return currentMinutes >= startMin && currentMinutes < endMin
+  }
+  return false
+}
+
+function isYearlyRecurringRuleActive(rule: PricingRule, now: Date): boolean {
+  if (!rule.startDate || !rule.endDate || !rule.startTime || !rule.endTime) return false
+
+  const startMin = parseTimeToMinutes(rule.startTime)
+  const endMin = parseTimeToMinutes(rule.endTime)
+  if (startMin === endMin) return false
+
+  // MM-DD format
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const todayMD = `${month}-${day}`
+  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+
+  // Feb 29 leap-year check: if rule references 02-29 and this isn't a leap year, skip
+  if ((rule.startDate === '02-29' || rule.endDate === '02-29') && !isLeapYear(now.getFullYear())) {
+    return false
+  }
+
+  const isYearWrap = rule.endDate < rule.startDate  // e.g., Dec 30 - Jan 2
+  const isCrossMidnight = endMin < startMin
+
+  // Check if today's MM-DD is in the date range
+  let inDateRange: boolean
+  if (isYearWrap) {
+    inDateRange = todayMD >= rule.startDate || todayMD <= rule.endDate
+  } else {
+    inDateRange = todayMD >= rule.startDate && todayMD <= rule.endDate
+  }
+
+  if (isCrossMidnight) {
+    // Before-midnight portion: today in range, time >= start
+    if (inDateRange && currentMinutes >= startMin) return true
+    // After-midnight portion: yesterday in range, time < end
+    const yesterday = new Date(now)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yMonth = String(yesterday.getMonth() + 1).padStart(2, '0')
+    const yDay = String(yesterday.getDate()).padStart(2, '0')
+    const yesterdayMD = `${yMonth}-${yDay}`
+    let yesterdayInRange: boolean
+    if (isYearWrap) {
+      yesterdayInRange = yesterdayMD >= rule.startDate || yesterdayMD <= rule.endDate
+    } else {
+      yesterdayInRange = yesterdayMD >= rule.startDate && yesterdayMD <= rule.endDate
+    }
+    if (yesterdayInRange && currentMinutes < endMin) return true
+    return false
+  }
+
+  // Non-cross-midnight
+  if (inDateRange) {
+    return currentMinutes >= startMin && currentMinutes < endMin
+  }
+  return false
+}
+
+function formatLocalDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+}
+
+/**
+ * Get all currently active pricing rules, sorted by canonical priority.
+ * Sort: priority DESC → scope specificity DESC (items > categories > all) → lexical id ASC
+ */
+export function getActivePricingRules(rules: PricingRule[], now?: Date): PricingRule[] {
+  if (!Array.isArray(rules)) {
+    console.warn('[PricingRules] getActivePricingRules called with non-array, returning []')
+    return []
+  }
+  const _now = now ?? new Date()
+  return rules
+    .filter(r => r.enabled && isPricingRuleActive(r, _now))
+    .sort((a, b) => {
+      // Priority DESC
+      if (b.priority !== a.priority) return b.priority - a.priority
+      // Scope specificity DESC
+      const specDiff = getScopeSpecificity(b.appliesTo) - getScopeSpecificity(a.appliesTo)
+      if (specDiff !== 0) return specDiff
+      // Lexical id ASC
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    })
+}
+
+/**
+ * Calculate adjusted price for an item given a pricing rule.
+ * All prices in DOLLARS. Result clamped >= 0, rounded to 2dp.
+ */
+export function getAdjustedPrice(originalPrice: number, rule: PricingRule): number {
+  let result: number
+  switch (rule.adjustmentType) {
+    case 'percent-off':
+      result = originalPrice * (1 - rule.adjustmentValue / 100)
+      break
+    case 'percent-increase':
+      result = originalPrice * (1 + rule.adjustmentValue / 100)
+      break
+    case 'fixed-off':
+      result = originalPrice - rule.adjustmentValue
+      break
+    case 'fixed-increase':
+      result = originalPrice + rule.adjustmentValue
+      break
+    case 'override-price':
+      result = rule.adjustmentValue
+      break
+    default:
+      result = originalPrice
+  }
+  return Math.round(Math.max(0, result) * 100) / 100
+}
+
+/**
+ * Find the best matching pricing rule for a specific item and return the adjustment.
+ * Winner picked by: priority DESC → scope specificity (items > categories > all) → lexical id ASC.
+ * Returns null if no matching rule is active.
+ */
+export function getBestPricingRuleForItem(
+  rules: PricingRule[],
+  itemId: string,
+  categoryId: string,
+  originalPrice: number,
+  now?: Date
+): PricingAdjustment | null {
+  const active = getActivePricingRules(rules, now)
+
+  // Filter to rules that match this item's scope
+  const matching = active.filter(r => {
+    if (r.appliesTo === 'all') return true
+    if (r.appliesTo === 'categories') return r.categoryIds.includes(categoryId)
+    if (r.appliesTo === 'items') return r.itemIds.includes(itemId)
+    return false
+  })
+
+  if (matching.length === 0) return null
+
+  // Already sorted by canonical priority — first match wins
+  const winner = matching[0]
+  const adjustedPrice = getAdjustedPrice(originalPrice, winner)
+
+  // Validate color — fallback to #10b981 if empty/invalid
+  const validColor = /^#[0-9a-fA-F]{6}$/.test(winner.color) ? winner.color : '#10b981'
+
+  // badgeText falls back to ruleName truncated to 20 chars
+  const badgeText = winner.badgeText || winner.name.slice(0, 20)
+
+  return {
+    version: 1,
+    ruleId: winner.id,
+    ruleName: winner.name,
+    adjustmentType: winner.adjustmentType,
+    adjustmentValue: winner.adjustmentValue,
+    originalPrice,
+    adjustedPrice,
+    color: validColor,
+    showBadge: winner.showBadge,
+    showOriginalPrice: winner.showOriginalPrice,
+    badgeText,
+  }
+}
+
+/**
+ * Get the end time of a currently active pricing rule (for banner countdown).
+ * Returns null if not active.
+ */
+export function getPricingRuleEndTime(rule: PricingRule, now?: Date): Date | null {
+  const _now = now ?? new Date()
+  if (!isPricingRuleActive(rule, _now)) return null
+
+  const currentMinutes = _now.getHours() * 60 + _now.getMinutes()
+
+  if (rule.type === 'recurring') {
+    for (const schedule of rule.schedules) {
+      const startMin = parseTimeToMinutes(schedule.startTime)
+      const endMin = parseTimeToMinutes(schedule.endTime)
+      if (startMin === endMin) continue
+      const isCrossMidnight = endMin < startMin
+
+      if (isCrossMidnight) {
+        const currentDay = _now.getDay()
+        const previousDay = (currentDay + 6) % 7
+        // Before-midnight portion
+        if (schedule.dayOfWeek.includes(currentDay) && currentMinutes >= startMin) {
+          const endDate = new Date(_now)
+          endDate.setDate(endDate.getDate() + 1)
+          endDate.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0)
+          return endDate
+        }
+        // After-midnight portion
+        if (schedule.dayOfWeek.includes(previousDay) && currentMinutes < endMin) {
+          const endDate = new Date(_now)
+          endDate.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0)
+          return endDate
+        }
+      } else {
+        if (schedule.dayOfWeek.includes(_now.getDay()) && currentMinutes >= startMin && currentMinutes < endMin) {
+          const endDate = new Date(_now)
+          endDate.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0)
+          return endDate
+        }
+      }
+    }
+    return null
+  }
+
+  if (rule.type === 'one-time' || rule.type === 'yearly-recurring') {
+    if (!rule.endTime) return null
+    const endMin = parseTimeToMinutes(rule.endTime)
+    const startMin = rule.startTime ? parseTimeToMinutes(rule.startTime) : 0
+    const isCrossMidnight = endMin < startMin
+
+    if (isCrossMidnight && currentMinutes >= startMin) {
+      // End is tomorrow
+      const endDate = new Date(_now)
+      endDate.setDate(endDate.getDate() + 1)
+      endDate.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0)
+      return endDate
+    }
+    // End is today (or after-midnight portion)
+    const endDate = new Date(_now)
+    endDate.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0)
+    return endDate
+  }
+
+  return null
+}
+
+/**
+ * Check for overlapping pricing rules. Only enabled rules participate.
+ * Returns overlap diagnostics with severity levels.
+ */
+export function checkPricingRuleOverlaps(rules: PricingRule[]): Array<{
+  ruleA: PricingRule
+  ruleB: PricingRule
+  severity: 'info' | 'warning' | 'error'
+  description: string
+}> {
+  const enabled = rules.filter(r => r.enabled)
+  const results: Array<{ ruleA: PricingRule; ruleB: PricingRule; severity: 'info' | 'warning' | 'error'; description: string }> = []
+
+  for (let i = 0; i < enabled.length; i++) {
+    for (let j = i + 1; j < enabled.length; j++) {
+      const a = enabled[i]
+      const b = enabled[j]
+
+      // Check time overlap
+      if (!hasTimeOverlap(a, b)) continue
+
+      // Check scope overlap
+      if (!hasScopeOverlap(a, b)) continue
+
+      // Determine severity
+      const samePriority = a.priority === b.priority
+      const sameScopeType = a.appliesTo === b.appliesTo
+
+      if (samePriority && sameScopeType) {
+        results.push({
+          ruleA: a,
+          ruleB: b,
+          severity: 'error',
+          description: `"${a.name}" and "${b.name}" have the same priority (${a.priority}), same scope type (${a.appliesTo}), and overlapping time/items — unpredictable winner`,
+        })
+      } else if (samePriority) {
+        results.push({
+          ruleA: a,
+          ruleB: b,
+          severity: 'warning',
+          description: `"${a.name}" and "${b.name}" have the same priority (${a.priority}) but different scope types — specificity will determine winner`,
+        })
+      } else {
+        results.push({
+          ruleA: a,
+          ruleB: b,
+          severity: 'info',
+          description: `"${a.name}" (priority ${a.priority}) and "${b.name}" (priority ${b.priority}) overlap but priority ordering is clear`,
+        })
+      }
+    }
+  }
+
+  return results
+}
+
+/** Check if two rules have overlapping time windows */
+function hasTimeOverlap(a: PricingRule, b: PricingRule): boolean {
+  // For recurring rules, check schedule day+time overlap
+  if (a.type === 'recurring' && b.type === 'recurring') {
+    for (const sa of a.schedules) {
+      for (const sb of b.schedules) {
+        // Check shared days
+        const sharedDays = sa.dayOfWeek.filter(d => sb.dayOfWeek.includes(d))
+        if (sharedDays.length === 0) continue
+        // Check time window overlap
+        if (timeWindowsOverlap(
+          parseTimeToMinutes(sa.startTime), parseTimeToMinutes(sa.endTime),
+          parseTimeToMinutes(sb.startTime), parseTimeToMinutes(sb.endTime)
+        )) return true
+      }
+    }
+    return false
+  }
+  // Simplification: for mixed types or date-based, assume overlap if any time windows overlap
+  // This is conservative — better to warn than miss
+  return true
+}
+
+/** Check if two time windows (possibly cross-midnight) overlap */
+function timeWindowsOverlap(s1: number, e1: number, s2: number, e2: number): boolean {
+  // Convert to linear ranges. Cross-midnight extends past 1440.
+  const ranges1 = e1 <= s1 ? [[s1, 1440], [0, e1]] : [[s1, e1]]
+  const ranges2 = e2 <= s2 ? [[s2, 1440], [0, e2]] : [[s2, e2]]
+
+  for (const [a0, a1] of ranges1) {
+    for (const [b0, b1] of ranges2) {
+      if (a0 < b1 && b0 < a1) return true
+    }
+  }
+  return false
+}
+
+/** Check if two rules have overlapping scope (could affect same items) */
+function hasScopeOverlap(a: PricingRule, b: PricingRule): boolean {
+  // 'all' overlaps with everything
+  if (a.appliesTo === 'all' || b.appliesTo === 'all') return true
+
+  // Both items — check intersection
+  if (a.appliesTo === 'items' && b.appliesTo === 'items') {
+    return a.itemIds.some(id => b.itemIds.includes(id))
+  }
+  // Both categories — check intersection
+  if (a.appliesTo === 'categories' && b.appliesTo === 'categories') {
+    return a.categoryIds.some(id => b.categoryIds.includes(id))
+  }
+  // Mixed items/categories — conservative: assume overlap (items could be in those categories)
+  return true
+}
+
+/**
+ * Validate a pricing rule. Returns array of error messages (empty = valid).
+ */
+export function validatePricingRule(rule: PricingRule): string[] {
+  const errors: string[] = []
+
+  // Name
+  if (!rule.name || rule.name.trim().length === 0) {
+    errors.push('Name is required')
+  } else if (rule.name.length > 50) {
+    errors.push('Name must be 50 characters or less')
+  }
+
+  // Color
+  if (!rule.color || !/^#[0-9a-fA-F]{6}$/.test(rule.color)) {
+    errors.push('Color must be a valid hex color (#XXXXXX)')
+  }
+
+  // Type-specific schedule validation
+  if (rule.type === 'recurring') {
+    if (!rule.schedules || rule.schedules.length === 0) {
+      errors.push('Recurring rules must have at least one schedule')
+    } else {
+      for (let i = 0; i < rule.schedules.length; i++) {
+        const s = rule.schedules[i]
+        if (!s.dayOfWeek || s.dayOfWeek.length === 0) {
+          errors.push(`Schedule ${i + 1} must have at least one day selected`)
+        }
+        if (s.startTime === s.endTime) {
+          errors.push(`Schedule ${i + 1} has identical start and end times (zero-length window)`)
+        }
+      }
+    }
+  } else if (rule.type === 'one-time') {
+    if (!rule.startDate || !/^\d{4}-\d{2}-\d{2}$/.test(rule.startDate)) {
+      errors.push('One-time rules require a start date (YYYY-MM-DD)')
+    }
+    if (!rule.endDate || !/^\d{4}-\d{2}-\d{2}$/.test(rule.endDate)) {
+      errors.push('One-time rules require an end date (YYYY-MM-DD)')
+    }
+    if (rule.startDate && rule.endDate && rule.endDate < rule.startDate) {
+      errors.push('End date must be on or after start date')
+    }
+    if (!rule.startTime) errors.push('One-time rules require a start time')
+    if (!rule.endTime) errors.push('One-time rules require an end time')
+    if (rule.startTime && rule.endTime && rule.startTime === rule.endTime) {
+      errors.push('Start time and end time cannot be identical (zero-length window)')
+    }
+  } else if (rule.type === 'yearly-recurring') {
+    if (!rule.startDate || !/^\d{2}-\d{2}$/.test(rule.startDate)) {
+      errors.push('Yearly-recurring rules require a start date (MM-DD)')
+    }
+    if (!rule.endDate || !/^\d{2}-\d{2}$/.test(rule.endDate)) {
+      errors.push('Yearly-recurring rules require an end date (MM-DD)')
+    }
+    // Allow end < start for year-wrap (e.g., Dec 30 - Jan 2)
+    if (!rule.startTime) errors.push('Yearly-recurring rules require a start time')
+    if (!rule.endTime) errors.push('Yearly-recurring rules require an end time')
+    if (rule.startTime && rule.endTime && rule.startTime === rule.endTime) {
+      errors.push('Start time and end time cannot be identical (zero-length window)')
+    }
+  }
+
+  // Adjustment value
+  if (rule.adjustmentType === 'override-price') {
+    if (rule.adjustmentValue < 0) {
+      errors.push('Override price must be >= 0')
+    }
+  } else if (rule.adjustmentType === 'percent-off' || rule.adjustmentType === 'percent-increase') {
+    if (rule.adjustmentValue <= 0) {
+      errors.push('Percent adjustment must be > 0')
+    }
+    if (rule.adjustmentValue > 100) {
+      errors.push('Percent adjustment must be <= 100')
+    }
+  } else if (rule.adjustmentType === 'fixed-off' || rule.adjustmentType === 'fixed-increase') {
+    if (rule.adjustmentValue <= 0) {
+      errors.push('Fixed adjustment must be > 0')
+    }
+  }
+
+  // Scope
+  if (rule.appliesTo === 'categories') {
+    if (!rule.categoryIds || rule.categoryIds.length === 0) {
+      errors.push('At least one category must be selected')
+    }
+  } else if (rule.appliesTo === 'items') {
+    if (!rule.itemIds || rule.itemIds.length === 0) {
+      errors.push('At least one item must be selected')
+    }
+  } else if (rule.appliesTo === 'all') {
+    if (rule.categoryIds?.length > 0 || rule.itemIds?.length > 0) {
+      errors.push('Scope "all" must not have category or item selections')
+    }
+  }
+
+  // Optional field length limits
+  if (rule.badgeText && rule.badgeText.length > 20) {
+    errors.push('Badge text must be 20 characters or less')
+  }
+  if (rule.description && rule.description.length > 200) {
+    errors.push('Description must be 200 characters or less')
+  }
+
+  return errors
 }
 
 // Parse settings from database JSON

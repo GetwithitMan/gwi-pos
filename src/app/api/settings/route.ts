@@ -199,6 +199,21 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
+    // Validate surcharge pricing program: state legality + card network cap
+    if (settings.pricingProgram?.model === 'surcharge' && settings.pricingProgram.enabled) {
+      const { validateSurchargeCompliance } = await import('@/lib/pricing')
+      const compliance = validateSurchargeCompliance(
+        settings.pricingProgram.surchargePercent ?? 0,
+        settings.pricingProgram.venueState
+      )
+      if (!compliance.valid) {
+        return NextResponse.json(
+          { error: compliance.errors.join(' ') },
+          { status: 400 }
+        )
+      }
+    }
+
     // Get current settings and deep-merge with updates
     // mergeWithDefaults() handles all nested objects including tipBank.tipGuide,
     // happyHour.schedules, and receiptDisplay sub-sections

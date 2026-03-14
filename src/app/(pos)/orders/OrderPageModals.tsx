@@ -20,6 +20,7 @@ const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then
 const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').then(m => ({ default: m.DiscountModal })))
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
 const ItemTransferModal = lazy(() => import('@/components/orders/ItemTransferModal').then(m => ({ default: m.ItemTransferModal })))
+const TabTransferModal = lazy(() => import('@/components/orders/TabTransferModal').then(m => ({ default: m.TabTransferModal })))
 const SplitCheckScreen = lazy(() => import('@/components/orders/SplitCheckScreen').then(m => ({ default: m.SplitCheckScreen })))
 const PayAllSplitsModal = lazy(() => import('@/components/orders/PayAllSplitsModal').then(m => ({ default: m.PayAllSplitsModal })))
 const ShiftCloseoutModal = lazy(() => import('@/components/shifts/ShiftCloseoutModal').then(m => ({ default: m.ShiftCloseoutModal })))
@@ -191,6 +192,10 @@ export interface OrderPageModalsProps {
   setShowItemTransferModal: (v: boolean) => void
   onTransferComplete: (transferredItemIds: string[]) => Promise<void>
 
+  // Tab/Order Transfer modal
+  showTabTransferModal: boolean
+  setShowTabTransferModal: (v: boolean) => void
+
   // Split Check Screen
   showSplitTicketManager: boolean
   setShowSplitTicketManager: (v: boolean) => void
@@ -274,6 +279,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     isTabManagerExpanded,
     setIsTabManagerExpanded,
     tabsRefreshTrigger,
+    setTabsRefreshTrigger,
     savedOrderId,
     onSelectOpenOrder,
     onViewOpenOrder,
@@ -371,6 +377,8 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     showItemTransferModal,
     setShowItemTransferModal,
     onTransferComplete,
+    showTabTransferModal,
+    setShowTabTransferModal,
     showSplitTicketManager,
     setShowSplitTicketManager,
     splitManageMode,
@@ -706,16 +714,19 @@ export function OrderPageModals(props: OrderPageModalsProps) {
           </p>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Note for kitchen (optional)
+              Reason for resend <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={resendNote}
               onChange={(e) => setResendNote(e.target.value)}
-              placeholder="e.g., Make it well done"
-              className="w-full p-3 border rounded-lg text-lg"
+              placeholder="e.g., Wrong temp, customer requested remake"
+              className={`w-full p-3 border rounded-lg text-lg ${!resendNote.trim() ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-gray-300 focus:border-blue-500'}`}
               autoFocus
             />
+            {!resendNote.trim() && (
+              <p className="mt-1 text-xs text-red-500">A reason is required before resending</p>
+            )}
           </div>
           <div className="flex gap-3">
             <Button
@@ -732,7 +743,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             <Button
               className="flex-1 bg-blue-600 hover:bg-blue-700"
               onClick={onConfirmResend}
-              disabled={resendLoading}
+              disabled={resendLoading || !resendNote.trim()}
             >
               {resendLoading ? 'Sending...' : 'Resend'}
             </Button>
@@ -762,6 +773,25 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             locationId={employee.location?.id || ''}
             employeeId={employee.id}
             onTransferComplete={onTransferComplete}
+          />
+        </Suspense>
+      )}
+
+      {/* Tab/Order Transfer Modal */}
+      {showTabTransferModal && savedOrderId && employee && (
+        <Suspense fallback={null}>
+          <TabTransferModal
+            isOpen={showTabTransferModal}
+            onClose={() => setShowTabTransferModal(false)}
+            tabId={savedOrderId}
+            tabName={currentOrder?.tabName || currentOrder?.tableName || `Order #${currentOrder?.orderNumber}`}
+            currentEmployeeId={employee.id}
+            currentEmployeeName={employee.displayName || `${employee.firstName} ${employee.lastName}`}
+            locationId={employee.location?.id || ''}
+            onTransferComplete={() => {
+              setShowTabTransferModal(false)
+              setTabsRefreshTrigger((prev: number) => prev + 1)
+            }}
           />
         </Suspense>
       )}

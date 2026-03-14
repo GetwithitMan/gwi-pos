@@ -105,6 +105,10 @@ interface SharedOrderPanelProps {
   setIsSendingOrder: (v: boolean) => void
   setTabsRefreshTrigger: (fn: (prev: number) => number) => void
 
+  // Transfer handlers
+  onTransferItems?: () => void
+  onTransferOrder?: () => void
+
   // Refs
   bartenderDeselectTabRef: React.MutableRefObject<(() => void) | null>
   floorPlanDeselectTableRef: React.MutableRefObject<(() => void) | null>
@@ -176,6 +180,8 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
     setTabCardInfo,
     setIsSendingOrder,
     setTabsRefreshTrigger,
+    onTransferItems,
+    onTransferOrder,
     bartenderDeselectTabRef,
     floorPlanDeselectTableRef,
     orderReadyPromiseRef,
@@ -697,6 +703,8 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
             setPayAllSplitsCardTotal(combinedCardTotal)
             setShowPayAllSplitsConfirm(true)
           } : undefined}
+          onTransferItems={onTransferItems}
+          onTransferOrder={onTransferOrder}
         />
       </SilentErrorBoundary>
       {/* Quick Pick Strip */}

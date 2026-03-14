@@ -1549,13 +1549,21 @@ function LiquorBuilderContent() {
                                 )}
                               </div>
                               {isEnabled && hasCustomPrice && (
-                                <div className="mt-1 ml-6 text-[11px] text-green-700">
-                                  Custom price: ${current!.customPrice!.toFixed(2)} (auto would be ${autoPrice.toFixed(2)})
-                                  {isDualPricingEnabled && (
-                                    <span className="text-indigo-500 ml-1">
-                                      | Card: ${calculateCardPrice(current!.customPrice!, cashDiscountPct).toFixed(2)}
-                                    </span>
-                                  )}
+                                <div className="mt-1 ml-6 flex items-center gap-2 text-[11px] text-green-700">
+                                  <span>
+                                    Custom price: ${current!.customPrice!.toFixed(2)} (auto would be ${autoPrice.toFixed(2)})
+                                    {isDualPricingEnabled && (
+                                      <span className="text-indigo-500 ml-1">
+                                        | Card: ${calculateCardPrice(current!.customPrice!, cashDiscountPct).toFixed(2)}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <button
+                                    onClick={() => updatePourSizeCustomPrice(sizeKey, null)}
+                                    className="text-[10px] text-red-500 hover:text-red-700 underline shrink-0"
+                                  >
+                                    Reset to Default
+                                  </button>
                                 </div>
                               )}
                             </div>

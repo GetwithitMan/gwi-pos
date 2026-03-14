@@ -64,6 +64,7 @@ interface OrderPanelActionsProps {
   onQuickSplitEvenly?: (numWays: number) => void
   orderType?: string  // 'bar_tab', 'dine_in', etc. — table orders show Send instead of Start Tab
   onTransferItems?: () => void
+  onTransferOrder?: () => void
   onMergeOrders?: () => void
   onSchedule?: () => void  // Schedule order for later (pre-order)
   isScheduled?: boolean    // Whether this order is already scheduled
@@ -117,6 +118,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   onQuickSplitEvenly,
   orderType,
   onTransferItems,
+  onTransferOrder,
   onMergeOrders,
   onSchedule,
   isScheduled = false,
@@ -140,6 +142,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   // immediately after a payment decline + cancel (prevents accidental tab destruction)
   const [justCancelledPayment, setJustCancelledPayment] = useState(false)
   const paymentCancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Transfer chooser dropdown state
+  const [showTransferChooser, setShowTransferChooser] = useState(false)
 
   // Detect isSending transition (true → false) to flash "Sent!" confirmation
   useEffect(() => {
@@ -705,6 +709,29 @@ export const OrderPanelActions = memo(function OrderPanelActions({
         )
       })()}
 
+      {/* $0 Balance Auto-Close: show "Close Table" when all items are voided/comped */}
+      {hasItems && !hasPendingItems && hasSentItems && total === 0 && onPay && (
+        <button
+          onClick={() => onPay('cash')}
+          style={{
+            width: '100%',
+            padding: '14px',
+            borderRadius: '10px',
+            border: 'none',
+            background: '#dc2626',
+            color: '#ffffff',
+            fontSize: '15px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            marginBottom: '10px',
+            boxShadow: '0 0 20px rgba(220, 38, 38, 0.3)',
+          }}
+        >
+          Close Table ($0.00)
+        </button>
+      )}
+
       {/* Cash/Card Toggle - Compact */}
       {hasItems && hasDualPricing && (
         <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
@@ -990,26 +1017,99 @@ export const OrderPanelActions = memo(function OrderPanelActions({
       </div>
 
       {/* Transfer / Merge row */}
-      {hasItems && (onTransferItems || onMergeOrders) && (
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-          {onTransferItems && (
-            <button
-              onClick={onTransferItems}
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid rgba(6, 182, 212, 0.3)',
-                background: 'rgba(6, 182, 212, 0.1)',
-                color: '#22d3ee',
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              Transfer
-            </button>
+      {hasItems && (onTransferItems || onTransferOrder || onMergeOrders) && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', position: 'relative' }}>
+          {(onTransferItems || onTransferOrder) && (
+            <div style={{ flex: 1, position: 'relative' }}>
+              <button
+                onClick={() => {
+                  // If only one transfer type is available, go directly to it
+                  if (onTransferItems && !onTransferOrder) {
+                    onTransferItems()
+                  } else if (onTransferOrder && !onTransferItems) {
+                    onTransferOrder()
+                  } else {
+                    setShowTransferChooser(!showTransferChooser)
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(6, 182, 212, 0.3)',
+                  background: showTransferChooser ? 'rgba(6, 182, 212, 0.2)' : 'rgba(6, 182, 212, 0.1)',
+                  color: '#22d3ee',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Transfer {onTransferItems && onTransferOrder ? '▾' : ''}
+              </button>
+              {/* Transfer chooser dropdown */}
+              {showTransferChooser && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '100%',
+                    left: 0,
+                    right: 0,
+                    marginBottom: '4px',
+                    background: 'rgba(15, 23, 42, 0.98)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    zIndex: 50,
+                    boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.4)',
+                  }}
+                >
+                  {onTransferItems && (
+                    <button
+                      onClick={() => { setShowTransferChooser(false); onTransferItems() }}
+                      style={{
+                        width: '100%',
+                        padding: '12px 14px',
+                        background: 'transparent',
+                        border: 'none',
+                        borderBottom: onTransferOrder ? '1px solid rgba(255, 255, 255, 0.06)' : 'none',
+                        color: '#22d3ee',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(6, 182, 212, 0.1)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      Transfer Item(s)
+                    </button>
+                  )}
+                  {onTransferOrder && (
+                    <button
+                      onClick={() => { setShowTransferChooser(false); onTransferOrder() }}
+                      style={{
+                        width: '100%',
+                        padding: '12px 14px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#22d3ee',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(6, 182, 212, 0.1)' }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      Transfer Table/Order
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           {onMergeOrders && (
             <button

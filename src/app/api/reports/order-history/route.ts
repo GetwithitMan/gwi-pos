@@ -18,8 +18,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const customerId = searchParams.get('customerId')
     const search = searchParams.get('search')
     const orderType = searchParams.get('orderType')
+    const format = searchParams.get('format') || 'json'
     const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = format === 'csv' ? 10000 : parseInt(searchParams.get('limit') || '50')
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
@@ -200,66 +201,113 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
     ])
 
-    return NextResponse.json({ data: {
-      orders: orders.map(order => {
-        // Compute card total from dual pricing multiplier (includes items + modifiers)
-        const activeItems = order.items.filter(i => i.status === 'active')
-        const hasCardPricing = activeItems.some(i => i.cardPrice != null)
-        // Derive multiplier from any item with both prices
-        const dpMultiplier = (() => {
-          for (const i of activeItems) {
-            const cp = Number(i.price)
-            if (i.cardPrice != null && cp > 0) return Number(i.cardPrice) / cp
-          }
-          return 1
-        })()
-        // Compute from items (not stored subtotal which may diverge)
-        const computedCashSubtotal = Math.round(
-          activeItems.reduce((sum, i) => sum + Number(i.itemTotal), 0) * 100
-        ) / 100
-        const cardSubtotal = hasCardPricing
-          ? Math.round(computedCashSubtotal * dpMultiplier * 100) / 100
-          : null
-        const displaySubtotal = cardSubtotal ?? computedCashSubtotal
-        const discountTotal = Math.round(Number(order.discountTotal) * 100) / 100
-        // Tax: compute from location settings (not stored values which may be buggy)
-        const cashTaxable = calculateAfterDiscount ? Math.max(0, computedCashSubtotal - discountTotal) : computedCashSubtotal
-        const computedCashTax = Math.round(cashTaxable * taxRateDecimal * 100) / 100
-        const cardTaxable = calculateAfterDiscount ? Math.max(0, displaySubtotal - discountTotal) : displaySubtotal
-        const cardTax = Math.round(cardTaxable * taxRateDecimal * 100) / 100
-        const computedCashTotal = Math.round((computedCashSubtotal - discountTotal + computedCashTax) * 100) / 100
-        const displayTotal = Math.round((displaySubtotal - discountTotal + cardTax) * 100) / 100
-
-        return {
-          id: order.id,
-          orderNumber: order.orderNumber,
-          orderType: order.orderType,
-          status: order.status,
-          tableName: order.table?.name,
-          tabName: order.tabName,
-          guestCount: order.guestCount,
-          subtotal: cardSubtotal ?? computedCashSubtotal,
-          taxTotal: cardTax,
-          discountTotal,
-          total: displayTotal,
-          cashTotal: hasCardPricing ? computedCashTotal : undefined,
-          employee: order.employee,
-          customer: order.customer,
-          itemCount: order._count.items,
-          payments: order.payments.map(p => ({
-            id: p.id,
-            method: p.paymentMethod,
-            paymentMethod: p.paymentMethod,
-            amount: Number(p.amount),
-            tipAmount: Number(p.tipAmount),
-            totalAmount: Number(p.totalAmount),
-            cardLast4: p.cardLast4,
-            cardBrand: p.cardBrand,
-          })),
-          createdAt: order.createdAt,
-          closedAt: order.closedAt,
+    const mappedOrders = orders.map(order => {
+      // Compute card total from dual pricing multiplier (includes items + modifiers)
+      const activeItems = order.items.filter(i => i.status === 'active')
+      const hasCardPricing = activeItems.some(i => i.cardPrice != null)
+      // Derive multiplier from any item with both prices
+      const dpMultiplier = (() => {
+        for (const i of activeItems) {
+          const cp = Number(i.price)
+          if (i.cardPrice != null && cp > 0) return Number(i.cardPrice) / cp
         }
-      }),
+        return 1
+      })()
+      // Compute from items (not stored subtotal which may diverge)
+      const computedCashSubtotal = Math.round(
+        activeItems.reduce((sum, i) => sum + Number(i.itemTotal), 0) * 100
+      ) / 100
+      const cardSubtotal = hasCardPricing
+        ? Math.round(computedCashSubtotal * dpMultiplier * 100) / 100
+        : null
+      const displaySubtotal = cardSubtotal ?? computedCashSubtotal
+      const discountTotal = Math.round(Number(order.discountTotal) * 100) / 100
+      // Tax: compute from location settings (not stored values which may be buggy)
+      const cashTaxable = calculateAfterDiscount ? Math.max(0, computedCashSubtotal - discountTotal) : computedCashSubtotal
+      const computedCashTax = Math.round(cashTaxable * taxRateDecimal * 100) / 100
+      const cardTaxable = calculateAfterDiscount ? Math.max(0, displaySubtotal - discountTotal) : displaySubtotal
+      const cardTax = Math.round(cardTaxable * taxRateDecimal * 100) / 100
+      const computedCashTotal = Math.round((computedCashSubtotal - discountTotal + computedCashTax) * 100) / 100
+      const displayTotal = Math.round((displaySubtotal - discountTotal + cardTax) * 100) / 100
+
+      return {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        orderType: order.orderType,
+        status: order.status,
+        tableName: order.table?.name,
+        tabName: order.tabName,
+        guestCount: order.guestCount,
+        subtotal: cardSubtotal ?? computedCashSubtotal,
+        taxTotal: cardTax,
+        discountTotal,
+        total: displayTotal,
+        cashTotal: hasCardPricing ? computedCashTotal : undefined,
+        employee: order.employee,
+        customer: order.customer,
+        itemCount: order._count.items,
+        payments: order.payments.map(p => ({
+          id: p.id,
+          method: p.paymentMethod,
+          paymentMethod: p.paymentMethod,
+          amount: Number(p.amount),
+          tipAmount: Number(p.tipAmount),
+          totalAmount: Number(p.totalAmount),
+          cardLast4: p.cardLast4,
+          cardBrand: p.cardBrand,
+        })),
+        createdAt: order.createdAt,
+        closedAt: order.closedAt,
+      }
+    })
+
+    // CSV export
+    if (format === 'csv') {
+      const csvEscape = (val: string) => {
+        if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+          return `"${val.replace(/"/g, '""')}"`
+        }
+        return val
+      }
+
+      const header = 'Order #,Date,Time,Status,Order Type,Server,Subtotal,Discount,Tax,Total,Payment Method,Tip Amount,Items'
+      const rows = mappedOrders.map(o => {
+        const d = new Date(o.createdAt)
+        const dateStr = d.toLocaleDateString('en-US')
+        const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+        const serverName = o.employee ? `${o.employee.firstName} ${o.employee.lastName}` : ''
+        const paymentMethods = o.payments.map(p => p.paymentMethod).join('; ')
+        const tipTotal = o.payments.reduce((sum, p) => sum + p.tipAmount, 0)
+
+        return [
+          String(o.orderNumber),
+          csvEscape(dateStr),
+          csvEscape(timeStr),
+          csvEscape(o.status),
+          csvEscape(o.orderType),
+          csvEscape(serverName),
+          o.subtotal.toFixed(2),
+          o.discountTotal.toFixed(2),
+          o.taxTotal.toFixed(2),
+          o.total.toFixed(2),
+          csvEscape(paymentMethods),
+          tipTotal.toFixed(2),
+          String(o.itemCount),
+        ].join(',')
+      })
+
+      const csv = [header, ...rows].join('\n')
+      const dateLabel = startDate || 'all'
+      return new NextResponse(csv, {
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition': `attachment; filename="order-history-${dateLabel}.csv"`,
+        },
+      })
+    }
+
+    return NextResponse.json({ data: {
+      orders: mappedOrders,
       pagination: {
         page,
         limit,

@@ -250,6 +250,60 @@ export function isSurchargeLegal(state: string): boolean {
   return !SURCHARGE_BANNED_STATES.has(state.toUpperCase().trim())
 }
 
+/** Visa/MC network cap on credit card surcharges. */
+const MAX_SURCHARGE_PERCENT = 3
+
+/**
+ * Returns the maximum surcharge percentage allowed by card network rules (Visa/MC).
+ * Currently 3%. Use this instead of hard-coding the cap elsewhere.
+ */
+export function getMaxSurchargePercent(): number {
+  return MAX_SURCHARGE_PERCENT
+}
+
+export interface SurchargeComplianceResult {
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+}
+
+/**
+ * Validate a surcharge pricing program configuration against state law and card network rules.
+ * Call this when saving surcharge settings or before applying surcharge in the payment flow.
+ *
+ * @param surchargePercent - The configured surcharge percentage
+ * @param venueState - Two-letter US state code or territory (e.g. 'CT', 'MA', 'PR')
+ * @returns Validation result with errors (blocking) and warnings (informational)
+ */
+export function validateSurchargeCompliance(
+  surchargePercent: number,
+  venueState?: string | null
+): SurchargeComplianceResult {
+  const errors: string[] = []
+  const warnings: string[] = []
+
+  // Check state legality
+  if (venueState && !isSurchargeLegal(venueState)) {
+    errors.push(`Surcharges are prohibited in ${venueState.toUpperCase()}. Choose a different pricing model.`)
+  }
+
+  // Check card network cap
+  if (surchargePercent > MAX_SURCHARGE_PERCENT) {
+    errors.push(`Surcharge of ${surchargePercent}% exceeds the Visa/Mastercard cap of ${MAX_SURCHARGE_PERCENT}%.`)
+  }
+
+  // Informational warnings
+  if (surchargePercent > 0 && surchargePercent <= MAX_SURCHARGE_PERCENT && surchargePercent > 2) {
+    warnings.push(`Surcharge of ${surchargePercent}% is close to the ${MAX_SURCHARGE_PERCENT}% Visa/Mastercard cap.`)
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+  }
+}
+
 // ─── Strategy Selector ────────────────────────────────────────────────────────
 
 export interface PricingResult {
@@ -294,11 +348,14 @@ export function applyPricingProgram(
 
     case 'surcharge': {
       if (paymentMethod === 'cash') return base
+      // State legality guard — if venue is in a banned state, skip surcharge silently
+      if (program.venueState && !isSurchargeLegal(program.venueState)) return base
       // Typically only credit, not debit
       const appliesToCard = (paymentMethod === 'credit' && (program.surchargeApplyToCredit ?? true))
         || (paymentMethod === 'debit' && (program.surchargeApplyToDebit ?? false))
       if (!appliesToCard) return base
-      const pct = program.surchargePercent ?? 0
+      // Enforce card network cap at runtime
+      const pct = Math.min(program.surchargePercent ?? 0, MAX_SURCHARGE_PERCENT)
       const surcharge = calculateSurcharge(basePrice, pct)
       return { ...base, finalPrice: roundToCents(basePrice + surcharge), surchargeAmount: surcharge }
     }

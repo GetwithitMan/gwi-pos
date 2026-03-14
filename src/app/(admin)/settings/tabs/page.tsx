@@ -217,6 +217,15 @@ export default function TabSettingsPage() {
               max={9999}
             />
             <NumberRow
+              label="Minimum Pre-Auth Amount"
+              description="Minimum hold amount required to open a bar tab. Set to 0 for no minimum. Prevents tabs from being opened with holds too small to cover a typical order."
+              value={payments.minPreAuthAmount ?? 0}
+              onChange={v => updatePayments('minPreAuthAmount', v)}
+              prefix="$"
+              min={0}
+              max={9999}
+            />
+            <NumberRow
               label="Pre-Auth Expiration"
               description="Days until the card hold is automatically released if the tab is never closed. Most card networks require release within 7 days."
               value={payments.preAuthExpirationDays}
@@ -265,7 +274,27 @@ export default function TabSettingsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 3: Walkout & Capture Retries
+            Card 3: Device Tip Prompt
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Device Tip Prompt</h2>
+          <p className="text-sm text-gray-600 mb-5">Settings for the customer-facing tip prompt shown on CFD or card reader during tab close.</p>
+
+          <div className="space-y-4">
+            <NumberRow
+              label="Tip Prompt Timeout"
+              description="How long to wait for the customer to select a tip on the device before falling back to $0 tip and proceeding with capture. Set higher for slower-paced environments."
+              value={payments.cfdTipTimeoutSeconds ?? 30}
+              onChange={v => updatePayments('cfdTipTimeoutSeconds', v)}
+              suffix="sec"
+              min={10}
+              max={300}
+            />
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 4: Walkout & Capture Retries
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Walkout & Capture Retries</h2>

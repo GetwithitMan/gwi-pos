@@ -1,7 +1,8 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useCallback } from 'react'
 import { StockBadge } from '@/components/menu/StockBadge'
+import { useLongPress } from '@/hooks/useLongPress'
 import type { PricingOptionGroup, PricingOption } from '@/types'
 
 interface MenuItem {
@@ -39,15 +40,16 @@ export interface FloorPlanMenuItemProps {
   customStyle?: { bgColor?: string | null; textColor?: string | null } | null
   inQuickBar: boolean
   pricing: { isDualPricingEnabled: boolean; cashDiscountRate: number }
-   
+
   onTap: (item: any) => void
-   
+
   onContextMenu: (e: React.MouseEvent, item: any) => void
   onUnavailable: (reason: string) => void
   onQuickPickTap?: (item: MenuItem, option: PricingOption) => void
+  onLongPress?: (item: MenuItem) => void
 }
 
-export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customStyle, inQuickBar, pricing, onTap, onContextMenu, onUnavailable, onQuickPickTap }: FloorPlanMenuItemProps) {
+export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customStyle, inQuickBar, pricing, onTap, onContextMenu, onUnavailable, onQuickPickTap, onLongPress }: FloorPlanMenuItemProps) {
   const isItem86d = item.is86d || item.stockStatus === 'out'
   const bgColor = isItem86d
     ? 'rgba(100, 100, 100, 0.3)'
@@ -62,20 +64,28 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
     : []
   const hasQuickPicks = quickPickOptions.length > 0
 
+  const handleTap = useCallback(() => {
+    if (isItem86d) {
+      const reason = item.reasons86d?.length
+        ? `${item.name} is unavailable - ${item.reasons86d.join(', ')} is out`
+        : item.stockIngredientName
+          ? `${item.name} is unavailable - ${item.stockIngredientName} is out`
+          : `${item.name} is currently unavailable`
+      onUnavailable(reason)
+    } else {
+      onTap(item)
+    }
+  }, [isItem86d, item, onUnavailable, onTap])
+
+  const handleLongPress = useCallback(() => {
+    onLongPress?.(item)
+  }, [onLongPress, item])
+
+  const longPressHandlers = useLongPress(handleLongPress, { onTap: handleTap })
+
   return (
     <button
-      onClick={() => {
-        if (isItem86d) {
-          const reason = item.reasons86d?.length
-            ? `${item.name} is unavailable - ${item.reasons86d.join(', ')} is out`
-            : item.stockIngredientName
-              ? `${item.name} is unavailable - ${item.stockIngredientName} is out`
-              : `${item.name} is currently unavailable`
-          onUnavailable(reason)
-        } else {
-          onTap(item)
-        }
-      }}
+      {...longPressHandlers}
       onContextMenu={(e) => onContextMenu(e, item)}
       className={`floor-plan-menu-item ${inQuickBar ? 'ring-2 ring-amber-400/50' : ''} ${isItem86d ? '' : 'transition-transform duration-150 hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98]'}`}
       style={{

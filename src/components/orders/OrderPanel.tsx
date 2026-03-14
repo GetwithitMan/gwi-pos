@@ -161,6 +161,7 @@ export interface OrderPanelProps {
   cardPriceMultiplier?: number
   onQuickSplitEvenly?: (numWays: number) => void
   onTransferItems?: () => void
+  onTransferOrder?: () => void
   onMergeOrders?: () => void
   // Upsell prompt integration
   onAddUpsellItem?: (menuItemId: string) => void
@@ -290,6 +291,7 @@ export const OrderPanel = memo(function OrderPanel({
   cardPriceMultiplier,
   onQuickSplitEvenly,
   onTransferItems,
+  onTransferOrder,
   onMergeOrders,
   // Upsell prompt integration
   onAddUpsellItem,
@@ -1974,6 +1976,7 @@ export const OrderPanel = memo(function OrderPanel({
           onQuickSplitEvenly={onQuickSplitEvenly}
           orderType={orderType}
           onTransferItems={onTransferItems}
+          onTransferOrder={onTransferOrder}
           onMergeOrders={onMergeOrders}
         />
       </div>

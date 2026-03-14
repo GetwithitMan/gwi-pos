@@ -304,6 +304,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       )
     }
 
+    // Resend reason is mandatory — prevents frivolous resends
+    if (action === 'resend' && (!resendNote || resendNote.trim().length === 0)) {
+      return NextResponse.json(
+        { error: 'A resend reason is required' },
+        { status: 400 }
+      )
+    }
+
     const now = new Date()
 
     if (action === 'complete') {

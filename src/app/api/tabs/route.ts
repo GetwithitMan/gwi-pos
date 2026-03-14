@@ -207,9 +207,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
       }
 
+      // Enforce minimum pre-auth amount if configured
+      const resolvedPreAuthAmount = preAuth.amount || settings.payments.defaultPreAuthAmount
+      const minPreAuth = settings.payments.minPreAuthAmount ?? 0
+      if (minPreAuth > 0 && resolvedPreAuthAmount < minPreAuth) {
+        return NextResponse.json(
+          { error: `Pre-auth amount ($${resolvedPreAuthAmount}) is below the minimum required ($${minPreAuth})` },
+          { status: 400 }
+        )
+      }
+
       preAuthData = {
         preAuthId: generateFakeTransactionId(),
-        preAuthAmount: preAuth.amount || settings.payments.defaultPreAuthAmount,
+        preAuthAmount: resolvedPreAuthAmount,
         preAuthLast4: preAuth.cardLast4,
         preAuthCardBrand: preAuth.cardBrand || 'visa',
         preAuthExpiresAt: calculatePreAuthExpiration(settings.payments.preAuthExpirationDays),

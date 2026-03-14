@@ -246,17 +246,18 @@ export const POST = withVenue(async function POST(
         const client = await requireDatacapClient(locationId)
 
         // If device tip mode, fire GetSuggestiveTip first
-        // H6 FIX: 30s timeout prevents tab stuck in "closing" forever if reader is unresponsive
+        // H6 FIX: configurable timeout prevents tab stuck in "closing" forever if reader is unresponsive
         if (tipMode === 'device') {
           try {
-            const tipAbort = AbortSignal.timeout(30_000)
+            const tipTimeoutMs = (locSettings.payments.cfdTipTimeoutSeconds ?? 30) * 1000
+            const tipAbort = AbortSignal.timeout(tipTimeoutMs)
             const tipPromise = client.getSuggestiveTip(card.readerId, tipSuggestions)
-            // Race the tip prompt against a 30s deadline
+            // Race the tip prompt against the configured deadline
             const tipResponse = await Promise.race([
               tipPromise,
               new Promise<never>((_, reject) => {
                 tipAbort.addEventListener('abort', () =>
-                  reject(new Error('Device tip prompt timed out after 30s'))
+                  reject(new Error(`Device tip prompt timed out after ${locSettings.payments.cfdTipTimeoutSeconds ?? 30}s`))
                 )
               }),
             ])

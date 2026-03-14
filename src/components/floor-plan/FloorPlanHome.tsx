@@ -13,6 +13,7 @@ import { useFloorPlanAutoScale, useFloorPlanDrag } from './hooks'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
+import { ItemDescriptionModal } from '@/components/pos/ItemDescriptionModal'
 import { FloorPlanMenuItem } from './FloorPlanMenuItem'
 import { QuantityMultiplier } from './QuantityMultiplier'
 import { useFloorPlanModals } from '@/hooks/useFloorPlanModals'
@@ -95,6 +96,7 @@ interface MenuItem {
   // Pricing option groups (size/variant pricing)
   pricingOptionGroups?: import('@/types').PricingOptionGroup[]
   hasPricingOptions?: boolean
+  calories?: number | null
 }
 
 // InlineOrderItem: derived type from the inlineOrderItems memo below.
@@ -308,6 +310,9 @@ export function FloorPlanHome({
     tablesReset: number
     businessDay: string
   } | null>(null)
+
+  // Long-press item description modal
+  const [longPressItem, setLongPressItem] = useState<MenuItem | null>(null)
 
   // Active order state (for selected table or quick order)
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
@@ -1563,6 +1568,17 @@ export function FloorPlanHome({
 
   // closeContextMenu — managed by useFloorPlanModals hook
 
+  // Handle long-press on menu item to show description modal
+  const handleMenuItemLongPress = useCallback((item: MenuItem) => {
+    setLongPressItem(item)
+  }, [])
+
+  // Refresh menu after 86/un-86 from description modal
+  const handleItemDescriptionUpdated = useCallback(() => {
+    void loadCategories()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Handle tapping an existing order item to edit modifiers
   const handleOrderItemTap = useCallback((item: InlineOrderItem) => {
     // Don't allow editing sent items
@@ -2399,6 +2415,7 @@ export function FloorPlanHome({
                           onContextMenu={handleMenuItemContextMenu}
                           onUnavailable={(reason) => toast.warning(reason)}
                           onQuickPickTap={handleQuickPickTap}
+                          onLongPress={handleMenuItemLongPress}
                         />
                       ))}
                     </div>
@@ -2859,6 +2876,14 @@ export function FloorPlanHome({
           />
         </Suspense>
       )}
+
+      {/* Item Description Modal (long-press) */}
+      <ItemDescriptionModal
+        item={longPressItem}
+        isOpen={!!longPressItem}
+        onClose={() => setLongPressItem(null)}
+        onItemUpdated={handleItemDescriptionUpdated}
+      />
 
       {/* EOD Summary Overlay — shown after eod:reset-complete socket event */}
       {eodSummary && (

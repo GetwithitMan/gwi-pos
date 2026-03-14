@@ -21,6 +21,7 @@ interface NewTabModalProps {
   }) => Promise<void>
   employeeId: string
   defaultPreAuthAmount?: number
+  minPreAuthAmount?: number
 }
 
 const CARD_BRANDS = [
@@ -36,6 +37,7 @@ export function NewTabModal({
   onCreateTab,
   employeeId,
   defaultPreAuthAmount = 50,
+  minPreAuthAmount = 0,
 }: NewTabModalProps) {
   const [tabName, setTabName] = useState('')
   const [usePreAuth, setUsePreAuth] = useState(false)
@@ -71,6 +73,10 @@ export function NewTabModal({
       }
       if (!/^\d{4}$/.test(cardLast4)) {
         setError('Card digits must be numbers only')
+        return
+      }
+      if (minPreAuthAmount > 0 && preAuthAmount < minPreAuthAmount) {
+        setError(`Hold amount must be at least ${formatCurrency(minPreAuthAmount)}`)
         return
       }
     }
@@ -211,6 +217,11 @@ export function NewTabModal({
                 <p className="text-xs text-gray-600 mt-1">
                   Amount to hold on the card
                 </p>
+                {minPreAuthAmount > 0 && preAuthAmount < minPreAuthAmount && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    Minimum hold amount is {formatCurrency(minPreAuthAmount)}
+                  </p>
+                )}
               </div>
 
               {/* Quick Amounts */}

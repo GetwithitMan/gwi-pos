@@ -1086,6 +1086,37 @@ export default function OrderHistoryPage() {
     setExpandedOrderId(prev => prev === orderId ? null : orderId)
   }
 
+  const handleExportCsv = useCallback(async () => {
+    if (!employee?.location?.id) return
+    try {
+      const params = new URLSearchParams({
+        locationId: employee.location.id,
+        employeeId: employee.id,
+        format: 'csv',
+      })
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
+      if (status) params.set('status', status)
+      if (orderType) params.set('orderType', orderType)
+      if (search) params.set('search', search)
+
+      const res = await fetch(`/api/reports/order-history?${params}`)
+      if (!res.ok) {
+        toast.error('Failed to export orders')
+        return
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `order-history-${startDate || 'all'}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast.error('Failed to export orders')
+    }
+  }, [employee?.location?.id, employee?.id, startDate, endDate, status, orderType, search])
+
   if (!hydrated) return null
 
   return (
@@ -1093,6 +1124,15 @@ export default function OrderHistoryPage() {
       <AdminPageHeader
         title="Order History"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+        actions={
+          <button
+            onClick={handleExportCsv}
+            disabled={orders.length === 0}
+            className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 font-medium disabled:opacity-50"
+          >
+            Export CSV
+          </button>
+        }
       />
 
       <div className="max-w-7xl mx-auto">
