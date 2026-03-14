@@ -1674,7 +1674,7 @@ echo "[pre-start] Checking database schema..."
 # SAFETY: Never use --accept-data-loss. If schema has destructive changes
 # (column drops, type changes), prisma db push will FAIL instead of
 # silently destroying data. This is intentional — the DB only moves forward.
-PUSH_OUTPUT=$(npx --yes prisma db push --skip-generate 2>&1) && {
+PUSH_OUTPUT=$(npx --yes prisma db push 2>&1) && {
   echo "[pre-start] Schema sync complete."
 } || {
   # Check if the failure is because of data loss warnings
