@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
@@ -51,8 +52,11 @@ interface SwapRequestEmployee {
 
 interface SwapRequest {
   id: string
+  type: 'swap' | 'cover' | 'drop'
   status: string
+  reason: string | null
   notes: string | null
+  managerNote: string | null
   createdAt: string
   shift: {
     id: string
@@ -63,6 +67,7 @@ interface SwapRequest {
   }
   requestedByEmployee: SwapRequestEmployee
   requestedToEmployee: SwapRequestEmployee | null
+  approvedByEmployee: SwapRequestEmployee | null
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -103,6 +108,24 @@ function SwapStatusBadge({ status }: { status: string }) {
   )
 }
 
+function RequestTypeBadge({ type }: { type: string }) {
+  const styles: Record<string, string> = {
+    swap: 'bg-purple-100 text-purple-800',
+    cover: 'bg-blue-100 text-blue-800',
+    drop: 'bg-red-100 text-red-800',
+  }
+  const labels: Record<string, string> = {
+    swap: 'Swap',
+    cover: 'Cover',
+    drop: 'Drop',
+  }
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${styles[type] ?? 'bg-gray-100 text-gray-600'}`}>
+      {labels[type] ?? type}
+    </span>
+  )
+}
+
 // ─── ShiftSwapRequestModal ───────────────────────────────────────────────────
 
 interface ShiftSwapRequestModalProps {
@@ -126,14 +149,18 @@ function ShiftSwapRequestModal({
   onClose,
   onSuccess,
 }: ShiftSwapRequestModalProps) {
+  const [requestType, setRequestType] = useState<'swap' | 'cover' | 'drop'>('swap')
   const [targetEmployeeId, setTargetEmployeeId] = useState('')
+  const [reason, setReason] = useState('')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
+      setRequestType('swap')
       setTargetEmployeeId('')
+      setReason('')
       setNotes('')
     }
   }, [isOpen])
@@ -150,31 +177,40 @@ function ShiftSwapRequestModal({
           body: JSON.stringify({
             locationId,
             requestedByEmployeeId,
-            requestedToEmployeeId: targetEmployeeId || undefined,
+            type: requestType,
+            requestedToEmployeeId: requestType === 'drop' ? undefined : (targetEmployeeId || undefined),
+            reason: reason || undefined,
             notes: notes || undefined,
           }),
         }
       )
       if (res.ok) {
-        toast.success('Swap request created')
+        const typeLabels = { swap: 'Swap', cover: 'Cover', drop: 'Drop' }
+        toast.success(`${typeLabels[requestType]} request created`)
         onSuccess()
         onClose()
       } else {
         const err = await res.json()
-        toast.error(err.error || 'Failed to create swap request')
+        toast.error(err.error || 'Failed to create request')
       }
     } catch {
-      toast.error('Failed to create swap request')
+      toast.error('Failed to create request')
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const typeDescriptions: Record<string, string> = {
+    swap: 'Trade this shift with another employee',
+    cover: 'Ask someone to cover this shift for you',
+    drop: 'Request to drop this shift entirely',
   }
 
   return (
     <Modal
       isOpen={isOpen && !!shift}
       onClose={onClose}
-      title="Request Shift Swap"
+      title="Shift Request"
       size="md"
     >
       <div className="space-y-4">
@@ -186,26 +222,73 @@ function ShiftSwapRequestModal({
           </div>
         )}
 
+        {/* Request Type */}
         <div>
-          <label className="block text-sm font-medium text-gray-900 mb-1">
-            Offer this shift to (optional)
+          <label className="block text-sm font-medium text-gray-900 mb-2">
+            Request Type
           </label>
-          <select
-            value={targetEmployeeId}
-            onChange={(e) => setTargetEmployeeId(e.target.value)}
-            className="w-full px-3 py-2 border rounded-lg text-sm"
-          >
-            <option value="">Open request (any employee)</option>
-            {employees
-              .filter(e => shift ? e.id !== shift.employee.id : true)
-              .map(emp => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name} ({emp.role})
-                </option>
-              ))}
-          </select>
+          <div className="grid grid-cols-3 gap-2">
+            {(['swap', 'cover', 'drop'] as const).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => {
+                  setRequestType(t)
+                  if (t === 'drop') setTargetEmployeeId('')
+                }}
+                className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  requestType === t
+                    ? t === 'swap' ? 'bg-purple-100 border-purple-300 text-purple-800'
+                      : t === 'cover' ? 'bg-blue-100 border-blue-300 text-blue-800'
+                      : 'bg-red-100 border-red-300 text-red-800'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-gray-500">{typeDescriptions[requestType]}</p>
         </div>
 
+        {/* Target Employee (not for drop) */}
+        {requestType !== 'drop' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-1">
+              {requestType === 'swap' ? 'Swap with (optional)' : 'Ask to cover (optional)'}
+            </label>
+            <select
+              value={targetEmployeeId}
+              onChange={(e) => setTargetEmployeeId(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm"
+            >
+              <option value="">Open request (any employee)</option>
+              {employees
+                .filter(e => shift ? e.id !== shift.employee.id : true)
+                .map(emp => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} ({emp.role})
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
+
+        {/* Reason */}
+        <div>
+          <label className="block text-sm font-medium text-gray-900 mb-1">
+            Reason
+          </label>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+            className="w-full px-3 py-2 border rounded-lg text-sm resize-none"
+            placeholder="Why are you making this request?"
+          />
+        </div>
+
+        {/* Notes */}
         <div>
           <label className="block text-sm font-medium text-gray-900 mb-1">
             Notes (optional)
@@ -215,7 +298,7 @@ function ShiftSwapRequestModal({
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
             className="w-full px-3 py-2 border rounded-lg text-sm resize-none"
-            placeholder="Any notes about this swap request..."
+            placeholder="Any additional details..."
           />
         </div>
 
@@ -689,6 +772,24 @@ export default function SchedulingPage() {
       <AdminPageHeader
         title="Employee Scheduling"
       />
+      {/* Link to dedicated requests page */}
+      <div className="max-w-7xl mx-auto mt-4 flex justify-end">
+        <Link
+          href="/scheduling/requests"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+          View All Shift Requests
+          {swapRequests.filter(r => r.status === 'pending' || r.status === 'accepted').length > 0 && (
+            <span className="px-1.5 py-0.5 bg-purple-600 text-white text-xs rounded-full">
+              {swapRequests.filter(r => r.status === 'pending' || r.status === 'accepted').length}
+            </span>
+          )}
+        </Link>
+      </div>
 
       <div className="max-w-7xl mx-auto mt-6">
         {/* Week Navigation */}
@@ -1214,46 +1315,58 @@ function SwapRequestRow({
 }) {
   const isActionable = req.status === 'pending' || req.status === 'accepted'
   const isTerminal = req.status === 'approved' || req.status === 'rejected' || req.status === 'cancelled'
+  const requestType = req.type || 'swap'
+
+  const flowLabel = requestType === 'drop'
+    ? employeeDisplayName(req.requestedByEmployee)
+    : `${employeeDisplayName(req.requestedByEmployee)} → ${req.requestedToEmployee ? employeeDisplayName(req.requestedToEmployee) : 'Open'}`
 
   return (
-    <div className={`flex items-center justify-between gap-4 p-3 rounded-lg border ${isTerminal ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200'}`}>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-gray-900">
-            {formatShiftDate(req.shift.date)}
-          </span>
-          <span className="text-xs text-gray-900">
-            {req.shift.startTime} – {req.shift.endTime}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5 mt-0.5 text-sm text-gray-600">
-          <span>{employeeDisplayName(req.requestedByEmployee)}</span>
-          <span className="text-gray-900">→</span>
-          <span>{req.requestedToEmployee ? employeeDisplayName(req.requestedToEmployee) : 'Open'}</span>
-        </div>
-        {req.notes && (
-          <p className="text-xs text-gray-900 mt-0.5 truncate">{req.notes}</p>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2 shrink-0">
-        <SwapStatusBadge status={req.status} />
-        {isActionable && (
-          <div className="flex gap-1.5">
-            <button
-              onClick={onApprove}
-              className="px-2.5 py-1 text-xs font-medium rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-            >
-              Approve
-            </button>
-            <button
-              onClick={onReject}
-              className="px-2.5 py-1 text-xs font-medium rounded bg-white text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
-            >
-              Reject
-            </button>
+    <div className={`p-3 rounded-lg border ${isTerminal ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-200'}`}>
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <RequestTypeBadge type={requestType} />
+            <span className="text-sm font-medium text-gray-900">
+              {formatShiftDate(req.shift.date)}
+            </span>
+            <span className="text-xs text-gray-500">
+              {req.shift.startTime} – {req.shift.endTime}
+            </span>
           </div>
-        )}
+          <div className="flex items-center gap-1.5 mt-0.5 text-sm text-gray-600">
+            <span>{flowLabel}</span>
+          </div>
+          {req.reason && (
+            <p className="text-xs text-gray-600 mt-0.5 truncate">Reason: {req.reason}</p>
+          )}
+          {req.notes && (
+            <p className="text-xs text-gray-500 mt-0.5 truncate">{req.notes}</p>
+          )}
+          {req.managerNote && (
+            <p className="text-xs text-blue-600 mt-0.5 truncate">Manager: {req.managerNote}</p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <SwapStatusBadge status={req.status} />
+          {isActionable && (
+            <div className="flex gap-1.5">
+              <button
+                onClick={onApprove}
+                className="px-2.5 py-1 text-xs font-medium rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                Approve
+              </button>
+              <button
+                onClick={onReject}
+                className="px-2.5 py-1 text-xs font-medium rounded bg-white text-red-600 border border-red-200 hover:bg-red-50 transition-colors"
+              >
+                Reject
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

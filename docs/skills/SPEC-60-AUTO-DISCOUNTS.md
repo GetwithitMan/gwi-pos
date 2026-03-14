@@ -176,7 +176,9 @@ spend_threshold:
       max_discount: 25.00  # Cap at $25
 ```
 
-#### Time-Based (Happy Hour)
+#### Time-Based
+> **Note:** Time-based pricing is handled by Pricing Rules (`docs/features/happy-hour.md`), not auto-discounts. The example below is for reference only — use Pricing Rules for time-based price adjustments.
+
 ```yaml
 time_based:
   happy_hour_drinks:

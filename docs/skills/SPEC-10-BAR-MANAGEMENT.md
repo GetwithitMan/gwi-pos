@@ -20,13 +20,13 @@ The Bar Management skill handles everything specific to bar operations - tab man
 - I want to open tabs instantly with a card swipe
 - I want to see all my open tabs at a glance
 - I want to track my pours for accountability
-- I want to quickly switch between happy hour and regular pricing
+- I want to quickly switch between pricing rules and regular pricing
 - I want to transfer tabs to servers when guests move to tables
 
 ### As a Bar Manager...
 - I want to track pour costs and waste
 - I want to see which bartenders are over-pouring
-- I want to manage happy hour timing automatically
+- I want to manage pricing rules timing automatically
 - I want to reconcile tabs at end of night
 
 ### As an Owner...

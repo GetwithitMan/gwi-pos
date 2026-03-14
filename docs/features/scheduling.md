@@ -41,9 +41,16 @@ Scheduling manages the planned work calendar for employees. It is distinct from 
 | `src/app/api/schedules/[id]/route.ts` | GET schedule detail; PUT publish/archive/draft; DELETE (draft only) |
 | `src/app/api/schedules/[id]/shifts/route.ts` | POST add shift to schedule; PUT bulk-upsert shifts |
 | `src/app/api/schedules/[id]/shifts/[shiftId]/route.ts` | PUT update individual shift; DELETE soft-delete individual shift |
-| `src/app/api/schedules/[id]/shifts/[shiftId]/swap-requests/route.ts` | GET swap requests for a shift; POST create swap request |
-| `src/app/api/shift-swap-requests/route.ts` | GET all swap requests for location (filterable by status, employee) |
-| `src/app/api/shift-swap-requests/[requestId]/route.ts` | DELETE cancel a pending swap request (soft delete) |
+| `src/app/api/schedules/[id]/shifts/[shiftId]/swap-requests/route.ts` | GET requests for a shift; POST create shift request (swap/cover/drop) |
+| `src/app/api/shift-swap-requests/route.ts` | GET all shift requests for location (filterable by status, employee, type) |
+| `src/app/api/shift-swap-requests/[requestId]/route.ts` | DELETE cancel a pending request (soft delete) |
+| `src/app/api/shift-swap-requests/[requestId]/accept/route.ts` | POST employee accepts a request |
+| `src/app/api/shift-swap-requests/[requestId]/decline/route.ts` | POST employee declines a request |
+| `src/app/api/shift-swap-requests/[requestId]/approve/route.ts` | POST manager approves (executes swap/cover/drop) |
+| `src/app/api/shift-swap-requests/[requestId]/reject/route.ts` | POST manager rejects a request |
+| `src/app/api/shift-requests/route.ts` | Unified GET list + POST create shift requests |
+| `src/app/api/shift-requests/[id]/route.ts` | Unified PUT (accept/decline/approve/reject) + DELETE cancel |
+| `src/app/(admin)/scheduling/requests/page.tsx` | Dedicated admin page for managing all shift requests |
 
 ---
 
@@ -66,18 +73,31 @@ Scheduling manages the planned work calendar for employees. It is distinct from 
 | `PUT` | `/api/schedules/[id]/shifts/[shiftId]` | Manager | Update an individual shift (employee, date, times, role, breakMinutes, notes) |
 | `DELETE` | `/api/schedules/[id]/shifts/[shiftId]` | Manager | Soft-delete an individual shift |
 
-### Shift Swap Requests
+### Shift Requests (swap, cover, drop)
 | Method | Route | Auth | Description |
 |--------|-------|------|-------------|
-| `GET` | `/api/schedules/[id]/shifts/[shiftId]/swap-requests` | Employee PIN | List swap requests for a specific shift |
-| `POST` | `/api/schedules/[id]/shifts/[shiftId]/swap-requests` | Employee PIN | Create a swap request; requires `requestedByEmployeeId`; optionally targets a specific `requestedToEmployeeId`; rejects if active request already exists for this shift |
-| `GET` | `/api/shift-swap-requests` | Manager / Employee PIN | List all swap requests for the location; filterable by `status` and `employeeId` (as target) |
-| `DELETE` | `/api/shift-swap-requests/[requestId]` | Employee PIN | Cancel (soft-delete) a swap request; only allowed when `status = pending` |
+| `GET` | `/api/schedules/[id]/shifts/[shiftId]/swap-requests` | Employee PIN | List requests for a specific shift |
+| `POST` | `/api/schedules/[id]/shifts/[shiftId]/swap-requests` | Employee PIN | Create a shift request (swap/cover/drop); requires `requestedByEmployeeId`, `type`; optionally `requestedToEmployeeId`, `reason`, `notes` |
+| `GET` | `/api/shift-swap-requests` | Manager / Employee PIN | List all shift requests for location; filterable by `status`, `employeeId`, `requestedByEmployeeId`, `type` |
+| `DELETE` | `/api/shift-swap-requests/[requestId]` | Employee PIN | Cancel a pending request (soft-delete + status → cancelled) |
+| `POST` | `/api/shift-swap-requests/[requestId]/accept` | Employee PIN | Employee accepts a request (status → accepted); for cover with no target, accepting employee becomes the target |
+| `POST` | `/api/shift-swap-requests/[requestId]/decline` | Employee PIN | Employee declines a request (status → rejected) |
+| `POST` | `/api/shift-swap-requests/[requestId]/approve` | Manager | Manager approves: swaps/covers reassign shift; drops mark shift as called_off; cancels other pending requests on same shift |
+| `POST` | `/api/shift-swap-requests/[requestId]/reject` | Manager | Manager rejects a request; accepts `managerNote` |
+| `GET` | `/api/shift-requests` | Manager / Employee PIN | Unified list endpoint (filterable by status, type, employeeId) |
+| `POST` | `/api/shift-requests` | Employee PIN | Unified create endpoint (swap/cover/drop) |
+| `PUT` | `/api/shift-requests/[id]` | Manager / Employee | Unified action endpoint (action: approve/reject/accept/decline) |
+| `DELETE` | `/api/shift-requests/[id]` | Employee PIN | Cancel a pending request |
 
 ---
 
 ## Socket Events
-No socket events are currently emitted for scheduling actions. Schedule changes are reflected on next poll/page load. This is acceptable because schedule data changes infrequently and does not require sub-second synchronization.
+
+| Event | Payload | When |
+|-------|---------|------|
+| `shift-request:updated` | `{ action, requestId, type, requestedByEmployeeId, requestedToEmployeeId?, shiftId }` | Shift request created, accepted, declined, approved, rejected, or cancelled |
+
+Socket events are dispatched via `dispatchShiftRequestUpdate()` in `src/lib/socket-dispatch.ts`. Enables real-time UI refresh on admin scheduling pages and mobile schedule views.
 
 ---
 
@@ -167,15 +187,18 @@ AvailabilityEntry {
 }
 ```
 
-### ShiftSwapRequest (shift swap workflow)
+### ShiftSwapRequest (shift swap/cover/drop workflow)
 ```
 ShiftSwapRequest {
   id                    String
   locationId            String
-  shiftId               String                  // the ScheduledShift being swapped
+  shiftId               String                  // the ScheduledShift being swapped/covered/dropped
   requestedByEmployeeId String                  // Employee A (initiator)
-  requestedToEmployeeId String?                 // Employee B (target; null = open request)
+  requestedToEmployeeId String?                 // Employee B (target; null = open request or drop)
+  type                  ShiftRequestType        // swap | cover | drop (default: swap)
   status                ShiftSwapRequestStatus  // pending | accepted | approved | rejected | cancelled
+  reason                String?                 // employee's reason for the request
+  managerNote           String?                 // manager's note on approval/denial
   respondedAt           DateTime?               // when Employee B accepted/declined
   approvedAt            DateTime?               // when manager approved
   approvedByEmployeeId  String?                 // manager who approved
@@ -220,21 +243,39 @@ Status transitions are updated via `PUT /schedules/[id]/shifts/[shiftId]` — no
 - Temporary availability changes use `effectiveFrom`/`effectiveTo` date range fields
 - Availability is advisory — managers are not blocked from scheduling an employee outside their availability
 
-### Shift Swap Request Flow
-1. Employee A is scheduled for a shift they cannot work
-2. Employee A creates a swap request:
-   `POST /schedules/[id]/shifts/[shiftId]/swap-requests { requestedByEmployeeId, requestedToEmployeeId?, notes }`
-   - Only one active swap request (`pending` or `accepted`) allowed per shift at a time
+### Shift Request Types
+Three request types are supported: **swap**, **cover**, and **drop**.
+
+#### Swap Request Flow
+1. Employee A creates a swap request:
+   `POST /schedules/[id]/shifts/[shiftId]/swap-requests { type: 'swap', requestedByEmployeeId, requestedToEmployeeId?, reason?, notes? }`
+   - Only one active request (`pending` or `accepted`) allowed per shift at a time
    - Request expires in 7 days by default (configurable via `expiresInDays`)
-3. Employee B (if targeted) sees the request and accepts or declines:
-   - Accept → status transitions to `accepted`; respondedAt set
-   - Decline → status transitions to `rejected`; respondedAt + declineReason set
-   - (No dedicated accept/decline endpoint in current API — status update likely via a manager or future endpoint)
-4. Manager reviews accepted swap requests and approves or rejects:
-   - Approve → status: `approved`; `approvedAt` + `approvedByEmployeeId` set; shift `employeeId` updated to Employee B; `originalEmployeeId` preserved; `swappedAt` set
-   - Reject → status: `rejected`
-5. Employee A can cancel their own pending request at any time:
-   `DELETE /shift-swap-requests/[requestId]` — soft-deletes the record; only works when `status = pending`
+2. Employee B (if targeted) accepts or declines:
+   - `POST /shift-swap-requests/[id]/accept` → status: `accepted`, respondedAt set
+   - `POST /shift-swap-requests/[id]/decline` → status: `rejected`, respondedAt + declineReason set
+3. Manager approves or rejects:
+   - `POST /shift-swap-requests/[id]/approve` → status: `approved`; shift reassigned to Employee B; `originalEmployeeId` preserved; `swappedAt` set; other pending requests cancelled
+   - `POST /shift-swap-requests/[id]/reject` → status: `rejected`; accepts `managerNote`
+4. Employee A can cancel their pending request:
+   `DELETE /shift-swap-requests/[id]` — soft-deletes + status → `cancelled`
+
+#### Cover Request Flow
+1. Employee A creates a cover request (open or targeted):
+   `POST /schedules/[id]/shifts/[shiftId]/swap-requests { type: 'cover', requestedByEmployeeId, requestedToEmployeeId?, reason? }`
+2. Any eligible employee (or the target) accepts — becomes the covering employee:
+   - `POST /shift-swap-requests/[id]/accept { employeeId }` — if no target was set, the accepting employee becomes `requestedToEmployeeId`
+3. Manager approves → shift reassigned to covering employee (same as swap approval)
+4. Employee A can cancel while still pending
+
+#### Drop Request Flow
+1. Employee A creates a drop request:
+   `POST /schedules/[id]/shifts/[shiftId]/swap-requests { type: 'drop', requestedByEmployeeId, reason? }`
+   - Drop requests cannot have a `requestedToEmployeeId`
+2. Manager can approve directly from `pending` (no employee acceptance needed):
+   - `POST /shift-swap-requests/[id]/approve` → shift status set to `called_off`; other pending requests cancelled
+   - `POST /shift-swap-requests/[id]/reject` → request rejected with optional `managerNote`
+3. Employee A can cancel while still pending
 
 ### Schedule Summary Calculation
 The `GET /schedules/[id]` response includes a `summary` object:
@@ -349,4 +390,4 @@ The scheduling admin page (`/scheduling`) shows a 7shifts import card with:
 
 ---
 
-*Last updated: 2026-03-04*
+*Last updated: 2026-03-14*

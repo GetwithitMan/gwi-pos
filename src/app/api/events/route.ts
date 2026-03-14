@@ -233,6 +233,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             sectionIds?: string[]
             sortOrder?: number
           }, index: number) => ({
+            locationId,
             name: tier.name,
             description: tier.description,
             color: tier.color,

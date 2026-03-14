@@ -46,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: cachedData })
   }
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -162,6 +162,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     }),
+    // Tax rules: needed to derive tax-inclusive pricing flags for Android
+    db.taxRule.findMany({
+      where: { locationId, isActive: true, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        rate: true,
+        appliesTo: true,
+        categoryIds: true,
+        itemIds: true,
+        isInclusive: true,
+        priority: true,
+        isCompounded: true,
+        isActive: true,
+      },
+      orderBy: { priority: 'asc' },
+    }),
   ])
 
   if (isCellular) {
@@ -231,11 +248,63 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   // parseSettings applies mergeWithDefaults — this corrects dualPricing.enabled from the stored
   // raw JSON (which may have legacy enabled:false) and derives it from cashDiscountPercent.
   const settings = parseSettings(location?.settings) as unknown as Record<string, unknown>
+
+  // ─── Tax-Inclusive Pricing Derivation ───────────────────────────────────────
+  // Derive taxInclusiveLiquor/taxInclusiveFood from TaxRule records (same logic
+  // as /api/settings GET). Without this, Android gets false/false from defaults
+  // and shows "Tax $0.00" when inclusive pricing is enabled. (P0 fix)
+  const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
+  const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
+
+  const inclusiveTaxRules = taxRules.filter(r => r.isInclusive)
+  const nonInclusiveTaxRules = taxRules.filter(r => !r.isInclusive)
+
+  // Sum all non-inclusive rates (stored as decimals, e.g. 0.07 for 7%)
+  const effectiveTaxRate = nonInclusiveTaxRules.reduce((sum, r) => sum + Number(r.rate), 0)
+
+  // Build a categoryId → categoryType map from the already-fetched categories
+  const categoryTypeMap = new Map<string, string | null>()
+  for (const cat of categories) {
+    categoryTypeMap.set(cat.id, cat.categoryType)
+  }
+
+  let taxInclusiveLiquor = false
+  let taxInclusiveFood = false
+
+  for (const rule of inclusiveTaxRules) {
+    if (rule.appliesTo === 'all') {
+      taxInclusiveLiquor = true
+      taxInclusiveFood = true
+      break
+    }
+    if (rule.appliesTo === 'category' && rule.categoryIds) {
+      const ruleCategories = rule.categoryIds as string[]
+      for (const catId of ruleCategories) {
+        const catType = categoryTypeMap.get(catId)
+        if (catType && LIQUOR_CATEGORY_TYPES.includes(catType)) taxInclusiveLiquor = true
+        if (catType && FOOD_CATEGORY_TYPES.includes(catType)) taxInclusiveFood = true
+      }
+    }
+  }
+
+  // Inject derived tax flags + effective rate into settings so Android receives them
+  const taxSettings = (settings.tax ?? {}) as Record<string, unknown>
+  settings.tax = {
+    ...taxSettings,
+    taxInclusiveLiquor,
+    taxInclusiveFood,
+    // Override defaultRate with the effective non-inclusive rate (as percentage) if TaxRules exist
+    ...(effectiveTaxRate > 0 ? { defaultRate: effectiveTaxRate * 100 } : {}),
+  }
+
+  // Also compute the inclusive tax rate (sum of inclusive rules) for Android to back out tax
+  const inclusiveTaxRate = inclusiveTaxRules.reduce((sum, r) => sum + Number(r.rate), 0)
+
   // Tax rate for Android: MUST match what calculateOrderTotals() uses on the server
   // (settings.tax.defaultRate / 100) so that the Android reducer's locally-computed
   // taxTotal agrees with server-computed taxTotal. Previous code used the TaxRule sum
   // which could disagree with defaultRate, causing cash tax mismatches.
-  const taxRate = ((settings?.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
+  const taxRate = ((settings.tax as Record<string, unknown>)?.defaultRate as number ?? 0) / 100
 
   // Convert Decimal fields to numbers for Android clients
   const mappedCategories = categories.map(cat => ({
@@ -279,6 +348,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       tables,
       orderTypes,
       taxRate,
+      inclusiveTaxRate,
+      taxRules: taxRules.map(r => ({
+        id: r.id,
+        name: r.name,
+        rate: Number(r.rate),
+        ratePercent: Number(r.rate) * 100,
+        appliesTo: r.appliesTo,
+        categoryIds: r.categoryIds,
+        itemIds: r.itemIds,
+        isInclusive: r.isInclusive,
+        priority: r.priority,
+        isCompounded: r.isCompounded,
+        isActive: r.isActive,
+      })),
       locationSettings: settings,
       paymentReaders,
       printers,
@@ -362,6 +445,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           weight: item.weight != null ? Number(item.weight) : null,
           weightUnit: item.weightUnit ?? null,
           unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+          isTaxInclusive: item.isTaxInclusive ?? false,
+          categoryType: item.categoryType ?? null,
           pricingOptionId: item.pricingOptionId ?? null,
           pricingOptionLabel: item.pricingOptionLabel ?? null,
           modifiers: item.modifiers.map((mod: any) => ({

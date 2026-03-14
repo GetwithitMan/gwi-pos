@@ -380,14 +380,14 @@ Burger
 
 - Base pricing
 - Size variants
-- Time-based pricing (happy hour)
+- Time-based pricing (Pricing Rules)
 - Day-of-week pricing
 - Dual pricing (cash/card)
 - Modifier pricing (add-ons)
 - Combo/bundle pricing
 
 **Related Skills:**
-- [16-Happy-Hour](skills/16-HAPPY-HOUR.md) - Time-based pricing
+- [Pricing Rules](../features/happy-hour.md) - Time-based pricing (Pricing Rules)
 - [31-Dual-Pricing](skills/31-DUAL-PRICING.md) - Cash discount programs
 - [18-Discounts](skills/18-DISCOUNTS.md) - Discounts and BOGO
 
@@ -935,7 +935,7 @@ Support for:
 | 07 | [Inventory](skills/07-INVENTORY.md) | Medium |
 | 14 | [Coursing](skills/14-COURSING.md) | Medium |
 | 15 | [Hold-Fire](skills/15-HOLD-FIRE.md) | Medium |
-| 16 | [Happy-Hour](skills/16-HAPPY-HOUR.md) | Medium |
+| 16 | [Pricing Rules](../features/happy-hour.md) | Medium |
 | 20 | [Loss-Tracking](skills/20-LOSS-TRACKING.md) | Medium |
 | 22 | [Live-Dashboard](skills/22-LIVE-DASHBOARD.md) | Medium |
 | 24 | [Seat-Ordering](skills/24-SEAT-ORDERING.md) | Medium |

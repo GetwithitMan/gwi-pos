@@ -26,6 +26,12 @@ interface EventInfo {
   eventDate: string
   doorsOpen: string
   startTime: string
+  pricingTiers?: {
+    id: string
+    name: string
+    price: number
+    color?: string
+  }[]
 }
 
 interface CheckInStats {
@@ -61,27 +67,28 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
   const [lastResult, setLastResult] = useState<CheckInResult | null>(null)
   const [filter, setFilter] = useState<'all' | 'checked_in' | 'not_checked_in'>('not_checked_in')
   const [search, setSearch] = useState('')
+  const [showWalkIn, setShowWalkIn] = useState(false)
+  const [walkInQuantity, setWalkInQuantity] = useState(1)
+  const [walkInTier, setWalkInTier] = useState('')
+  const [walkInName, setWalkInName] = useState('')
+  const [walkInProcessing, setWalkInProcessing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchData()
-    // Keep focus on scan input
     inputRef.current?.focus()
   }, [id])
 
   async function fetchData() {
     try {
-      // Fetch event
       const eventRes = await fetch(`/api/events/${id}`)
       const eventData = await eventRes.json()
       setEvent(eventData.data.event)
 
-      // Fetch tickets
       const ticketsRes = await fetch(`/api/tickets?eventId=${id}`)
       const ticketsData = await ticketsRes.json()
       setTickets(ticketsData.data.tickets || [])
 
-      // Calculate stats
       const sold = ticketsData.data.tickets?.filter((t: Ticket) =>
         ['sold', 'checked_in'].includes(t.status)
       ) || []
@@ -118,10 +125,8 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
         setStats(data.stats)
       }
 
-      // Refresh ticket list
       fetchData()
 
-      // Play sound based on result
       if (data.success) {
         playSound('success')
       } else {
@@ -179,7 +184,6 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
   }
 
   function playSound(type: 'success' | 'error') {
-    // Simple beep using Web Audio API
     try {
       const ctx = new AudioContext()
       const oscillator = ctx.createOscillator()
@@ -199,6 +203,42 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
       }, type === 'success' ? 150 : 300)
     } catch {
       // Audio not supported
+    }
+  }
+
+  async function handleWalkIn() {
+    if (!walkInTier || walkInQuantity < 1) {
+      toast.error('Select a pricing tier and quantity')
+      return
+    }
+    setWalkInProcessing(true)
+    try {
+      const res = await fetch(`/api/events/${id}/walk-in`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quantity: walkInQuantity,
+          pricingTierId: walkInTier,
+          customerName: walkInName || 'Walk-in',
+          autoCheckIn: true,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to add walk-in')
+        return
+      }
+      toast.success(`${data.data.walkInCount} walk-in(s) added and checked in`)
+      playSound('success')
+      setWalkInQuantity(1)
+      setWalkInName('')
+      setShowWalkIn(false)
+      fetchData()
+    } catch (error) {
+      console.error('Walk-in failed:', error)
+      toast.error('Failed to add walk-in')
+    } finally {
+      setWalkInProcessing(false)
     }
   }
 
@@ -222,7 +262,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-full bg-gray-50">
         <div className="text-gray-600">Loading...</div>
       </div>
     )
@@ -230,59 +270,74 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
 
   if (!event) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-full bg-gray-50">
         <div className="text-gray-600">Event not found</div>
       </div>
     )
   }
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <div className="bg-gray-800 p-4">
-        <Link href={`/events/${id}`} className="text-gray-900 hover:text-white text-sm">
+      <div className="bg-white p-4 border-b border-gray-200 shadow-sm">
+        <Link href={`/events/${id}`} className="text-blue-600 hover:text-blue-700 text-sm">
           &larr; Back to Event
         </Link>
         <div className="flex justify-between items-center mt-2">
           <div>
-            <h1 className="text-xl font-bold">{event.name}</h1>
-            <div className="text-sm text-gray-900">
-              {new Date(event.eventDate).toLocaleDateString()} &bull; Check-In
+            <h1 className="text-xl font-bold text-gray-900">{event.name}</h1>
+            <div className="text-sm text-gray-500">
+              {new Date(event.eventDate).toLocaleDateString()} -- Check-In
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="flex gap-6">
+          {/* Stats + Walk-in */}
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => {
+                setShowWalkIn(!showWalkIn)
+                if (!walkInTier && event?.pricingTiers?.length) {
+                  setWalkInTier(event.pricingTiers[0].id)
+                }
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                showWalkIn
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+              }`}
+            >
+              Walk-In / Cover
+            </button>
             <div className="text-center">
-              <div className="text-3xl font-bold text-green-400">{stats.checkedIn}</div>
-              <div className="text-sm text-gray-900">Checked In</div>
+              <div className="text-3xl font-bold text-green-600">{stats.checkedIn}</div>
+              <div className="text-sm text-gray-500">Checked In</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-yellow-400">{stats.remaining}</div>
-              <div className="text-sm text-gray-900">Remaining</div>
+              <div className="text-3xl font-bold text-yellow-600">{stats.remaining}</div>
+              <div className="text-sm text-gray-500">Remaining</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold">{stats.total}</div>
-              <div className="text-sm text-gray-900">Total</div>
+              <div className="text-3xl font-bold text-gray-900">{stats.total}</div>
+              <div className="text-sm text-gray-500">Total</div>
             </div>
             <div className="text-center">
-              <div className="text-3xl font-bold text-blue-400">{stats.percentCheckedIn}%</div>
-              <div className="text-sm text-gray-900">Complete</div>
+              <div className="text-3xl font-bold text-blue-600">{stats.percentCheckedIn}%</div>
+              <div className="text-sm text-gray-500">Complete</div>
             </div>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="mt-4 h-2 bg-gray-700 rounded-full overflow-hidden">
+        <div className="mt-4 h-2 bg-gray-100 rounded-full overflow-hidden">
           <div
-            className="h-full bg-green-500 transition-all"
+            className="h-full bg-green-500 transition-all rounded-full"
             style={{ width: `${stats.percentCheckedIn}%` }}
           />
         </div>
       </div>
 
       {/* Scan Input */}
-      <div className="bg-gray-900 p-4 border-b border-gray-700">
+      <div className="bg-white p-4 border-b border-gray-200">
         <form onSubmit={handleScan} className="flex gap-4 max-w-2xl mx-auto">
           <input
             ref={inputRef}
@@ -290,12 +345,12 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
             value={scanInput}
             onChange={e => setScanInput(e.target.value)}
             placeholder="Scan barcode or enter ticket number..."
-            className="flex-1 px-4 py-3 bg-gray-800 rounded-lg text-lg focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg text-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             autoFocus
           />
           <button
             type="submit"
-            className="px-6 py-3 bg-blue-600 rounded-lg hover:bg-blue-700 font-medium"
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
           >
             Check In
           </button>
@@ -306,40 +361,93 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
           <div
             className={`mt-4 p-4 rounded-lg max-w-2xl mx-auto ${
               lastResult.success
-                ? 'bg-green-900/50 border border-green-600'
-                : 'bg-red-900/50 border border-red-600'
+                ? 'bg-green-50 border border-green-200'
+                : 'bg-red-50 border border-red-200'
             }`}
           >
             {lastResult.success ? (
               <div className="flex items-center gap-4">
-                <div className="text-4xl">&#10003;</div>
+                <div className="text-4xl text-green-500">&#10003;</div>
                 <div>
-                  <div className="font-bold text-lg">{lastResult.ticket?.customerName || 'Guest'}</div>
-                  <div className="text-sm">
+                  <div className="font-bold text-lg text-green-900">{lastResult.ticket?.customerName || 'Guest'}</div>
+                  <div className="text-sm text-green-700">
                     {lastResult.ticket?.seatLabel && `Seat ${lastResult.ticket.seatLabel}`}
                     {lastResult.ticket?.tableName && ` - ${lastResult.ticket.tableName}`}
-                    {' '}&bull; {lastResult.ticket?.pricingTier}
+                    {' '} -- {lastResult.ticket?.pricingTier}
                   </div>
                 </div>
               </div>
             ) : (
               <div className="flex items-center gap-4">
-                <div className="text-4xl text-red-400">&#10007;</div>
+                <div className="text-4xl text-red-500">&#10007;</div>
                 <div>
-                  <div className="font-bold text-lg">
+                  <div className="font-bold text-lg text-red-900">
                     {lastResult.checkInResult === 'already_checked_in'
                       ? 'Already Checked In'
                       : lastResult.checkInResult === 'invalid'
                         ? 'Ticket Not Found'
                         : 'Check-In Failed'}
                   </div>
-                  <div className="text-sm text-red-300">{lastResult.error}</div>
+                  <div className="text-sm text-red-700">{lastResult.error}</div>
                 </div>
               </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Walk-In Panel */}
+      {showWalkIn && event?.pricingTiers && (
+        <div className="bg-orange-50 border-b border-orange-200 p-4">
+          <div className="max-w-2xl mx-auto">
+            <h3 className="font-semibold text-orange-900 mb-3">Walk-In / Cover Charge</h3>
+            <div className="flex gap-4 items-end">
+              <div>
+                <label className="block text-xs text-orange-800 mb-1">Name (optional)</label>
+                <input
+                  type="text"
+                  value={walkInName}
+                  onChange={e => setWalkInName(e.target.value)}
+                  placeholder="Walk-in"
+                  className="px-3 py-2 bg-white border border-orange-300 rounded-lg text-gray-900 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-orange-800 mb-1">Tier</label>
+                <select
+                  value={walkInTier}
+                  onChange={e => setWalkInTier(e.target.value)}
+                  className="px-3 py-2 bg-white border border-orange-300 rounded-lg text-gray-900 text-sm"
+                >
+                  {event.pricingTiers.map(tier => (
+                    <option key={tier.id} value={tier.id}>
+                      {tier.name} - ${tier.price}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-orange-800 mb-1">Qty</label>
+                <input
+                  type="number"
+                  value={walkInQuantity}
+                  onChange={e => setWalkInQuantity(Math.max(1, Number(e.target.value)))}
+                  min="1"
+                  max="20"
+                  className="w-16 px-3 py-2 bg-white border border-orange-300 rounded-lg text-gray-900 text-sm text-center"
+                />
+              </div>
+              <button
+                onClick={handleWalkIn}
+                disabled={walkInProcessing}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm font-medium transition-colors whitespace-nowrap"
+              >
+                {walkInProcessing ? 'Adding...' : `Add ${walkInQuantity} Walk-In${walkInQuantity !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Guest List */}
       <div className="flex-1 overflow-auto p-4">
@@ -351,8 +459,10 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
-                  className={`px-3 py-1.5 rounded ${
-                    filter === f ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
+                  className={`px-3 py-1.5 rounded transition-colors ${
+                    filter === f
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                   }`}
                 >
                   {f === 'not_checked_in' ? 'Not Checked In' :
@@ -365,33 +475,33 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
               placeholder="Search by name, ticket #, seat..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="flex-1 px-3 py-1.5 bg-gray-700 rounded"
+              className="flex-1 px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
           {/* Ticket list */}
           <div className="space-y-2">
             {filteredTickets.length === 0 ? (
-              <div className="text-center text-gray-900 py-8">
+              <div className="text-center text-gray-500 py-8">
                 No tickets found
               </div>
             ) : (
               filteredTickets.map(ticket => (
                 <div
                   key={ticket.id}
-                  className={`bg-gray-800 rounded-lg p-4 flex items-center gap-4 ${
+                  className={`bg-white rounded-lg p-4 flex items-center gap-4 border border-gray-200 shadow-sm transition-opacity ${
                     ticket.status === 'checked_in' ? 'opacity-60' : ''
                   }`}
                 >
                   <div
-                    className={`w-3 h-3 rounded-full ${
+                    className={`w-3 h-3 rounded-full flex-shrink-0 ${
                       ticket.status === 'checked_in' ? 'bg-green-500' : 'bg-yellow-500'
                     }`}
                   />
 
-                  <div className="flex-1">
-                    <div className="font-medium">{ticket.customerName || 'Guest'}</div>
-                    <div className="text-sm text-gray-900">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900">{ticket.customerName || 'Guest'}</div>
+                    <div className="text-sm text-gray-500 truncate">
                       {ticket.ticketNumber}
                       {ticket.seatLabel && ` - Seat ${ticket.seatLabel}`}
                       {ticket.tableName && ` (${ticket.tableName})`}
@@ -399,7 +509,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
                   </div>
 
                   <div
-                    className="px-2 py-1 rounded text-xs"
+                    className="px-2 py-1 rounded text-xs text-white flex-shrink-0"
                     style={{ backgroundColor: ticket.pricingTier.color || '#4b5563' }}
                   >
                     {ticket.pricingTier.name}
@@ -408,14 +518,14 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
                   {ticket.status === 'checked_in' ? (
                     <button
                       onClick={() => undoCheckIn(ticket.id)}
-                      className="px-3 py-1.5 bg-gray-700 rounded text-sm hover:bg-gray-600"
+                      className="px-3 py-1.5 bg-gray-100 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-200 transition-colors flex-shrink-0"
                     >
                       Undo
                     </button>
                   ) : (
                     <button
                       onClick={() => manualCheckIn(ticket.id)}
-                      className="px-3 py-1.5 bg-green-600 rounded text-sm hover:bg-green-700"
+                      className="px-3 py-1.5 bg-green-600 rounded text-sm text-white hover:bg-green-700 transition-colors flex-shrink-0"
                     >
                       Check In
                     </button>

@@ -470,6 +470,12 @@ enum ShiftSwapRequestStatus {
   cancelled
 }
 
+enum ShiftRequestType {
+  swap
+  cover
+  drop
+}
+
 enum TipGroupMembershipStatus {
   active
   left
@@ -7136,7 +7142,7 @@ model ScheduledShift {
   @@index([sevenShiftsShiftId])
 }
 
-// ShiftSwapRequest - Employee shift swap workflow
+// ShiftSwapRequest - Employee shift swap/cover/drop workflow
 model ShiftSwapRequest {
   id                    String                 @id @default(cuid())
   locationId            String
@@ -7147,7 +7153,10 @@ model ShiftSwapRequest {
   requestedByEmployee   Employee               @relation("SwapInitiator", fields: [requestedByEmployeeId], references: [id])
   requestedToEmployeeId String?
   requestedToEmployee   Employee?              @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id])
+  type                  ShiftRequestType       @default(swap)
   status                ShiftSwapRequestStatus @default(pending)
+  reason                String?                // Employee's reason for requesting
+  managerNote           String?                // Manager's note on approval/denial
   respondedAt           DateTime?
   approvedAt            DateTime?
   approvedByEmployeeId  String?
@@ -7165,6 +7174,7 @@ model ShiftSwapRequest {
   @@index([requestedByEmployeeId])
   @@index([requestedToEmployeeId])
   @@index([status])
+  @@index([type])
 }
 
 // ============================================
@@ -7716,6 +7726,35 @@ model ErrorLog {
   @@index([category])
   @@index([locationId, status, createdAt]) // Error monitoring: open errors by date
   @@index([locationId, category, createdAt]) // Error reports by category
+}
+
+// ============================================
+// VENUE DIAGNOSTIC LOGS
+// Centralized per-venue log collection from NUC devices.
+// Auto-expires after 30 days. No relations to avoid FK constraints
+// on high-volume insert path.
+// ============================================
+
+model VenueLog {
+  id         String   @id @default(cuid())
+  locationId String
+  level      String   @default("info")    // info, warn, error, critical
+  source     String   @default("server")  // server, pos, kds, android, sync, pax
+  category   String   @default("system")  // payment, sync, hardware, auth, order, system
+  message    String
+  details    Json?                         // Arbitrary JSON context
+  employeeId String?
+  deviceId   String?
+  stackTrace String?
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime                      // Auto-cleanup target (30 days default)
+
+  @@index([locationId, createdAt(sort: Desc)])
+  @@index([level])
+  @@index([source])
+  @@index([category])
+  @@index([expiresAt])
+  @@index([createdAt(sort: Desc)])
 }
 
 model HealthCheck {

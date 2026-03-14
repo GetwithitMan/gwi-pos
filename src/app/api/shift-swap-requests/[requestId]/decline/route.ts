@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 
-// POST - Employee declines a swap request
+// POST - Employee declines a shift request
 // Body: { locationId: string, reason?: string }
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -22,23 +23,25 @@ export const POST = withVenue(async function POST(
     })
 
     if (!swapRequest) {
-      return NextResponse.json({ error: 'Swap request not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
     }
 
     if (swapRequest.locationId !== locationId) {
-      return NextResponse.json({ error: 'Swap request does not belong to this location' }, { status: 403 })
+      return NextResponse.json({ error: 'Request does not belong to this location' }, { status: 403 })
     }
 
     if (swapRequest.deletedAt !== null) {
-      return NextResponse.json({ error: 'Swap request has been cancelled' }, { status: 404 })
+      return NextResponse.json({ error: 'Request has been cancelled' }, { status: 404 })
     }
 
     if (swapRequest.status !== 'pending') {
       return NextResponse.json(
-        { error: `Cannot decline a swap request with status '${swapRequest.status}'` },
+        { error: `Cannot decline a request with status '${swapRequest.status}'` },
         { status: 400 }
       )
     }
+
+    const requestType = swapRequest.type || 'swap'
 
     const updated = await db.shiftSwapRequest.update({
       where: { id: requestId },
@@ -49,9 +52,19 @@ export const POST = withVenue(async function POST(
       },
     })
 
+    // Socket event
+    void dispatchShiftRequestUpdate(locationId, {
+      action: 'declined',
+      requestId,
+      type: requestType as 'swap' | 'cover' | 'drop',
+      requestedByEmployeeId: swapRequest.requestedByEmployeeId,
+      requestedToEmployeeId: swapRequest.requestedToEmployeeId,
+      shiftId: swapRequest.shiftId,
+    }, { async: true }).catch(console.error)
+
     return NextResponse.json({ data: { request: updated } })
   } catch (error) {
-    console.error('Failed to decline swap request:', error)
-    return NextResponse.json({ error: 'Failed to decline swap request' }, { status: 500 })
+    console.error('Failed to decline request:', error)
+    return NextResponse.json({ error: 'Failed to decline request' }, { status: 500 })
   }
 })

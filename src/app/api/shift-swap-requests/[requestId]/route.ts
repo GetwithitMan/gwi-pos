@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 
-// DELETE - Employee cancels their own pending swap request (soft delete)
+// DELETE - Employee cancels their own pending request (soft delete)
 export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
@@ -21,33 +22,45 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     if (!swapRequest) {
-      return NextResponse.json({ error: 'Swap request not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
     }
 
     if (swapRequest.locationId !== locationId) {
-      return NextResponse.json({ error: 'Swap request does not belong to this location' }, { status: 403 })
+      return NextResponse.json({ error: 'Request does not belong to this location' }, { status: 403 })
     }
 
     if (swapRequest.deletedAt !== null) {
-      return NextResponse.json({ error: 'Swap request already cancelled' }, { status: 404 })
+      return NextResponse.json({ error: 'Request already cancelled' }, { status: 404 })
     }
 
     if (swapRequest.status !== 'pending') {
       return NextResponse.json(
-        { error: `Cannot cancel a swap request with status '${swapRequest.status}'` },
+        { error: `Cannot cancel a request with status '${swapRequest.status}'` },
         { status: 400 }
       )
     }
 
+    const requestType = swapRequest.type || 'swap'
+
     // Soft delete
     await db.shiftSwapRequest.update({
       where: { id: requestId },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), status: 'cancelled' },
     })
 
-    return NextResponse.json({ data: { message: 'Swap request cancelled' } })
+    // Socket event
+    void dispatchShiftRequestUpdate(locationId, {
+      action: 'cancelled',
+      requestId,
+      type: requestType as 'swap' | 'cover' | 'drop',
+      requestedByEmployeeId: swapRequest.requestedByEmployeeId,
+      requestedToEmployeeId: swapRequest.requestedToEmployeeId,
+      shiftId: swapRequest.shiftId,
+    }, { async: true }).catch(console.error)
+
+    return NextResponse.json({ data: { message: 'Request cancelled' } })
   } catch (error) {
-    console.error('Failed to cancel swap request:', error)
-    return NextResponse.json({ error: 'Failed to cancel swap request' }, { status: 500 })
+    console.error('Failed to cancel request:', error)
+    return NextResponse.json({ error: 'Failed to cancel request' }, { status: 500 })
   }
 })

@@ -1,3 +1,7 @@
+> **DEPRECATED** — This planning spec has been superseded by the implemented Pricing Rules engine. See `docs/features/happy-hour.md` for the canonical, production documentation. Do not implement from this spec.
+
+---
+
 # 16 - Happy Hour
 
 **Status:** Planning

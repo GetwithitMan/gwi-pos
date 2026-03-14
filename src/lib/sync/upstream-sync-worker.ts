@@ -346,6 +346,19 @@ async function runSyncCycle(): Promise<void> {
     console.error('[UpstreamSync] Cycle error:', err)
     metrics.errorCount++
     consecutiveFailures++
+
+    // Write to venue diagnostic log (fire-and-forget, dynamic import to avoid circular deps)
+    void import('../venue-logger').then(({ logVenueEvent }) =>
+      logVenueEvent({
+        level: consecutiveFailures >= 3 ? 'error' : 'warn',
+        source: 'sync',
+        category: 'sync',
+        message: `Upstream sync cycle failed (attempt ${consecutiveFailures}): ${err instanceof Error ? err.message : String(err)}`,
+        details: { consecutiveFailures, totalSynced: 0 },
+        stackTrace: err instanceof Error ? err.stack : undefined,
+      })
+    ).catch(console.error)
+
     if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
       isInOutage = true
       console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)

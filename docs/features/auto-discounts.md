@@ -13,7 +13,7 @@ Rule-based automatic discounts that apply to orders without server intervention.
 - **Quantity discount** — 3+ items → 10% off
 - **Mix-and-match bundles** — combine items from different categories
 - **Spend threshold** — order over $50 → 15% off
-- **Time-based (Happy Hour)** — active during configured time windows
+- **Time-based** — active during configured time windows (note: time-based *price adjustments* are handled by the separate Pricing Rules engine; see `docs/features/happy-hour.md`)
 - Real-time rule evaluation on every item add/remove
 - Rule priority ordering + stacking exclusions (can't combine happy hour + late night)
 - Maximum discount caps per rule
@@ -29,7 +29,9 @@ Rule-based automatic discounts that apply to orders without server intervention.
 
 ## Existing Related Features
 - Manual discounts: `docs/features/discounts.md`
-- Happy Hour (time-based pricing): see `docs/skills/SPEC-16-HAPPY-HOUR.md`
+- Pricing Rules (time-based price adjustments): see `docs/features/happy-hour.md`
+
+> **Note:** Auto-discounts are distinct from Pricing Rules. Auto-discounts handle BOGO/quantity-based promotions; Pricing Rules handle time-based price adjustments (happy hour, late night, brunch pricing, etc.).
 
 ## SPEC Document
 `docs/skills/SPEC-60-AUTO-DISCOUNTS.md`

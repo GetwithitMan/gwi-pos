@@ -48,6 +48,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   dinner_show: 'Dinner Show',
   concert: 'Concert',
   private_event: 'Private Event',
+  special_occasion: 'Special Occasion',
   comedy_night: 'Comedy Night',
   karaoke: 'Karaoke Night',
 }

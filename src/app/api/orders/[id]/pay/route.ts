@@ -1847,6 +1847,18 @@ export const POST = withVenue(withTiming(async function POST(
       requestBody: body,
     }).catch(() => {})
 
+    // Write to venue diagnostic log
+    void import('@/lib/venue-logger').then(({ logVenueEvent }) =>
+      logVenueEvent({
+        level: 'error',
+        source: 'server',
+        category: 'payment',
+        message: `Payment failed for order ${orderId}: ${error instanceof Error ? error.message : String(error)}`,
+        details: { orderId, method: body?.method },
+        stackTrace: error instanceof Error ? error.stack : undefined,
+      })
+    ).catch(console.error)
+
     return NextResponse.json(
       { error: 'Failed to process payment', detail: error instanceof Error ? error.message : String(error) },
       { status: 500 }

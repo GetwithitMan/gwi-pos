@@ -24,6 +24,10 @@ Spirit category and bottle product management with pour cost tracking, cocktail 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
 | Admin | `/liquor-builder` (6-tab builder) | Managers |
+| Admin | `/liquor-inventory` → `LiquorInventory` component | Managers |
+| Admin | `/settings/liquor-builder` (alias for `/liquor-builder`) | Managers |
+| Admin | `/reports/liquor` | Managers |
+| POS Web | `BartenderView` — bar hot buttons, spirit tier, pour size | Bartenders |
 | POS Web | ModifierModal (spirit tier select, pour size) | Bartenders, Servers |
 | Android | Spirit tier quick-select, pour size | Bartenders |
 
@@ -41,9 +45,23 @@ Spirit category and bottle product management with pour cost tracking, cocktail 
 | `src/app/api/liquor/recipes/route.ts` | Cocktail recipes with cost calculations |
 | `src/app/api/liquor/upsells/route.ts` | Upsell statistics and recording |
 | `src/app/api/liquor/menu-items/route.ts` | List liquor menu items |
-| `src/app/(admin)/liquor-builder/page.tsx` | Main builder page (2061 lines) |
-| `src/app/(admin)/liquor-builder/types.ts` | TypeScript interfaces |
-| `src/lib/liquor-inventory.ts` | `processLiquorInventory()`, spirit substitution |
+| `src/app/api/orders/[id]/bottle-service/route.ts` | `POST` open bottle service tab (pre-auth + tier), `GET` bottle service status |
+| `src/app/(admin)/liquor-builder/page.tsx` | Main builder page (spirits, bottles, drinks, modifiers, recipes, inventory) |
+| `src/app/(admin)/liquor-builder/types.ts` | TypeScript interfaces (`SpiritCategory`, `BottleProduct`) |
+| `src/app/(admin)/liquor-builder/CategoryModal.tsx` | Spirit category create/edit modal |
+| `src/app/(admin)/liquor-builder/BottleModal.tsx` | Bottle product create/edit modal |
+| `src/app/(admin)/liquor-builder/CreateMenuItemModal.tsx` | Create menu item from bottle product |
+| `src/app/(admin)/liquor-builder/LiquorModifierGroupEditor.tsx` | Inline modifier group editor |
+| `src/app/(admin)/liquor-inventory/page.tsx` | Liquor inventory admin page |
+| `src/app/(admin)/settings/liquor-builder/page.tsx` | Alias redirect to `/liquor-builder` |
+| `src/app/(admin)/reports/liquor/page.tsx` | Liquor reports |
+| `src/components/liquor/LiquorInventory.tsx` | Liquor inventory component (bottle stock, categories, tiers, container types) |
+| `src/components/liquor/LiquorModifiers.tsx` | Liquor modifier template management (reusable groups for drinks) |
+| `src/components/bartender/BartenderView.tsx` | Bar POS view with hot buttons, spirit tier selection, pour sizes |
+| `src/components/bartender/SpiritSelectionModal.tsx` | Spirit upgrade selection modal |
+| `src/components/bartender/bartender-settings.ts` | Bar hot modifier config, common bar modifier names |
+| `src/components/tabs/BottleServiceBanner.tsx` | Bottle service progress banner (spend tracking, re-auth alerts) |
+| `src/lib/liquor-inventory.ts` | `processLiquorInventory()`, `recordSpiritUpsells()`, `getLiquorUsageSummary()` |
 | `src/components/modifiers/useModifierSelections.ts` | Pour size + spirit tier selection |
 
 ---
@@ -66,6 +84,8 @@ Spirit category and bottle product management with pour cost tracking, cocktail 
 | `GET` | `/api/liquor/recipes` | Employee PIN | List cocktails with cost breakdown |
 | `GET/POST` | `/api/liquor/upsells` | Employee PIN | Upsell stats and recording |
 | `GET` | `/api/liquor/menu-items` | Employee PIN | List liquor menu items |
+| `POST` | `/api/orders/[id]/bottle-service` | Employee PIN | Open bottle service tab (pre-auth + tier selection) |
+| `GET` | `/api/orders/[id]/bottle-service` | Employee PIN | Get bottle service status (spend progress, alerts) |
 
 ---
 
@@ -138,6 +158,19 @@ SpiritUpsellEvent {
   priceDifference Decimal
   wasAccepted     Boolean
 }
+
+BottleServiceTier {
+  id                  String
+  locationId          String
+  name                String            // "Bronze", "Silver", "Gold", "Platinum"
+  description         String?
+  color               String            // Banner/badge color (default: gold #D4AF37)
+  depositAmount       Decimal           // Pre-auth amount ($500, $1000, $2000)
+  minimumSpend        Decimal           // Soft minimum spend requirement
+  autoGratuityPercent Decimal?          // Override auto-gratuity for this tier
+  sortOrder           Int
+  isActive            Boolean
+}
 ```
 
 ---
@@ -173,6 +206,49 @@ Example: 750mL bottle @ $25 with 1.5oz pours → 16 pours → $1.5625/pour
 - Recipe ingredient must have `isSubstitutable: true`
 - Validated by `spiritCategoryId` match
 
+### Bartender View (Bar Hot Buttons)
+- `BartenderView` is the primary bar POS interface at `src/components/bartender/BartenderView.tsx`
+- Shows categories filtered to `categoryShow: 'bar'` or `categoryType: 'drinks'/'liquor'`
+- Hot modifiers: common bar modifiers (e.g., rocks, neat, dirty, shaken) displayed as quick-tap buttons below each item
+- Hot modifier config defined in `src/components/bartender/bartender-settings.ts` (`COMMON_BAR_MODIFIERS`, `HOT_MODIFIER_CONFIG`)
+- Spirit tier quick-select: distinct color-coded buttons for Well, Call, Premium, Top Shelf
+- Pour size quick-select: Shot (1x), Double (2x), Tall (1.5x), Short (0.75x) with teal gradient colors
+- Custom pour sizes supported via `MenuItem.pourSizes` JSON field
+- `SpiritSelectionModal` provides full-screen spirit upgrade selection
+
+### Bottle Service
+- Managed via `POST/GET /api/orders/[id]/bottle-service`
+- Opening a bottle service tab: selects a `BottleServiceTier`, runs a Datacap EMV PreAuth for the deposit amount
+- Creates `OrderCard` record and sets `Order.isBottleService = true`
+- Tiers (`BottleServiceTier`): name, color, deposit amount, minimum spend, optional auto-gratuity percent
+- `BottleServiceBanner` component tracks spend progress, minimum spend status, re-auth alerts
+- Re-auth alert triggers when spend reaches 80% of deposit amount
+- Increment auth failure flag persists so bartender sees "card limit reached" alert
+- Socket-driven refresh: listens to `order:updated`, `order:item-added`, `tab:updated`, `payment:processed`
+- 20s fallback polling only when socket is disconnected
+
+### Liquor Inventory Management
+- `LiquorInventory` component at `src/components/liquor/LiquorInventory.tsx`
+- Displays bottle products organized by spirit category with tier badges (Well/Call/Premium/Top Shelf)
+- Beer tier labels: DOM/IMP/CRFT/PREM+; Wine tier labels: HOUSE/GLASS/RESV/CELLR
+- Container type display: Can, Btl, Draft, Glass
+- Subtype classification with color-coded badges (domestic, import, craft for beer; red, white, rose for wine)
+- Category and bottle create/edit modals inline
+
+### Liquor Modifier Templates
+- `LiquorModifiers` component at `src/components/liquor/LiquorModifiers.tsx`
+- Manages reusable modifier groups with `modifierTypes: ['liquor']` (excludes spirit groups and linked-item groups)
+- Left panel lists templates with active modifier count; right panel has inline `LiquorModifierGroupEditor`
+- Create/delete groups via `POST/DELETE /api/menu/modifiers` and `/api/menu/modifiers/[id]`
+
+### Inventory Deduction Details
+- `processLiquorInventory()` batches all bottle product and inventory item lookups to minimize DB queries
+- Uses Prisma's atomic `decrement` on `InventoryItem.currentStock` to prevent race conditions on concurrent payments
+- Creates `InventoryItemTransaction` records for audit trail (type: `sale`, referenceType: `order`)
+- Negative stock is allowed (soft warning only) — reconciled via count sheet at bar close
+- `recordSpiritUpsells()` tracks upsell acceptance for analytics
+- `getLiquorUsageSummary()` provides per-order pour cost breakdown
+
 ### Edge Cases & Business Rules
 - Single-tier stacking ONLY — no spirit stacking by design
 - Bottles from menu builder: `needsVerification: true` until admin reviews
@@ -180,6 +256,8 @@ Example: 750mL bottle @ $25 with 1.5oz pours → 16 pours → $1.5625/pour
 - Wine-specific: `alcoholSubtype` (red/white/rose/sparkling), `vintage` year
 - Beer-specific: `alcoholSubtype` (domestic/import/craft/seltzer/na)
 - Bottle → MenuItem is soft 1:1 (one bottle, one menu item)
+- `InventoryItem.currentStock` (oz) is canonical; `BottleProduct.currentStock` is deprecated
+- Inventory deduction is fire-and-forget — never blocks payment
 
 ---
 
@@ -191,6 +269,8 @@ Example: 750mL bottle @ $25 with 1.5oz pours → 16 pours → $1.5625/pour
 | Orders | Pour size selection, spirit tier on order items |
 | Reports | Liquor reports: pour cost %, bottle variance |
 | Inventory | Bottle deductions on payment |
+| Tabs | Bottle service tab with deposit pre-auth and minimum spend tracking |
+| Payments | Bottle service deposit pre-auth via Datacap |
 
 ### These features MODIFY this feature:
 | Feature | How / Why |
@@ -198,12 +278,14 @@ Example: 750mL bottle @ $25 with 1.5oz pours → 16 pours → $1.5625/pour
 | Menu | Liquor items are menu items with `categoryType: 'liquor'` |
 | Modifiers | Spirit tier modifiers with `linkedMenuItemId` |
 | Inventory | Bottle stock tracking |
+| Payments | Payment triggers `processLiquorInventory()` for deductions |
 
 ### BEFORE CHANGING THIS FEATURE, VERIFY:
 - [ ] **Modifiers** — spirit tier and linked menu item interactions
 - [ ] **Inventory** — bottle deduction calculations
 - [ ] **Orders** — pour size and multiplier on order items
 - [ ] **Menu** — `categoryType: 'liquor'` routing
+- [ ] **Bottle Service** — deposit pre-auth, minimum spend, re-auth alerts
 
 ---
 
@@ -221,6 +303,9 @@ Example: 750mL bottle @ $25 with 1.5oz pours → 16 pours → $1.5625/pour
 - ML to OZ conversion: 29.5735 mL/oz
 - Bottle metrics auto-recalculated on size/cost/pour changes
 - Inventory unification: multiple bottle sizes can share one InventoryItem
+- Negative stock allowed at bar — reconciled via count sheet (soft warning only)
+- Bottle service re-auth alert threshold: 80% of deposit amount
+- `BottleProduct.currentStock` is deprecated — use `InventoryItem.currentStock` (oz) as canonical
 
 ---
 
@@ -236,7 +321,9 @@ Example: 750mL bottle @ $25 with 1.5oz pours → 16 pours → $1.5625/pour
 - **Cross-ref:** `docs/features/_CROSS-REF-MATRIX.md` → Liquor Management row
 - **Modifiers:** `docs/features/modifiers.md`
 - **Inventory:** `docs/domains/INVENTORY-DOMAIN.md`
+- **Bottle service:** `docs/features/bottle-service.md`
+- **Tabs:** `docs/features/tabs.md`
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-14*

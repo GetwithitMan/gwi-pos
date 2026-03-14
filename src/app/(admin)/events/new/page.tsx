@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { Button } from '@/components/ui/button'
 
 interface PricingTierInput {
   name: string
@@ -31,6 +33,7 @@ const EVENT_TYPES = [
   { value: 'concert', label: 'Concert' },
   { value: 'comedy_night', label: 'Comedy Night' },
   { value: 'karaoke', label: 'Karaoke Night' },
+  { value: 'special_occasion', label: 'Special Occasion' },
   { value: 'private_event', label: 'Private Event' },
 ]
 
@@ -87,7 +90,6 @@ export default function CreateEventPage() {
     setSaving(true)
     setError('')
 
-    // Validate
     const validTiers = pricingTiers.filter(t => t.name && t.price > 0)
     if (validTiers.length === 0) {
       setError('At least one pricing tier with name and price is required')
@@ -115,7 +117,6 @@ export default function CreateEventPage() {
         throw new Error(data.error || 'Failed to create event')
       }
 
-      // Redirect to event page
       router.push(`/events/${data.data.event.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create event')
@@ -127,306 +128,304 @@ export default function CreateEventPage() {
   if (!hydrated) return null
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <Link href="/events" className="text-gray-900 hover:text-white text-sm mb-4 inline-block">
-        &larr; Back to Events
-      </Link>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-4xl mx-auto">
+        <AdminPageHeader
+          title="Create New Event"
+          backHref="/events"
+          breadcrumbs={[{ label: 'Events', href: '/events' }]}
+        />
 
-      <h1 className="text-2xl font-bold mb-6">Create New Event</h1>
+        {error && (
+          <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6 border border-red-200">
+            {error}
+          </div>
+        )}
 
-      {error && (
-        <div className="bg-red-900/50 text-red-300 p-4 rounded-lg mb-6">
-          {error}
-        </div>
-      )}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Info */}
+          <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Basic Information</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic Info */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-lg font-medium mb-4">Basic Information</h2>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-900 mb-1">Event Name *</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                placeholder="e.g., New Year's Eve Gala"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm text-gray-900 mb-1">Description</label>
-              <textarea
-                value={form.description}
-                onChange={e => setForm({ ...form, description: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                rows={3}
-                placeholder="Event description for ticket buyers..."
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm text-gray-900 mb-1">Event Type</label>
-                <select
-                  value={form.eventType}
-                  onChange={e => setForm({ ...form, eventType: e.target.value })}
-                  className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                >
-                  {EVENT_TYPES.map(type => (
-                    <option key={type.value} value={type.value}>{type.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-900 mb-1">Total Capacity *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Event Name *</label>
                 <input
-                  type="number"
-                  value={form.totalCapacity}
-                  onChange={e => setForm({ ...form, totalCapacity: Number(e.target.value) })}
-                  className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                  min="1"
+                  type="text"
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., New Year's Eve Gala"
                   required
                 />
               </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Schedule */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-lg font-medium mb-4">Schedule</h2>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-900 mb-1">Event Date *</label>
-              <input
-                type="date"
-                value={form.eventDate}
-                onChange={e => setForm({ ...form, eventDate: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-900 mb-1">Doors Open *</label>
-              <input
-                type="time"
-                value={form.doorsOpen}
-                onChange={e => setForm({ ...form, doorsOpen: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-900 mb-1">Show Start *</label>
-              <input
-                type="time"
-                value={form.startTime}
-                onChange={e => setForm({ ...form, startTime: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-900 mb-1">End Time</label>
-              <input
-                type="time"
-                value={form.endTime}
-                onChange={e => setForm({ ...form, endTime: e.target.value })}
-                className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Ticketing */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-lg font-medium mb-4">Ticketing Options</h2>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-900 mb-2">Ticketing Mode</label>
-              <div className="grid grid-cols-3 gap-4">
-                {TICKETING_MODES.map(mode => (
-                  <label
-                    key={mode.value}
-                    className={`p-4 rounded-lg border-2 cursor-pointer ${
-                      form.ticketingMode === mode.value
-                        ? 'border-blue-500 bg-blue-900/20'
-                        : 'border-gray-700 hover:border-gray-600'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="ticketingMode"
-                      value={mode.value}
-                      checked={form.ticketingMode === mode.value}
-                      onChange={e => setForm({ ...form, ticketingMode: e.target.value })}
-                      className="sr-only"
-                    />
-                    <div className="font-medium">{mode.label}</div>
-                    <div className="text-sm text-gray-900 mt-1">{mode.description}</div>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm text-gray-900 mb-1">Max Per Order</label>
-                <input
-                  type="number"
-                  value={form.maxTicketsPerOrder}
-                  onChange={e => setForm({ ...form, maxTicketsPerOrder: Number(e.target.value) })}
-                  className="w-full px-4 py-2 bg-gray-700 rounded-lg"
-                  min="1"
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm({ ...form, description: e.target.value })}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  placeholder="Event description for ticket buyers..."
                 />
               </div>
-              <label className="flex items-center gap-3 pt-6">
-                <input
-                  type="checkbox"
-                  checked={form.allowOnlineSales}
-                  onChange={e => setForm({ ...form, allowOnlineSales: e.target.checked })}
-                  className="w-5 h-5"
-                />
-                <span>Allow Online Sales</span>
-              </label>
-              <label className="flex items-center gap-3 pt-6">
-                <input
-                  type="checkbox"
-                  checked={form.allowPOSSales}
-                  onChange={e => setForm({ ...form, allowPOSSales: e.target.checked })}
-                  className="w-5 h-5"
-                />
-                <span>Allow POS Sales</span>
-              </label>
-            </div>
-          </div>
-        </div>
 
-        {/* Pricing Tiers */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-medium">Pricing Tiers</h2>
-            <button
-              type="button"
-              onClick={addTier}
-              className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700 text-sm"
-            >
-              Add Tier
-            </button>
-          </div>
-
-          <div className="space-y-4">
-            {pricingTiers.map((tier, index) => (
-              <div key={index} className="bg-gray-700 rounded-lg p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="text-sm text-gray-900">Tier {index + 1}</div>
-                  {pricingTiers.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeTier(index)}
-                      className="text-red-400 hover:text-red-300 text-sm"
-                    >
-                      Remove
-                    </button>
-                  )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Event Type</label>
+                  <select
+                    value={form.eventType}
+                    onChange={e => setForm({ ...form, eventType: e.target.value })}
+                    className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {EVENT_TYPES.map(type => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
                 </div>
-
-                <div className="grid grid-cols-6 gap-4">
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-900 mb-1">Name *</label>
-                    <input
-                      type="text"
-                      value={tier.name}
-                      onChange={e => updateTier(index, { name: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-600 rounded"
-                      placeholder="e.g., VIP, General"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-900 mb-1">Price *</label>
-                    <input
-                      type="number"
-                      value={tier.price}
-                      onChange={e => updateTier(index, { price: Number(e.target.value) })}
-                      className="w-full px-3 py-2 bg-gray-600 rounded"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-900 mb-1">Service Fee</label>
-                    <input
-                      type="number"
-                      value={tier.serviceFee}
-                      onChange={e => updateTier(index, { serviceFee: Number(e.target.value) })}
-                      className="w-full px-3 py-2 bg-gray-600 rounded"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-900 mb-1">Quantity</label>
-                    <input
-                      type="number"
-                      value={tier.quantityAvailable || ''}
-                      onChange={e => updateTier(index, {
-                        quantityAvailable: e.target.value ? Number(e.target.value) : null
-                      })}
-                      className="w-full px-3 py-2 bg-gray-600 rounded"
-                      min="0"
-                      placeholder="Unlimited"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-900 mb-1">Color</label>
-                    <input
-                      type="color"
-                      value={tier.color}
-                      onChange={e => updateTier(index, { color: e.target.value })}
-                      className="w-full h-[38px] bg-gray-600 rounded cursor-pointer"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <label className="block text-xs text-gray-900 mb-1">Description</label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Capacity *</label>
                   <input
-                    type="text"
-                    value={tier.description}
-                    onChange={e => updateTier(index, { description: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-600 rounded"
-                    placeholder="e.g., Premium seating with complimentary drinks"
+                    type="number"
+                    value={form.totalCapacity}
+                    onChange={e => setForm({ ...form, totalCapacity: Number(e.target.value) })}
+                    className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="1"
+                    required
                   />
                 </div>
               </div>
-            ))}
+            </div>
           </div>
-        </div>
 
-        {/* Submit */}
-        <div className="flex gap-4">
-          <Link
-            href="/events"
-            className="flex-1 px-4 py-3 bg-gray-700 rounded-lg text-center hover:bg-gray-600"
-          >
-            Cancel
-          </Link>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex-1 px-4 py-3 bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? 'Creating...' : 'Create Event'}
-          </button>
-        </div>
-      </form>
+          {/* Schedule */}
+          <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Schedule</h2>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Event Date *</label>
+                <input
+                  type="date"
+                  value={form.eventDate}
+                  onChange={e => setForm({ ...form, eventDate: e.target.value })}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Doors Open *</label>
+                <input
+                  type="time"
+                  value={form.doorsOpen}
+                  onChange={e => setForm({ ...form, doorsOpen: e.target.value })}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Show Start *</label>
+                <input
+                  type="time"
+                  value={form.startTime}
+                  onChange={e => setForm({ ...form, startTime: e.target.value })}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                <input
+                  type="time"
+                  value={form.endTime}
+                  onChange={e => setForm({ ...form, endTime: e.target.value })}
+                  className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Ticketing */}
+          <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Ticketing Options</h2>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Ticketing Mode</label>
+                <div className="grid grid-cols-3 gap-4">
+                  {TICKETING_MODES.map(mode => (
+                    <label
+                      key={mode.value}
+                      className={`p-4 rounded-lg border-2 cursor-pointer transition-colors ${
+                        form.ticketingMode === mode.value
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="ticketingMode"
+                        value={mode.value}
+                        checked={form.ticketingMode === mode.value}
+                        onChange={e => setForm({ ...form, ticketingMode: e.target.value })}
+                        className="sr-only"
+                      />
+                      <div className="font-medium text-gray-900">{mode.label}</div>
+                      <div className="text-sm text-gray-600 mt-1">{mode.description}</div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Per Order</label>
+                  <input
+                    type="number"
+                    value={form.maxTicketsPerOrder}
+                    onChange={e => setForm({ ...form, maxTicketsPerOrder: Number(e.target.value) })}
+                    className="w-full px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="1"
+                  />
+                </div>
+                <label className="flex items-center gap-3 pt-6">
+                  <input
+                    type="checkbox"
+                    checked={form.allowOnlineSales}
+                    onChange={e => setForm({ ...form, allowOnlineSales: e.target.checked })}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-gray-700">Allow Online Sales</span>
+                </label>
+                <label className="flex items-center gap-3 pt-6">
+                  <input
+                    type="checkbox"
+                    checked={form.allowPOSSales}
+                    onChange={e => setForm({ ...form, allowPOSSales: e.target.checked })}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-gray-700">Allow POS Sales</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Pricing Tiers */}
+          <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Pricing Tiers</h2>
+              <Button type="button" onClick={addTier} variant="secondary" size="sm">
+                Add Tier
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              {pricingTiers.map((tier, index) => (
+                <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="text-sm font-medium text-gray-700">Tier {index + 1}</div>
+                    {pricingTiers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeTier(index)}
+                        className="text-red-600 hover:text-red-700 text-sm"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-6 gap-4">
+                    <div className="col-span-2">
+                      <label className="block text-xs text-gray-600 mb-1">Name *</label>
+                      <input
+                        type="text"
+                        value={tier.name}
+                        onChange={e => updateTier(index, { name: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="e.g., VIP, General"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Price *</label>
+                      <input
+                        type="number"
+                        value={tier.price}
+                        onChange={e => updateTier(index, { price: Number(e.target.value) })}
+                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Service Fee</label>
+                      <input
+                        type="number"
+                        value={tier.serviceFee}
+                        onChange={e => updateTier(index, { serviceFee: Number(e.target.value) })}
+                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Quantity</label>
+                      <input
+                        type="number"
+                        value={tier.quantityAvailable || ''}
+                        onChange={e => updateTier(index, {
+                          quantityAvailable: e.target.value ? Number(e.target.value) : null
+                        })}
+                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="0"
+                        placeholder="Unlimited"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">Color</label>
+                      <input
+                        type="color"
+                        value={tier.color}
+                        onChange={e => updateTier(index, { color: e.target.value })}
+                        className="w-full h-[38px] bg-white border border-gray-300 rounded cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="block text-xs text-gray-600 mb-1">Description</label>
+                    <input
+                      type="text"
+                      value={tier.description}
+                      onChange={e => updateTier(index, { description: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="e.g., Premium seating with complimentary drinks"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Submit */}
+          <div className="flex gap-4">
+            <Link
+              href="/events"
+              className="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg text-center text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors font-medium"
+            >
+              {saving ? 'Creating...' : 'Create Event'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

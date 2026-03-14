@@ -249,7 +249,7 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | Scheduling | `docs/features/scheduling.md` | — | `src/app/api/schedules/`, `src/app/api/scheduled-shifts/` |
 | Security settings | `docs/features/security-settings.md` | — | `src/app/(admin)/settings/security/` |
 | Audit trail | `docs/features/audit-trail.md` | — | `src/app/api/audit/`, `src/lib/audit-log.ts` |
-| Happy hour pricing | `docs/features/happy-hour.md` | — | `src/lib/settings.ts` (`isHappyHourActive`, `getHappyHourPrice`) |
+| Pricing Rules (time-based) | `docs/features/happy-hour.md` | — | `src/lib/settings.ts` (`isPricingRuleActive`, `getBestPricingRuleForItem`, `getActivePricingRules`) |
 | Daily prep counts | `docs/features/daily-prep-count.md` | — | `src/app/api/daily-prep-counts/` |
 | Coupons / promo codes | `docs/features/coupons.md` | — | `src/app/api/coupons/` |
 | Walkout retry | `docs/features/walkout-retry.md` | — | `src/app/api/orders/[id]/mark-walkout/`, `src/app/api/datacap/walkout-retry/` — ⚠️ no scheduler, no write-off API |

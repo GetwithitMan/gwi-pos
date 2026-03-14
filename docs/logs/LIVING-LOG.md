@@ -5,6 +5,41 @@
 
 ---
 
+## 2026-03-14 — Pricing Rules Overhaul
+
+### Commits
+- Pricing Rules engine: types, 7 engine functions, validation, overlap detection
+- Settings page: complete rewrite (1028 lines), two-column modal, hierarchical item picker
+- Integration: banner, POS menu indicators, nav rename, API merge, order wiring, migration
+- Bug fixes: API response shape, itemTotal recalculation, Prisma schema, migration numbering
+- Security hardening: server-side validation, HTML sanitization, NaN/Infinity guards, scope bypass fix
+- Dual pricing + pricing rules: card price display, formula consistency
+- Price increases: force-hide badge/strikethrough/CFD countdown
+- CFD countdown banner: new component on idle + order screens (per-rule toggle)
+- Split orders: pricingRuleApplied JSONB now preserved through splits
+- Documentation: 8 docs updated, SPEC-16 deprecated, cross-ref matrix updated
+
+### Features
+- Multi-rule pricing engine replacing single happy hour config
+- 3 rule types: recurring (weekly), one-time (event), yearly-recurring
+- 5 adjustment types: % off, $ off, % up, $ up, override price
+- Priority-based resolution (no stacking), cross-midnight support
+- Per-rule: scope (all/categories/items), badge, strikethrough, CFD countdown
+- Prices locked on OrderItem at creation time (survives rule expiry)
+- Legacy happyHour auto-migrated on first settings read
+
+### Bug Fixes
+- API returns `{data: {items: [...]}}` not `{data: [...]}` — fixed settings page parsing
+- itemTotal not recalculated after pricing rule adjustment — fixed
+- pricingRuleApplied missing from Prisma schema — added
+- Migration 046 number collision — renumbered to 050
+- Dual pricing card price: `.toFixed(2)` vs `Math.round` penny discrepancy — fixed
+
+### Blockers
+- None
+
+---
+
 ## 2026-03-13 — Entertainment Timer Fix (Android Register + Server), System Audit, CAS PDN Scale
 
 ### Entertainment Timed Rental — Android Register BAR Tab Fix

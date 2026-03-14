@@ -26,8 +26,11 @@ interface SwapRequestEmployee {
 
 interface IncomingSwapRequest {
   id: string
+  type: 'swap' | 'cover' | 'drop'
   status: string
+  reason: string | null
   notes: string | null
+  managerNote: string | null
   createdAt: string
   shift: {
     id: string
@@ -167,8 +170,14 @@ function MobileScheduleContent() {
   const [incomingSwaps, setIncomingSwaps] = useState<IncomingSwapRequest[]>([])
   const [swapsLoading, setSwapsLoading] = useState(false)
 
+  // Outgoing requests (made BY this employee)
+  const [myRequests, setMyRequests] = useState<IncomingSwapRequest[]>([])
+  const [myRequestsLoading, setMyRequestsLoading] = useState(false)
+
   // Swap request dialog state (for requesting a swap on own shift)
   const [swapDialogShift, setSwapDialogShift] = useState<ScheduleShift | null>(null)
+  const [swapRequestType, setSwapRequestType] = useState<'swap' | 'cover' | 'drop'>('swap')
+  const [swapReason, setSwapReason] = useState('')
   const [swapNotes, setSwapNotes] = useState('')
   const [swapSubmitting, setSwapSubmitting] = useState(false)
 
@@ -246,14 +255,39 @@ function MobileScheduleContent() {
     }
   }, [employeeId, locationId])
 
+  const loadMyRequests = useCallback(async () => {
+    if (!employeeId || !locationId) return
+    setMyRequestsLoading(true)
+    try {
+      const params = new URLSearchParams({
+        locationId,
+        requestedByEmployeeId: employeeId,
+      })
+      const res = await fetch(`/api/shift-swap-requests?${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        // Show only non-terminal (pending/accepted) requests
+        const active = (data.data.requests ?? []).filter(
+          (r: IncomingSwapRequest) => r.status === 'pending' || r.status === 'accepted'
+        )
+        setMyRequests(active)
+      }
+    } catch (err) {
+      console.error('Failed to load my requests:', err)
+    } finally {
+      setMyRequestsLoading(false)
+    }
+  }, [employeeId, locationId])
+
   useEffect(() => {
     if (authChecked && employeeId && locationId) {
       loadSchedule()
       loadIncomingSwaps()
+      loadMyRequests()
     }
-  }, [authChecked, employeeId, locationId, loadSchedule, loadIncomingSwaps])
+  }, [authChecked, employeeId, locationId, loadSchedule, loadIncomingSwaps, loadMyRequests])
 
-  // Submit a swap request for one of the employee's own shifts
+  // Submit a shift request for one of the employee's own shifts
   const handleSendSwapRequest = async () => {
     if (!swapDialogShift || !employeeId || !locationId) return
     if (!swapDialogShift.scheduleId) {
@@ -270,20 +304,25 @@ function MobileScheduleContent() {
           body: JSON.stringify({
             locationId,
             requestedByEmployeeId: employeeId,
+            type: swapRequestType,
+            reason: swapReason || undefined,
             notes: swapNotes || undefined,
           }),
         }
       )
       if (res.ok) {
-        toast.success('Swap request sent')
+        const typeLabels = { swap: 'Swap', cover: 'Cover', drop: 'Drop' }
+        toast.success(`${typeLabels[swapRequestType]} request sent`)
         setSwapDialogShift(null)
+        setSwapRequestType('swap')
+        setSwapReason('')
         setSwapNotes('')
       } else {
         const err = await res.json()
-        toast.error(err.error || 'Failed to send swap request')
+        toast.error(err.error || 'Failed to send request')
       }
     } catch {
-      toast.error('Failed to send swap request')
+      toast.error('Failed to send request')
     } finally {
       setSwapSubmitting(false)
     }
@@ -363,7 +402,7 @@ function MobileScheduleContent() {
         </button>
         <h1 className="text-xl font-bold">My Schedule</h1>
         <button
-          onClick={() => { loadSchedule(); loadIncomingSwaps() }}
+          onClick={() => { loadSchedule(); loadIncomingSwaps(); loadMyRequests() }}
           className="text-white/60 hover:text-white transition-colors"
           aria-label="Refresh"
         >
@@ -458,12 +497,14 @@ function MobileScheduleContent() {
                           </div>
                         )}
 
-                        {/* Swap request button */}
+                        {/* Shift request button */}
                         {isSwappable(shift.status) && (
                           <div className="mt-3 pt-3 border-t border-white/10">
                             <button
                               onClick={() => {
                                 setSwapDialogShift(shift)
+                                setSwapRequestType('swap')
+                                setSwapReason('')
                                 setSwapNotes('')
                               }}
                               className="flex items-center gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300 transition-colors"
@@ -472,7 +513,7 @@ function MobileScheduleContent() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                                   d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                               </svg>
-                              Request Swap
+                              Swap / Cover / Drop
                             </button>
                           </div>
                         )}
@@ -506,49 +547,168 @@ function MobileScheduleContent() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {incomingSwaps.map(req => (
-                    <div
-                      key={req.id}
-                      className="bg-gray-800 rounded-xl p-4 border border-purple-500/20"
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <p className="text-sm font-semibold text-white">
-                            {formatShortDate(req.shift.date)}
-                          </p>
-                          <p className="text-white/60 text-xs">
-                            {formatTime(req.shift.startTime)} – {formatTime(req.shift.endTime)}
-                          </p>
+                  {incomingSwaps.map(req => {
+                    const reqType = req.type || 'swap'
+                    const typeBadgeStyles: Record<string, string> = {
+                      swap: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+                      cover: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                      drop: 'bg-red-500/20 text-red-400 border-red-500/30',
+                    }
+                    const typeLabels: Record<string, string> = {
+                      swap: 'Swap Offer',
+                      cover: 'Cover Request',
+                      drop: 'Drop Request',
+                    }
+                    return (
+                      <div
+                        key={req.id}
+                        className={`bg-gray-800 rounded-xl p-4 border ${
+                          reqType === 'cover' ? 'border-blue-500/20' : reqType === 'drop' ? 'border-red-500/20' : 'border-purple-500/20'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {formatShortDate(req.shift.date)}
+                            </p>
+                            <p className="text-white/60 text-xs">
+                              {formatTime(req.shift.startTime)} – {formatTime(req.shift.endTime)}
+                            </p>
+                          </div>
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full border shrink-0 ${typeBadgeStyles[reqType] ?? typeBadgeStyles.swap}`}>
+                            {typeLabels[reqType] ?? 'Request'}
+                          </span>
                         </div>
-                        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 shrink-0">
-                          Swap Offer
-                        </span>
+
+                        <p className="text-white/50 text-sm mb-1">
+                          From: <span className="text-white/80">{empName(req.requestedByEmployee)}</span>
+                        </p>
+
+                        {req.reason && (
+                          <p className="text-white/40 text-xs mb-1">Reason: {req.reason}</p>
+                        )}
+
+                        {req.notes && (
+                          <p className="text-white/40 text-xs mb-3 italic">&ldquo;{req.notes}&rdquo;</p>
+                        )}
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleAcceptSwap(req)}
+                            className="flex-1 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => handleDeclineSwap(req)}
+                            className="flex-1 py-2 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-600 text-white/70 hover:text-white transition-colors"
+                          >
+                            Decline
+                          </button>
+                        </div>
                       </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
-                      <p className="text-white/50 text-sm mb-3">
-                        From: <span className="text-white/80">{empName(req.requestedByEmployee)}</span>
-                      </p>
+            {/* ── My Outgoing Requests ───────────────────────────────────── */}
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-semibold tracking-widest text-white/40 uppercase">
+                  My Requests
+                  {myRequests.length > 0 && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full text-xs normal-case tracking-normal">
+                      {myRequests.length}
+                    </span>
+                  )}
+                </span>
+              </div>
 
-                      {req.notes && (
-                        <p className="text-white/40 text-xs mb-3 italic">&ldquo;{req.notes}&rdquo;</p>
-                      )}
+              {myRequestsLoading ? (
+                <div className="flex items-center justify-center py-6">
+                  <div className="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : myRequests.length === 0 ? (
+                <div className="bg-gray-800/50 rounded-xl p-4 border border-white/5 text-center text-white/30 text-sm">
+                  No pending requests.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {myRequests.map(req => {
+                    const reqType = req.type || 'swap'
+                    const statusStyles: Record<string, string> = {
+                      pending: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+                      accepted: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                    }
+                    const statusLabels: Record<string, string> = {
+                      pending: 'Pending',
+                      accepted: 'Awaiting Manager',
+                    }
+                    const typeLabels: Record<string, string> = {
+                      swap: 'Swap',
+                      cover: 'Cover',
+                      drop: 'Drop',
+                    }
+                    return (
+                      <div
+                        key={req.id}
+                        className="bg-gray-800 rounded-xl p-4 border border-amber-500/20"
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div>
+                            <p className="text-sm font-semibold text-white">
+                              {formatShortDate(req.shift.date)}
+                            </p>
+                            <p className="text-white/60 text-xs">
+                              {formatTime(req.shift.startTime)} – {formatTime(req.shift.endTime)}
+                            </p>
+                          </div>
+                          <div className="flex gap-1.5 shrink-0">
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded-full border ${statusStyles[req.status] ?? statusStyles.pending}`}>
+                              {statusLabels[req.status] ?? req.status}
+                            </span>
+                          </div>
+                        </div>
 
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleAcceptSwap(req)}
-                          className="flex-1 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-500 text-white transition-colors"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => handleDeclineSwap(req)}
-                          className="flex-1 py-2 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-600 text-white/70 hover:text-white transition-colors"
-                        >
-                          Decline
-                        </button>
+                        <p className="text-white/50 text-xs mb-1">
+                          {typeLabels[reqType]} request
+                          {req.requestedToEmployee && ` to ${empName(req.requestedToEmployee)}`}
+                        </p>
+
+                        {req.reason && (
+                          <p className="text-white/40 text-xs">{req.reason}</p>
+                        )}
+
+                        {req.status === 'pending' && (
+                          <button
+                            onClick={async () => {
+                              if (!locationId) return
+                              try {
+                                const res = await fetch(
+                                  `/api/shift-swap-requests/${req.id}?locationId=${locationId}`,
+                                  { method: 'DELETE' }
+                                )
+                                if (res.ok) {
+                                  toast.success('Request cancelled')
+                                  loadMyRequests()
+                                } else {
+                                  const err = await res.json()
+                                  toast.error(err.error || 'Failed to cancel')
+                                }
+                              } catch {
+                                toast.error('Failed to cancel')
+                              }
+                            }}
+                            className="mt-2 text-xs text-red-400 hover:text-red-300 transition-colors"
+                          >
+                            Cancel Request
+                          </button>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -556,21 +716,21 @@ function MobileScheduleContent() {
         )}
       </div>
 
-      {/* ── Swap Request Dialog (bottom sheet style overlay) ──────────────── */}
+      {/* ── Shift Request Dialog (bottom sheet style overlay) ──────────────── */}
       {swapDialogShift && (
         <div className="fixed inset-0 z-50 flex items-end justify-center">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/60"
-            onClick={() => { setSwapDialogShift(null); setSwapNotes('') }}
+            onClick={() => { setSwapDialogShift(null); setSwapNotes(''); setSwapReason('') }}
           />
 
           {/* Sheet */}
-          <div className="relative w-full max-w-lg bg-gray-900 rounded-t-2xl border-t border-white/10 p-6 space-y-4">
+          <div className="relative w-full max-w-lg bg-gray-900 rounded-t-2xl border-t border-white/10 p-6 space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">Offer Shift for Swap?</h2>
+              <h2 className="text-lg font-bold text-white">Shift Request</h2>
               <button
-                onClick={() => { setSwapDialogShift(null); setSwapNotes('') }}
+                onClick={() => { setSwapDialogShift(null); setSwapNotes(''); setSwapReason('') }}
                 className="text-white/40 hover:text-white transition-colors"
                 aria-label="Close"
               >
@@ -587,6 +747,51 @@ function MobileScheduleContent() {
               </p>
             </div>
 
+            {/* Request type selector */}
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-2">
+                What do you need?
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'swap' as const, label: 'Swap', desc: 'Trade shifts', color: 'purple' },
+                  { value: 'cover' as const, label: 'Cover', desc: 'Get covered', color: 'blue' },
+                  { value: 'drop' as const, label: 'Drop', desc: 'Remove shift', color: 'red' },
+                ]).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setSwapRequestType(opt.value)}
+                    className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-colors text-center ${
+                      swapRequestType === opt.value
+                        ? opt.color === 'purple' ? 'bg-purple-500/20 border-purple-500/40 text-purple-400'
+                          : opt.color === 'blue' ? 'bg-blue-500/20 border-blue-500/40 text-blue-400'
+                          : 'bg-red-500/20 border-red-500/40 text-red-400'
+                        : 'bg-gray-800 border-white/10 text-white/50'
+                    }`}
+                  >
+                    <div className="font-semibold">{opt.label}</div>
+                    <div className="text-[10px] mt-0.5 opacity-70">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Reason */}
+            <div>
+              <label className="block text-sm font-medium text-white/70 mb-1.5">
+                Reason
+              </label>
+              <textarea
+                value={swapReason}
+                onChange={(e) => setSwapReason(e.target.value)}
+                rows={2}
+                className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-xl text-white text-sm resize-none placeholder:text-white/30 focus:outline-none focus:border-purple-500/50"
+                placeholder="Why do you need this?"
+              />
+            </div>
+
+            {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-white/70 mb-1.5">
                 Notes (optional)
@@ -596,13 +801,13 @@ function MobileScheduleContent() {
                 onChange={(e) => setSwapNotes(e.target.value)}
                 rows={2}
                 className="w-full px-3 py-2 bg-gray-800 border border-white/10 rounded-xl text-white text-sm resize-none placeholder:text-white/30 focus:outline-none focus:border-purple-500/50"
-                placeholder="Any reason or message..."
+                placeholder="Any additional details..."
               />
             </div>
 
             <div className="flex gap-3 pt-1">
               <button
-                onClick={() => { setSwapDialogShift(null); setSwapNotes('') }}
+                onClick={() => { setSwapDialogShift(null); setSwapNotes(''); setSwapReason('') }}
                 disabled={swapSubmitting}
                 className="flex-1 py-3 rounded-xl text-sm font-medium bg-gray-800 hover:bg-gray-700 text-white/60 hover:text-white transition-colors"
               >
@@ -611,9 +816,15 @@ function MobileScheduleContent() {
               <button
                 onClick={handleSendSwapRequest}
                 disabled={swapSubmitting}
-                className="flex-1 py-3 rounded-xl text-sm font-semibold bg-purple-600 hover:bg-purple-500 text-white transition-colors disabled:opacity-60"
+                className={`flex-1 py-3 rounded-xl text-sm font-semibold text-white transition-colors disabled:opacity-60 ${
+                  swapRequestType === 'drop'
+                    ? 'bg-red-600 hover:bg-red-500'
+                    : swapRequestType === 'cover'
+                      ? 'bg-blue-600 hover:bg-blue-500'
+                      : 'bg-purple-600 hover:bg-purple-500'
+                }`}
               >
-                {swapSubmitting ? 'Sending...' : 'Send Request'}
+                {swapSubmitting ? 'Sending...' : `Send ${swapRequestType.charAt(0).toUpperCase() + swapRequestType.slice(1)} Request`}
               </button>
             </div>
           </div>

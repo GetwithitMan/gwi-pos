@@ -52,7 +52,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Combo Meals** | [combos.md](combos.md) | Active | pos, android | Menu, Orders, Payments |
 | **Pizza Builder** | [pizza-builder.md](pizza-builder.md) | Active | pos, android | Menu, Orders, Modifiers |
 | **Entertainment** | [entertainment.md](entertainment.md) | Active | pos, android | Orders, Floor Plan, KDS, Payments |
-| **Happy Hour** | [happy-hour.md](happy-hour.md) | Active | pos | Menu, Payments, Settings |
+| **Pricing Rules (Time-Based)** | [happy-hour.md](happy-hour.md) | Active | pos | Menu, Payments, Settings |
 | **Upsell Prompts** | [upsell-prompts.md](upsell-prompts.md) | Schema Built | pos, android | Menu, Orders, Reports |
 | **Repeat Orders** | [repeat-orders.md](repeat-orders.md) | Planned | pos, android | Orders, Menu |
 | **Custom Menus** | [custom-menus.md](custom-menus.md) | Planned | pos, android | Menu, Employees, Settings |

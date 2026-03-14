@@ -726,7 +726,7 @@ When one of these changes, the entire cluster often needs review:
 | **Guest Tenders** | Payments + Gift Cards + House Accounts + Tabs + Pay-at-Table + Memberships | All are non-cash or alternative tender paths — each needs payment permission check |
 | **Staff Lifecycle** | Employees + Time Clock + Shifts + Scheduling | Schedule → clock-in → shift → close → tips all connected |
 | **Venue Operations** | Floor Plan + Coursing + KDS + Entertainment | Physical space, kitchen flow, and order routing interlock |
-| **Promotions** | Discounts + Coupons + Happy Hour + Auto Discounts | All affect order totals — test together when changing pricing logic |
+| **Promotions** | Discounts + Coupons + Pricing Rules + Auto Discounts | All affect order totals — test together when changing pricing logic |
 | **Security & Compliance** | Security Settings + Roles + Audit Trail + Remote Void Approval | Permission model, access log, and void approval chain |
 | **System Operations** | Notifications + EOD Reset + Error Reporting + Audit Trail | Alert routing, day-close, error capture, and compliance log all share service layer |
 | **Debt & Recovery** | Walkout Retry + Chargebacks + House Accounts | All represent money owed with incomplete close paths — no scheduler, no write-off UI built |

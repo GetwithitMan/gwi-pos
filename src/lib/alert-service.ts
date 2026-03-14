@@ -20,6 +20,8 @@
 import { db } from './db'
 import { getLocationSettings } from './location-cache'
 import { parseSettings } from './settings'
+import { logVenueEvent } from './venue-logger'
+import type { VenueLogLevel, VenueLogCategory } from './venue-logger'
 
 // ============================================
 // Type Definitions
@@ -154,6 +156,32 @@ export async function dispatchAlert(payload: AlertPayload): Promise<{
         return { sent: false, channels: [], throttled: true }
       }
     }
+
+    // Write a VenueLog entry for every alert dispatch (fire-and-forget)
+    const severityToLevel: Record<string, VenueLogLevel> = {
+      CRITICAL: 'critical', HIGH: 'error', MEDIUM: 'warn', LOW: 'info',
+    }
+    const categoryMap: Record<string, VenueLogCategory> = {
+      PAYMENT: 'payment', ORDER: 'order', NETWORK: 'sync',
+      DATABASE: 'system', FRONTEND: 'system', API: 'system',
+      BUSINESS_LOGIC: 'order', PERFORMANCE: 'system',
+    }
+    void logVenueEvent({
+      level: severityToLevel[payload.severity] || 'info',
+      source: 'server',
+      category: categoryMap[payload.errorType] || 'system',
+      message: `[Alert] ${payload.errorType}: ${payload.message}`,
+      details: {
+        errorCode: payload.errorCode,
+        path: payload.path,
+        action: payload.action,
+        orderId: payload.orderId,
+        paymentId: payload.paymentId,
+        groupId: payload.groupId,
+      },
+      employeeId: payload.employeeId,
+      locationId: payload.locationId,
+    }).catch(console.error)
 
     // Send alerts to all configured channels
     const results = await Promise.allSettled(

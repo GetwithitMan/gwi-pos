@@ -1724,3 +1724,51 @@ export async function dispatchMembershipUpdate(
   }
   return doEmit()
 }
+
+// ==================== Shift Request Events ====================
+
+export async function dispatchShiftRequestUpdate(
+  locationId: string,
+  payload: {
+    action: 'created' | 'accepted' | 'declined' | 'approved' | 'rejected' | 'cancelled'
+    requestId: string
+    type: 'swap' | 'cover' | 'drop'
+    requestedByEmployeeId: string
+    requestedToEmployeeId?: string | null
+    shiftId: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'shift-request:updated', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch shift-request:updated:', error)
+      return false
+    }
+  }
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+  return doEmit()
+}
+
+/**
+ * Dispatch a venue-log:new event to notify the diagnostics UI
+ * that a new log entry has been recorded. Payload is minimal
+ * (just a signal) -- the UI re-fetches on receipt.
+ */
+export async function dispatchVenueLogNew(
+  locationId: string,
+  summary: { level: string; source: string; category: string }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'venue-log:new', summary)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch venue-log:new:', error)
+    return false
+  }
+}

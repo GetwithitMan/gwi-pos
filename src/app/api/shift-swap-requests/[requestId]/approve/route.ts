@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 
-// POST - Manager approves swap (EXECUTES the swap)
-// Body: { locationId: string, approvedByEmployeeId: string }
+// POST - Manager approves a shift request (swap, cover, or drop)
+// For swaps: reassigns shift to target employee
+// For covers: reassigns shift to target employee (who claimed the open request)
+// For drops: marks shift as called_off
+// Body: { locationId: string, approvedByEmployeeId: string, managerNote?: string }
 export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
@@ -11,9 +15,10 @@ export const POST = withVenue(async function POST(
   try {
     const { requestId } = await params
     const body = await request.json()
-    const { locationId, approvedByEmployeeId } = body as {
+    const { locationId, approvedByEmployeeId, managerNote } = body as {
       locationId: string
       approvedByEmployeeId: string
+      managerNote?: string
     }
 
     if (!locationId) {
@@ -29,45 +34,100 @@ export const POST = withVenue(async function POST(
     })
 
     if (!swapRequest) {
-      return NextResponse.json({ error: 'Swap request not found' }, { status: 404 })
+      return NextResponse.json({ error: 'Request not found' }, { status: 404 })
     }
 
     if (swapRequest.locationId !== locationId) {
-      return NextResponse.json({ error: 'Swap request does not belong to this location' }, { status: 403 })
+      return NextResponse.json({ error: 'Request does not belong to this location' }, { status: 403 })
     }
 
     if (swapRequest.deletedAt !== null) {
-      return NextResponse.json({ error: 'Swap request has been cancelled' }, { status: 404 })
+      return NextResponse.json({ error: 'Request has been cancelled' }, { status: 404 })
     }
 
-    if (swapRequest.status !== 'accepted') {
-      return NextResponse.json(
-        { error: `Cannot approve a swap request with status '${swapRequest.status}'. Employee must accept first.` },
-        { status: 400 }
-      )
-    }
+    const requestType = swapRequest.type || 'swap'
 
-    if (!swapRequest.requestedToEmployeeId) {
-      return NextResponse.json(
-        { error: 'Cannot approve: no target employee assigned to this swap request' },
-        { status: 400 }
-      )
+    // For drop requests, manager can approve directly from pending
+    // For swap/cover, employee must accept first (status === 'accepted')
+    if (requestType === 'drop') {
+      if (!['pending', 'accepted'].includes(swapRequest.status)) {
+        return NextResponse.json(
+          { error: `Cannot approve a request with status '${swapRequest.status}'` },
+          { status: 400 }
+        )
+      }
+    } else {
+      if (swapRequest.status !== 'accepted') {
+        return NextResponse.json(
+          { error: `Cannot approve a ${requestType} request with status '${swapRequest.status}'. Employee must accept first.` },
+          { status: 400 }
+        )
+      }
+
+      if (!swapRequest.requestedToEmployeeId) {
+        return NextResponse.json(
+          { error: `Cannot approve: no target employee assigned to this ${requestType} request` },
+          { status: 400 }
+        )
+      }
     }
 
     const now = new Date()
 
-    // Execute the swap in a transaction
+    if (requestType === 'drop') {
+      // Drop: mark the shift as called_off, no reassignment
+      const [updatedRequest, updatedShift] = await db.$transaction([
+        db.shiftSwapRequest.update({
+          where: { id: requestId },
+          data: {
+            status: 'approved',
+            approvedAt: now,
+            approvedByEmployeeId,
+            managerNote: managerNote || null,
+          },
+        }),
+        db.scheduledShift.update({
+          where: { id: swapRequest.shiftId },
+          data: {
+            status: 'called_off',
+          },
+        }),
+      ])
+
+      // Cancel other pending requests for the same shift
+      await db.shiftSwapRequest.updateMany({
+        where: {
+          shiftId: swapRequest.shiftId,
+          status: { in: ['pending'] },
+          id: { not: requestId },
+          deletedAt: null,
+        },
+        data: { status: 'cancelled' },
+      })
+
+      // Socket event
+      void dispatchShiftRequestUpdate(locationId, {
+        action: 'approved',
+        requestId,
+        type: 'drop',
+        requestedByEmployeeId: swapRequest.requestedByEmployeeId,
+        shiftId: swapRequest.shiftId,
+      }, { async: true }).catch(console.error)
+
+      return NextResponse.json({ data: { request: updatedRequest, shift: updatedShift } })
+    }
+
+    // Swap or Cover: reassign the shift to the new employee
     const [updatedRequest, updatedShift] = await db.$transaction([
-      // 1. Mark the swap request as approved
       db.shiftSwapRequest.update({
         where: { id: requestId },
         data: {
           status: 'approved',
           approvedAt: now,
           approvedByEmployeeId,
+          managerNote: managerNote || null,
         },
       }),
-      // 2. Reassign the shift to the new employee
       db.scheduledShift.update({
         where: { id: swapRequest.shiftId },
         data: {
@@ -79,7 +139,7 @@ export const POST = withVenue(async function POST(
       }),
     ])
 
-    // 3. Cancel any other pending requests for the same shift (fire after transaction)
+    // Cancel other pending requests for the same shift
     await db.shiftSwapRequest.updateMany({
       where: {
         shiftId: swapRequest.shiftId,
@@ -90,9 +150,19 @@ export const POST = withVenue(async function POST(
       data: { status: 'cancelled' },
     })
 
+    // Socket event
+    void dispatchShiftRequestUpdate(locationId, {
+      action: 'approved',
+      requestId,
+      type: requestType as 'swap' | 'cover' | 'drop',
+      requestedByEmployeeId: swapRequest.requestedByEmployeeId,
+      requestedToEmployeeId: swapRequest.requestedToEmployeeId,
+      shiftId: swapRequest.shiftId,
+    }, { async: true }).catch(console.error)
+
     return NextResponse.json({ data: { request: updatedRequest, shift: updatedShift } })
   } catch (error) {
-    console.error('Failed to approve swap request:', error)
-    return NextResponse.json({ error: 'Failed to approve swap request' }, { status: 500 })
+    console.error('Failed to approve request:', error)
+    return NextResponse.json({ error: 'Failed to approve request' }, { status: 500 })
   }
 })
