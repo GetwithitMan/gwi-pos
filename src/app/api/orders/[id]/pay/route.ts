@@ -1,20 +1,14 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { z } from 'zod'
 import { db } from '@/lib/db'
 import { OrderStatus, PaymentMethod, PaymentStatus, PmsAttemptStatus } from '@prisma/client'
-import {
-  generateFakeAuthCode,
-  generateFakeTransactionId,
-  calculateRoundingAdjustment,
-  roundAmount,
-} from '@/lib/payment'
-import { parseSettings, getPricingProgram } from '@/lib/settings'
+import { roundAmount } from '@/lib/payment'
+import { parseSettings } from '@/lib/settings'
 import { requireAnyPermission, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
-import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
+import { calculateCardPrice, applyPriceRounding, roundToCents } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -26,7 +20,7 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing, type OvertimeConfig } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate, recalculatePercentDiscounts } from '@/lib/order-calculations'
-import { ingestAndProject, type IngestEvent, type IngestResult } from '@/lib/order-events/ingester'
+import { ingestAndProject, type IngestEvent } from '@/lib/order-events/ingester'
 import { OrderRouter } from '@/lib/order-router'
 import { batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -37,155 +31,26 @@ import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { PAYABLE_STATUSES } from '@/lib/domain/order-status'
-
-/**
- * Resolve which drawer and shift should be attributed for a cash payment.
- *
- * Priority:
- * 1. If terminal has a physical drawer, use it (+ the shift that claimed it)
- * 2. Fall back to the processing employee's own open shift/drawer
- *
- * Card payments return nulls (no drawer attribution needed).
- */
-async function resolveDrawerForPayment(
-  paymentMethod: string,
-  processingEmployeeId: string | null,
-  terminalId?: string,
-): Promise<{ drawerId: string | null; shiftId: string | null }> {
-  // Card payments: no drawer attribution
-  if (paymentMethod !== 'cash') {
-    return { drawerId: null, shiftId: null }
-  }
-
-  // 1. If terminal has a physical drawer, use it
-  if (terminalId) {
-    const drawer = await db.drawer.findFirst({
-      where: { deviceId: terminalId, isActive: true, deletedAt: null },
-      select: { id: true },
-    })
-    if (drawer) {
-      const ownerShift = await db.shift.findFirst({
-        where: { drawerId: drawer.id, status: 'open', deletedAt: null },
-        select: { id: true },
-      })
-      return { drawerId: drawer.id, shiftId: ownerShift?.id ?? null }
-    }
-  }
-
-  // 2. Fall back to the processing employee's own shift
-  if (processingEmployeeId) {
-    const employeeShift = await db.shift.findFirst({
-      where: { employeeId: processingEmployeeId, status: 'open', deletedAt: null },
-      select: { id: true, drawerId: true },
-    })
-    if (employeeShift) {
-      return {
-        drawerId: employeeShift.drawerId ?? null,
-        shiftId: employeeShift.id,
-      }
-    }
-  }
-
-  return { drawerId: null, shiftId: null }
-}
-
-interface PaymentInput {
-  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points' | 'room_charge'
-  amount: number
-  tipAmount?: number
-  // Cash specific
-  amountTendered?: number
-  // Card specific
-  cardBrand?: string
-  cardLast4?: string
-  // Gift card specific
-  giftCardId?: string
-  giftCardNumber?: string
-  // House account specific
-  houseAccountId?: string
-  // Hotel PMS / Bill to Room fields
-  // P1.1: client sends only selectionId; server resolves guest data from in-memory selection
-  selectionId?: string
-  roomNumber?: string
-  guestName?: string
-  pmsReservationId?: string
-  // Loyalty points specific
-  pointsUsed?: number
-  // Datacap Direct fields
-  datacapRecordNo?: string
-  datacapRefNumber?: string
-  datacapSequenceNo?: string
-  authCode?: string
-  entryMethod?: string
-  signatureData?: string
-  amountAuthorized?: number
-  // Datacap processor metadata for ByRecordNo ops + chargeback defense
-  acqRefData?: string
-  processData?: string
-  aid?: string
-  cvm?: string
-  avsResult?: string
-  level2Status?: string
-  tokenFrequency?: string
-  // SAF (Store-and-Forward) — transaction stored offline on reader
-  storedOffline?: boolean
-}
-
-// Zod schema for request validation
-const PaymentInputSchema = z.object({
-  method: z.enum(['cash', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty_points', 'room_charge']),
-  amount: z.number().positive('Amount must be positive').max(999999.99, 'Amount cannot exceed $999,999.99').finite('Amount must be a finite number'),
-  tipAmount: z.number().min(0, 'Tip amount cannot be negative').max(99999.99, 'Tip cannot exceed $99,999.99').finite('Tip must be a finite number').optional(),
-  // Cash specific
-  amountTendered: z.number().positive().optional(),
-  // Card specific
-  cardBrand: z.string().optional(),
-  cardLast4: z.string().length(4, 'Card last 4 must be exactly 4 digits').regex(/^\d{4}$/, 'Card last 4 must be numeric').optional(),
-  // Gift card specific
-  giftCardId: z.string().optional(),
-  giftCardNumber: z.string().optional(),
-  // House account specific
-  houseAccountId: z.string().optional(),
-  // Hotel PMS / Bill to Room fields (P1.1: client sends selectionId, not raw OPERA IDs)
-  selectionId: z.string().optional(),
-  roomNumber: z.string().optional(),
-  guestName: z.string().optional(),
-  pmsReservationId: z.string().optional(),
-  // Loyalty points specific
-  pointsUsed: z.number().int().positive().optional(),
-  // Datacap Direct fields
-  datacapRecordNo: z.string().optional(),
-  datacapRefNumber: z.string().optional(),
-  datacapSequenceNo: z.string().optional(),
-  authCode: z.string().optional(),
-  entryMethod: z.string().optional(),
-  signatureData: z.string().optional(),
-  amountAuthorized: z.number().positive().optional(),
-  // Datacap processor metadata for ByRecordNo ops + chargeback defense
-  acqRefData: z.string().optional(),
-  processData: z.string().optional(),
-  aid: z.string().optional(),
-  cvm: z.string().optional(),
-  avsResult: z.string().optional(),
-  level2Status: z.string().optional(),
-  tokenFrequency: z.string().optional(),
-  // SAF (Store-and-Forward) — transaction stored offline on reader, pending upload
-  storedOffline: z.boolean().optional(),
-})
-
-// PAYMENT-SAFETY: Idempotency design
-// - idempotencyKey is optional in the schema because some clients (legacy, mobile) may not send it.
-// - Server generates a fallback UUID when missing (line below: `finalIdempotencyKey`).
-// - The duplicate check only fires when the CLIENT sends a key, because a server-generated UUID
-//   is unique per request and can never match an existing payment.
-// - For true double-charge prevention, the client MUST generate a UUID on button press and resend
-//   the same key on retries. The PaymentModal already does this.
-const PaymentRequestSchema = z.object({
-  payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
-  employeeId: z.string().optional(),
-  terminalId: z.string().optional(),
-  idempotencyKey: z.string().optional(),
-})
+import {
+  PaymentRequestSchema,
+  normalizePaymentInput,
+  resolveDrawerForPayment,
+  calculateAutoGratuity,
+  checkIdempotencyByKey,
+  checkIdempotencyByRecordNo,
+  validateTipBounds,
+  validatePaymentAmounts,
+  processCashPayment,
+  processCardPayment,
+  processGiftCardPayment,
+  processHouseAccountPayment,
+  processLoyaltyPayment,
+  processRoomChargePayment,
+  buildReceiptData,
+  type PaymentInput,
+  type PaymentRecord,
+  type PreChargeResult,
+} from '@/lib/domain/payment'
 
 // POST - Process payment for order
 export const POST = withVenue(withTiming(async function POST(
@@ -515,38 +380,8 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // ─── Normalize legacy / Android offline-sync payment format ───────────
-    // Old callers (and PendingPayment offline queue) send a flat object:
-    //   { paymentMethodId: "cash", amount: 123, tipAmount: 0, employeeId: "..." }
-    // Android native sends:
-    //   { paymentMethod: "cash", amount: 159.12, tipAmount: 0, employeeId: "..." }
-    // The Zod schema expects:
-    //   { payments: [{ method: "cash", amount: 123 }], employeeId: "..." }
-    // Transform the flat shape so both formats are accepted.
-    if (!body.payments && (body.paymentMethodId || body.paymentMethod || body.method || body.amount)) {
-      const method = body.paymentMethodId || body.paymentMethod || body.method || 'cash'
-      body = {
-        payments: [{
-          method,
-          amount: body.amount,
-          ...(body.tipAmount !== undefined ? { tipAmount: body.tipAmount } : {}),
-          ...(body.amountTendered !== undefined ? { amountTendered: body.amountTendered } : {}),
-          ...(body.cardBrand !== undefined ? { cardBrand: body.cardBrand } : {}),
-          ...(body.cardLast4 !== undefined ? { cardLast4: body.cardLast4 } : {}),
-          // Map Android PaymentReconciliationWorker fields
-          ...(body.authCode !== undefined ? { authCode: body.authCode } : {}),
-          ...(body.recordNo !== undefined ? { datacapRecordNo: body.recordNo } : {}),
-          ...(body.datacapRecordNo !== undefined ? { datacapRecordNo: body.datacapRecordNo } : {}),
-          // House account / gift card fields
-          ...(body.houseAccountId !== undefined ? { houseAccountId: body.houseAccountId } : {}),
-          ...(body.giftCardId !== undefined ? { giftCardId: body.giftCardId } : {}),
-          ...(body.giftCardNumber !== undefined ? { giftCardNumber: body.giftCardNumber } : {}),
-        }],
-        ...(body.employeeId ? { employeeId: body.employeeId } : {}),
-        ...(body.terminalId ? { terminalId: body.terminalId } : {}),
-        ...(body.idempotencyKey ? { idempotencyKey: body.idempotencyKey } : {}),
-      }
-    }
+    // Normalize legacy / Android offline-sync payment format → { payments: [...] }
+    body = normalizePaymentInput(body)
 
     // Validate request body with Zod
     const validation = PaymentRequestSchema.safeParse(body)
@@ -563,57 +398,34 @@ export const POST = withVenue(withTiming(async function POST(
     const { payments, employeeId, terminalId, idempotencyKey } = validation.data
     const finalIdempotencyKey = idempotencyKey || crypto.randomUUID()
 
-    // P0: Unbounded tip guard — tips exceeding 500% of payment amount are clearly fraudulent
-    for (const payment of payments) {
-      if (payment.tipAmount && payment.tipAmount > payment.amount * 5) {
-        return { earlyReturn: NextResponse.json(
-          { error: 'Tip amount cannot exceed 500% of payment amount' },
-          { status: 400 }
-        ) }
-      }
+    // P0: Unbounded tip guard
+    const tipError = validateTipBounds(payments)
+    if (tipError) {
+      return { earlyReturn: NextResponse.json({ error: tipError }, { status: 400 }) }
     }
 
     // Idempotency check using already-loaded payments (no extra query needed)
-    if (idempotencyKey) {
-      const duplicatePayments = order.payments.filter(
-        p => p.idempotencyKey === idempotencyKey && p.status === 'completed'
-      )
-      if (duplicatePayments.length > 0) {
-        return { earlyReturn: NextResponse.json({ data: {
-          success: true,
-          duplicate: true,
-          payments: duplicatePayments.map(p => ({
-            id: p.id,
-            method: p.paymentMethod,
-            amount: Number(p.amount),
-            tipAmount: Number(p.tipAmount),
-            totalAmount: Number(p.totalAmount),
-            status: p.status,
-          })),
-          orderStatus: order.status || 'unknown',
-          remainingBalance: 0,
-        } }) }
-      }
+    const idempDup = checkIdempotencyByKey(idempotencyKey, order.payments as any, order.status)
+    if (idempDup) {
+      return { earlyReturn: NextResponse.json({ data: {
+        success: true,
+        duplicate: true,
+        ...idempDup.response,
+        remainingBalance: 0,
+      } }) }
     }
 
-    // RecordNo-based idempotency check — PaymentReconciliationWorker sends datacapRecordNo
-    // as a secondary idempotency key for offline-captured card payments.
-    // If a payment with the same recordNo already exists for this order, return 409.
-    const firstPaymentRecordNo = payments[0]?.datacapRecordNo
-    if (firstPaymentRecordNo) {
-      const existingByRecordNo = order.payments.find(
-        p => p.datacapRecordNo === firstPaymentRecordNo && p.status === 'completed'
-      )
-      if (existingByRecordNo) {
-        return { earlyReturn: NextResponse.json(
-          {
-            error: 'Payment with this recordNo already exists for this order',
-            code: 'DUPLICATE_RECORD_NO',
-            existingPaymentId: existingByRecordNo.id,
-          },
-          { status: 409 }
-        ) }
-      }
+    // RecordNo-based idempotency check
+    const recordNoDup = checkIdempotencyByRecordNo(payments[0]?.datacapRecordNo, order.payments as any)
+    if (recordNoDup) {
+      return { earlyReturn: NextResponse.json(
+        {
+          error: 'Payment with this recordNo already exists for this order',
+          code: 'DUPLICATE_RECORD_NO',
+          existingPaymentId: recordNoDup.existingPaymentId,
+        },
+        { status: 409 }
+      ) }
     }
 
     // C18: Permission checks moved OUTSIDE the FOR UPDATE transaction (above)
@@ -866,102 +678,34 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
-    // Validate payment amounts upfront
-    for (const payment of payments) {
-      const paymentAmount = payment.amount + (payment.tipAmount || 0)
-
-      // Validate amount is a valid number
-      if (isNaN(paymentAmount) || paymentAmount <= 0) {
-        return { earlyReturn: NextResponse.json(
-          { error: `Invalid payment amount: ${paymentAmount}. Amount must be a positive number.` },
-          { status: 400 }
-        ) }
-      }
-
-      // Prevent unreasonably large payments (potential UI bugs)
-      const maxReasonablePayment = orderTotal * 1.5
-      if (paymentAmount > maxReasonablePayment) {
-        return { earlyReturn: NextResponse.json(
-          { error: `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (150% of order total). This may indicate an error.` },
-          { status: 400 }
-        ) }
-      }
-
-      // Validate Datacap field mutual exclusivity for card payments
-      if (payment.method === 'credit' || payment.method === 'debit') {
-        const hasAnyDatacapField = !!(
-          payment.datacapRecordNo ||
-          payment.datacapRefNumber ||
-          payment.datacapSequenceNo ||
-          payment.entryMethod ||
-          payment.signatureData ||
-          payment.amountAuthorized
-        )
-
-        const hasAllRequiredDatacapFields = !!(
-          payment.datacapRecordNo &&
-          payment.datacapRefNumber &&
-          payment.cardLast4
-        )
-
-        // If ANY Datacap field is present, ensure ALL required fields are present
-        if (hasAnyDatacapField && !hasAllRequiredDatacapFields) {
-          return { earlyReturn: NextResponse.json(
-            {
-              error: 'Partial Datacap data detected. Card payments must have either all Datacap fields (RecordNo, RefNumber, CardLast4) or none. This indicates a corrupted payment record.',
-              details: {
-                hasDatacapRecordNo: !!payment.datacapRecordNo,
-                hasDatacapRefNumber: !!payment.datacapRefNumber,
-                hasCardLast4: !!payment.cardLast4,
-              }
-            },
-            { status: 400 }
-          ) }
-        }
-      }
+    // Validate payment amounts and Datacap field consistency
+    const amountError = validatePaymentAmounts(payments, orderTotal)
+    if (amountError) {
+      return { earlyReturn: NextResponse.json({ error: amountError }, { status: 400 }) }
     }
 
     // Process each payment
     // Payments from special types (loyalty, gift card, house account) are created
     // inside their own transactions. Default payments (cash, card) are collected
     // and created atomically with the order status update below.
-    const allPendingPayments: Record<string, unknown>[] = []
+    const allPendingPayments: any[] = []
     let totalTips = 0
     let alreadyPaidInLoop = 0
     let autoGratApplied = false
     let autoGratNote: string | null = null
 
     // ── Party-size auto-gratuity ────────────────────────────────────────────
-    // Check BEFORE the payment loop so the auto-grat flows through the standard
-    // tip pipeline (TipLedger -> TipShare). Applied as tipAmount on the first
-    // tippable payment. Does NOT apply if any payment already carries a tip
-    // (customer-provided tip takes precedence). Does NOT double-apply if
-    // existing tipTotal indicates a prior auto-grat.
-    const autoGrat = settings.autoGratuity
-    if (
-      autoGrat?.enabled &&
-      autoGrat.percent > 0 &&
-      autoGrat.minimumPartySize > 0 &&
-      order.guestCount >= autoGrat.minimumPartySize &&
-      Number(order.tipTotal ?? 0) === 0 // no prior tip on the order
-    ) {
-      // Only apply if no payment in this request already carries a tip
-      const hasExistingTip = payments.some(p => (p.tipAmount ?? 0) > 0)
-      if (!hasExistingTip) {
-        const orderSubtotal = Number(order.subtotal ?? order.total ?? 0) - Number(order.tipTotal ?? 0)
-        const autoGratAmount = Math.round(orderSubtotal * (autoGrat.percent / 100) * 100) / 100
-
-        if (autoGratAmount > 0) {
-          // Apply to the first payment that supports tips (not gift card)
-          const tippableIdx = payments.findIndex(p => p.method !== 'gift_card')
-          if (tippableIdx >= 0) {
-            ;(payments[tippableIdx] as any).tipAmount = autoGratAmount
-            autoGratApplied = true
-            autoGratNote = `Auto-gratuity applied (${autoGrat.percent}% for party of ${order.guestCount})`
-            console.info(`[Pay] ${autoGratNote}`, { orderId, guestCount: order.guestCount, autoGratAmount })
-          }
-        }
-      }
+    const autoGratResult = calculateAutoGratuity(settings.autoGratuity, {
+      guestCount: order.guestCount,
+      existingTipTotal: Number(order.tipTotal ?? 0),
+      orderSubtotal: Number(order.subtotal ?? order.total ?? 0) - Number(order.tipTotal ?? 0),
+      payments,
+    })
+    if (autoGratResult.applied) {
+      ;(payments[autoGratResult.tippableIndex] as any).tipAmount = autoGratResult.amount
+      autoGratApplied = true
+      autoGratNote = autoGratResult.note
+      console.info(`[Pay] ${autoGratNote}`, { orderId, guestCount: order.guestCount, autoGratAmount: autoGratResult.amount })
     }
 
     // PMS attempt tracking — set in room_charge handler, consumed after payment creation
@@ -1012,52 +756,7 @@ export const POST = withVenue(withTiming(async function POST(
         ? drawerAttribution
         : { drawerId: null, shiftId: null }
 
-      let paymentRecord: {
-        locationId: string
-        orderId: string
-        employeeId: string | null
-        drawerId?: string | null
-        shiftId?: string | null
-        terminalId?: string | null
-        amount: number
-        tipAmount: number
-        totalAmount: number
-        paymentMethod: PaymentMethod
-        amountTendered?: number
-        changeGiven?: number
-        roundingAdjustment?: number
-        cardBrand?: string
-        cardLast4?: string
-        authCode?: string
-        transactionId?: string
-        datacapRecordNo?: string
-        datacapRefNumber?: string
-        datacapSequenceNo?: string
-        entryMethod?: string
-        signatureData?: string
-        amountAuthorized?: number
-        amountRequested?: number
-        isOfflineCapture?: boolean
-        safStatus?: string
-        // Datacap processor metadata
-        acqRefData?: string | null
-        processData?: string | null
-        aid?: string | null
-        cvmResult?: string | null
-        avsResult?: string | null
-        level2Status?: string | null
-        tokenFrequency?: string | null
-        cashDiscountAmount?: number
-        priceBeforeDiscount?: number
-        pricingMode?: string
-        idempotencyKey?: string
-        // Hotel PMS / Bill to Room
-        roomNumber?: string
-        guestName?: string
-        pmsReservationId?: string
-        pmsTransactionId?: string
-        status: PaymentStatus
-      } = {
+      let paymentRecord: PaymentRecord & Record<string, unknown> = {
         locationId: order.locationId,
         orderId,
         employeeId: employeeId || null,
@@ -1118,386 +817,66 @@ export const POST = withVenue(withTiming(async function POST(
       }
 
       if (payment.method === 'cash') {
-        // Apply rounding if enabled (priceRounding takes precedence over legacy cashRounding)
-        let finalAmount = payment.amount
-        let roundingAdjustment = 0
-
-        // The client already sends the rounded amount (e.g. $3.25 from $3.29).
-        // To compute the adjustment, compare against the raw remaining balance.
-        const rawRemaining = roundToCents(remaining - alreadyPaidInLoop)
-        if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
-          const rounded = applyPriceRounding(rawRemaining, settings.priceRounding, 'cash')
-          roundingAdjustment = Math.round((rounded - rawRemaining) * 100) / 100
-          finalAmount = payment.amount // already rounded by client
-        } else if (settings.payments.cashRounding !== 'none') {
-          roundingAdjustment = calculateRoundingAdjustment(
-            rawRemaining,
-            settings.payments.cashRounding,
-            settings.payments.roundingDirection
-          )
-          finalAmount = roundAmount(
-            rawRemaining,
-            settings.payments.cashRounding,
-            settings.payments.roundingDirection
-          )
-        }
-
-        const amountTendered = payment.amountTendered || finalAmount + (payment.tipAmount || 0)
-        const changeGiven = Math.max(0, amountTendered - finalAmount - (payment.tipAmount || 0))
-
-        // Dual pricing: calculate from post-rounding amount
-        if (dualPricing?.enabled && paymentRecord.pricingMode === 'cash') {
-          const cardPrice = calculateCardPrice(finalAmount, dualPricing.cashDiscountPercent)
-          const discountAmount = calculateCashDiscount(cardPrice, dualPricing.cashDiscountPercent)
-          paymentRecord.priceBeforeDiscount = cardPrice
-          paymentRecord.cashDiscountAmount = discountAmount
-
-          // Validate: cash amount should match expected cash price (warn, don't reject)
-          // When priceRounding is active, the rounded amount will differ from order.total — that's expected
-          const expectedCashAmount = Number(order.total ?? 0)
-          const roundingTolerance = (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) ? 0.50 : 0.01
-          if (Math.abs(finalAmount - expectedCashAmount) > roundingTolerance) {
-            console.warn(`[DualPricing] Cash payment amount $${finalAmount} differs from total $${expectedCashAmount} for order ${orderId}`)
-          }
-        }
-
-        paymentRecord = {
-          ...paymentRecord,
-          amount: finalAmount,
-          totalAmount: finalAmount + (payment.tipAmount || 0),
-          amountTendered,
-          changeGiven,
-          roundingAdjustment: roundingAdjustment !== 0 ? roundingAdjustment : undefined,
-        }
+        paymentRecord = processCashPayment(
+          payment as PaymentInput, paymentRecord as PaymentRecord,
+          remaining, alreadyPaidInLoop, settings, dualPricing?.enabled ? dualPricing : undefined,
+          orderId, Number(order.total ?? 0),
+        ) as typeof paymentRecord
       } else if (payment.method === 'credit' || payment.method === 'debit') {
-        // Validate cardLast4 — allow '0000' only for non-card methods (gift card, house account, etc.)
-        // For actual credit/debit card payments, a missing cardLast4 likely means the terminal
-        // didn't return it. We still allow the payment through (blocking could strand a successful
-        // charge) but log a warning so it shows up in monitoring.
-        if (!payment.cardLast4 || !/^\d{4}$/.test(payment.cardLast4)) {
-          if (payment.method === 'credit' || payment.method === 'debit') {
-            console.warn(`[Pay] Card payment missing cardLast4 for order ${orderId} (method=${payment.method}). Defaulting to '0000'.`)
-          }
-          payment.cardLast4 = '0000'
-        }
-
-        // Use real Datacap fields when available, fall back to placeholders
-        const isDatacap = !!payment.datacapRecordNo || !!payment.datacapRefNumber
-        paymentRecord = {
-          ...paymentRecord,
-          cardBrand: payment.cardBrand || 'visa',
-          cardLast4: payment.cardLast4,
-          authCode: isDatacap ? payment.authCode : generateFakeAuthCode(),
-          transactionId: isDatacap ? payment.datacapRefNumber : generateFakeTransactionId(),
-          ...(isDatacap && {
-            datacapRecordNo: payment.datacapRecordNo,
-            datacapRefNumber: payment.datacapRefNumber,
-            datacapSequenceNo: payment.datacapSequenceNo,
-            entryMethod: payment.entryMethod,
-            signatureData: payment.signatureData,
-            amountAuthorized: payment.amountAuthorized,
-            amountRequested: payment.amount,
-            ...(payment.storedOffline && { isOfflineCapture: true }),
-            // Datacap processor metadata for chargeback defense + ByRecordNo ops
-            acqRefData: payment.acqRefData || null,
-            processData: payment.processData || null,
-            aid: payment.aid || null,
-            cvmResult: payment.cvm ? String(payment.cvm) : null,
-            avsResult: payment.avsResult || null,
-            level2Status: payment.level2Status || null,
-            tokenFrequency: payment.tokenFrequency || 'OneTime',
-          }),
-          safStatus: payment.storedOffline ? 'APPROVED_SAF_PENDING_UPLOAD' : 'APPROVED_ONLINE',
-        }
+        paymentRecord = processCardPayment(
+          payment as PaymentInput, paymentRecord as PaymentRecord, orderId,
+        ) as typeof paymentRecord
       } else if (payment.method === 'loyalty_points') {
-        if (!settings.loyalty.enabled || !settings.loyalty.redemptionEnabled) {
+        const loyaltyResult = await processLoyaltyPayment(
+          tx as any, payment as PaymentInput, paymentRecord as PaymentRecord,
+          orderTotal, order.customer as any, settings.loyalty,
+        )
+        if (loyaltyResult.error) {
           return { earlyReturn: NextResponse.json(
-            { error: 'Loyalty points redemption is not enabled' },
-            { status: 400 }
+            { error: loyaltyResult.error }, { status: loyaltyResult.errorStatus || 400 }
           ) }
         }
-
-        if (!order.customer) {
-          return { earlyReturn: NextResponse.json(
-            { error: 'Customer is required to redeem loyalty points' },
-            { status: 400 }
-          ) }
-        }
-
-        const pointsNeeded = Math.ceil(payment.amount * settings.loyalty.pointsPerDollarRedemption)
-
-        if (!payment.pointsUsed || payment.pointsUsed < pointsNeeded) {
-          return { earlyReturn: NextResponse.json(
-            { error: `${pointsNeeded} points required for $${payment.amount.toFixed(2)} redemption` },
-            { status: 400 }
-          ) }
-        }
-
-        if (order.customer.loyaltyPoints < payment.pointsUsed) {
-          return { earlyReturn: NextResponse.json(
-            { error: `Insufficient points. Customer has ${order.customer.loyaltyPoints} points.` },
-            { status: 400 }
-          ) }
-        }
-
-        if (payment.pointsUsed < settings.loyalty.minimumRedemptionPoints) {
-          return { earlyReturn: NextResponse.json(
-            { error: `Minimum ${settings.loyalty.minimumRedemptionPoints} points required for redemption` },
-            { status: 400 }
-          ) }
-        }
-
-        const maxRedemptionAmount = orderTotal * (settings.loyalty.maximumRedemptionPercent / 100)
-        if (payment.amount > maxRedemptionAmount) {
-          return { earlyReturn: NextResponse.json(
-            { error: `Maximum ${settings.loyalty.maximumRedemptionPercent}% of order can be paid with points` },
-            { status: 400 }
-          ) }
-        }
-
-        paymentRecord = {
-          ...paymentRecord,
-          transactionId: `LOYALTY:${payment.pointsUsed}pts`,
-        }
-
-        const freshCustomer = await tx.customer.findUnique({
-          where: { id: order.customer!.id },
-          select: { loyaltyPoints: true },
-        })
-        if (!freshCustomer || freshCustomer.loyaltyPoints < payment.pointsUsed!) {
-          return { earlyReturn: NextResponse.json(
-            { error: `Insufficient points. Customer has ${freshCustomer?.loyaltyPoints ?? 0} points.` },
-            { status: 400 }
-          ) }
-        }
-        await tx.customer.update({
-          where: { id: order.customer!.id },
-          data: {
-            loyaltyPoints: { decrement: payment.pointsUsed! },
-          },
-        })
-
-        allPendingPayments.push(paymentRecord)
+        allPendingPayments.push(loyaltyResult.record)
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'gift_card') {
-        // Gift card payment
-        if (!settings.payments.acceptGiftCards) {
-          return { earlyReturn: NextResponse.json(
-            { error: 'Gift cards are not accepted' },
-            { status: 400 }
-          ) }
-        }
-
-        const giftCardLookup = payment.giftCardId || payment.giftCardNumber
-        if (!giftCardLookup) {
-          return { earlyReturn: NextResponse.json(
-            { error: 'Gift card ID or number is required' },
-            { status: 400 }
-          ) }
-        }
-
-        let giftCard = await tx.giftCard.findUnique({
-          where: { id: payment.giftCardId || '' }
-        })
-
-        if (!giftCard && payment.giftCardNumber) {
-          giftCard = await tx.giftCard.findUnique({
-            where: { cardNumber: payment.giftCardNumber.toUpperCase() }
-          })
-        }
-
-        if (!giftCard) {
-          return { earlyReturn: NextResponse.json(
-            { error: 'Gift card not found' },
-            { status: 404 }
-          ) }
-        }
-
-        // C3: Acquire row lock on gift card to prevent balance race condition.
-        // Two terminals checking balance concurrently could both pass the check
-        // and drive balance negative. FOR UPDATE serializes the reads.
-        await tx.$queryRawUnsafe(
-          `SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE`,
-          giftCard.id,
+        const gcResult = await processGiftCardPayment(
+          tx as any, payment as PaymentInput, paymentRecord as PaymentRecord,
+          orderId, order.locationId, order.orderNumber, employeeId || null,
+          settings.payments.acceptGiftCards,
         )
-        // Re-read with fresh balance after acquiring lock
-        const freshGiftCard = await tx.giftCard.findUniqueOrThrow({ where: { id: giftCard.id } })
-        giftCard = freshGiftCard
-
-        if (giftCard.status !== 'active') {
+        if (gcResult.error) {
           return { earlyReturn: NextResponse.json(
-            { error: `Gift card is ${giftCard.status}` },
-            { status: 400 }
+            { error: gcResult.error, ...gcResult.errorExtras }, { status: gcResult.errorStatus || 400 }
           ) }
         }
-
-        if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
-          await tx.giftCard.update({
-            where: { id: giftCard.id },
-            data: { status: 'expired' }
-          })
-          return { earlyReturn: NextResponse.json(
-            { error: 'Gift card has expired' },
-            { status: 400 }
-          ) }
-        }
-
-        const cardBalance = Number(giftCard.currentBalance)
-        const gcPaymentAmount = payment.amount + (payment.tipAmount || 0)
-
-        if (cardBalance < gcPaymentAmount) {
-          return { earlyReturn: NextResponse.json(
-            { error: `Insufficient gift card balance ($${cardBalance.toFixed(2)})`, currentBalance: cardBalance },
-            { status: 400 }
-          ) }
-        }
-
-        const newBalance = cardBalance - gcPaymentAmount
-
-        paymentRecord = {
-          ...paymentRecord,
-          transactionId: `GC:${giftCard.cardNumber}`,
-          cardLast4: giftCard.cardNumber.slice(-4),
-        }
-
-        await tx.giftCard.update({
-          where: { id: giftCard.id },
-          data: {
-            currentBalance: { decrement: gcPaymentAmount },
-            status: newBalance === 0 ? 'depleted' : 'active',
-            transactions: {
-              create: {
-                locationId: order.locationId,
-                type: 'redemption',
-                amount: -gcPaymentAmount,
-                balanceBefore: cardBalance,
-                balanceAfter: newBalance,
-                orderId,
-                employeeId: employeeId || null,
-                notes: `Payment for order #${order.orderNumber}`,
-              }
-            }
-          }
-        })
-
-        allPendingPayments.push(paymentRecord)
+        allPendingPayments.push(gcResult.record)
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'house_account') {
-        if (!settings.payments.acceptHouseAccounts) {
-          return { earlyReturn: NextResponse.json(
-            { error: 'House accounts are not accepted' },
-            { status: 400 }
-          ) }
-        }
-
-        if (!payment.houseAccountId) {
-          return { earlyReturn: NextResponse.json(
-            { error: 'House account ID is required' },
-            { status: 400 }
-          ) }
-        }
-
-        const haPaymentAmount = payment.amount + (payment.tipAmount || 0)
-
-        // C3: Acquire row lock on house account to prevent balance race condition.
-        // Same pattern as gift card — FOR UPDATE serializes concurrent balance checks.
-        await tx.$queryRawUnsafe(
-          `SELECT id FROM "HouseAccount" WHERE id = $1 FOR UPDATE`,
-          payment.houseAccountId!,
+        const haResult = await processHouseAccountPayment(
+          tx as any, payment as PaymentInput, paymentRecord as PaymentRecord,
+          orderId, order.locationId, order.orderNumber, employeeId || null,
+          settings.payments.acceptHouseAccounts,
         )
-
-        const freshAccount = await tx.houseAccount.findUnique({
-          where: { id: payment.houseAccountId! }
-        })
-
-        if (!freshAccount) {
+        if (haResult.error) {
           return { earlyReturn: NextResponse.json(
-            { error: 'House account not found' },
-            { status: 404 }
+            { error: haResult.error, ...haResult.errorExtras }, { status: haResult.errorStatus || 400 }
           ) }
         }
-
-        if (freshAccount.status === 'pending') {
-          return { earlyReturn: NextResponse.json(
-            { error: 'House account not yet activated' },
-            { status: 400 }
-          ) }
-        }
-
-        if (freshAccount.status !== 'active') {
-          return { earlyReturn: NextResponse.json(
-            { error: `House account is ${freshAccount.status}` },
-            { status: 400 }
-          ) }
-        }
-
-        const haCurrentBalance = Number(freshAccount.currentBalance)
-        const haCreditLimit = Number(freshAccount.creditLimit)
-        const haNewBalance = haCurrentBalance + haPaymentAmount
-
-        if (haCreditLimit > 0 && haNewBalance > haCreditLimit) {
-          return { earlyReturn: NextResponse.json(
-            {
-              error: 'Charge would exceed credit limit',
-              currentBalance: haCurrentBalance,
-              creditLimit: haCreditLimit,
-              availableCredit: Math.max(0, haCreditLimit - haCurrentBalance),
-            },
-            { status: 400 }
-          ) }
-        }
-
-        const dueDate = new Date()
-        dueDate.setDate(dueDate.getDate() + (freshAccount.paymentTerms ?? 30))
-
-        await tx.houseAccount.update({
-          where: { id: freshAccount.id },
-          data: {
-            currentBalance: { increment: haPaymentAmount },
-            transactions: {
-              create: {
-                locationId: order.locationId,
-                type: 'charge',
-                amount: haPaymentAmount,
-                balanceBefore: haCurrentBalance,
-                balanceAfter: haNewBalance,
-                orderId,
-                employeeId: employeeId || null,
-                notes: `Order #${order.orderNumber}`,
-                dueDate,
-              }
-            }
-          }
-        })
-
-        paymentRecord.transactionId = `HA:${freshAccount.id}`
-        paymentRecord.authCode = freshAccount.name
-
-        allPendingPayments.push(paymentRecord)
+        allPendingPayments.push(haResult.record)
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'room_charge') {
-        // PMS charge was already executed OUTSIDE the transaction (pre-charge above).
-        // Here we just apply the pre-fetched result to the payment record.
-        // This eliminates the 1-5s Oracle OPERA HTTP call from inside the FOR UPDATE lock.
-        if (!preChargeResult) {
-          // Defensive: should never happen since pre-charge runs for any room_charge payment
+        const rcResult = processRoomChargePayment(paymentRecord as PaymentRecord, preChargeResult as PreChargeResult | null)
+        if (rcResult.error) {
           return { earlyReturn: NextResponse.json(
-            { error: 'Internal error: PMS pre-charge result missing.' },
-            { status: 500 }
+            { error: rcResult.error }, { status: rcResult.errorStatus || 500 }
           ) }
         }
-
-        paymentRecord.roomNumber = preChargeResult.roomNumber
-        paymentRecord.guestName = preChargeResult.guestName
-        paymentRecord.pmsReservationId = preChargeResult.reservationId
-        paymentRecord.pmsTransactionId = preChargeResult.pmsTransactionNo
-        paymentRecord.transactionId = `PMS:${preChargeResult.pmsTransactionNo}`
-        paymentRecord.authCode = `Room ${preChargeResult.roomNumber}`
-        pmsAttemptId = preChargeResult.pmsAttemptId
-        pmsTransactionNo = preChargeResult.pmsTransactionNo
+        paymentRecord = rcResult.record as typeof paymentRecord
+        pmsAttemptId = rcResult.pmsAttemptId
+        pmsTransactionNo = rcResult.pmsTransactionNo
       }
 
       allPendingPayments.push(paymentRecord)
@@ -2308,86 +1687,8 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // Build receipt data inline (eliminates separate /receipt fetch)
-    const receiptData = {
-      id: order.id,
-      orderNumber: order.orderNumber,
-      displayNumber: order.displayNumber,
-      orderType: order.orderType,
-      tabName: order.tabName,
-      tableName: order.table?.name || null,
-      guestCount: order.guestCount,
-      employee: {
-        id: order.employee?.id ?? 'unknown',
-        name: order.employee?.displayName || (order.employee ? `${order.employee.firstName} ${order.employee.lastName}` : 'Unknown'),
-      },
-      location: {
-        name: order.location.name,
-        address: order.location.address,
-        phone: order.location.phone,
-      },
-      items: order.items.map((item: any) => ({
-        id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: Number(item.price),
-        itemTotal: Number(item.itemTotal),
-        specialNotes: item.specialNotes,
-        status: item.status,
-        modifiers: (item.modifiers || []).map((mod: any) => ({
-          id: mod.id,
-          name: mod.name,
-          price: Number(mod.price),
-          preModifier: mod.preModifier,
-        })),
-      })),
-      payments: ingestResult.bridgedPayments.map((p: any) => ({
-        method: p.paymentMethod,
-        amount: p.amount,
-        tipAmount: p.tipAmount,
-        totalAmount: p.totalAmount,
-        cardBrand: p.cardBrand,
-        cardLast4: p.cardLast4,
-        authCode: p.authCode,
-        amountTendered: p.amountTendered ? Number(p.amountTendered) : null,
-        changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
-      })),
-      subtotal: Number(order.subtotal ?? 0),
-      discountTotal: Number(order.discountTotal ?? 0),
-      taxTotal: Number(order.taxTotal ?? 0),
-      tipTotal: Number(order.tipTotal ?? 0),
-      // For cash discount (dual pricing) model: order.total IS the cash price.
-      // If any payment was charged at the card price, show the card total on the receipt.
-      total: (() => {
-        const dualPricing = settings.dualPricing
-        if (dualPricing.enabled) {
-          const hasCardPayment = ingestResult.bridgedPayments.some(
-            (p: any) => p.pricingMode === 'card'
-          )
-          if (hasCardPayment) {
-            return calculateCardPrice(Number(order.total ?? 0), dualPricing.cashDiscountPercent)
-          }
-        }
-        return Number(order.total ?? 0)
-      })(),
-      createdAt: order.createdAt.toISOString(),
-      paidAt: new Date().toISOString(),
-      customer: order.customer ? {
-        name: (order.customer as any).displayName || `${(order.customer as any).firstName} ${(order.customer as any).lastName}`,
-        loyaltyPoints: (order.customer as any).loyaltyPoints,
-        phone: (order.customer as any).phone || null,
-        email: (order.customer as any).email || null,
-      } : null,
-      loyaltyPointsRedeemed: null,
-      loyaltyPointsEarned: pointsEarned || null,
-      // Surcharge disclosure — include when pricing program is 'surcharge' and disclosure text is set
-      surchargeDisclosure: (() => {
-        const pp = getPricingProgram(settings)
-        return pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
-          ? pp.surchargeDisclosure
-          : null
-      })(),
-    }
+    // Build receipt data via domain module (eliminates separate /receipt fetch)
+    const receiptData = buildReceiptData(order as any, ingestResult.bridgedPayments, pointsEarned, settings as any)
 
     // Return response — includes flat fields for Android's PayOrderData DTO
     const primaryPayment = ingestResult.bridgedPayments[0]
