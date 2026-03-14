@@ -171,6 +171,7 @@ export default function KDSScreensPage() {
         body: JSON.stringify({
           ...formData,
           locationId,
+          employeeId: employee?.id,
         }),
       })
 
@@ -195,6 +196,8 @@ export default function KDSScreensPage() {
     try {
       const res = await fetch(`/api/hardware/kds-screens/${screen.id}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: employee?.id, locationId }),
       })
       if (res.ok) {
         fetchData()
@@ -224,10 +227,11 @@ export default function KDSScreensPage() {
       const data = await res.json()
 
       if (res.ok) {
+        const result = data.data || data
         setPairingModal({
           screen,
-          code: data.pairingCode,
-          expiresAt: data.expiresAt,
+          code: result.pairingCode,
+          expiresAt: result.expiresAt,
           loading: false,
           error: null,
         })

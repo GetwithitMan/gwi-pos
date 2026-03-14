@@ -12,6 +12,8 @@
  *   await sendEmail({ to: customer.email, ...email })
  */
 
+import { formatCurrency } from '@/lib/utils'
+
 // ── Shared Styles ───────────────────────────────────────────────────────────
 
 const BRAND_COLOR = '#2563eb' // Blue 600
@@ -52,10 +54,6 @@ ${locationName ? `${locationName} &middot; ` : ''}Powered by GWI POS<br>
 You are receiving this because you have an active membership.
 </p>
 </div>`
-}
-
-function formatCurrency(amount: number): string {
-  return `$${amount.toFixed(2)}`
 }
 
 function formatDate(date: Date | string): string {

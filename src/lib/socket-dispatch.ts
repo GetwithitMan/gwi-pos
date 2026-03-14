@@ -21,6 +21,7 @@ import type { WeightReading } from '@/lib/scale/scale-protocol'
 import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
+import { db } from '@/lib/db'
 
 interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */
@@ -40,8 +41,8 @@ export async function dispatchNewOrder(
 ): Promise<boolean> {
   const doEmit = async () => {
     try {
-      // Emit to each station's tags
-      for (const manifest of routingResult.manifests) {
+      // Build all station tag emissions + location emission in parallel
+      const stationEmissions = routingResult.manifests.map((manifest) => {
         const orderEvent = {
           orderId: routingResult.order.orderId,
           orderNumber: routingResult.order.orderNumber,
@@ -84,20 +85,23 @@ export async function dispatchNewOrder(
           stationName: manifest.stationName,
         }
 
-        await emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent, locationId)
-      }
-
-      // Also emit to location for general awareness (enriched for Android)
-      await emitToLocation(locationId, 'order:created', {
-        orderId: routingResult.order.orderId,
-        orderNumber: routingResult.order.orderNumber,
-        orderType: routingResult.order.orderType,
-        tableName: routingResult.order.tableName,
-        tabName: routingResult.order.tabName,
-        employeeName: routingResult.order.employeeName,
-        createdAt: routingResult.order.createdAt.toISOString(),
-        stations: routingResult.manifests.map((m) => m.stationName),
+        return emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent, locationId)
       })
+
+      // Emit to all stations + location for general awareness in parallel
+      await Promise.all([
+        ...stationEmissions,
+        emitToLocation(locationId, 'order:created', {
+          orderId: routingResult.order.orderId,
+          orderNumber: routingResult.order.orderNumber,
+          orderType: routingResult.order.orderType,
+          tableName: routingResult.order.tableName,
+          tabName: routingResult.order.tabName,
+          employeeName: routingResult.order.employeeName,
+          createdAt: routingResult.order.createdAt.toISOString(),
+          stations: routingResult.manifests.map((m) => m.stationName),
+        }),
+      ])
 
       return true
     } catch (error) {
@@ -133,8 +137,10 @@ export async function dispatchItemStatus(
 ): Promise<boolean> {
   const doEmit = async () => {
     try {
-      await emitToTags(['expo'], 'kds:item-status', payload, locationId)
-      await emitToLocation(locationId, 'kds:item-status', payload)
+      await Promise.all([
+        emitToTags(['expo'], 'kds:item-status', payload, locationId),
+        emitToLocation(locationId, 'kds:item-status', payload),
+      ])
       return true
     } catch (error) {
       console.error('[SocketDispatch] Failed to dispatch:', error)
@@ -168,8 +174,10 @@ export async function dispatchOrderBumped(
 ): Promise<boolean> {
   const doEmit = async () => {
     try {
-      await emitToTags(['expo'], 'kds:order-bumped', payload, locationId)
-      await emitToLocation(locationId, 'kds:order-bumped', payload)
+      await Promise.all([
+        emitToTags(['expo'], 'kds:order-bumped', payload, locationId),
+        emitToLocation(locationId, 'kds:order-bumped', payload),
+      ])
       return true
     } catch (error) {
       console.error('[SocketDispatch] Failed to dispatch:', error)
@@ -204,10 +212,20 @@ export async function dispatchEntertainmentUpdate(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
+  const enrichedPayload = {
+    ...payload,
+    minutesRemaining: payload.expiresAt
+      ? Math.max(0, Math.round((new Date(payload.expiresAt).getTime() - Date.now()) / 60000))
+      : null,
+    serverTime: new Date().toISOString(),
+  }
+
   const doEmit = async () => {
     try {
-      await emitToTags(['entertainment'], 'entertainment:session-update', payload, locationId)
-      await emitToLocation(locationId, 'entertainment:session-update', payload)
+      await Promise.all([
+        emitToTags(['entertainment'], 'entertainment:session-update', enrichedPayload, locationId),
+        emitToLocation(locationId, 'entertainment:session-update', enrichedPayload),
+      ])
       return true
     } catch (error) {
       console.error('[SocketDispatch] Failed to dispatch:', error)
@@ -601,9 +619,125 @@ export async function dispatchEntertainmentStatusChanged(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
+  // Enrich payload with full item snapshot for native incremental updates
+  let enrichedPayload: Record<string, unknown> = { ...payload }
+
+  try {
+    const now = new Date()
+
+    // Fetch MenuItem + category + linked FloorPlanElement in parallel
+    const [menuItem, floorPlanElement, waitlistCount] = await Promise.all([
+      db.menuItem.findUnique({
+        where: { id: payload.itemId },
+        select: {
+          id: true,
+          name: true,
+          blockTimeMinutes: true,
+          currentOrderId: true,
+          currentOrderItemId: true,
+          category: { select: { id: true, name: true } },
+        },
+      }),
+      db.floorPlanElement.findFirst({
+        where: {
+          linkedMenuItemId: payload.itemId,
+          locationId,
+          deletedAt: null,
+          elementType: 'entertainment',
+        },
+        select: {
+          id: true,
+          name: true,
+          sessionStartedAt: true,
+          sessionExpiresAt: true,
+          currentOrderId: true,
+        },
+      }),
+      db.floorPlanElement.findFirst({
+        where: {
+          linkedMenuItemId: payload.itemId,
+          locationId,
+          deletedAt: null,
+          elementType: 'entertainment',
+        },
+        select: { id: true },
+      }).then(async (fpe) => {
+        if (!fpe) return 0
+        return db.entertainmentWaitlist.count({
+          where: {
+            elementId: fpe.id,
+            status: 'waiting',
+            deletedAt: null,
+          },
+        })
+      }),
+    ])
+
+    // Build timeInfo from FloorPlanElement session data
+    let timeInfo: Record<string, unknown> | null = null
+    const fpeExpiresAt = floorPlanElement?.sessionExpiresAt
+    const fpeStartedAt = floorPlanElement?.sessionStartedAt
+
+    if (fpeExpiresAt) {
+      const remaining = Math.max(0, Math.round((new Date(fpeExpiresAt).getTime() - now.getTime()) / 60000))
+      timeInfo = {
+        type: 'block',
+        expiresAt: fpeExpiresAt.toISOString(),
+        startedAt: fpeStartedAt?.toISOString() || null,
+        minutesRemaining: remaining,
+        blockMinutes: menuItem?.blockTimeMinutes || null,
+      }
+    } else if (fpeStartedAt) {
+      timeInfo = {
+        type: 'per_minute',
+        expiresAt: null,
+        startedAt: fpeStartedAt.toISOString(),
+        minutesRemaining: null,
+        blockMinutes: menuItem?.blockTimeMinutes || null,
+      }
+    }
+
+    // Build currentOrder snapshot
+    let currentOrder: Record<string, unknown> | null = null
+    const orderId = floorPlanElement?.currentOrderId || payload.currentOrderId || menuItem?.currentOrderId
+    if (orderId && payload.entertainmentStatus === 'in_use') {
+      const order = await db.orderSnapshot.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          tabName: true,
+          orderNumber: true,
+          displayNumber: true,
+        },
+      })
+      if (order) {
+        currentOrder = {
+          orderId: order.id,
+          tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
+          orderNumber: order.orderNumber,
+          displayNumber: order.displayNumber,
+        }
+      }
+    }
+
+    enrichedPayload = {
+      ...payload,
+      timeInfo,
+      waitlistCount,
+      displayName: floorPlanElement?.name || menuItem?.name || null,
+      category: menuItem?.category
+        ? { id: menuItem.category.id, name: menuItem.category.name }
+        : null,
+      currentOrder,
+    }
+  } catch (enrichError) {
+    // If enrichment fails, still dispatch the original payload
+    console.error('[SocketDispatch] Entertainment enrichment failed, dispatching base payload:', enrichError)
+  }
+
   const doEmit = async () => {
     try {
-      await emitToLocation(locationId, 'entertainment:status-changed', payload)
+      await emitToLocation(locationId, 'entertainment:status-changed', enrichedPayload)
       return true
     } catch (error) {
       console.error('[SocketDispatch] Failed to dispatch:', error)
@@ -936,70 +1070,11 @@ export async function dispatchOrderItemAdded(
 }
 
 /**
- * Dispatch order editing awareness event
+ * Dispatch tip group update event (Skill 252)
  *
- * Called when a terminal opens an order for editing.
- * Notifies other terminals that this order is being edited elsewhere.
+ * Called when tip group membership changes, group created/closed, etc.
+ * Keeps all bartender terminals in sync with group state.
  */
-export async function dispatchOrderEditing(
-  locationId: string,
-  payload: {
-    orderId: string
-    terminalId: string
-    terminalName: string
-  },
-  options: DispatchOptions = {}
-): Promise<boolean> {
-  const doEmit = async () => {
-    try {
-      await emitToLocation(locationId, 'order:editing', payload)
-      return true
-    } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch order:editing:', error)
-      return false
-    }
-  }
-
-  if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async order:editing dispatch failed:', err))
-    return true
-  }
-
-  return doEmit()
-}
-
-/**
- * Dispatch order editing released event
- *
- * Called when a terminal stops editing an order (navigates away or closes it).
- * Clears the "editing on another terminal" banner on other terminals.
- */
-export async function dispatchOrderEditingReleased(
-  locationId: string,
-  payload: {
-    orderId: string
-    terminalId: string
-  },
-  options: DispatchOptions = {}
-): Promise<boolean> {
-  const doEmit = async () => {
-    try {
-      await emitToLocation(locationId, 'order:editing-released', payload)
-      return true
-    } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch order:editing-released:', error)
-      return false
-    }
-  }
-
-  if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async order:editing-released dispatch failed:', err))
-    return true
-  }
-
-  return doEmit()
-}
-
 export async function dispatchTipGroupUpdate(
   locationId: string,
   payload: {
@@ -1568,44 +1643,6 @@ export async function dispatchWaitlistChanged(
 }
 
 /**
- * Dispatch cover charge entry recorded event.
- *
- * Called when a new cover charge / door entry is recorded.
- * Updates the Door Count dashboard widget in real-time.
- */
-export async function dispatchCoverEntryRecorded(
-  locationId: string,
-  payload: {
-    id: string
-    amount: number
-    paymentMethod: string
-    guestCount: number
-    isVip: boolean
-    isComped: boolean
-    employeeId: string
-    createdAt: string
-  },
-  options: DispatchOptions = {}
-): Promise<boolean> {
-  const doEmit = async () => {
-    try {
-      await emitToLocation(locationId, 'cover:entry-recorded', payload)
-      return true
-    } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch cover:entry-recorded:', error)
-      return false
-    }
-  }
-
-  if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async cover:entry-recorded failed:', err))
-    return true
-  }
-
-  return doEmit()
-}
-
-/**
  * Dispatch print job failure notification.
  *
  * Emitted when a kitchen print job fails after send.
@@ -1638,54 +1675,6 @@ export async function dispatchPrintJobFailed(
   }
 
   return doEmit()
-}
-
-/**
- * Dispatch delivery order update event
- *
- * Emitted when a delivery order is created, status changed, or driver assigned.
- * Listened by the delivery dashboard for real-time updates.
- */
-export async function dispatchDeliveryUpdated(
-  locationId: string,
-  payload: {
-    action: string
-    deliveryId: string
-    status?: string
-    driverId?: string | null
-    driverName?: string | null
-  }
-): Promise<boolean> {
-  try {
-    await emitToLocation(locationId, 'delivery:updated', payload)
-    return true
-  } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch delivery:updated:', error)
-    return false
-  }
-}
-
-/**
- * Dispatch host view update event
- *
- * Emitted when seating, rotation, or table status changes from host view.
- * Notifies all terminals of floor state changes.
- */
-export async function dispatchHostViewUpdated(
-  locationId: string,
-  payload: {
-    action: string
-    tableId?: string
-    serverId?: string
-  }
-): Promise<boolean> {
-  try {
-    await emitToLocation(locationId, 'host:updated', payload)
-    return true
-  } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch host:updated:', error)
-    return false
-  }
 }
 
 // ==================== Quick Bar Events ====================

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET customer analytics report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -54,7 +55,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       include: {
         orders: {
           where: {
-            status: { in: ['completed', 'paid'] },
+            status: { in: [...REVENUE_ORDER_STATUSES] },
             ...dateFilter,
           },
           select: {

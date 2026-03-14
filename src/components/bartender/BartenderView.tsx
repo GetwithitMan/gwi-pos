@@ -297,11 +297,13 @@ const MenuItemButton = memo(function MenuItemButton({
       })()}
 
       {/* Quick Pour Buttons - cohesive teal gradient */}
+      {/* Skip 'standard' — that's the base item tap, not a quick pick */}
       {itemSettings.showQuickPours && item.pourSizes && Object.keys(item.pourSizes).length > 0 && !isEditingItems && (
         <div className="mt-auto pt-1 flex gap-0.5">
-          {Object.entries(item.pourSizes).map(([size, multiplier]) => {
+          {Object.entries(item.pourSizes)
+            .filter(([size]) => size !== 'standard' && POUR_SIZE_CONFIG[size])
+            .map(([size, multiplier]) => {
             const config = POUR_SIZE_CONFIG[size]
-            if (!config) return null
             // Handle both formats: number (legacy) or { label, multiplier, customPrice? } (modern)
             const mult = typeof multiplier === 'number' ? multiplier : (multiplier as any)?.multiplier ?? 1.0
             const custom = typeof multiplier === 'object' ? (multiplier as any)?.customPrice : null
@@ -323,16 +325,16 @@ const MenuItemButton = memo(function MenuItemButton({
                     onPourSizeClick(item, size, pourPrice)
                   }
                 }}
-                className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer ${itemSettings.showDualPricing && dualPricing.enabled ? 'min-h-[44px]' : 'min-h-[36px]'} ${config.color} ${isDefault ? 'ring-1 ring-white/50' : ''} text-white hover:brightness-110`}
+                className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer ${dualPricing.enabled ? 'min-h-[44px]' : 'min-h-[36px]'} ${config.color} ${isDefault ? 'ring-1 ring-white/50' : ''} text-white hover:brightness-110`}
               >
                 <span className="leading-tight">{config.label}</span>
-                {itemSettings.showDualPricing && dualPricing.enabled ? (
+                {dualPricing.enabled ? (
                   <>
                     <span className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>{formatCurrency(prices.cardPrice)}</span>
                     <span className="text-[9px] leading-tight" style={{ color: '#86efac' }}>{formatCurrency(prices.cashPrice)}</span>
                   </>
                 ) : (
-                  <span className="text-[10px] opacity-75">{formatCurrency(dualPricing.enabled ? prices.cardPrice : prices.cashPrice)}</span>
+                  <span className="text-[10px] opacity-75">{formatCurrency(prices.cashPrice)}</span>
                 )}
               </div>
             )
@@ -366,16 +368,16 @@ const MenuItemButton = memo(function MenuItemButton({
                     onSpiritTierClick(item, tier)
                   }
                 }}
-                className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all ${itemSettings.showDualPricing && dualPricing.enabled ? 'min-h-[44px]' : 'min-h-[36px]'} ${config.color} ${config.hoverColor} text-white cursor-pointer`}
+                className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all ${dualPricing.enabled ? 'min-h-[44px]' : 'min-h-[36px]'} ${config.color} ${config.hoverColor} text-white cursor-pointer`}
               >
                 <span className="leading-tight">{config.label}</span>
-                {itemSettings.showDualPricing && dualPricing.enabled ? (
+                {dualPricing.enabled ? (
                   <>
                     <span className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>{formatCurrency(prices.cardPrice)}{suffix}</span>
                     <span className="text-[9px] leading-tight" style={{ color: '#86efac' }}>{formatCurrency(prices.cashPrice)}{suffix}</span>
                   </>
                 ) : (
-                  <span className="text-[10px] opacity-75">{formatCurrency(dualPricing.enabled ? prices.cardPrice : prices.cashPrice)}{suffix}</span>
+                  <span className="text-[10px] opacity-75">{formatCurrency(prices.cashPrice)}{suffix}</span>
                 )}
               </div>
             )
@@ -448,7 +450,7 @@ const MenuItemButton = memo(function MenuItemButton({
                   style={isHex ? { backgroundColor: bgColor } : undefined}
                 >
                   <span className="leading-tight">{option.label}</span>
-                  {isVariant && itemSettings.showDualPricing && dualPricing.enabled ? (
+                  {isVariant && dualPricing.enabled ? (
                     <>
                       <span className="text-[10px] leading-tight" style={{ color: '#93c5fd' }}>{formatCurrency(isVariant && option.priceCC != null ? option.priceCC : prices.cardPrice)}</span>
                       <span className="text-[9px] leading-tight" style={{ color: '#86efac' }}>{formatCurrency(prices.cashPrice)}</span>
@@ -2149,6 +2151,7 @@ export function BartenderView({
       {/* ====== PRICING OPTION PICKER ====== */}
       <PricingOptionPicker
         item={pricingPickerItem}
+        dualPricing={dualPricing}
         onSelect={(option) => {
           pricingPickerCallbackRef.current?.(option)
           setPricingPickerItem(null)

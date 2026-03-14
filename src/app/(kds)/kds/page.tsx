@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense, memo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type { Socket } from 'socket.io-client'
@@ -125,7 +125,286 @@ const getCourseColor = (courseNumber: number): string => {
   return COURSE_COLORS[courseNumber] || '#6B7280'
 }
 
-// TODO: KDSContent is ~900 lines. Consider extracting KDSOrderCard, KDSHeader, KDSItemRow into separate components.
+// ---------------------------------------------------------------------------
+// MEMOIZED KDS ORDER CARD — prevents full grid re-render when one card changes
+// ---------------------------------------------------------------------------
+interface KDSOrderCardProps {
+  order: KDSOrder
+  onBumpItem: (itemId: string) => void
+  onUncompleteItem: (itemId: string) => void
+  onBumpOrder: (order: KDSOrder) => void
+  socketConnected: boolean
+}
+
+const KDSOrderCard = memo(function KDSOrderCard({
+  order,
+  onBumpItem,
+  onUncompleteItem,
+  onBumpOrder,
+  socketConnected,
+}: KDSOrderCardProps) {
+  const allCompleted = order.items.every(item => item.isCompleted)
+
+  const handleBumpOrderClick = useCallback(() => {
+    onBumpOrder(order)
+  }, [onBumpOrder, order])
+
+  return (
+    <div
+      className={`bg-gray-800 rounded-lg border-t-4 overflow-hidden transition-all ${
+        allCompleted ? 'opacity-50 border-green-500' : getTimeStatusBg(order.timeStatus)
+      }`}
+    >
+      {/* Order Header */}
+      <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className={`text-2xl font-bold ${allCompleted ? 'text-green-400' : ''}`}>
+            #{order.orderNumber}
+          </span>
+          <span className={`px-2 py-0.5 rounded text-xs font-medium ${ORDER_TYPE_COLORS[order.orderType]} text-white`}>
+            {ORDER_TYPE_LABELS[order.orderType] || order.orderType}
+          </span>
+        </div>
+        <div className={`text-lg font-mono font-bold ${getTimeStatusColor(order.timeStatus)}`}>
+          {formatTime(order.elapsedMinutes)}
+        </div>
+      </div>
+
+      {/* Order Info */}
+      <div className="px-4 py-2 bg-gray-750 border-b border-gray-700 text-sm text-gray-400">
+        <div className="flex justify-between">
+          <span>{order.tableName || order.tabName || order.employeeName}</span>
+          <span>{order.items.length} item{order.items.length !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+
+      {/* Items */}
+      <div className="divide-y divide-gray-700">
+        {order.items.map(item => (
+          <div
+            key={item.id}
+            className={`px-4 py-3 transition-colors ${
+              item.isCompleted
+                ? 'bg-green-900/20'
+                : 'hover:bg-gray-750 cursor-pointer'
+            }`}
+            onClick={() => item.isCompleted ? onUncompleteItem(item.id) : onBumpItem(item.id)}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <div className={`font-medium ${item.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>
+                  {/* Seat number prefix (T023) */}
+                  {item.seatNumber && (
+                    <span className="text-purple-400 font-bold mr-1">S{item.seatNumber}:</span>
+                  )}
+                  {item.soldByWeight && item.weight != null ? (
+                    <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs font-bold mr-2">
+                      {Number(item.weight).toFixed(2)} {item.weightUnit || 'lb'}
+                    </span>
+                  ) : (
+                    <span className="text-blue-400 mr-2">{item.quantity}x</span>
+                  )}
+                  {item.name}
+                  {item.pricingOptionLabel && (
+                    <span style={PRICING_OPTION_STYLE}>
+                      ({item.pricingOptionLabel})
+                    </span>
+                  )}
+                  {/* Course badge (T013) */}
+                  {item.courseNumber != null && item.courseNumber >= 0 && (
+                    <span
+                      className={`ml-2 px-1.5 py-0.5 text-xs font-bold rounded text-white ${item.isHeld ? 'animate-pulse ring-1 ring-red-400' : ''}`}
+                      style={{ backgroundColor: getCourseColor(item.courseNumber) }}
+                    >
+                      {item.courseNumber === 0 ? 'ASAP' : `C${item.courseNumber}`}
+                      {item.courseStatus === 'fired' && ' '}
+                      {item.courseStatus === 'ready' && ' '}
+                    </span>
+                  )}
+                  {/* Held badge */}
+                  {item.isHeld && (
+                    <span className="ml-1 px-1.5 py-0.5 bg-red-600 text-white text-xs font-bold rounded animate-pulse">
+                      HOLD
+                    </span>
+                  )}
+                  {item.resendCount > 0 && (
+                    <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded animate-pulse">
+                      RESEND{item.resendCount > 1 ? ` x${item.resendCount}` : ''}
+                    </span>
+                  )}
+                </div>
+
+                {item.resendNote && (
+                  <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-red-400'}`}>
+                    {item.resendNote}
+                  </div>
+                )}
+
+                {item.ingredientModifications?.length > 0 && (
+                  <div className="mt-1 space-y-0.5">
+                    {item.ingredientModifications.map(ing => (
+                      <div
+                        key={ing.id}
+                        className={`text-sm pl-4 font-semibold ${
+                          item.isCompleted ? 'text-gray-600' :
+                          ing.modificationType === 'no' ? 'text-red-400' :
+                          ing.modificationType === 'swap' ? 'text-purple-400' :
+                          ing.modificationType === 'extra' ? 'text-green-400' : 'text-cyan-400'
+                        }`}
+                      >
+                        {ing.modificationType === 'no' && `NO ${ing.ingredientName}`}
+                        {ing.modificationType === 'lite' && `LITE ${ing.ingredientName}`}
+                        {ing.modificationType === 'on_side' && `SIDE ${ing.ingredientName}`}
+                        {ing.modificationType === 'extra' && `EXTRA ${ing.ingredientName}`}
+                        {ing.modificationType === 'swap' && `SWAP ${ing.ingredientName} → ${ing.swappedToModifierName}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {item.modifiers.length > 0 && (() => {
+                  // Aggregate stacked modifiers by (name, preModifier, depth)
+                  const aggregatedMods = item.modifiers.reduce((acc, mod) => {
+                    const key = `${mod.name}|${mod.depth || 0}`
+                    const existing = acc.find(a => a.key === key)
+                    if (existing) {
+                      existing.count++
+                    } else {
+                      acc.push({ ...mod, key, count: 1 })
+                    }
+                    return acc
+                  }, [] as (typeof item.modifiers[number] & { key: string; count: number })[])
+
+                  return (
+                    <div className="mt-1 space-y-0.5">
+                      {aggregatedMods.map((mod, idx) => {
+                        const depth = mod.depth || 0
+                        const prefix = depth > 0 ? '-'.repeat(depth) + ' ' : '• '
+                        return (
+                          <div
+                            key={`${mod.key}-${idx}`}
+                            className={`text-sm pl-4 ${
+                              item.isCompleted ? 'text-gray-600' : depth === 0 ? 'text-yellow-400' : 'text-yellow-300'
+                            }`}
+                          >
+                            {prefix}{mod.name}{mod.count > 1 ? ` ×${mod.count}` : ''}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
+
+                {item.specialNotes && (
+                  <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-orange-400'}`}>
+                    {item.specialNotes}
+                  </div>
+                )}
+
+                {/* Allergen badges */}
+                {item.allergens && item.allergens.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {item.allergens.map(allergen => (
+                      <span
+                        key={allergen}
+                        className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${
+                          item.isCompleted
+                            ? 'bg-gray-700 text-gray-400 border-gray-600'
+                            : 'bg-orange-900/60 text-orange-300 border-orange-500/50'
+                        }`}
+                      >
+                        {allergen.toUpperCase()}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Completion info (T023) */}
+                {item.isCompleted && item.completedAt && (
+                  <div className="mt-1 text-xs text-green-500">
+                    ✓ Completed {new Date(item.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                    {item.completedBy && <span className="text-gray-500"> by {item.completedBy}</span>}
+                  </div>
+                )}
+              </div>
+
+              {item.isCompleted ? (
+                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="w-6 h-6 border-2 border-gray-500 rounded-full flex-shrink-0" />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {order.notes && (
+        <div className="px-4 py-2 bg-orange-900/30 border-t border-orange-800/50">
+          <p className="text-sm text-orange-300">
+            <span className="font-medium">Note:</span> {order.notes}
+          </p>
+        </div>
+      )}
+
+      {!allCompleted && (
+        <div className="p-3 border-t border-gray-700">
+          <button
+            onClick={handleBumpOrderClick}
+            disabled={!socketConnected}
+            className={`w-full py-3 rounded-lg font-bold text-lg transition-colors ${
+              socketConnected
+                ? 'bg-green-600 hover:bg-green-700'
+                : 'bg-gray-600 cursor-not-allowed opacity-60'
+            }`}
+          >
+            BUMP ORDER
+          </button>
+        </div>
+      )}
+    </div>
+  )
+})
+
+// Stable style object for pricing option labels (avoids re-allocation per render)
+const PRICING_OPTION_STYLE: React.CSSProperties = {
+  fontSize: '12px',
+  fontWeight: 600,
+  color: '#38bdf8',
+  marginLeft: '6px',
+}
+
+// Hoisted helpers (pure functions, no component state dependency)
+const formatTime = (minutes: number) => {
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  return `${hours}h ${mins}m`
+}
+
+const getTimeStatusColor = (status: string) => {
+  switch (status) {
+    case 'fresh': return 'text-green-400'
+    case 'aging': return 'text-yellow-400'
+    case 'late': return 'text-red-400'
+    default: return 'text-gray-400'
+  }
+}
+
+const getTimeStatusBg = (status: string) => {
+  switch (status) {
+    case 'fresh': return 'border-green-500'
+    case 'aging': return 'border-yellow-400 bg-yellow-950/30'
+    case 'late': return 'border-red-400 bg-red-950/40 animate-pulse'
+    default: return 'border-gray-500'
+  }
+}
+
+// TODO: KDSContent is ~900 lines. Consider extracting KDSHeader, KDSItemRow into separate components.
 function KDSContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -190,12 +469,13 @@ function KDSContent() {
         )
 
         const data = await response.json()
+        const result = data.data || data
 
-        if (response.ok && data.authenticated) {
+        if (response.ok && result.authenticated) {
           // Successfully authenticated
-          setScreenConfig(data.screen)
+          setScreenConfig(result.screen)
           setDeviceToken(storedToken)
-          localStorage.setItem(SCREEN_CONFIG_KEY, JSON.stringify(data.screen))
+          localStorage.setItem(SCREEN_CONFIG_KEY, JSON.stringify(result.screen))
           setAuthState('authenticated')
           return
         }
@@ -229,7 +509,8 @@ function KDSContent() {
 
         if (response.ok) {
           const data = await response.json()
-          setScreenConfig(data.screen)
+          const result = data.data || data
+          setScreenConfig(result.screen)
           setDeviceToken(storedToken)
           setAuthState('authenticated')
           return
@@ -250,6 +531,13 @@ function KDSContent() {
     // No authentication - require pairing
     setAuthState('requires_pairing')
   }
+
+  // Redirect entertainment screens to the dedicated entertainment KDS page
+  useEffect(() => {
+    if (authState === 'authenticated' && screenConfig?.screenType === 'entertainment') {
+      router.replace('/entertainment')
+    }
+  }, [authState, screenConfig, router])
 
   // Redirect to pairing if needed
   useEffect(() => {
@@ -315,12 +603,22 @@ function KDSContent() {
     const onOrderClosed = () => debouncedLoadOrders()
     const onDisconnect = () => setSocketConnected(false)
 
+    // Entertainment timer expiry: when a timed rental expires, the cron emits
+    // entertainment:session-update with action='stopped'. Refresh KDS data so
+    // entertainment-type stations reflect the updated item status.
+    const onEntertainmentSessionUpdate = (payload: { action: string; tableName?: string }) => {
+      if (payload.action === 'stopped' || payload.action === 'warning') {
+        debouncedLoadOrders()
+      }
+    }
+
     socket.on('connect', onConnect)
     socket.on('kds:order-received', onOrderReceived)
     socket.on('kds:item-status', onItemStatus)
     socket.on('kds:order-bumped', onOrderBumped)
     socket.on('order:created', onOrderCreated)
     socket.on('order:closed', onOrderClosed)
+    socket.on('entertainment:session-update', onEntertainmentSessionUpdate)
     socket.on('disconnect', onDisconnect)
 
     if (socket.connected) {
@@ -336,6 +634,7 @@ function KDSContent() {
       socket.off('kds:order-bumped', onOrderBumped)
       socket.off('order:created', onOrderCreated)
       socket.off('order:closed', onOrderClosed)
+      socket.off('entertainment:session-update', onEntertainmentSessionUpdate)
       socket.off('disconnect', onDisconnect)
       socketRef.current = null
       releaseSharedSocket()
@@ -690,31 +989,7 @@ function KDSContent() {
     }
   }
 
-  const formatTime = (minutes: number) => {
-    if (minutes < 1) return 'Just now'
-    if (minutes < 60) return `${minutes}m`
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    return `${hours}h ${mins}m`
-  }
-
-  const getTimeStatusColor = (status: string) => {
-    switch (status) {
-      case 'fresh': return 'text-green-400'
-      case 'aging': return 'text-yellow-400'
-      case 'late': return 'text-red-400'
-      default: return 'text-gray-400'
-    }
-  }
-
-  const getTimeStatusBg = (status: string) => {
-    switch (status) {
-      case 'fresh': return 'border-green-500'
-      case 'aging': return 'border-yellow-400 bg-yellow-950/30'
-      case 'late': return 'border-red-400 bg-red-950/40 animate-pulse'
-      default: return 'border-gray-500'
-    }
-  }
+  // formatTime, getTimeStatusColor, getTimeStatusBg hoisted to module scope for KDSOrderCard
 
   // Show loading while checking auth
   if (authState === 'checking') {
@@ -1077,235 +1352,17 @@ function KDSContent() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-            {orders.map(order => {
-              const allCompleted = order.items.every(item => item.isCompleted)
-
-              return (
+            {orders.map(order => (
                 <SilentErrorBoundary key={order.id} name="KDS Ticket">
-                <div
-                  className={`bg-gray-800 rounded-lg border-t-4 overflow-hidden transition-all ${
-                    allCompleted ? 'opacity-50 border-green-500' : getTimeStatusBg(order.timeStatus)
-                  }`}
-                >
-                  {/* Order Header */}
-                  <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className={`text-2xl font-bold ${allCompleted ? 'text-green-400' : ''}`}>
-                        #{order.orderNumber}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${ORDER_TYPE_COLORS[order.orderType]} text-white`}>
-                        {ORDER_TYPE_LABELS[order.orderType] || order.orderType}
-                      </span>
-                    </div>
-                    <div className={`text-lg font-mono font-bold ${getTimeStatusColor(order.timeStatus)}`}>
-                      {formatTime(order.elapsedMinutes)}
-                    </div>
-                  </div>
-
-                  {/* Order Info */}
-                  <div className="px-4 py-2 bg-gray-750 border-b border-gray-700 text-sm text-gray-400">
-                    <div className="flex justify-between">
-                      <span>{order.tableName || order.tabName || order.employeeName}</span>
-                      <span>{order.items.length} item{order.items.length !== 1 ? 's' : ''}</span>
-                    </div>
-                  </div>
-
-                  {/* Items */}
-                  <div className="divide-y divide-gray-700">
-                    {order.items.map(item => (
-                      <div
-                        key={item.id}
-                        className={`px-4 py-3 transition-colors ${
-                          item.isCompleted
-                            ? 'bg-green-900/20'
-                            : 'hover:bg-gray-750 cursor-pointer'
-                        }`}
-                        onClick={() => item.isCompleted ? handleUncompleteItem(item.id) : handleBumpItem(item.id)}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">
-                            <div className={`font-medium ${item.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>
-                              {/* Seat number prefix (T023) */}
-                              {item.seatNumber && (
-                                <span className="text-purple-400 font-bold mr-1">S{item.seatNumber}:</span>
-                              )}
-                              {item.soldByWeight && item.weight != null ? (
-                                <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs font-bold mr-2">
-                                  {Number(item.weight).toFixed(2)} {item.weightUnit || 'lb'}
-                                </span>
-                              ) : (
-                                <span className="text-blue-400 mr-2">{item.quantity}x</span>
-                              )}
-                              {item.name}
-                              {item.pricingOptionLabel && (
-                                <span style={{
-                                  fontSize: '12px',
-                                  fontWeight: 600,
-                                  color: '#38bdf8',
-                                  marginLeft: '6px',
-                                }}>
-                                  ({item.pricingOptionLabel})
-                                </span>
-                              )}
-                              {/* Course badge (T013) */}
-                              {item.courseNumber != null && item.courseNumber >= 0 && (
-                                <span
-                                  className={`ml-2 px-1.5 py-0.5 text-xs font-bold rounded text-white ${item.isHeld ? 'animate-pulse ring-1 ring-red-400' : ''}`}
-                                  style={{ backgroundColor: getCourseColor(item.courseNumber) }}
-                                >
-                                  {item.courseNumber === 0 ? 'ASAP' : `C${item.courseNumber}`}
-                                  {item.courseStatus === 'fired' && ' '}
-                                  {item.courseStatus === 'ready' && ' '}
-                                </span>
-                              )}
-                              {/* Held badge */}
-                              {item.isHeld && (
-                                <span className="ml-1 px-1.5 py-0.5 bg-red-600 text-white text-xs font-bold rounded animate-pulse">
-                                  HOLD
-                                </span>
-                              )}
-                              {item.resendCount > 0 && (
-                                <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded animate-pulse">
-                                  RESEND{item.resendCount > 1 ? ` x${item.resendCount}` : ''}
-                                </span>
-                              )}
-                            </div>
-
-                            {item.resendNote && (
-                              <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-red-400'}`}>
-                                {item.resendNote}
-                              </div>
-                            )}
-
-                            {item.ingredientModifications?.length > 0 && (
-                              <div className="mt-1 space-y-0.5">
-                                {item.ingredientModifications.map(ing => (
-                                  <div
-                                    key={ing.id}
-                                    className={`text-sm pl-4 font-semibold ${
-                                      item.isCompleted ? 'text-gray-600' :
-                                      ing.modificationType === 'no' ? 'text-red-400' :
-                                      ing.modificationType === 'swap' ? 'text-purple-400' :
-                                      ing.modificationType === 'extra' ? 'text-green-400' : 'text-cyan-400'
-                                    }`}
-                                  >
-                                    {ing.modificationType === 'no' && `NO ${ing.ingredientName}`}
-                                    {ing.modificationType === 'lite' && `LITE ${ing.ingredientName}`}
-                                    {ing.modificationType === 'on_side' && `SIDE ${ing.ingredientName}`}
-                                    {ing.modificationType === 'extra' && `EXTRA ${ing.ingredientName}`}
-                                    {ing.modificationType === 'swap' && `SWAP ${ing.ingredientName} → ${ing.swappedToModifierName}`}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {item.modifiers.length > 0 && (() => {
-                              // Aggregate stacked modifiers by (name, preModifier, depth)
-                              const aggregatedMods = item.modifiers.reduce((acc, mod) => {
-                                const key = `${mod.name}|${mod.depth || 0}`
-                                const existing = acc.find(a => a.key === key)
-                                if (existing) {
-                                  existing.count++
-                                } else {
-                                  acc.push({ ...mod, key, count: 1 })
-                                }
-                                return acc
-                              }, [] as (typeof item.modifiers[number] & { key: string; count: number })[])
-
-                              return (
-                                <div className="mt-1 space-y-0.5">
-                                  {aggregatedMods.map((mod, idx) => {
-                                    const depth = mod.depth || 0
-                                    const prefix = depth > 0 ? '-'.repeat(depth) + ' ' : '• '
-                                    return (
-                                      <div
-                                        key={`${mod.key}-${idx}`}
-                                        className={`text-sm pl-4 ${
-                                          item.isCompleted ? 'text-gray-600' : depth === 0 ? 'text-yellow-400' : 'text-yellow-300'
-                                        }`}
-                                      >
-                                        {prefix}{mod.name}{mod.count > 1 ? ` ×${mod.count}` : ''}
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                              )
-                            })()}
-
-                            {item.specialNotes && (
-                              <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-orange-400'}`}>
-                                {item.specialNotes}
-                              </div>
-                            )}
-
-                            {/* Allergen badges */}
-                            {item.allergens && item.allergens.length > 0 && (
-                              <div className="mt-1.5 flex flex-wrap gap-1">
-                                {item.allergens.map(allergen => (
-                                  <span
-                                    key={allergen}
-                                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${
-                                      item.isCompleted
-                                        ? 'bg-gray-700 text-gray-400 border-gray-600'
-                                        : 'bg-orange-900/60 text-orange-300 border-orange-500/50'
-                                    }`}
-                                  >
-                                    {allergen.toUpperCase()}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Completion info (T023) */}
-                            {item.isCompleted && item.completedAt && (
-                              <div className="mt-1 text-xs text-green-500">
-                                ✓ Completed {new Date(item.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                                {item.completedBy && <span className="text-gray-500"> by {item.completedBy}</span>}
-                              </div>
-                            )}
-                          </div>
-
-                          {item.isCompleted ? (
-                            <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
-                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </div>
-                          ) : (
-                            <div className="w-6 h-6 border-2 border-gray-500 rounded-full flex-shrink-0" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {order.notes && (
-                    <div className="px-4 py-2 bg-orange-900/30 border-t border-orange-800/50">
-                      <p className="text-sm text-orange-300">
-                        <span className="font-medium">Note:</span> {order.notes}
-                      </p>
-                    </div>
-                  )}
-
-                  {!allCompleted && (
-                    <div className="p-3 border-t border-gray-700">
-                      <button
-                        onClick={() => handleBumpOrder(order)}
-                        disabled={!socketConnected}
-                        className={`w-full py-3 rounded-lg font-bold text-lg transition-colors ${
-                          socketConnected
-                            ? 'bg-green-600 hover:bg-green-700'
-                            : 'bg-gray-600 cursor-not-allowed opacity-60'
-                        }`}
-                      >
-                        BUMP ORDER
-                      </button>
-                    </div>
-                  )}
-                </div>
+                  <KDSOrderCard
+                    order={order}
+                    onBumpItem={handleBumpItem}
+                    onUncompleteItem={handleUncompleteItem}
+                    onBumpOrder={handleBumpOrder}
+                    socketConnected={socketConnected}
+                  />
                 </SilentErrorBoundary>
-              )
-            })}
+            ))}
           </div>
         )}
       </div>

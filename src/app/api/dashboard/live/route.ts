@@ -7,6 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -65,7 +66,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: {
           locationId,
           deletedAt: null,
-          status: { in: ['closed', 'paid'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
+          parentOrderId: null,
           OR: [
             { businessDayDate: { gte: startOfDay, lte: endOfDay } },
             { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
@@ -86,7 +88,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: {
           locationId,
           deletedAt: null,
-          status: { in: ['closed', 'paid'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
+          parentOrderId: null,
           OR: [
             { businessDayDate: { gte: lastWeekRange.start, lte: new Date(lastWeekRange.start.getTime() + elapsedMs) } },
             { businessDayDate: null, createdAt: { gte: lastWeekRange.start, lte: new Date(lastWeekRange.start.getTime() + elapsedMs) } },
@@ -141,6 +144,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: {
           locationId,
           deletedAt: null,
+          status: { in: [...REVENUE_ORDER_STATUSES] },
           OR: [
             { businessDayDate: { gte: startOfDay, lte: endOfDay } },
             { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },

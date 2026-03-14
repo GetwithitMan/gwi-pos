@@ -1003,13 +1003,13 @@ export function FloorPlanHome({
 
   // Instant local table status: When items are added to a table order,
   // immediately mark the table as 'occupied' in local state (no server round-trip)
-  const currentOrder = useOrderStore(s => s.currentOrder)
-  const itemCount = currentOrder?.items?.length ?? 0
+  // Granular selector: only re-render when item count changes, not on every item mutation
+  const currentOrderItemCount = useOrderStore(s => s.currentOrder?.items?.length ?? 0)
   useEffect(() => {
-    if (activeTableId && itemCount > 0) {
+    if (activeTableId && currentOrderItemCount > 0) {
       updateTableStatus(activeTableId, 'occupied')
     }
-  }, [activeTableId, itemCount, updateTableStatus])
+  }, [activeTableId, currentOrderItemCount, updateTableStatus])
 
   // Load order when orderToLoad prop is set (from Open Orders panel)
   useEffect(() => {

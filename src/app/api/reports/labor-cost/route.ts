@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // I-2: Labor cost report — hours, wages, labor% by date/role/employee vs sales
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -54,8 +55,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.orderSnapshot.aggregate({
         where: {
           locationId,
-          status: { in: ['completed', 'paid'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
           deletedAt: null,
+          parentOrderId: null,
           OR: [
             { businessDayDate: { gte: start, lte: end } },
             { businessDayDate: null, createdAt: { gte: start, lte: end } },
@@ -98,8 +100,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           key = entry.employeeId
           label = entry.employee.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`
           break
-        default: // date
-          key = entry.clockIn.toISOString().split('T')[0]
+        default: { // date
+          const tz = process.env.TIMEZONE || process.env.TZ
+          key = tz ? entry.clockIn.toLocaleDateString('en-CA', { timeZone: tz }) : entry.clockIn.toISOString().split('T')[0]
+        }
           label = key
       }
 
@@ -117,8 +121,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         by: ['businessDayDate'],
         where: {
           locationId,
-          status: { in: ['completed', 'paid'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
           deletedAt: null,
+          parentOrderId: null,
           OR: [
             { businessDayDate: { gte: start, lte: end } },
             { businessDayDate: null, createdAt: { gte: start, lte: end } },
@@ -126,9 +131,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         _sum: { subtotalCents: true },
       })
+      const tzLc = process.env.TIMEZONE || process.env.TZ
       dailyOrders.forEach(d => {
         if (d.businessDayDate) {
-          const key = d.businessDayDate.toISOString().split('T')[0]
+          const key = tzLc ? d.businessDayDate.toLocaleDateString('en-CA', { timeZone: tzLc }) : d.businessDayDate.toISOString().split('T')[0]
           dailySales[key] = (d._sum.subtotalCents || 0) / 100
         }
       })

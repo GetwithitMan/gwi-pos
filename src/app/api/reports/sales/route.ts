@@ -7,6 +7,8 @@ import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { getBusinessDayRange } from '@/lib/business-day'
+import { getHourInTimezone } from '@/lib/timezone'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET sales report with comprehensive groupings
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -78,9 +80,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.order.findMany({
         where: {
           locationId,
+          deletedAt: null,
           ...dateFilter,
           ...additionalFilters,
-          status: { in: ['completed', 'paid'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
           NOT: { splitOrders: { some: {} } },
         },
         include: {
@@ -227,8 +230,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         dailySales[dateKey].tips += Number(p.tipAmount) || 0
       })
 
-      // Hourly grouping
-      const hour = order.createdAt.getHours()
+      // Hourly grouping — timezone-aware
+      const tz2 = process.env.TIMEZONE || process.env.TZ
+      const hour = tz2 ? getHourInTimezone(order.createdAt, tz2) : order.createdAt.getHours()
       if (!hourlySales[hour]) {
         hourlySales[hour] = { hour, orders: 0, gross: 0 }
       }

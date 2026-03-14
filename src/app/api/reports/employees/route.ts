@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { getHourInTimezone } from '@/lib/timezone'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET employee performance report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -58,7 +60,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         locationId,
         deletedAt: null,
-        status: { in: ['completed', 'paid'] },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
+        parentOrderId: null,
         ...orderDateFilter,
         ...(employeeId ? { employeeId } : {}),
       },
@@ -219,8 +222,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       tips: number
     }> = {}
 
+    const tz = process.env.TIMEZONE || process.env.TZ
     orders.forEach(order => {
-      const hour = order.createdAt.getHours()
+      const hour = tz ? getHourInTimezone(order.createdAt, tz) : order.createdAt.getHours()
       if (!hourlyStats[hour]) {
         hourlyStats[hour] = { hour, sales: 0, orders: 0, tips: 0 }
       }
@@ -240,7 +244,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }>> = {}
 
     orders.forEach(order => {
-      const dateKey = order.createdAt.toISOString().split('T')[0]
+      const dateKey = tz ? order.createdAt.toLocaleDateString('en-CA', { timeZone: tz }) : order.createdAt.toISOString().split('T')[0]
       const empId = order.employeeId
       const empName = employeeStats[empId]?.name || 'Unknown'
       const key = `${dateKey}-${empId}`

@@ -128,6 +128,13 @@ Only after Steps 1–5:
 - **Report/admin pages use `useReportAutoRefresh`:** All live-data pages must import the hook for socket-driven auto-refresh (2s debounce, 60s fallback). Never rely on manual refresh only.
 - **Full rules:** `docs/guides/CODING-STANDARDS.md`
 
+### Performance Optimizations (2026-03-13 Audit)
+- **8 new DB indices** for delta sync and hot queries (orders by status, items by orderId, events by syncStatus, etc.)
+- **Batch tip updates** — tips are applied in batch rather than one-at-a-time
+- **Parallel socket emissions** — multi-event socket broadcasts run concurrently
+- **Bootstrap includes open orders** — device reboot recovery no longer requires a full re-sync; open orders are sent during bootstrap
+- **`formatCurrency` consolidated** in `src/lib/utils.ts` — single canonical implementation, all other copies removed
+
 ### Multi-Tenancy
 - Every table has `locationId` (except Organization, Location)
 - Always filter: `locationId` + `deletedAt: null`
@@ -252,27 +259,17 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | EOD Reset | `docs/features/eod-reset.md` | — | `src/app/api/eod/reset/` |
 | Print routing | `docs/features/print-routing.md` | — | `src/lib/print-template-factory.ts`, `src/lib/print-factory.ts` |
 | Customer receipts | `docs/features/customer-receipts.md` | — | `src/lib/print-factory.ts` (`buildReceiptWithSettings`), `src/app/api/receipts/` |
-| Discounts (auto) | `docs/features/auto-discounts.md` | — | *(Planned — not built)* |
-| Upsell prompts | `docs/features/upsell-prompts.md` | — | *(Schema built — models exist, no API/UI)* |
-| Repeat orders | `docs/features/repeat-orders.md` | — | *(Planned — not built)* |
-| Custom menus | `docs/features/custom-menus.md` | — | *(Planned — not built)* |
 | Commissioned items | `docs/features/commissioned-items.md` | — | `src/components/menu/ItemSettingsModal.tsx`, `src/app/api/reports/commission/`, `src/app/(pos)/crew/commission/` |
 | Paid in / out | `docs/features/paid-in-out.md` | — | `src/app/api/paid-in-out/`, `src/app/(admin)/cash-drawer/paid-in-out/` |
-| Staff training mode | `docs/features/staff-training.md` | — | *(Planned — not built)* |
 | Live dashboard | `docs/features/live-dashboard.md` | — | `src/app/api/dashboard/live/`, `src/app/(admin)/dashboard/` |
 | Online ordering | `docs/features/online-ordering.md` | — | `src/app/(admin)/settings/online-ordering/` — uses Datacap PayAPI |
-| QR self-ordering | `docs/features/qr-ordering.md` | — | *(Partially built — `/api/public/resolve-order-code` exists)* |
-| Delivery management | `docs/features/delivery.md` | — | *(Planned — not built)* |
 | Bottle service | `docs/features/bottle-service.md` | — | `src/app/api/bottle-service/` |
-| Reservations | `docs/features/reservations.md` | — | *(Planned — not built)* |
-| Host management | `docs/features/host-management.md` | — | *(Planned — not built)* |
-| Multi-location | `docs/features/multi-location.md` | — | *(Planned — not built)* |
-| Invoicing / B2B | `docs/features/invoicing.md` | — | *(Planned — not built)* |
 | Hotel PMS integration | `docs/features/hotel-pms.md` | — | `src/lib/oracle-pms-client.ts`, `src/app/api/integrations/oracle-pms/`, `src/app/(admin)/settings/integrations/oracle-pms/page.tsx` |
 | 7shifts labor integration | `docs/features/7shifts-integration.md` | `docs/skills/SPEC-485-7SHIFTS-INTEGRATION.md` | `src/lib/7shifts-client.ts`, `src/app/api/integrations/7shifts/`, `src/app/api/webhooks/7shifts/`, `src/app/(admin)/settings/integrations/7shifts/` |
 | MarginEdge COGS integration | `docs/features/marginedge-integration.md` | `docs/skills/SPEC-490-MARGINEDGE-INTEGRATION.md` | `src/lib/marginedge-client.ts`, `src/app/api/integrations/marginedge/`, `src/app/api/cron/marginedge-sync/` |
-| Printer settings | `docs/features/printer-settings.md` | — | *(Planned — not built)* |
 | Cloud-Primary Sync | `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6 | Sync + Bridge | outage-replay-worker.ts, fulfillment-bridge-worker.ts, bridge-checkpoint.ts |
+
+> **Planned/unbuilt features** (auto-discounts, reservations, QR ordering, delivery, multi-location, etc.) are tracked in `docs/features/_INDEX.md`. Add them to this table when code is written.
 
 ### Flow Docs (read when your change crosses feature boundaries)
 

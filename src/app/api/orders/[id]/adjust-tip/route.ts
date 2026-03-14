@@ -89,10 +89,11 @@ export const PATCH = withVenue(async function PATCH(
         return { error: 'Cannot increase tip on gift card payment — gift card balance already consumed', status: 400 } as const
       }
 
-      // Tip cap: if baseAmount is 0 or negative (comped/refunded), no tip allowed
+      // Tip cap: if baseAmount is 0 or negative (comped/refunded), no tip allowed.
+      // 500% cap matches the guard in the pay route (line 534-540).
       // payment.amount IS the base amount (food + tax, excluding tip); tip is stored separately in tipAmount
       const baseAmount = Number(payment.amount)
-      const maxTip = baseAmount > 0 ? baseAmount : 0
+      const maxTip = baseAmount > 0 ? baseAmount * 5 : 0
       if (newTipAmount > maxTip) {
         return {
           error: `Tip amount $${newTipAmount.toFixed(2)} exceeds the maximum allowed for this payment`,

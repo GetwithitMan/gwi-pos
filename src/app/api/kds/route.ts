@@ -27,43 +27,42 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    // W2-K3: Lazy expiry for entertainment sessions
-    // Throttled to every 30s — no need to scan on every poll
+    // W2-K3: Lazy expiry for entertainment sessions — fire-and-forget
+    // Throttled to every 30s. Runs in background to avoid blocking KDS response.
     const shouldRunExpiry = Date.now() - _lastExpiryCheck > _EXPIRY_INTERVAL
-    if (shouldRunExpiry) _lastExpiryCheck = Date.now()
-    const expiredItems = shouldRunExpiry ? await db.orderItem.findMany({
-      where: {
-        order: { locationId },
-        blockTimeExpiresAt: { lte: new Date() },
-        kitchenStatus: { not: 'delivered' },
-        isCompleted: false,
-        deletedAt: null,
-      },
-      select: { id: true, orderId: true },
-    }) : []
-
-    if (expiredItems.length > 0) {
-      await db.orderItem.updateMany({
-        where: { id: { in: expiredItems.map(i => i.id) } },
-        data: {
-          kitchenStatus: 'delivered',
-          isCompleted: true,
-          completedAt: new Date(),
-        },
-      })
-
-      // Fire-and-forget: notify KDS screens of the status change
-      for (const item of expiredItems) {
-        dispatchItemStatus(locationId, {
-          orderId: item.orderId,
-          itemId: item.id,
-          status: 'completed',
-          stationId: '',
-          updatedBy: 'system',
-        }, { async: true }).catch(err => {
-          console.error('[KDS] Failed to dispatch entertainment expiry:', err)
-        })
-      }
+    if (shouldRunExpiry) {
+      _lastExpiryCheck = Date.now()
+      void (async () => {
+        try {
+          const expiredItems = await db.orderItem.findMany({
+            where: {
+              order: { locationId },
+              blockTimeExpiresAt: { lte: new Date() },
+              kitchenStatus: { not: 'delivered' },
+              isCompleted: false,
+              deletedAt: null,
+            },
+            select: { id: true, orderId: true },
+          })
+          if (expiredItems.length > 0) {
+            await db.orderItem.updateMany({
+              where: { id: { in: expiredItems.map(i => i.id) } },
+              data: { kitchenStatus: 'delivered', isCompleted: true, completedAt: new Date() },
+            })
+            for (const item of expiredItems) {
+              dispatchItemStatus(locationId!, {
+                orderId: item.orderId,
+                itemId: item.id,
+                status: 'completed',
+                stationId: '',
+                updatedBy: 'system',
+              }, { async: true }).catch(console.error)
+            }
+          }
+        } catch (err) {
+          console.error('[KDS] Entertainment expiry check failed:', err)
+        }
+      })()
     }
 
     // Get the station info if specified

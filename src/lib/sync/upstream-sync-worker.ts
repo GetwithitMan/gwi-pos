@@ -206,23 +206,21 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
       })
 
       // Neon transaction committed — stamp syncedAt locally for the whole chunk.
-      // Each stamp is individually try/caught: if one fails, the rest still get
-      // stamped. A missed stamp just means the row is re-sent next cycle
-      // (idempotent via ON CONFLICT).
-      for (const row of chunk) {
-        try {
-          await masterClient.$executeRawUnsafe(
-            `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
-            row.id as string
-          )
-          synced++
-        } catch (stampErr) {
-          console.error(
-            `[UpstreamSync] ${tableName} row ${row.id}: syncedAt stamp failed (will retry next cycle):`,
-            stampErr instanceof Error ? stampErr.message : stampErr
-          )
-          metrics.errorCount++
-        }
+      // Batch UPDATE using ANY() for efficiency (single query instead of N queries).
+      // A missed stamp just means the row is re-sent next cycle (idempotent via ON CONFLICT).
+      try {
+        const ids = chunk.map(r => r.id as string)
+        await masterClient.$executeRawUnsafe(
+          `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = ANY($1::text[])`,
+          ids
+        )
+        synced += chunk.length
+      } catch (stampErr) {
+        console.error(
+          `[UpstreamSync] ${tableName} batch syncedAt stamp failed (${chunk.length} rows, will retry next cycle):`,
+          stampErr instanceof Error ? stampErr.message : stampErr
+        )
+        metrics.errorCount++
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)

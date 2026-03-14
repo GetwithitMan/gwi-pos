@@ -132,11 +132,12 @@ interface ReaderModalProps {
   existing?: RegisteredReader
   terminals: Terminal[]
   locationId: string
+  employeeId?: string
   onClose: () => void
   onSaved: () => void
 }
 
-function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, onSaved }: ReaderModalProps) {
+function ReaderModal({ mode, scanned, existing, terminals, locationId, employeeId, onClose, onSaved }: ReaderModalProps) {
   const isEdit = mode === 'edit'
   const prefilled = scanned || existing
 
@@ -162,6 +163,7 @@ function ReaderModal({ mode, scanned, existing, terminals, locationId, onClose, 
       let method = 'POST'
       const body: Record<string, unknown> = {
         locationId,
+        employeeId,
         name: form.name.trim(),
         connectionType: form.connectionType,
         ipAddress: form.ipAddress,
@@ -487,7 +489,7 @@ export default function PaymentReadersPage() {
       const res = await fetch(`/api/hardware/payment-readers/${reader.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !reader.isActive }),
+        body: JSON.stringify({ isActive: !reader.isActive, employeeId: employee?.id, locationId }),
       })
       if (!res.ok) {
         const d = await res.json()
@@ -532,7 +534,11 @@ export default function PaymentReadersPage() {
     if (!confirm(`Delete "${reader.name}"? This cannot be undone.`)) return
     setDeletingId(reader.id)
     try {
-      const res = await fetch(`/api/hardware/payment-readers/${reader.id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/hardware/payment-readers/${reader.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: employee?.id, locationId }),
+      })
       if (!res.ok) {
         const d = await res.json()
         throw new Error(d.error || 'Delete failed')
@@ -871,6 +877,7 @@ export default function PaymentReadersPage() {
           existing={modal.existing}
           terminals={terminals}
           locationId={locationId}
+          employeeId={employee?.id}
           onClose={() => setModal(null)}
           onSaved={() => {
             fetchReaders()

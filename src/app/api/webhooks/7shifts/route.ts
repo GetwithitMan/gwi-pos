@@ -146,21 +146,18 @@ async function processWebhookEvent(
       const data = payload.data as Record<string, unknown> | undefined
       const startDate = (data?.start as string) || getBusinessDate(timezone, 0)
       const endDate = (data?.end as string) || getBusinessDate(timezone, 14)
-      console.log(`[7shifts/webhook] Schedule published — pulling ${startDate} to ${endDate} for location ${locationId}`)
       await triggerSchedulePull(locationId, timezone, startDate, endDate)
       break
     }
     case 'time_punch.created':
     case 'time_punch.edited':
     case 'time_punch.deleted':
-      console.log(`[7shifts/webhook] Time punch event: ${event}`, payload.id ?? '')
       break
     case 'user.modified':
     case 'user.deactivated':
-      console.log(`[7shifts/webhook] User event: ${event}`, payload.id ?? '')
       break
     default:
-      console.log(`[7shifts/webhook] Unknown event: ${event}`)
+      console.warn(`[7shifts/webhook] Unknown event: ${event}`)
   }
 }
 
@@ -252,7 +249,6 @@ async function triggerSchedulePull(
       upserted++
     }
 
-    console.log(`[7shifts/webhook] Schedule pull complete: ${upserted} upserted, ${deleted} deleted, ${skipped} skipped`)
     await updateSyncStatus(locationId, {
       lastSchedulePullAt: new Date().toISOString(),
       lastSchedulePullStatus: 'success',

@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { getCurrentBusinessDay } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 
 export const GET = withVenue(async (request: NextRequest) => {
   try {
@@ -19,9 +22,17 @@ export const GET = withVenue(async (request: NextRequest) => {
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // 1. Cash on hand from active drawers (paid in/out)
+    // Get current business day for filtering paid in/out
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
+    const dayStartTime = locationSettings.businessDay?.dayStartTime || '04:00'
+    const currentDay = getCurrentBusinessDay(dayStartTime)
+
+    // 1. Cash on hand from active drawers (paid in/out) — current business day only
     const paidInOuts = await db.paidInOut.findMany({
-      where: { locationId },
+      where: {
+        locationId,
+        createdAt: { gte: currentDay.start, lte: currentDay.end },
+      },
       select: { type: true, amount: true },
     })
 

@@ -120,8 +120,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Record not found or already resolved' }, { status: 404 })
     }
 
-    console.log(`[Datacap Reconciliation] Sale ${id} marked as ${resolution}${note ? `: ${note}` : ''}`)
-
     return NextResponse.json({ success: true, id, resolution })
   } catch (error) {
     console.error('[Datacap Reconciliation] POST error:', error)

@@ -89,14 +89,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
       const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
+      // Batch-fetch all menu items in one query instead of N+1 findUnique calls
+      const menuItemIds = [...new Set(items.map((item: any) => item.menuItemId))]
+      const menuItemsMap = new Map(
+        (await tx.menuItem.findMany({
+          where: { id: { in: menuItemIds } },
+        })).map(mi => [mi.id, mi])
+      )
+
       // Calculate totals from items
       let subtotal = 0
       const orderItems: any[] = []
 
       for (const item of items) {
-        const menuItem = await tx.menuItem.findUnique({
-          where: { id: item.menuItemId },
-        })
+        const menuItem = menuItemsMap.get(item.menuItemId)
 
         if (!menuItem) {
           throw new Error(`Menu item ${item.menuItemId} not found`)
@@ -149,15 +155,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
 
-      // Create order items
-      for (const item of orderItems) {
-        await tx.orderItem.create({
-          data: {
-            ...item,
-            orderId: newOrder.id,
-          },
-        })
-      }
+      // Create order items in parallel
+      await Promise.all(
+        orderItems.map(item =>
+          tx.orderItem.create({
+            data: {
+              ...item,
+              orderId: newOrder.id,
+            },
+          })
+        )
+      )
 
       // If table, update status
       if (tableId) {

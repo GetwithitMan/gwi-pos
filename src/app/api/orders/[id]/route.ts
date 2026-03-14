@@ -21,16 +21,8 @@ export const GET = withVenue(async function GET(
     const { id } = await params
     const view = request.nextUrl.searchParams.get('view')
 
-    // Auth check — require POS access (locationId resolved from order record below)
+    // Auth check deferred — resolved from the order record after fetch (eliminates double-fetch)
     const requestingEmployeeId = request.headers.get('x-employee-id') || request.nextUrl.searchParams.get('requestingEmployeeId')
-    if (requestingEmployeeId) {
-      // Lightweight lookup to get locationId for auth check
-      const orderForAuth = await db.order.findFirst({ where: { id, deletedAt: null }, select: { locationId: true } })
-      if (orderForAuth) {
-        const auth = await requirePermission(requestingEmployeeId, orderForAuth.locationId, PERMISSIONS.POS_ACCESS)
-        if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
-      }
-    }
 
     // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
     if (view === 'split') {
@@ -80,6 +72,8 @@ export const GET = withVenue(async function GET(
           guestCount: true,
           subtotal: true,
           taxTotal: true,
+          taxFromInclusive: true,
+          taxFromExclusive: true,
           total: true,
           tipTotal: true,
           discountTotal: true,
@@ -143,6 +137,8 @@ export const GET = withVenue(async function GET(
       }
 
       // Compute server-authoritative cash/card totals
+      // Uses stored taxFromInclusive/taxFromExclusive to correctly handle tax-inclusive items.
+      // Inclusive-tax items have tax baked into the price — simple `sub * taxRate` double-counts.
       let panelCashTotal = Number(order.total)
       let panelCardTotal = Number(order.total)
       let panelCashDiscountPercent = 0
@@ -158,8 +154,15 @@ export const GET = withVenue(async function GET(
           const cardSub = calculateCardPrice(sub, panelCashDiscountPercent)
           const discountedCardSub = Math.max(0, cardSub - disc)
           const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
-          const cashTax = roundToCents(discountedCashSub * taxRate)
-          const cardTax = roundToCents(discountedCardSub * taxRate)
+          const storedTaxInc = Number(order.taxFromInclusive) || 0
+          const storedTaxExc = Number(order.taxFromExclusive) || 0
+          const storedTaxTotal = storedTaxInc + storedTaxExc
+          // Use the stored inclusive/exclusive ratio to split the tax correctly
+          const excRatio = storedTaxTotal > 0 ? storedTaxExc / storedTaxTotal : 1
+          // Cash: inclusive portion stays as-is (baked into price), only exclusive portion scales with subtotal
+          const cashTax = roundToCents(storedTaxInc + (discountedCashSub * taxRate * excRatio))
+          // Card: apply surcharge then compute tax on the exclusive portion
+          const cardTax = roundToCents(storedTaxInc + (discountedCardSub * taxRate * excRatio))
           panelCashTotal = roundToCents(discountedCashSub + cashTax)
           panelCardTotal = roundToCents(discountedCardSub + cardTax)
         }
@@ -250,6 +253,12 @@ export const GET = withVenue(async function GET(
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
     }
 
+    // Auth check — deferred to after fetch to eliminate double-fetch
+    if (requestingEmployeeId) {
+      const auth = await requirePermission(requestingEmployeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     // Use mapper for complete response with all modifier fields
     const response = mapOrderForResponse(order)
 
@@ -274,8 +283,15 @@ export const GET = withVenue(async function GET(
         const cardSub = calculateCardPrice(cashSub, cashDiscountPercent)
         const discountedCardSub = Math.max(0, cardSub - disc)
         const taxRate = (parsed?.tax?.defaultRate ?? 0) / 100
-        const cashTax = roundToCents(discountedCashSub * taxRate)
-        const cardTax = roundToCents(discountedCardSub * taxRate)
+        const storedTaxInc = Number((order as any).taxFromInclusive) || 0
+        const storedTaxExc = Number((order as any).taxFromExclusive) || 0
+        const storedTaxTotal = storedTaxInc + storedTaxExc
+        // Use the stored inclusive/exclusive ratio to split the tax correctly
+        const excRatio = storedTaxTotal > 0 ? storedTaxExc / storedTaxTotal : 1
+        // Cash: inclusive portion stays as-is (baked into price), only exclusive portion scales with subtotal
+        const cashTax = roundToCents(storedTaxInc + (discountedCashSub * taxRate * excRatio))
+        // Card: apply surcharge then compute tax on the exclusive portion
+        const cardTax = roundToCents(storedTaxInc + (discountedCardSub * taxRate * excRatio))
         cashTotal = roundToCents(discountedCashSub + cashTax)
         cardTotal = roundToCents(discountedCardSub + cardTax)
       }
@@ -359,12 +375,22 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // Get existing order
+    // Get existing order — selective fetch (only fields used for validation + tax recalc)
     const existingOrder = await db.order.findUnique({
       where: { id },
-      include: {
-        location: true,
-        items: true,
+      select: {
+        id: true,
+        status: true,
+        locationId: true,
+        subtotal: true,
+        taxTotal: true,
+        discountTotal: true,
+        tipTotal: true,
+        total: true,
+        isTaxExempt: true,
+        version: true,
+        employeeId: true,
+        location: { select: { settings: true } },
       },
     })
 
@@ -486,21 +512,57 @@ export const PUT = withVenue(async function PUT(
     const updatedOrder = await db.order.update({
       where: { id },
       data: { ...updateData, version: { increment: 1 } },
-      include: {
+      select: {
+        id: true,
+        locationId: true,
+        orderNumber: true,
+        status: true,
+        orderType: true,
+        tableId: true,
+        tabName: true,
+        guestCount: true,
+        subtotal: true,
+        taxTotal: true,
+        tipTotal: true,
+        discountTotal: true,
+        total: true,
+        commissionTotal: true,
+        notes: true,
+        employeeId: true,
+        version: true,
+        isTaxExempt: true,
+        createdAt: true,
+        updatedAt: true,
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-        items: {
-          include: {
-            modifiers: true,
-            ingredientModifications: true,
-          },
         },
       },
     })
 
-    // Use mapper for complete response with all modifier fields
-    const response = { ...mapOrderForResponse(updatedOrder), version: updatedOrder.version }
+    // Build lightweight response (metadata-only update — no items needed)
+    const response = {
+      id: updatedOrder.id,
+      locationId: updatedOrder.locationId,
+      orderNumber: updatedOrder.orderNumber,
+      status: updatedOrder.status,
+      orderType: updatedOrder.orderType,
+      tableId: updatedOrder.tableId,
+      tabName: updatedOrder.tabName,
+      guestCount: updatedOrder.guestCount,
+      subtotal: Number(updatedOrder.subtotal),
+      taxTotal: Number(updatedOrder.taxTotal),
+      tipTotal: Number(updatedOrder.tipTotal),
+      discountTotal: Number(updatedOrder.discountTotal),
+      total: Number(updatedOrder.total),
+      notes: updatedOrder.notes,
+      employeeId: updatedOrder.employeeId,
+      version: updatedOrder.version,
+      isTaxExempt: updatedOrder.isTaxExempt,
+      employee: updatedOrder.employee ? {
+        id: updatedOrder.employee.id,
+        name: updatedOrder.employee.displayName || `${updatedOrder.employee.firstName} ${updatedOrder.employee.lastName}`,
+      } : null,
+    }
 
     // Dispatch order:updated for metadata changes (fire-and-forget)
     void dispatchOrderUpdated(updatedOrder.locationId, { orderId: id, changes: Object.keys(updateData) }).catch(() => {})

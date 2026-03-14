@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useMemo } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { calculateCardPrice } from '@/lib/pricing'
@@ -181,19 +181,128 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
     orderReadyPromiseRef,
   } = props
 
-  const currentOrder = useOrderStore(s => s.currentOrder)
+  // Granular selectors — only subscribe to the specific fields used in the render path
+  const orderId = useOrderStore(s => s.currentOrder?.id)
+  const orderNumber = useOrderStore(s => s.currentOrder?.orderNumber)
+  const orderType = useOrderStore(s => s.currentOrder?.orderType)
+  const tabName = useOrderStore(s => s.currentOrder?.tabName)
+  const tableName = useOrderStore(s => s.currentOrder?.tableName)
+  const tableId = useOrderStore(s => s.currentOrder?.tableId)
+  const orderStatus = useOrderStore(s => s.currentOrder?.status)
+  const hasSentItems = useOrderStore(s => s.currentOrder?.items?.some(i => i.sentToKitchen) ?? false)
+  const pendingDelay = useOrderStore(s => s.currentOrder?.pendingDelay)
+  const delayStartedAt = useOrderStore(s => s.currentOrder?.delayStartedAt)
+  const delayFiredAt = useOrderStore(s => s.currentOrder?.delayFiredAt)
+  const reopenedAt = useOrderStore(s => s.currentOrder?.reopenedAt)
+  const reopenReason = useOrderStore(s => s.currentOrder?.reopenReason)
+
+  // QuickPick item state - granular selectors for selected item's hold/delay state
+  const quickPickItemIsHeld = useOrderStore(s => {
+    if (!quickPickSelectedId) return false
+    return s.currentOrder?.items?.find(i => i.id === quickPickSelectedId)?.isHeld ?? false
+  })
+  const quickPickActiveDelay = useOrderStore(s => {
+    const selectedIds = Array.from(quickPickSelectedIds)
+    if (selectedIds.length === 0) return s.currentOrder?.pendingDelay ?? null
+    const firstItem = s.currentOrder?.items?.find(i => i.id === selectedIds[0])
+    return firstItem?.delayMinutes ?? null
+  })
+
   const clearSelectedSeat = useFloorPlanStore(s => s.clearSelectedSeat)
   const [showTabMethodChoice, setShowTabMethodChoice] = useState(false)
 
+  // Extracted callbacks to avoid re-creating on every render
+  const handlePay = useCallback(async (method?: string) => {
+    if (useOrderStore.getState().currentOrder?.status === 'split') {
+      setSplitManageMode(true)
+      setShowSplitTicketManager(true)
+      return
+    }
+    const payOrderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employeeId)
+    if (payOrderId) {
+      setInitialPayMethod(method)
+      setOrderToPayId(payOrderId)
+      fetch(`/api/orders/${payOrderId}/cards`)
+        .then(r => r.ok ? r.json() : { data: [] })
+        .then(d => {
+          const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
+          setPaymentTabCards(authorized)
+        })
+        .catch(() => setPaymentTabCards([]))
+      setShowPaymentModal(true)
+    }
+  }, [savedOrderId, employeeId, ensureOrderInDB, setSplitManageMode, setShowSplitTicketManager, setInitialPayMethod, setOrderToPayId, setPaymentTabCards, setShowPaymentModal])
+
+  const handlePrintCheck = useCallback(async () => {
+    const printOrderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employeeId)
+    if (printOrderId) {
+      try {
+        await fetch('/api/print/receipt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId: printOrderId, type: 'check' }),
+        })
+        toast.success('Check sent to printer')
+      } catch {
+        void OfflineManager.queuePrintJob(printOrderId, '', 0, []).catch(() => {})
+        toast.info('Print queued — will retry when printer available')
+      }
+    }
+  }, [savedOrderId, employeeId, ensureOrderInDB])
+
+  const handleOtherPayment = useCallback(async () => {
+    const payOrderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employeeId)
+    if (payOrderId) {
+      setInitialPayMethod(undefined)
+      setOrderToPayId(payOrderId)
+      fetch(`/api/orders/${payOrderId}/cards`)
+        .then(r => r.ok ? r.json() : { data: [] })
+        .then(d => {
+          const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
+          setPaymentTabCards(authorized)
+        })
+        .catch(() => setPaymentTabCards([]))
+      setShowPaymentModal(true)
+    }
+  }, [savedOrderId, employeeId, ensureOrderInDB, setInitialPayMethod, setOrderToPayId, setPaymentTabCards, setShowPaymentModal])
+
+  const handleCancelOrder = useCallback(() => {
+    clearOrder()
+    setSavedOrderId(null)
+    setSelectedOrderType(null)
+    setOrderCustomFields({})
+    setOrderSent(false)
+    setAppliedDiscounts([])
+    useFloorPlanStore.getState().clearSelectedSeat()
+  }, [clearOrder, setSavedOrderId, setSelectedOrderType, setOrderCustomFields, setOrderSent, setAppliedDiscounts])
+
+  const handleHidePanel = useCallback(() => {
+    if (viewMode === 'bartender') {
+      bartenderDeselectTabRef.current?.()
+    } else {
+      floorPlanDeselectTableRef.current?.()
+    }
+    setSavedOrderId(null)
+    setSelectedOrderType(null)
+    setOrderCustomFields({})
+    setOrderSent(false)
+    useFloorPlanStore.getState().clearSelectedSeat()
+  }, [viewMode, bartenderDeselectTabRef, floorPlanDeselectTableRef, setSavedOrderId, setSelectedOrderType, setOrderCustomFields, setOrderSent])
+
+  const computedRequireCardForTab = useMemo(() => {
+    const barTabOT = orderTypes.find(t => t.slug === 'bar_tab')
+    return (barTabOT?.workflowRules as WorkflowRules)?.requireCardOnFile ?? requireCardForTab
+  }, [orderTypes, requireCardForTab])
+
   const handleSeatSelect = useCallback((seatNumber: number | null) => {
-    const tableId = currentOrder?.tableId
-    if (!tableId) return
+    const currentTableId = tableId
+    if (!currentTableId) return
     if (seatNumber === null || seatNumber === 0) {
       useFloorPlanStore.getState().clearSelectedSeat()
     } else {
-      useFloorPlanStore.getState().selectSeat(tableId, seatNumber)
+      useFloorPlanStore.getState().selectSeat(currentTableId, seatNumber)
     }
-  }, [currentOrder?.tableId])
+  }, [tableId])
 
   if (!(viewMode === 'floor-plan' || viewMode === 'bartender') || !locationId) {
     return null
@@ -203,12 +312,12 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
     <div className="flex h-full">
       <SilentErrorBoundary name="OrderPanel">
         <OrderPanel
-          orderId={currentOrder?.id || savedOrderId}
-          orderNumber={currentOrder?.orderNumber}
-          orderType={currentOrder?.orderType || (viewMode === 'bartender' ? 'bar_tab' : undefined)}
-          tabName={currentOrder?.tabName}
-          tableName={currentOrder?.tableName}
-          tableId={currentOrder?.tableId}
+          orderId={orderId || savedOrderId}
+          orderNumber={orderNumber}
+          orderType={orderType || (viewMode === 'bartender' ? 'bar_tab' : undefined)}
+          tabName={tabName}
+          tableName={tableName}
+          tableId={tableId}
           locationId={locationId}
           employeeId={employeeId}
           items={filteredOrderPanelItems}
@@ -237,54 +346,17 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
           onItemDiscount={handleItemDiscount}
           onItemDiscountRemove={handleItemDiscountRemove}
           onItemResend={panelCallbacks.onItemResend}
-          onItemSplit={editingChildSplit || orderSplitChips.some(c => c.id === currentOrder?.id) ? undefined : panelCallbacks.onItemSplit}
-          onQuickSplitEvenly={savedOrderId && !editingChildSplit && !orderSplitChips.some(c => c.id === currentOrder?.id) ? handleQuickSplitEvenly : undefined}
+          onItemSplit={editingChildSplit || orderSplitChips.some(c => c.id === orderId) ? undefined : panelCallbacks.onItemSplit}
+          onQuickSplitEvenly={savedOrderId && !editingChildSplit && !orderSplitChips.some(c => c.id === orderId) ? handleQuickSplitEvenly : undefined}
           onItemSeatChange={panelCallbacks.onItemSeatChange}
           expandedItemId={panelCallbacks.expandedItemId}
           onItemToggleExpand={panelCallbacks.onItemToggleExpand}
           onSend={handleSendToKitchen}
-          onPay={async (method) => {
-            if (useOrderStore.getState().currentOrder?.status === 'split') {
-              setSplitManageMode(true)
-              setShowSplitTicketManager(true)
-              return
-            }
-            const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employeeId)
-            if (orderId) {
-              setInitialPayMethod(method)
-              setOrderToPayId(orderId)
-              fetch(`/api/orders/${orderId}/cards`)
-                .then(r => r.ok ? r.json() : { data: [] })
-                .then(d => {
-                  const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
-                  setPaymentTabCards(authorized)
-                })
-                .catch(() => setPaymentTabCards([]))
-              setShowPaymentModal(true)
-            }
-          }}
-          onPrintCheck={async () => {
-            const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employeeId)
-            if (orderId) {
-              try {
-                await fetch('/api/print/receipt', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ orderId, type: 'check' }),
-                })
-                toast.success('Check sent to printer')
-              } catch {
-                void OfflineManager.queuePrintJob(orderId, '', 0, []).catch(() => {})
-                toast.info('Print queued — will retry when printer available')
-              }
-            }
-          }}
+          onPay={handlePay}
+          onPrintCheck={handlePrintCheck}
           isSending={isSendingOrder}
-          hasActiveTab={!!(tabCardInfo?.cardLast4 || currentOrder?.tabName)}
-          requireCardForTab={(() => {
-            const barTabOT = orderTypes.find(t => t.slug === 'bar_tab')
-            return (barTabOT?.workflowRules as WorkflowRules)?.requireCardOnFile ?? requireCardForTab
-          })()}
+          hasActiveTab={!!(tabCardInfo?.cardLast4 || tabName)}
+          requireCardForTab={computedRequireCardForTab}
           tabCardLast4={tabCardInfo?.cardLast4}
           onStartTab={async () => {
             // This is the complex "Start Tab" handler — we keep it inline as it
@@ -545,21 +617,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
               setShowTabNamePrompt(true)
             }
           }}
-          onOtherPayment={async () => {
-            const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employeeId)
-            if (orderId) {
-              setInitialPayMethod(undefined)
-              setOrderToPayId(orderId)
-              fetch(`/api/orders/${orderId}/cards`)
-                .then(r => r.ok ? r.json() : { data: [] })
-                .then(d => {
-                  const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
-                  setPaymentTabCards(authorized)
-                })
-                .catch(() => setPaymentTabCards([]))
-              setShowPaymentModal(true)
-            }
-          }}
+          onOtherPayment={handleOtherPayment}
           onDiscount={handleOpenDiscount}
           cashDiscountPct={pricing.cashDiscountRate}
           taxPct={Math.round(pricing.taxRate * 100)}
@@ -568,50 +626,31 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
           cashDiscountAmount={pricing.isDualPricingEnabled ? pricing.cardTotal - pricing.cashTotal : 0}
           hasTaxInclusiveItems={taxInclusiveLiquor || taxInclusiveFood}
           roundingAdjustment={pricing.cashRoundingDelta !== 0 ? pricing.cashRoundingDelta : undefined}
-          hasSentItems={currentOrder?.items?.some(i => i.sentToKitchen) ?? false}
-          onCancelOrder={() => {
-            clearOrder()
-            setSavedOrderId(null)
-            setSelectedOrderType(null)
-            setOrderCustomFields({})
-            setOrderSent(false)
-            setAppliedDiscounts([])
-            useFloorPlanStore.getState().clearSelectedSeat()
-          }}
-          onHide={() => {
-            if (viewMode === 'bartender') {
-              bartenderDeselectTabRef.current?.()
-            } else {
-              floorPlanDeselectTableRef.current?.()
-            }
-            setSavedOrderId(null)
-            setSelectedOrderType(null)
-            setOrderCustomFields({})
-            setOrderSent(false)
-            useFloorPlanStore.getState().clearSelectedSeat()
-          }}
+          hasSentItems={hasSentItems}
+          onCancelOrder={handleCancelOrder}
+          onHide={handleHidePanel}
           selectedItemId={quickPickSelectedId}
           selectedItemIds={quickPickSelectedIds}
           onItemSelect={selectQuickPickItem}
           multiSelectMode={quickPickMultiSelect}
           onToggleMultiSelect={toggleQuickPickMultiSelect}
           onSelectAllPending={selectAllPendingQuickPick}
-          pendingDelay={currentOrder?.pendingDelay ?? undefined}
-          delayStartedAt={currentOrder?.delayStartedAt ?? undefined}
-          delayFiredAt={currentOrder?.delayFiredAt ?? undefined}
+          pendingDelay={pendingDelay ?? undefined}
+          delayStartedAt={delayStartedAt ?? undefined}
+          delayFiredAt={delayFiredAt ?? undefined}
           onFireDelayed={activeOrderFull.handleFireDelayed}
           onCancelDelay={() => useOrderStore.getState().setPendingDelay(null)}
           onFireItem={activeOrderFull.handleFireItem}
           onCancelItemDelay={(itemId) => useOrderStore.getState().setItemDelay([itemId], null)}
-          reopenedAt={currentOrder?.reopenedAt}
-          reopenReason={currentOrder?.reopenReason}
+          reopenedAt={reopenedAt}
+          reopenReason={reopenReason}
           hideHeader={viewMode === 'floor-plan'}
           className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
           splitChips={orderSplitChips.length > 0 ? orderSplitChips : undefined}
           splitChipsFlashing={splitChipsFlashing}
           cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
           onAddSplit={orderSplitChips.length > 0 ? async () => {
-            const parentId = splitParentId || currentOrder?.id
+            const parentId = splitParentId || orderId
             if (!parentId) return
             try {
               const res = await fetch(`/api/orders/${parentId}/split-tickets/create-check`, { method: 'POST' })
@@ -626,7 +665,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                 isPaid: false,
                 total: 0,
               }])
-              const success = await fetchAndLoadSplitOrder(newSplit.id, currentOrder?.tableId ?? undefined)
+              const success = await fetchAndLoadSplitOrder(newSplit.id, tableId ?? undefined)
               if (success) {
                 setSavedOrderId(newSplit.id)
               }
@@ -636,7 +675,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
             }
           } : undefined}
           onSplitChipSelect={orderSplitChips.length > 0 ? async (splitId) => {
-            const success = await fetchAndLoadSplitOrder(splitId, currentOrder?.tableId ?? undefined)
+            const success = await fetchAndLoadSplitOrder(splitId, tableId ?? undefined)
             if (success) {
               setSavedOrderId(splitId)
             }
@@ -648,7 +687,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
           onPayAll={orderSplitChips.length > 0 ? () => {
             const unpaid = orderSplitChips.filter(c => !c.isPaid)
             if (unpaid.length === 0) return
-            const parentId = splitParentId || savedOrderId || currentOrder?.id || ''
+            const parentId = splitParentId || savedOrderId || orderId || ''
             const combinedTotal = unpaid.reduce((sum, c) => sum + c.total, 0)
             const combinedCardTotal = pricing.isDualPricingEnabled
               ? calculateCardPrice(combinedTotal, pricing.cashDiscountRate)
@@ -669,10 +708,10 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
         multiSelectMode={quickPickMultiSelect}
         onToggleMultiSelect={toggleQuickPickMultiSelect}
         onHoldToggle={quickPickSelectedId ? () => {
-          const item = currentOrder?.items.find(i => i.id === quickPickSelectedId)
+          const item = useOrderStore.getState().currentOrder?.items.find(i => i.id === quickPickSelectedId)
           if (item) useOrderStore.getState().updateItem(quickPickSelectedId, { isHeld: !item.isHeld })
         } : undefined}
-        isHeld={quickPickSelectedId ? currentOrder?.items.find(i => i.id === quickPickSelectedId)?.isHeld : false}
+        isHeld={quickPickItemIsHeld}
         onSetDelay={(minutes) => {
           const selectedIds = Array.from(quickPickSelectedIds)
           if (selectedIds.length > 0) {
@@ -683,16 +722,11 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
             })
             store.setItemDelay(selectedIds, allHaveThisDelay ? null : minutes)
           } else {
-            const current = currentOrder?.pendingDelay
+            const current = useOrderStore.getState().currentOrder?.pendingDelay
             useOrderStore.getState().setPendingDelay(current === minutes ? null : minutes)
           }
         }}
-        activeDelay={(() => {
-          const selectedIds = Array.from(quickPickSelectedIds)
-          if (selectedIds.length === 0) return currentOrder?.pendingDelay ?? null
-          const firstItem = currentOrder?.items.find(i => i.id === selectedIds[0])
-          return firstItem?.delayMinutes ?? null
-        })()}
+        activeDelay={quickPickActiveDelay}
       />
 
       {/* Tab method choice: swipe card vs name only */}

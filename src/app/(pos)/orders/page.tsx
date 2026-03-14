@@ -65,6 +65,14 @@ export default function OrdersPage() {
   const employee = useAuthStore(s => s.employee)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const logout = useAuthStore(s => s.logout)
+  const currentOrderId = useOrderStore(s => s.currentOrder?.id)
+  const currentOrderStatus = useOrderStore(s => s.currentOrder?.status)
+  const currentOrderType = useOrderStore(s => s.currentOrder?.orderType)
+  const currentOrderSubtotal = useOrderStore(s => s.currentOrder?.subtotal)
+  const currentOrderDiscountTotal = useOrderStore(s => s.currentOrder?.discountTotal)
+  const currentOrderTipTotal = useOrderStore(s => s.currentOrder?.tipTotal)
+  // Full order ref: only used for payment modal prop and split check items.
+  // Hot-path reads above use granular selectors to avoid re-rendering on every item change.
   const currentOrder = useOrderStore(s => s.currentOrder)
   const hasDevAccess = useDevStore(s => s.hasDevAccess)
   const setHasDevAccess = useDevStore(s => s.setHasDevAccess)
@@ -165,7 +173,7 @@ export default function OrdersPage() {
     entertainmentItem, setEntertainmentItem } = useTimedRentals()
 
   const { showCardTabFlow, setShowCardTabFlow, cardTabOrderId, setCardTabOrderId,
-    tabCardInfo, setTabCardInfo } = useCardTabFlow(currentOrder)
+    tabCardInfo, setTabCardInfo } = useCardTabFlow(currentOrderId ? { id: currentOrderId } : null)
 
   // ── Pricing option picker state ──
   const [pricingPickerItem, setPricingPickerItem] = useState<any>(null)
@@ -195,11 +203,11 @@ export default function OrdersPage() {
   const savedOrderIdRef = useRef(savedOrderId)
   savedOrderIdRef.current = savedOrderId
   useEffect(() => {
-    const storeOrderId = currentOrder?.id ?? null
+    const storeOrderId = currentOrderId ?? null
     if (storeOrderId !== savedOrderIdRef.current) {
       setSavedOrderId(storeOrderId)
     }
-  }, [currentOrder?.id])
+  }, [currentOrderId])
 
   // ── Order type state ──
   const [selectedOrderType, setSelectedOrderType] = useState<any>(null)
@@ -241,9 +249,9 @@ export default function OrdersPage() {
 
   // ── Pricing ──
   const pricing = usePricing({
-    subtotal: currentOrder?.subtotal || 0,
-    discountTotal: currentOrder?.discountTotal || 0,
-    tipTotal: currentOrder?.tipTotal || 0,
+    subtotal: currentOrderSubtotal || 0,
+    discountTotal: currentOrderDiscountTotal || 0,
+    tipTotal: currentOrderTipTotal || 0,
     paymentMethod,
   })
 
@@ -441,8 +449,8 @@ export default function OrdersPage() {
   orderSplitChipsRef.current = orderSplitChips
 
   useEffect(() => {
-    const orderId = currentOrder?.id
-    const status = currentOrder?.status
+    const orderId = currentOrderId
+    const status = currentOrderStatus
     if (!orderId) {
       setOrderSplitChips([])
       setSplitParentId(null)
@@ -469,7 +477,7 @@ export default function OrdersPage() {
       setOrderSplitChips([])
       setSplitParentId(null)
     }
-  }, [currentOrder?.id, currentOrder?.status, setOrderSplitChips, setSplitParentId])
+  }, [currentOrderId, currentOrderStatus, setOrderSplitChips, setSplitParentId])
 
   // ── Split check items (for SplitCheckScreen) ──
   const splitCheckItems = useMemo(() => {
@@ -748,7 +756,7 @@ export default function OrdersPage() {
             }
           }
         }}
-        activeOrderType={currentOrder?.orderType || null}
+        activeOrderType={currentOrderType || null}
         onQuickOrderType={(type) => quickOrderTypeRef.current?.(type)}
         onTablesClick={() => tablesClickRef.current?.()}
         onSwitchUser={() => { logout() }}

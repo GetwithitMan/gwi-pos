@@ -86,7 +86,6 @@ export async function POST(request: NextRequest) {
         await pool.end()
       }
       changes.push('Applied full schema to empty database')
-      console.log(`[sync-schema] ${slug}: applied full schema`)
       return Response.json({ success: true, slug, databaseName: dbName, changes })
     }
 
@@ -117,8 +116,6 @@ export async function POST(request: NextRequest) {
     } finally {
       await Promise.all([masterPool.end(), venuePool.end()])
     }
-
-    console.log(`[sync-schema] ${slug}: ${changes.length} changes applied`)
 
     return Response.json({
       success: true,

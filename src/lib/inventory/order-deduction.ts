@@ -266,6 +266,16 @@ export async function deductInventoryForOrder(
   multiplierSettings?: MultiplierSettings | null
 ): Promise<InventoryDeductionResult> {
   try {
+    // Idempotency guard: skip if deductions already exist for this order
+    const existingDeduction = await db.inventoryItemTransaction.findFirst({
+      where: { referenceType: 'order', referenceId: orderId, type: 'sale' },
+      select: { id: true },
+    })
+    if (existingDeduction) {
+      console.warn(`[INVENTORY] Deduction already exists for order ${orderId}, skipping`)
+      return { success: true, itemsDeducted: 0, totalCost: 0 }
+    }
+
     // Fetch the order with full recipe tree
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -895,6 +905,13 @@ export async function deductInventoryForOrder(
 
     await db.$transaction(async (tx) => {
       for (const item of usageItems) {
+        // Skip items with inventory tracking disabled
+        const invCheck = await tx.inventoryItem.findUnique({
+          where: { id: item.inventoryItemId },
+          select: { trackInventory: true },
+        })
+        if (invCheck?.trackInventory === false) continue
+
         const totalCost = item.quantity * item.costPerUnit
 
         // Decrement stock first

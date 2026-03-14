@@ -25,6 +25,7 @@ let sharedSocket: Socket | null = null
 let refCount = 0
 let visibilityHandlerAttached = false
 let lastPongAt = 0 // Timestamp of last successful pong/event from server
+let lastReconnectAttempt = 0 // Timestamp of last visibility-triggered reconnect
 
 // ==================== Event Buffer Catch-Up State ====================
 // Tracks the highest _eid seen from the server, so on reconnect we can
@@ -91,12 +92,17 @@ function handleVisibilityChange() {
   if (!sharedSocket) return
 
   const now = Date.now()
+
+  // Debounce: skip if a reconnect was attempted within the last 3 seconds
+  if (now - lastReconnectAttempt < 3000) return
+
   const timeSinceLastPong = now - lastPongAt
 
   // If we haven't received any server data in >30s, the socket is likely stale
   // (server pings every 25s, so 30s without a pong = zombie connection)
   if (sharedSocket.connected && timeSinceLastPong > 30_000) {
     console.log('[SharedSocket] Foreground return — socket stale (no pong in', Math.round(timeSinceLastPong / 1000), 's). Forcing reconnect.')
+    lastReconnectAttempt = now
     sharedSocket.disconnect()
     // Small delay before reconnect so disconnect completes cleanly
     setTimeout(() => {
@@ -110,6 +116,7 @@ function handleVisibilityChange() {
   // If socket reports disconnected, kick off reconnect immediately
   if (!sharedSocket.connected) {
     console.log('[SharedSocket] Foreground return — socket disconnected. Reconnecting.')
+    lastReconnectAttempt = Date.now()
     sharedSocket.connect()
   }
 }
@@ -156,10 +163,9 @@ function attachVisibilityHandler(socket: Socket) {
     }
   })
 
-  // Any incoming event from the server = proof of life
-  socket.onAny(() => {
-    lastPongAt = Date.now()
-  })
+  // Note: onAny handler removed — ping and connect handlers already update lastPongAt.
+  // The onAny handler ran on every incoming event just to set the same timestamp,
+  // adding unnecessary overhead on high-frequency event streams (KDS, scale, etc.).
 }
 
 /**

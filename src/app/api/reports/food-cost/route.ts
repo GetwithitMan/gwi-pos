@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -49,7 +50,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         order: {
           locationId,
-          status: { in: ['paid', 'closed'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
+          parentOrderId: null,
           paidAt: dateFilter,
         },
         status: { in: ['active', 'comped'] },

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 /**
  * GET /api/reports/berg-comparison
@@ -67,7 +68,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               status: 'active',
               order: {
                 locationId,
-                status: { in: ['paid', 'completed'] },
+                status: { in: [...REVENUE_ORDER_STATUSES] },
                 ...orderDateFilter,
               },
             },

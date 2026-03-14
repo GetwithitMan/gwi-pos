@@ -46,177 +46,184 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Fetch order
-    const order = await db.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      include: { location: true },
-    })
+    const result = await db.$transaction(async (tx) => {
+      // Lock the Order row to prevent concurrent discount applications from producing incorrect totals
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
-    }
-
-    // Auth check — require manager.discounts permission
-    const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
-
-    if (order.status === 'paid' || order.status === 'closed') {
-      return NextResponse.json(
-        { error: 'Cannot apply discount to a paid or closed order' },
-        { status: 409 }
-      )
-    }
-
-    // Fetch item
-    const item = await db.orderItem.findFirst({
-      where: { id: itemId, orderId, deletedAt: null },
-      include: { menuItem: { select: { itemType: true } } },
-    })
-
-    if (!item) {
-      return NextResponse.json(
-        { error: 'Order item not found' },
-        { status: 404 }
-      )
-    }
-
-    // Block item-level discounts on timed_rental items (dynamic pricing makes fixed discounts unreliable)
-    if (item.menuItem?.itemType === 'timed_rental') {
-      return NextResponse.json(
-        { error: 'Cannot apply item-level discounts to timed rental items. Use order-level discounts instead.' },
-        { status: 400 }
-      )
-    }
-
-    // Toggle prevention: if this discountRuleId is already applied to this item, remove it
-    if (body.discountRuleId) {
-      const alreadyApplied = await db.orderItemDiscount.findFirst({
-        where: { orderItemId: itemId, discountRuleId: body.discountRuleId, deletedAt: null },
+      // Fetch order
+      const order = await tx.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        include: { location: true },
       })
-      if (alreadyApplied) {
-        const removedAmount = Number(alreadyApplied.amount)
-        await db.orderItemDiscount.update({
-          where: { id: alreadyApplied.id },
-          data: { deletedAt: new Date() },
-        })
-        const newDiscountTotal = Math.max(0, Number(order.discountTotal) - removedAmount)
-        const totals = calculateOrderTotals(
-          Number(order.subtotal),
-          newDiscountTotal,
-          order.location.settings as { tax?: { defaultRate?: number } },
-          order.isTaxExempt
+
+      if (!order) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
         )
-        const updatedOrder = await db.order.update({
-          where: { id: orderId },
-          data: { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, total: totals.total },
-          select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
-        })
-        void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
-
-        // Emit order event for item discount removed via toggle (fire-and-forget)
-        void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
-          discountId: alreadyApplied.id,
-          lineItemId: itemId,
-        })
-
-        return NextResponse.json({
-          data: {
-            toggled: 'off',
-            removedDiscountId: alreadyApplied.id,
-            orderTotals: {
-              subtotal: Number(updatedOrder.subtotal),
-              discountTotal: Number(updatedOrder.discountTotal),
-              taxTotal: Number(updatedOrder.taxTotal),
-              total: Number(updatedOrder.total),
-            },
-          },
-        })
       }
-    }
 
-    // Calculate discount amount
-    let discountAmount: number
-    let discountPercent: number | null = null
+      // Auth check — require manager.discounts permission
+      const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    if (body.type === 'fixed') {
-      discountAmount = Math.min(body.value, Number(item.itemTotal))
-    } else {
-      discountPercent = body.value
-      discountAmount = Math.round(Number(item.itemTotal) * (body.value / 100) * 100) / 100
-    }
+      if (order.status === 'paid' || order.status === 'closed') {
+        return NextResponse.json(
+          { error: 'Cannot apply discount to a paid or closed order' },
+          { status: 409 }
+        )
+      }
 
-    // Create the OrderItemDiscount record
-    const itemDiscount = await db.orderItemDiscount.create({
-      data: {
-        locationId: order.locationId,
+      // Fetch item
+      const item = await tx.orderItem.findFirst({
+        where: { id: itemId, orderId, deletedAt: null },
+        include: { menuItem: { select: { itemType: true } } },
+      })
+
+      if (!item) {
+        return NextResponse.json(
+          { error: 'Order item not found' },
+          { status: 404 }
+        )
+      }
+
+      // Block item-level discounts on timed_rental items (dynamic pricing makes fixed discounts unreliable)
+      if (item.menuItem?.itemType === 'timed_rental') {
+        return NextResponse.json(
+          { error: 'Cannot apply item-level discounts to timed rental items. Use order-level discounts instead.' },
+          { status: 400 }
+        )
+      }
+
+      // Toggle prevention: if this discountRuleId is already applied to this item, remove it
+      if (body.discountRuleId) {
+        const alreadyApplied = await tx.orderItemDiscount.findFirst({
+          where: { orderItemId: itemId, discountRuleId: body.discountRuleId, deletedAt: null },
+        })
+        if (alreadyApplied) {
+          const removedAmount = Number(alreadyApplied.amount)
+          await tx.orderItemDiscount.update({
+            where: { id: alreadyApplied.id },
+            data: { deletedAt: new Date() },
+          })
+          const newDiscountTotal = Math.max(0, Number(order.discountTotal) - removedAmount)
+          const totals = calculateOrderTotals(
+            Number(order.subtotal),
+            newDiscountTotal,
+            order.location.settings as { tax?: { defaultRate?: number } },
+            order.isTaxExempt
+          )
+          const updatedOrder = await tx.order.update({
+            where: { id: orderId },
+            data: { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, total: totals.total },
+            select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
+          })
+          void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
+
+          // Emit order event for item discount removed via toggle (fire-and-forget)
+          void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+            discountId: alreadyApplied.id,
+            lineItemId: itemId,
+          })
+
+          return NextResponse.json({
+            data: {
+              toggled: 'off',
+              removedDiscountId: alreadyApplied.id,
+              orderTotals: {
+                subtotal: Number(updatedOrder.subtotal),
+                discountTotal: Number(updatedOrder.discountTotal),
+                taxTotal: Number(updatedOrder.taxTotal),
+                total: Number(updatedOrder.total),
+              },
+            },
+          })
+        }
+      }
+
+      // Calculate discount amount
+      let discountAmount: number
+      let discountPercent: number | null = null
+
+      if (body.type === 'fixed') {
+        discountAmount = Math.min(body.value, Number(item.itemTotal))
+      } else {
+        discountPercent = body.value
+        discountAmount = Math.round(Number(item.itemTotal) * (body.value / 100) * 100) / 100
+      }
+
+      // Create the OrderItemDiscount record
+      const itemDiscount = await tx.orderItemDiscount.create({
+        data: {
+          locationId: order.locationId,
+          orderId,
+          orderItemId: itemId,
+          discountRuleId: body.discountRuleId ?? null,
+          amount: discountAmount,
+          percent: discountPercent,
+          appliedById: body.employeeId,
+          reason: body.reason ?? null,
+        },
+      })
+
+      // Update Order.discountTotal (increment) and recalculate total via calculateOrderTotals
+      const newDiscountTotal = Number(order.discountTotal) + discountAmount
+      const totals = calculateOrderTotals(
+        Number(order.subtotal),
+        newDiscountTotal,
+        order.location.settings as { tax?: { defaultRate?: number } },
+        order.isTaxExempt
+      )
+
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          discountTotal: totals.discountTotal,
+          taxTotal: totals.taxTotal,
+          total: totals.total,
+        },
+        select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
+      })
+
+      // Emit order event for item discount applied (fire-and-forget)
+      void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
+        discountId: itemDiscount.id,
+        type: body.type,
+        value: body.value,
+        amountCents: Math.round(Number(itemDiscount.amount) * 100),
+        reason: body.reason || null,
+        lineItemId: itemId,
+      })
+
+      // Fire-and-forget socket dispatch
+      void dispatchOpenOrdersChanged(order.locationId, {
+        trigger: 'created',
         orderId,
-        orderItemId: itemId,
-        discountRuleId: body.discountRuleId ?? null,
-        amount: discountAmount,
-        percent: discountPercent,
-        appliedById: body.employeeId,
-        reason: body.reason ?? null,
-      },
-    })
+      }, { async: true }).catch(() => {})
 
-    // Update Order.discountTotal (increment) and recalculate total via calculateOrderTotals
-    const newDiscountTotal = Number(order.discountTotal) + discountAmount
-    const totals = calculateOrderTotals(
-      Number(order.subtotal),
-      newDiscountTotal,
-      order.location.settings as { tax?: { defaultRate?: number } },
-      order.isTaxExempt
-    )
-
-    const updatedOrder = await db.order.update({
-      where: { id: orderId },
-      data: {
-        discountTotal: totals.discountTotal,
-        taxTotal: totals.taxTotal,
-        total: totals.total,
-      },
-      select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
-    })
-
-    // Emit order event for item discount applied (fire-and-forget)
-    void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
-      discountId: itemDiscount.id,
-      type: body.type,
-      value: body.value,
-      amountCents: Math.round(Number(itemDiscount.amount) * 100),
-      reason: body.reason || null,
-      lineItemId: itemId,
-    })
-
-    // Fire-and-forget socket dispatch
-    void dispatchOpenOrdersChanged(order.locationId, {
-      trigger: 'created',
-      orderId,
-    }, { async: true }).catch(() => {})
-
-    return NextResponse.json({
-      data: {
-        discount: {
-          id: itemDiscount.id,
-          amount: Number(itemDiscount.amount),
-          percent: itemDiscount.percent !== null ? Number(itemDiscount.percent) : null,
-          reason: itemDiscount.reason,
-          appliedById: itemDiscount.appliedById,
-          createdAt: itemDiscount.createdAt.toISOString(),
+      return NextResponse.json({
+        data: {
+          discount: {
+            id: itemDiscount.id,
+            amount: Number(itemDiscount.amount),
+            percent: itemDiscount.percent !== null ? Number(itemDiscount.percent) : null,
+            reason: itemDiscount.reason,
+            appliedById: itemDiscount.appliedById,
+            createdAt: itemDiscount.createdAt.toISOString(),
+          },
+          newItemTotal: Number(item.itemTotal) - discountAmount,
+          newOrderTotal: Number(updatedOrder.total),
+          orderTotals: {
+            subtotal: Number(updatedOrder.subtotal),
+            discountTotal: Number(updatedOrder.discountTotal),
+            taxTotal: Number(updatedOrder.taxTotal),
+            total: Number(updatedOrder.total),
+          },
         },
-        newItemTotal: Number(item.itemTotal) - discountAmount,
-        newOrderTotal: Number(updatedOrder.total),
-        orderTotals: {
-          subtotal: Number(updatedOrder.subtotal),
-          discountTotal: Number(updatedOrder.discountTotal),
-          taxTotal: Number(updatedOrder.taxTotal),
-          total: Number(updatedOrder.total),
-        },
-      },
+      })
     })
+
+    return result
   } catch (error) {
     console.error('Failed to apply item discount:', error)
     return NextResponse.json(
@@ -251,93 +258,100 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    // Fetch the discount and verify it belongs to this order/item
-    const existingDiscount = await db.orderItemDiscount.findFirst({
-      where: {
-        id: discountId,
-        orderId,
-        orderItemId: itemId,
-        deletedAt: null,
-      },
-    })
+    const result = await db.$transaction(async (tx) => {
+      // Lock the Order row to prevent concurrent discount removals from producing incorrect totals
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-    if (!existingDiscount) {
-      return NextResponse.json(
-        { error: 'Discount not found on this item' },
-        { status: 404 }
-      )
-    }
-
-    // Fetch order for total recalculation
-    const order = await db.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      include: { location: true },
-    })
-
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
-    }
-
-    // Auth check — require manager.discounts permission
-    const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
-    if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
-
-    const discountAmount = Number(existingDiscount.amount)
-
-    // Soft delete the discount
-    await db.orderItemDiscount.update({
-      where: { id: discountId },
-      data: {
-        updatedAt: new Date(),
-        deletedAt: new Date(),
-      },
-    })
-
-    // Update Order.discountTotal (decrement) and recalculate total via calculateOrderTotals
-    const newDiscountTotal = Math.max(0, Number(order.discountTotal) - discountAmount)
-    const totals = calculateOrderTotals(
-      Number(order.subtotal),
-      newDiscountTotal,
-      order.location.settings as { tax?: { defaultRate?: number } },
-      order.isTaxExempt
-    )
-
-    const updatedOrder = await db.order.update({
-      where: { id: orderId },
-      data: {
-        discountTotal: totals.discountTotal,
-        taxTotal: totals.taxTotal,
-        total: totals.total,
-      },
-      select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
-    })
-
-    // Emit order event for item discount removed (fire-and-forget)
-    void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
-      discountId,
-      lineItemId: itemId,
-    })
-
-    // Fire-and-forget socket dispatch
-    void dispatchOpenOrdersChanged(order.locationId, {
-      trigger: 'created',
-      orderId,
-    }, { async: true }).catch(() => {})
-
-    return NextResponse.json({
-      data: {
-        success: true,
-        orderTotals: {
-          subtotal: Number(updatedOrder.subtotal),
-          discountTotal: Number(updatedOrder.discountTotal),
-          taxTotal: Number(updatedOrder.taxTotal),
-          total: Number(updatedOrder.total),
+      // Fetch the discount and verify it belongs to this order/item
+      const existingDiscount = await tx.orderItemDiscount.findFirst({
+        where: {
+          id: discountId,
+          orderId,
+          orderItemId: itemId,
+          deletedAt: null,
         },
-      },
+      })
+
+      if (!existingDiscount) {
+        return NextResponse.json(
+          { error: 'Discount not found on this item' },
+          { status: 404 }
+        )
+      }
+
+      // Fetch order for total recalculation
+      const order = await tx.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        include: { location: true },
+      })
+
+      if (!order) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+
+      // Auth check — require manager.discounts permission
+      const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
+      if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
+
+      const discountAmount = Number(existingDiscount.amount)
+
+      // Soft delete the discount
+      await tx.orderItemDiscount.update({
+        where: { id: discountId },
+        data: {
+          updatedAt: new Date(),
+          deletedAt: new Date(),
+        },
+      })
+
+      // Update Order.discountTotal (decrement) and recalculate total via calculateOrderTotals
+      const newDiscountTotal = Math.max(0, Number(order.discountTotal) - discountAmount)
+      const totals = calculateOrderTotals(
+        Number(order.subtotal),
+        newDiscountTotal,
+        order.location.settings as { tax?: { defaultRate?: number } },
+        order.isTaxExempt
+      )
+
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          discountTotal: totals.discountTotal,
+          taxTotal: totals.taxTotal,
+          total: totals.total,
+        },
+        select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
+      })
+
+      // Emit order event for item discount removed (fire-and-forget)
+      void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+        discountId,
+        lineItemId: itemId,
+      })
+
+      // Fire-and-forget socket dispatch
+      void dispatchOpenOrdersChanged(order.locationId, {
+        trigger: 'created',
+        orderId,
+      }, { async: true }).catch(() => {})
+
+      return NextResponse.json({
+        data: {
+          success: true,
+          orderTotals: {
+            subtotal: Number(updatedOrder.subtotal),
+            discountTotal: Number(updatedOrder.discountTotal),
+            taxTotal: Number(updatedOrder.taxTotal),
+            total: Number(updatedOrder.total),
+          },
+        },
+      })
     })
+
+    return result
   } catch (error) {
     console.error('Failed to remove item discount:', error)
     return NextResponse.json(

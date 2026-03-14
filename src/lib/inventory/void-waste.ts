@@ -42,37 +42,41 @@ export async function restoreInventoryForRestoredItem(
       return { success: true, itemsRestored: 0 }
     }
 
-    // Create reversal transactions and restore stock
-    const operations = wasteTransactions.flatMap(tx => {
-      const restoreQty = Math.abs(toNumber(tx.quantityChange))
-      const currentStock = toNumber(tx.inventoryItem.currentStock)
+    // Interactive transaction: update stock FIRST, then read post-update value
+    // for accurate before/after audit trail (prevents TOCTOU race).
+    await db.$transaction(async (txClient) => {
+      for (const wasteTx of wasteTransactions) {
+        const restoreQty = Math.abs(toNumber(wasteTx.quantityChange))
 
-      return [
-        // Increment stock back
-        db.inventoryItem.update({
-          where: { id: tx.inventoryItemId },
+        // Increment stock first
+        const updated = await txClient.inventoryItem.update({
+          where: { id: wasteTx.inventoryItemId },
           data: { currentStock: { increment: restoreQty } },
-        }),
-        // Create adjustment transaction record
-        db.inventoryItemTransaction.create({
+          select: { currentStock: true },
+        })
+
+        // Post-increment stock is the authoritative "after" value
+        const quantityAfter = toNumber(updated.currentStock)
+        const quantityBefore = quantityAfter - restoreQty
+
+        // Create adjustment transaction record with accurate snapshot
+        await txClient.inventoryItemTransaction.create({
           data: {
             locationId,
-            inventoryItemId: tx.inventoryItemId,
+            inventoryItemId: wasteTx.inventoryItemId,
             type: 'adjustment',
-            quantityBefore: currentStock,
+            quantityBefore,
             quantityChange: restoreQty,
-            quantityAfter: currentStock + restoreQty,
-            unitCost: toNumber(tx.unitCost),
-            totalCost: -(toNumber(tx.totalCost)),
-            reason: `Restored: item un-voided (reversal of waste txn ${tx.id})`,
+            quantityAfter,
+            unitCost: toNumber(wasteTx.unitCost),
+            totalCost: -(toNumber(wasteTx.totalCost)),
+            reason: `Restored: item un-voided (reversal of waste txn ${wasteTx.id})`,
             referenceType: 'void_reversal',
             referenceId: orderItemId,
           },
-        }),
-      ]
+        })
+      }
     })
-
-    await db.$transaction(operations)
 
     return { success: true, itemsRestored: wasteTransactions.length }
   } catch (error) {
@@ -238,7 +242,8 @@ export async function deductInventoryForVoidedItem(
   orderItemId: string,
   voidReason: string,
   employeeId?: string | null,
-  multiplierSettings?: MultiplierSettings | null
+  multiplierSettings?: MultiplierSettings | null,
+  deductionType: 'waste' | 'comp' = 'waste'
 ): Promise<InventoryDeductionResult> {
   try {
     // Normalize the void reason
@@ -340,6 +345,48 @@ export async function deductInventoryForVoidedItem(
             },
           },
         },
+        // Pricing option inventory links (additive deduction on top of base recipe)
+        pricingOption: {
+          include: {
+            inventoryLinks: {
+              where: { deletedAt: null },
+              include: {
+                inventoryItem: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: true,
+                    department: true,
+                    storageUnit: true,
+                    costPerUnit: true,
+                    yieldCostPerUnit: true,
+                    currentStock: true,
+                  },
+                },
+                prepItem: {
+                  include: {
+                    ingredients: {
+                      include: {
+                        inventoryItem: {
+                          select: {
+                            id: true,
+                            name: true,
+                            category: true,
+                            department: true,
+                            storageUnit: true,
+                            costPerUnit: true,
+                            yieldCostPerUnit: true,
+                            currentStock: true,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         modifiers: {
           include: {
             modifier: {
@@ -425,6 +472,16 @@ export async function deductInventoryForVoidedItem(
                 },
               },
             },
+          },
+        },
+        // Pizza-specific inventory (toppings, sauce, cheese, crust)
+        pizzaData: {
+          select: {
+            toppingsData: true,
+            sizeId: true,
+            sauceId: true,
+            cheeseId: true,
+            crustId: true,
           },
         },
       },
@@ -652,8 +709,32 @@ export async function deductInventoryForVoidedItem(
       // tells us which bottle was actually used instead of the recipe's default.
       const spiritSubstitutions = new Map<string, { inventoryItem: InventoryItemWithStock; pourSizeOz: number | null }>()
       for (const mod of orderItem.modifiers) {
-         
-        const lb = (mod as any).modifier?.linkedBottleProduct
+        // Primary path: Modifier relation has linkedBottleProduct (Modifier model)
+        let lb = (mod as any).modifier?.linkedBottleProduct
+        // Fallback: OrderItemModifier only has linkedBottleProductId (no relation),
+        // so fetch the BottleProduct manually if the modifier path didn't resolve it.
+        if (!lb && (mod as any).linkedBottleProductId) {
+          lb = await db.bottleProduct.findUnique({
+            where: { id: (mod as any).linkedBottleProductId },
+            select: {
+              id: true,
+              spiritCategoryId: true,
+              pourSizeOz: true,
+              inventoryItem: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: true,
+                  department: true,
+                  storageUnit: true,
+                  costPerUnit: true,
+                  yieldCostPerUnit: true,
+                  currentStock: true,
+                },
+              },
+            },
+          })
+        }
         if (lb?.spiritCategoryId && lb.inventoryItem) {
           spiritSubstitutions.set(lb.spiritCategoryId, {
             inventoryItem: lb.inventoryItem as InventoryItemWithStock,
@@ -769,6 +850,191 @@ export async function deductInventoryForVoidedItem(
       }
     }
 
+    // Pricing option inventory links (additive deduction on top of base recipe)
+    const pricingOption = (orderItem as any).pricingOption
+    if (orderItem.pricingOptionId && pricingOption?.inventoryLinks) {
+      for (const link of pricingOption.inventoryLinks) {
+        if (link.inventoryItem) {
+          let linkQty = toNumber(link.usageQuantity) * itemQty
+          // Unit conversion if needed
+          if (link.usageUnit && link.inventoryItem.storageUnit) {
+            const converted = convertUnits(linkQty, link.usageUnit, link.inventoryItem.storageUnit)
+            if (converted !== null) linkQty = converted
+          }
+          addUsage(link.inventoryItem as InventoryItemWithStock, linkQty)
+        } else if (link.prepItem) {
+          // Explode prep item to raw ingredients
+          const exploded = explodePrepItem(
+            link.prepItem as PrepItemWithIngredients,
+            toNumber(link.usageQuantity) * itemQty,
+            link.usageUnit || 'each'
+          )
+          for (const exp of exploded) {
+            addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
+          }
+        }
+      }
+    }
+
+    // Pizza topping inventory deductions
+    // Parse OrderItemPizza.toppingsData and deduct each topping's linked inventory
+    const pizzaData = (orderItem as any).pizzaData
+    if (pizzaData?.toppingsData) {
+      try {
+        const toppingsJson = typeof pizzaData.toppingsData === 'string'
+          ? JSON.parse(pizzaData.toppingsData)
+          : pizzaData.toppingsData
+
+        const toppingEntries: Array<{
+          toppingId?: string
+          sections?: number[]
+          amount?: string
+        }> = toppingsJson.toppings || []
+
+        if (toppingEntries.length > 0) {
+          // Fetch PizzaTopping records with inventory links
+          const toppingIds = toppingEntries
+            .map(t => t.toppingId)
+            .filter((id): id is string => !!id)
+
+          if (toppingIds.length > 0) {
+            const pizzaToppings = await db.pizzaTopping.findMany({
+              where: { id: { in: toppingIds } },
+              select: {
+                id: true,
+                name: true,
+                usageQuantity: true,
+                usageUnit: true,
+                inventoryItemId: true,
+                inventoryItem: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: true,
+                    department: true,
+                    storageUnit: true,
+                    costPerUnit: true,
+                    yieldCostPerUnit: true,
+                    currentStock: true,
+                  },
+                },
+              },
+            })
+
+            const toppingMap = new Map(pizzaToppings.map(t => [t.id, t]))
+
+            // Fetch size multiplier if available
+            let sizeInventoryMultiplier = 1.0
+            if (pizzaData.sizeId) {
+              const size = await db.pizzaSize.findUnique({
+                where: { id: pizzaData.sizeId },
+                select: { inventoryMultiplier: true },
+              })
+              if (size?.inventoryMultiplier) {
+                sizeInventoryMultiplier = toNumber(size.inventoryMultiplier) || 1.0
+              }
+            }
+
+            for (const entry of toppingEntries) {
+              if (!entry.toppingId) continue
+              const topping = toppingMap.get(entry.toppingId)
+              if (!topping?.inventoryItem) continue
+
+              const baseUsage = toNumber(topping.usageQuantity) || 0
+              if (baseUsage <= 0) continue
+
+              // Coverage fraction: sections array length / 24 (micro-section grid)
+              const sectionCount = entry.sections?.length || 24
+              const coverageFraction = sectionCount / 24.0
+
+              // Amount multiplier: light=0.5, regular=1.0, extra=2.0
+              const amountMultiplier = entry.amount === 'light' ? 0.5
+                : entry.amount === 'extra' ? 2.0
+                : 1.0
+
+              const totalUsage = baseUsage * coverageFraction * amountMultiplier
+                * sizeInventoryMultiplier * itemQty
+
+              // Apply unit conversion if needed
+              let finalUsage = totalUsage
+              if (topping.usageUnit && topping.inventoryItem.storageUnit) {
+                const converted = convertUnits(
+                  totalUsage,
+                  topping.usageUnit,
+                  topping.inventoryItem.storageUnit
+                )
+                if (converted !== null) {
+                  finalUsage = converted
+                }
+              }
+
+              addUsage(topping.inventoryItem, finalUsage)
+            }
+          }
+        }
+
+        // Also deduct sauce/cheese/crust inventory if linked
+        // Sauce
+        if (pizzaData.sauceId) {
+          const sauce = await db.pizzaSauce.findUnique({
+            where: { id: pizzaData.sauceId },
+            select: {
+              inventoryItemId: true,
+              inventoryItem: {
+                select: {
+                  id: true, name: true, category: true, department: true,
+                  storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                },
+              },
+            },
+          })
+          if (sauce?.inventoryItem) {
+            addUsage(sauce.inventoryItem, 1.0 * itemQty)
+          }
+        }
+
+        // Cheese
+        if (pizzaData.cheeseId) {
+          const cheese = await db.pizzaCheese.findUnique({
+            where: { id: pizzaData.cheeseId },
+            select: {
+              inventoryItemId: true,
+              inventoryItem: {
+                select: {
+                  id: true, name: true, category: true, department: true,
+                  storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                },
+              },
+            },
+          })
+          if (cheese?.inventoryItem) {
+            addUsage(cheese.inventoryItem, 1.0 * itemQty)
+          }
+        }
+
+        // Crust
+        if (pizzaData.crustId) {
+          const crust = await db.pizzaCrust.findUnique({
+            where: { id: pizzaData.crustId },
+            select: {
+              inventoryItemId: true,
+              inventoryItem: {
+                select: {
+                  id: true, name: true, category: true, department: true,
+                  storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                },
+              },
+            },
+          })
+          if (crust?.inventoryItem) {
+            addUsage(crust.inventoryItem, 1.0 * itemQty)
+          }
+        }
+      } catch (err) {
+        console.warn('[VOID-WASTE] Failed to process pizza toppings for voided item:', err)
+      }
+    }
+
     // Perform deductions
     const usageItems = Array.from(usageMap.values())
 
@@ -776,37 +1042,44 @@ export async function deductInventoryForVoidedItem(
       return { success: true, itemsDeducted: 0, totalCost: 0 }
     }
 
-    // Build transaction array - includes both stock decrement and waste log entries
-    const operations = usageItems.flatMap(item => {
-      const totalCost = item.quantity * item.costPerUnit
-      const newStock = item.currentStock - item.quantity
+    // Interactive transaction: decrement stock FIRST, then read post-update value
+    // for accurate before/after audit trail (prevents TOCTOU race).
+    await db.$transaction(async (txClient) => {
+      for (const item of usageItems) {
+        const totalCost = item.quantity * item.costPerUnit
 
-      return [
-        // Decrement stock
-        db.inventoryItem.update({
+        // Decrement stock first
+        const updated = await txClient.inventoryItem.update({
           where: { id: item.inventoryItemId },
           data: {
             currentStock: { decrement: item.quantity },
           },
-        }),
+          select: { currentStock: true },
+        })
+
+        // Post-decrement stock is the authoritative "after" value
+        const quantityAfter = toNumber(updated.currentStock)
+        const quantityBefore = quantityAfter + item.quantity
+
         // Create transaction record (type: waste)
-        db.inventoryItemTransaction.create({
+        await txClient.inventoryItemTransaction.create({
           data: {
             locationId,
             inventoryItemId: item.inventoryItemId,
-            type: 'waste',
-            quantityBefore: item.currentStock,
+            type: deductionType,
+            quantityBefore,
             quantityChange: -item.quantity,
-            quantityAfter: newStock,
+            quantityAfter,
             unitCost: item.costPerUnit,
             totalCost,
             reason: `Void: ${voidReason} (Order #${orderNumber})`,
             referenceType: 'void',
             referenceId: orderItemId,
           },
-        }),
+        })
+
         // Create waste log entry
-        db.wasteLogEntry.create({
+        await txClient.wasteLogEntry.create({
           data: {
             locationId,
             inventoryItemId: item.inventoryItemId,
@@ -817,12 +1090,9 @@ export async function deductInventoryForVoidedItem(
             employeeId: employeeId || null,
             notes: `Auto-logged from voided order item (Order #${orderNumber})`,
           },
-        }),
-      ]
+        })
+      }
     })
-
-    // Execute atomically
-    await db.$transaction(operations)
 
     const totalCost = usageItems.reduce((sum, item) => sum + item.quantity * item.costPerUnit, 0)
 

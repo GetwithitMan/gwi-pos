@@ -6,6 +6,7 @@ import { formatCurrency } from '@/lib/utils'
 import { getLocationDateRange } from '@/lib/timezone'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 export const POST = withVenue(async (request: NextRequest) => {
   try {
@@ -144,7 +145,7 @@ export const POST = withVenue(async (request: NextRequest) => {
       where: {
         locationId,
         deletedAt: null,
-        status: 'paid',
+        status: { in: [...REVENUE_ORDER_STATUSES] },
         paidAt: { gte: startOfDay, lte: endOfDay },
       },
       select: {

@@ -1,7 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
-
 interface Category {
   id: string
   name: string
@@ -35,12 +33,10 @@ export function CategoriesBar({
   })
 
   const renderCategoryButton = (category: Category) => (
-    <motion.button
+    <button
       key={category.id}
-      className={`category-button ${selectedCategoryId === category.id ? 'active' : ''}`}
+      className={`category-button transition-transform duration-150 hover:-translate-y-0.5 active:scale-[0.98] ${selectedCategoryId === category.id ? 'active' : ''}`}
       onClick={() => onCategorySelect(category.id)}
-      whileHover={{ y: -2 }}
-      whileTap={{ scale: 0.98 }}
       style={{
         padding: '10px 20px',
         background: selectedCategoryId === category.id
@@ -66,7 +62,7 @@ export function CategoriesBar({
       {category.itemCount !== undefined && (
         <span style={{ marginLeft: '6px', fontSize: '12px', opacity: 0.6 }}>({category.itemCount})</span>
       )}
-    </motion.button>
+    </button>
   )
 
 
@@ -103,11 +99,9 @@ export function CategoriesBar({
 
         {/* Start Tab Quick Action */}
         {onStartTabWorkflow && (
-          <motion.button
-            className="category-button new-tab-button"
+          <button
+            className="category-button new-tab-button transition-transform duration-150 hover:-translate-y-0.5 active:scale-[0.98]"
             onClick={onStartTabWorkflow}
-            whileHover={{ y: -2 }}
-            whileTap={{ scale: 0.98 }}
           >
             <svg
               className="w-4 h-4 mr-1.5 inline-block"
@@ -123,7 +117,7 @@ export function CategoriesBar({
               />
             </svg>
             New Tab
-          </motion.button>
+          </button>
         )}
       </div>
     </div>

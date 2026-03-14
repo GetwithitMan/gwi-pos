@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
 
       default:
         // Unknown event type — log but don't error
-        console.log(`[doordash/webhook] Unknown event type: ${eventType}`)
+        console.warn(`[doordash/webhook] Unknown event type: ${eventType}`)
     }
 
     return NextResponse.json({ received: true })

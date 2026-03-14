@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { calculateSplitTicketPricing, type OrderItemInput, type RoundingIncrement } from '@/lib/split-pricing'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
-import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -519,6 +519,22 @@ export const POST = withVenue(async function POST(
       orderId: id,
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
+    }).catch(() => {})
+
+    // Dispatch order:split-created so all devices instantly render the split
+    void dispatchSplitCreated(parentOrder.locationId, {
+      parentOrderId: parentOrder.id,
+      parentStatus: 'split',
+      splits: createdSplits.map(split => ({
+        id: split.id,
+        orderNumber: split.orderNumber,
+        splitIndex: split.splitIndex!,
+        displayNumber: split.displayNumber || `${parentOrder.orderNumber}-${split.splitIndex}`,
+        total: Number(split.total),
+        itemCount: split.items.length,
+        isPaid: false,
+      })),
+      sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
     }).catch(() => {})
 
     // Event emission: ORDER_CREATED for each new split child

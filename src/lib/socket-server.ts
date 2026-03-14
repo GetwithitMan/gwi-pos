@@ -68,9 +68,48 @@ const connectedTerminals = new Map<string, {
   connectedAt: Date
 }>()
 
+// ── Per-socket rate limiting ──────────────────────────────────────────────────
+const socketRateLimits = new Map<string, { count: number; resetAt: number }>()
+const MAX_EVENTS_PER_SECOND = 50
+
+function checkSocketRateLimit(socketId: string): boolean {
+  const now = Date.now()
+  let state = socketRateLimits.get(socketId)
+  if (!state || now > state.resetAt) {
+    state = { count: 0, resetAt: now + 1000 }
+    socketRateLimits.set(socketId, state)
+  }
+  state.count++
+  return state.count <= MAX_EVENTS_PER_SECOND
+}
+
+/** Clean up stale rate limit entries periodically */
+function cleanupRateLimits(): void {
+  const now = Date.now()
+  for (const [socketId, state] of socketRateLimits) {
+    if (now > state.resetAt + 5000) {
+      socketRateLimits.delete(socketId)
+    }
+  }
+}
+
 // Reverse mapping: cfdTerminalId → registerTerminalId (cached from auth middleware)
 // Used by CFD-to-register relay to avoid DB lookups during payment flow
 const cfdToRegisterMap = new Map<string, string>()
+const CFD_MAP_MAX_SIZE = 100
+
+/**
+ * Add to cfdToRegisterMap with size bound.
+ * If map exceeds max size, evict the oldest entry (first key in insertion order).
+ */
+function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void {
+  cfdToRegisterMap.set(cfdTerminalId, registerTerminalId)
+  if (cfdToRegisterMap.size > CFD_MAP_MAX_SIZE) {
+    // Map iterates in insertion order — first key is oldest
+    const oldestKey = cfdToRegisterMap.keys().next().value
+    if (oldestKey) cfdToRegisterMap.delete(oldestKey)
+  }
+}
 
 async function markTerminalOffline(terminalId: string, locationId: string, reason: string, socketId: string): Promise<void> {
   try {
@@ -144,7 +183,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     path: process.env.SOCKET_PATH || '/api/socket',
     cors: {
       origin: process.env.NODE_ENV !== 'production'
-        ? '*'
+        ? ['http://localhost:3000', 'http://localhost:3005', 'http://127.0.0.1:3005']
         : (origin, callback) => {
             // No origin (same-origin / server-to-server) — allow
             if (!origin) return callback(null, true)
@@ -167,23 +206,41 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   // On NUC (POS_LOCATION_ID set), local connections are trusted.
   socketServer.use(async (socket, next) => {
     try {
-      // Path 1: Native device token (phones/iPads)
+      // Path 1: Native device token (register/PAX terminals OR KDS screens)
       const deviceToken = socket.handshake.auth?.deviceToken as string | undefined
       if (deviceToken && typeof deviceToken === 'string') {
+        // 1a: Check Terminal table (register, PAX, handheld)
         const terminal = await db.terminal.findFirst({
           where: { deviceToken, deletedAt: null },
           select: { id: true, locationId: true, name: true, platform: true, cfdTerminalId: true },
         })
-        if (!terminal) {
-          return next(new Error('Invalid device token'))
+        if (terminal) {
+          socket.data.terminalId = terminal.id
+          socket.data.terminalName = terminal.name
+          socket.data.platform = terminal.platform
+          socket.data.locationId = terminal.locationId
+          socket.data.authenticated = true
+          socket.data.cfdTerminalId = terminal.cfdTerminalId ?? null
+          return next()
         }
-        socket.data.terminalId = terminal.id
-        socket.data.terminalName = terminal.name
-        socket.data.platform = terminal.platform
-        socket.data.locationId = terminal.locationId
-        socket.data.authenticated = true
-        socket.data.cfdTerminalId = terminal.cfdTerminalId ?? null
-        return next()
+
+        // 1b: Check KDSScreen table (native KDS tablets)
+        const kdsScreen = await db.kDSScreen.findFirst({
+          where: { deviceToken, deletedAt: null, isActive: true },
+          select: { id: true, locationId: true, name: true, screenType: true },
+        })
+        if (kdsScreen) {
+          socket.data.terminalId = `kds-${kdsScreen.id}`
+          socket.data.terminalName = kdsScreen.name
+          socket.data.platform = 'kds'
+          socket.data.locationId = kdsScreen.locationId
+          socket.data.authenticated = true
+          socket.data.kdsScreenId = kdsScreen.id
+          socket.data.kdsScreenType = kdsScreen.screenType
+          return next()
+        }
+
+        return next(new Error('Invalid device token'))
       }
 
       // Path 2: POS session cookie (browser terminals)
@@ -206,10 +263,18 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         }
       }
 
-      // Path 3: NUC local network — trust all connections from the local server
+      // Path 3: NUC local network — trust LAN connections but track identity
       if (process.env.POS_LOCATION_ID) {
         socket.data.locationId = process.env.POS_LOCATION_ID
         socket.data.authenticated = true
+        // Track identity from handshake auth if provided
+        const authTerminalId = socket.handshake.auth?.terminalId as string | undefined
+        const authEmployeeId = socket.handshake.auth?.employeeId as string | undefined
+        if (authTerminalId) socket.data.terminalId = authTerminalId
+        if (authEmployeeId) socket.data.employeeId = authEmployeeId
+        if (!authTerminalId && !authEmployeeId) {
+          console.warn(`[Socket] Path 3 LAN connection without identity (no terminalId/employeeId) from ${socket.handshake.address} — allowing but untracked`)
+        }
         return next()
       }
 
@@ -241,7 +306,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       socket.join(`location:${socket.data.locationId}`)
       // Cache CFD→register reverse mapping for relay without DB lookups
       if (socket.data.cfdTerminalId) {
-        cfdToRegisterMap.set(socket.data.cfdTerminalId, socket.data.terminalId)
+        setCfdMapping(socket.data.cfdTerminalId, socket.data.terminalId)
       }
       if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Native client authenticated: ${socket.data.terminalName} (${socket.data.platform})`)
     }
@@ -264,11 +329,21 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     // Valid room prefixes for subscribe
     const ALLOWED_ROOM_PREFIXES = ['location:', 'tag:', 'terminal:', 'station:', 'scale:']
 
+    // Per-socket room tracking for rate limiting (max 50 rooms)
+    const MAX_ROOMS_PER_SOCKET = 50
+    if (!socket.data.joinedRooms) socket.data.joinedRooms = new Set<string>()
+
     // Handle channel subscribe/unsubscribe from SocketEventProvider
     socket.on('subscribe', (channelName: string) => {
       try {
         if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
           console.warn(`[Socket] Rejected subscribe to invalid room: ${channelName}`)
+          return
+        }
+        // Rate limit: max rooms per socket
+        const joinedRooms = socket.data.joinedRooms as Set<string>
+        if (!joinedRooms.has(channelName) && joinedRooms.size >= MAX_ROOMS_PER_SOCKET) {
+          console.warn(`[Socket] Rejected subscribe — socket ${socket.id} at max rooms (${MAX_ROOMS_PER_SOCKET}): ${channelName}`)
           return
         }
         // Validate location rooms against authenticated context
@@ -283,6 +358,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           }
         }
         socket.join(channelName)
+        joinedRooms.add(channelName)
       } catch (err) {
         console.error(JSON.stringify({ event: 'subscribe', socketId: socket.id, error: String(err) }))
       }
@@ -290,6 +366,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     socket.on('unsubscribe', (channelName: string) => {
       try {
         socket.leave(channelName)
+        ;(socket.data.joinedRooms as Set<string>)?.delete(channelName)
       } catch (err) {
         console.error(JSON.stringify({ event: 'unsubscribe', socketId: socket.id, error: String(err) }))
       }
@@ -338,6 +415,15 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         for (const [existingId, info] of connectedTerminals.entries()) {
           if (info.socketId === socket.id) {
             connectedTerminals.delete(existingId)
+            break
+          }
+        }
+
+        // Clean up any existing entry with the same terminalId from a different socket
+        // (stale socket that disconnected without cleanup, or duplicate connection)
+        for (const [key, value] of connectedTerminals.entries()) {
+          if (value.socketId !== socket.id && key === terminalId) {
+            connectedTerminals.delete(key)
             break
           }
         }
@@ -407,8 +493,32 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         const missedEvents = getEventsSince(catchUpLocationId, lastEventId, subscribedRooms)
 
         if (missedEvents.length > 0) {
-          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Catch-up: replaying ${missedEvents.length} events to ${socket.id} (since eid=${lastEventId})`)
+          // Deduplicate: for list-changed events, only send the latest of each type.
+          // For item-specific events (payment, order-specific), send all.
+          const DEDUP_EVENT_TYPES = new Set([
+            'orders:list-changed', 'tab:updated', 'floor-plan:updated',
+            'terminal:status_changed', 'kds:order-received',
+          ])
+          const latestByType = new Map<string, typeof missedEvents[0]>()
+          const directEvents: typeof missedEvents = []
+
           for (const evt of missedEvents) {
+            if (DEDUP_EVENT_TYPES.has(evt.event)) {
+              latestByType.set(evt.event, evt)
+            } else {
+              directEvents.push(evt)
+            }
+          }
+
+          const dedupedCount = missedEvents.length - directEvents.length - latestByType.size
+          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Catch-up: replaying ${directEvents.length + latestByType.size} events to ${socket.id} (since eid=${lastEventId}, deduped ${dedupedCount})`)
+
+          // Send non-deduplicatable events first (order-specific, payment, etc.)
+          for (const evt of directEvents) {
+            socket.emit(evt.event, evt.data)
+          }
+          // Send deduplicated events (only latest of each type)
+          for (const evt of latestByType.values()) {
             socket.emit(evt.event, evt.data)
           }
         }
@@ -472,7 +582,9 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Missing orderId or employeeId' })
         return
       }
-      // Call the close-tab API route internally (payment logic is complex — Datacap hardware)
+      // NOTE: Uses HTTP loopback to reuse close-tab API logic including Datacap interaction.
+      // The 30s timeout is appropriate for hardware payment processing.
+      // Future optimization: extract close-tab business logic into a shared function.
       const port = parseInt(process.env.PORT || '3005', 10)
       void fetch(`http://127.0.0.1:${port}/api/orders/${orderId}/close-tab`, {
         method: 'POST',
@@ -606,6 +718,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       data: unknown
     }) => {
       try {
+        // Rate limit check
+        if (!checkSocketRateLimit(socket.id)) {
+          socket.emit('rate_limited', { message: 'Too many events per second', event: 'terminal_message' })
+          return
+        }
+
         // Require authenticated locationId on sender
         const senderLocationId = socket.data.locationId
         if (!senderLocationId) {
@@ -707,7 +825,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           }).then(register => {
             if (!register) return
             // Populate cache for future relays
-            cfdToRegisterMap.set(myTerminalId, register.id)
+            setCfdMapping(myTerminalId, register.id)
             void emitToTerminal(register.id, cfdEvent, data)
           }).catch((err: unknown) => {
             console.error(JSON.stringify({ event: cfdEvent, lookupFailed: true, error: String(err) }))
@@ -808,7 +926,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     }
   }, 60000) // Every minute
 
-  // Periodic cleanup of stale terminal entries (every 5 minutes)
+  // Periodic cleanup of stale terminal entries (every 60 seconds)
   setInterval(() => {
     let cleaned = 0
     for (const [terminalId, info] of connectedTerminals.entries()) {
@@ -822,7 +940,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     if (cleaned > 0) {
       if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Cleaned ${cleaned} stale terminal entries`)
     }
-  }, 5 * 60 * 1000) // Every 5 minutes
+  }, 60_000) // Every 60 seconds
+
+  // Periodic cleanup of stale rate limit entries (every 30 seconds)
+  setInterval(cleanupRateLimits, 30_000)
 
   // NOTE: Redundant 60s stale-terminal sweep removed (2026-03-09).
   // Socket disconnect events (line ~653) already mark terminals offline immediately

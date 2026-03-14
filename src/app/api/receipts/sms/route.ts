@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 import { withVenue } from '@/lib/with-venue'
+import { formatCurrency } from '@/lib/utils'
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   cash: 'Cash',
@@ -11,10 +12,6 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   house_account: 'House Acct',
   loyalty_points: 'Loyalty',
   room_charge: 'Room Charge',
-}
-
-function formatCurrency(amount: number): string {
-  return `$${amount.toFixed(2)}`
 }
 
 /**

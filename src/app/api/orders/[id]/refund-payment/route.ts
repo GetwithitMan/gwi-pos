@@ -67,12 +67,17 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Interactive transaction: FOR UPDATE on Payment row prevents concurrent over-refund
-    const txResult = await db.$transaction(async (tx) => {
-      // Acquire row lock on Payment
+    // 3-Phase pattern (matches void-payment): Datacap call OUTSIDE the DB transaction
+    // to prevent holding the FOR UPDATE lock during network I/O.
+    //
+    // Phase 1: Read + validate under FOR UPDATE lock, then release lock
+    // Phase 2: Call Datacap outside transaction
+    // Phase 3: Write under FOR UPDATE lock (record refund result)
+
+    // ── Phase 1: Validate under lock ──────────────────────────────────────────
+    const phase1Result = await db.$transaction(async (tx) => {
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
-      // Re-read payment inside lock
       const payment = await tx.payment.findFirst({
         where: { id: paymentId, orderId: id, deletedAt: null },
       })
@@ -93,7 +98,6 @@ export const POST = withVenue(async function POST(
         return { error: 'Refund amount exceeds payment amount', status: 400 } as const
       }
 
-      // Check cumulative refunds inside lock
       const existingRefunds = await tx.refundLog.aggregate({
         where: { paymentId },
         _sum: { refundAmount: true },
@@ -106,47 +110,80 @@ export const POST = withVenue(async function POST(
         } as const
       }
 
-      // Process Datacap refund for card payments (idempotent at processor)
-      let datacapRefNo: string | null = null
+      return { payment, totalAlreadyRefunded }
+    }, { timeout: 15000 })
 
-      const isCardPayment =
-        payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
+    if ('error' in phase1Result) {
+      return NextResponse.json({ error: phase1Result.error }, { status: phase1Result.status })
+    }
 
-      const effectiveReaderId = readerId ?? payment.paymentReaderId ?? null
-      if (isCardPayment && effectiveReaderId && payment.datacapRecordNo) {
-        await validateReader(effectiveReaderId, order.locationId)
-        const client = await requireDatacapClient(order.locationId)
+    const { payment, totalAlreadyRefunded } = phase1Result
 
-        const response = await client.emvReturn(effectiveReaderId, {
-          recordNo: payment.datacapRecordNo,
-          invoiceNo: order.orderNumber?.toString() ?? id,
-          amount: refundAmount,
-          cardPresent: false,
-        })
+    // ── Phase 2: Call Datacap OUTSIDE the transaction ──────────────────────────
+    let datacapRefNo: string | null = null
+    const isCardPayment =
+      payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
 
-        const approved = response.cmdStatus === 'Approved'
+    const effectiveReaderId = readerId ?? payment.paymentReaderId ?? null
+    if (isCardPayment && effectiveReaderId && payment.datacapRecordNo) {
+      await validateReader(effectiveReaderId, order.locationId)
+      const client = await requireDatacapClient(order.locationId)
 
-        if (!approved) {
-          return { error: response.textResponse || 'Refund declined', status: 422 } as const
-        }
+      const response = await client.emvReturn(effectiveReaderId, {
+        recordNo: payment.datacapRecordNo,
+        invoiceNo: order.orderNumber?.toString() ?? id,
+        amount: refundAmount,
+        cardPresent: false,
+      })
 
-        datacapRefNo = response.refNo ?? null
+      if (response.cmdStatus !== 'Approved') {
+        return NextResponse.json(
+          { error: response.textResponse || 'Refund declined' },
+          { status: 422 }
+        )
+      }
+
+      datacapRefNo = response.refNo ?? null
+    }
+
+    // ── Phase 3: Write under lock (record refund result) ──────────────────────
+    const txResult = await db.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
+
+      // Re-check payment status inside lock (may have changed between Phase 1 and Phase 3)
+      const freshPayment = await tx.payment.findUnique({ where: { id: paymentId } })
+      if (freshPayment?.status === 'voided') {
+        return { error: 'Payment was voided between refund phases', status: 400 } as const
+      }
+      if (freshPayment?.status === 'refunded') {
+        return { error: 'Payment was fully refunded between refund phases', status: 400 } as const
+      }
+
+      // Re-check cumulative refunds inside lock
+      const freshRefunds = await tx.refundLog.aggregate({
+        where: { paymentId },
+        _sum: { refundAmount: true },
+      })
+      const freshTotalRefunded = Number(freshRefunds._sum.refundAmount ?? 0)
+      if (freshTotalRefunded + refundAmount > Number(payment.amount)) {
+        return {
+          error: `Refund amount exceeds remaining refundable balance (concurrent refund detected).`,
+          status: 400,
+        } as const
       }
 
       const isPartial = refundAmount < Number(payment.amount)
 
-      // Update payment status
       await tx.payment.update({
         where: { id: paymentId },
         data: {
           status: isPartial ? 'completed' : 'refunded',
           refundedAt: new Date(),
-          refundedAmount: totalAlreadyRefunded + refundAmount,
+          refundedAmount: freshTotalRefunded + refundAmount,
           lastMutatedBy: 'local',
         },
       })
 
-      // Create RefundLog
       const refundLog = await tx.refundLog.create({
         data: {
           locationId: order.locationId,
@@ -164,7 +201,6 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      // Create AuditLog
       await tx.auditLog.create({
         data: {
           locationId: order.locationId,
@@ -180,15 +216,21 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return { refundLog, isPartial, totalAlreadyRefunded, payment }
-    }, { timeout: 30000 })
+      return { refundLog, isPartial, totalAlreadyRefunded: freshTotalRefunded, payment }
+    }, { timeout: 15000 })
 
-    // Handle early-return errors from inside the transaction
     if ('error' in txResult) {
+      // CRITICAL: If Datacap succeeded but Phase 3 failed, log for reconciliation
+      if (isCardPayment && datacapRefNo) {
+        console.error(
+          `[PAYMENT-SAFETY] CRITICAL: Datacap refund succeeded (refNo=${datacapRefNo}) but DB write failed. ` +
+          `orderId=${id}, paymentId=${paymentId}, amount=${refundAmount}. Manual reconciliation required.`
+        )
+      }
       return NextResponse.json({ error: txResult.error }, { status: txResult.status })
     }
 
-    const { refundLog, isPartial, totalAlreadyRefunded, payment } = txResult
+    const { refundLog, isPartial } = txResult
 
     // Emit PAYMENT_VOIDED event (fire-and-forget)
     void emitOrderEvent(order.locationId, id, 'PAYMENT_VOIDED', {

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 type Classification = 'star' | 'plow_horse' | 'puzzle' | 'dog'
 
@@ -59,7 +60,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         order: {
           locationId,
-          status: { in: ['paid', 'closed'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
           paidAt: dateFilter,
         },
         status: 'active',

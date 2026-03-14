@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useSocket } from '@/hooks/useSocket'
-import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 
@@ -114,8 +113,8 @@ export default function TabsPage() {
     }
   }
 
-  // Filter and sort tabs
-  const filteredTabs = tabs
+  // Filter and sort tabs (memoized to avoid recomputation on unrelated re-renders)
+  const filteredTabs = useMemo(() => tabs
     .filter(tab => {
       // Search filter
       if (searchQuery) {
@@ -154,7 +153,8 @@ export default function TabsPage() {
         default:
           return 0
       }
-    })
+    }),
+  [tabs, searchQuery, filter, sortBy, employee?.id])
 
   const handleViewTab = useCallback((tab: TabOrder) => {
     setSelectedTab(tab)
@@ -295,14 +295,11 @@ export default function TabsPage() {
       <main className="p-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-            >
+            <div className="animate-spin">
               <svg width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24" className="text-slate-400">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-            </motion.div>
+            </div>
           </div>
         ) : filteredTabs.length === 0 ? (
           <div className="text-center py-20 text-slate-400">
@@ -314,14 +311,10 @@ export default function TabsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            <AnimatePresence>
               {filteredTabs.map((tab) => (
-                <motion.div
+                <div
                   key={tab.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/[0.07] transition-colors"
+                  className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/[0.07] transition-colors animate-[fadeIn_0.15s_ease]"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -370,9 +363,8 @@ export default function TabsPage() {
                       </div>
                     </div>
                   </div>
-                </motion.div>
+                </div>
               ))}
-            </AnimatePresence>
           </div>
         )}
       </main>

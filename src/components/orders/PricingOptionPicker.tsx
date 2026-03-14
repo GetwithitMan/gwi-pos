@@ -6,12 +6,19 @@ import type { EnginePricingOption, EnginePricingOptionGroup } from '@/hooks/useO
 
 interface PricingOptionPickerProps {
   item: { id: string; name: string; price: number; pricingOptionGroups?: EnginePricingOptionGroup[] } | null
+  dualPricing?: { enabled: boolean; cashDiscountPercent: number }
   onSelect: (option: EnginePricingOption) => void
   onClose: () => void
 }
 
-export function PricingOptionPicker({ item, onSelect, onClose }: PricingOptionPickerProps) {
+export function PricingOptionPicker({ item, dualPricing, onSelect, onClose }: PricingOptionPickerProps) {
   const group = item?.pricingOptionGroups?.[0]
+  const uplift = (cashPrice: number) => {
+    if (dualPricing?.enabled && dualPricing.cashDiscountPercent > 0) {
+      return Math.round(cashPrice * (1 + dualPricing.cashDiscountPercent / 100) * 100) / 100
+    }
+    return cashPrice
+  }
 
   return (
     <Modal isOpen={!!item} onClose={onClose} size="2xl">
@@ -37,7 +44,8 @@ export function PricingOptionPicker({ item, onSelect, onClose }: PricingOptionPi
           <div className="flex gap-2 flex-wrap">
             {group.options.slice(0, 4).map(option => {
               const isVariant = option.price !== null
-              const displayPrice = isVariant ? option.price! : item.price
+              const cashPrice = isVariant ? option.price! : item.price
+              const displayPrice = uplift(cashPrice)
               const bgColor = option.color || 'bg-indigo-600'
               // Use inline style if color is a hex value, otherwise use as class
               const isHex = bgColor.startsWith('#') || bgColor.startsWith('rgb')
@@ -54,7 +62,7 @@ export function PricingOptionPicker({ item, onSelect, onClose }: PricingOptionPi
                   </div>
                   {isVariant && option.price! !== item.price && (
                     <div className="text-white/60 text-[10px]">
-                      {option.price! > item.price ? '+' : ''}{formatCurrency(option.price! - item.price)}
+                      {option.price! > item.price ? '+' : ''}{formatCurrency(uplift(option.price!) - uplift(item.price))}
                     </div>
                   )}
                 </button>

@@ -94,9 +94,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       if (sendRes.ok) {
         dispatched++
-        console.log(
-          `[DispatchOnlineOrder] Order #${order.orderNumber} dispatched to kitchen`
-        )
+        // dispatched — count tracked in response
       } else {
         const err = await sendRes.json().catch(() => ({})) as { error?: string }
         const msg = err.error || `HTTP ${sendRes.status}`

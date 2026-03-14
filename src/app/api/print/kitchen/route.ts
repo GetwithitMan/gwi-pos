@@ -634,7 +634,7 @@ function buildKitchenTicket(
     // Weight-based items show weight instead of quantity
     let itemName: string
     if (item.soldByWeight && item.weight != null) {
-      const w = Number(item.weight).toFixed(2)
+      const w = Number(item.weight).toFixed(3)
       const unit = item.weightUnit || 'lb'
       const netLabel = item.tareWeight != null && Number(item.tareWeight) > 0 ? ' (NET)' : ''
       itemName = `${positionPrefix}${w} ${unit} ${item.name}${netLabel}`

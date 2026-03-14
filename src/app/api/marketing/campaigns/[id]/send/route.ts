@@ -111,17 +111,15 @@ export const POST = withVenue(async function POST(
     // Cap recipients at remaining daily limit
     const eligibleCustomers = customers.slice(0, remainingToday)
 
-    // Create recipient records
-    const recipientValues = eligibleCustomers.map((c) => {
+    // Create recipient records (parameterized inserts to prevent SQL injection)
+    for (const c of eligibleCustomers) {
       const address = campaignType === 'email' ? (c.email || '') : (c.phone || '')
-      return `('${id}', '${c.id}', '${campaignType}', '${address.replace(/'/g, "''")}')`
-    }).join(',\n')
-
-    if (recipientValues) {
-      await db.$executeRawUnsafe(`
-        INSERT INTO "MarketingRecipient" ("campaignId", "customerId", "channel", "address")
-        VALUES ${recipientValues}
-      `)
+      await db.$executeRawUnsafe(
+        `INSERT INTO "MarketingRecipient" ("campaignId", "customerId", "channel", "address")
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT DO NOTHING`,
+        id, c.id, campaignType, address
+      )
     }
 
     // Update campaign to 'sending' with recipient count
@@ -248,7 +246,7 @@ async function processCampaignSend(
     WHERE id = $1
   `, campaignId, deliveredCount)
 
-  console.log(`[Marketing] Campaign ${campaignId} complete: ${deliveredCount}/${customers.length} delivered`)
+  // Campaign stats returned in response
 }
 
 /**
@@ -256,7 +254,8 @@ async function processCampaignSend(
  * Format: base64url(customerId:campaignId:hmac)
  */
 function generateUnsubscribeToken(customerId: string, campaignId: string): string {
-  const secret = process.env.MARKETING_UNSUBSCRIBE_SECRET || process.env.JWT_SECRET || 'marketing-fallback-secret'
+  const secret = process.env.MARKETING_UNSUBSCRIBE_SECRET || process.env.JWT_SECRET
+  if (!secret) throw new Error('MARKETING_UNSUBSCRIBE_SECRET or JWT_SECRET must be set')
   const payload = `${customerId}:${campaignId}`
   const hmac = crypto.createHmac('sha256', secret).update(payload).digest('hex').slice(0, 16)
   return Buffer.from(`${payload}:${hmac}`).toString('base64url')

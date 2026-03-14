@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomInt } from 'crypto'
+import { hash } from 'bcryptjs'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { verifyPassword } from '@/lib/auth'
 import { signVenueToken, signOwnerToken } from '@/lib/cloud-auth'
 import { verifyWithClerk } from '@/lib/clerk-verify'
+import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
 
 /**
  * POST /api/auth/venue-login
@@ -17,6 +20,24 @@ import { verifyWithClerk } from '@/lib/clerk-verify'
  * Control would issue — no redirect to MC needed.
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
+  // ── Rate limiting ──────────────────────────────────────────────
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || 'unknown'
+
+  const rateCheck = checkLoginRateLimit(ip)
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { error: rateCheck.reason },
+      {
+        status: 429,
+        headers: rateCheck.retryAfterSeconds
+          ? { 'Retry-After': String(rateCheck.retryAfterSeconds) }
+          : undefined,
+      }
+    )
+  }
+
   const body = await request.json().catch(() => ({}))
   const { email, password } = body
 
@@ -67,6 +88,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   if (!authenticated) {
+    recordLoginFailure(ip)
     console.error(`[venue-login] Auth failed for ${normalizedEmail}: clerk=${clerkValid}, hasEmployee=${!!employee}, hasLocalPw=${!!employee?.password}`)
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
@@ -134,7 +156,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               }) || allRoles[0]
 
               if (adminRole) {
-                const pin = String(Math.floor(100000 + Math.random() * 900000))
+                const rawPin = String(randomInt(100000, 1000000))
+                const hashedPin = await hash(rawPin, 10)
                 ownerEmployee = await db.employee.create({
                   data: {
                     locationId: location.id,
@@ -144,7 +167,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                     email: normalizedEmail,
                     roleId: adminRole.id,
                     isActive: true,
-                    pin,
+                    pin: hashedPin,
                   },
                   include: { role: true },
                 })
@@ -204,9 +227,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   // ── Local employee session ───────────────────────────────────────
   if (!employee) {
+    recordLoginFailure(ip)
     console.error(`[venue-login] No local employee and MC access check failed for ${normalizedEmail} at ${venueSlug}`)
     return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 })
   }
+
+  // Clear rate limit on success
+  recordLoginSuccess(ip, employee.id)
 
   // Generate a cloud-session-compatible JWT signed with PROVISION_API_KEY
   const token = await signVenueToken(

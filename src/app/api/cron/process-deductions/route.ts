@@ -11,7 +11,6 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await processAllPending()
-    console.log('[cron/process-deductions]', result)
     return NextResponse.json({ ok: true, ...result })
   } catch (err) {
     console.error('[cron/process-deductions] fatal error:', err)

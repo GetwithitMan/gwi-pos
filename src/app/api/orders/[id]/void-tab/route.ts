@@ -143,9 +143,7 @@ export const POST = withVenue(async function POST(
 
         cleanedEntertainmentIds = entertainmentItems.map((i) => i.id)
 
-        if (entertainmentItems.length > 0) {
-          console.log(`[Tab Void] Cleaned up ${entertainmentItems.length} entertainment items for order ${orderId}`)
-        }
+        // entertainment items cleaned up
       } catch (cleanupErr) {
         console.error('[Tab Void] Failed to clean up entertainment items:', cleanupErr)
       }

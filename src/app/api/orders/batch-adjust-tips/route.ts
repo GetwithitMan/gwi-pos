@@ -67,22 +67,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const prefetched = new Map<string, { order: any; adj: TipAdjustment }>()
 
+    // Pre-fetch all orders + payments in batch to avoid N+1
+    const allOrderIds = [...new Set(adjustments.map(a => a.orderId))]
+    const allOrders = await db.order.findMany({
+      where: { id: { in: allOrderIds } },
+      include: { payments: { where: { deletedAt: null } } },
+    })
+    const orderMap = new Map(allOrders.map(o => [o.id, o]))
+
     for (const adj of adjustments) {
-      const order = await db.order.findUnique({
-        where: { id: adj.orderId },
-        include: {
-          payments: {
-            where: { id: adj.paymentId, deletedAt: null },
-          },
-        },
-      })
+      const order = orderMap.get(adj.orderId)
 
       if (!order) {
         results.push({ orderId: adj.orderId, success: false, error: 'Order not found' })
         continue
       }
 
-      const payment = order.payments[0]
+      const payment = order.payments.find(p => p.id === adj.paymentId)
       if (!payment) {
         results.push({ orderId: adj.orderId, success: false, error: 'Payment not found' })
         continue
@@ -95,7 +96,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         continue
       }
 
-      prefetched.set(adj.paymentId, { order, adj })
+      // Re-shape order to match the expected structure (single payment in array)
+      const orderWithFilteredPayment = { ...order, payments: [payment] }
+      prefetched.set(adj.paymentId, { order: orderWithFilteredPayment, adj })
 
       // Call Datacap for card payments
       if (payment.datacapRecordNo && payment.paymentReaderId) {
@@ -125,112 +128,153 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Phase 2: DB transaction — only update payments that passed Datacap (or don't need it)
-    await db.$transaction(async (tx) => {
-      for (const [paymentId, { order, adj }] of prefetched) {
-        // Skip if Datacap failed for this payment
-        if (datacapFailed.has(paymentId)) continue
-        // Only proceed if Datacap approved or was not needed
-        if (!datacapApproved.has(paymentId) && !datacapSkipped.has(paymentId)) continue
+    // Filter to eligible adjustments first to avoid repeated checks inside transaction
+    const eligibleEntries = [...prefetched.entries()].filter(([paymentId]) =>
+      !datacapFailed.has(paymentId) && (datacapApproved.has(paymentId) || datacapSkipped.has(paymentId))
+    )
 
-        const payment = order.payments[0]
-        const oldTipAmount = Number(payment.tipAmount)
-        const newTotalAmount = Number(payment.amount) + adj.tipAmount
+    if (eligibleEntries.length > 0) {
+      await db.$transaction(async (tx) => {
+        // Batch 1: Update all payment tips in parallel
+        await Promise.all(
+          eligibleEntries.map(([, { order, adj }]) => {
+            const payment = order.payments[0]
+            const newTotalAmount = Number(payment.amount) + adj.tipAmount
+            return tx.payment.update({
+              where: { id: adj.paymentId },
+              data: {
+                tipAmount: adj.tipAmount,
+                totalAmount: newTotalAmount,
+                lastMutatedBy: 'local',
+              },
+            })
+          })
+        )
 
-        // Update payment tip
-        await tx.payment.update({
-          where: { id: adj.paymentId },
-          data: {
-            tipAmount: adj.tipAmount,
-            totalAmount: newTotalAmount,
-            lastMutatedBy: 'local',
-          },
-        })
-
-        // Recalculate order tip total from all non-voided payments
-        const allPayments = await tx.payment.findMany({
+        // Batch 2: Fetch all payments for affected orders in one query (avoid N+1 findMany per order)
+        const affectedOrderIds = [...new Set(eligibleEntries.map(([, { adj }]) => adj.orderId))]
+        const allOrderPayments = await tx.payment.findMany({
           where: {
-            orderId: adj.orderId,
+            orderId: { in: affectedOrderIds },
             deletedAt: null,
             status: { not: 'voided' },
           },
         })
 
-        const newOrderTipTotal = allPayments.reduce(
-          (sum, p) => sum + (p.id === adj.paymentId ? adj.tipAmount : Number(p.tipAmount)),
-          0
-        )
+        // Group payments by orderId for tip recalculation
+        const paymentsByOrder = new Map<string, typeof allOrderPayments>()
+        for (const p of allOrderPayments) {
+          const list = paymentsByOrder.get(p.orderId) ?? []
+          list.push(p)
+          paymentsByOrder.set(p.orderId, list)
+        }
 
-        // Recalculate Order.total to include new tip total (BUG #410 fix)
-        const newOrderTotal = Number(order.subtotal) + Number(order.taxTotal) - Number(order.discountTotal) + newOrderTipTotal
+        // Build a map of paymentId → new tip amount from this batch
+        const tipOverrides = new Map(eligibleEntries.map(([, { adj }]) => [adj.paymentId, adj.tipAmount]))
 
-        await tx.order.update({
-          where: { id: adj.orderId },
-          data: {
-            tipTotal: newOrderTipTotal,
-            total: newOrderTotal,
-            version: { increment: 1 },
-            lastMutatedBy: 'local',
-          },
-        })
+        // Batch 3: Update all order totals in parallel + create all audit logs in parallel
+        const orderUpdates: Promise<unknown>[] = []
+        const auditCreates: Promise<unknown>[] = []
 
-        // Audit log
-        await tx.auditLog.create({
-          data: {
-            locationId: order.locationId,
-            employeeId,
-            action: 'tip_adjusted',
-            entityType: 'payment',
-            entityId: adj.paymentId,
-            details: {
-              orderId: adj.orderId,
-              orderNumber: order.orderNumber,
-              paymentId: adj.paymentId,
-              oldTipAmount,
-              newTipAmount: adj.tipAmount,
-              difference: adj.tipAmount - oldTipAmount,
-              reason: 'Batch tip adjustment',
-              batchSize: adjustments.length,
-              datacapAdjusted: datacapApproved.has(paymentId),
-            },
-          },
-        })
+        for (const [paymentId, { order, adj }] of eligibleEntries) {
+          const payment = order.payments[0]
+          const oldTipAmount = Number(payment.tipAmount)
 
-        totalTips += adj.tipAmount
-        results.push({ orderId: adj.orderId, success: true })
-        dispatchInfos.push({
-          locationId: order.locationId,
-          orderId: adj.orderId,
-          subtotal: Number(order.subtotal),
-          taxTotal: Number(order.taxTotal),
-          tipTotal: newOrderTipTotal,
-          discountTotal: Number(order.discountTotal),
-          total: newOrderTotal,
-          commissionTotal: Number(order.commissionTotal || 0),
-        })
+          // Recalculate order tip total from all non-voided payments (using overrides for this batch)
+          const orderPayments = paymentsByOrder.get(adj.orderId) ?? []
+          const newOrderTipTotal = orderPayments.reduce(
+            (sum, p) => sum + (tipOverrides.has(p.id) ? tipOverrides.get(p.id)! : Number(p.tipAmount)),
+            0
+          )
 
-        // Collect info for tip allocation (BUG #412 fix)
-        if (adj.tipAmount > 0 && order.employeeId) {
-          allocationInfos.push({
+          // Recalculate Order.total to include new tip total (BUG #410 fix)
+          const newOrderTotal = Number(order.subtotal) + Number(order.taxTotal) - Number(order.discountTotal) + newOrderTipTotal
+
+          orderUpdates.push(
+            tx.order.update({
+              where: { id: adj.orderId },
+              data: {
+                tipTotal: newOrderTipTotal,
+                total: newOrderTotal,
+                version: { increment: 1 },
+                lastMutatedBy: 'local',
+              },
+            })
+          )
+
+          auditCreates.push(
+            tx.auditLog.create({
+              data: {
+                locationId: order.locationId,
+                employeeId,
+                action: 'tip_adjusted',
+                entityType: 'payment',
+                entityId: adj.paymentId,
+                details: {
+                  orderId: adj.orderId,
+                  orderNumber: order.orderNumber,
+                  paymentId: adj.paymentId,
+                  oldTipAmount,
+                  newTipAmount: adj.tipAmount,
+                  difference: adj.tipAmount - oldTipAmount,
+                  reason: 'Batch tip adjustment',
+                  batchSize: adjustments.length,
+                  datacapAdjusted: datacapApproved.has(paymentId),
+                },
+              },
+            })
+          )
+
+          totalTips += adj.tipAmount
+          results.push({ orderId: adj.orderId, success: true })
+          dispatchInfos.push({
             locationId: order.locationId,
             orderId: adj.orderId,
-            employeeId: order.employeeId,
-            paymentId: adj.paymentId,
-            paymentMethod: payment.paymentMethod,
-            tipAmount: adj.tipAmount,
+            subtotal: Number(order.subtotal),
+            taxTotal: Number(order.taxTotal),
+            tipTotal: newOrderTipTotal,
+            discountTotal: Number(order.discountTotal),
+            total: newOrderTotal,
+            commissionTotal: Number(order.commissionTotal || 0),
           })
+
+          // Collect info for tip allocation (BUG #412 fix)
+          if (adj.tipAmount > 0 && order.employeeId) {
+            allocationInfos.push({
+              locationId: order.locationId,
+              orderId: adj.orderId,
+              employeeId: order.employeeId,
+              paymentId: adj.paymentId,
+              paymentMethod: payment.paymentMethod,
+              tipAmount: adj.tipAmount,
+            })
+          }
         }
-      }
-    })
+
+        // Execute order updates and audit log creates in parallel
+        await Promise.all([...orderUpdates, ...auditCreates])
+      })
+    }
 
     // Queue outage writes if in outage mode (fire-and-forget)
-    if (isInOutageMode()) {
-      for (const [paymentId, { order, adj }] of prefetched) {
-        if (datacapFailed.has(paymentId)) continue
-        if (!datacapApproved.has(paymentId) && !datacapSkipped.has(paymentId)) continue
-        const fullPayment = await db.payment.findUnique({ where: { id: adj.paymentId } })
-        if (fullPayment) void queueOutageWrite('Payment', adj.paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
-        const fullOrder = await db.order.findUnique({ where: { id: adj.orderId } })
-        if (fullOrder) void queueOutageWrite('Order', adj.orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+    if (isInOutageMode() && eligibleEntries.length > 0) {
+      // Batch-fetch all updated payments and orders in two queries instead of N+1
+      const eligiblePaymentIds = eligibleEntries.map(([, { adj }]) => adj.paymentId)
+      const eligibleOrderIds = [...new Set(eligibleEntries.map(([, { adj }]) => adj.orderId))]
+
+      const [fullPayments, fullOrders] = await Promise.all([
+        db.payment.findMany({ where: { id: { in: eligiblePaymentIds } } }),
+        db.order.findMany({ where: { id: { in: eligibleOrderIds } } }),
+      ])
+
+      for (const fp of fullPayments) {
+        const entry = eligibleEntries.find(([, { adj }]) => adj.paymentId === fp.id)
+        if (entry) {
+          void queueOutageWrite('Payment', fp.id, 'UPDATE', fp as unknown as Record<string, unknown>, entry[1].order.locationId).catch(console.error)
+        }
+      }
+      for (const fo of fullOrders) {
+        void queueOutageWrite('Order', fo.id, 'UPDATE', fo as unknown as Record<string, unknown>, fo.locationId).catch(console.error)
       }
     }
 

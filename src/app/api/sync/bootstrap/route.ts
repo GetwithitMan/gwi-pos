@@ -46,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: cachedData })
   }
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -111,6 +111,57 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     }),
     db.cfdSettings.findFirst({ where: { locationId, deletedAt: null } }),
+    // Open orders: allows device to rebuild state after mid-service reboot
+    // without relying solely on socket catch-up (which may miss events)
+    db.order.findMany({
+      where: {
+        locationId,
+        status: { notIn: ['closed', 'voided', 'paid', 'cancelled'] },
+        deletedAt: null,
+      },
+      take: 100,
+      include: {
+        items: {
+          where: { deletedAt: null },
+          include: {
+            modifiers: {
+              select: {
+                id: true,
+                modifierId: true,
+                name: true,
+                price: true,
+                depth: true,
+                preModifier: true,
+              },
+            },
+            ingredientModifications: {
+              select: {
+                id: true,
+                ingredientId: true,
+                ingredientName: true,
+                modificationType: true,
+                priceAdjustment: true,
+                swappedToModifierId: true,
+                swappedToModifierName: true,
+              },
+            },
+          },
+        },
+        payments: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            status: true,
+            paymentMethod: true,
+            totalAmount: true,
+            tipAmount: true,
+          },
+        },
+        table: { select: { id: true, name: true } },
+        employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
   ])
 
   if (isCellular) {
@@ -263,6 +314,82 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         idlePromoEnabled: cfdSettings.idlePromoEnabled,
         idleWelcomeText: cfdSettings.idleWelcomeText,
       } : null,
+      // Open orders: allows device to rebuild state after mid-service reboot
+      // without relying solely on socket catch-up (which may miss events).
+      // Includes items, modifiers, ingredient mods, and payments.
+      openOrders: openOrders.map((order: any) => ({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        orderType: order.orderType,
+        status: order.status,
+        tableId: order.tableId,
+        tableName: order.table?.name || null,
+        tabName: order.tabName,
+        guestCount: order.guestCount,
+        employeeId: order.employeeId,
+        employeeName: order.employee?.displayName || `${order.employee?.firstName || ''} ${order.employee?.lastName || ''}`.trim(),
+        subtotal: Number(order.subtotal),
+        discountTotal: Number(order.discountTotal),
+        taxTotal: Number(order.taxTotal),
+        tipTotal: Number(order.tipTotal),
+        total: Number(order.total),
+        notes: order.notes || null,
+        createdAt: order.createdAt?.toISOString?.() || order.createdAt,
+        version: order.version ?? null,
+        items: order.items.map((item: any) => ({
+          id: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          price: Number(item.price),
+          quantity: item.quantity,
+          itemTotal: Number(item.itemTotal),
+          specialNotes: item.specialNotes || null,
+          seatNumber: item.seatNumber ?? null,
+          courseNumber: item.courseNumber ?? null,
+          courseStatus: item.courseStatus ?? null,
+          isHeld: item.isHeld ?? false,
+          firedAt: item.firedAt?.toISOString?.() || null,
+          isCompleted: item.isCompleted ?? false,
+          completedAt: item.completedAt?.toISOString?.() || null,
+          kitchenStatus: item.kitchenStatus ?? null,
+          status: item.status || 'active',
+          blockTimeMinutes: item.blockTimeMinutes ?? null,
+          blockTimeStartedAt: item.blockTimeStartedAt?.toISOString?.() || null,
+          blockTimeExpiresAt: item.blockTimeExpiresAt?.toISOString?.() || null,
+          delayMinutes: item.delayMinutes ?? null,
+          delayStartedAt: item.delayStartedAt?.toISOString?.() || null,
+          soldByWeight: item.soldByWeight ?? false,
+          weight: item.weight != null ? Number(item.weight) : null,
+          weightUnit: item.weightUnit ?? null,
+          unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+          pricingOptionId: item.pricingOptionId ?? null,
+          pricingOptionLabel: item.pricingOptionLabel ?? null,
+          modifiers: item.modifiers.map((mod: any) => ({
+            id: mod.id,
+            modifierId: mod.modifierId,
+            name: mod.name,
+            price: Number(mod.price),
+            depth: mod.depth || 0,
+            preModifier: mod.preModifier || null,
+          })),
+          ingredientModifications: item.ingredientModifications?.map((ing: any) => ({
+            id: ing.id,
+            ingredientId: ing.ingredientId,
+            ingredientName: ing.ingredientName,
+            modificationType: ing.modificationType,
+            priceAdjustment: Number(ing.priceAdjustment || 0),
+            swappedToModifierId: ing.swappedToModifierId || null,
+            swappedToModifierName: ing.swappedToModifierName || null,
+          })) || [],
+        })),
+        payments: order.payments.map((p: any) => ({
+          id: p.id,
+          status: p.status,
+          paymentMethod: p.paymentMethod,
+          totalAmount: Number(p.totalAmount),
+          tipAmount: Number(p.tipAmount || 0),
+        })),
+      })),
     }
 
   // Cache the response for 15s (terminal-specific config re-injected on hit)

@@ -43,13 +43,17 @@ export function recordEvent(locationId: string, event: string, data: unknown, ro
   const eventId = buffer.nextId++
   buffer.events.push({ eventId, event, data, room, timestamp: Date.now() })
 
-  // Evict old events (size cap + TTL)
+  // Evict old events (TTL + size cap) — single splice instead of repeated shift()
   const cutoff = Date.now() - MAX_BUFFER_AGE_MS
-  while (
-    buffer.events.length > MAX_BUFFER_SIZE ||
-    (buffer.events.length > 0 && buffer.events[0].timestamp < cutoff)
-  ) {
-    buffer.events.shift()
+  let removeCount = 0
+  while (removeCount < buffer.events.length && buffer.events[removeCount].timestamp < cutoff) {
+    removeCount++
+  }
+  if (buffer.events.length - removeCount > MAX_BUFFER_SIZE) {
+    removeCount = buffer.events.length - MAX_BUFFER_SIZE
+  }
+  if (removeCount > 0) {
+    buffer.events.splice(0, removeCount) // Single O(n) operation instead of removeCount * O(n)
   }
 
   return eventId
@@ -87,9 +91,13 @@ export function getLatestEventId(locationId: string): number {
 function cleanupBuffers(): void {
   const cutoff = Date.now() - MAX_BUFFER_AGE_MS
   for (const [locationId, buffer] of locationBuffers) {
-    // Remove expired events
-    while (buffer.events.length > 0 && buffer.events[0].timestamp < cutoff) {
-      buffer.events.shift()
+    // Remove expired events — single splice instead of repeated shift()
+    let removeCount = 0
+    while (removeCount < buffer.events.length && buffer.events[removeCount].timestamp < cutoff) {
+      removeCount++
+    }
+    if (removeCount > 0) {
+      buffer.events.splice(0, removeCount)
     }
     // Remove empty buffers
     if (buffer.events.length === 0) {

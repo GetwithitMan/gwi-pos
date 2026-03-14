@@ -104,10 +104,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, { method: string; count: number; total: number }>)
 
-    // Daily trend
+    // Daily trend — timezone-aware grouping
+    const tzRd = process.env.TIMEZONE || process.env.TZ
     const dailyTrend = deposits.reduce((acc, d) => {
       if (d.status !== 'completed') return acc
-      const date = new Date(d.createdAt).toISOString().split('T')[0]
+      const date = tzRd ? new Date(d.createdAt).toLocaleDateString('en-CA', { timeZone: tzRd }) : new Date(d.createdAt).toISOString().split('T')[0]
       if (!acc[date]) acc[date] = { date, collected: 0, refunded: 0, count: 0 }
       acc[date].count++
       acc[date].collected += Number(d.amount)

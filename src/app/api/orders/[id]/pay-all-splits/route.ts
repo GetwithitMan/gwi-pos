@@ -4,7 +4,8 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
-import { deductInventoryForOrder } from '@/lib/inventory-calculations'
+// deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
+// import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { parseSettings } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
@@ -271,23 +272,48 @@ export const POST = withVenue(async function POST(
       reason: `All ${unpaidSplits.length} splits paid`,
     }).catch(console.error)
 
-    // Fire-and-forget: inventory deductions for each split child (parent has zero items after split)
+    // ── Inventory Deduction Outbox ──────────────────────────────────────────
+    // Create PendingDeduction rows for each split child, then trigger best-effort processing.
+    // This mirrors the pattern in pay/route.ts — durable outbox instead of fire-and-forget.
     for (const split of unpaidSplits) {
-      void deductInventoryForOrder(split.id, employeeId).catch(err => {
-        console.error(`[PAYMENT-SAFETY] Inventory deduction failed for split ${split.id}:`, err)
-        // W2-P3: Log failed deduction for manager visibility
-        void db.auditLog.create({
-          data: {
-            locationId: split.locationId,
-            employeeId,
-            action: 'inventory_deduction_failed',
-            entityType: 'order',
-            entityId: split.id,
-            details: { error: String(err), splitId: split.id, parentOrderId },
-          },
-        }).catch(() => {})
-      })
+      try {
+        const splitPaymentId = splitPaymentMap.get(split.id) ?? null
+        const existingDeduction = await db.pendingDeduction.findUnique({ where: { orderId: split.id } })
+        if (!existingDeduction) {
+          await db.pendingDeduction.create({
+            data: {
+              locationId: split.locationId,
+              orderId: split.id,
+              paymentId: splitPaymentId,
+              deductionType: 'order_deduction',
+              status: 'pending',
+            },
+          })
+        } else if (existingDeduction.status !== 'succeeded' && existingDeduction.status !== 'dead') {
+          await db.pendingDeduction.update({
+            where: { orderId: split.id },
+            data: {
+              paymentId: splitPaymentId,
+              status: 'pending',
+              availableAt: new Date(),
+              lastError: null,
+            },
+          })
+        }
+      } catch (err) {
+        console.error(`[Pay-All-Splits] Failed to create PendingDeduction for split ${split.id}:`, err)
+      }
     }
+
+    // Best-effort async processing (non-blocking)
+    void (async () => {
+      try {
+        const { processNextDeduction } = await import('@/lib/deduction-processor')
+        await processNextDeduction()
+      } catch (err) {
+        console.error('[Pay-All-Splits] Best-effort deduction trigger failed (outbox will retry):', err)
+      }
+    })()
 
     // Fire-and-forget: tip allocation for splits that have tips
     for (const split of unpaidSplits) {

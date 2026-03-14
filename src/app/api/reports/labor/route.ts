@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET labor report - hours worked, costs, overtime
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -177,8 +178,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       employeeStats[empId].totalHours += totalHours
       employeeStats[empId].breakMinutes += breakMins
       employeeStats[empId].laborCost += entryCost
+      const tz = process.env.TIMEZONE || process.env.TZ
       employeeStats[empId].entries.push({
-        date: entry.clockIn.toISOString().split('T')[0],
+        date: tz ? entry.clockIn.toLocaleDateString('en-CA', { timeZone: tz }) : entry.clockIn.toISOString().split('T')[0],
         clockIn: entry.clockIn.toISOString(),
         clockOut: entry.clockOut!.toISOString(),
         regularHours,
@@ -188,7 +190,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
 
       // Daily stats
-      const dateKey = entry.clockIn.toISOString().split('T')[0]
+      const dateKey = tz ? entry.clockIn.toLocaleDateString('en-CA', { timeZone: tz }) : entry.clockIn.toISOString().split('T')[0]
       if (!dailyStats[dateKey]) {
         dailyStats[dateKey] = {
           date: dateKey,
@@ -223,8 +225,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Count unique employees per day
     const dailyEmployees: Record<string, Set<string>> = {}
+    const tz2 = process.env.TIMEZONE || process.env.TZ
     entries.forEach(entry => {
-      const dateKey = entry.clockIn.toISOString().split('T')[0]
+      const dateKey = tz2 ? entry.clockIn.toLocaleDateString('en-CA', { timeZone: tz2 }) : entry.clockIn.toISOString().split('T')[0]
       if (!dailyEmployees[dateKey]) {
         dailyEmployees[dateKey] = new Set()
       }
@@ -289,7 +292,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Calculate labor cost as percentage of sales (if we have sales data)
     let laborCostPercent = null
     try {
-      const salesFilter: Record<string, unknown> = { locationId, status: { in: ['completed', 'paid'] }, deletedAt: null }
+      const salesFilter: Record<string, unknown> = { locationId, status: { in: [...REVENUE_ORDER_STATUSES] }, deletedAt: null }
       if (startDate || endDate) {
         const dateRange: Record<string, Date> = {}
         if (startDate) dateRange.gte = new Date(startDate)

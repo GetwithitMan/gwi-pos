@@ -6,6 +6,7 @@
  */
 
 import type { InvoicingSettings } from '@/lib/settings'
+import { formatCurrency } from '@/lib/utils'
 
 export interface InvoiceData {
   id: string
@@ -29,13 +30,6 @@ export interface InvoiceData {
     total: number
     taxable: boolean
   }>
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount)
 }
 
 function formatDate(date: Date | string | null): string {

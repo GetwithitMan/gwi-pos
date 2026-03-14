@@ -44,7 +44,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.employee.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { role: { select: { id: true, name: true, permissions: true } } } }),
     db.table.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.orderType.findMany({ where: { locationId, updatedAt: { gt: since } } }),
-    db.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true } }),
+    db.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true }, take: 100, orderBy: { updatedAt: 'desc' } }),
     db.pricingOptionGroup.findMany({ where: { locationId, updatedAt: { gt: since }, deletedAt: null }, include: { options: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } } }),
   ])
 
@@ -103,6 +103,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }))
 
   return NextResponse.json({
-    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, syncVersion: Date.now() },
+    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 },
   })
 })

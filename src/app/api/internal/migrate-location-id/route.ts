@@ -32,11 +32,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Location ${oldLocationId} not found` }, { status: 404 })
   }
 
-  // Auto-generated from prisma/schema.prisma — 173 models with locationId FK
+  // Auto-generated from prisma/schema.prisma — 171 models with locationId FK
   // Excludes: Location (updated separately as PK change at the end)
   const tables = [
     'AuditLog',
-    'AvailabilityEntry',
     'BergDevice',
     'BergDispenseEvent',
     'BergPluMapping',
@@ -193,7 +192,6 @@ export async function POST(request: NextRequest) {
     'TipLedgerEntry',
     'TipOutRule',
     'TipPool',
-    'TipPoolEntry',
     'TipShare',
     'TipTransaction',
     'Vendor',
@@ -218,13 +216,11 @@ export async function POST(request: NextRequest) {
             newLocationId, oldLocationId
           )
           counts[table] = rowCount
-          console.log(`[MigrateLocationId] [${i + 1}/${tables.length}] ${table}: ${rowCount} rows updated`)
         } catch (err: any) {
           // Table might not exist yet (pending migration) or not have locationId — skip gracefully
           // 42P01 = undefined_table, 42703 = undefined_column
           if (err.code === '42P01' || err.code === '42703') {
             counts[table] = -1 // skipped
-            console.log(`[MigrateLocationId] [${i + 1}/${tables.length}] ${table}: SKIPPED (table/column not found)`)
             continue
           }
           throw err
@@ -237,12 +233,10 @@ export async function POST(request: NextRequest) {
         newLocationId, oldLocationId
       )
       counts['Location'] = 1
-      console.log(`[MigrateLocationId] [FINAL] Location PK updated`)
 
       return counts
     }, { timeout: 300_000 }) // 5 min timeout for large venues with millions of rows
 
-    console.log(`[MigrateLocationId] Migrated ${oldLocationId} -> ${newLocationId}`, result)
     return NextResponse.json({ success: true, oldLocationId, newLocationId, counts: result })
   } catch (err: any) {
     console.error('[MigrateLocationId] Failed:', err)

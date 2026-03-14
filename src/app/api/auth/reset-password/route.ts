@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkLoginRateLimit } from '@/lib/auth-rate-limiter'
 
 /**
  * POST /api/auth/reset-password
@@ -41,6 +42,24 @@ function extractClientToken(res: Response): string | null {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limiting
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || 'unknown'
+
+  const rateCheck = checkLoginRateLimit(ip)
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please try again later.' },
+      {
+        status: 429,
+        headers: rateCheck.retryAfterSeconds
+          ? { 'Retry-After': String(rateCheck.retryAfterSeconds) }
+          : undefined,
+      }
+    )
+  }
+
   const { code, password } = await request.json().catch(() => ({} as any))
 
   if (!code || !password) {

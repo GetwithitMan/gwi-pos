@@ -223,31 +223,35 @@ export async function deductPrepStockForOrder(
       return { success: true, deductedItems: [], errors: [] }
     }
 
-    // Build update operations
+    // Interactive transaction: decrement stock FIRST, then read post-update value
+    // for accurate before/after audit trail (prevents TOCTOU race).
     const deductedItems: PrepStockDeductionResult['deductedItems'] = []
 
-    const operations = prepItems.map(item => {
-      const newStock = Math.max(0, item.currentStock - item.quantity)
+    await db.$transaction(async (tx) => {
+      for (const item of prepItems) {
+        // Decrement stock first
+        const updated = await tx.ingredient.update({
+          where: { id: item.ingredientId },
+          data: {
+            currentPrepStock: { decrement: item.quantity },
+          },
+          select: { currentPrepStock: true },
+        })
 
-      deductedItems.push({
-        ingredientId: item.ingredientId,
-        name: item.name,
-        quantityDeducted: item.quantity,
-        unit: item.unit,
-        stockBefore: item.currentStock,
-        stockAfter: newStock,
-      })
+        // Post-decrement stock is the authoritative "after" value
+        const stockAfter = Math.max(0, toNumber(updated.currentPrepStock))
+        const stockBefore = stockAfter + item.quantity
 
-      return db.ingredient.update({
-        where: { id: item.ingredientId },
-        data: {
-          currentPrepStock: { decrement: item.quantity },
-        },
-      })
+        deductedItems.push({
+          ingredientId: item.ingredientId,
+          name: item.name,
+          quantityDeducted: item.quantity,
+          unit: item.unit,
+          stockBefore,
+          stockAfter,
+        })
+      }
     })
-
-    // Execute atomically
-    await db.$transaction(operations)
 
     return {
       success: true,

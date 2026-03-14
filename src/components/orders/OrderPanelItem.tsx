@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, memo } from 'react'
+import { useState, useEffect, useRef, memo, useMemo } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
 import type { UiModifier, IngredientModification } from '@/types/orders'
 import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
@@ -205,102 +205,80 @@ export const OrderPanelItem = memo(function OrderPanelItem({
 
   const statusConfig = item.kitchenStatus ? STATUS_CONFIG[item.kitchenStatus] : null
 
+  // Memoize the large inline style object to avoid recomputing on every render
+  const rootStyle = useMemo(() => {
+    const borderColorDefault = isNewest
+      ? 'rgba(34, 197, 94, 0.5)'
+      : hasActiveDelay
+      ? 'rgba(251, 191, 36, 0.35)'
+      : hasDelayPreset
+      ? 'rgba(59, 130, 246, 0.35)'
+      : isReady
+      ? 'rgba(34, 197, 94, 0.25)'
+      : isSent
+      ? 'rgba(59, 130, 246, 0.15)'
+      : 'rgba(255, 255, 255, 0.08)'
+
+    const selectedBorder = '2px solid rgba(168, 85, 247, 0.5)'
+    const defaultBorder = `1px solid ${borderColorDefault}`
+
+    return {
+      padding: '12px',
+      opacity: isCompedOrVoided ? 0.6 : 1,
+      background: isCompedOrVoided
+        ? (isVoided ? 'rgba(239, 68, 68, 0.08)' : 'rgba(59, 130, 246, 0.08)')
+        : isNewest
+        ? 'rgba(34, 197, 94, 0.12)'
+        : isSelected
+        ? 'rgba(168, 85, 247, 0.06)'
+        : hasActiveDelay
+        ? 'rgba(251, 191, 36, 0.06)'
+        : hasDelayPreset
+        ? 'rgba(59, 130, 246, 0.06)'
+        : isReady
+        ? 'rgba(34, 197, 94, 0.08)'
+        : isSent
+        ? 'rgba(59, 130, 246, 0.05)'
+        : 'rgba(255, 255, 255, 0.03)',
+      borderTop: isSelected ? selectedBorder : defaultBorder,
+      borderRight: isSelected ? selectedBorder : defaultBorder,
+      borderBottom: isSelected ? selectedBorder : defaultBorder,
+      borderLeft: hasActiveDelay
+        ? '3px solid rgba(251, 191, 36, 0.7)'
+        : hasDelayPreset
+        ? '3px solid rgba(59, 130, 246, 0.6)'
+        : isSelected
+        ? selectedBorder
+        : `1px solid ${
+            isNewest
+              ? 'rgba(34, 197, 94, 0.5)'
+              : isReady
+              ? 'rgba(34, 197, 94, 0.25)'
+              : isSent
+              ? 'rgba(59, 130, 246, 0.15)'
+              : 'rgba(255, 255, 255, 0.08)'
+          }`,
+      borderRadius: '10px',
+      cursor: (onClick && !isSent) || onSelect ? 'pointer' : 'default' as const,
+      transition: 'all 0.3s ease',
+      boxShadow: isNewest
+        ? '0 0 12px rgba(34, 197, 94, 0.2)'
+        : isSelected
+        ? '0 0 8px rgba(168, 85, 247, 0.15)'
+        : hasActiveDelay
+        ? '0 0 8px rgba(251, 191, 36, 0.12)'
+        : hasDelayPreset
+        ? '0 0 8px rgba(59, 130, 246, 0.1)'
+        : undefined,
+      // Compensate for 2px border so layout doesn't shift
+      margin: isSelected ? '-1px' : undefined,
+    }
+  }, [isVoided, isComped, isCompedOrVoided, isNewest, isSelected, hasActiveDelay, hasDelayPreset, isReady, isSent, onClick, onSelect])
+
   return (
     <div
       data-item-id={item.id}
-      style={{
-        padding: '12px',
-        opacity: isCompedOrVoided ? 0.6 : 1,
-        background: isCompedOrVoided
-          ? (isVoided ? 'rgba(239, 68, 68, 0.08)' : 'rgba(59, 130, 246, 0.08)')
-          : isNewest
-          ? 'rgba(34, 197, 94, 0.12)'
-          : isSelected
-          ? 'rgba(168, 85, 247, 0.06)'
-          : hasActiveDelay
-          ? 'rgba(251, 191, 36, 0.06)'
-          : hasDelayPreset
-          ? 'rgba(59, 130, 246, 0.06)'
-          : isReady
-          ? 'rgba(34, 197, 94, 0.08)'
-          : isSent
-          ? 'rgba(59, 130, 246, 0.05)'
-          : 'rgba(255, 255, 255, 0.03)',
-        borderTop: isSelected
-          ? '2px solid rgba(168, 85, 247, 0.5)'
-          : `1px solid ${
-              isNewest
-                ? 'rgba(34, 197, 94, 0.5)'
-                : hasActiveDelay
-                ? 'rgba(251, 191, 36, 0.35)'
-                : hasDelayPreset
-                ? 'rgba(59, 130, 246, 0.35)'
-                : isReady
-                ? 'rgba(34, 197, 94, 0.25)'
-                : isSent
-                ? 'rgba(59, 130, 246, 0.15)'
-                : 'rgba(255, 255, 255, 0.08)'
-            }`,
-        borderRight: isSelected
-          ? '2px solid rgba(168, 85, 247, 0.5)'
-          : `1px solid ${
-              isNewest
-                ? 'rgba(34, 197, 94, 0.5)'
-                : hasActiveDelay
-                ? 'rgba(251, 191, 36, 0.35)'
-                : hasDelayPreset
-                ? 'rgba(59, 130, 246, 0.35)'
-                : isReady
-                ? 'rgba(34, 197, 94, 0.25)'
-                : isSent
-                ? 'rgba(59, 130, 246, 0.15)'
-                : 'rgba(255, 255, 255, 0.08)'
-            }`,
-        borderBottom: isSelected
-          ? '2px solid rgba(168, 85, 247, 0.5)'
-          : `1px solid ${
-              isNewest
-                ? 'rgba(34, 197, 94, 0.5)'
-                : hasActiveDelay
-                ? 'rgba(251, 191, 36, 0.35)'
-                : hasDelayPreset
-                ? 'rgba(59, 130, 246, 0.35)'
-                : isReady
-                ? 'rgba(34, 197, 94, 0.25)'
-                : isSent
-                ? 'rgba(59, 130, 246, 0.15)'
-                : 'rgba(255, 255, 255, 0.08)'
-            }`,
-        borderLeft: hasActiveDelay
-          ? '3px solid rgba(251, 191, 36, 0.7)'
-          : hasDelayPreset
-          ? '3px solid rgba(59, 130, 246, 0.6)'
-          : isSelected
-          ? '2px solid rgba(168, 85, 247, 0.5)'
-          : `1px solid ${
-              isNewest
-                ? 'rgba(34, 197, 94, 0.5)'
-                : isReady
-                ? 'rgba(34, 197, 94, 0.25)'
-                : isSent
-                ? 'rgba(59, 130, 246, 0.15)'
-                : 'rgba(255, 255, 255, 0.08)'
-            }`,
-        borderRadius: '10px',
-        cursor: (onClick && !isSent) || onSelect ? 'pointer' : 'default',
-        transition: 'all 0.3s ease',
-        boxShadow: isNewest
-          ? '0 0 12px rgba(34, 197, 94, 0.2)'
-          : isSelected
-          ? '0 0 8px rgba(168, 85, 247, 0.15)'
-          : hasActiveDelay
-          ? '0 0 8px rgba(251, 191, 36, 0.12)'
-          : hasDelayPreset
-          ? '0 0 8px rgba(59, 130, 246, 0.1)'
-          : undefined,
-        // Compensate for 2px border so layout doesn't shift
-        margin: isSelected ? '-1px' : undefined,
-      }}
+      style={rootStyle}
       onClick={() => {
         // Toggle selection for all items (sent items show Resend/Comp/Void when selected)
         onSelect?.(item.id)

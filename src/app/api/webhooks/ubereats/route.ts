@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        console.log(`[ubereats/webhook] Unknown event type: ${eventType}`)
+        console.warn(`[ubereats/webhook] Unknown event type: ${eventType}`)
     }
 
     return NextResponse.json({ received: true })

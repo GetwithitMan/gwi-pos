@@ -128,7 +128,7 @@ export default function CfdSettingsPage() {
       const res = await fetch('/api/hardware/cfd-settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...settings, locationId }),
+        body: JSON.stringify({ ...settings, locationId, employeeId: employee?.id }),
       })
       if (!res.ok) throw new Error('Failed to save')
       const data = await res.json()

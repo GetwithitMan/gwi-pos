@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
+import { formatCurrency } from '@/lib/utils'
 
 interface PaidInOutRecord {
   id: string
@@ -36,10 +37,6 @@ interface CreateFormData {
 const TYPE_STYLES = {
   paid_in: 'bg-green-50 text-green-700 border-green-200',
   paid_out: 'bg-red-50 text-red-700 border-red-200',
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 }
 
 function formatTime(iso: string): string {

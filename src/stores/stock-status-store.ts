@@ -31,9 +31,10 @@ export const useStockStatusStore = create<StockStatusState>((set, get) => ({
   itemStatus: {},
 
   setItemStatus: (itemId, status) => {
-    set((state) => ({
-      itemStatus: { ...state.itemStatus, [itemId]: status },
-    }))
+    set((state) => {
+      if (state.itemStatus[itemId] === status) return state
+      return { itemStatus: { ...state.itemStatus, [itemId]: status } }
+    })
   },
 
   isItemUnavailable: (itemId) => {

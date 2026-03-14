@@ -221,6 +221,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   const strategy = getConflictStrategy(tableName)
   /** Track which locationIds have already received a socket dispatch this batch */
   const dispatchedLocations = new Set<string>()
+  /** Collect IDs of successfully synced rows for batch syncedAt stamping */
+  const syncedIds: string[] = []
 
   for (const row of rows) {
     try {
@@ -266,12 +268,9 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       const values = upsertCols.map((col) => serializeValue(row[col], types?.get(col)?.endsWith('[]') ?? false))
       await masterClient.$executeRawUnsafe(sql, ...values)
 
-      // Stamp syncedAt locally if the column exists
-      if (columns.includes('syncedAt')) {
-        await masterClient.$executeRawUnsafe(
-          `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
-          row.id as string
-        )
+      // Collect ID for batch syncedAt stamping (done after the loop)
+      if (columns.includes('syncedAt') && row.id) {
+        syncedIds.push(row.id as string)
       }
 
       // Fulfillment routing hook — when a cloud-originated Order arrives
@@ -347,6 +346,21 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       }
       metrics.conflictCount++
       // Do NOT advance HWM for failed rows — they must be retried on next cycle
+    }
+  }
+
+  // Batch stamp syncedAt for all successfully synced rows (single query instead of N queries)
+  if (syncedIds.length > 0) {
+    try {
+      await masterClient.$executeRawUnsafe(
+        `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = ANY($1::text[])`,
+        syncedIds
+      )
+    } catch (err) {
+      console.error(
+        `[DownstreamSync] ${tableName} batch syncedAt stamp failed (${syncedIds.length} rows, will retry next cycle):`,
+        err instanceof Error ? err.message : err
+      )
     }
   }
 

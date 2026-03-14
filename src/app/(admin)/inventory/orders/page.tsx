@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { toast } from '@/stores/toast-store'
+import { formatCurrency } from '@/lib/utils'
 
 interface VendorOrder {
   id: string
@@ -40,9 +41,6 @@ const STATUS_COLORS: Record<string, string> = {
   received: 'bg-green-50 text-green-700',
   cancelled: 'bg-red-50 text-red-700',
 }
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 
 export default function PurchaseOrdersPage() {
   const employee = useAuthStore(s => s.employee)

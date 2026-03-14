@@ -6,6 +6,7 @@ import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // Hour label lookup: 0 → "12 AM", 1 → "1 AM", ..., 12 → "12 PM", 13 → "1 PM", etc.
 function hourLabel(hour: number): string {
@@ -89,8 +90,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: { in: ['paid', 'closed'] },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
         deletedAt: null,
+        parentOrderId: null,
         paidAt: { gte: dayStart, lt: dayEnd },
       },
       select: {
@@ -140,8 +142,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const compareOrders = await db.order.findMany({
         where: {
           locationId,
-          status: { in: ['paid', 'closed'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
           deletedAt: null,
+          parentOrderId: null,
           paidAt: { gte: compareRange.start, lt: compareRange.end },
         },
         select: {

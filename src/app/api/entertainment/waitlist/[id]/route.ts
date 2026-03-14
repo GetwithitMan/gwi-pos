@@ -439,8 +439,19 @@ export const DELETE = withVenue(async function DELETE(
       }
     })
 
-    // Dispatch real-time update
+    // Dispatch real-time updates
     dispatchFloorPlanUpdate(locationId, { async: true })
+
+    // Notify PitBoss of waitlist count change
+    if (entry.elementId) {
+      const remainingCount = await db.entertainmentWaitlist.count({
+        where: { elementId: entry.elementId, status: 'waiting', deletedAt: null },
+      })
+      dispatchEntertainmentWaitlistChanged(locationId, {
+        elementId: entry.elementId,
+        waitlistCount: remainingCount,
+      })
+    }
 
     return NextResponse.json({ data: {
       success: true,

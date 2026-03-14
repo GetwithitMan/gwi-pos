@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -138,7 +139,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           locationId: locationIdToUse,
           employeeId: employee.id,
           createdAt: { gte: shiftStart, lte: shiftEnd },
-          status: { in: ['completed', 'closed', 'paid'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
         },
         include: {
           items: {

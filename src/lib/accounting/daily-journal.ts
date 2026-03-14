@@ -11,6 +11,7 @@ import type { PrismaClient } from '@prisma/client'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings, DEFAULT_ACCOUNTING_SETTINGS, DEFAULT_GL_MAPPING } from '@/lib/settings'
 import type { AccountingGLMapping } from '@/lib/settings'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,13 +96,14 @@ export async function generateDailySalesJournal(
     payments,
     discounts,
     voidLogs,
+    compedItems,
     timeClockEntries,
   ] = await Promise.all([
     // All completed/paid orders for the business day
     db.order.findMany({
       where: {
         locationId,
-        status: { in: ['completed', 'paid'] },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
         NOT: { splitOrders: { some: {} } }, // Exclude split parents
         OR: [
           { businessDayDate: new Date(businessDate) },
@@ -133,12 +135,17 @@ export async function generateDailySalesJournal(
       },
     }),
 
-    // All payments for the day
+    // All payments for the day — join to orders by businessDayDate for alignment
     db.payment.findMany({
       where: {
         locationId,
         deletedAt: null,
-        createdAt: { gte: start, lte: end },
+        order: {
+          OR: [
+            { businessDayDate: new Date(businessDate) },
+            { businessDayDate: null, createdAt: { gte: start, lte: end } },
+          ],
+        },
       },
       select: {
         id: true,
@@ -167,7 +174,7 @@ export async function generateDailySalesJournal(
       },
     }),
 
-    // Void logs (item and order voids)
+    // Void logs (item and order voids — these are TRUE voids, not comps)
     db.voidLog.findMany({
       where: {
         locationId,
@@ -178,6 +185,20 @@ export async function generateDailySalesJournal(
         id: true,
         amount: true,
         voidType: true,
+      },
+    }),
+
+    // Comped items — queried separately from voids for accurate comp totals
+    db.orderItem.findMany({
+      where: {
+        locationId,
+        status: 'comped',
+        deletedAt: null,
+        updatedAt: { gte: start, lte: end },
+      },
+      select: {
+        id: true,
+        itemTotal: true,
       },
     }),
 
@@ -272,15 +293,16 @@ export async function generateDailySalesJournal(
     totalDiscounts += Number(discount.amount)
   }
 
-  // 5. Total comps (voided items that were already made)
+  // 5. Total comps — from comped order items (separate from voids)
   let totalComps = 0
-  for (const order of orders) {
-    // Count comped items from the order items query (status = 'comped' items excluded by active filter)
-    // Use void logs instead for accuracy
+  for (const item of compedItems) {
+    totalComps += Number(item.itemTotal)
   }
-  // Comps from void logs where items were made
+
+  // 5b. Total voids — from void logs (true voids, not comps)
+  let totalVoids = 0
   for (const voidLog of voidLogs) {
-    totalComps += Number(voidLog.amount)
+    totalVoids += Number(voidLog.amount)
   }
 
   // 6. Labor cost from time clock entries
@@ -413,7 +435,18 @@ export async function generateDailySalesJournal(
       accountName: getAccountName('comps', gl.comps),
       debit: totalComps,
       credit: 0,
-      memo: 'Daily comps and voids',
+      memo: 'Daily comps (comped items)',
+    })
+  }
+
+  if (totalVoids > 0) {
+    entries.push({
+      date: businessDate,
+      accountCode: gl.comps,
+      accountName: 'Voids',
+      debit: totalVoids,
+      credit: 0,
+      memo: 'Daily voids (voided items/orders)',
     })
   }
 

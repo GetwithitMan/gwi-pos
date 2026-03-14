@@ -34,6 +34,14 @@ const metrics: ReplayMetrics = {
 let replayTimer: ReturnType<typeof setInterval> | null = null
 let isReplaying = false
 
+/**
+ * Idempotency guard: tracks entry IDs currently being processed in the active
+ * drain cycle. Prevents duplicate replay if processOutageQueue is re-entered
+ * (e.g., timer fires while a previous cycle is still draining).
+ * Cleared at the end of each drain cycle.
+ */
+const processingEntryIds = new Set<string>()
+
 /** Maximum retry attempts before an entry is dead-lettered */
 const MAX_RETRY_ATTEMPTS = 10
 
@@ -242,6 +250,8 @@ async function processOutageQueue(): Promise<void> {
       MAX_RETRY_ATTEMPTS
     )
 
+    // Use FOR UPDATE SKIP LOCKED to prevent duplicate replay if multiple processes
+    // or a timer re-entrance attempt to drain the same entries concurrently.
     const pending = await masterClient.$queryRawUnsafe<Array<{
       id: string
       tableName: string
@@ -254,7 +264,8 @@ async function processOutageQueue(): Promise<void> {
        FROM "OutageQueueEntry"
        WHERE status = 'pending'
        ORDER BY "localSeq" ASC
-       LIMIT 50`
+       LIMIT 50
+       FOR UPDATE SKIP LOCKED`
     )
 
     if (pending.length === 0) return
@@ -262,6 +273,12 @@ async function processOutageQueue(): Promise<void> {
     console.log(`[OutageReplay] Processing ${pending.length} queued entries`)
 
     for (const entry of pending) {
+      // Idempotency: skip entries already being processed in this cycle
+      if (processingEntryIds.has(entry.id)) {
+        continue
+      }
+      processingEntryIds.add(entry.id)
+
       try {
         await replayEntry(entry)
         await masterClient.$executeRawUnsafe(
@@ -300,6 +317,7 @@ async function processOutageQueue(): Promise<void> {
 
     metrics.lastReplayAt = new Date()
   } finally {
+    processingEntryIds.clear()
     isReplaying = false
   }
 }

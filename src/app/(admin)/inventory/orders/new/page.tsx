@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
+import { formatCurrency } from '@/lib/utils'
 
 interface Vendor {
   id: string
@@ -39,9 +40,6 @@ interface LineItem {
 }
 
 const UNIT_OPTIONS = ['each', 'case', 'lb', 'oz', 'kg', 'g', 'L', 'ml', 'gal']
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 
 export default function NewPurchaseOrderPage() {
   const router = useRouter()

@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationDateRange, dateRangeToUTC, getHourInTimezone } from '@/lib/timezone'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 interface DaypartConfig {
   name: string
@@ -85,7 +86,8 @@ export const GET = withVenue(async (request: NextRequest) => {
       where: {
         locationId,
         deletedAt: null,
-        status: 'paid',
+        status: { in: [...REVENUE_ORDER_STATUSES] },
+        parentOrderId: null,
         paidAt: { gte: start, lte: end },
       },
       select: {
@@ -117,7 +119,7 @@ export const GET = withVenue(async (request: NextRequest) => {
       const idx = getDaypartIndex(hour, dayparts)
       if (idx >= 0) {
         buckets[idx].orderCount += 1
-        buckets[idx].revenue += Number(order.subtotal || 0)
+        buckets[idx].revenue += Number(order.total || 0)
         buckets[idx].covers += Number(order.guestCount || 1)
         buckets[idx].tipTotal += Number(order.tipTotal || 0)
       }

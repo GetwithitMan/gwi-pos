@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit'
+import { formatCurrency } from '@/lib/utils'
 
 export interface PayStubData {
   // Company info
@@ -325,13 +326,6 @@ export function generatePayStubPDF(data: PayStubData): Promise<Buffer> {
       reject(error)
     }
   })
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount)
 }
 
 function formatDate(dateStr: string): string {

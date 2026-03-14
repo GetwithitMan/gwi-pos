@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import { formatCurrency } from '@/lib/utils'
 
 interface FeedbackEntry {
   id: string
@@ -30,10 +31,6 @@ interface FeedbackAggregates {
 interface FeedbackData {
   entries: FeedbackEntry[]
   aggregates: FeedbackAggregates
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
 }
 
 function formatDate(dateStr: string): string {

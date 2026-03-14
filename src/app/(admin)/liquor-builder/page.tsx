@@ -231,11 +231,13 @@ function LiquorBuilderContent() {
   }
 
   const togglePourSize = (size: string) => {
+    if (size === 'standard') return // Standard pour is always on (base item tap)
     const newSizes = { ...enabledPourSizes }
     if (newSizes[size]) {
       delete newSizes[size]
-      if (defaultPourSize === size && Object.keys(newSizes).length > 0) {
-        setDefaultPourSize(Object.keys(newSizes)[0])
+      if (defaultPourSize === size) {
+        // Fall back to standard (base item) as default
+        setDefaultPourSize('standard')
       }
     } else {
       newSizes[size] = { ...DEFAULT_POUR_SIZES[size] }
@@ -302,7 +304,10 @@ function LiquorBuilderContent() {
     if (!selectedDrink) return
     setEditingDrinkName(selectedDrink.name)
     setEditingDrinkPrice(String(selectedDrink.price))
-    setEnabledPourSizes(normalizePourSizes(selectedDrink.pourSizes ?? null))
+    // Standard pour is implicit (base item tap), strip it from quick pick buttons
+    const normalized = normalizePourSizes(selectedDrink.pourSizes ?? null)
+    delete normalized['standard']
+    setEnabledPourSizes(normalized)
     setDefaultPourSize(selectedDrink.defaultPourSize || 'standard')
     setApplyPourToModifiers(selectedDrink.applyPourToModifiers || false)
     setSelectedModGroupId(null)
@@ -1441,7 +1446,29 @@ function LiquorBuilderContent() {
                       </div>
                       <p className="text-xs text-gray-600 mb-3">Enable size variants for this item. Each multiplies the base price, or set a custom price override.</p>
                       <div className="space-y-2 mb-3">
-                        {Object.entries(DEFAULT_POUR_SIZES).map(([sizeKey, defaults]) => {
+                        {/* Standard Pour — always on, represents the base item tap */}
+                        {(() => {
+                          const basePrice = parseFloat(editingDrinkPrice) || 0
+                          return (
+                            <div className="p-2.5 border rounded-lg border-indigo-300 bg-indigo-50">
+                              <div className="flex items-center gap-2">
+                                <input type="checkbox" checked disabled className="w-4 h-4 text-indigo-600 shrink-0 opacity-60" />
+                                <span className="flex-1 text-sm font-medium text-indigo-800">Standard Pour</span>
+                                <span className="text-xs text-indigo-600">1.0x — Base price</span>
+                                <span className="text-sm font-semibold text-indigo-700">${basePrice.toFixed(2)}</span>
+                                {isDualPricingEnabled && (
+                                  <span className="text-[10px] text-blue-500">Card: ${calculateCardPrice(basePrice, cashDiscountPct).toFixed(2)}</span>
+                                )}
+                                {defaultPourSize === 'standard' && (
+                                  <span className="text-[10px] bg-indigo-600 text-white px-1.5 py-0.5 rounded shrink-0">Default</span>
+                                )}
+                              </div>
+                              <div className="mt-1 ml-6 text-[11px] text-indigo-600">Always on — this is the main item tap price. Select a quick pick below to change the default.</div>
+                            </div>
+                          )
+                        })()}
+                        {/* Quick pick pour size buttons */}
+                        {Object.entries(DEFAULT_POUR_SIZES).filter(([sizeKey]) => sizeKey !== 'standard').map(([sizeKey, defaults]) => {
                           const isEnabled = enabledPourSizes[sizeKey] !== undefined
                           const current = enabledPourSizes[sizeKey]
                           const basePrice = parseFloat(editingDrinkPrice) || 0

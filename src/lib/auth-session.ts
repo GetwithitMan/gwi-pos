@@ -28,6 +28,8 @@ export interface PosSessionPayload {
   roleId: string
   roleName: string
   permissions: string[]
+  sessionId: string   // Unique per session — changes on every login. Role changes should
+                      // call clearSessionCookie() to force re-login with a new sessionId.
   iat: number
   exp: number
   lastActivity: number // timestamp seconds — updated on each verified request
@@ -40,7 +42,11 @@ function getSecret(): string {
   // Sessions won't survive restarts, but the POS stays operational.
   if (!_fallbackSecret) {
     _fallbackSecret = crypto.randomBytes(32).toString('hex')
-    console.warn('[auth-session] SESSION_SECRET not set — using auto-generated secret (sessions will not survive restarts)')
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[auth-session] SESSION_SECRET not set in production — using auto-generated secret (sessions will not survive restarts)')
+    } else {
+      console.warn('[auth-session] SESSION_SECRET not set — using auto-generated secret (sessions will not survive restarts)')
+    }
   }
   return _fallbackSecret
 }
@@ -64,10 +70,11 @@ function base64urlDecode(str: string): Uint8Array {
 
 // ─── Token creation ─────────────────────────────────────────────────────
 
-export async function createSessionToken(payload: Omit<PosSessionPayload, 'iat' | 'exp' | 'lastActivity'>): Promise<string> {
+export async function createSessionToken(payload: Omit<PosSessionPayload, 'iat' | 'exp' | 'lastActivity' | 'sessionId'> & { sessionId?: string }): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
   const fullPayload: PosSessionPayload = {
     ...payload,
+    sessionId: payload.sessionId || crypto.randomUUID(),
     iat: now,
     exp: now + SESSION_EXPIRY_SECONDS,
     lastActivity: now,
@@ -152,7 +159,7 @@ export async function verifySessionToken(token: string): Promise<PosSessionPaylo
  * Set the POS session cookie after a successful login.
  * Must be called inside a route handler (uses next/headers cookies()).
  */
-export async function setSessionCookie(payload: Omit<PosSessionPayload, 'iat' | 'exp' | 'lastActivity'>): Promise<string> {
+export async function setSessionCookie(payload: Omit<PosSessionPayload, 'iat' | 'exp' | 'lastActivity' | 'sessionId'> & { sessionId?: string }): Promise<string> {
   const token = await createSessionToken(payload)
   const cookieStore = await cookies()
   cookieStore.set(POS_SESSION_COOKIE, token, {
@@ -189,18 +196,23 @@ export async function refreshSessionCookie(payload: PosSessionPayload): Promise<
   // Only refresh if >1 min since last refresh to avoid excessive cookie writes
   if (now - payload.lastActivity < 60) return
 
-  const refreshed: Omit<PosSessionPayload, 'iat' | 'exp' | 'lastActivity'> = {
+  await setSessionCookie({
     employeeId: payload.employeeId,
     locationId: payload.locationId,
     roleId: payload.roleId,
     roleName: payload.roleName,
     permissions: payload.permissions,
-  }
-  await setSessionCookie(refreshed)
+    sessionId: payload.sessionId, // Preserve sessionId across refreshes — only rotates on new login
+  })
 }
 
 /**
  * Clear the POS session cookie (on logout).
+ *
+ * IMPORTANT: Must also be called when an employee's role or permissions change
+ * to force re-login with a new sessionId. This prevents stale permissions from
+ * being used after a role change (e.g. demoting a manager should immediately
+ * invalidate their elevated session).
  */
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies()

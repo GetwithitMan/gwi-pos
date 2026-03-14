@@ -15,6 +15,11 @@ const BILLING_SOURCE = 'api' as never
 // 2. Send reminder emails for invoices approaching due date
 // 3. Apply late fees if configured
 export const GET = withVenue(async function GET(request: NextRequest) {
+  const cronSecret = request.headers.get('authorization')
+  if (cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const now = new Date()
     const results = {

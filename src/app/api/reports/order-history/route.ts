@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { dateRangeToUTC } from '@/lib/timezone'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -35,14 +36,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationId,
     }
 
-    // Date range — use explicit UTC to avoid timezone drift
+    // Date range — use venue timezone for correct boundaries
     if (startDate || endDate) {
+      // Get location timezone
+      const loc = await prisma.location.findFirst({
+        where: { id: locationId },
+        select: { timezone: true },
+      })
+      const timezone = loc?.timezone || 'America/New_York'
+      const range = dateRangeToUTC(startDate || endDate!, endDate, timezone)
       where.createdAt = {}
       if (startDate) {
-        (where.createdAt as Record<string, Date>).gte = new Date(`${startDate}T00:00:00.000Z`)
+        (where.createdAt as Record<string, Date>).gte = range.start
       }
       if (endDate) {
-        (where.createdAt as Record<string, Date>).lte = new Date(`${endDate}T23:59:59.999Z`)
+        (where.createdAt as Record<string, Date>).lte = range.end
       }
     }
 

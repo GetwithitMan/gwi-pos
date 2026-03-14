@@ -12,6 +12,8 @@ import { startTipGroup } from '@/lib/domain/tips/tip-groups'
 import type { TipGroupInfo } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // ─── GET: List active tip groups for a location ─────────────────────────────
 
@@ -31,32 +33,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
-    // Any clocked-in employee at this location can view groups
-    const requestingEmployeeId = request.headers.get('x-employee-id')
-    if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
-    }
-
-    // Verify employee belongs to location
-    const employee = await db.employee.findFirst({
-      where: {
-        id: requestingEmployeeId,
-        locationId,
-        deletedAt: null,
-        isActive: true,
-      },
-      select: { id: true },
-    })
-
-    if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found at this location' },
-        { status: 403 }
-      )
-    }
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId || request.headers.get('x-employee-id')
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // ── Query groups ──────────────────────────────────────────────────────
 
@@ -167,38 +147,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // ── Auth check ────────────────────────────────────────────────────────
-    // The requesting employee becomes the creator
-    const requestingEmployeeId = request.headers.get('x-employee-id')
-    if (!requestingEmployeeId) {
-      return NextResponse.json(
-        { error: 'Employee ID is required' },
-        { status: 401 }
-      )
-    }
-
-    // Verify employee belongs to location
-    const employee = await db.employee.findFirst({
-      where: {
-        id: requestingEmployeeId,
-        locationId,
-        deletedAt: null,
-        isActive: true,
-      },
-      select: { id: true },
-    })
-
-    if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found at this location' },
-        { status: 403 }
-      )
-    }
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId || request.headers.get('x-employee-id')
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // ── Create the group ──────────────────────────────────────────────────
 
     const group = await startTipGroup({
       locationId,
-      createdBy: requestingEmployeeId,
+      createdBy: requestingEmployeeId!,
       initialMemberIds,
       registerId: registerId || undefined,
       splitMode: splitMode || undefined,

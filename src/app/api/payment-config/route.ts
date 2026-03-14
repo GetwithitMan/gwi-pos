@@ -116,8 +116,6 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     invalidateLocationCache(location.id)
     invalidatePaymentSettings(location.id)
 
-    console.log(`[payment-config] Credentials updated — processor=${processor} env=${environment} mid=${merchantId.slice(0, 4)}…`)
-
     return NextResponse.json({ data: { updated: true, processor, environment } })
   } catch (error) {
     console.error('[payment-config] Failed to update payment config:', error)

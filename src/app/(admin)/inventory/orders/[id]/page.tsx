@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { BarcodeScanField } from '@/components/admin/BarcodeScanField'
+import { formatCurrency } from '@/lib/utils'
 
 interface VendorOrderLineItem {
   id: string
@@ -60,9 +61,6 @@ const STATUS_COLORS: Record<string, string> = {
   received: 'bg-green-50 text-green-700',
   cancelled: 'bg-red-50 text-red-700',
 }
-
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)
 
 function getLineItemStatus(ordered: number, received: number): { label: string; color: string } {
   if (received <= 0) return { label: 'Not Received', color: 'bg-gray-100 text-gray-600' }

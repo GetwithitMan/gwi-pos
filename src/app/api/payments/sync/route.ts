@@ -88,21 +88,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       resolvedOrderId = syncedOrder.id
     }
 
-    // Verify the order exists
+    // Verify the order exists — selective fetch (only needed fields)
     const order = await db.order.findUnique({
       where: { id: resolvedOrderId },
-      include: {
-        location: true,
-      },
+      select: { id: true, locationId: true, total: true, status: true, paidAt: true },
     })
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Verify employee exists
+    // Verify employee exists — minimal select
     const employee = await db.employee.findUnique({
       where: { id: employeeId },
+      select: { id: true },
     })
 
     if (!employee) {
@@ -193,15 +192,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
       .catch(console.error)
 
-    // Fetch complete payment with relations
-    const completePayment = await db.payment.findUnique({
-      where: { id: payment.id },
-    })
-
+    // Return the payment from the transaction directly (no redundant re-fetch)
     return NextResponse.json({
       success: true,
       paymentId: payment.id,
-      payment: completePayment,
+      payment,
       isOfflineCapture,
       message: isOfflineCapture
         ? 'Offline payment synced successfully - flagged for reconciliation'

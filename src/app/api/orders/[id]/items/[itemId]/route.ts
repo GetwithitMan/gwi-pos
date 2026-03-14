@@ -205,6 +205,17 @@ export const PUT = withVenue(async function PUT(
     // Regular update (no action specified)
     const quantityChanged = updateData.quantity !== undefined && updateData.quantity !== item.quantity
 
+    // Fetch active modifiers for fresh modifierTotal (stale item.modifierTotal can cause penny drift)
+    let liveModifierTotal = Number(item.modifierTotal)
+    if (quantityChanged) {
+      const activeModifiers = await db.orderItemModifier.findMany({
+        where: { orderItemId: itemId, deletedAt: null },
+      })
+      liveModifierTotal = activeModifiers.reduce(
+        (sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0
+      )
+    }
+
     const updated = await db.orderItem.update({
       where: { id: itemId },
       data: {
@@ -216,7 +227,8 @@ export const PUT = withVenue(async function PUT(
         specialNotes: updateData.specialNotes,
         ...(quantityChanged ? {
           quantity: updateData.quantity,
-          itemTotal: (Number(item.price) + Number(item.modifierTotal)) * updateData.quantity,
+          modifierTotal: liveModifierTotal,
+          itemTotal: (Number(item.price) + liveModifierTotal) * updateData.quantity,
         } : {}),
       },
       include: { modifiers: true },

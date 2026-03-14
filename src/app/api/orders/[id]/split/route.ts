@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderItemStatus } from '@prisma/client'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
@@ -225,10 +225,6 @@ export const POST = withVenue(async function POST(
         const createdSplits = await Promise.all(
           Array.from({ length: numWays }, (_, i) => {
             const splitIndex = existingSplits + i + 1
-            // Last split gets any remaining cents
-            const splitTotal = i === numWays - 1
-              ? Math.round((orderTotal - perSplit * (numWays - 1)) * 100) / 100
-              : perSplit
 
             // Split subtotal, tax, and discount proportionally from parent (handles tax-inclusive items correctly)
             const splitSubtotal = i === numWays - 1
@@ -240,6 +236,12 @@ export const POST = withVenue(async function POST(
             const splitDiscount = i === numWays - 1
               ? Math.round((Number(order.discountTotal) - Math.floor((Number(order.discountTotal) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
               : Math.floor((Number(order.discountTotal) / numWays) * 100) / 100
+
+            // Last split: compute total FROM its own components to avoid penny drift
+            // (independently remaindered subtotal/tax/discount may not sum to independently remaindered total)
+            const splitTotal = i === numWays - 1
+              ? roundToCents(splitSubtotal + splitTax - splitDiscount)
+              : perSplit
 
             return tx.order.create({
               data: {
@@ -389,6 +391,23 @@ export const POST = withVenue(async function POST(
           tableId: order.tableId || undefined,
         }, { async: true }).catch(() => {})
       }
+
+      // Dispatch order:split-created so all devices instantly render the split
+      const terminalId = request.headers.get('x-terminal-id')
+      void dispatchSplitCreated(order.locationId, {
+        parentOrderId: order.id,
+        parentStatus: 'split',
+        splits: splitOrders.map(s => ({
+          id: s.id,
+          orderNumber: s.orderNumber,
+          splitIndex: s.splitIndex!,
+          displayNumber: s.displayNumber || `${order.orderNumber}-${s.splitIndex}`,
+          total: Number(s.total),
+          itemCount: 0, // Even split doesn't copy items
+          isPaid: false,
+        })),
+        sourceTerminalId: terminalId || undefined,
+      }).catch(() => {})
 
       // Emit order events for each new split order (fire-and-forget)
       for (const s of splitOrders) {
@@ -755,6 +774,22 @@ export const POST = withVenue(async function POST(
         orderId: newOrder.id,
         tableId: order.tableId || undefined,
       }, { async: true }).catch(() => {})
+
+      // Dispatch order:split-created so all devices instantly render the split
+      void dispatchSplitCreated(order.locationId, {
+        parentOrderId: order.parentOrderId || order.id,
+        parentStatus: 'split',
+        splits: [{
+          id: newOrder.id,
+          orderNumber: newOrder.orderNumber,
+          splitIndex: newOrder.splitIndex!,
+          displayNumber: `${baseOrderNumber}-${nextSplitIndex}`,
+          total: Number(newOrder.total),
+          itemCount: newOrder.items.length,
+          isPaid: false,
+        }],
+        sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
+      }).catch(() => {})
 
       // Emit order events for new split order (fire-and-forget)
       void emitOrderEvents(order.locationId, newOrder.id, [
@@ -1159,6 +1194,22 @@ export const POST = withVenue(async function POST(
         }, { async: true }).catch(() => {})
       }
 
+      // Dispatch order:split-created so all devices instantly render the split
+      void dispatchSplitCreated(order.locationId, {
+        parentOrderId: order.id,
+        parentStatus: 'split',
+        splits: splitOrders.map(s => ({
+          id: s.id,
+          orderNumber: s.orderNumber,
+          splitIndex: s.splitIndex!,
+          displayNumber: s.displayNumber,
+          total: s.total,
+          itemCount: s.itemCount,
+          isPaid: false,
+        })),
+        sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
+      }).catch(() => {})
+
       // Emit order events for each seat split order (fire-and-forget)
       // We need to re-query to get full item data for the events since splitOrders
       // is a mapped summary. The db.order.create calls above already include items.
@@ -1560,6 +1611,22 @@ export const POST = withVenue(async function POST(
           tableId: s.tableId || undefined,
         }, { async: true }).catch(() => {})
       }
+
+      // Dispatch order:split-created so all devices instantly render the split
+      void dispatchSplitCreated(order.locationId, {
+        parentOrderId: order.id,
+        parentStatus: 'split',
+        splits: splitOrders.map(s => ({
+          id: s.id,
+          orderNumber: s.orderNumber,
+          splitIndex: s.splitIndex!,
+          displayNumber: s.displayNumber,
+          total: s.total,
+          itemCount: s.itemCount,
+          isPaid: false,
+        })),
+        sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
+      }).catch(() => {})
 
       // Emit order events for each table split order (fire-and-forget)
       for (const tableId of tablesWithItems) {

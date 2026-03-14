@@ -112,6 +112,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         payments: {
           where: { deletedAt: null },
+          select: {
+            id: true,
+            paymentMethod: true,
+            amount: true,
+            tipAmount: true,
+            totalAmount: true,
+            status: true,
+            cardBrand: true,
+            cardLast4: true,
+            datacapRecordNo: true,
+          },
         },
       },
       orderBy,

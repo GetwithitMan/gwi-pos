@@ -14,6 +14,12 @@ const DEFAULT_POS_DISPLAY: POSDisplaySettings = {
   showPriceOnMenuItems: true,
 }
 
+// Module-level cache to avoid duplicate /api/settings fetches across instances
+let posDisplayCache: POSDisplaySettings | null = null
+let posDisplayCacheTime = 0
+const POS_DISPLAY_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+let posDisplayInflight: Promise<POSDisplaySettings | null> | null = null
+
 // CSS class mappings for each setting
 const MENU_ITEM_CLASSES = {
   compact: 'h-16 text-sm',       // 64px - maximum items visible
@@ -35,25 +41,50 @@ const ORDER_PANEL_CLASSES = {
 } as const
 
 export function usePOSDisplay() {
-  const [settings, setSettings] = useState<POSDisplaySettings>(DEFAULT_POS_DISPLAY)
-  const [isLoading, setIsLoading] = useState(true)
+  const [settings, setSettings] = useState<POSDisplaySettings>(posDisplayCache ?? DEFAULT_POS_DISPLAY)
+  const [isLoading, setIsLoading] = useState(!posDisplayCache)
 
   const loadSettings = useCallback(async () => {
-    try {
-      const response = await fetch('/api/settings')
-      if (response.ok) {
-        const raw = await response.json()
-        const data = raw.data ?? raw
-        const posDisplay = data.settings?.posDisplay || data.posDisplay
-        if (posDisplay) {
-          setSettings({ ...DEFAULT_POS_DISPLAY, ...posDisplay })
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load POS display settings:', error)
-    } finally {
+    // Check module cache
+    if (posDisplayCache && Date.now() - posDisplayCacheTime < POS_DISPLAY_CACHE_TTL) {
+      setSettings(posDisplayCache)
       setIsLoading(false)
+      return
     }
+
+    // Deduplicate concurrent fetches
+    if (posDisplayInflight) {
+      const result = await posDisplayInflight
+      if (result) setSettings(result)
+      setIsLoading(false)
+      return
+    }
+
+    const fetchPromise = (async (): Promise<POSDisplaySettings | null> => {
+      try {
+        const response = await fetch('/api/settings')
+        if (response.ok) {
+          const raw = await response.json()
+          const data = raw.data ?? raw
+          const posDisplay = data.settings?.posDisplay || data.posDisplay
+          if (posDisplay) {
+            const merged = { ...DEFAULT_POS_DISPLAY, ...posDisplay }
+            posDisplayCache = merged
+            posDisplayCacheTime = Date.now()
+            setSettings(merged)
+            return merged
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load POS display settings:', error)
+      } finally {
+        setIsLoading(false)
+        posDisplayInflight = null
+      }
+      return null
+    })()
+    posDisplayInflight = fetchPromise
+    await fetchPromise
   }, [])
 
   const saveSettings = useCallback(async (newSettings: POSDisplaySettings) => {

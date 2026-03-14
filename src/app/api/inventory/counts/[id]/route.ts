@@ -175,55 +175,55 @@ export const PUT = withVenue(async function PUT(
         return NextResponse.json({ error: 'Reviewer ID required' }, { status: 400 })
       }
 
-      // Apply counts to inventory
+      // Apply counts to inventory — wrapped in interactive transaction
+      // to prevent TOCTOU races between stock read and update.
       const items = await db.inventoryCountItem.findMany({
         where: { inventoryCountId: id },
       })
 
-      // Pre-fetch all inventory items for stock levels (batch instead of N+1)
       const countedItems = items.filter(item => item.countedQty !== null)
-      const reviewInvItemIds = countedItems.map(item => item.inventoryItemId)
-      const reviewInvItems = await db.inventoryItem.findMany({
-        where: { id: { in: reviewInvItemIds } },
-        select: { id: true, currentStock: true, costPerUnit: true },
-      })
-      const reviewInvItemMap = new Map(reviewInvItems.map(i => [i.id, i]))
 
-      for (const item of countedItems) {
-        // C10: Skip uncounted items — don't wipe their stock to 0
-        if (item.countedQty === null || item.countedQty === undefined) {
-          continue
-        }
+      await db.$transaction(async (tx) => {
+        for (const item of countedItems) {
+          // C10: Skip uncounted items — don't wipe their stock to 0
+          if (item.countedQty === null || item.countedQty === undefined) {
+            continue
+          }
 
-        const invItem = reviewInvItemMap.get(item.inventoryItemId)
-        const currentStock = invItem ? Number(invItem.currentStock) : 0
-        const countedQty = Number(item.countedQty)
+          const countedQty = Number(item.countedQty)
 
-        // Only update items that were actually counted
-        await db.inventoryItem.update({
-          where: { id: item.inventoryItemId },
-          data: {
-            currentStock: countedQty,
-          },
-        })
+          // Update stock and read the pre-update value atomically
+          const invItemBefore = await tx.inventoryItem.findUnique({
+            where: { id: item.inventoryItemId },
+            select: { currentStock: true, costPerUnit: true },
+          })
+          const currentStock = invItemBefore ? Number(invItemBefore.currentStock) : 0
 
-        // Create transaction record if there's a variance
-        if (item.variance && Number(item.variance) !== 0) {
-          await db.inventoryItemTransaction.create({
+          await tx.inventoryItem.update({
+            where: { id: item.inventoryItemId },
             data: {
-              locationId: existing.locationId,
-              inventoryItemId: item.inventoryItemId,
-              type: 'count',
-              quantityBefore: currentStock,
-              quantityChange: Number(item.variance),
-              quantityAfter: countedQty,
-              unitCost: invItem?.costPerUnit,
-              totalCost: item.varianceValue,
-              reason: `Count adjustment - ${existing.countType}`,
+              currentStock: countedQty,
             },
           })
+
+          // Create transaction record if there's a variance
+          if (item.variance && Number(item.variance) !== 0) {
+            await tx.inventoryItemTransaction.create({
+              data: {
+                locationId: existing.locationId,
+                inventoryItemId: item.inventoryItemId,
+                type: 'count',
+                quantityBefore: currentStock,
+                quantityChange: Number(item.variance),
+                quantityAfter: countedQty,
+                unitCost: invItemBefore?.costPerUnit,
+                totalCost: item.varianceValue,
+                reason: `Count adjustment - ${existing.countType}`,
+              },
+            })
+          }
         }
-      }
+      })
 
       updateData.status = 'reviewed'
       updateData.reviewedById = body.reviewedById

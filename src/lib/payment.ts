@@ -13,7 +13,9 @@ export {
   type RoundingDirection,
 } from './payment-domain/rounding'
 
-// Calculate change for cash payment
+// Calculate change for cash payment.
+// Intentional: Math.round() uses round-half-up (IEEE 754), not banker's rounding.
+// This is correct for cash change — $0.005 rounds to $0.01 (in the customer's favor).
 export function calculateChange(amountDue: number, amountTendered: number): number {
   const change = amountTendered - amountDue
   return Math.max(0, Math.round(change * 100) / 100)
@@ -108,25 +110,28 @@ export function calculateTipPercent(
   return Math.round((tipAmount / base) * 100 * 10) / 10
 }
 
-// Check if order is fully paid
+// Check if order is fully paid.
+// Uses p.amount (pre-tip base) — tips are not part of the order balance.
+// Using p.totalAmount (which includes tip) would overcount and hide underpayments.
 export function isFullyPaid(
   orderTotal: number,
-  payments: { totalAmount: number; status: string }[]
+  payments: { amount: number; totalAmount: number; status: string }[]
 ): boolean {
   const paidAmount = payments
     .filter(p => p.status === 'completed')
-    .reduce((sum, p) => sum + Number(p.totalAmount), 0)
+    .reduce((sum, p) => sum + Number(p.amount), 0)
   return paidAmount >= orderTotal
 }
 
-// Calculate remaining balance
+// Calculate remaining balance.
+// Uses p.amount (pre-tip base) — tips are not part of the order balance.
 export function calculateRemainingBalance(
   orderTotal: number,
-  payments: { totalAmount: number; status: string }[]
+  payments: { amount: number; totalAmount: number; status: string }[]
 ): number {
   const paidAmount = payments
     .filter(p => p.status === 'completed')
-    .reduce((sum, p) => sum + Number(p.totalAmount), 0)
+    .reduce((sum, p) => sum + Number(p.amount), 0)
   return Math.max(0, Math.round((orderTotal - paidAmount) * 100) / 100)
 }
 

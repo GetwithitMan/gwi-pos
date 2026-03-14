@@ -52,7 +52,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         .filter(w => w.url.replace(/\/$/, '') === webhookUrl && w.method.toLowerCase() === 'post')
         .map(w => w.event)
     )
-    console.log(`[7shifts/register-webhooks] Found ${existing.length} existing webhooks, ${existingEvents.size} matching our URL`)
+    // existing webhook count returned in response
   } catch (err) {
     console.warn('[7shifts/register-webhooks] Could not list existing webhooks:', err instanceof Error ? err.message : err)
     // Non-fatal — proceed and attempt to create all; duplicates may result but 7shifts handles them

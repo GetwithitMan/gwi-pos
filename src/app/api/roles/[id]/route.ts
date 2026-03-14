@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { CashHandlingMode } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, clearPermissionCache } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
@@ -138,6 +138,11 @@ export const PUT = withVenue(async function PUT(
         ...(tipWeight !== undefined && { tipWeight: Number(tipWeight) }),
       },
     })
+
+    // Clear permission cache — role permissions may have changed
+    if (permissions !== undefined) {
+      clearPermissionCache()
+    }
 
     return NextResponse.json({ data: {
       role: {

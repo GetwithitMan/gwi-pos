@@ -120,8 +120,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       `, parsed.campaignId)
     }
 
-    console.log(`[Marketing] Customer ${parsed.customerId} unsubscribed via campaign ${parsed.campaignId}`)
-
     return htmlResponse(
       'Unsubscribed',
       'You have been successfully unsubscribed from marketing messages. You will no longer receive promotional communications from us.',
@@ -147,7 +145,8 @@ function parseToken(token: string): { customerId: string; campaignId: string } |
     const providedHmac = parts[2]
 
     // Verify HMAC
-    const secret = process.env.MARKETING_UNSUBSCRIBE_SECRET || process.env.JWT_SECRET || 'marketing-fallback-secret'
+    const secret = process.env.MARKETING_UNSUBSCRIBE_SECRET || process.env.JWT_SECRET
+    if (!secret) throw new Error('MARKETING_UNSUBSCRIBE_SECRET or JWT_SECRET must be set')
     const payload = `${customerId}:${campaignId}`
     const expectedHmac = crypto.createHmac('sha256', secret).update(payload).digest('hex').slice(0, 16)
 

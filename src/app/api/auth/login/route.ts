@@ -50,15 +50,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     })
 
-    // Find employee with matching PIN
-    let matchedEmployee = null
-    for (const employee of employees) {
-      const pinMatch = await compare(pin, employee.pin)
-      if (pinMatch) {
-        matchedEmployee = employee
-        break
-      }
-    }
+    // Find employee with matching PIN — parallel bcrypt comparisons
+    // bcrypt.compare is CPU-bound (~100ms each). Running in parallel cuts from N*100ms to ~100ms.
+    const pinResults = await Promise.all(
+      employees.map(emp => compare(pin, emp.pin).then(match => match ? emp : null))
+    )
+    const matchedEmployee = pinResults.find(r => r !== null) ?? null
 
     if (!matchedEmployee) {
       // Record failure for rate limiting — no employee ID since PIN didn't match

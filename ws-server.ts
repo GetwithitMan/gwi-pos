@@ -98,24 +98,68 @@ function readBody(req: IncomingMessage): Promise<string> {
 // Replicates the room management and event handlers from socket-server.ts
 // so the standalone server handles all client interactions identically.
 
+// Valid room prefixes for subscribe validation
+const ALLOWED_ROOM_PREFIXES = ['location:', 'tag:', 'terminal:', 'station:', 'scale:']
+const MAX_ROOMS_PER_SOCKET = 50
+
 function setupConnectionHandler(socketServer: SocketServer): void {
+  // ==================== Authentication Middleware ====================
+  socketServer.use((socket, next) => {
+    try {
+      const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization
+      const locationId = socket.handshake.auth?.locationId || socket.handshake.query?.locationId
+
+      if (!locationId) {
+        // In development, allow connections without locationId
+        if (process.env.NODE_ENV !== 'production') {
+          socket.data.authenticated = false
+          return next()
+        }
+        console.warn(`[WS] Rejected connection — no locationId (${socket.handshake.address})`)
+        return next(new Error('locationId required'))
+      }
+
+      socket.data.locationId = locationId
+      socket.data.authenticated = !!token
+      return next()
+    } catch (err) {
+      console.error('[WS] Auth middleware error:', err)
+      return next(new Error('Authentication error'))
+    }
+  })
+
   socketServer.on('connection', (socket: Socket) => {
     const clientIp = socket.handshake.address
     console.log(`[WS] New connection from ${clientIp} (${socket.id})`)
+
+    // Per-socket room tracking for rate limiting
+    if (!socket.data.joinedRooms) socket.data.joinedRooms = new Set<string>()
 
     // Auto-join location room from handshake query (used by SocketEventProvider)
     const queryLocationId = socket.handshake.query?.locationId as string | undefined
     if (queryLocationId) {
       socket.join(`location:${queryLocationId}`)
+      ;(socket.data.joinedRooms as Set<string>).add(`location:${queryLocationId}`)
       console.log(`[WS] Auto-joined location:${queryLocationId} from query`)
     }
 
     // Handle channel subscribe/unsubscribe from SocketEventProvider
     socket.on('subscribe', (channelName: string) => {
+      if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
+        console.warn(`[WS] Rejected subscribe to invalid room: ${channelName}`)
+        return
+      }
+      const joinedRooms = socket.data.joinedRooms as Set<string>
+      if (!joinedRooms.has(channelName) && joinedRooms.size >= MAX_ROOMS_PER_SOCKET) {
+        console.warn(`[WS] Rejected subscribe — socket ${socket.id} at max rooms (${MAX_ROOMS_PER_SOCKET}): ${channelName}`)
+        return
+      }
       socket.join(channelName)
+      joinedRooms.add(channelName)
     })
     socket.on('unsubscribe', (channelName: string) => {
       socket.leave(channelName)
+      ;(socket.data.joinedRooms as Set<string>)?.delete(channelName)
     })
 
     // ==================== Room Management ====================
@@ -125,7 +169,7 @@ function setupConnectionHandler(socketServer: SocketServer): void {
       socket.join(`terminal:${terminalId}`)
 
       tags.forEach((tag: string) => {
-        socket.join(`tag:${tag}`)
+        socket.join(`tag:${locationId}:${tag}`)
       })
 
       if (stationId) {
@@ -149,7 +193,7 @@ function setupConnectionHandler(socketServer: SocketServer): void {
 
       console.log(`[WS] Terminal ${terminalId} joined rooms:`, {
         location: `location:${locationId}`,
-        tags: tags.map((t) => `tag:${t}`),
+        tags: tags.map((t) => `tag:${locationId}:${t}`),
         station: stationId ? `station:${stationId}` : null,
       })
 
@@ -166,14 +210,14 @@ function setupConnectionHandler(socketServer: SocketServer): void {
       console.log(`[WS] New order routing to ${manifest.destinations.length} destinations`)
 
       manifest.destinations.forEach((dest) => {
-        socketServer.to(`tag:${dest.tag}`).emit('kds:order-received', dest.orderData)
+        socketServer.to(`tag:${manifest.locationId}:${dest.tag}`).emit('kds:order-received', dest.orderData)
 
         if (dest.tag !== 'expo') {
           const expoData =
             typeof dest.orderData === 'object' && dest.orderData !== null
               ? { ...(dest.orderData as Record<string, unknown>), isExpoView: true }
               : { orderData: dest.orderData, isExpoView: true }
-          socketServer.to('tag:expo').emit('kds:order-received', expoData)
+          socketServer.to(`tag:${manifest.locationId}:expo`).emit('kds:order-received', expoData)
         }
       })
 
@@ -194,8 +238,9 @@ function setupConnectionHandler(socketServer: SocketServer): void {
         stationId: payload.stationId,
       }
 
-      socketServer.to('tag:expo').emit('kds:item-status', update)
-      socketServer.to(`location:${socket.data.locationId}`).emit('kds:item-status', update)
+      const itemLocationId = socket.data.locationId
+      socketServer.to(`tag:${itemLocationId}:expo`).emit('kds:item-status', update)
+      socketServer.to(`location:${itemLocationId}`).emit('kds:item-status', update)
 
       console.log(`[WS] Item ${payload.itemId} -> ${payload.status}`)
     })
@@ -209,8 +254,9 @@ function setupConnectionHandler(socketServer: SocketServer): void {
         allItemsServed: payload.allItemsServed,
       }
 
-      socketServer.to('tag:expo').emit('kds:order-bumped', update)
-      socketServer.to(`location:${socket.data.locationId}`).emit('kds:order-bumped', update)
+      const bumpLocationId = socket.data.locationId
+      socketServer.to(`tag:${bumpLocationId}:expo`).emit('kds:order-bumped', update)
+      socketServer.to(`location:${bumpLocationId}`).emit('kds:order-bumped', update)
 
       console.log(`[WS] Order ${payload.orderId} bumped from ${payload.stationId}`)
     })
@@ -218,7 +264,7 @@ function setupConnectionHandler(socketServer: SocketServer): void {
     // ==================== Entertainment Events ====================
 
     socket.on('entertainment_update', (payload: EntertainmentUpdatePayload) => {
-      socketServer.to('tag:entertainment').emit('entertainment:session-update', payload)
+      socketServer.to(`tag:${payload.locationId}:entertainment`).emit('entertainment:session-update', payload)
       socketServer.to(`location:${payload.locationId}`).emit('entertainment:session-update', payload)
 
       console.log(`[WS] Entertainment ${payload.action}: ${payload.tableName}`)

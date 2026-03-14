@@ -247,101 +247,92 @@ export function PaymentModal({
     }
   }, [])
 
-  // Fetch order data if orderTotal is 0 or not provided
+  // Consolidated order fetch: populates order total/subtotal, CFD dispatch, and tab increment flag.
+  // Previously 3 separate useEffects each fetched `/api/orders/${orderId}` independently.
   useEffect(() => {
-    if (isOpen && orderId && orderTotal === 0) {
-      setLoadingOrder(true)
-      fetch(`/api/orders/${orderId}`)
-        .then(res => res.json())
-        .then(raw => {
-          const data = raw.data ?? raw
+    if (!isOpen || !orderId) return
+
+    const needsTotal = orderTotal === 0
+    if (needsTotal) setLoadingOrder(true)
+
+    fetch(`/api/orders/${orderId}`)
+      .then(res => res.json())
+      .then(raw => {
+        const data = raw.data ?? raw
+
+        // 1. Populate order total/subtotal when not provided by parent
+        if (needsTotal) {
           setFetchedOrderTotal(data.total || 0)
           setFetchedSubtotal(data.subtotal || 0)
-        })
-        .catch(err => {
-          console.error('Failed to fetch order:', err)
-        })
-        .finally(() => {
-          setLoadingOrder(false)
-        })
-    }
-  }, [isOpen, orderId, orderTotal])
+        }
 
-  // CFD: dispatch show-order + show-order-detail via server when payment modal opens (fire and forget)
-  useEffect(() => {
-    if (!isOpen || !orderId || !locationId) return
-    fetch(`/api/orders/${orderId}`)
-      .then(res => res.json())
-      .then(raw => {
-        const data = raw.data ?? raw
-        const itemsBasic = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
-          name: i.name,
-          quantity: i.quantity,
-          price: Number(i.price),
-        }))
-        // Show-order: basic view (existing behavior)
-        void fetch('/api/cfd/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'show-order',
-            locationId,
-            payload: {
-              orderId: data.id ?? orderId,
-              orderNumber: data.orderNumber ?? 0,
-              items: itemsBasic,
-              subtotal: Number(data.subtotal ?? 0),
-              tax: Number(data.taxTotal ?? 0),
-              total: Number(data.total ?? orderTotal),
-            },
-          }),
-        }).catch(() => {})
-        // Show-order-detail: full confirmation with modifiers before card swipe
-        const itemsDetailed = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string; modifiers?: Array<{ name: string }> }) => ({
-          name: i.name,
-          quantity: i.quantity,
-          price: Number(i.price),
-          modifiers: (i.modifiers ?? []).map((m: { name: string }) => m.name),
-        }))
-        void fetch('/api/cfd/notify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            event: 'show-order-detail',
-            locationId,
-            payload: {
-              orderId: data.id ?? orderId,
-              orderNumber: data.orderNumber ?? 0,
-              items: itemsDetailed,
-              subtotal: Number(data.subtotal ?? 0),
-              tax: Number(data.taxTotal ?? 0),
-              total: Number(data.total ?? orderTotal),
-              discountTotal: Number(data.discountTotal ?? 0),
-            },
-          }),
-        }).catch(() => {})
-      })
-      .catch(err => {
-        console.error('[CFD] Failed to dispatch cfd:show-order:', err)
-      })
-  }, [isOpen, orderId, locationId])  
-
-  // Listen for tab:updated socket events (increment status indicator)
-  // W3-3: Listener active even when modal is closed so toast fires immediately
-  // BUG-H3: Also check DB-persisted flag on mount (survives page refresh / missed socket)
-  useEffect(() => {
-    if (!orderId) return
-    setTabIncrementFailed(false)
-    // Check DB-persisted increment failure flag
-    fetch(`/api/orders/${orderId}`)
-      .then(res => res.json())
-      .then(raw => {
-        const data = raw.data ?? raw
+        // 2. Tab increment failure check (BUG-H3: DB-persisted flag)
         if (data.incrementAuthFailed) {
           setTabIncrementFailed(true)
         }
+
+        // 3. CFD: dispatch show-order + show-order-detail (fire and forget)
+        if (locationId) {
+          const itemsBasic = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.price),
+          }))
+          void fetch('/api/cfd/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'show-order',
+              locationId,
+              payload: {
+                orderId: data.id ?? orderId,
+                orderNumber: data.orderNumber ?? 0,
+                items: itemsBasic,
+                subtotal: Number(data.subtotal ?? 0),
+                tax: Number(data.taxTotal ?? 0),
+                total: Number(data.total ?? orderTotal),
+              },
+            }),
+          }).catch(() => {})
+
+          const itemsDetailed = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string; modifiers?: Array<{ name: string }> }) => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.price),
+            modifiers: (i.modifiers ?? []).map((m: { name: string }) => m.name),
+          }))
+          void fetch('/api/cfd/notify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'show-order-detail',
+              locationId,
+              payload: {
+                orderId: data.id ?? orderId,
+                orderNumber: data.orderNumber ?? 0,
+                items: itemsDetailed,
+                subtotal: Number(data.subtotal ?? 0),
+                tax: Number(data.taxTotal ?? 0),
+                total: Number(data.total ?? orderTotal),
+                discountTotal: Number(data.discountTotal ?? 0),
+              },
+            }),
+          }).catch(() => {})
+        }
       })
-      .catch(() => {})
+      .catch(err => {
+        console.error('Failed to fetch order:', err)
+      })
+      .finally(() => {
+        if (needsTotal) setLoadingOrder(false)
+      })
+  }, [isOpen, orderId, orderTotal, locationId])
+
+  // Listen for tab:updated socket events (increment status indicator)
+  // W3-3: Listener active even when modal is closed so toast fires immediately
+  useEffect(() => {
+    if (!orderId) return
+    setTabIncrementFailed(false)
     const socket = getSharedSocket()
     const onTabUpdated = (data: { orderId: string; status: string }) => {
       if (data.orderId !== orderId) return
@@ -427,7 +418,21 @@ export function PaymentModal({
     [totalWithTip]
   )
 
-  const surchargeAmount = 0
+  // Surcharge: when pricing program is 'surcharge' and payment method is not cash,
+  // add surcharge on top of the card payment amount. Surcharge never applies to cash.
+  const surchargeAmount = useMemo(() => {
+    if (!pricingProgram?.enabled || pricingProgram.model !== 'surcharge') return 0
+    if (!selectedMethod || selectedMethod === 'cash') return 0
+    const pct = pricingProgram.surchargePercent ?? 0
+    if (pct <= 0) return 0
+    // Only apply to card types that the program targets
+    const applies =
+      (selectedMethod === 'credit' && (pricingProgram.surchargeApplyToCredit ?? true)) ||
+      (selectedMethod === 'debit' && (pricingProgram.surchargeApplyToDebit ?? false))
+    if (!applies) return 0
+    // calculateSurcharge from pricing.ts: roundToCents(basePrice * (pct / 100))
+    return Math.round(currentTotal * (pct / 100) * 100) / 100
+  }, [pricingProgram, selectedMethod, currentTotal])
 
   // Don't render if not open
   if (!isOpen) return null
@@ -819,34 +824,41 @@ export function PaymentModal({
 
   // Build the /pay request body (shared between sync and fire-and-forget paths)
   const buildPayBody = (payments: PendingPayment[]) => ({
-    payments: payments.map(p => ({
-      method: p.method,
-      amount: p.amount,
-      tipAmount: p.tipAmount,
-      amountTendered: p.amountTendered,
-      cardBrand: p.cardBrand,
-      cardLast4: p.cardLast4,
-      giftCardId: p.giftCardId,
-      giftCardNumber: p.giftCardNumber,
-      houseAccountId: p.houseAccountId,
-      // Hotel PMS / Bill to Room fields (P1.1: send selectionId only; server resolves guest data)
-      selectionId: p.selectionId,
-      roomNumber: p.roomNumber,
-      guestName: p.guestName,
-      pmsReservationId: p.pmsReservationId,
-      // Datacap Direct fields — only include if we have the required fields
-      ...(p.datacapRecordNo && p.datacapRefNumber ? {
-        datacapRecordNo: p.datacapRecordNo,
-        datacapRefNumber: p.datacapRefNumber,
-        datacapSequenceNo: p.datacapSequenceNo,
-        authCode: p.authCode,
-        entryMethod: p.entryMethod,
-        signatureData: p.signatureData,
-        amountAuthorized: p.amountAuthorized,
-        storedOffline: p.storedOffline,
-      } : {}),
-    })),
+    payments: payments.map(p => {
+      // Surcharge: for non-cash card payments under a surcharge pricing program,
+      // add the surcharge to the payment amount so the server records the full charge.
+      const isCashMethod = p.method === 'cash'
+      const paymentSurcharge = (!isCashMethod && surchargeAmount > 0) ? surchargeAmount : 0
+      return {
+        method: p.method,
+        amount: p.amount + paymentSurcharge,
+        tipAmount: p.tipAmount,
+        amountTendered: p.amountTendered,
+        cardBrand: p.cardBrand,
+        cardLast4: p.cardLast4,
+        giftCardId: p.giftCardId,
+        giftCardNumber: p.giftCardNumber,
+        houseAccountId: p.houseAccountId,
+        // Hotel PMS / Bill to Room fields (P1.1: send selectionId only; server resolves guest data)
+        selectionId: p.selectionId,
+        roomNumber: p.roomNumber,
+        guestName: p.guestName,
+        pmsReservationId: p.pmsReservationId,
+        // Datacap Direct fields — only include if we have the required fields
+        ...(p.datacapRecordNo && p.datacapRefNumber ? {
+          datacapRecordNo: p.datacapRecordNo,
+          datacapRefNumber: p.datacapRefNumber,
+          datacapSequenceNo: p.datacapSequenceNo,
+          authCode: p.authCode,
+          entryMethod: p.entryMethod,
+          signatureData: p.signatureData,
+          amountAuthorized: p.amountAuthorized,
+          storedOffline: p.storedOffline,
+        } : {}),
+      }
+    }),
     employeeId,
+    terminalId,
     idempotencyKey,
     version: getOrderVersion(),
   })

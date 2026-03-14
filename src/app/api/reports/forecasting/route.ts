@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 const DAY_NAMES = [
   'Sunday',
@@ -70,7 +71,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: { in: ['paid', 'closed'] },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
         deletedAt: null,
         OR: [
           { businessDayDate: { gte: startDate, lte: today } },
@@ -98,7 +99,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       if (!dateSource) continue
 
       const dayIndex = dateSource.getDay() // 0-6
-      const dateKey = dateSource.toISOString().split('T')[0]
+      const tzFc = process.env.TIMEZONE || process.env.TZ
+      const dateKey = tzFc ? dateSource.toLocaleDateString('en-CA', { timeZone: tzFc }) : dateSource.toISOString().split('T')[0]
 
       buckets[dayIndex].totalRevenue += Number(order.total) || 0
       buckets[dayIndex].totalOrders += 1

@@ -31,9 +31,7 @@ export async function GET(request: NextRequest) {
 
     const expiredCount = typeof result === 'number' ? result : 0
 
-    if (expiredCount > 0) {
-      console.log(`[cron/expire-payment-links] Expired ${expiredCount} payment link(s)`)
-    }
+    if (expiredCount > 0) { /* expired count returned in response */ }
 
     return NextResponse.json({
       success: true,

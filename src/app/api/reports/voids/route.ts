@@ -4,6 +4,9 @@ import { VoidType, Prisma } from '@prisma/client'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 
 // GET - Get void/comp report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -28,10 +31,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date range
-    const start = startDate ? new Date(startDate) : new Date(new Date().setHours(0, 0, 0, 0))
-    const end = endDate ? new Date(endDate) : new Date(new Date().setHours(23, 59, 59, 999))
-    end.setHours(23, 59, 59, 999)
+    // Build date range using business day boundaries
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
+    const dayStartTime = locationSettings.businessDay?.dayStartTime || '04:00'
+
+    let start: Date
+    let end: Date
+    if (startDate) {
+      const range = getBusinessDayRange(startDate, dayStartTime)
+      start = range.start
+      end = endDate ? getBusinessDayRange(endDate, dayStartTime).end : range.end
+    } else {
+      const current = getCurrentBusinessDay(dayStartTime)
+      start = current.start
+      end = current.end
+    }
 
     // Build where clause
     const where: Prisma.VoidLogWhereInput = {

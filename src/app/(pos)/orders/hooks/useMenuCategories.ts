@@ -91,13 +91,15 @@ export function useMenuCategories(options: UseMenuCategoriesOptions) {
     }
   }
 
-  // Filtered items for the selected category
-  const filteredItems = menuItems.filter(
-    item => item.categoryId === selectedCategory && item.isAvailable
-  )
-  const unavailableItems = menuItems.filter(
-    item => item.categoryId === selectedCategory && !item.isAvailable
-  )
+  // Filtered items for the selected category (memoized to avoid O(n) filter on every render)
+  const { filteredItems, unavailableItems } = useMemo(() => ({
+    filteredItems: menuItems.filter(
+      item => item.categoryId === selectedCategory && item.isAvailable
+    ),
+    unavailableItems: menuItems.filter(
+      item => item.categoryId === selectedCategory && !item.isAvailable
+    ),
+  }), [menuItems, selectedCategory])
 
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
 

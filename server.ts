@@ -9,8 +9,9 @@
  *   Production:  npm start     (runs this via node on the built output)
  */
 
-import { createServer } from 'http'
+import { createServer, IncomingMessage, ServerResponse } from 'http'
 import next from 'next'
+import compression from 'compression'  // eslint-disable-line @typescript-eslint/no-var-requires
 import { initializeSocketServer, getSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
@@ -120,7 +121,11 @@ async function main() {
 
   const socketPath = process.env.SOCKET_PATH || '/api/socket'
 
-  const httpServer = createServer((req, res) => {
+  // Compression middleware — reduces JSON response sizes by ~70%
+  // Threshold 1KB: don't compress tiny responses (overhead > benefit)
+  const compress = compression({ threshold: 1024 })
+
+  const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
     // Let Socket.io handle its own HTTP polling requests — the [orderCode]/[slug]
     // catch-all route would otherwise intercept /api/socket as a page route.
     const pathname = req.url?.split('?')[0] || ''
@@ -128,18 +133,22 @@ async function main() {
       return // Socket.io's own request listener handles this
     }
 
-    // Multi-tenant: wrap request in AsyncLocalStorage with the correct
-    // PrismaClient so that `import { db } from '@/lib/db'` automatically
-    // routes to the venue's Neon database.
-    const slug = req.headers['x-venue-slug'] as string | undefined
-    if (slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-      const prisma = getDbForVenue(slug)
-      requestStore.run({ slug, prisma }, () => handle(req, res))
-    } else {
-      // Local/NUC mode (no slug header): still wrap in requestStore so
-      // withVenue() fast-path fires and skips await headers() entirely.
-      requestStore.run({ slug: '', prisma: masterClient }, () => handle(req, res))
-    }
+    // Apply compression to all non-socket responses
+    // Cast to any — compression types expect Express but work fine with raw http
+    compress(req as any, res as any, () => {
+      // Multi-tenant: wrap request in AsyncLocalStorage with the correct
+      // PrismaClient so that `import { db } from '@/lib/db'` automatically
+      // routes to the venue's Neon database.
+      const slug = req.headers['x-venue-slug'] as string | undefined
+      if (slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+        const prisma = getDbForVenue(slug)
+        requestStore.run({ slug, prisma }, () => handle(req, res))
+      } else {
+        // Local/NUC mode (no slug header): still wrap in requestStore so
+        // withVenue() fast-path fires and skips await headers() entirely.
+        requestStore.run({ slug: '', prisma: masterClient }, () => handle(req, res))
+      }
+    })
   })
 
   // Initialize Socket.io (skip if standalone ws-server handles sockets)

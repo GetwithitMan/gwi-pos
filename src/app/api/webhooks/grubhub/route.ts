@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
       }
 
       default:
-        console.log(`[grubhub/webhook] Unknown event type: ${eventType}`)
+        console.warn(`[grubhub/webhook] Unknown event type: ${eventType}`)
     }
 
     return NextResponse.json({ received: true })

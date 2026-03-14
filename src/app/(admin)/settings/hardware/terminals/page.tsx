@@ -184,7 +184,11 @@ export default function TerminalsPage() {
     if (!confirm('Are you sure you want to delete this terminal?')) return
 
     try {
-      const res = await fetch(`/api/hardware/terminals/${id}`, { method: 'DELETE' })
+      const res = await fetch(`/api/hardware/terminals/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: employee?.id, locationId }),
+      })
       if (res.ok) {
         setTerminals((prev) => prev.filter((t) => t.id !== id))
       }
@@ -198,7 +202,7 @@ export default function TerminalsPage() {
       const res = await fetch(`/api/hardware/terminals/${terminal.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ forceAllPrints: !terminal.forceAllPrints }),
+        body: JSON.stringify({ forceAllPrints: !terminal.forceAllPrints, employeeId: employee?.id, locationId }),
       })
       if (res.ok) {
         fetchData()
@@ -228,7 +232,7 @@ export default function TerminalsPage() {
       const res = await fetch(`/api/hardware/terminals/${terminalId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ defaultMode: mode }),
+        body: JSON.stringify({ defaultMode: mode, employeeId: employee?.id, locationId }),
       })
       if (res.ok) {
         setTerminals(prev => prev.map(t =>

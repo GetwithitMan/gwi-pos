@@ -10,7 +10,12 @@ export const maxDuration = 30
 // Fires scheduled orders whose scheduledFor time has arrived.
 // Moves them from draft/open+scheduled to open (ready for prep).
 // Designed to be called by an external cron every 1-2 minutes.
-export async function GET(_request: NextRequest) {
+export async function GET(request: NextRequest) {
+  const cronSecret = request.headers.get('authorization')
+  if (cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const now = new Date()
 

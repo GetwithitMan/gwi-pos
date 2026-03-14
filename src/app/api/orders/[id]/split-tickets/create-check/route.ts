@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
 
 // ============================================
 // POST - Create a new empty check on a split order
@@ -100,6 +100,22 @@ export const POST = withVenue(async function POST(
       trigger: 'created',
       orderId: newOrder.id,
       tableId: parentOrder.tableId || undefined,
+    }).catch(console.error)
+
+    // Dispatch order:split-created so all devices instantly render the new check
+    void dispatchSplitCreated(parentOrder.locationId, {
+      parentOrderId: id,
+      parentStatus: 'split',
+      splits: [{
+        id: newOrder.id,
+        orderNumber: parentOrder.orderNumber,
+        splitIndex: newOrder.splitIndex!,
+        displayNumber: newOrder.displayNumber || `${parentOrder.orderNumber}-${newOrder.splitIndex}`,
+        total: 0,
+        itemCount: 0,
+        isPaid: false,
+      }],
+      sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
     }).catch(console.error)
 
     // Event emission: new empty split check created

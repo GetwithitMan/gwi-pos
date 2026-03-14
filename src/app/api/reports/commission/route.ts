@@ -6,6 +6,7 @@ import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET commission report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -72,7 +73,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         ...dateFilter,
         ...employeeFilter,
-        status: { in: ['completed', 'paid'] },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
+        parentOrderId: null,
       },
       include: {
         employee: {

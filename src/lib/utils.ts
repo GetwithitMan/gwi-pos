@@ -34,11 +34,3 @@ export function formatDate(date: Date | string): string {
 export function formatDateTime(date: Date | string): string {
   return `${formatDate(date)} ${formatTime(date)}`
 }
-
-export function generateOrderNumber(): string {
-  // Simple alphanumeric order number for display
-  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ' // Removed I and O to avoid confusion
-  const letter = letters[Math.floor(Math.random() * letters.length)]
-  const number = Math.floor(Math.random() * 99) + 1
-  return `${letter}${number.toString().padStart(2, '0')}`
-}

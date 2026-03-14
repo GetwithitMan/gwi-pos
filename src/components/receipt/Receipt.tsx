@@ -207,7 +207,7 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                 </div>
                 {showPrices && (
                   <div className="text-xs text-gray-500 pl-2">
-                    {item.weight.toFixed(2)} {item.weightUnit || 'lb'}
+                    {item.weight.toFixed(3)} {item.weightUnit || 'lb'}
                     {item.tareWeight != null && item.tareWeight > 0 ? ' NET' : ''}
                     {' '}@ {formatCurrency(item.unitPrice)}/{item.weightUnit || 'lb'}
                   </div>

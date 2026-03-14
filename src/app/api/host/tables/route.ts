@@ -47,22 +47,30 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
       })
 
+      // Batch subtotal query — single query instead of N+1 per table
+      const orderIds = orders.filter(o => o.tableId).map(o => o.id)
+      const subtotalMap = new Map<string, number>()
+      if (orderIds.length > 0) {
+        const totals: { orderId: string; subtotal: number }[] = await db.$queryRawUnsafe(`
+          SELECT oi."orderId", COALESCE(SUM(oi.price * oi.quantity), 0)::float as subtotal
+          FROM "OrderItem" oi
+          WHERE oi."orderId" = ANY($1::text[]) AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
+          GROUP BY oi."orderId"
+        `, orderIds)
+        for (const row of totals) {
+          subtotalMap.set(row.orderId, row.subtotal)
+        }
+      }
+
       for (const order of orders) {
         if (order.tableId) {
-          // Get order total via raw query (subtotal + tax)
-          const totals: any[] = await db.$queryRawUnsafe(`
-            SELECT COALESCE(SUM(oi.price * oi.quantity), 0)::float as subtotal
-            FROM "OrderItem" oi
-            WHERE oi."orderId" = $1 AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
-          `, order.id)
-
           ordersByTable[order.tableId] = {
             orderId: order.id,
             orderNumber: order.orderNumber,
             serverId: order.employeeId,
             serverName: order.employee ? `${order.employee.firstName} ${order.employee.lastName}`.trim() : null,
             guestCount: order.guestCount,
-            subtotal: totals[0]?.subtotal ?? 0,
+            subtotal: subtotalMap.get(order.id) ?? 0,
             seatedAt: order.createdAt,
           }
         }

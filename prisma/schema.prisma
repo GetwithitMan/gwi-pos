@@ -641,7 +641,6 @@ model Location {
   tipOutRules    TipOutRule[]
   tipShares      TipShare[]
   tipPools       TipPool[]
-  tipPoolEntries TipPoolEntry[]
 
   // Tip Bank Ledger (Skill 250)
   tipLedgers       TipLedger[]
@@ -694,8 +693,8 @@ model Location {
   houseAccountTransactions HouseAccountTransaction[]
 
   // Events (multi-tenancy)
-  eventPricingTiers EventPricingTier[]
-  eventTableConfigs EventTableConfig[]
+  eventPricingTiers     EventPricingTier[]
+  eventTableConfigs     EventTableConfig[]
   // Inventory & Tax (multi-tenancy)
   taxRules              TaxRule[]
   inventoryTransactions InventoryTransaction[]
@@ -782,7 +781,6 @@ model Location {
   payStubs            PayStub[]
   schedules           Schedule[]
   scheduledShifts     ScheduledShift[]
-  availabilityEntries AvailabilityEntry[]
   shiftSwapRequests   ShiftSwapRequest[]
   payrollSettings     PayrollSettings?
 
@@ -800,8 +798,8 @@ model Location {
   bottleServiceTiers BottleServiceTier[]
 
   // Error Reporting (Domain 16)
-  errorLogs       ErrorLog[]
-  healthChecks    HealthCheck[]
+  errorLogs    ErrorLog[]
+  healthChecks HealthCheck[]
 
   // Fleet Management (Skill 345)
   serverRegistrationTokens ServerRegistrationToken[]
@@ -879,7 +877,7 @@ model Customer {
   allergies     String? // Dedicated field for allergy tracking
   favoriteDrink String? // Customer's preferred drink
   favoriteFood  String? // Customer's preferred food
-  tags          Json?   // VIP, Regular, etc.
+  tags          Json? // VIP, Regular, etc.
 
   // Loyalty (Skill 52 foundation)
   loyaltyPoints Int       @default(0)
@@ -1052,7 +1050,7 @@ model Employee {
 
   // Relations
   orders           Order[]
-  claimedOrders    Order[]          @relation("ClaimedOrders")
+  claimedOrders    Order[]             @relation("ClaimedOrders")
   timeClockEntries TimeClockEntry[]
   shifts           Shift[]
   voidLogs         VoidLog[]
@@ -1083,7 +1081,6 @@ model Employee {
   // Payroll & Scheduling
   payStubs            PayStub[]
   scheduledShifts     ScheduledShift[]    @relation("ScheduledShiftEmployee")
-  availabilityEntries AvailabilityEntry[]
 
   // Remote void approval relations
   voidApprovalsRequested RemoteVoidApproval[] @relation("VoidRequester")
@@ -1158,6 +1155,7 @@ model Employee {
   @@index([roleId])
   @@index([locationId, isActive])
   @@index([locationId, isActive, deletedAt])
+  @@index([locationId, updatedAt]) // Delta sync: { locationId, updatedAt: { gt: since } }
 }
 
 // ============================================
@@ -1243,6 +1241,7 @@ model TimeClockEntry {
   @@index([clockIn])
   @@index([locationId, employeeId, clockOut])
   @@index([locationId, clockIn])
+  @@index([employeeId, clockOut]) // Active clock check: { employeeId, clockOut: null }
 }
 
 // ============================================
@@ -1502,12 +1501,13 @@ model Category {
 
   // @@index([locationId]) — removed: redundant with compound indexes below
 
+  @@unique([locationId, name])
   @@index([prepStationId])
   @@index([sortOrder])
   @@index([categoryType])
-  @@unique([locationId, name])
   @@index([locationId, isActive, deletedAt])
   @@index([locationId, sortOrder])
+  @@index([locationId, updatedAt]) // Delta sync: { locationId, updatedAt: { gt: since } }
 }
 
 model MenuItem {
@@ -1592,12 +1592,12 @@ model MenuItem {
   happyHourDays     Json? // ["monday", "tuesday", "wednesday", "thursday", "friday"]
 
   // Overtime pricing
-  overtimeEnabled        Boolean? @default(false)
-  overtimeMode           String?  // 'multiplier' | 'custom_rate' | 'flat_fee' | 'per_minute'
-  overtimeMultiplier     Decimal? // e.g., 1.5, 2.0 — scales base rate
-  overtimePerMinuteRate  Decimal? // custom per-minute rate in dollars
-  overtimeFlatFee        Decimal? // flat fee charged for any overtime
-  overtimeGraceMinutes   Int?     @default(5) // grace before overtime kicks in
+  overtimeEnabled       Boolean? @default(false)
+  overtimeMode          String? // 'multiplier' | 'custom_rate' | 'flat_fee' | 'per_minute'
+  overtimeMultiplier    Decimal? // e.g., 1.5, 2.0 — scales base rate
+  overtimePerMinuteRate Decimal? // custom per-minute rate in dollars
+  overtimeFlatFee       Decimal? // flat fee charged for any overtime
+  overtimeGraceMinutes  Int?     @default(5) // grace before overtime kicks in
 
   // Entertainment tracking (Skill 94-97)
   entertainmentStatus String? // 'available', 'in_use', 'maintenance'
@@ -1615,7 +1615,7 @@ model MenuItem {
   availableDays String? // Comma-separated days: "0,1,2,3,4,5,6" (0=Sunday)
 
   // Seasonal date-based availability (date range, not time-of-day)
-  availableFromDate DateTime? // Item becomes visible on this date
+  availableFromDate  DateTime? // Item becomes visible on this date
   availableUntilDate DateTime? // Item becomes hidden after this date
 
   // Commission (Skill 29)
@@ -1710,6 +1710,7 @@ model MenuItem {
   @@index([locationId, isActive, deletedAt])
   @@index([locationId, isActive])
   @@index([locationId, categoryId])
+  @@index([locationId, updatedAt]) // Delta sync: { locationId, updatedAt: { gt: since } }
 }
 
 model ModifierGroup {
@@ -2115,6 +2116,7 @@ model Table {
   @@index([locationId, status])
   @@index([locationId, isActive, deletedAt])
   @@index([locationId, sectionId])
+  @@index([locationId, updatedAt]) // Delta sync: { locationId, updatedAt: { gt: since } }
 }
 
 // ============================================
@@ -2212,14 +2214,14 @@ model EntertainmentWaitlist {
   notes String?
 
   // Deposit
-  depositAmount        Decimal?  // Amount held (in dollars)
-  depositMethod        String?   // 'cash' | 'card'
-  depositRecordNo      String?   // Datacap token for card pre-auth
-  depositCardLast4     String?
-  depositCardBrand     String?
-  depositStatus        String?   // 'collected' | 'applied' | 'refunded' | 'forfeited'
-  depositCollectedBy   String?   // Employee ID who collected
-  depositRefundedAt    DateTime?
+  depositAmount      Decimal? // Amount held (in dollars)
+  depositMethod      String? // 'cash' | 'card'
+  depositRecordNo    String? // Datacap token for card pre-auth
+  depositCardLast4   String?
+  depositCardBrand   String?
+  depositStatus      String? // 'collected' | 'applied' | 'refunded' | 'forfeited'
+  depositCollectedBy String? // Employee ID who collected
+  depositRefundedAt  DateTime?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2280,6 +2282,7 @@ model OrderType {
   @@unique([locationId, slug])
   @@index([locationId])
   @@index([sortOrder])
+  @@index([locationId, updatedAt]) // Delta sync: { locationId, updatedAt: { gt: since } }
 }
 
 // ============================================
@@ -2422,7 +2425,7 @@ model Order {
   // Order claiming — soft lock to prevent concurrent editing
   claimedByEmployeeId String?
   claimedByEmployee   Employee? @relation("ClaimedOrders", fields: [claimedByEmployeeId], references: [id])
-  claimedByTerminalId String?   // Terminal ID that currently has the order open
+  claimedByTerminalId String? // Terminal ID that currently has the order open
   claimedAt           DateTime? // When the claim was acquired; auto-expires after 60s
 
   // Order creation idempotency — client-generated key to prevent double-tap duplicates
@@ -2748,13 +2751,13 @@ model Payment {
   entryMethod       String? // "Chip" | "Tap" | "Swipe" | "Manual"
 
   // Datacap processor data for ByRecordNo ops + chargeback defense
-  acqRefData        String?   // Acquirer reference (for voids/refunds)
-  processData       String?   // Processor routing data
-  aid               String?   // EMV Application ID
-  cvmResult         String?   // Cardholder Verification Method result
-  avsResult         String?   // AVS check result
-  level2Status      String?   // B2B interchange qualification
-  tokenFrequency    String?   // 'OneTime' | 'Recurring'
+  acqRefData     String? // Acquirer reference (for voids/refunds)
+  processData    String? // Processor routing data
+  aid            String? // EMV Application ID
+  cvmResult      String? // Cardholder Verification Method result
+  avsResult      String? // AVS check result
+  level2Status   String? // B2B interchange qualification
+  tokenFrequency String? // 'OneTime' | 'Recurring'
 
   // Partial Approvals & Signature (Chargeback Defense)
   amountRequested  Decimal? // Original amount requested
@@ -3278,16 +3281,18 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@index([locationId, createdAt])
+  @@index([locationId, action, createdAt]) // EOD idempotency + audit activity queries
 }
 
 // ============================================
 // TIPPING (Skill 06)
 // ============================================
-// ⚠️ DEPRECATED MODELS (Skill 273): TipPool, TipPoolEntry, TipShare
-// TipBank model REMOVED in Skill 284. These remaining legacy models are
-// superseded by the TipLedger system (TipLedger, TipLedgerEntry, TipTransaction).
-// All new tip flows use the ledger. These models are retained for historical
-// data only. Do NOT write new code that creates records in these models.
+// ⚠️ DEPRECATED MODELS (Skill 273): TipPool, TipShare
+// TipBank model REMOVED in Skill 284. TipPoolEntry REMOVED (unused).
+// These remaining legacy models are superseded by the TipLedger system
+// (TipLedger, TipLedgerEntry, TipTransaction). All new tip flows use the ledger.
+// These models are retained for historical data only. Do NOT write new code
+// that creates records in these models.
 // Report queries should read from TipLedgerEntry instead.
 // ============================================
 
@@ -3311,34 +3316,7 @@ model TipPool {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  entries TipPoolEntry[]
-
   @@index([locationId])
-}
-
-model TipPoolEntry {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-  tipPoolId  String
-  tipPool    TipPool  @relation(fields: [tipPoolId], references: [id])
-
-  shiftDate   DateTime
-  totalAmount Decimal
-
-  // Distributions
-  distributions Json // [{employeeId, amount, hours, points}]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@index([locationId])
-  @@index([tipPoolId])
-  @@index([shiftDate])
 }
 
 // ============================================
@@ -4804,6 +4782,7 @@ model PricingOptionGroup {
   @@index([locationId])
   @@index([menuItemId])
   @@index([locationId, menuItemId, deletedAt])
+  @@index([locationId, updatedAt]) // Delta sync: { locationId, updatedAt: { gt: since }, deletedAt: null }
 }
 
 model PricingOption {
@@ -6596,7 +6575,7 @@ model PizzaConfig {
 
   // Condiment section settings (allow sauce/cheese to be placed on sections)
   allowCondimentSections Boolean @default(false) // Enable section-based sauce/cheese placement
-  condimentDivisionMax   Int     @default(1)     // Max division for condiments: 1=whole, 2=halves, 3=thirds
+  condimentDivisionMax   Int     @default(1) // Max division for condiments: 1=whole, 2=halves, 3=thirds
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -7173,42 +7152,6 @@ model ShiftSwapRequest {
   @@index([status])
 }
 
-// AvailabilityEntry - Employee availability preferences
-model AvailabilityEntry {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
-
-  // Recurring availability (weekly pattern)
-  dayOfWeek     Int // 0-6 (Sunday-Saturday)
-  availableFrom String? // "09:00" or null for not available
-  availableTo   String? // "17:00" or null for not available
-  isAvailable   Boolean @default(true)
-
-  // Preference level
-  preference String @default("available") // 'preferred' | 'available' | 'if_needed' | 'unavailable'
-
-  // Effective dates (for temporary changes)
-  effectiveFrom DateTime?
-  effectiveTo   DateTime?
-
-  // Notes
-  notes String?
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@unique([employeeId, dayOfWeek, effectiveFrom])
-  @@index([locationId])
-  @@index([employeeId])
-  @@index([dayOfWeek])
-}
-
 // ============================================
 // PAYROLL SETTINGS & TAX CONFIGURATION
 // ============================================
@@ -7443,14 +7386,14 @@ model OrderCard {
   isDefault  Boolean @default(false) // Default payment card for this tab
 
   // Datacap token metadata for ByRecordNo operations
-  tokenFrequency   String?   // 'OneTime' | 'Recurring' — determines post-batch reuse
-  acqRefData       String?   // Acquirer reference data — required by some processors for ByRecordNo
-  processData      String?   // Processor routing data — required by some processors for ByRecordNo
-  aid              String?   // EMV Application ID (chargeback evidence)
-  cvm              String?   // Cardholder Verification Method (chargeback evidence)
-  avsResult        String?   // AVS response code (fraud detection)
-  authCode         String?   // 6-digit authorization code
-  refNo            String?   // Reference number from Datacap response
+  tokenFrequency String? // 'OneTime' | 'Recurring' — determines post-batch reuse
+  acqRefData     String? // Acquirer reference data — required by some processors for ByRecordNo
+  processData    String? // Processor routing data — required by some processors for ByRecordNo
+  aid            String? // EMV Application ID (chargeback evidence)
+  cvm            String? // Cardholder Verification Method (chargeback evidence)
+  avsResult      String? // AVS response code (fraud detection)
+  authCode       String? // 6-digit authorization code
+  refNo          String? // Reference number from Datacap response
 
   // Status
   status OrderCardStatus @default(authorized)

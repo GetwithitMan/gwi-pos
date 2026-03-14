@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
@@ -11,13 +11,15 @@ export const maxDuration = 30
  * Deletes SharedReport rows where expiresAt < now.
  * Intended to be called by cron (Vercel Cron or NUC crontab).
  */
-export const GET = withVenue(async function GET() {
+export const GET = withVenue(async function GET(request: NextRequest) {
+  const cronSecret = request.headers.get('authorization')
+  if (cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
   try {
     const result = await db.$executeRawUnsafe(
       `DELETE FROM "SharedReport" WHERE "expiresAt" < NOW()`
     )
-
-    console.log(`[cron/expire-shared-reports] Cleaned up ${result} expired shared reports`)
 
     return NextResponse.json({
       data: { deleted: result },

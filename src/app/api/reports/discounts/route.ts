@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET discount usage report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -44,6 +45,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         order: {
           locationId,
+          status: { in: [...REVENUE_ORDER_STATUSES] },
+          parentOrderId: null,
           ...dateFilter,
         },
         ...(discountRuleId ? { discountRuleId } : {}),
@@ -85,6 +88,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         order: {
           locationId,
+          status: { in: [...REVENUE_ORDER_STATUSES] },
+          parentOrderId: null,
           ...dateFilter,
         },
         deletedAt: null,
@@ -281,7 +286,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
 
       // By day
-      const dateKey = discount.createdAt.toISOString().split('T')[0]
+      const tzDisc = process.env.TIMEZONE || process.env.TZ
+      const dateKey = tzDisc ? discount.createdAt.toLocaleDateString('en-CA', { timeZone: tzDisc }) : discount.createdAt.toISOString().split('T')[0]
       if (!byDay[dateKey]) {
         byDay[dateKey] = {
           date: dateKey,
@@ -387,7 +393,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
 
       // By day
-      const dateKey = discount.createdAt.toISOString().split('T')[0]
+      const tzDisc = process.env.TIMEZONE || process.env.TZ
+      const dateKey = tzDisc ? discount.createdAt.toLocaleDateString('en-CA', { timeZone: tzDisc }) : discount.createdAt.toISOString().split('T')[0]
       if (!byDay[dateKey]) {
         byDay[dateKey] = {
           date: dateKey,

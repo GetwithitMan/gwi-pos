@@ -188,8 +188,13 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Transition draft → open on first send (so Open Orders panel sees it)
     // Always increment version for optimistic concurrency control
+    // Record sentAt for ghost order protection — the void route should check
+    // if (order.sentAt && Date.now() - order.sentAt.getTime() < 30000) to require
+    // manager approval for voids within 30 seconds of sending (prevents send→void→pocket-cash fraud).
+    // TODO: Add the 30-second void-delay guard in comp-void/route.ts (requires manager approval
+    // for voids within 30s of sentAt to prevent send→void→pocket-cash attacks).
     timing.start('db-update')
-    const orderUpdateData: Record<string, unknown> = { version: { increment: 1 } }
+    const orderUpdateData: Record<string, unknown> = { version: { increment: 1 }, sentAt: now }
     if (order.status === 'draft') {
       orderUpdateData.status = 'open'
     }
@@ -382,24 +387,6 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // Fire kitchen print jobs for PRINTER-type stations (fire and forget)
-    // Training mode: skip printing if suppressPrinting is enabled
-    // printKitchenTicketsForManifests handles per-station failover, backup routing,
-    // socket emit (print:job-failed), and alert dispatch internally.
-    if (!trainingSuppress.printing) {
-      void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err => {
-        console.error('[API /orders/[id]/send] Kitchen print failed:', err)
-      })
-    }
-
-    // Deduct prep stock for sent items (fire and forget)
-    // Training mode: skip inventory deduction if suppressInventory is enabled
-    if (!trainingSuppress.inventory) {
-      void deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {
-        console.error('[API /orders/[id]/send] Prep stock deduction failed:', err)
-      })
-    }
-
     // Audit log: sent to kitchen (fire-and-forget — don't block response)
     void db.auditLog.create({
       data: {
@@ -450,7 +437,9 @@ export const POST = withVenue(withTiming(async function POST(
     // Evaluate auto-discount rules after items are sent (fire-and-forget)
     void evaluateAutoDiscounts(order.id, order.locationId).catch(console.error)
 
-    return NextResponse.json({ data: {
+    // Build response BEFORE firing kitchen print — print can hang 7s on TCP timeout
+    // if printer is offline. DB writes + socket events are already done above.
+    const response = NextResponse.json({ data: {
       success: true,
       sentItemCount: updatedItemIds.length,
       sentItemIds: updatedItemIds,
@@ -465,6 +454,26 @@ export const POST = withVenue(withTiming(async function POST(
         unroutedCount: routingResult.unroutedItems.length,
       },
     } })
+
+    // Fire kitchen print jobs AFTER response is built (fire-and-forget).
+    // printKitchenTicketsForManifests handles per-station failover, backup routing,
+    // socket emit (print:job-failed), and alert dispatch internally.
+    // Training mode: skip printing if suppressPrinting is enabled
+    if (!trainingSuppress.printing) {
+      void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err => {
+        console.error('[API /orders/[id]/send] Kitchen print failed:', err)
+      })
+    }
+
+    // Deduct prep stock for sent items (fire and forget)
+    // Training mode: skip inventory deduction if suppressInventory is enabled
+    if (!trainingSuppress.inventory) {
+      void deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {
+        console.error('[API /orders/[id]/send] Prep stock deduction failed:', err)
+      })
+    }
+
+    return response
   } catch (error) {
     console.error('Failed to send order to kitchen:', error)
     if (error instanceof Error) {

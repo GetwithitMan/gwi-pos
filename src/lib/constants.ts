@@ -2,6 +2,13 @@
 // Shared constant values used across the application
 
 /**
+ * Order statuses that count toward revenue in reports.
+ * Every report that aggregates sales/revenue MUST use this constant
+ * to avoid inconsistent totals across reports.
+ */
+export const REVENUE_ORDER_STATUSES = ['completed', 'closed', 'paid'] as const
+
+/**
  * Category types for menu organization and reporting
  */
 export const CATEGORY_TYPES = [

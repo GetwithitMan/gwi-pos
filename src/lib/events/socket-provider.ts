@@ -46,8 +46,12 @@ export class SocketEventProvider implements EventProvider {
   private onConnectErrorHandler: ((error: Error) => void) | null = null
   private onReconnectAttemptHandler: ((attempt: number) => void) | null = null
   private onReconnectFailedHandler: (() => void) | null = null
-   
+
   private onAnyHandler: ((eventName: string, data: any) => void) | null = null
+
+  // Deduplication set for incoming events (keyed by _dedupKey)
+  private recentDedupKeys = new Set<string>()
+  private static readonly MAX_DEDUP_SIZE = 200
 
   constructor(config?: Partial<ProviderConfig>) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config }
@@ -68,6 +72,14 @@ export class SocketEventProvider implements EventProvider {
   }
 
   async connect(locationId: string): Promise<void> {
+    // Guard: if already connected with handlers attached, skip re-attaching
+    // This prevents duplicate onAny handlers during HMR or route navigation
+    if (this.socket && this.onAnyHandler) {
+      // Already connected with handlers — just update locationId and return
+      this.locationId = locationId
+      return
+    }
+
     // Use shared socket singleton instead of creating our own connection
     let getSharedSocket: () => Socket
 
@@ -134,6 +146,18 @@ export class SocketEventProvider implements EventProvider {
     // Individual consumers can debounce on their end if needed.
     // Also extracts _eid from incoming events for reconnection catch-up tracking.
     this.onAnyHandler = (eventName: string, data: EventMap[EventName]) => {
+      // Deduplicate events by _dedupKey (if present)
+      const dedupData = data as unknown as Record<string, unknown> | null
+      if (dedupData && typeof dedupData === 'object' && '_dedupKey' in dedupData) {
+        const key = dedupData._dedupKey as string
+        if (this.recentDedupKeys.has(key)) return // Skip duplicate
+        this.recentDedupKeys.add(key)
+        if (this.recentDedupKeys.size > SocketEventProvider.MAX_DEDUP_SIZE) {
+          const first = this.recentDedupKeys.values().next().value
+          if (first) this.recentDedupKeys.delete(first)
+        }
+      }
+
       // Track event buffer position for catch-up on reconnect
       const dataObj = data as unknown as Record<string, unknown> | null
       if (dataObj && typeof dataObj === 'object' && '_eid' in dataObj) {
@@ -232,6 +256,7 @@ export class SocketEventProvider implements EventProvider {
 
     this.eventListeners.clear()
     this.subscribedChannels.clear()
+    this.recentDedupKeys.clear()
     this.locationId = null
     this.setConnectionStatus('disconnected')
   }

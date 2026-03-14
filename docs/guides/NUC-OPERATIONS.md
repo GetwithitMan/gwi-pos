@@ -74,6 +74,20 @@ The installer canonicalizes critical .env values on every server re-run: `PORT=3
 
 ---
 
+## CRITICAL: Never Run `sudo npm run build`
+
+Running `npm run build` as root (`sudo npm run build`) changes ownership of `.next/build/` to `root`. The next deploy (running as `smarttab`) will fail with EACCES because it cannot overwrite root-owned files. This happened on Fruita Grill NUC (2026-03-12).
+
+**If this happens, fix with:**
+```bash
+chown -R smarttab:smarttab /opt/gwi-pos/app/.next/
+```
+Then re-run the deploy or rebuild as `smarttab`.
+
+**Rule:** All build commands on a NUC must run as the `smarttab` user, never as root.
+
+---
+
 ## SSH Credentials
 
 | Host | User | Password |

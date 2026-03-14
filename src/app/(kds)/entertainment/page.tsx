@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
-import { useAuthGuard } from '@/hooks/useAuthGuard'
+import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { EntertainmentItemCard } from '@/components/entertainment/EntertainmentItemCard'
 import { WaitlistPanel } from '@/components/entertainment/WaitlistPanel'
@@ -34,7 +34,9 @@ function playNotificationSound() {
 
 export default function EntertainmentKDSPage() {
   const router = useRouter()
-  const { isReady, employee } = useAuthGuard()
+  // Use auth store directly — do NOT use useAuthGuard() which redirects to /login.
+  // KDS devices authenticate via device token, not employee session.
+  const employee = useAuthStore(s => s.employee)
 
   const [items, setItems] = useState<EntertainmentItem[]>([])
   const [allWaitlist, setAllWaitlist] = useState<WaitlistEntry[]>([])
@@ -46,11 +48,32 @@ export default function EntertainmentKDSPage() {
   const [selectedEntryForSeat, setSelectedEntryForSeat] = useState<WaitlistEntry | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   const [socketConnected, setSocketConnected] = useState(false)
-   
+
   const socketRef = useRef<any>(null)
 
-  // Get location ID from employee context
-  const locationId = employee?.location?.id || ''
+  // KDS device-token auth — paired KDS devices store config in localStorage
+  const [kdsLocationId, setKdsLocationId] = useState<string>('')
+  const [kdsScreenName, setKdsScreenName] = useState<string>('')
+
+  useEffect(() => {
+    if (employee?.location?.id) return // Employee auth takes precedence
+    try {
+      const storedConfig = localStorage.getItem('kds_screen_config')
+      const storedToken = localStorage.getItem('kds_device_token')
+      if (storedConfig && storedToken) {
+        const config = JSON.parse(storedConfig)
+        if (config.locationId) {
+          setKdsLocationId(config.locationId)
+          setKdsScreenName(config.name || 'Entertainment')
+        }
+      }
+    } catch {
+      // Invalid stored config
+    }
+  }, [employee?.location?.id])
+
+  // Use employee location or KDS device location
+  const locationId = employee?.location?.id || kdsLocationId
 
   // Fetch entertainment status
   const fetchStatus = useCallback(async () => {
@@ -62,7 +85,24 @@ export default function EntertainmentKDSPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setItems(data.data.items)
+        // Fix clock-skew: compute offset between server time and client time,
+        // then shift all timestamps so calculateTimeRemaining() works with local clock.
+        const clockOffset = data.data.serverTime
+          ? new Date(data.data.serverTime).getTime() - Date.now()
+          : 0
+        const adjustedItems = (data.data.items as EntertainmentItem[]).map(item => {
+          if (!item.timeInfo || clockOffset === 0) return item
+          const ti = { ...item.timeInfo }
+          // Shift server timestamps into client-local time by subtracting the offset
+          if (ti.expiresAt) {
+            ti.expiresAt = new Date(new Date(ti.expiresAt).getTime() - clockOffset).toISOString()
+          }
+          if (ti.startedAt) {
+            ti.startedAt = new Date(new Date(ti.startedAt).getTime() - clockOffset).toISOString()
+          }
+          return { ...item, timeInfo: ti }
+        })
+        setItems(adjustedItems)
         // Collect all waitlist entries from all items
         // Each item.id is a FloorPlanElement ID; waitlist entries use elementId to reference it
         const waitlistEntries: WaitlistEntry[] = data.data.items.flatMap((item: EntertainmentItem) =>
@@ -132,9 +172,23 @@ export default function EntertainmentKDSPage() {
       debouncedFetch()
     }
 
+    // Entertainment session-update: timer started/extended/stopped/warning from cron or API.
+    // The status-changed event covers availability transitions, but session-update carries
+    // timer lifecycle events (e.g. 'stopped' on expiry, 'warning' near expiry).
+    const onSessionUpdate = (data: { action?: string; tableName?: string }) => {
+      if (data.action === 'stopped') {
+        playNotificationSound()
+        toast.warning(`Timer expired: ${data.tableName || 'Entertainment item'}`)
+      } else if (data.action === 'warning') {
+        toast.info(`Timer warning: ${data.tableName || 'Entertainment item'} expiring soon`)
+      }
+      debouncedFetch()
+    }
+
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
     socket.on('entertainment:status-changed', onEntertainmentChanged)
+    socket.on('entertainment:session-update', onSessionUpdate)
     socket.on('orders:list-changed', onListChanged)
     socket.on('entertainment:waitlist-notify', onWaitlistNotify)
 
@@ -146,6 +200,7 @@ export default function EntertainmentKDSPage() {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
       socket.off('entertainment:status-changed', onEntertainmentChanged)
+      socket.off('entertainment:session-update', onSessionUpdate)
       socket.off('orders:list-changed', onListChanged)
       socket.off('entertainment:waitlist-notify', onWaitlistNotify)
       if (debouncedFetchTimer.current) clearTimeout(debouncedFetchTimer.current)
@@ -443,12 +498,13 @@ export default function EntertainmentKDSPage() {
     waitlistTotal: allWaitlist.filter(w => !w.status || w.status === 'waiting').length,
   }
 
-  if (!isReady || !locationId) {
+  // Allow access via employee auth OR KDS device token
+  if (!locationId) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-white text-center">
           <h1 className="text-2xl font-bold mb-2">Loading...</h1>
-          <p className="text-gray-400">Please log in to access the Entertainment Center</p>
+          <p className="text-gray-400">Connecting to Entertainment Center...</p>
         </div>
       </div>
     )
@@ -462,7 +518,7 @@ export default function EntertainmentKDSPage() {
           <div>
             <h1 className="text-2xl font-bold">Entertainment Center</h1>
             <p className="text-sm text-gray-400 flex items-center gap-2">
-              {employee?.location?.name} - Last updated: {lastRefresh.toLocaleTimeString()}
+              {employee?.location?.name || kdsScreenName} - Last updated: {lastRefresh.toLocaleTimeString()}
               <span
                 className={`inline-block w-2 h-2 rounded-full ${socketConnected ? 'bg-green-400' : 'bg-yellow-400'}`}
                 title={socketConnected ? 'Live updates' : 'Polling fallback'}

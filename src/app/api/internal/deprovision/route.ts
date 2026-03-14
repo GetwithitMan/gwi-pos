@@ -30,6 +30,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
   }
 
+  if (databaseName.includes('\n') || databaseName.includes('\r')) {
+    return Response.json({ error: 'Invalid database name' }, { status: 400 })
+  }
+
   // Safety: never drop the master database
   if (databaseName === 'gwi_pos' || databaseName === 'neondb') {
     return Response.json(
@@ -63,7 +67,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[Deprovision] Failed to drop database:', error)
     return Response.json(
-      { error: 'Failed to drop database', details: String(error) },
+      { error: 'Failed to drop database' },
       { status: 500 }
     )
   }

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -1179,7 +1180,7 @@ async function legacyReport(
       where: {
         locationId,
         deletedAt: null,
-        status: { in: ['completed', 'closed', 'paid'] },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
         NOT: { splitOrders: { some: {} } },
         OR: [
           { businessDayDate: { gte: startOfDay, lte: endOfDay } },

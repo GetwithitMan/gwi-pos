@@ -4,7 +4,7 @@
 > Before working in any area, scan your section. Before closing a bug, update its status here.
 > When a bug is confirmed fixed, mark it ✅ FIXED with the commit hash.
 
-*Last updated: 2026-03-11*
+*Last updated: 2026-03-12*
 
 ---
 
@@ -239,6 +239,43 @@ These will cause visible data loss or payment failure at a live venue.
 
 ---
 
+### BUG-H6 — NUC Deploy EACCES After `sudo npm run build`
+**Status:** ✅ FIXED (documented) — operational fix, not code fix
+**Feature:** NUC Deployment
+**Affected files:** NUC filesystem (`/opt/gwi-pos/app/.next/`)
+
+**What happens:** If someone runs `sudo npm run build` on a NUC, the `.next/build/` directory becomes owned by `root`. Subsequent deploys running as `smarttab` fail with EACCES.
+
+**Fix:** `chown -R smarttab:smarttab /opt/gwi-pos/app/.next/` — documented in `docs/guides/NUC-OPERATIONS.md`.
+
+**Prevention:** Never run build commands as root on a NUC. All builds must run as `smarttab`.
+
+---
+
+### BUG-H7 — CellularDevice Table Missing on Production NUCs
+**Status:** 🔴 UNRESOLVED
+**Feature:** Cellular Edge, HA
+**Affected files:** `scripts/migrations/`, `src/lib/sync/downstream-sync-worker.ts`
+
+**What happens:** Production NUCs (e.g., Fruita Grill) don't have the `CellularDevice` table. Downstream sync logs errors on every cycle. The `BridgeCheckpoint` upsert also fails with null ID errors.
+
+**Root cause:** Migrations that create these tables (from the HA/Cellular feature set) haven't been applied to existing production NUCs. The `pre-start.sh` `prisma db push` should handle this, but needs verification.
+
+**Action needed:** Verify that `prisma db push` on NUC boot creates the CellularDevice and BridgeCheckpoint tables. If not, add explicit migration scripts.
+
+---
+
+### BUG-H8 — "Employee ID is Required" for MC/Email Login Users
+**Status:** ✅ FIXED — gwi-pos `2a3408ca`
+**Feature:** Auth, Admin Operations
+**Affected files:** `src/lib/api-auth.ts`, `src/app/api/auth/venue-login/route.ts`, `src/app/(admin)/settings/hardware/terminals/page.tsx`
+
+**What happened:** Venue owners using email/password login (MC auth) only had a `pos-cloud-session` cookie. `getActorFromRequest()` only checked `pos-session` (PIN login), making cloud-session users invisible to auth. All admin operations returned 401.
+
+**Fix:** 3-layer: (1) `getActorFromRequest()` reads both cookies, (2) venue-login auto-provisions Employee records for MC owners, (3) terminal creation sends employeeId from client auth store.
+
+---
+
 ## LOW — Polish / Future
 
 ---
@@ -328,3 +365,6 @@ These were requested but are not bugs — they're missing features. Track them i
 | **Grey/invisible text across admin UI (dark mode CSS root cause)** | 2026-03-11 | `ce291b73` (root cause: removed @media prefers-color-scheme: dark), `e6942d51` (223 files text-gray-900), `0829aad6` (global CSS + inputClass) |
 | **NUC schema out-of-sync on boot ("Migration didn't properly handle")** | 2026-03-11 | `0e425f2b` (pre-start.sh runs prisma db push before service start) |
 | **Android Room migration crash (wrong schema, no auto-recovery)** | 2026-03-11 | register `6f0ba91`, PAX `cb92728` (try/catch + delete + rebuild on migration failure) |
+| **"Employee ID is required" for MC/email login users (BUG-H8)** | 2026-03-12 | `2a3408ca` (3-layer auth unification: dual cookie, auto-provision, client employeeId) |
+| **Pizza builder TS2532 blocking Vercel builds** | 2026-03-12 | `aa5a844b` (pizzaConfig! extraction in truthiness-guarded IIFE) |
+| **NUC deploy EACCES after sudo build (BUG-H6)** | 2026-03-12 | Operational fix (chown), documented in NUC-OPERATIONS.md |

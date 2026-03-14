@@ -190,6 +190,7 @@ export default function PrintersPage() {
         body: JSON.stringify({
           ...formData,
           locationId,
+          employeeId: employee?.id,
         }),
       })
 
@@ -214,6 +215,8 @@ export default function PrintersPage() {
     try {
       const res = await fetch(`/api/hardware/printers/${printer.id}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: employee?.id, locationId }),
       })
       if (res.ok) {
         fetchPrinters()
@@ -288,7 +291,7 @@ export default function PrintersPage() {
       const res = await fetch(`/api/hardware/printers/${hardwareSettingsPrinter.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ printSettings: settings }),
+        body: JSON.stringify({ printSettings: settings, employeeId: employee?.id, locationId }),
       })
 
       if (res.ok) {
@@ -307,7 +310,7 @@ export default function PrintersPage() {
       const res = await fetch(`/api/hardware/printers/${visualEditorPrinter.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ printSettings: settings }),
+        body: JSON.stringify({ printSettings: settings, employeeId: employee?.id, locationId }),
       })
 
       if (res.ok) {

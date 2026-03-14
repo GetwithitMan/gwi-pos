@@ -32,7 +32,22 @@ export default function EntertainmentLiveStatusPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setItems(data.data.items)
+        // Fix clock-skew: shift server timestamps to client-local time
+        const clockOffset = data.data.serverTime
+          ? new Date(data.data.serverTime).getTime() - Date.now()
+          : 0
+        const adjustedItems = (data.data.items as EntertainmentItem[]).map((item: EntertainmentItem) => {
+          if (!item.timeInfo || clockOffset === 0) return item
+          const ti = { ...item.timeInfo }
+          if (ti.expiresAt) {
+            ti.expiresAt = new Date(new Date(ti.expiresAt).getTime() - clockOffset).toISOString()
+          }
+          if (ti.startedAt) {
+            ti.startedAt = new Date(new Date(ti.startedAt).getTime() - clockOffset).toISOString()
+          }
+          return { ...item, timeInfo: ti }
+        })
+        setItems(adjustedItems)
       } else {
         toast.error('Failed to fetch entertainment status')
       }

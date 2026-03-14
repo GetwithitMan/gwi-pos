@@ -3,14 +3,15 @@ import { triggerImmediateDownstreamSync } from '@/lib/sync/downstream-sync-worke
 
 export async function POST(request: Request) {
   // C16: API key validation + localhost fallback for backward compatibility
-  const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
-  if (!apiKey || apiKey !== process.env.INTERNAL_API_SECRET) {
-    // Still allow localhost for backward compatibility
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
-    const isLocal = ['127.0.0.1', '::1', 'localhost'].includes(ip)
-    if (!isLocal) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  const authHeader = request.headers.get('authorization')
+  const apiKey = request.headers.get('x-api-key') || authHeader?.replace('Bearer ', '')
+  const isAuthed = !!apiKey && apiKey === process.env.INTERNAL_API_SECRET
+  // Localhost check: only trust when no x-forwarded-for header (direct local connection)
+  const forwardedFor = request.headers.get('x-forwarded-for')
+  const ip = forwardedFor?.split(',')[0]?.trim() || ''
+  const isLocal = !forwardedFor || ['127.0.0.1', '::1'].includes(ip)
+  if (!isAuthed && !isLocal) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {

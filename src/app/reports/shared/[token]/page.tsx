@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, use } from 'react'
+import { formatCurrency } from '@/lib/utils'
 
 interface SharedReportData {
   reportType: string
@@ -18,14 +19,6 @@ interface SharedReportData {
   }
   expiresAt: string
   createdAt: string
-}
-
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(amount)
 }
 
 function exportCSV(headers: string[], rows: string[][], filename: string) {

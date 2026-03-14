@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -56,7 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: { in: ['completed', 'closed', 'paid'] },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
         deletedAt: null,
         OR: [
           { businessDayDate: { gte: startOfDay, lte: endOfDay } },

@@ -431,6 +431,12 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       },
     })
 
+    // Update FloorPlanElement expiration to match (keeps dispatchEntertainmentStatusChanged in sync)
+    await db.floorPlanElement.updateMany({
+      where: { linkedMenuItemId: orderItem.menuItemId, deletedAt: null },
+      data: { sessionExpiresAt: newExpiresAt },
+    })
+
     // Recalculate percent-based discounts if price changed (extension changes subtotal)
     void (async () => {
       try {

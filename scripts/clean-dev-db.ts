@@ -38,7 +38,6 @@ async function main() {
 
   // --- Tip system ---
   console.log('  Wiping tip tables...')
-  await prisma.tipPoolEntry.deleteMany({})
   await prisma.tipPool.deleteMany({})
   await prisma.tipGroupMembership.deleteMany({})
   await prisma.tipGroupSegment.deleteMany({})
@@ -124,7 +123,6 @@ async function main() {
   // --- Scheduling ---
   console.log('  Wiping scheduling tables...')
   await prisma.scheduledShift.deleteMany({})
-  await prisma.availabilityEntry.deleteMany({})
   await prisma.schedule.deleteMany({})
 
   // --- Sessions & auth ---

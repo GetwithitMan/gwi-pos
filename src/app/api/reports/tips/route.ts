@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get business day settings from cache for proper date boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
-    const dayStartTime = locationSettings.businessDay.dayStartTime
+    const dayStartTime = locationSettings.businessDay?.dayStartTime || '04:00'
 
     // Build date filter using business day boundaries
     const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}

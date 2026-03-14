@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import { formatCurrency } from '@/lib/utils'
 
 interface HourData {
   hour: number
@@ -32,14 +33,6 @@ interface HourlyReport {
   compareDate?: string
   compareHours?: HourData[]
   summary: HourlySummary
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  }).format(value)
 }
 
 function exportHourlyCSV(report: HourlyReport) {

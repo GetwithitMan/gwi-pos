@@ -292,8 +292,13 @@ export const POST = withVenue(async function POST(
         throw new Error('ORDER_ALREADY_SETTLED')
       }
 
-      // Re-check item status inside the lock to prevent double comp/void
-      const freshItem = await tx.orderItem.findFirst({ where: { id: itemId, orderId } })
+      // Re-check item status inside the lock to prevent double comp/void.
+      // Use FOR UPDATE to serialize concurrent comp/void on the same item row.
+      const [freshItem] = await tx.$queryRawUnsafe<Array<{ id: string; status: string }>>(
+        `SELECT "id", "status" FROM "OrderItem" WHERE "id" = $1 AND "orderId" = $2 FOR UPDATE`,
+        itemId,
+        orderId,
+      )
       if (!freshItem || freshItem.status !== 'active') {
         throw new Error('ITEM_ALREADY_SETTLED')
       }
@@ -332,6 +337,10 @@ export const POST = withVenue(async function POST(
       })
 
       // 2. Create void log entry
+      // NOTE: VoidLog has no `voidAction` field to distinguish comp vs void.
+      // The action is tracked in AuditLog (item_voided/item_comped) and OrderItem.status (voided/comped),
+      // but VoidLog itself only has voidType=item|order. A Prisma migration adding `voidAction String?`
+      // to VoidLog would allow direct querying. For now, the action can be inferred from the item status.
       await tx.voidLog.create({
         data: {
           locationId: order.locationId,
@@ -340,7 +349,7 @@ export const POST = withVenue(async function POST(
           voidType: 'item',
           itemId,
           amount: itemTotal,
-          reason,
+          reason: `[${action}] ${reason}`, // Prefix reason with action for traceability until voidAction field is added
           wasMade: action === 'comp' ? true : (wasMade ?? false),
           approvedById: effectiveApprovedById,
           approvedAt: effectiveApprovedAt,
@@ -349,6 +358,19 @@ export const POST = withVenue(async function POST(
       })
 
       // 2b. W4-1: Log void/comp to AuditLog (in addition to VoidLog)
+      // Query previous comp/void audit entries for this order+item to create
+      // a linked paper trail (e.g. "item comped by A at 10:00, then voided by B at 10:05")
+      const previousAuditActions = await tx.auditLog.findMany({
+        where: {
+          entityType: 'order',
+          entityId: orderId,
+          action: { in: ['item_voided', 'item_comped'] },
+          details: { path: ['itemId'], equals: itemId },
+        },
+        select: { id: true, action: true, employeeId: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      })
+
       await tx.auditLog.create({
         data: {
           locationId: order.locationId,
@@ -365,6 +387,14 @@ export const POST = withVenue(async function POST(
             wasMade: itemWasMade,
             approvedBy: effectiveApprovedById,
             remoteApproval: !!remoteApproval,
+            relatedAuditActions: previousAuditActions.length > 0
+              ? previousAuditActions.map(a => ({
+                  auditLogId: a.id,
+                  action: a.action,
+                  employeeId: a.employeeId,
+                  at: a.createdAt.toISOString(),
+                }))
+              : undefined,
           },
         },
       })
@@ -737,7 +767,8 @@ export const POST = withVenue(async function POST(
       || (wasMade !== undefined ? wasMade : WASTE_VOID_REASONS.includes(normalizedReason))
 
     if (shouldDeductInventory) {
-      deductInventoryForVoidedItem(itemId, reason, employeeId).catch(err => {
+      const deductionType = action === 'comp' ? 'comp' as const : 'waste' as const
+      deductInventoryForVoidedItem(itemId, reason, employeeId, undefined, deductionType).catch(err => {
         console.error('Background waste inventory deduction failed:', err)
       })
     } else {

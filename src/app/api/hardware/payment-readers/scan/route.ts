@@ -83,9 +83,7 @@ async function scanUsbDevices(): Promise<UsbDevice[]> {
   } catch {
     // ioreg not available (Linux) — try lsusb
     try {
-      const { stdout } = await execAsync('lsusb -v 2>/dev/null | grep -A5 -i "ID TECH\\|IDTECH\\|PAX\\|Ingenico"', { timeout: 5000 })
-      // Basic fallback — just log, return empty for now
-      console.log('[Scan] lsusb output (Linux):', stdout.slice(0, 200))
+      await execAsync('lsusb -v 2>/dev/null | grep -A5 -i "ID TECH\\|IDTECH\\|PAX\\|Ingenico"', { timeout: 5000 })
     } catch {}
     return []
   }

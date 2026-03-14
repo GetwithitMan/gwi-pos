@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC, getTodayInTimezone, tzToUTC } from '@/lib/timezone'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET - Comprehensive payroll report for a date range
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -250,7 +251,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: {
           locationId,
           deletedAt: null,
-          status: { in: ['completed', 'paid'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
           commissionTotal: { gt: 0 },
           ...(employeeId ? { employeeId } : {}),
           OR: [
@@ -276,7 +277,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       employeePayroll[entry.employeeId].timeEntries.push({
         id: entry.id,
-        date: entry.clockIn.toISOString().split('T')[0],
+        date: timezone ? entry.clockIn.toLocaleDateString('en-CA', { timeZone: timezone }) : entry.clockIn.toISOString().split('T')[0],
         clockIn: entry.clockIn.toISOString(),
         clockOut: entry.clockOut?.toISOString() || null,
         regularHours,
@@ -291,7 +292,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       employeePayroll[shift.employeeId].shifts.push({
         id: shift.id,
-        date: shift.startedAt.toISOString().split('T')[0],
+        date: timezone ? shift.startedAt.toLocaleDateString('en-CA', { timeZone: timezone }) : shift.startedAt.toISOString().split('T')[0],
         hours: 0, // Calculated from time entries
         tips: 0, // Now sourced from ledger below
         commission: 0, // Calculated separately from orders

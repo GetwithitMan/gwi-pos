@@ -1,3 +1,18 @@
+/**
+ * Legacy Inventory Route — MenuItem.currentStock
+ *
+ * DUAL INVENTORY SYSTEM:
+ * 1. Legacy system (this file): Operates on MenuItem.currentStock / MenuItem.trackInventory.
+ *    Used by the admin UI for simple per-item stock counts (e.g., "5 burgers left").
+ *    Transactions stored in InventoryTransaction (keyed by menuItemId).
+ *
+ * 2. COGS system (src/lib/inventory/order-deduction.ts): Operates on InventoryItem.currentStock.
+ *    Used by the order deduction pipeline for ingredient-level stock tracking tied to recipes.
+ *    Transactions stored in InventoryItemTransaction (keyed by inventoryItemId).
+ *
+ * These two systems are independent. Changes here do NOT affect InventoryItem stock and vice versa.
+ * The COGS system is the authoritative source for ingredient-level inventory and cost tracking.
+ */
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -125,32 +140,36 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const quantityBefore = item.currentStock ?? 0
     const quantityAfter = quantityBefore + quantityChange
 
-    // Create transaction
-    const transaction = await prisma.inventoryTransaction.create({
-      data: {
-        locationId,
-        menuItemId,
-        type,
-        quantityBefore,
-        quantityChange,
-        quantityAfter,
-        reason,
-        vendorName,
-        invoiceNumber,
-        unitCost,
-        totalCost: unitCost ? unitCost * Math.abs(quantityChange) : null,
-        employeeId,
-      },
-    })
+    // Wrap transaction record + stock update in an atomic transaction
+    // to prevent TOCTOU race between read and write.
+    const { transaction } = await prisma.$transaction(async (tx) => {
+      const txRecord = await tx.inventoryTransaction.create({
+        data: {
+          locationId,
+          menuItemId,
+          type,
+          quantityBefore,
+          quantityChange,
+          quantityAfter,
+          reason,
+          vendorName,
+          invoiceNumber,
+          unitCost,
+          totalCost: unitCost ? unitCost * Math.abs(quantityChange) : null,
+          employeeId,
+        },
+      })
 
-    // Update item stock
-    const isAvailable = quantityAfter > 0
-    await prisma.menuItem.update({
-      where: { id: menuItemId },
-      data: {
-        currentStock: quantityAfter,
-        isAvailable,
-      },
+      const isAvailable = quantityAfter > 0
+      await tx.menuItem.update({
+        where: { id: menuItemId },
+        data: {
+          currentStock: quantityAfter,
+          isAvailable,
+        },
+      })
+
+      return { transaction: txRecord }
     })
 
     // Check for low stock alert
@@ -185,7 +204,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         quantityAfter,
       },
       newStock: quantityAfter,
-      isAvailable,
+      isAvailable: quantityAfter > 0,
     } })
   } catch (error) {
     console.error('Inventory transaction error:', error)

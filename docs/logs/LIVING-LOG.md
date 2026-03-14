@@ -5,6 +5,45 @@
 
 ---
 
+## 2026-03-12 — Auth Unification, Pizza Builder TS Fix, Fruita Grill NUC Deploy, Register APK Install
+
+### Auth Unification — "Employee ID is Required" Permanent Fix
+- **Problem:** `getActorFromRequest()` in `src/lib/api-auth.ts` only read the `pos-session` cookie (PIN-based employee login). Venue owners who log in via email/password (MC auth) only have a `pos-cloud-session` cookie — invisible to the auth layer — causing 401 "Employee ID is required" on all admin actions (terminal creation, settings changes, etc.).
+- **3-layer fix:**
+  - Layer 1: `getActorFromRequest()` now reads both `pos-session` AND `pos-cloud-session`. New helpers `getCloudSessionEmployee()` and `resolveOrProvisionEmployee()` auto-provision real Employee records for cloud/MC owners.
+  - Layer 2: `src/app/api/auth/venue-login/route.ts` — MC owners without local Employee records are auto-provisioned on login (no more synthetic `mc-owner-{email}` IDs).
+  - Layer 3: `src/app/(admin)/settings/hardware/terminals/page.tsx` — Terminal creation form sends `employeeId` from Zustand auth store as belt-and-suspenders.
+- **Permanent rule:** Every admin operation must have a server-resolved employeeId regardless of login method.
+- **Commit:** gwi-pos `2a3408ca`
+
+### Pizza Builder TS Build Error Fix
+- **Problem:** Pre-existing `item.pizzaConfig` possibly undefined (TS2532) error was blocking Vercel production builds.
+- **Fix:** Extracted to local `const pc = item.pizzaConfig!` inside the truthiness-guarded IIFE — TypeScript can't narrow across closures.
+- **Commit:** gwi-pos `aa5a844b`
+
+### Fruita Grill NUC Deploy Fix (v1.0.54)
+- **Problem:** Deploy failed with EACCES — `.next/build/` directory owned by `root` because someone previously ran `sudo npm run build`.
+- **Fix:** `chown -R smarttab:smarttab /opt/gwi-pos/app/.next/` then rebuild + restart.
+- **Remaining issues found:** `CellularDevice` table doesn't exist on this NUC (migration not yet applied), `BridgeCheckpoint` null ID upsert error (non-blocking).
+
+### Android Register APK Install
+- Built register debug APK locally from latest `main` branch.
+- Installed on 3 PAX L1400 stations via ADB WiFi + Samsung SM-A176U1 via USB.
+- v1.3.1 release APK crashed on L1400 due to Sentry auto-init (no Google Play Services on PAX) — resolved by using latest `main` which has the Sentry background init fix.
+- Triggered v1.4.0 release build on GitHub Actions (completed successfully).
+
+### Enterprise Catalog Sync Fixes (MC)
+- Multiple 500 errors on venue catalog import fixed in Mission Control.
+- MC commits: `387d7be` → `21e07c5` → `50394dc` → `d54e9ed` → `ecc5bc8`
+
+### Files Changed
+- `src/lib/api-auth.ts` — dual cookie reading, cloud session resolution, auto-provisioning
+- `src/app/api/auth/venue-login/route.ts` — MC owner Employee auto-provisioning on login
+- `src/app/(admin)/settings/hardware/terminals/page.tsx` — employeeId from auth store
+- Pizza builder IIFE fix (TS2532)
+
+---
+
 ## 2026-03-11 — Downstream Sync HWM Gap Fix, ModifierGroup/Modifier Dedup, CellularDevice Log Fix
 
 ### Downstream Sync HWM (High-Water Mark) Gap Bug — Fixed

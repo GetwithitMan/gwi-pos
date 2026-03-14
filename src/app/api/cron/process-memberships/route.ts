@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       const billing = await processMembershipBilling(loc.id, db)
       const dunning = await processDunning(loc.id, db, mbrSettings.gracePeriodDays)
       results.push({ locationId: loc.id, billing, dunning })
-      console.log(`[cron/process-memberships] ${loc.id}:`, { billing, dunning })
+      // Results returned in response body
     }
 
     return NextResponse.json({ ok: true, results })

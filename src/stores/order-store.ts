@@ -325,6 +325,13 @@ function clearPendingItems(orderId: string | undefined): void {
   try { localStorage.removeItem(PENDING_ITEMS_PREFIX + orderId) } catch { /* noop */ }
 }
 
+// Debounced persistence — avoids thrashing localStorage on rapid item additions
+let persistTimer: ReturnType<typeof setTimeout> | undefined
+function debouncedPersist(orderId: string | undefined, items: OrderItem[]): void {
+  clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => persistPendingItems(orderId, items), 200)
+}
+
 // Pure function to compute totals from an order — used by mutations to batch into a single set()
 function computeTotals(order: Order, taxRate: number): { subtotal: number; taxTotal: number; total: number; commissionTotal: number } {
   let subtotal = 0
@@ -533,7 +540,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const updatedOrder = { ...currentOrder, items: [...currentOrder.items, newItem] }
     const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
-    persistPendingItems(updatedOrder.id, updatedOrder.items)
+    debouncedPersist(updatedOrder.id, updatedOrder.items)
     return newItem.id
   },
 
@@ -549,7 +556,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
     const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
-    persistPendingItems(updatedOrder.id, updatedOrder.items)
+    debouncedPersist(updatedOrder.id, updatedOrder.items)
   },
 
   removeItem: (itemId) => {
@@ -562,7 +569,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
     const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
-    persistPendingItems(updatedOrder.id, updatedOrder.items)
+    debouncedPersist(updatedOrder.id, updatedOrder.items)
   },
 
   updateQuantity: (itemId, quantity) => {
@@ -577,7 +584,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       }
       const totals = computeTotals(updatedOrder, estimatedTaxRate)
       set({ currentOrder: { ...updatedOrder, ...totals } })
-      persistPendingItems(updatedOrder.id, updatedOrder.items)
+      debouncedPersist(updatedOrder.id, updatedOrder.items)
       return
     }
 
@@ -590,7 +597,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
     const totals = computeTotals(updatedOrder, estimatedTaxRate)
     set({ currentOrder: { ...updatedOrder, ...totals } })
-    persistPendingItems(updatedOrder.id, updatedOrder.items)
+    debouncedPersist(updatedOrder.id, updatedOrder.items)
   },
 
   setGuestCount: (count) => {

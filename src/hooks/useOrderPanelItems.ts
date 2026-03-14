@@ -11,11 +11,17 @@ import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 export function useOrderPanelItems(menuItems?: { id: string; itemType?: string; allergens?: string[] }[]): OrderPanelItemData[] {
   const items = useOrderStore(state => state.currentOrder?.items)
 
+  // Build Map for O(1) lookups instead of O(n) .find() per item
+  const menuItemMap = useMemo(() => {
+    if (!menuItems) return new Map<string, { id: string; itemType?: string; allergens?: string[] }>()
+    return new Map(menuItems.map(m => [m.id, m]))
+  }, [menuItems])
+
   return useMemo(() => {
     if (!items) return []
 
     return items.map(item => {
-      const menuItemInfo = menuItems?.find(m => m.id === item.menuItemId)
+      const menuItemInfo = menuItemMap.get(item.menuItemId)
       const isTimedRental = menuItemInfo?.itemType === 'timed_rental'
 
       const kitchenStatus: OrderPanelItemData['kitchenStatus'] = item.isCompleted
@@ -76,5 +82,5 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string; 
         allergens: menuItemInfo && 'allergens' in menuItemInfo ? (menuItemInfo as { allergens?: string[] }).allergens : undefined,
       }
     })
-  }, [items, menuItems])
+  }, [items, menuItemMap])
 }

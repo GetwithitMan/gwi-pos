@@ -242,6 +242,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const response = NextResponse.json({ data: {
       items,
+      serverTime: new Date().toISOString(),
       summary: {
         total: items.length,
         available: items.filter(i => i.status === 'available').length,

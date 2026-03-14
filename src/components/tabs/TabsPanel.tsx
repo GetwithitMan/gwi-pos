@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
@@ -85,16 +85,20 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
   }, [refreshTrigger, loadTabs])
 
   const { socket, isConnected } = useSocket()
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     if (!socket || !isConnected) return
-    const onTabUpdated = () => loadTabs()
-    const onOrdersChanged = () => loadTabs()
-    socket.on('tab:updated', onTabUpdated)
-    socket.on('orders:list-changed', onOrdersChanged)
+    const debouncedRefresh = () => {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(loadTabs, 300)
+    }
+    socket.on('tab:updated', debouncedRefresh)
+    socket.on('orders:list-changed', debouncedRefresh)
     return () => {
-      socket.off('tab:updated', onTabUpdated)
-      socket.off('orders:list-changed', onOrdersChanged)
+      socket.off('tab:updated', debouncedRefresh)
+      socket.off('orders:list-changed', debouncedRefresh)
+      clearTimeout(debounceRef.current)
     }
   }, [socket, isConnected, loadTabs])
 

@@ -177,6 +177,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  console.log(`[cron/berg-reprocess] Processed ${events.length} events: ${succeeded} succeeded, ${failed} failed`)
   return NextResponse.json({ ok: true, processed: events.length, succeeded, failed })
 }

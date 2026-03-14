@@ -1,4 +1,4 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  load multiple .env files with { path: ['.env.local', '.env'] }
+[dotenv@17.2.3] injecting env (16) from .env.local -- tip: ⚙️  write to custom object with { processEnv: myObject }
 [dotenv@17.2.3] injecting env (0) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
@@ -73,7 +73,7 @@ CREATE TYPE "PrintRuleLevel" AS ENUM ('category', 'item', 'modifier');
 CREATE TYPE "GiftCardStatus" AS ENUM ('active', 'depleted', 'expired', 'frozen');
 
 -- CreateEnum
-CREATE TYPE "HouseAccountStatus" AS ENUM ('active', 'suspended', 'closed');
+CREATE TYPE "HouseAccountStatus" AS ENUM ('pending', 'active', 'suspended', 'closed');
 
 -- CreateEnum
 CREATE TYPE "ReservationStatus" AS ENUM ('confirmed', 'seated', 'completed', 'cancelled', 'no_show');
@@ -284,6 +284,9 @@ CREATE TABLE "Customer" (
     "email" TEXT,
     "phone" TEXT,
     "notes" TEXT,
+    "allergies" TEXT,
+    "favoriteDrink" TEXT,
+    "favoriteFood" TEXT,
     "tags" JSONB,
     "loyaltyPoints" INTEGER NOT NULL DEFAULT 0,
     "totalSpent" DECIMAL(65,30) NOT NULL DEFAULT 0,
@@ -1766,7 +1769,7 @@ CREATE TABLE "HouseAccount" (
     "creditLimit" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "currentBalance" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "paymentTerms" INTEGER NOT NULL DEFAULT 30,
-    "status" "HouseAccountStatus" NOT NULL DEFAULT 'active',
+    "status" "HouseAccountStatus" NOT NULL DEFAULT 'pending',
     "suspendedAt" TIMESTAMP(3),
     "suspendedReason" TEXT,
     "billingCycle" TEXT NOT NULL DEFAULT 'monthly',

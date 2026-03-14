@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
 
@@ -74,7 +75,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Fetch orders with timing data
     const orderWhere: Record<string, unknown> = {
       locationId,
-      status: { in: ['completed', 'closed', 'paid'] },
+      status: { in: [...REVENUE_ORDER_STATUSES] },
       createdAt: { gte: start, lte: end },
     }
     if (filterEmployeeId && filterEmployeeId !== requestingEmployeeId) {
@@ -147,7 +148,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const created = order.createdAt.getTime()
       const sent = order.sentAt?.getTime()
       const paid = order.paidAt?.getTime()
-      const dayKey = order.createdAt.toISOString().split('T')[0]
+      const tzSos = process.env.TIMEZONE || process.env.TZ
+      const dayKey = tzSos ? order.createdAt.toLocaleDateString('en-CA', { timeZone: tzSos }) : order.createdAt.toISOString().split('T')[0]
       const orderType = order.orderType || 'Unknown'
       const empId = order.employeeId || 'unknown'
       const empName = order.employee
@@ -214,7 +216,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             bumpByHourMap.get(hour)!.push(seconds)
 
             // Group by day
-            const itemDayKey = item.kitchenSentAt.toISOString().split('T')[0]
+            const itemDayKey = tzSos ? item.kitchenSentAt.toLocaleDateString('en-CA', { timeZone: tzSos }) : item.kitchenSentAt.toISOString().split('T')[0]
             if (!bumpByDayMap.has(itemDayKey)) bumpByDayMap.set(itemDayKey, [])
             bumpByDayMap.get(itemDayKey)!.push(seconds)
           }

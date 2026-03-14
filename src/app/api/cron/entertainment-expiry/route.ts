@@ -391,10 +391,6 @@ export async function GET(request: NextRequest) {
     staleNotifiedCount = staleNotified.length
 
     // ── Step 4: Log and return summary ───────────────────────────
-    console.log(
-      `[entertainment-expiry] Processed ${expiredSessionCount} sessions, ${expiredWaitlistCount} waitlist entries, ${staleNotifiedCount} stale notified`
-    )
-
     return NextResponse.json({
       ok: true,
       processed: {

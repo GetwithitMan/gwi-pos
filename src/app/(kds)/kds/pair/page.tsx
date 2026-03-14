@@ -96,15 +96,18 @@ function PairContent() {
         throw new Error(data.error || 'Pairing failed')
       }
 
+      // Unwrap { data: { ... } } envelope from API response
+      const result = data.data || data
+
       // Store device token and screen config in localStorage
-      localStorage.setItem(DEVICE_TOKEN_KEY, data.deviceToken)
-      localStorage.setItem(SCREEN_CONFIG_KEY, JSON.stringify(data.screen))
+      localStorage.setItem(DEVICE_TOKEN_KEY, result.deviceToken)
+      localStorage.setItem(SCREEN_CONFIG_KEY, JSON.stringify(result.screen))
 
       setSuccess(true)
 
       // Redirect to KDS — always include screen slug from API response
       setTimeout(() => {
-        const slug = data.screen.slug || screenSlug
+        const slug = result.screen?.slug || screenSlug
         const targetUrl = slug ? `/kds?screen=${slug}` : returnTo
         router.push(targetUrl)
       }, 1500)

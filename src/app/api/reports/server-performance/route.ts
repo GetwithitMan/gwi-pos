@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET /api/reports/server-performance
 // Query params: startDate, endDate, locationId, requestingEmployeeId
@@ -44,14 +45,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: 'paid',
+        status: { in: [...REVENUE_ORDER_STATUSES] },
         deletedAt: null,
+        parentOrderId: null,
         ...(Object.keys(paidAtFilter).length > 0 && { paidAt: paidAtFilter }),
       },
       select: {
         id: true,
         employeeId: true,
         tableId: true,
+        subtotal: true,
         total: true,
         tipTotal: true,
         employee: {
@@ -97,7 +100,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       }
 
-      serverMap[empId].totalSales += Number(order.total) || 0
+      serverMap[empId].totalSales += Number(order.subtotal) || 0
       serverMap[empId].totalTips += Number(order.tipTotal) || 0
       serverMap[empId].orderCount += 1
 

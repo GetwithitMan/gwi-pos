@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
+import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // GET - Product mix report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -57,7 +58,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         order: {
           locationId,
-          status: { in: ['paid', 'closed'] },
+          status: { in: [...REVENUE_ORDER_STATUSES] },
+          parentOrderId: null,
           paidAt: dateFilter,
         },
         status: 'active',
