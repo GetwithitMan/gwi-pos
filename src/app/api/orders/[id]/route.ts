@@ -11,6 +11,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { validateTransition, isModifiable } from '@/lib/domain/order-status'
 
 // GET - Get order details
 export const GET = withVenue(async function GET(
@@ -427,7 +428,7 @@ export const PUT = withVenue(async function PUT(
       }, { status: 409 })
     }
 
-    if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existingOrder.status)) {
+    if (!isModifiable(existingOrder.status)) {
       return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
     }
 
@@ -474,33 +475,10 @@ export const PUT = withVenue(async function PUT(
     if (customerId !== undefined) updateData.customerId = customerId
     if (employeeId !== undefined) updateData.employeeId = employeeId
     if (status !== undefined) {
-      // Status transition validation — prevent invalid state changes
-      const VALID_TRANSITIONS: Record<string, string[]> = {
-        open: ['closed', 'void', 'cancelled'],
-        draft: ['open', 'closed', 'void', 'cancelled'],
-        sent: ['open', 'closed', 'void', 'cancelled'],
-        in_progress: ['open', 'closed', 'void', 'cancelled'],
-        split: ['open', 'closed', 'void', 'cancelled'],
-        closed: ['void'],  // needs manager auth (checked above)
-        void: [],           // terminal state
-        paid: [],           // terminal state — only via payment flow
-        cancelled: [],      // terminal state
-      }
-
-      // Never allow direct transition to 'paid' via PUT
-      if (status === 'paid') {
-        return apiError.badRequest(
-          'Cannot set status to "paid" directly. Use the payment flow (/api/orders/[id]/pay).',
-          ERROR_CODES.INVALID_ORDER_STATUS
-        )
-      }
-
-      const allowedNext = VALID_TRANSITIONS[existingOrder.status] ?? []
-      if (!allowedNext.includes(status)) {
-        return apiError.badRequest(
-          `Invalid status transition: "${existingOrder.status}" → "${status}". Allowed: ${allowedNext.length ? allowedNext.join(', ') : 'none (terminal state)'}`,
-          ERROR_CODES.INVALID_ORDER_STATUS
-        )
+      // Status transition validation — single source of truth in domain module
+      const transition = validateTransition(existingOrder.status, status)
+      if (!transition.valid) {
+        return apiError.badRequest(transition.error!, ERROR_CODES.INVALID_ORDER_STATUS)
       }
 
       updateData.status = status
@@ -693,7 +671,7 @@ export const PATCH = withVenue(async function PATCH(
       }
     }
 
-    if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existing.status)) {
+    if (!isModifiable(existing.status)) {
       return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
     }
 
@@ -742,32 +720,10 @@ export const PATCH = withVenue(async function PATCH(
       }
     }
     if (status !== undefined) {
-      // Status transition validation — same rules as PUT
-      const VALID_TRANSITIONS: Record<string, string[]> = {
-        open: ['closed', 'void', 'cancelled'],
-        draft: ['open', 'closed', 'void', 'cancelled'],
-        sent: ['open', 'closed', 'void', 'cancelled'],
-        in_progress: ['open', 'closed', 'void', 'cancelled'],
-        split: ['open', 'closed', 'void', 'cancelled'],
-        closed: ['void'],
-        void: [],
-        paid: [],
-        cancelled: [],
-      }
-
-      if (status === 'paid') {
-        return apiError.badRequest(
-          'Cannot set status to "paid" directly. Use the payment flow (/api/orders/[id]/pay).',
-          ERROR_CODES.INVALID_ORDER_STATUS
-        )
-      }
-
-      const allowedNext = VALID_TRANSITIONS[existing.status] ?? []
-      if (!allowedNext.includes(status)) {
-        return apiError.badRequest(
-          `Invalid status transition: "${existing.status}" → "${status}". Allowed: ${allowedNext.length ? allowedNext.join(', ') : 'none (terminal state)'}`,
-          ERROR_CODES.INVALID_ORDER_STATUS
-        )
+      // Status transition validation — single source of truth in domain module
+      const transition = validateTransition(existing.status, status)
+      if (!transition.valid) {
+        return apiError.badRequest(transition.error!, ERROR_CODES.INVALID_ORDER_STATUS)
       }
 
       updateData.status = status

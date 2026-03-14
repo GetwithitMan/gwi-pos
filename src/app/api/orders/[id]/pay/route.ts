@@ -36,6 +36,7 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { PAYABLE_STATUSES } from '@/lib/domain/order-status'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -486,7 +487,6 @@ export const POST = withVenue(withTiming(async function POST(
 
     // C11: Source-state validation — only allow payment on known payable statuses.
     // This prevents silent transitions from unexpected states (e.g., 'error', future states).
-    const PAYABLE_STATUSES = ['open', 'sent', 'in_progress', 'draft', 'split']
     if (!PAYABLE_STATUSES.includes(order.status) && !['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
       return { earlyReturn: NextResponse.json(
         { error: `Cannot pay order in '${order.status}' status` },

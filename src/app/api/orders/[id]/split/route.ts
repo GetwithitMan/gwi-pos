@@ -8,6 +8,7 @@ import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { checkOrderClaim } from '@/lib/order-claim'
+import { SPLITTABLE_STATUSES } from '@/lib/domain/order-status'
 import { roundToCents } from '@/lib/pricing'
 
 interface SplitRequest {
@@ -95,8 +96,7 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Status guard: only splittable statuses allowed
-    const SPLITTABLE_STATUSES = ['open', 'in_progress', 'sent'];
+    // Status guard: only splittable statuses allowed (from domain module)
     if (!SPLITTABLE_STATUSES.includes(order.status)) {
       return NextResponse.json(
         { error: `Cannot split order in '${order.status}' status` },
