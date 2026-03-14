@@ -1,81 +1,69 @@
 /**
  * Compile server.ts → server.js for production.
  *
- * In development we use `tsx server.ts` directly, but in production
- * tsx's CJS loader conflicts with Next.js's AsyncLocalStorage setup.
- * esbuild bundles server.ts + its local imports into a single CJS file
- * that runs with plain `node server.js`.
+ * Outputs CJS (required because Next.js 16 does not have proper ESM
+ * exports maps — e.g., `next/headers` fails in strict ESM resolution).
  *
- * CRITICAL: Next.js 16 checks globalThis.AsyncLocalStorage before its own
- * bootstrap sets it up. On Node < 22, AsyncLocalStorage is only available via
- * async_hooks, not on globalThis. NUC servers run Node 20 where this is needed.
- * The banner injects the polyfill BEFORE any require('next') calls that esbuild
- * hoists to the top of the file.
+ * preload.js (loaded via `node -r ./preload.js server.js`) handles:
+ *   1. AsyncLocalStorage polyfill (Node < 22)
+ *   2. .env loading (production NUCs)
  *
- * PRISMA 7: The generated client is TypeScript-only (no .js files). We must
- * resolve @prisma/client imports at BUILD time, not runtime. The plugin below
- * redirects @prisma/client to the generated .ts source, and @prisma/client/*
- * subpaths to the @prisma/client npm package (which has compiled JS runtime).
+ * Prisma 7 compatibility:
+ *   The generated client uses `import.meta.url` for __dirname detection.
+ *   In CJS, import.meta is empty → crash. We use esbuild `define` to
+ *   replace it with a `file://` URL derived from __filename (which CJS
+ *   provides natively). This is safe because:
+ *   - __filename is accurate in CJS (points to the bundled server.js)
+ *   - Only Prisma's generated client reads import.meta.url
+ *   - The define is applied at BUILD time, not globally at runtime
  */
 import { build } from 'esbuild'
+import { existsSync } from 'fs'
 import path from 'path'
+import { pathToFileURL } from 'url'
 
-const asyncLocalStorageBanner = `
-// Polyfill: Next.js 16 expects globalThis.AsyncLocalStorage but Node < 22
-// only exposes it via require('async_hooks'). NUC servers run Node 20.
+// Verify generated Prisma client exists before building
+const prismaClientPath = path.resolve('src/generated/prisma/client.ts')
+if (!existsSync(prismaClientPath)) {
+  console.error('✘ Prisma client not found at', prismaClientPath)
+  console.error('  Run "npx prisma generate" first.')
+  process.exit(1)
+}
+
+try {
+  await build({
+    entryPoints: ['server.ts'],
+    outfile: 'server.js',
+    bundle: true,
+    platform: 'node',
+    target: 'node20',
+    format: 'cjs',
+    // Don't bundle node_modules — they're installed on disk.
+    // Local source (including src/generated/prisma/) IS bundled.
+    packages: 'external',
+    // Prisma 7: replace import.meta.url with a file:// URL pointing to
+    // server.js. In CJS, __filename exists natively but import.meta is
+    // empty. Prisma only uses import.meta.url for path.dirname() to find
+    // sibling files — pointing to server.js is correct since the generated
+    // client is bundled into it.
+    define: {
+      'import.meta.url': JSON.stringify(pathToFileURL(path.resolve('server.js')).href),
+    },
+    sourcemap: false,
+    logLevel: 'warning',
+    banner: {
+      js: `
+// Node < 22: AsyncLocalStorage is not on globalThis.
+// Next.js 16 checks for it during module evaluation.
 if (!globalThis.AsyncLocalStorage) {
   globalThis.AsyncLocalStorage = require('node:async_hooks').AsyncLocalStorage;
 }
-// Prisma 7 generated client uses import.meta.url for __dirname in ESM.
-// In CJS mode, import.meta is empty, so we polyfill it to prevent crash.
-if (typeof globalThis.__dirname === 'undefined') {
-  globalThis.__dirname = __dirname;
+`,
+    },
+  })
+
+  console.log('✓ server.js compiled for production')
+} catch (err) {
+  console.error('✘ Build failed:', err.message)
+  process.exit(1)
 }
-`
-
-// Plugin: Redirect bare @prisma/client to generated TS source,
-// but keep @prisma/client/* subpaths (runtime, adapter) as external.
-const prismaResolverPlugin = {
-  name: 'prisma-client-resolver',
-  setup(build) {
-    // Bare @prisma/client → generated TypeScript client (bundled)
-    build.onResolve({ filter: /^@prisma\/client$/ }, () => ({
-      path: path.resolve('src/generated/prisma/client.ts'),
-    }))
-    // @prisma/client/* subpaths → keep external (runtime JS exists in node_modules)
-    build.onResolve({ filter: /^@prisma\/client\// }, (args) => ({
-      path: args.path,
-      external: true,
-    }))
-    // @prisma/adapter-pg → keep external
-    build.onResolve({ filter: /^@prisma\/adapter-pg/ }, (args) => ({
-      path: args.path,
-      external: true,
-    }))
-  },
-}
-
-await build({
-  entryPoints: ['server.ts'],
-  outfile: 'server.js',
-  bundle: true,
-  platform: 'node',
-  target: 'node20',
-  format: 'cjs',
-  // Don't bundle node_modules — they're installed on disk
-  packages: 'external',
-  plugins: [prismaResolverPlugin],
-  // Prisma 7 generated client uses import.meta.url for __dirname detection.
-  // In CJS format import.meta is empty, causing fileURLToPath(undefined) crash.
-  // Replace with a file:// URL pointing to server.js itself.
-  define: {
-    'import.meta.url': JSON.stringify('file://' + path.resolve('server.js')),
-  },
-  sourcemap: false,
-  logLevel: 'warning',
-  banner: {
-    js: asyncLocalStorageBanner,
-  },
-})
-
-console.log('✓ server.js compiled for production')

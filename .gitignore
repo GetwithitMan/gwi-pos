@@ -3,6 +3,7 @@
 /out/
 /build
 /server.js
+/server.mjs
 /ws-server.js
 /src/generated/prisma
 
