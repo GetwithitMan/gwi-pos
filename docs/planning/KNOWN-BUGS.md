@@ -4,7 +4,7 @@
 > Before working in any area, scan your section. Before closing a bug, update its status here.
 > When a bug is confirmed fixed, mark it ✅ FIXED with the commit hash.
 
-*Last updated: 2026-03-12*
+*Last updated: 2026-03-14*
 
 ---
 
@@ -23,7 +23,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-C1 — Card Decline + Cancel Destroys Entire Tab
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Tabs, Payments
 **Source:** "Broken things need fixin.rtf" + Front-End Audit Report (BUG-1)
 **Affected files:** `PaymentModal.tsx`, `DatacapPaymentProcessor.tsx`, `OrderPanelActions.tsx`
@@ -39,7 +39,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-C2 — Extra Seats Disappear on Page Refresh
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Floor Plan, Orders
 **Source:** "Broken things need fixin.rtf" + Front-End Audit Report (BUG-2)
 **Affected files:** `src/domains/floor-plan/seats/`, Zustand floor plan store hydration
@@ -104,7 +104,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-H3 — Auto-Increment Auth Fails Silently on Tab
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Tabs, Payments
 **Source:** Front-End Audit Report (BUG-7)
 **Affected files:** `src/app/api/datacap/increment/`, `BottleServiceBanner.tsx`
@@ -147,7 +147,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-M1 — Discounts Keyboard Missing
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ ALREADY IMPLEMENTED (verified 2026-03-14 — numeric keypad exists in DiscountModal.tsx)
 **Feature:** Discounts
 **Source:** "Broken things need fixin.rtf"
 **Affected files:** `DiscountModal.tsx` or equivalent
@@ -159,7 +159,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-M2 — Bar Tabs: Items Slow/Not Sticking When Adding Quickly
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Tabs, Orders
 **Source:** "Broken things need fixin.rtf"
 
@@ -172,7 +172,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-M3 — Duplicate Adds on Tabs
-**Status:** ⚠️ NEEDS VERIFICATION (may be fixed by debounce)
+**Status:** ✅ FIXED — `a44948d1` (same-item dedup in order store)
 **Feature:** Tabs, Orders
 **Source:** "Broken things need fixin.rtf"
 
@@ -181,7 +181,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-M4 — Tab Name Bypass Setting Not Working
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Tabs, Settings
 **Source:** "Broken things need fixin.rtf" + Front-End Audit Report (BUG-6)
 **Affected files:** `NewTabModal.tsx`, `CardFirstTabFlow.tsx`, `src/app/(admin)/settings/tabs/`
@@ -253,7 +253,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-H7 — CellularDevice Table Missing on Production NUCs
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Cellular Edge, HA
 **Affected files:** `scripts/migrations/`, `src/lib/sync/downstream-sync-worker.ts`
 
@@ -281,7 +281,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-L1 — Timing Tax Calculation When Timer Off
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Entertainment, Tax
 **Source:** "Broken things need fixin.rtf"
 
@@ -308,7 +308,7 @@ These will cause visible data loss or payment failure at a live venue.
 ---
 
 ### BUG-L4 — Fire-and-Forget Missing .catch() on Floor Plan Save
-**Status:** 🔴 UNRESOLVED
+**Status:** ✅ FIXED — `a44948d1`
 **Feature:** Floor Plan
 **Source:** Forensic Bug Log 2026-02-23 (BUG-1)
 **Affected files:** `src/app/api/tables/save-default-layout/route.ts` line 71
