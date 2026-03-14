@@ -93,6 +93,38 @@ function cleanupRateLimits(): void {
   }
 }
 
+// ── Socket Metrics (Phase 6: Observability) ─────────────────────────────────
+interface SocketMetrics {
+  eventsEmitted60s: number[]  // Ring buffer of timestamps (last 60s)
+  reconnections60s: number[]  // Ring buffer of reconnection timestamps
+}
+
+const socketMetrics: SocketMetrics = {
+  eventsEmitted60s: [],
+  reconnections60s: [],
+}
+
+/** Record an event emission for throughput tracking */
+function recordMetricEvent(): void {
+  const now = Date.now()
+  socketMetrics.eventsEmitted60s.push(now)
+  // Prune entries older than 60s
+  const cutoff = now - 60_000
+  while (socketMetrics.eventsEmitted60s.length > 0 && socketMetrics.eventsEmitted60s[0] < cutoff) {
+    socketMetrics.eventsEmitted60s.shift()
+  }
+}
+
+/** Record a reconnection */
+function recordReconnection(): void {
+  const now = Date.now()
+  socketMetrics.reconnections60s.push(now)
+  const cutoff = now - 60_000
+  while (socketMetrics.reconnections60s.length > 0 && socketMetrics.reconnections60s[0] < cutoff) {
+    socketMetrics.reconnections60s.shift()
+  }
+}
+
 // Reverse mapping: cfdTerminalId → registerTerminalId (cached from auth middleware)
 // Used by CFD-to-register relay to avoid DB lookups during payment flow
 const cfdToRegisterMap = new Map<string, string>()
@@ -109,6 +141,11 @@ function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void 
     const oldestKey = cfdToRegisterMap.keys().next().value
     if (oldestKey) cfdToRegisterMap.delete(oldestKey)
   }
+  // Persist CFD pairing to Terminal.metadata for restart recovery
+  void db.$executeRawUnsafe(
+    `UPDATE "Terminal" SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{cfdTerminalId}', $1::jsonb) WHERE id = $2`,
+    JSON.stringify(cfdTerminalId), registerTerminalId
+  ).catch(err => console.warn('[Socket] CFD pairing persist failed:', err instanceof Error ? err.message : err))
 }
 
 async function markTerminalOffline(terminalId: string, locationId: string, reason: string, socketId: string): Promise<void> {
@@ -200,6 +237,25 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     pingInterval: 25000,
     transports: ['websocket', 'polling'],
   })
+
+  // Rehydrate CFD-to-register map from Terminal.metadata (survives restarts)
+  void (async () => {
+    try {
+      const pairings = await db.$queryRawUnsafe<Array<{ id: string; metadata: { cfdTerminalId?: string } }>>(
+        `SELECT id, metadata FROM "Terminal" WHERE metadata->>'cfdTerminalId' IS NOT NULL`
+      )
+      for (const t of pairings) {
+        if (t.metadata?.cfdTerminalId) {
+          cfdToRegisterMap.set(t.metadata.cfdTerminalId, t.id)
+        }
+      }
+      if (pairings.length > 0) {
+        console.log(`[Socket] Rehydrated ${pairings.length} CFD-to-register pairings from Terminal.metadata`)
+      }
+    } catch (err) {
+      console.warn('[Socket] CFD pairing rehydration failed:', err instanceof Error ? err.message : err)
+    }
+  })().catch(console.error)
 
   // ==================== Authentication Middleware ====================
   // Validate session cookie or deviceToken before allowing connection.
@@ -385,7 +441,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * Join station rooms based on terminal identity
      * Called when a KDS/terminal starts up
      */
-    socket.on('join_station', ({ locationId, tags, terminalId, stationId }: JoinStationPayload) => {
+    socket.on('join_station', async ({ locationId, tags, terminalId, stationId }: JoinStationPayload) => {
       try {
         // Validate locationId against authenticated context
         if (socket.data.locationId && locationId !== socket.data.locationId) {
@@ -446,9 +502,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         })
 
         // Acknowledge successful join — include latestEventId for catch-up baseline
-        socket.emit('joined', { success: true, rooms: socket.rooms.size, latestEventId: getLatestEventId(locationId) })
+        socket.emit('joined', { success: true, rooms: socket.rooms.size, latestEventId: await getLatestEventId(locationId) })
 
         // Mark terminal online on (re)connection — fire-and-forget
+        recordReconnection()
         void markTerminalOnline(terminalId, locationId)
       } catch (err) {
         console.error(JSON.stringify({ event: 'join_station', socketId: socket.id, terminalId, error: String(err) }))
@@ -474,7 +531,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * Server replays all buffered events since that eventId that match the
      * client's subscribed rooms.
      */
-    socket.on('catch-up', ({ lastEventId, locationId: catchUpLocationId }: { lastEventId: number; locationId: string }) => {
+    socket.on('catch-up', async ({ lastEventId, locationId: catchUpLocationId }: { lastEventId: number; locationId: string }) => {
       try {
         if (typeof lastEventId !== 'number' || lastEventId < 0) return
         if (typeof catchUpLocationId !== 'string' || !catchUpLocationId) return
@@ -490,7 +547,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           r => r !== socket.id // Exclude the socket's own room
         )
 
-        const missedEvents = getEventsSince(catchUpLocationId, lastEventId, subscribedRooms)
+        const missedEvents = await getEventsSince(catchUpLocationId, lastEventId, subscribedRooms)
 
         if (missedEvents.length > 0) {
           // Deduplicate: for list-changed events, only send the latest of each type.
@@ -994,6 +1051,7 @@ export function getSocketServer(): SocketServer | null {
  * Emit event from API route (helper function)
  */
 export async function emitToRoom(room: string, event: string, data: unknown): Promise<boolean> {
+  recordMetricEvent()
   // Only buffer location: and tag: rooms (terminal/scale/station are device-specific, not replayable)
   const shouldBuffer = room.startsWith('location:') || room.startsWith('tag:')
 
@@ -1026,6 +1084,7 @@ export async function emitToRoom(room: string, event: string, data: unknown): Pr
  * Tags are location-scoped: tag:{locationId}:{tagName}
  */
 export async function emitToTags(tags: string[], event: string, data: unknown, locationId?: string): Promise<boolean> {
+  recordMetricEvent()
   // Build location-scoped room names: tag:{locationId}:{tagName}
   const rooms = tags.map(tag => locationId ? `tag:${locationId}:${tag}` : `tag:${tag}`)
 
@@ -1051,6 +1110,7 @@ export async function emitToTags(tags: string[], event: string, data: unknown, l
  * Emit to location room (global alerts)
  */
 export async function emitToLocation(locationId: string, event: string, data: unknown): Promise<boolean> {
+  recordMetricEvent()
   if (globalForSocket.socketServer) {
     const room = `location:${locationId}`
     const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
@@ -1077,6 +1137,7 @@ export async function emitCriticalToLocation(
   event: string,
   data: unknown,
 ): Promise<void> {
+  recordMetricEvent()
   const room = `location:${locationId}`
   const ackId = enqueueAck(locationId, room, event, data)
   const payload = {
@@ -1100,6 +1161,7 @@ export async function emitCriticalToLocation(
  * Room name: terminal:{terminalId}
  */
 export async function emitToTerminal(terminalId: string, event: string, data: unknown): Promise<boolean> {
+  recordMetricEvent()
   const room = `terminal:${terminalId}`
   if (globalForSocket.socketServer) {
     if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitToTerminal: ${event} → ${room}`)
@@ -1127,4 +1189,54 @@ export function getTerminalsForTags(tags: string[]): string[] {
     }
   }
   return terminals
+}
+
+/**
+ * Get socket health metrics for the monitoring endpoint.
+ * Read-only, no DB queries — only cached in-memory data.
+ */
+export function getSocketHealthMetrics(): {
+  connectedClients: { total: number; byCategory: Record<string, number> }
+  eventThroughput: { last60s: number; perSecond: number }
+  reconnections: { last60s: number }
+  cfdPairings: number
+} {
+  // Prune stale entries
+  const now = Date.now()
+  const cutoff = now - 60_000
+  while (socketMetrics.eventsEmitted60s.length > 0 && socketMetrics.eventsEmitted60s[0] < cutoff) {
+    socketMetrics.eventsEmitted60s.shift()
+  }
+  while (socketMetrics.reconnections60s.length > 0 && socketMetrics.reconnections60s[0] < cutoff) {
+    socketMetrics.reconnections60s.shift()
+  }
+
+  // Categorize connected terminals
+  const byCategory: Record<string, number> = {}
+  for (const [, info] of connectedTerminals) {
+    const tags = info.tags || []
+    for (const tag of tags) {
+      byCategory[tag] = (byCategory[tag] || 0) + 1
+    }
+    if (tags.length === 0) {
+      byCategory['uncategorized'] = (byCategory['uncategorized'] || 0) + 1
+    }
+  }
+
+  const events60s = socketMetrics.eventsEmitted60s.length
+
+  return {
+    connectedClients: {
+      total: connectedTerminals.size,
+      byCategory,
+    },
+    eventThroughput: {
+      last60s: events60s,
+      perSecond: Math.round((events60s / 60) * 10) / 10,
+    },
+    reconnections: {
+      last60s: socketMetrics.reconnections60s.length,
+    },
+    cfdPairings: cfdToRegisterMap.size,
+  }
 }

@@ -770,4 +770,15 @@ When one of these changes, the entire cluster often needs review:
 
 ---
 
-*Last updated: 2026-03-10 (Device count limits, cellular device management, transaction/behavior limits added to Hardware row)*
+### Cloud Relay
+| | |
+|---|---|
+| **Depends On** | Offline Sync (relay accelerates downstream sync), Mission Control (relay endpoint hosted in cloud), Settings (`CLOUD_RELAY_URL` env var) |
+| **Depended On By** | Offline Sync (instant downstream wake-up), Mission Control (receives SYNC_SUMMARY, HEALTH, OUTAGE_DEAD_LETTER events) |
+| **Shared Models** | None — stateless WebSocket connection; no dedicated DB model |
+| **Shared Socket Events** | Cloud relay events: `DATA_CHANGED`, `CONFIG_UPDATED`, `COMMAND` (inbound); `SYNC_SUMMARY`, `BUSINESS_EVENT`, `HEALTH`, `OUTAGE_DEAD_LETTER` (outbound) |
+| **Critical Rules** | Relay is acceleration ONLY — never a durability layer. All durable guarantees remain in DB-backed sync workers. Safety switch: 5 consecutive failures → 2s polling fallback. `CLOUD_RELAY_URL` required; relay disabled when unset. Auth via `SERVER_API_KEY`. |
+
+---
+
+*Last updated: 2026-03-14 (Cloud Relay entry added)*

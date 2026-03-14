@@ -12,6 +12,8 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | `gwi-cfd` | Customer-Facing Display (PAX A3700) — payment screens |
 | `gwi-backoffice` | Cloud event ingestion + aggregate reporting |
 | `gwi-mission-control` | Fleet management, licensing, deployments |
+| `gwi-pax-a6650` | PAX handheld POS terminal (table service, bar, kiosk) |
+| `gwi-kds-android` | Kitchen Display (FoodKDS) + Entertainment Management (PitBoss) |
 
 ---
 
@@ -54,7 +56,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Entertainment** | [entertainment.md](entertainment.md) | Active | pos, android | Orders, Floor Plan, KDS, Payments |
 | **Pricing Rules (Time-Based)** | [happy-hour.md](happy-hour.md) | Active | pos | Menu, Payments, Settings |
 | **Upsell Prompts** | [upsell-prompts.md](upsell-prompts.md) | Schema Built | pos, android | Menu, Orders, Reports |
-| **Repeat Orders** | [repeat-orders.md](repeat-orders.md) | Planned | pos, android | Orders, Menu |
+| **Repeat Orders** | [repeat-orders.md](repeat-orders.md) | Active | pos, android | Orders, Menu |
 | **Custom Menus** | [custom-menus.md](custom-menus.md) | Planned | pos, android | Menu, Employees, Settings |
 
 ### Tipping & Compensation
@@ -125,6 +127,8 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Cellular Edge Path** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-2--cellular-edge-path) | In Progress | pos, mission-control, android | Orders, Payments, Offline Sync, Security |
 | **Fulfillment Routing** | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-3--fulfillment-routing) | In Progress | pos | Orders, KDS, Hardware, Menu, Print Routing |
 | **Cloud-Primary Sync** | Neon-canonical SOR, outage queue, conflict resolution, bridge worker | `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6 | Active | pos, mission-control | Offline Sync, Orders, Payments, Mission Control |
+| **Cloud Relay** | Outbound WebSocket from NUC to cloud for real-time push | [cloud-relay.md](cloud-relay.md) | Active | pos | Offline Sync, Mission Control |
+| **Deployment Control Plane** | MC-managed fleet deployment, update agent, health gates, auto refresh | [../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md](../architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md#phase-8--deployment-control-plane-planned--next-priority) | Planned | pos, mission-control | Offline Sync, Mission Control, Cloud Relay |
 | **Migration Architecture** | Unified migration runner, tracking table, 12 extracted migrations | `scripts/migrations/`, `scripts/nuc-pre-migrate.js` | Active | pos | Settings, Offline Sync |
 
 ### Billing & Subscriptions
@@ -161,10 +165,8 @@ These exist in code but have no formal feature doc yet. Create docs before build
 
 | Feature | Evidence | Priority |
 |---------|----------|----------|
-| **Print Routing** | `src/lib/print-template-factory.ts` — tag-based routing manifests, 5 kitchen ticket templates, primary→backup failover | High — affects Orders, KDS, Hardware |
-| **Customer Receipt** | `buildReceiptWithSettings()` in `print-factory.ts` — full builder (dual pricing, tip suggestions, signature, surcharge) but **no `/api/print/receipt` endpoint** | High — affects Payments, Hardware |
-| **Print Routing** | `src/lib/print-template-factory.ts` — tag-based routing manifests, 5 kitchen ticket templates, primary→backup failover | High — affects Orders, KDS, Hardware |
-| **Customer Receipt** | `buildReceiptWithSettings()` in `print-factory.ts` — full builder (dual pricing, tip suggestions, signature, surcharge) but **no `/api/print/receipt` endpoint** | High — affects Payments, Hardware |
+| ~~**Print Routing**~~ | ~~`src/lib/print-template-factory.ts` — tag-based routing manifests, 5 kitchen ticket templates, primary→backup failover~~ | **RESOLVED 2026-03-14** — `docs/features/print-routing.md` now exists |
+| ~~**Customer Receipt**~~ | ~~`buildReceiptWithSettings()` in `print-factory.ts` — full builder (dual pricing, tip suggestions, signature, surcharge)~~ | **RESOLVED 2026-03-14** — `docs/features/customer-receipts.md` now exists |
 | **CashTipDeclaration** | `CashTipDeclaration` model, `/api/tips/cash-declarations` — no shift-close seal endpoint (documented in `tips.md` Known Constraints) | High — affects Tips, Shifts |
 | **TipDebt** | `TipDebt` model — auto-created on void/refund, auto-reclaimed FIFO, no manual write-off API (documented in `tips.md` Known Constraints) | High — affects Tips, Payments |
 | Prep Stations | `/api/prep-stations` | Medium — affects KDS, Hardware |
@@ -188,7 +190,7 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 | Gap | Severity | Source | Details |
 |-----|----------|--------|---------|
 | ~~**WalkoutRetry no write-off API**~~ | ~~Critical~~ **RESOLVED 2026-03-10** | Financial audit | Write-off endpoint at `PUT /api/datacap/walkout-retry/[id]` (action: 'write-off', requires MGR_VOID_PAYMENTS). Admin report at `/reports/walkout-retries`. Inline status in closed tab/order detail. |
-| **WalkoutRetry no scheduler** | **Critical** | Walkout audit | Route comment says "used by cron/scheduler" but no scheduler exists. Retries require manual triggering. Walkout auto-detection now runs during automated EOD batch close (`/api/cron/eod-batch-close`). |
+| ~~**WalkoutRetry no scheduler**~~ | ~~**Critical**~~ **RESOLVED 2026-03-14** | Walkout audit | `startWalkoutRetryScheduler()` added to server.ts (6h interval). Walkout auto-detection also runs during automated EOD batch close (`/api/cron/eod-batch-close`). |
 | **Mobile socket relay drops events silently** | High | Mobile audit | `tab:close-request`, `tab:transfer-request`, `tab:alert-manager` emitted by `MobileTabActions.tsx` — `socket-server.ts` has ZERO handlers for them. If no POS terminal is in the same location room, events are silently dropped |
 | **`walkoutAutoDetectMinutes` setting not wired** | Medium | Walkout audit | Setting exists (default 120 min) to auto-detect idle tabs as walkouts — no background job monitors this threshold |
 | TipAdjustment undocumented in tips.md | Low | Financial audit | `POST /api/tips/adjustments` exists and handles all 5 adjustment types — now documented in `tips.md`. Was incorrectly flagged as missing. |
@@ -214,7 +216,7 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 | Chargeback UI page not confirmed | Medium | Original audit | No admin UI page found; chargebacks may be API-only |
 | `/api/monitoring/error` route may not exist | Medium | Integration audit | `error-capture.ts` sends errors to this route but no handler confirmed — all error logging may silently fail |
 | Neon sync timezone risk | Medium | Integration audit | `downstream-sync-worker.ts` uses `::timestamp` cast — warning in code comments about `::timestamptz` drift on non-UTC NUC systems |
-| Alert service Slack not wired | Medium | Integration audit | `alert-service.ts` routes CRITICAL alerts to Slack — channel structure exists, no webhook URL configured |
+| ~~Alert service Slack not wired~~ | ~~Medium~~ **RESOLVED 2026-03-14** | Integration audit | Slack webhook now configurable via admin UI at `/admin/settings/integrations/slack` |
 | Android native combo builder not built | Medium | Original audit | POS has combo builder; Android uses text-based flow only |
 | Android native pizza builder not built | Medium | Original audit | POS has visual builder; Android uses standard modifier flow |
 | VP3350 USB read loop | Medium | Original audit | TODO comment: replace per-transaction TCP reads with persistent loop |
@@ -236,15 +238,15 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 | Combo analytics endpoint not implemented | Low | Original audit | `GET /api/combos/analytics` planned but not built |
 | Tax holidays/exemption certificates not implemented | Low | Original audit | Planned in Skill 36, not yet built |
 | **PAT `/pay-at-table` route is public** | High | PAT audit | `/pay-at-table` is in `cloud-auth.ts` public paths — access control relies entirely on valid query params, no session auth |
-| **PAT `locationId = ''` in Datacap call** | High | PAT audit | iPad PAT sends empty `locationId` to Datacap sale endpoint — relies on Datacap to resolve from reader ID. May silently fail for misconfigured readers |
+| ~~**PAT `locationId = ''` in Datacap call**~~ | ~~High~~ **RESOLVED 2026-03-14** | PAT audit | `locationId` now extracted from order response. No longer sends empty string to Datacap. |
 | **No terminal-side PAT "in progress" UI** | Medium | PAT audit | `pat:pay-request` socket sent to terminal, but no handler renders a "payment in progress" notice — terminal operator unaware |
 | `pat:split-request` / `pat:split-result` dead code | Low | PAT audit | Defined in `multi-surface.ts` but never emitted or consumed — split PAT flow does not exist |
 | `POST /api/orders/eod-cleanup` has no permission check | Medium | EOD audit | Lighter cleanup route beyond `withVenue` — no `requirePermission()` call |
-| EOD Reset has no admin UI trigger | Medium | EOD audit | `POST /api/eod/reset` requires `MGR_CLOSE_DAY` permission but no admin page button — must call API directly |
+| ~~EOD Reset has no admin UI trigger~~ | ~~Medium~~ **RESOLVED 2026-03-14** | EOD audit | EOD admin UI button added. `POST /api/eod/reset` now triggerable from admin settings. |
 | `cancelledDrafts` always 0 from primary EOD route | Low | EOD audit | Draft cancellation is handled by `eod-cleanup` route, which does NOT emit `eod:reset-complete` — primary route payload is always `cancelledDrafts: 0` |
 | No dedicated tax breakdown report | Low | Reports audit | Tax data exists in `Order.taxTotal` but no `/api/reports/taxes` endpoint for per-rule breakdown |
 | No chargeback aging/breakdown report | Low | Reports audit | `ChargebackCase` model exists, no report endpoint for dispute tracking or aging |
-| Liquor API routes undocumented | Low | Original audit | 16+ routes in `/api/liquor/` not listed in `liquor.md` |
+| ~~Liquor API routes undocumented~~ | ~~Low~~ **RESOLVED 2026-03-14** | Original audit | `liquor.md` updated to 329 lines with all API routes documented |
 
 ---
 
@@ -289,20 +291,23 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 
 | Metric | Count |
 |--------|-------|
-| Feature docs (active/built) | 46 |
+| Feature docs (active/built) | 49 |
 | Feature docs (schema built) | 1 |
 | Feature docs (planned/roadmap) | 14 |
-| Feature docs total | 61 |
+| Feature docs total | 64 |
 | Flow docs | 12 |
-| API routes (gwi-pos) | 452 |
-| UI pages (gwi-pos) | 189+ |
+| API routes (gwi-pos) | 649+ |
+| UI pages (gwi-pos) | 316 |
 | Prisma models | 154 |
 | SPEC files (original design specs) | 62 |
 | Skill docs (implementation records) | 297 |
 | Skill entries in index | 478 |
 | Domain docs | 27 |
-| Android screens | 12+ |
+| Android screens | 30+ |
+| Android UI components | 206+ |
 | CFD states | 8 |
 | Socket event types | 63 (reverse-flow audit 2026-03-03) |
+| Cron jobs | 13 |
+| Server workers | 6 |
 
-*Last updated: 2026-03-03 (post reverse-flow audit)*
+*Last updated: 2026-03-14 (post Sprint 2-6 + comprehensive feature audit)*

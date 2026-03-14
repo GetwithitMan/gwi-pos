@@ -1,7 +1,7 @@
 # GWI POS - Real-Time & Resilience
 
-**Version:** 1.0
-**Updated:** February 23, 2026
+**Version:** 1.1
+**Updated:** March 14, 2026
 **Scope:** Socket.io event map, consistency guarantees, failure modes, coverage gaps
 
 ---
@@ -86,8 +86,9 @@ How concurrent writes are resolved when two terminals touch the same data.
 1. Socket.io auto-reconnects with exponential backoff (infinite attempts).
 2. Client re-joins location rooms on `connect`.
 3. KDS and Floor Plan auto-refresh on reconnect (Skill 411).
-4. Events missed during the disconnect window are **not** replayed (no server-side backfill).
+4. **Persistent event buffer:** Socket events are buffered in a two-tier architecture — L1 (in-memory, 500ms dedup) and L2 (PostgreSQL `SocketEventLog`, 30min TTL). On NUC restart, events replay from PG so reconnecting clients catch up. CFD pairings are persisted in `Terminal.metadata` and rehydrated on startup.
 5. 30 s polling fallback activates if the socket stays down.
+6. **Cloud relay:** An outbound WebSocket to the cloud relay (`cloud-relay-client.ts`) enables real-time cloud→NUC push for instant downstream sync. Safety switch: 5 consecutive failures → 2s polling fallback.
 
 ### Story 4: Payment processor timeout
 
@@ -127,3 +128,7 @@ How concurrent writes are resolved when two terminals touch the same data.
 - **Socket Events** -- Primary path. Events emitted by `socket-dispatch.ts`, consumed by client hooks/pages.
 - **Polling Fallback** -- Secondary path when the socket is disconnected. Interval listed is approximate.
 - **No Real-Time** -- Entities with no polling fallback rely entirely on socket delivery. If the socket is down, the client sees stale data until reconnection triggers a refresh.
+
+### Socket Monitoring
+
+`GET /api/health/sockets` provides real-time socket health metrics: connected clients, throughput (events/min), reconnection rate, CFD pairings, ack queue depth, cloud relay status, and sync worker metrics. Downstream sync interval is now 5s (was 15s).

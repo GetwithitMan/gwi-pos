@@ -36,7 +36,7 @@ Hybrid local-first sync architecture. NUC (local PostgreSQL) is the source of tr
 |-----------------|---------|
 | `src/lib/sync/sync-config.ts` | Registry of 95+ models with direction, owner, FK priority, batch size |
 | `src/lib/sync/upstream-sync-worker.ts` | NUC → Neon: pushes orders, payments, shifts (5s interval) |
-| `src/lib/sync/downstream-sync-worker.ts` | Neon → NUC: pulls menu, employees, settings (15s interval) |
+| `src/lib/sync/downstream-sync-worker.ts` | Neon → NUC: pulls menu, employees, settings (5s interval) |
 | `src/lib/cloud-event-queue.ts` | Queue event batching, retry logic, dead-letter handling |
 | `src/lib/offline-manager.ts` | Client-side offline queue (IndexedDB via Dexie) |
 | `src/lib/offline-db.ts` | IndexedDB schema: PendingOrder, PendingPrintJob, PendingPayment |
@@ -51,6 +51,11 @@ Hybrid local-first sync architecture. NUC (local PostgreSQL) is the source of tr
 | `src/app/api/hardware/terminals/heartbeat-native/route.ts` | Native heartbeat |
 | `src/app/api/hardware/terminals/heartbeat/route.ts` | Web terminal heartbeat |
 | `src/app/api/monitoring/health-check/route.ts` | Health check logging |
+| `src/lib/cloud-relay-client.ts` | Outbound WebSocket to cloud relay for instant downstream wake-up |
+| `src/lib/socket-event-buffer.ts` | Persistent L2 socket event buffer (PG-backed, 30min TTL) |
+| `src/app/api/system/outage-queue/route.ts` | Outage queue reconciliation (status counts + last 50 entries) |
+| `src/app/api/health/sockets/route.ts` | Socket health monitoring (metrics, relay status, sync status) |
+| `src/app/api/reports/outage-payments/route.ts` | Outage payment reconciliation report |
 
 ---
 
@@ -67,6 +72,9 @@ Hybrid local-first sync architecture. NUC (local PostgreSQL) is the source of tr
 | `POST` | `/api/hardware/terminals/heartbeat-native` | Bearer (deviceToken) | Native heartbeat (updates isOnline, lastSeenAt) |
 | `POST` | `/api/hardware/terminals/heartbeat` | Cookie | Web terminal heartbeat |
 | `GET/POST` | `/api/monitoring/health-check` | Employee PIN | Health check logging |
+| `GET` | `/api/system/outage-queue` | Manager | Outage queue reconciliation (status counts + last 50 entries) |
+| `GET` | `/api/reports/outage-payments` | Manager | Payments flagged during outage (summary + detail) |
+| `GET` | `/api/health/sockets` | Internal | Socket health, relay status, sync worker metrics |
 
 ---
 
@@ -129,7 +137,8 @@ Terminal {
 ```
 Android → NUC (local PG) → Neon Cloud
   ↑ bootstrap/delta      ↑ upstream (5s)
-  ↓ outbox sync          ↓ downstream (15s)
+  ↓ outbox sync          ↓ downstream (5s) + cloud relay WS (instant push)
+                           ↕ cloud-relay-client.ts (WebSocket)
 ```
 
 ### Upstream Sync (NUC → Neon, every 5s)
@@ -139,12 +148,23 @@ Android → NUC (local PG) → Neon Cloud
 4. Update `syncedAt` on success
 5. Priority order: Orders/Payments (10) → Shifts (35) → Tips (45) → Inventory (50)
 
-### Downstream Sync (Neon → NUC, every 15s)
+### Downstream Sync (Neon → NUC, every 5s)
 1. Use high-water mark (last `syncedAt` timestamp)
 2. Pull changed records from Neon
 3. Batch 100 rows
 4. LWW conflict resolution based on `updatedAt`
 5. Priority order: Organization (1) → Location (2) → Employee (5) → Menu (6-9)
+6. Cloud relay WebSocket accelerates delivery — `DATA_CHANGED` event triggers immediate sync cycle
+
+### Cloud Relay
+Outbound WebSocket from NUC to cloud (`cloud-relay-client.ts`). Accelerates cloud→NUC data delivery and enables MC real-time dashboard.
+- **Inbound events:** `DATA_CHANGED` (triggers immediate downstream sync), `CONFIG_UPDATED`, `COMMAND`
+- **Outbound events:** `SYNC_SUMMARY` (after each upstream cycle with rows synced > 0), `OUTAGE_DEAD_LETTER`, `HEALTH`
+- **Safety switch:** 5 consecutive failures → 2s polling fallback
+- **Env var:** `CLOUD_RELAY_URL` required; relay disabled when unset
+
+### Outage Payment Flagging
+Payments processed during outage mode (`isInOutageMode() === true`) are automatically flagged with `needsReconciliation = true`. This applies to all 4 payment routes: pay, close-tab, refund, void. A reconciliation report is available at `GET /api/reports/outage-payments` (summary + detail of flagged payments) for EOD/shift close review.
 
 ### Client-Side Offline (IndexedDB)
 1. Connection detection: `navigator.onLine` + 5-second health check to `/api/health`
@@ -202,7 +222,9 @@ Android → NUC (local PG) → Neon Cloud
 
 ## Known Constraints & Limits
 - Upstream sync interval: 5 seconds (configurable via `SYNC_UPSTREAM_INTERVAL_MS`)
-- Downstream sync interval: 15 seconds (configurable via `SYNC_DOWNSTREAM_INTERVAL_MS`)
+- Downstream sync interval: 5 seconds (configurable via `SYNC_DOWNSTREAM_INTERVAL_MS`, reduced from 15s in Phase 7)
+- Cloud relay auto-reconnect: exponential backoff 1s–30s, 60s heartbeat keepalive
+- Socket event buffer TTL: 30 minutes (PG L2), cleanup every 5 minutes
 - Cloud event queue: max 5 retry attempts, exponential backoff up to 1 hour
 - Max 1000 cloud events per location (auto-pruned)
 - Stale heartbeat timeout: 120 seconds
@@ -226,6 +248,9 @@ These rules were hardened via penetration testing and production debugging:
 - **Upstream resilience**: Per-row try/catch on `syncedAt` stamps. One failure doesn't block the batch.
 - **OutageQueueEntry.metadata**: JSONB field for retryCount tracking. Added in migration 022.
 - **CellularDevice guard**: `syncCellularDenyList()` checks table existence via `information_schema` (cached) before querying. Prevents log spam on NUCs without the HA/Cellular feature.
+- **Cloud relay is NOT durability**: The cloud WebSocket relay (`cloud-relay-client.ts`) accelerates delivery but provides ZERO durability guarantees. All durable sync remains DB-backed. Relay failure falls back to 5s polling with no data loss.
+- **Socket event log survives restart**: Events persist in PG `SocketEventLog` (30min TTL). On restart, reconnecting clients catch up from PG. CFD pairings rehydrate from `Terminal.metadata`.
+- **Outage payment flagging**: Payments during outage are flagged `needsReconciliation = true` for EOD reconciliation. Report at `GET /api/reports/outage-payments`.
 
 ---
 
@@ -249,4 +274,4 @@ These rules were hardened via penetration testing and production debugging:
 
 ---
 
-*Last updated: 2026-03-11*
+*Last updated: 2026-03-14*

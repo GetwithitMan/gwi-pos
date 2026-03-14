@@ -232,7 +232,46 @@ async function processOutageQueue(): Promise<void> {
     const totalDeadLettered = (deadLettered || 0) + (agedOut || 0)
     if (totalDeadLettered > 0) {
       console.error(`[OUTAGE-REPLAY] CRITICAL: ${totalDeadLettered} entries dead-lettered (${deadLettered || 0} max-retry, ${agedOut || 0} aged-out). Orders may be lost. Check OutageQueueEntry table.`)
-      // If MC health endpoint exists, report it
+
+      // Emit cloud event for MC alerting
+      void (async () => {
+        try {
+          const { emitCloudEvent } = await import('../cloud-events')
+          const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || ''
+
+          // Fetch details of recently dead-lettered entries for the alert
+          const deadLetterDetails = await masterClient.$queryRawUnsafe<Array<{
+            id: string
+            tableName: string
+            recordId: string
+            operation: string
+            createdAt: Date
+            metadata: unknown
+          }>>(
+            `SELECT id, "tableName", "recordId", operation, "createdAt", metadata
+             FROM "OutageQueueEntry"
+             WHERE status = 'dead_letter'
+             ORDER BY "createdAt" DESC
+             LIMIT 10`
+          )
+
+          await emitCloudEvent('OUTAGE_DEAD_LETTER', {
+            locationId,
+            totalDeadLettered,
+            entries: deadLetterDetails.map(e => ({
+              id: e.id,
+              tableName: e.tableName,
+              recordId: e.recordId,
+              operation: e.operation,
+              attempts: (e.metadata as any)?.retryCount ?? 0,
+              createdAt: e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
+            })),
+            timestamp: new Date().toISOString(),
+          })
+        } catch (err) {
+          console.error('[OutageReplay] Failed to emit dead-letter cloud event:', err instanceof Error ? err.message : err)
+        }
+      })().catch(console.error)
     }
 
     // Reset failed entries < 24h old back to pending for retry, incrementing retry count

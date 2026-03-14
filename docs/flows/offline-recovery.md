@@ -18,7 +18,7 @@
 
 | Precondition | Detail |
 |-------------|--------|
-| Feature flags / settings | None required; `SYNC_UPSTREAM_INTERVAL_MS` (5s) and `SYNC_DOWNSTREAM_INTERVAL_MS` (15s) control background Neon sync (separate) |
+| Feature flags / settings | None required; `SYNC_UPSTREAM_INTERVAL_MS` (5s) and `SYNC_DOWNSTREAM_INTERVAL_MS` (5s) control background Neon sync (separate). `CLOUD_RELAY_URL` enables instant cloud→NUC push. |
 | Hardware required | NUC reachable on local network at `http://{NUC_IP}:3005`; Android or web client with stored `deviceToken` or session |
 | Permissions required | Bearer `deviceToken` (Android) or session cookie (web) — same credentials from original login |
 | Online / offline state | Terminal was in Red/Unavailable state (10s+ no heartbeat). This flow begins when heartbeat resumes. |
@@ -113,6 +113,15 @@
                 → Any terminal with lastSeenAt > 120s ago → marked offline
                 → emitToLocation: terminal:status_changed { isOnline: false }
                 → connectedTerminals map entry removed
+
+12. [SIDE EFFECTS] NUC restart recovery (if NUC itself restarted):
+                → Socket events replay from PG (SocketEventLog L2 buffer, 30min TTL)
+                → Reconnecting clients catch up from PG without data loss
+                → CFD pairings rehydrate from Terminal.metadata (JSONB)
+                → Cloud relay (cloud-relay-client.ts) reconnects automatically
+                  with exponential backoff (1s–30s)
+                → After relay reconnect, DATA_CHANGED events trigger immediate
+                  downstream sync (no need to wait for 5s polling interval)
 ```
 
 ---
@@ -139,6 +148,8 @@
 | Room `OrderEventEntity` (Android) | `status`: PENDING → SYNCED | After NUC batch confirms (step 4–5) |
 | Room `CachedOrderEntity` (Android) | Updated from delta sync events | Step 6 |
 | `connectedTerminals` map (in-memory) | Entry added on reconnect, removed on stale sweep | Steps 7 and 11 |
+| `SocketEventLog` (PG) | Events replayed to reconnecting clients after NUC restart | Step 12 |
+| `Terminal.metadata` (JSONB) | CFD pairings rehydrated on NUC restart | Step 12 |
 
 **Snapshot rebuild points:** Step 5 — every OrderEvent processed during outbox drain triggers a full `OrderSnapshot` rebuild via `reducer.ts` (pure replay from entire event log ordered by `serverSequence`).
 
@@ -201,4 +212,4 @@ If any invariant is broken, the fix is: check `DATABASE_URL` on the NUC, verify 
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-14*

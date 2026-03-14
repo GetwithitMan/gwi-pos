@@ -337,6 +337,22 @@ async function runSyncCycle(): Promise<void> {
     metrics.rowsSyncedTotal += totalSynced
     metrics.pendingCount = Math.max(0, totalPending - totalSynced)
 
+    // Emit sync summary via cloud relay (Phase 5)
+    if (totalSynced > 0) {
+      void (async () => {
+        try {
+          const { emitToRelay } = await import('../cloud-relay-client')
+          emitToRelay('SYNC_SUMMARY', {
+            locationId: process.env.POS_LOCATION_ID || process.env.LOCATION_ID || '',
+            rowsSynced: totalSynced,
+            pendingCount: metrics.pendingCount,
+            isOutage: isInOutage,
+            timestamp: new Date().toISOString(),
+          })
+        } catch { /* relay not available */ }
+      })().catch(console.error)
+    }
+
     if (totalSynced > 0) {
       console.log(
         `[UpstreamSync] Cycle: ${totalSynced} synced, ${metrics.pendingCount} pending`

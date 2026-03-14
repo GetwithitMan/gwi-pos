@@ -137,6 +137,17 @@ Forces a transaction into SAF storage even when the processor is online. Used fo
 
 ---
 
+## Outage Payment Reconciliation
+
+Separate from SAF (which handles processor-level offline storage on the Datacap reader), the NUC also flags payments processed during an internet outage for reconciliation:
+
+- When `isInOutageMode()` returns true (3 consecutive Neon sync failures), all 4 payment routes (`pay`, `close-tab`, `refund-payment`, `void-payment`) set `needsReconciliation = true` on the Payment record
+- `GET /api/reports/outage-payments` provides a reconciliation report with summary (count, total amount) and detail list of all outage-flagged payments
+- This report is available in the EOD/shift close context so managers can verify all outage payments reconciled correctly after connectivity was restored
+- Note: `needsReconciliation` is a separate concern from `safStatus` — SAF tracks reader-level offline, while `needsReconciliation` tracks NUC-level internet outage
+
+---
+
 ## Cross-Feature Dependencies
 
 > See `_CROSS-REF-MATRIX.md` for full matrix.
@@ -199,4 +210,4 @@ SAF state (`safStatus`, `isOfflineCapture`) is synchronized to the Android regis
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-14*

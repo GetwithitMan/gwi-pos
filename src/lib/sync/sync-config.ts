@@ -203,6 +203,6 @@ export const UPSTREAM_INTERVAL_MS = parseInt(
 )
 
 export const DOWNSTREAM_INTERVAL_MS = parseInt(
-  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '15000',
+  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '5000',
   10
 )

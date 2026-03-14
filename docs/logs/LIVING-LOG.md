@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-03-14 — Architecture Hardening: Socket Reliability + Cloud Relay + Offline Redundancy
+- Phase 1: Persistent Socket Event Log (SocketEventLog table, PG L2 buffer, CFD pairing persistence)
+- Phase 2: Outage Replay Hardening (OUTAGE_DEAD_LETTER cloud event, /api/system/outage-queue)
+- Phase 3: Cloud WebSocket Relay (cloud-relay-client.ts, outbound WS, instant downstream wake-up)
+- Phase 4: Downstream sync interval 15s → 5s
+- Phase 5: SYNC_SUMMARY emission via relay
+- Phase 6: Socket Monitoring API (/api/health/sockets, in-memory metrics)
+- Phase 7: SAF Payment Audit Trail (needsReconciliation flag, /api/reports/outage-payments)
+- Phase 8: Deployment Control Plane documented (planned, next priority after hardening)
+- Branches: feat/phase-{1,2,3,6,7}-*
+
+---
+
 ## 2026-03-14 — Android Happy Hour + Pricing Options Fix
 
 ### Summary

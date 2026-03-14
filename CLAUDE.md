@@ -233,7 +233,7 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | Pizza builder | `docs/features/pizza-builder.md` | `docs/domains/PIZZA-BUILDER-DOMAIN.md` | `src/app/(admin)/pizza-builder/` |
 | Tax rules | `docs/features/tax-rules.md` | — | `src/app/api/tax-rules/` |
 | Customers | `docs/features/customers.md` | `docs/domains/GUEST-DOMAIN.md` | `src/app/api/customers/` |
-| Offline sync | `docs/features/offline-sync.md` | `docs/domains/OFFLINE-SYNC-DOMAIN.md` | `src/lib/neon-client.ts` |
+| Offline sync | `docs/features/offline-sync.md` | `docs/domains/OFFLINE-SYNC-DOMAIN.md` | `src/lib/neon-client.ts`, `cloud-relay-client.ts` |
 | Cash drawers | `docs/features/cash-drawers.md` | — | `src/app/api/drawers/` |
 | Events / tickets | `docs/features/events-tickets.md` | `docs/domains/EVENTS-DOMAIN.md` | `src/app/api/events/` |
 | Error reporting | `docs/features/error-reporting.md` | `docs/domains/ERROR-REPORTING-DOMAIN.md` | `src/app/api/errors/` |
@@ -268,6 +268,7 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | 7shifts labor integration | `docs/features/7shifts-integration.md` | `docs/skills/SPEC-485-7SHIFTS-INTEGRATION.md` | `src/lib/7shifts-client.ts`, `src/app/api/integrations/7shifts/`, `src/app/api/webhooks/7shifts/`, `src/app/(admin)/settings/integrations/7shifts/` |
 | MarginEdge COGS integration | `docs/features/marginedge-integration.md` | `docs/skills/SPEC-490-MARGINEDGE-INTEGRATION.md` | `src/lib/marginedge-client.ts`, `src/app/api/integrations/marginedge/`, `src/app/api/cron/marginedge-sync/` |
 | Cloud-Primary Sync | `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6 | Sync + Bridge | outage-replay-worker.ts, fulfillment-bridge-worker.ts, bridge-checkpoint.ts |
+| Cloud Relay | `docs/features/cloud-relay.md` | — | `src/lib/cloud-relay-client.ts` |
 
 > **Planned/unbuilt features** (auto-discounts, reservations, QR ordering, delivery, multi-location, etc.) are tracked in `docs/features/_INDEX.md`. Add them to this table when code is written.
 
@@ -295,7 +296,8 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | Working On | Read First | Key Files |
 |------------|-----------|-----------|
 | Any API route | `docs/guides/CODING-STANDARDS.md` | `src/lib/with-venue.ts` |
-| Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts` |
+| Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts`, `socket-event-buffer.ts` |
+| Socket / cloud relay | `docs/guides/SOCKET-REALTIME.md` | `src/lib/cloud-relay-client.ts`, `socket-event-buffer.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
 | NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (source of truth) + `gwi-mission-control/scripts/installer.run` (served copy — MUST sync both) |
 | Database / schema | `docs/guides/ARCHITECTURE-RULES.md` | `prisma/schema.prisma` |

@@ -148,6 +148,19 @@ MC syncs tier-appropriate limits to POS `LocationSettings.hardwareLimits` during
 ### Cellular Device Management (Venue-Side)
 Cellular device viewing and revocation is now available from the venue admin at `/settings/hardware/cellular` — venue managers no longer need Mission Control access to see connected cellular devices or revoke them. MC remains the authority for initial device approval/deny via the CellularDevice lifecycle, but day-to-day session monitoring and revocation is handled venue-side.
 
+### Cloud Relay (NUC → Cloud WebSocket)
+
+A persistent outbound WebSocket from each NUC to the cloud relay enables real-time bidirectional communication without the NUC needing a public IP.
+
+- **Env var:** `CLOUD_RELAY_URL` on the NUC — points to the cloud relay WebSocket endpoint
+- **Auth:** `SERVER_API_KEY` header on connection handshake
+- **NUC → Cloud events:** `SYNC_SUMMARY` (per upstream cycle), `BUSINESS_EVENT`, `HEALTH`, `OUTAGE_DEAD_LETTER`
+- **Cloud → NUC events:** `DATA_CHANGED` (triggers immediate downstream sync), `CONFIG_UPDATED` (settings push), `COMMAND` (fleet commands)
+- MC receives these events in real time for live dashboard updates (sync status, venue health, outage alerting)
+- **Resilience:** Auto-reconnect with exponential backoff (1s–30s), 60s heartbeat. Safety switch: 5 consecutive failures → falls back to 2s polling. Relay is an acceleration layer — all durability remains in DB-backed sync workers.
+
+**Key file (NUC side):** `src/lib/cloud-relay-client.ts`
+
 ### Edge Cases & Business Rules
 - HMAC-SHA256 for ALL fleet API calls (6-header auth model)
 - AES-256-GCM for sensitive config (payment keys) — NEVER store in plain text
@@ -217,4 +230,4 @@ Cellular device viewing and revocation is now available from the venue admin at 
 
 ---
 
-*Last updated: 2026-03-10*
+*Last updated: 2026-03-14*

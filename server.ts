@@ -24,6 +24,7 @@ import { startDownstreamSyncWorker, stopDownstreamSyncWorker } from './src/lib/s
 import { startOutageReplayWorker, stopOutageReplayWorker } from './src/lib/sync/outage-replay-worker'
 import { startFulfillmentBridge, stopFulfillmentBridge } from './src/lib/fulfillment-bridge-worker'
 import { startBridgeCheckpoint, stopBridgeCheckpoint } from './src/lib/bridge-checkpoint'
+import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-relay-client'
 import { disconnectNeon } from './src/lib/neon-client'
 
 const dev = process.env.NODE_ENV !== 'production'
@@ -254,6 +255,7 @@ async function main() {
         startOutageReplayWorker()
         startFulfillmentBridge()
         startBridgeCheckpoint()
+        startCloudRelayClient()
         console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
       }
     }
@@ -300,6 +302,7 @@ async function main() {
       stopOutageReplayWorker()
       stopFulfillmentBridge()
       await stopBridgeCheckpoint()
+      stopCloudRelayClient()
     }
     await disconnectNeon()
     console.log('[Server] Neon client disconnected')

@@ -1,8 +1,8 @@
 # Local-Core / Cellular-Edge HA Architecture
 
-**Version:** 2.0
-**Updated:** March 9, 2026
-**Status:** Implementation in progress (Phases 1–6)
+**Version:** 3.0
+**Updated:** March 14, 2026
+**Status:** Implementation complete (Phases 1–7)
 **Scope:** Cloud-primary HA with local NUC execution layer, cellular edge for roaming devices, fulfillment routing
 
 ---
@@ -20,6 +20,10 @@ GWI POS is a cloud-primary architecture: Neon is the canonical source of truth i
 **Phases 4–5** formalize disaster recovery (automated backups, Neon-assisted recovery) and observability (Mission Control dashboard, on-device health indicators, alerting).
 
 4. **Cloud-Primary Architecture Transition (Phase 6):** Unified migration system, durable fulfillment queue (FulfillmentEvent), outage detection and replay (OutageQueueEntry), bridge checkpoint failover (BridgeCheckpoint), and ID unification across cloud and local systems.
+
+5. **Architecture Hardening (Phase 7):** Persistent socket event log, outage replay hardening, cloud WebSocket relay for real-time cloud→NUC push, downstream sync interval reduction (15s→5s), socket monitoring API, and SAF payment audit trail for outage reconciliation.
+
+6. **Deployment Control Plane (Phase 8 — Planned):** MC-managed fleet deployment with release channels, NUC update agent, health-gated rollouts, automatic terminal refresh, version handshake, and appliance-style provisioning. Next priority after Architecture Hardening.
 
 ---
 
@@ -70,6 +74,10 @@ These MUST hold at all times. Violation of any invariant is a P0 bug.
 
 > **INV-13 — FulfillmentEvent is the Durable Hardware Queue:** All hardware dispatch (kitchen prints, bar prints, KDS updates, drawer kicks) goes through the `FulfillmentEvent` model. The bridge worker claims and executes events via optimistic locking. Fire-and-forget dispatch via Socket.IO is preserved for backward compatibility only — `FulfillmentEvent` is the durable, retryable, dead-letterable path.
 
+> **INV-14 — Relay is Acceleration, NOT Durability:** The cloud WebSocket relay (`cloud-relay-client.ts`) accelerates cloud→NUC push delivery but provides ZERO durability guarantees. All durable guarantees remain DB-backed (upstream/downstream sync workers, OutageQueueEntry). If the relay is unavailable, the system falls back to polling-based sync (5s downstream) with no data loss.
+
+> **INV-15 — Socket Event Log Survives Restart:** Socket events are buffered in a two-tier architecture: L1 (in-memory ring buffer, 500ms dedup) and L2 (PostgreSQL `SocketEventLog` table, 30min TTL). On NUC restart, clients reconnecting catch up from PG. CFD pairings are persisted in `Terminal.metadata` and rehydrated on startup. Restart does not lose buffered events or CFD pairings.
+
 ---
 
 ## System Topology
@@ -92,10 +100,19 @@ These MUST hold at all times. Violation of any invariant is a P0 bug.
                         │    │  - Route allowlist gate          │          │
                         │    │  - Rate limiting (10 req/s)      │          │
                         │    └────────────────┬────────────────┘          │
+                        │                     │                            │
+                        │    ┌────────────────┴────────────────┐          │
+                        │    │     Cloud Relay (WebSocket)      │          │
+                        │    │  - NUC → Cloud push (socket.io)  │          │
+                        │    │  - SYNC_SUMMARY, HEALTH events   │          │
+                        │    │  - Cloud → NUC: DATA_CHANGED,    │          │
+                        │    │    CONFIG_UPDATED, COMMAND        │          │
+                        │    └────────────────┬────────────────┘          │
                         └─────────────────────┼───────────────────────────┘
                               ▲               │               ▲
                    upstream   │    cellular    │    SSE        │  heartbeat
                    sync (5s)  │    orders ↓   │    wake-up    │  (30s)
+                              │    + relay WS  │               │
                               │               ▼               │
                  ┌────────────┴───────────────────────────────┴──────────┐
                  │                    VENUE LAN                          │
@@ -657,7 +674,7 @@ Three new models added to `prisma/schema.prisma`:
 **Normal operation (internet up):**
 1. LAN terminals → NUC local API → write to local PG (for speed) → upstream sync to Neon (5s)
 2. Cellular → Vercel → Neon (direct)
-3. NUC downstream sync pulls Neon changes (15s)
+3. NUC downstream sync pulls Neon changes (5s) — accelerated by cloud relay WS for instant push
 
 **Outage (internet down):**
 1. Upstream sync detects 3 consecutive failures → outage mode
@@ -670,6 +687,143 @@ Three new models added to `prisma/schema.prisma`:
 2. Each entry has idempotencyKey: `{locationId}:{tableName}:{recordId}:{localSeq}`
 3. Neon-wins on timestamp ties (cloud is canonical)
 4. Conflicts logged, visible in MC monitoring dashboard
+
+---
+
+## Phase 7 — Architecture Hardening: Socket Reliability + Cloud Relay + Offline Redundancy
+
+**Status:** Implemented (2026-03-14)
+
+### 7.1 — Persistent Socket Event Log
+
+**New table:** `SocketEventLog` (migration `060-socket-event-log.js`)
+
+Two-tier socket event buffer:
+- **L1 (in-memory):** Ring buffer with 500ms dedup window and 60s TTL — fast path for normal operation
+- **L2 (PostgreSQL):** `SocketEventLog` table with 30min TTL — durable fallback for restart recovery
+
+On NUC restart, buffered events are read from PG so reconnecting clients catch up without data loss. CFD pairings are persisted in `Terminal.metadata` and rehydrated on startup. A cleanup job runs every 5 minutes to prune entries older than 30 minutes.
+
+**Key files:** `scripts/migrations/060-socket-event-log.js`, `src/lib/socket-event-buffer.ts`, `src/lib/socket-server.ts`
+
+### 7.2 — Outage Replay Hardening
+
+- `outage-replay-worker.ts` now emits `OUTAGE_DEAD_LETTER` cloud event when entries are dead-lettered, enabling MC alerting
+- New reconciliation endpoint: `GET /api/system/outage-queue` — returns status counts and last 50 entries for manual review
+
+**Key files:** `src/lib/sync/outage-replay-worker.ts`, `src/app/api/system/outage-queue/route.ts`
+
+### 7.3 — Cloud WebSocket Relay
+
+New outbound WebSocket from NUC to cloud relay for real-time bidirectional push.
+
+- **NUC → Cloud:** Emits `SYNC_SUMMARY`, `BUSINESS_EVENT`, `HEALTH`, `OUTAGE_DEAD_LETTER` events
+- **Cloud → NUC:** Receives `DATA_CHANGED`, `CONFIG_UPDATED`, `COMMAND` events → triggers immediate downstream sync
+- **Safety switch:** 5 consecutive connection failures → falls back to 2s polling
+- **Auto-reconnect:** Exponential backoff (1s–30s), 60s heartbeat keepalive
+- **Auth:** `SERVER_API_KEY` header on connection handshake
+- **Env var:** `CLOUD_RELAY_URL` — when unset, relay is disabled (polling-only mode)
+- **Wiring:** Started/stopped with sync workers in `server.ts`, inside `SYNC_ENABLED` + non-backup guard
+
+**Key files:** `src/lib/cloud-relay-client.ts`, `server.ts`
+
+### 7.4 — Downstream Sync Interval Reduction
+
+`DOWNSTREAM_INTERVAL_MS` default changed from 15000 → 5000 (15s → 5s). Combined with cloud relay instant push, most cloud changes reach the NUC within 1–2 seconds.
+
+**Key files:** `src/lib/sync/sync-config.ts`
+
+### 7.5 — Real-Time Cloud Dashboard Events
+
+`upstream-sync-worker.ts` now emits `SYNC_SUMMARY` via the cloud relay after each sync cycle when rows synced > 0. Payload includes model counts, sync duration, and error summary. Enables MC live dashboard to show near-real-time sync status per venue.
+
+**Key files:** `src/lib/sync/upstream-sync-worker.ts`
+
+### 7.6 — Socket Monitoring API
+
+In-memory ring buffer metrics added to `socket-server.ts`:
+- `recordMetricEvent()` called in all 5 emit functions (emitToLocation, emitToTags, emitToClient, emitToSocket, emitToRoom)
+- `recordReconnection()` called on `join_station` events
+- Exported `getSocketHealthMetrics()` — returns connected clients, throughput (events/min), reconnection rate, CFD pairings
+
+New health endpoint: `GET /api/health/sockets` — returns socket metrics, ack queue depth, relay status, and sync worker metrics.
+
+**Key files:** `src/lib/socket-server.ts`, `src/app/api/health/sockets/route.ts`
+
+### 7.7 — SAF Payment Audit Trail
+
+Payments processed during outage mode are automatically flagged for reconciliation:
+- 4 payment routes (`pay`, `close-tab`, `refund-payment`, `void-payment`) set `needsReconciliation = true` when `isInOutageMode()` returns true
+- New report endpoint: `GET /api/reports/outage-payments` — provides summary (count, total amount) and detail list of outage-flagged payments
+- Available for EOD/shift close reconciliation context
+
+**Key files:** `src/app/api/orders/[id]/pay/route.ts`, `close-tab/route.ts`, `refund-payment/route.ts`, `void-payment/route.ts`, `src/app/api/reports/outage-payments/route.ts`
+
+---
+
+## Phase 8 — Deployment Control Plane (PLANNED — Next Priority)
+
+**Status:** Planned — the next build after Architecture Hardening
+**Goal:** Turn every venue into a managed appliance: MC chooses the version, the NUC updates itself safely, terminals refresh automatically, and rollback is one click.
+
+### Motivation
+The hardening work (Phases 1–7) ensures socket reliability, cloud relay push, and offline redundancy. But updates still require manual SSH into each venue. The Deployment Control Plane eliminates manual intervention by centralizing release management in Mission Control.
+
+### Requirements (8 sub-phases, in priority order)
+
+#### 8.1 — Release Channel System
+MC defines target app version per venue with states: `dev` → `internal` → `canary` → `production` (+ `rollback_target`). Version tracking per location becomes operational, not just informational.
+
+#### 8.2 — NUC Update Agent
+Small agent on each NUC that:
+- Checks MC for approved target version (not blind auto-latest)
+- Pulls exact Docker image tag
+- Runs preflight checks (disk space, DB connectivity, migration compatibility)
+- Restarts safely (PM2/Docker Compose)
+- Reports success/failure back to MC
+
+Fits Docker Compose + Watchtower-style model but made safe for live POS.
+
+#### 8.3 — Safe Rollout Workflow in Mission Control
+MC screens/actions: "release available" → "deploy to canary venue" → "pause rollout" → "promote to all" → "rollback venue/group". MC is the single tool for provisioning, configuring, monitoring, AND deploying — not SSH sessions.
+
+#### 8.4 — Post-Update Health Gates
+Release only marked successful after ALL pass:
+- App container healthy
+- Local PG reachable
+- Migrations successful
+- Sync workers healthy (upstream + downstream)
+- Socket health endpoint healthy (`/api/health/sockets`)
+- Bridge worker healthy (where applicable)
+- Version heartbeat reported to MC
+
+#### 8.5 — Automatic Terminal Refresh + Version Enforcement
+After successful NUC update:
+- NUC emits `system:update-required` socket event
+- Idle browser/kiosk/PWA clients auto-refresh
+- Active payment/order screens defer refresh until safe (no mid-transaction reload)
+- Clients reconnect and load new build automatically
+- Socket-driven, not manual or polling-based
+
+#### 8.6 — Client/Server Version Handshake
+Every terminal connection reports: appVersion, assetVersion, terminalId, locationId. NUC/MC tracks: serverVersion, schemaVersion, clientAssetVersion, stale clients needing reload.
+
+#### 8.7 — Migration Compatibility + Rollback Rules
+Every release must support:
+- Schema migration forward
+- Rollback to previous app image when startup checks fail
+- One-version compatibility window where possible
+- No data corruption across LAN/cloud transitions (respects lastMutatedBy ownership, sync direction, no full resync on transaction tables)
+
+#### 8.8 — Provisioning Standard for New/Replacement NUCs
+Appliance path: prebuilt image or scripted installer → server boots → phones home → assigned to location → downloads approved version → registers in MC → reports heartbeat + version.
+
+### Implementation Order
+1. Version tracking + target release in MC (8.1)
+2. NUC update agent (8.2)
+3. Health-gated rollout/rollback (8.3 + 8.4)
+4. Client auto-refresh + version handshake (8.5 + 8.6)
+5. Provisioning/bootstrap for replacement NUCs (8.7 + 8.8)
 
 ---
 
@@ -812,6 +966,12 @@ All cellular operations are logged to `CellularAuditEvent` in Mission Control:
 | `src/app/api/fleet/failover-event/route.ts` | gwi-mission-control | 1 | Failover event recording |
 | `src/components/monitoring/*.tsx` | gwi-mission-control | 6 | Dashboard monitoring widgets |
 | `src/app/api/admin/monitoring/*.ts` | gwi-mission-control | 6 | Monitoring API routes |
+| `scripts/migrations/060-socket-event-log.js` | gwi-pos | 7 | SocketEventLog table for persistent L2 buffer |
+| `src/lib/socket-event-buffer.ts` | gwi-pos | 7 | PG write-through L2 buffer, 30min TTL cleanup |
+| `src/lib/cloud-relay-client.ts` | gwi-pos | 7 | Outbound WebSocket to cloud relay |
+| `src/app/api/system/outage-queue/route.ts` | gwi-pos | 7 | Outage queue reconciliation endpoint |
+| `src/app/api/health/sockets/route.ts` | gwi-pos | 7 | Socket health monitoring endpoint |
+| `src/app/api/reports/outage-payments/route.ts` | gwi-pos | 7 | Outage payment reconciliation report |
 | `public/ha-check.sh` | gwi-pos | 1 | keepalived health check script + MC lease renewal |
 | `public/promote.sh` | gwi-pos | 1 | Backup → primary promotion script + MC arbiter claim |
 | `public/rejoin-as-standby.sh` | gwi-pos | 1 | Old primary → standby rejoin script |
@@ -844,6 +1004,15 @@ All cellular operations are logged to `CellularAuditEvent` in Mission Control:
 | `src/lib/sync/downstream-sync-worker.ts` | gwi-pos | 6 | Conflict detection with updatedAt + lastMutatedBy comparison |
 | `src/app/api/orders/send/route.ts` | gwi-pos | 6 | Persists FulfillmentAction[] as FulfillmentEvent rows |
 | `prisma/schema.prisma` | gwi-mission-control | 6 | CloudLocation.canonicalLocationId field |
+| `src/lib/socket-server.ts` | gwi-pos | 7 | Persistent event buffer (L1+L2), CFD pairing persistence, socket metrics ring buffer |
+| `src/lib/sync/outage-replay-worker.ts` | gwi-pos | 7 | OUTAGE_DEAD_LETTER cloud event emission |
+| `src/lib/sync/upstream-sync-worker.ts` | gwi-pos | 7 | SYNC_SUMMARY emission via cloud relay |
+| `src/lib/sync/sync-config.ts` | gwi-pos | 7 | DOWNSTREAM_INTERVAL_MS 15000 → 5000 |
+| `server.ts` | gwi-pos | 7 | Cloud relay client start/stop wiring |
+| `src/app/api/orders/[id]/pay/route.ts` | gwi-pos | 7 | needsReconciliation flag during outage |
+| `src/app/api/orders/[id]/close-tab/route.ts` | gwi-pos | 7 | needsReconciliation flag during outage |
+| `src/app/api/orders/[id]/refund-payment/route.ts` | gwi-pos | 7 | needsReconciliation flag during outage |
+| `src/app/api/orders/[id]/void-payment/route.ts` | gwi-pos | 7 | needsReconciliation flag during outage |
 
 ---
 
