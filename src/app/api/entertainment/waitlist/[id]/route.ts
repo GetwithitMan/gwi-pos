@@ -6,6 +6,8 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get a specific waitlist entry
 export const GET = withVenue(async function GET(
@@ -90,7 +92,7 @@ export const PATCH = withVenue(async function PATCH(
   try {
     const { id } = await params
     const body = await request.json()
-    const { locationId, status, notes, phone, partySize } = body
+    const { locationId, status, notes, phone, partySize, employeeId } = body
 
     // Verify locationId is provided
     if (!locationId) {
@@ -99,6 +101,10 @@ export const PATCH = withVenue(async function PATCH(
         { status: 400 }
       )
     }
+
+    // Permission check
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const entry = await db.entertainmentWaitlist.findUnique({
       where: { id },
@@ -331,6 +337,25 @@ export const PATCH = withVenue(async function PATCH(
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })
 
+    // Audit trail: waitlist entry updated
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: status === 'notified' ? 'entertainment_waitlist_notified' : 'entertainment_waitlist_updated',
+        entityType: 'entertainment_waitlist',
+        entityId: id,
+        details: {
+          customerName: updatedEntry.customerName,
+          oldStatus: entry.status,
+          newStatus: status || entry.status,
+          elementId: updatedEntry.elementId,
+          elementName: updatedEntry.element?.name || updatedEntry.element?.visualType || null,
+          employeeName: auth.employee.displayName || `${auth.employee.firstName} ${auth.employee.lastName}`,
+        },
+      },
+    }).catch(err => console.error('[entertainment] Audit log failed:', err))
+
     return NextResponse.json({ data: {
       entry: {
         id: updatedEntry.id,
@@ -376,6 +401,7 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const employeeId = searchParams.get('employeeId')
 
     // Verify locationId is provided
     if (!locationId) {
@@ -384,6 +410,10 @@ export const DELETE = withVenue(async function DELETE(
         { status: 400 }
       )
     }
+
+    // Permission check
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const entry = await db.entertainmentWaitlist.findUnique({
       where: { id },
@@ -440,6 +470,17 @@ export const DELETE = withVenue(async function DELETE(
       }
     })
 
+    // Dispatch waitlist removal notification to all terminals
+    dispatchEntertainmentWaitlistNotify(locationId, {
+      entryId: entry.id,
+      customerName: entry.customerName,
+      elementId: entry.elementId,
+      elementName: null,
+      partySize: 0,
+      action: 'cancelled',
+      message: `${entry.customerName || 'Entry'} removed from waitlist`,
+    }, { async: true })
+
     // Dispatch real-time updates
     dispatchFloorPlanUpdate(locationId, { async: true })
 
@@ -451,8 +492,24 @@ export const DELETE = withVenue(async function DELETE(
       dispatchEntertainmentWaitlistChanged(locationId, {
         itemId: entry.element.linkedMenuItemId,
         waitlistCount: remainingCount,
-      })
+      }, { async: true })
     }
+
+    // Audit trail: waitlist entry removed
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'entertainment_waitlist_removed',
+        entityType: 'entertainment_waitlist',
+        entityId: id,
+        details: {
+          customerName: entry.customerName,
+          elementId: entry.elementId,
+          employeeName: auth.employee.displayName || `${auth.employee.firstName} ${auth.employee.lastName}`,
+        },
+      },
+    }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
     return NextResponse.json({ data: {
       success: true,

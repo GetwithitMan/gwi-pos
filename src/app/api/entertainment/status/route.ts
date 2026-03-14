@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { FloorPlanElementStatus } from '@prisma/client'
+import { FloorPlanElementStatus, EntertainmentWaitlistStatus } from '@prisma/client'
 import { db } from '@/lib/db'
-import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -271,7 +274,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { elementId, locationId, status, currentOrderId, sessionStartedAt, sessionExpiresAt } = body
+    const { elementId, locationId, status, currentOrderId, sessionStartedAt, sessionExpiresAt, employeeId } = body
 
     if (!elementId || !locationId) {
       return NextResponse.json(
@@ -279,6 +282,10 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Permission check — status changes (maintenance, etc.) require entertainment settings permission
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const validStatuses = ['available', 'in_use', 'reserved', 'maintenance']
     if (status && !validStatuses.includes(status)) {
@@ -341,6 +348,63 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       },
     })
 
+    // When entering maintenance, cancel all waiting/notified waitlist entries
+    if (status === 'maintenance') {
+      const activeWaitlistEntries = await db.entertainmentWaitlist.findMany({
+        where: {
+          elementId,
+          locationId,
+          deletedAt: null,
+          status: { in: [EntertainmentWaitlistStatus.waiting, EntertainmentWaitlistStatus.notified] },
+        },
+        select: {
+          id: true,
+          customerName: true,
+          partySize: true,
+          elementId: true,
+        },
+      })
+
+      if (activeWaitlistEntries.length > 0) {
+        // Batch cancel all active entries
+        await db.entertainmentWaitlist.updateMany({
+          where: {
+            id: { in: activeWaitlistEntries.map(e => e.id) },
+          },
+          data: {
+            status: EntertainmentWaitlistStatus.cancelled,
+            notes: 'Item under maintenance',
+          },
+        })
+
+        // Dispatch notification for each cancelled entry
+        for (const entry of activeWaitlistEntries) {
+          dispatchEntertainmentWaitlistNotify(locationId, {
+            entryId: entry.id,
+            customerName: entry.customerName,
+            elementId: entry.elementId,
+            elementName: updatedElement.name || updatedElement.visualType || null,
+            partySize: entry.partySize,
+            action: 'cancelled',
+            message: `${entry.customerName || 'Customer'} removed from waitlist — item under maintenance`,
+          }, { async: true })
+        }
+
+        // Dispatch waitlist count change (now 0) to POS menu grids
+        if (element.linkedMenuItemId) {
+          dispatchEntertainmentWaitlistChanged(locationId, {
+            itemId: element.linkedMenuItemId,
+            waitlistCount: 0,
+          }, { async: true })
+        }
+      }
+    }
+
+    // When returning to available, auto-notify next waitlist entry if any remain
+    if (status === 'available' && element.linkedMenuItemId) {
+      void notifyNextWaitlistEntry(locationId, element.linkedMenuItemId, updatedElement.name || undefined).catch(() => {})
+    }
+
     // Dispatch real-time update to all connected clients (fire-and-forget)
     dispatchFloorPlanUpdate(locationId, { async: true })
 
@@ -352,6 +416,26 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         currentOrderId: updatedElement.currentOrderId,
         expiresAt: updatedElement.sessionExpiresAt?.toISOString() || null,
       }, { async: true }).catch(() => {})
+    }
+
+    // Audit trail: status changed
+    if (status) {
+      void db.auditLog.create({
+        data: {
+          locationId,
+          employeeId: auth.employee.id,
+          action: 'entertainment_status_changed',
+          entityType: 'floor_plan_element',
+          entityId: elementId,
+          details: {
+            elementName: updatedElement.name || updatedElement.visualType,
+            oldStatus: element.status,
+            newStatus: status,
+            linkedMenuItemId: element.linkedMenuItemId,
+            employeeName: auth.employee.displayName || `${auth.employee.firstName} ${auth.employee.lastName}`,
+          },
+        },
+      }).catch(err => console.error('[entertainment] Audit log failed:', err))
     }
 
     return NextResponse.json({

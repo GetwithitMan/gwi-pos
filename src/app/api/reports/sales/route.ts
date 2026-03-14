@@ -8,7 +8,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { getHourInTimezone } from '@/lib/timezone'
-import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { REVENUE_ORDER_STATUSES, calculateSurchargeAmount, roundMoney } from '@/lib/domain/reports'
 
 // GET sales report with comprehensive groupings
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -96,7 +96,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           items: {
             include: {
               menuItem: {
-                select: { id: true, name: true, categoryId: true },
+                select: { id: true, name: true, categoryId: true, itemType: true },
               },
               modifiers: {
                 where: { deletedAt: null },
@@ -168,6 +168,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const modifierSales: Record<string, { name: string; quantity: number; gross: number }> = {}
     const paymentMethodSales: Record<string, { method: string; count: number; amount: number; tips: number }> = {}
 
+    // Entertainment tracking
+    let entertainmentRevenue = 0
+    let entertainmentSessions = 0
+    let entertainmentTotalMinutes = 0
+    const entertainmentByItem: Record<string, { name: string; sessions: number; revenue: number; totalMinutes: number }> = {}
+
     orders.forEach(order => {
       orderCount += 1
       guestCount += order.guestCount
@@ -209,7 +215,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           return method === 'credit' || method === 'card'
         })
         if (hasCardPayment) {
-          totalSurcharge += Math.round(orderSubtotal * pricingProgram.surchargePercent) / 100
+          totalSurcharge += calculateSurchargeAmount(orderSubtotal, pricingProgram.surchargePercent)
         }
       }
 
@@ -331,6 +337,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           modifierSales[modKey].quantity += 1
           modifierSales[modKey].gross += Number(mod.price)
         })
+
+        // Entertainment tracking — timed rental items with block time
+        if (item.menuItem.itemType === 'timed_rental' && item.blockTimeStartedAt) {
+          entertainmentRevenue += itemTotal
+          entertainmentSessions += item.quantity
+          const blockMin = item.blockTimeMinutes || 0
+          entertainmentTotalMinutes += blockMin * item.quantity
+
+          const entItemId = item.menuItemId
+          if (!entertainmentByItem[entItemId]) {
+            entertainmentByItem[entItemId] = { name: item.menuItem.name, sessions: 0, revenue: 0, totalMinutes: 0 }
+          }
+          entertainmentByItem[entItemId].sessions += item.quantity
+          entertainmentByItem[entItemId].revenue += itemTotal
+          entertainmentByItem[entItemId].totalMinutes += blockMin * item.quantity
+        }
       })
     })
 
@@ -354,10 +376,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .sort((a, b) => b.date.localeCompare(a.date))
       .map(d => ({
         ...d,
-        gross: Math.round(d.gross * 100) / 100,
-        net: Math.round(d.net * 100) / 100,
-        tax: Math.round(d.tax * 100) / 100,
-        tips: Math.round(d.tips * 100) / 100,
+        gross: roundMoney(d.gross),
+        net: roundMoney(d.net),
+        tax: roundMoney(d.tax),
+        tips: roundMoney(d.tips),
       }))
 
     const hourlyReport = Object.values(hourlySales)
@@ -365,19 +387,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .map(h => ({
         ...h,
         label: `${h.hour.toString().padStart(2, '0')}:00`,
-        gross: Math.round(h.gross * 100) / 100,
+        gross: roundMoney(h.gross),
       }))
 
     const categoryReport = Object.entries(categorySales)
-      .map(([id, data]) => ({ id, ...data, gross: Math.round(data.gross * 100) / 100 }))
+      .map(([id, data]) => ({ id, ...data, gross: roundMoney(data.gross) }))
       .sort((a, b) => b.gross - a.gross)
 
     const itemReport = Object.entries(itemSales)
       .map(([id, data]) => ({
         id,
         ...data,
-        gross: Math.round(data.gross * 100) / 100,
-        totalWeight: Math.round(data.totalWeight * 100) / 100,
+        gross: roundMoney(data.gross),
+        totalWeight: roundMoney(data.totalWeight),
       }))
       .sort((a, b) => b.gross - a.gross)
       .slice(0, 50) // Top 50 items
@@ -386,8 +408,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .map(([id, data]) => ({
         id,
         ...data,
-        gross: Math.round(data.gross * 100) / 100,
-        tips: Math.round(data.tips * 100) / 100,
+        gross: roundMoney(data.gross),
+        tips: roundMoney(data.tips),
       }))
       .sort((a, b) => b.gross - a.gross)
 
@@ -397,8 +419,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         name: data.name,
         orders: data.orders,
         guests: data.guests,
-        gross: Math.round(data.gross * 100) / 100,
-        avgTicket: Math.round(data.avgTicket * 100) / 100,
+        gross: roundMoney(data.gross),
+        avgTicket: roundMoney(data.avgTicket),
         avgTurnTimeMinutes: (data as Record<string, unknown>).avgTurnTimeMinutes || null,
       }))
       .sort((a, b) => b.gross - a.gross)
@@ -406,28 +428,28 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const seatReport = Object.values(seatSales)
       .map(s => ({
         ...s,
-        gross: Math.round(s.gross * 100) / 100,
+        gross: roundMoney(s.gross),
       }))
       .sort((a, b) => a.seat - b.seat)
 
     const orderTypeReport = Object.values(orderTypeSales)
       .map(ot => ({
         ...ot,
-        gross: Math.round(ot.gross * 100) / 100,
-        avgTicket: Math.round(ot.avgTicket * 100) / 100,
+        gross: roundMoney(ot.gross),
+        avgTicket: roundMoney(ot.avgTicket),
       }))
       .sort((a, b) => b.gross - a.gross)
 
     const modifierReport = Object.entries(modifierSales)
-      .map(([id, data]) => ({ id, ...data, gross: Math.round(data.gross * 100) / 100 }))
+      .map(([id, data]) => ({ id, ...data, gross: roundMoney(data.gross) }))
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 30) // Top 30 modifiers
 
     const paymentMethodReport = Object.values(paymentMethodSales)
       .map(pm => ({
         ...pm,
-        amount: Math.round(pm.amount * 100) / 100,
-        tips: Math.round(pm.tips * 100) / 100,
+        amount: roundMoney(pm.amount),
+        tips: roundMoney(pm.tips),
       }))
       .sort((a, b) => b.amount - a.amount)
 
@@ -437,19 +459,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         itemCount,
         guestCount,
         // Back out hidden tax from inclusive items for accurate gross sales
-        grossSales: Math.round((totalGrossSales - totalTaxFromInclusive) * 100) / 100,
-        discounts: Math.round(totalDiscounts * 100) / 100,
-        netSales: Math.round((totalGrossSales - totalTaxFromInclusive - totalDiscounts) * 100) / 100,
-        tax: Math.round(totalTax * 100) / 100,
-        taxFromInclusive: Math.round(totalTaxFromInclusive * 100) / 100,
-        taxFromExclusive: Math.round(totalTaxFromExclusive * 100) / 100,
-        surcharge: Math.round(totalSurcharge * 100) / 100,
-        tips: Math.round(totalTips * 100) / 100,
-        total: Math.round((totalGrossSales - totalTaxFromInclusive - totalDiscounts + totalTax + totalSurcharge) * 100) / 100,
-        cashSales: Math.round(cashSales * 100) / 100,
-        cardSales: Math.round(cardSales * 100) / 100,
-        averageOrderValue: orderCount > 0 ? Math.round(((totalGrossSales - totalTaxFromInclusive) / orderCount) * 100) / 100 : 0,
-        averageGuestSpend: guestCount > 0 ? Math.round(((totalGrossSales - totalTaxFromInclusive) / guestCount) * 100) / 100 : 0,
+        grossSales: roundMoney(totalGrossSales - totalTaxFromInclusive),
+        discounts: roundMoney(totalDiscounts),
+        netSales: roundMoney(totalGrossSales - totalTaxFromInclusive - totalDiscounts),
+        tax: roundMoney(totalTax),
+        taxFromInclusive: roundMoney(totalTaxFromInclusive),
+        taxFromExclusive: roundMoney(totalTaxFromExclusive),
+        surcharge: roundMoney(totalSurcharge),
+        tips: roundMoney(totalTips),
+        total: roundMoney(totalGrossSales - totalTaxFromInclusive - totalDiscounts + totalTax + totalSurcharge),
+        cashSales: roundMoney(cashSales),
+        cardSales: roundMoney(cardSales),
+        averageOrderValue: orderCount > 0 ? roundMoney((totalGrossSales - totalTaxFromInclusive) / orderCount) : 0,
+        averageGuestSpend: guestCount > 0 ? roundMoney((totalGrossSales - totalTaxFromInclusive) / guestCount) : 0,
       },
       byDay: dailyReport,
       byHour: hourlyReport,
@@ -461,6 +483,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       byOrderType: orderTypeReport,
       byModifier: modifierReport,
       byPaymentMethod: paymentMethodReport,
+      entertainment: entertainmentSessions > 0 ? {
+        revenue: roundMoney(entertainmentRevenue),
+        sessions: entertainmentSessions,
+        averageSessionMinutes: entertainmentSessions > 0 ? Math.round(entertainmentTotalMinutes / entertainmentSessions) : 0,
+        topItem: Object.values(entertainmentByItem).sort((a, b) => b.revenue - a.revenue)[0]?.name || null,
+      } : null,
       filters: {
         startDate,
         endDate,

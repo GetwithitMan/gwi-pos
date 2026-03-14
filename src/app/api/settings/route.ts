@@ -240,6 +240,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       catering: settings.catering !== undefined
         ? { ...(currentSettings.catering ?? {}), ...settings.catering }
         : currentSettings.catering,
+      entertainment: settings.entertainment !== undefined
+        ? { ...(currentSettings.entertainment ?? {}), ...settings.entertainment }
+        : currentSettings.entertainment,
     })
 
     // P0.1: Preserve existing secrets — never overwrite with empty values.

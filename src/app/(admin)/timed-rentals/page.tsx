@@ -135,6 +135,55 @@ export function TimedRentalsContent() {
   })
   const [isSaving, setIsSaving] = useState(false)
 
+  // Entertainment settings state
+  const [allowExtendWithWaitlist, setAllowExtendWithWaitlist] = useState(true)
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+
+  // Load entertainment settings
+  useEffect(() => {
+    async function loadEntertainmentSettings() {
+      try {
+        const res = await fetch('/api/settings')
+        if (res.ok) {
+          const data = await res.json()
+          const s = data.data?.settings
+          if (s?.entertainment?.allowExtendWithWaitlist !== undefined) {
+            setAllowExtendWithWaitlist(s.entertainment.allowExtendWithWaitlist)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load entertainment settings:', err)
+      }
+    }
+    loadEntertainmentSettings()
+  }, [])
+
+  const saveEntertainmentSettings = async (value: boolean) => {
+    setAllowExtendWithWaitlist(value)
+    setIsSavingSettings(true)
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: { entertainment: { allowExtendWithWaitlist: value } },
+          employeeId: employee?.id,
+        }),
+      })
+      if (res.ok) {
+        toast.success(value ? 'Extensions allowed with waitlist' : 'Extensions blocked when waitlist active')
+      } else {
+        setAllowExtendWithWaitlist(!value) // revert on failure
+        toast.error('Failed to save setting')
+      }
+    } catch {
+      setAllowExtendWithWaitlist(!value) // revert on failure
+      toast.error('Failed to save setting')
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }
+
   useEffect(() => {
     loadData()
   }, [])
@@ -574,6 +623,40 @@ export function TimedRentalsContent() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Entertainment Policies */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Policies</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <label className="flex items-center justify-between gap-4 cursor-pointer">
+              <div>
+                <div className="font-medium text-gray-900">Block extensions when waitlist is active</div>
+                <div className="text-sm text-gray-500">
+                  When enabled, customers cannot extend their session if others are waiting for the same equipment type.
+                  They must finish so the next person can play.
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!allowExtendWithWaitlist}
+                disabled={isSavingSettings}
+                onClick={() => saveEntertainmentSettings(!allowExtendWithWaitlist)}
+                className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                  !allowExtendWithWaitlist ? 'bg-blue-600' : 'bg-gray-200'
+                } ${isSavingSettings ? 'opacity-50' : ''}`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    !allowExtendWithWaitlist ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </label>
           </CardContent>
         </Card>
 

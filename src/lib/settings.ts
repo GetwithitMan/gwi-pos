@@ -847,6 +847,7 @@ export interface LocationSettings {
   delivery?: DeliverySettings                         // In-house delivery management (optional for backward compat)
   textToPay?: TextToPaySettings                       // Text-to-Pay / Payment Links via SMS/email (optional for backward compat)
   memberships?: MembershipSettings                     // Recurring membership billing (optional for backward compat)
+  entertainment?: EntertainmentSettings                 // Entertainment / timed rental policies (optional for backward compat)
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -1655,6 +1656,16 @@ export const DEFAULT_SETTINGS: LocationSettings = {
   paidInOutCategories: ['Cash Advance', 'Vendor Payment', 'Refund', 'Restock', 'Tip Payout', 'Other'],
 }
 
+// ─── Entertainment Settings ──────────────────────────────────────────────
+
+export interface EntertainmentSettings {
+  allowExtendWithWaitlist: boolean  // Allow extending time when customers are on the waitlist (default: true)
+}
+
+export const DEFAULT_ENTERTAINMENT_SETTINGS: EntertainmentSettings = {
+  allowExtendWithWaitlist: true,
+}
+
 // ─── Membership Settings ──────────────────────────────────────────────────
 
 export interface MembershipSettings {
@@ -1892,6 +1903,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     memberships: partial.memberships
       ? { ...DEFAULT_MEMBERSHIP_SETTINGS, ...partial.memberships }
+      : undefined,
+    entertainment: partial.entertainment
+      ? { ...DEFAULT_ENTERTAINMENT_SETTINGS, ...partial.entertainment }
       : undefined,
   }
 }

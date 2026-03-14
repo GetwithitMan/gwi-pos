@@ -94,6 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       tipSharesDistributed,
       categories,
       ccTipFees,
+      entertainmentSummary,
     ] = await Promise.all([
       // 1) Revenue summary — order-level aggregates
       // Exclude split parents: when pay-all-splits marks the parent as 'paid',
@@ -435,6 +436,46 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           deletedAt: null,
         },
       }),
+
+      // Entertainment sessions — timed rental items with block time tracking
+      db.$queryRaw<EntertainmentSummaryRow[]>(Prisma.sql`
+        SELECT
+          COUNT(*)::int AS session_count,
+          COALESCE(SUM(oi."itemTotal"), 0)::float AS revenue,
+          COALESCE(SUM(oi."blockTimeMinutes" * oi.quantity), 0)::int AS total_minutes,
+          (
+            SELECT mi.name FROM "OrderItem" oi2
+            JOIN "MenuItem" mi ON oi2."menuItemId" = mi.id
+            JOIN "Order" o2 ON oi2."orderId" = o2.id
+            WHERE o2."locationId" = ${locationId}
+              AND o2.status IN ('completed', 'closed', 'paid')
+              AND o2."deletedAt" IS NULL
+              AND oi2."deletedAt" IS NULL
+              AND oi2."blockTimeStartedAt" IS NOT NULL
+              AND mi."itemType" = 'timed_rental'
+              AND (
+                (o2."businessDayDate" >= ${startOfDay} AND o2."businessDayDate" <= ${endOfDay})
+                OR (o2."businessDayDate" IS NULL AND o2."createdAt" >= ${startOfDay} AND o2."createdAt" <= ${endOfDay})
+              )
+            GROUP BY mi.id, mi.name
+            ORDER BY SUM(oi2."itemTotal") DESC
+            LIMIT 1
+          ) AS top_item_name
+        FROM "OrderItem" oi
+        JOIN "Order" o ON oi."orderId" = o.id
+        JOIN "MenuItem" mi ON oi."menuItemId" = mi.id
+        WHERE o."locationId" = ${locationId}
+          AND o.status IN ('completed', 'closed', 'paid')
+          AND o."deletedAt" IS NULL
+          AND oi."deletedAt" IS NULL
+          AND oi."blockTimeStartedAt" IS NOT NULL
+          AND mi."itemType" = 'timed_rental'
+          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
+          AND (
+            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
+            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
+          )
+      `),
     ])
 
     // ============================================
@@ -1074,6 +1115,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ccTipFees: round(Number(ccTipFees._sum.ccFeeAmountCents || 0) / 100),
         ccTipFeeTransactions: ccTipFees._count || 0,
       },
+
+      entertainment: (() => {
+        const ent = entertainmentSummary[0]
+        if (!ent || Number(ent.session_count) === 0) return null
+        const sessions = Number(ent.session_count) || 0
+        const revenue = Number(ent.revenue) || 0
+        const totalMin = Number(ent.total_minutes) || 0
+        return {
+          revenue: round(revenue),
+          sessions,
+          averageSessionMinutes: sessions > 0 ? round(totalMin / sessions) : 0,
+          topItem: ent.top_item_name || null,
+        }
+      })(),
     } })
   } catch (error) {
     console.error('Failed to generate daily report:', error)
@@ -1143,6 +1198,13 @@ interface WeightSummaryRow {
   revenue: number
   item_count: number
   total_weight: number
+}
+
+interface EntertainmentSummaryRow {
+  session_count: number
+  revenue: number
+  total_minutes: number
+  top_item_name: string | null
 }
 
 interface SurchargeOrderRow {

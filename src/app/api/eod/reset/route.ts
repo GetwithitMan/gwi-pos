@@ -140,6 +140,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         tablesReset: result.tablesReset,
         staleOrdersDetected: result.rolledOverOrders,
         entertainmentReset: result.entertainmentReset,
+        entertainmentSessionsCharged: result.entertainmentSessionsCharged,
+        entertainmentTotalCharges: result.entertainmentTotalCharges,
+        waitlistCancelled: result.waitlistCancelled,
         tabsCaptured: result.tabsCaptured,
         tabsCapturedAmount: result.tabsCapturedAmount,
         tabsDeclined: result.tabsDeclined,
@@ -239,7 +242,25 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    const needsReset = occupiedTablesWithoutOrders > 0 || staleOrderCount > 0 || openTabCount > 0
+    // Count active entertainment sessions and waiting waitlist entries
+    const [activeEntertainment, waitingWaitlist] = await Promise.all([
+      db.menuItem.count({
+        where: {
+          locationId,
+          itemType: 'timed_rental',
+          entertainmentStatus: 'in_use',
+        },
+      }),
+      db.entertainmentWaitlist.count({
+        where: {
+          locationId,
+          deletedAt: null,
+          status: { in: ['waiting', 'notified'] },
+        },
+      }),
+    ])
+
+    const needsReset = occupiedTablesWithoutOrders > 0 || staleOrderCount > 0 || openTabCount > 0 || activeEntertainment > 0 || waitingWaitlist > 0
 
     return NextResponse.json({ data: {
       needsReset,
@@ -249,6 +270,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         currentOpenOrders: openOrderCount,
         openTabsToCapture: openTabCount,
         autoCaptureTabs: eodSettings?.autoCaptureTabs ?? false,
+        activeEntertainmentSessions: activeEntertainment,
+        waitingWaitlistEntries: waitingWaitlist,
       },
       recommendation: needsReset
         ? 'Run EOD reset to clean up orphaned data'

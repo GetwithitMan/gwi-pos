@@ -142,140 +142,146 @@ export async function GET(request: NextRequest) {
     })
 
     // ── Step 2: Process each expired session sequentially ─────────
-    // Group locationIds that need floor plan refresh
+    // Each session is processed inside an interactive transaction with FOR UPDATE
+    // to prevent race conditions with manual stop (DELETE /api/entertainment/block-time).
     const locationIdsToRefresh = new Set<string>()
 
     for (const item of expiredItems) {
-      // Skip items on already-paid/closed orders
-      if (['paid', 'closed', 'voided', 'cancelled'].includes(item.order.status)) {
-        // Still reset the MenuItem so it doesn't stay in_use forever
-        await db.menuItem.update({
-          where: { id: item.menuItem.id },
-          data: {
-            entertainmentStatus: 'available',
-            currentOrderId: null,
-            currentOrderItemId: null,
-          },
-        })
-
-        // Reset linked FloorPlanElements
-        await db.floorPlanElement.updateMany({
-          where: {
-            linkedMenuItemId: item.menuItem.id,
-            status: 'in_use',
-          },
-          data: {
-            status: 'available',
-            currentOrderId: null,
-            sessionStartedAt: null,
-            sessionExpiresAt: null,
-          },
-        })
-
-        locationIdsToRefresh.add(item.order.locationId)
-
-        void dispatchEntertainmentStatusChanged(item.order.locationId, {
-          itemId: item.menuItem.id,
-          entertainmentStatus: 'available',
-          currentOrderId: null,
-          expiresAt: null,
-        }).catch(console.error)
-
-        void notifyNextWaitlistEntry(item.order.locationId, item.menuItem.id, item.menuItem.name).catch(console.error)
-
-        continue
-      }
-
       try {
-        // Calculate elapsed minutes
-        const startedAt = item.blockTimeStartedAt!
-        const elapsedMs = now.getTime() - startedAt.getTime()
-        const elapsedMinutes = Math.ceil(elapsedMs / (1000 * 60))
+        const result = await db.$transaction(async (tx) => {
+          // Lock the OrderItem row to prevent concurrent modification by manual stop
+          const [lockedItem] = await tx.$queryRaw<Array<{
+            blockTimeStartedAt: Date | null
+            blockTimeExpiresAt: Date | null
+            blockTimeMinutes: number | null
+          }>>`
+            SELECT "blockTimeStartedAt", "blockTimeExpiresAt", "blockTimeMinutes"
+            FROM "OrderItem"
+            WHERE "id" = ${item.id}
+            FOR UPDATE
+          `
 
-        // Calculate charge using pricing engine
-        let newPrice: number
-        const bookedMinutes = item.blockTimeMinutes || undefined
-
-        if (item.menuItem.ratePerMinute != null && Number(item.menuItem.ratePerMinute) > 0) {
-          // Per-minute pricing available
-          const pricing = buildPricing(item.menuItem)
-          const { rate: activeRate } = getActiveRate(
-            pricing.ratePerMinute,
-            pricing.happyHour,
-            startedAt
-          )
-          const adjustedPricing: EntertainmentPricing = {
-            ...pricing,
-            ratePerMinute: activeRate,
+          // If already stopped (manual stop won the race), skip silently
+          if (!lockedItem?.blockTimeStartedAt) {
+            return { skipped: true as const }
           }
-          // Pass bookedMinutes so calculateCharge applies overtime if exceeded
-          const breakdown = calculateCharge(elapsedMinutes, adjustedPricing, bookedMinutes)
-          newPrice = breakdown.totalCharge
-        } else {
-          // No per-minute config -- fall back to MenuItem.price
-          newPrice = Number(item.menuItem.price) || 0
 
-          // Apply overtime for non-per-minute items (tier-based or flat-rate)
-          const otConfig = buildOvertimeConfig(item.menuItem)
-          if (otConfig && bookedMinutes && elapsedMinutes > bookedMinutes) {
-            const baseRate = newPrice / bookedMinutes
-            const incrementMin = item.menuItem.incrementMinutes || 15
-            const otResult = calculateBlockTimeOvertime(
-              elapsedMinutes,
-              bookedMinutes,
-              otConfig,
-              baseRate,
-              incrementMin
+          // Also lock and check MenuItem — if already available, another process handled it
+          const [lockedMenuItem] = await tx.$queryRaw<Array<{
+            entertainmentStatus: string | null
+          }>>`
+            SELECT "entertainmentStatus" FROM "MenuItem"
+            WHERE "id" = ${item.menuItem.id}
+            FOR UPDATE
+          `
+
+          if (lockedMenuItem?.entertainmentStatus !== 'in_use') {
+            return { skipped: true as const }
+          }
+
+          // Skip items on already-paid/closed orders — but still reset MenuItem/FloorPlan
+          if (['paid', 'closed', 'voided', 'cancelled'].includes(item.order.status)) {
+            await tx.menuItem.update({
+              where: { id: item.menuItem.id },
+              data: {
+                entertainmentStatus: 'available',
+                currentOrderId: null,
+                currentOrderItemId: null,
+              },
+            })
+
+            await tx.floorPlanElement.updateMany({
+              where: { linkedMenuItemId: item.menuItem.id, status: 'in_use' },
+              data: {
+                status: 'available',
+                currentOrderId: null,
+                sessionStartedAt: null,
+                sessionExpiresAt: null,
+              },
+            })
+
+            return { skipped: false as const, closedOrder: true as const, newPrice: 0 }
+          }
+
+          // Calculate elapsed minutes
+          const startedAt = lockedItem.blockTimeStartedAt!
+          const elapsedMs = now.getTime() - startedAt.getTime()
+          const elapsedMinutes = Math.ceil(elapsedMs / (1000 * 60))
+
+          // Calculate charge using pricing engine
+          let newPrice: number
+          const bookedMinutes = lockedItem.blockTimeMinutes || undefined
+
+          if (item.menuItem.ratePerMinute != null && Number(item.menuItem.ratePerMinute) > 0) {
+            const pricing = buildPricing(item.menuItem)
+            const { rate: activeRate } = getActiveRate(
+              pricing.ratePerMinute,
+              pricing.happyHour,
+              startedAt
             )
-            newPrice += otResult.overtimeCharge
+            const adjustedPricing: EntertainmentPricing = {
+              ...pricing,
+              ratePerMinute: activeRate,
+            }
+            const breakdown = calculateCharge(elapsedMinutes, adjustedPricing, bookedMinutes)
+            newPrice = breakdown.totalCharge
+          } else {
+            newPrice = Number(item.menuItem.price) || 0
+
+            const otConfig = buildOvertimeConfig(item.menuItem)
+            if (otConfig && bookedMinutes && elapsedMinutes > bookedMinutes) {
+              const baseRate = newPrice / bookedMinutes
+              const incrementMin = item.menuItem.incrementMinutes || 15
+              const otResult = calculateBlockTimeOvertime(
+                elapsedMinutes,
+                bookedMinutes,
+                otConfig,
+                baseRate,
+                incrementMin
+              )
+              newPrice += otResult.overtimeCharge
+            }
           }
-        }
 
-        // Update the OrderItem price with the calculated charge and clear startedAt
-        await db.orderItem.update({
-          where: { id: item.id },
-          data: {
-            blockTimeStartedAt: null,
-            price: newPrice,
-            itemTotal: newPrice,
-          },
+          // Update OrderItem price and clear startedAt
+          await tx.orderItem.update({
+            where: { id: item.id },
+            data: {
+              blockTimeStartedAt: null,
+              price: newPrice,
+              itemTotal: newPrice,
+            },
+          })
+
+          // Reset MenuItem to available
+          await tx.menuItem.update({
+            where: { id: item.menuItem.id },
+            data: {
+              entertainmentStatus: 'available',
+              currentOrderId: null,
+              currentOrderItemId: null,
+            },
+          })
+
+          // Reset linked FloorPlanElements
+          await tx.floorPlanElement.updateMany({
+            where: { linkedMenuItemId: item.menuItem.id, status: 'in_use' },
+            data: {
+              status: 'available',
+              currentOrderId: null,
+              sessionStartedAt: null,
+              sessionExpiresAt: null,
+            },
+          })
+
+          return { skipped: false as const, closedOrder: false as const, newPrice }
         })
 
-        // Reset MenuItem to available
-        await db.menuItem.update({
-          where: { id: item.menuItem.id },
-          data: {
-            entertainmentStatus: 'available',
-            currentOrderId: null,
-            currentOrderItemId: null,
-          },
-        })
-
-        // Reset linked FloorPlanElements
-        await db.floorPlanElement.updateMany({
-          where: {
-            linkedMenuItemId: item.menuItem.id,
-            status: 'in_use',
-          },
-          data: {
-            status: 'available',
-            currentOrderId: null,
-            sessionStartedAt: null,
-            sessionExpiresAt: null,
-          },
-        })
+        if (result.skipped) continue
 
         locationIdsToRefresh.add(item.order.locationId)
 
-        // Emit socket events
-        void dispatchEntertainmentUpdate(item.order.locationId, {
-          sessionId: item.id,
-          tableId: item.menuItem.id,
-          tableName: item.menuItem.name,
-          action: 'stopped',
-          expiresAt: null,
-        }).catch(console.error)
-
+        // Fire-and-forget socket events (outside transaction)
         void dispatchEntertainmentStatusChanged(item.order.locationId, {
           itemId: item.menuItem.id,
           entertainmentStatus: 'available',
@@ -285,20 +291,30 @@ export async function GET(request: NextRequest) {
 
         void notifyNextWaitlistEntry(item.order.locationId, item.menuItem.id, item.menuItem.name).catch(console.error)
 
-        // Emit ITEM_UPDATED order event for the price change
-        void emitOrderEvent(
-          item.order.locationId,
-          item.order.id,
-          'ITEM_UPDATED',
-          {
-            lineItemId: item.id,
-            priceCents: Math.round(newPrice * 100),
-            reason: 'block_time_expired',
-          },
-          { deviceId: 'cron-entertainment-expiry' }
-        ).catch(console.error)
+        if (!result.closedOrder) {
+          void dispatchEntertainmentUpdate(item.order.locationId, {
+            sessionId: item.id,
+            tableId: item.menuItem.id,
+            tableName: item.menuItem.name,
+            action: 'stopped',
+            expiresAt: null,
+            startedAt: null,
+          }).catch(console.error)
 
-        expiredSessionCount++
+          void emitOrderEvent(
+            item.order.locationId,
+            item.order.id,
+            'ITEM_UPDATED',
+            {
+              lineItemId: item.id,
+              priceCents: Math.round(result.newPrice * 100),
+              reason: 'block_time_expired',
+            },
+            { deviceId: 'cron-entertainment-expiry' }
+          ).catch(console.error)
+
+          expiredSessionCount++
+        }
       } catch (itemErr) {
         console.error(
           `[entertainment-expiry] Failed to process expired session for OrderItem ${item.id}:`,
@@ -359,13 +375,21 @@ export async function GET(request: NextRequest) {
         notifiedAt: { lt: new Date(now.getTime() - 10 * 60 * 1000) },
         deletedAt: null,
       },
+      include: {
+        element: {
+          select: { id: true, linkedMenuItemId: true, name: true },
+        },
+      },
     })
 
     for (const entry of staleNotified) {
       try {
         await db.entertainmentWaitlist.update({
           where: { id: entry.id },
-          data: { status: 'expired' },
+          data: {
+            status: 'expired',
+            notes: 'Auto-expired — no response within 10 minutes',
+          },
         })
 
         // Decrement positions of entries after this one
@@ -381,6 +405,15 @@ export async function GET(request: NextRequest) {
           },
           data: { position: { decrement: 1 } },
         })
+
+        // Auto-notify the next waiting entry for this item
+        if (entry.element?.linkedMenuItemId) {
+          void notifyNextWaitlistEntry(
+            entry.locationId,
+            entry.element.linkedMenuItemId,
+            entry.element.name || undefined
+          ).catch(console.error)
+        }
       } catch (notifiedErr) {
         console.error(
           `[entertainment-expiry] Failed to expire stale notified entry ${entry.id}:`,

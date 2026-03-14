@@ -4,6 +4,8 @@ import { EntertainmentWaitlistStatus } from '@prisma/client'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - List waitlist entries for floor plan elements
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -127,6 +129,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       partySize,
       notes,
       expiresInMinutes,
+      employeeId,
     } = body
 
     if (!locationId) {
@@ -135,6 +138,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Permission check
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_ENTERTAINMENT)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!elementId && !visualType) {
       return NextResponse.json(
@@ -254,6 +261,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const waitlistSettings = settings.waitlist
     const depositRequired = waitlistSettings?.depositEnabled === true
     const depositAmountSetting = waitlistSettings?.depositAmount ?? 25
+
+    // Audit trail: waitlist entry added
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'entertainment_waitlist_added',
+        entityType: 'entertainment_waitlist',
+        entityId: entry.id,
+        details: {
+          customerName: entry.customerName,
+          partySize: entry.partySize,
+          position: entry.position,
+          elementId: entry.elementId,
+          elementName: entry.element?.name || entry.element?.visualType || null,
+          employeeName: auth.employee.displayName || `${auth.employee.firstName} ${auth.employee.lastName}`,
+        },
+      },
+    }).catch(err => console.error('[entertainment] Audit log failed:', err))
 
     return NextResponse.json({ data: {
       entry: {

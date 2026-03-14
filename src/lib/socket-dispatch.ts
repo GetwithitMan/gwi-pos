@@ -205,8 +205,9 @@ export async function dispatchEntertainmentUpdate(
     sessionId: string
     tableId: string
     tableName: string
-    action: 'started' | 'extended' | 'stopped' | 'warning'
+    action: 'started' | 'extended' | 'stopped' | 'warning' | 'comped' | 'voided' | 'force_stopped' | 'time_override'
     expiresAt: string | null
+    startedAt?: string | null
     addedMinutes?: number
     partyName?: string
   },
@@ -214,6 +215,7 @@ export async function dispatchEntertainmentUpdate(
 ): Promise<boolean> {
   const enrichedPayload = {
     ...payload,
+    startedAt: payload.startedAt ?? null,
     minutesRemaining: payload.expiresAt
       ? Math.max(0, Math.round((new Date(payload.expiresAt).getTime() - Date.now()) / 60000))
       : null,

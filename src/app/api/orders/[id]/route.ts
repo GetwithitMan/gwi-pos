@@ -6,7 +6,8 @@ import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOrderUpdated, dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -567,6 +568,60 @@ export const PUT = withVenue(async function PUT(
       void emitOrderEvents(updatedOrder.locationId, id, orderEvents)
     }
 
+    // Auto-stop entertainment sessions when order is voided/cancelled/closed
+    if (status !== undefined && ['voided', 'cancelled', 'closed'].includes(status)) {
+      void (async () => {
+        try {
+          const entertainmentItems = await db.menuItem.findMany({
+            where: { currentOrderId: id, itemType: 'timed_rental' },
+            select: { id: true, name: true },
+          })
+
+          if (entertainmentItems.length > 0) {
+            // Clear blockTimeStartedAt on order items so Android stops showing timers
+            await db.orderItem.updateMany({
+              where: { orderId: id, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
+              data: { blockTimeStartedAt: null },
+            })
+
+            await db.menuItem.updateMany({
+              where: { currentOrderId: id, itemType: 'timed_rental' },
+              data: {
+                entertainmentStatus: 'available',
+                currentOrderId: null,
+                currentOrderItemId: null,
+              },
+            })
+
+            for (const item of entertainmentItems) {
+              await db.floorPlanElement.updateMany({
+                where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
+                data: {
+                  status: 'available',
+                  currentOrderId: null,
+                  sessionStartedAt: null,
+                  sessionExpiresAt: null,
+                },
+              })
+            }
+
+            void dispatchFloorPlanUpdate(updatedOrder.locationId, { async: true }).catch(() => {})
+            for (const item of entertainmentItems) {
+              void dispatchEntertainmentStatusChanged(updatedOrder.locationId, {
+                itemId: item.id,
+                entertainmentStatus: 'available',
+                currentOrderId: null,
+                expiresAt: null,
+              }, { async: true }).catch(() => {})
+              void notifyNextWaitlistEntry(updatedOrder.locationId, item.id, item.name).catch(() => {})
+            }
+          }
+        } catch (cleanupErr) {
+          console.error('[Order Update] Failed to auto-stop entertainment sessions:', cleanupErr)
+        }
+      })()
+    }
+
     // FIX-011: Dispatch real-time totals update if tip changed (fire-and-forget)
     if (tipTotal !== undefined) {
       dispatchOrderTotalsUpdate(updatedOrder.locationId, updatedOrder.id, {
@@ -775,6 +830,59 @@ export const PATCH = withVenue(async function PATCH(
     // This notifies other terminals (especially Android) of the metadata change
     if (Object.keys(updateData).length > 0) {
       void dispatchOrderUpdated(updatedOrder.locationId, { orderId: updatedOrder.id }).catch(() => {})
+    }
+
+    // Auto-stop entertainment sessions when order is voided/cancelled/closed via PATCH
+    if (status !== undefined && ['voided', 'cancelled', 'closed'].includes(status)) {
+      void (async () => {
+        try {
+          const entertainmentItems = await db.menuItem.findMany({
+            where: { currentOrderId: id, itemType: 'timed_rental' },
+            select: { id: true, name: true },
+          })
+
+          if (entertainmentItems.length > 0) {
+            await db.orderItem.updateMany({
+              where: { orderId: id, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
+              data: { blockTimeStartedAt: null },
+            })
+
+            await db.menuItem.updateMany({
+              where: { currentOrderId: id, itemType: 'timed_rental' },
+              data: {
+                entertainmentStatus: 'available',
+                currentOrderId: null,
+                currentOrderItemId: null,
+              },
+            })
+
+            for (const item of entertainmentItems) {
+              await db.floorPlanElement.updateMany({
+                where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
+                data: {
+                  status: 'available',
+                  currentOrderId: null,
+                  sessionStartedAt: null,
+                  sessionExpiresAt: null,
+                },
+              })
+            }
+
+            void dispatchFloorPlanUpdate(updatedOrder.locationId, { async: true }).catch(() => {})
+            for (const item of entertainmentItems) {
+              void dispatchEntertainmentStatusChanged(updatedOrder.locationId, {
+                itemId: item.id,
+                entertainmentStatus: 'available',
+                currentOrderId: null,
+                expiresAt: null,
+              }, { async: true }).catch(() => {})
+              void notifyNextWaitlistEntry(updatedOrder.locationId, item.id, item.name).catch(() => {})
+            }
+          }
+        } catch (cleanupErr) {
+          console.error('[Order PATCH] Failed to auto-stop entertainment sessions:', cleanupErr)
+        }
+      })()
     }
 
     return NextResponse.json({ data: {

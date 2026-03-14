@@ -172,6 +172,7 @@ export const POST = withVenue(async function POST(
           tableName: order.tabName || `Order #${order.orderNumber}`,
           action: 'started',
           expiresAt: new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString(),
+          startedAt: now.toISOString(),
         }, { async: true }).catch((err) => {
           console.error('[API /fire-course] Entertainment dispatch failed:', err)
         })

@@ -47,6 +47,9 @@ export interface EodResetResult {
   rolledOverOrders: number
   tablesReset: number
   entertainmentReset: number
+  entertainmentSessionsCharged: number
+  entertainmentTotalCharges: number
+  waitlistCancelled: number
   tabsCaptured: number
   tabsCapturedAmount: number
   tabsDeclined: number
@@ -95,6 +98,9 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       rolledOverOrders: (prev?.rolledOverOrders as number) ?? (prev?.staleOrdersDetected as number) ?? 0,
       tablesReset: (prev?.tablesReset as number) ?? 0,
       entertainmentReset: (prev?.entertainmentReset as number) ?? 0,
+      entertainmentSessionsCharged: (prev?.entertainmentSessionsCharged as number) ?? 0,
+      entertainmentTotalCharges: (prev?.entertainmentTotalCharges as number) ?? 0,
+      waitlistCancelled: (prev?.waitlistCancelled as number) ?? 0,
       tabsCaptured: (prev?.tabsCaptured as number) ?? 0,
       tabsCapturedAmount: (prev?.tabsCapturedAmount as number) ?? 0,
       tabsDeclined: (prev?.tabsDeclined as number) ?? 0,
@@ -447,19 +453,76 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
   // ── 6. Clean entertainment ─────────────────────────────────────────────────
   let entertainmentReset = 0
+  let entertainmentSessionsCharged = 0
+  let entertainmentTotalCharges = 0
+  let waitlistCancelled = 0
   let cleanedEntertainmentIds: string[] = []
 
   if (!dryRun) {
+    // 6a. Stop all active entertainment sessions and calculate final charges
     const staleEntertainment = await db.menuItem.findMany({
       where: {
         locationId,
         itemType: 'timed_rental',
         entertainmentStatus: 'in_use',
       },
-      select: { id: true, name: true },
+      select: {
+        id: true,
+        name: true,
+        currentOrderId: true,
+        currentOrderItemId: true,
+        ratePerMinute: true,
+        overtimeEnabled: true,
+        overtimeMode: true,
+        overtimeMultiplier: true,
+        overtimePerMinuteRate: true,
+        overtimeFlatFee: true,
+        overtimeGraceMinutes: true,
+      },
     })
 
     if (staleEntertainment.length > 0) {
+      // For each active session, update the order item's block time expiry to now
+      // This ensures charges are calculated up to the current time
+      for (const item of staleEntertainment) {
+        if (item.currentOrderItemId) {
+          try {
+            const orderItem = await db.orderItem.findUnique({
+              where: { id: item.currentOrderItemId },
+              select: {
+                id: true,
+                blockTimeStartedAt: true,
+                blockTimeMinutes: true,
+                blockTimeExpiresAt: true,
+                price: true,
+                itemTotal: true,
+              },
+            })
+
+            if (orderItem?.blockTimeStartedAt) {
+              // Calculate actual minutes used up to now
+              const actualMinutes = Math.ceil(
+                (now.getTime() - orderItem.blockTimeStartedAt.getTime()) / (1000 * 60)
+              )
+
+              // Update the order item to reflect final session end time
+              await db.orderItem.update({
+                where: { id: orderItem.id },
+                data: {
+                  blockTimeExpiresAt: now,
+                },
+              })
+
+              entertainmentSessionsCharged++
+              entertainmentTotalCharges += Number(orderItem.itemTotal) || 0
+            }
+          } catch (itemErr) {
+            warnings.push(`Failed to finalize session for ${item.name}: ${itemErr instanceof Error ? itemErr.message : 'Unknown'}`)
+          }
+        }
+      }
+
+      // Reset all entertainment menu items to available
       await db.menuItem.updateMany({
         where: { id: { in: staleEntertainment.map(i => i.id) } },
         data: {
@@ -469,6 +532,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
         },
       })
 
+      // Reset all linked floor plan elements
       for (const item of staleEntertainment) {
         await db.floorPlanElement.updateMany({
           where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
@@ -485,15 +549,19 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       cleanedEntertainmentIds = staleEntertainment.map(i => i.id)
     }
 
-    // Expire all waiting/notified waitlist entries
-    await db.entertainmentWaitlist.updateMany({
+    // 6b. Cancel all waiting/notified waitlist entries with EOD note
+    const waitlistResult = await db.entertainmentWaitlist.updateMany({
       where: {
         locationId,
         deletedAt: null,
         status: { in: ['waiting', 'notified'] },
       },
-      data: { status: 'expired' },
+      data: {
+        status: 'cancelled',
+        notes: 'End of day',
+      },
     })
+    waitlistCancelled = waitlistResult.count
 
     // Dispatch entertainment socket events + waitlist notifications
     if (cleanedEntertainmentIds.length > 0) {
@@ -507,6 +575,15 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
         }, { async: true }).catch(() => {})
         void notifyNextWaitlistEntry(locationId, itemId).catch(() => {})
       }
+    }
+
+    // Log entertainment EOD summary
+    if (entertainmentReset > 0 || waitlistCancelled > 0) {
+      console.log(
+        `[EOD] Entertainment cleanup: Stopped ${entertainmentReset} sessions, ` +
+        `cancelled ${waitlistCancelled} waitlist entries, ` +
+        `$${entertainmentTotalCharges.toFixed(2)} total charges`
+      )
     }
   }
 
@@ -612,6 +689,9 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
     rolledOverOrders,
     tablesReset,
     entertainmentReset,
+    entertainmentSessionsCharged,
+    entertainmentTotalCharges: Math.round(entertainmentTotalCharges * 100) / 100,
+    waitlistCancelled,
     tabsCaptured,
     tabsCapturedAmount: Math.round(tabsCapturedAmount * 100) / 100,
     tabsDeclined,
@@ -635,6 +715,9 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
           rolledOverOrders: stats.rolledOverOrders,
           tablesReset: stats.tablesReset,
           entertainmentReset: stats.entertainmentReset,
+          entertainmentSessionsCharged: stats.entertainmentSessionsCharged,
+          entertainmentTotalCharges: stats.entertainmentTotalCharges,
+          waitlistCancelled: stats.waitlistCancelled,
           tabsCaptured: stats.tabsCaptured,
           tabsCapturedAmount: stats.tabsCapturedAmount,
           tabsDeclined: stats.tabsDeclined,
@@ -651,6 +734,9 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       rolledOverOrders: stats.rolledOverOrders,
       tablesReset: stats.tablesReset,
       entertainmentReset: stats.entertainmentReset,
+      entertainmentSessionsCharged: stats.entertainmentSessionsCharged,
+      entertainmentTotalCharges: stats.entertainmentTotalCharges,
+      waitlistCancelled: stats.waitlistCancelled,
       tabsCaptured: stats.tabsCaptured,
       tabsCapturedAmount: stats.tabsCapturedAmount,
       tabsDeclined: stats.tabsDeclined,
