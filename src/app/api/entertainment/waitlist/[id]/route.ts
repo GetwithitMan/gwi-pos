@@ -396,6 +396,7 @@ export const DELETE = withVenue(async function DELETE(
         position: true,
         elementId: true,
         visualType: true,
+        element: { select: { linkedMenuItemId: true } },
       },
     })
 
@@ -443,12 +444,12 @@ export const DELETE = withVenue(async function DELETE(
     dispatchFloorPlanUpdate(locationId, { async: true })
 
     // Notify PitBoss of waitlist count change
-    if (entry.elementId) {
+    if (entry.elementId && entry.element?.linkedMenuItemId) {
       const remainingCount = await db.entertainmentWaitlist.count({
         where: { elementId: entry.elementId, status: 'waiting', deletedAt: null },
       })
       dispatchEntertainmentWaitlistChanged(locationId, {
-        elementId: entry.elementId,
+        itemId: entry.element.linkedMenuItemId,
         waitlistCount: remainingCount,
       })
     }
