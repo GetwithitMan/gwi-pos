@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { Suspense, useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
@@ -37,7 +37,15 @@ interface OrderItemSummary {
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function SplitOrderPage() {
+export default function SplitOrderPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+      <SplitOrderPage />
+    </Suspense>
+  )
+}
+
+function SplitOrderPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const orderId = searchParams.get('orderId')

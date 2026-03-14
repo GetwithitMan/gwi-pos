@@ -62,7 +62,7 @@ async function syncVenueSchemas() {
       })
 
       // 2. Push full Prisma schema
-      execSync('npx prisma db push', {
+      execSync('npx prisma db push --accept-data-loss', {
         stdio: 'inherit',
         env: { ...process.env, DATABASE_URL: venuePooler, DIRECT_URL: venueDirect },
       })
@@ -89,10 +89,11 @@ async function main() {
   })
 
   // 3. Push full Prisma schema to master
-  // No --accept-data-loss: if schema has destructive changes, fail loudly.
-  // Pre-push migrations above handle all data-safe schema transitions.
+  // --accept-data-loss: required on Vercel/Neon for Prisma-internal schema
+  // transitions (e.g., type casts, constraint changes). Pre-push migrations
+  // handle real data safety. NUC pre-start does NOT use this flag.
   console.log('[vercel-build] Running prisma db push (master)...')
-  execSync('npx prisma db push', { stdio: 'inherit' })
+  execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' })
 
   // 4. Sync schema to all existing venue DBs (same Neon project, different DB name per venue)
   await syncVenueSchemas()

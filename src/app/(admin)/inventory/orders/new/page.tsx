@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -41,7 +41,15 @@ interface LineItem {
 
 const UNIT_OPTIONS = ['each', 'case', 'lb', 'oz', 'kg', 'g', 'L', 'ml', 'gal']
 
-export default function NewPurchaseOrderPage() {
+export default function NewPurchaseOrderPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen">Loading...</div>}>
+      <NewPurchaseOrderPage />
+    </Suspense>
+  )
+}
+
+function NewPurchaseOrderPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const employee = useAuthStore(s => s.employee)
