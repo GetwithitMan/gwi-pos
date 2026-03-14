@@ -1756,6 +1756,26 @@ export async function dispatchShiftRequestUpdate(
 }
 
 /**
+ * Notify all clients at a location that the server has been updated.
+ * Idle clients auto-refresh; active payment/order screens defer.
+ */
+export async function dispatchUpdateRequired(
+  locationId: string,
+  newVersion: string
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'system:update-required', {
+      version: newVersion,
+      timestamp: new Date().toISOString(),
+    })
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch system:update-required:', error)
+    return false
+  }
+}
+
+/**
  * Dispatch a venue-log:new event to notify the diagnostics UI
  * that a new log entry has been recorded. Payload is minimal
  * (just a signal) -- the UI re-fetches on receipt.

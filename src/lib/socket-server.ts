@@ -66,6 +66,7 @@ const connectedTerminals = new Map<string, {
   locationId: string
   tags: string[]
   connectedAt: Date
+  clientVersion?: string
 }>()
 
 // ── Per-socket rate limiting ──────────────────────────────────────────────────
@@ -521,6 +522,23 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         // Socket.io automatically cleans up room memberships on disconnect
       } catch (err) {
         console.error(JSON.stringify({ event: 'leave_station', socketId: socket.id, error: String(err) }))
+      }
+    })
+
+    // ==================== Version Handshake ====================
+
+    /**
+     * Client reports its app version after connect/reconnect.
+     * Enables the server to track stale clients needing refresh.
+     */
+    socket.on('client:version', (data: { clientVersion?: string }) => {
+      if (data?.clientVersion && typeof data.clientVersion === 'string') {
+        for (const [, info] of connectedTerminals) {
+          if (info.socketId === socket.id) {
+            info.clientVersion = data.clientVersion
+            break
+          }
+        }
       }
     })
 
@@ -1195,11 +1213,30 @@ export function getTerminalsForTags(tags: string[]): string[] {
  * Get socket health metrics for the monitoring endpoint.
  * Read-only, no DB queries — only cached in-memory data.
  */
+/**
+ * Get connected clients whose reported version differs from the current server version.
+ * Used by update pipeline to identify terminals that need a refresh.
+ */
+export function getStaleClients(currentServerVersion: string): Array<{
+  terminalId: string
+  clientVersion: string
+  locationId: string
+}> {
+  const stale: Array<{ terminalId: string; clientVersion: string; locationId: string }> = []
+  for (const [terminalId, info] of connectedTerminals) {
+    if (info.clientVersion && info.clientVersion !== currentServerVersion) {
+      stale.push({ terminalId, clientVersion: info.clientVersion, locationId: info.locationId })
+    }
+  }
+  return stale
+}
+
 export function getSocketHealthMetrics(): {
   connectedClients: { total: number; byCategory: Record<string, number> }
   eventThroughput: { last60s: number; perSecond: number }
   reconnections: { last60s: number }
   cfdPairings: number
+  staleClients: number
 } {
   // Prune stale entries
   const now = Date.now()
@@ -1225,6 +1262,15 @@ export function getSocketHealthMetrics(): {
 
   const events60s = socketMetrics.eventsEmitted60s.length
 
+  // Count clients with a version that differs from server's package.json version
+  let staleCount = 0
+  const serverVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
+  for (const [, info] of connectedTerminals) {
+    if (info.clientVersion && info.clientVersion !== serverVersion) {
+      staleCount++
+    }
+  }
+
   return {
     connectedClients: {
       total: connectedTerminals.size,
@@ -1238,5 +1284,6 @@ export function getSocketHealthMetrics(): {
       last60s: socketMetrics.reconnections60s.length,
     },
     cfdPairings: cfdToRegisterMap.size,
+    staleClients: staleCount,
   }
 }

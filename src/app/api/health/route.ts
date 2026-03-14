@@ -14,6 +14,7 @@ import { dispatchFailoverActive, dispatchFailoverResolved } from '@/lib/socket-d
 import { getLocalLeaseExpiry } from '@/app/api/fence-check/route'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
+import { getUpdateAgentStatus } from '@/lib/update-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +57,12 @@ interface HealthResponse {
     errorCount: number
     inOutage: boolean
   } | null
+  /** Update agent status */
+  updateAgent: {
+    currentVersion: string
+    isUpdating: boolean
+    lockFileExists: boolean
+  }
   error?: string
 }
 
@@ -215,6 +222,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     pendingReconciliation,
     downstreamSync,
     upstreamSync,
+    updateAgent: getUpdateAgentStatus(),
   }
 
   // Return appropriate HTTP status

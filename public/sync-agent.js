@@ -130,8 +130,90 @@ function run(cmd, cwd, timeoutSec) {
 }
 
 // ── FORCE_UPDATE handler ───────────────────────────────────────────────────
-function handleForceUpdate(payload) {
-  log('[Update] Starting FORCE_UPDATE...')
+// Phase 8.2: First tries version-targeted update via local update agent
+// (preflight checks, payment safety, cloud event reporting).
+// Falls back to direct update if local POS server is unreachable.
+async function handleForceUpdate(payload) {
+  var targetVersion = (payload && payload.version) || null
+
+  // Try version-targeted update via local update agent (Phase 8.2)
+  if (targetVersion) {
+    log('[Update] Attempting version-targeted update to ' + targetVersion + ' via update agent...')
+    try {
+      var updateRes = await postJsonLocal('/api/system/update', { targetVersion: targetVersion })
+      if (updateRes.status === 200) {
+        var updateData = JSON.parse(updateRes.body)
+        if (updateData.success) {
+          log('[Update] Update agent accepted update to ' + targetVersion + ' — monitoring...')
+          // Wait for the update to complete (up to 15 minutes)
+          // The update agent runs in background; poll status
+          var waited = 0
+          var pollInterval = 10000 // 10s
+          var maxWait = 900000 // 15 min
+          while (waited < maxWait) {
+            await new Promise(function(r) { setTimeout(r, pollInterval) })
+            waited += pollInterval
+            try {
+              var statusRes = await new Promise(function(resolve, reject) {
+                var url = new URL('/api/system/update', 'http://localhost:3005')
+                http.get(url, function(res) {
+                  var d = ''
+                  res.on('data', function(c) { d += c })
+                  res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
+                }).on('error', reject)
+              })
+              var statusData = JSON.parse(statusRes.body)
+              if (!statusData.isUpdating) {
+                // Update finished (or server restarted with new version)
+                var newVer = statusData.currentVersion || 'unknown'
+                log('[Update] Update agent finished — version: ' + newVer)
+                // Self-update sync-agent from the new repo
+                selfUpdateSyncAgent()
+                return { ok: true, version: newVer, steps: ['update-agent OK'] }
+              }
+            } catch (pollErr) {
+              // Server may be restarting — expected. Wait a bit more.
+              log('[Update] Server unreachable during update (expected during restart), waiting...')
+              await new Promise(function(r) { setTimeout(r, 15000) })
+              waited += 15000
+              // Check if the server came back with new version
+              try {
+                var postRestartRes = await new Promise(function(resolve, reject) {
+                  var url = new URL('/api/system/update', 'http://localhost:3005')
+                  http.get(url, function(res) {
+                    var d = ''
+                    res.on('data', function(c) { d += c })
+                    res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
+                  }).on('error', reject)
+                })
+                var prData = JSON.parse(postRestartRes.body)
+                if (!prData.isUpdating) {
+                  log('[Update] Server back online — version: ' + (prData.currentVersion || 'unknown'))
+                  selfUpdateSyncAgent()
+                  return { ok: true, version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK'] }
+                }
+              } catch (e) {
+                // Still down — continue waiting
+              }
+            }
+          }
+          log('[Update] Update agent timed out after 15min — falling back to direct update')
+        } else {
+          log('[Update] Update agent rejected: ' + (updateData.error || 'unknown') + ' — falling back to direct update')
+        }
+      } else if (updateRes.status === 409) {
+        log('[Update] Update already in progress — waiting...')
+        return { ok: true, version: 'pending', steps: ['update-agent already running'] }
+      } else {
+        log('[Update] Update agent HTTP ' + updateRes.status + ' — falling back to direct update')
+      }
+    } catch (agentErr) {
+      log('[Update] Update agent unreachable: ' + agentErr.message + ' — falling back to direct update')
+    }
+  }
+
+  // Fallback: Direct update (original behavior)
+  log('[Update] Starting direct FORCE_UPDATE...')
   var steps = []
 
   function step(name, cmd, failOk, timeout) {
@@ -152,11 +234,24 @@ function handleForceUpdate(payload) {
 
   step('git fetch', 'git fetch origin', true, 60)
 
+  // Version-targeted: if targetVersion has a git tag, use it; otherwise origin/main
+  var gitRef = 'origin/main'
+  if (targetVersion) {
+    var tagRef = 'v' + targetVersion
+    try {
+      execSync('git rev-parse ' + tagRef, { cwd: APP_DIR, timeout: 5000, stdio: 'pipe' })
+      gitRef = tagRef
+      log('  Using tag: ' + tagRef)
+    } catch (e) {
+      log('  Tag ' + tagRef + ' not found, using origin/main')
+    }
+  }
+
   // Run git reset and capture the actual error output for diagnostics
-  log('  git reset...')
+  log('  git reset to ' + gitRef + '...')
   var gitResetError = ''
   try {
-    execSync('git reset --hard origin/main', { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
+    execSync('git reset --hard ' + gitRef, { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
     steps.push('git reset OK')
   } catch (e) {
     gitResetError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
@@ -228,7 +323,16 @@ function handleForceUpdate(payload) {
     return { ok: false, error: 'restart failed', steps: steps }
   }
 
-  // Self-update: copy new sync-agent.js from repo so future deploys update the agent too
+  selfUpdateSyncAgent()
+
+  var ver = 'unknown'
+  try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
+  log('[Update] SUCCESS — v' + ver)
+  return { ok: true, version: ver, steps: steps }
+}
+
+// ── Self-update sync agent from repo ──────────────────────────────────────
+function selfUpdateSyncAgent() {
   try {
     var newAgentPath = path.join(APP_DIR, 'public', 'sync-agent.js')
     if (fs.existsSync(newAgentPath)) {
@@ -244,11 +348,6 @@ function handleForceUpdate(payload) {
   } catch (e) {
     log('[Update] WARNING: Could not self-update sync agent: ' + e.message)
   }
-
-  var ver = 'unknown'
-  try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
-  log('[Update] SUCCESS — v' + ver)
-  return { ok: true, version: ver, steps: steps }
 }
 
 // ── Command ACK ────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { ToastContainer } from "@/components/ui/ToastContainer";
 import { ErrorBoundary } from "@/lib/error-boundary";
 import { KioskExitZone } from "@/components/KioskExitZone";
 import { SystemReloadListener } from "@/components/SystemReloadListener";
+import { UpdateRefreshListener } from "@/components/UpdateRefreshListener";
 import { LocationAlertListener } from "@/components/LocationAlertListener";
 import { IdleTimerProvider } from "@/components/IdleTimerProvider";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
@@ -49,6 +50,7 @@ export default function RootLayout({
         </ErrorBoundary>
         <KioskExitZone />
         <SystemReloadListener />
+        <UpdateRefreshListener />
         <LocationAlertListener />
         <ManagerAlertListener />
         <StockChangeListener />

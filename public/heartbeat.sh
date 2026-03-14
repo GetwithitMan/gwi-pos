@@ -81,4 +81,28 @@ if [ -n "$RESPONSE" ]; then
         >/dev/null 2>&1 || true
     fi
   fi
+
+  # Version-targeted update: compare MC targetVersion to current running version
+  TARGET_VER=$(echo "$RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',{}); print(d.get('targetVersion',''))" 2>/dev/null || echo "")
+  if [ -n "$TARGET_VER" ]; then
+    CURRENT_VER=$(python3 -c "import json; print(json.load(open('/opt/gwi-pos/app/package.json')).get('version','unknown'))" 2>/dev/null || echo "unknown")
+    if [ "$CURRENT_VER" != "$TARGET_VER" ] && [ "$CURRENT_VER" != "unknown" ]; then
+      # Trigger version-targeted update via local update agent
+      INTERNAL_SECRET="${INTERNAL_API_SECRET:-}"
+      if [ -n "$INTERNAL_SECRET" ]; then
+        curl -s --max-time 5 \
+          -X POST "http://localhost:3005/api/system/update" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer $INTERNAL_SECRET" \
+          -d "{\"targetVersion\":\"$TARGET_VER\"}" \
+          >/dev/null 2>&1 || true
+      else
+        curl -s --max-time 5 \
+          -X POST "http://localhost:3005/api/system/update" \
+          -H "Content-Type: application/json" \
+          -d "{\"targetVersion\":\"$TARGET_VER\"}" \
+          >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
 fi
