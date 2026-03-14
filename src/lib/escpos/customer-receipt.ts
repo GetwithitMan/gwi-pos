@@ -67,6 +67,7 @@ export interface ReceiptTotals {
   surchargeAmount?: number
   surchargePercent?: number
   surchargeDisclosure?: string | null
+  tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip suggestion basis
 }
 
 export interface CustomerReceiptData {
@@ -206,8 +207,9 @@ export function buildCustomerReceipt(
 
     // Suggested tips
     if (s.receipt.suggestedTips.length > 0) {
-      const tipBase =
+      const rawTipBase =
         s.receipt.tipCalculation === 'pre-tax' ? totals.subtotal : totals.total
+      const tipBase = totals.tipExemptAmount ? Math.max(0, rawTipBase - totals.tipExemptAmount) : rawTipBase
       content.push(line(''))
       content.push(ESCPOS.ALIGN_CENTER)
       content.push(line('Suggested Gratuity'))

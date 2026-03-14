@@ -59,6 +59,8 @@ export interface MappedOrderItem {
   // Pour size (liquor)
   pourSize: string | null
   pourMultiplier: number | null
+  // Tip-exempt — excluded from tip suggestion basis
+  tipExempt: boolean
   createdAt: Date
 }
 
@@ -205,6 +207,7 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
     itemType: item.menuItem?.itemType || item.itemType || null,
     pourSize: item.pourSize || null,
     pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
+    tipExempt: item.tipExempt ?? false,
     createdAt: item.createdAt,
   }
 }

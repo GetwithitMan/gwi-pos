@@ -11,7 +11,9 @@ import { getTerminalId } from '@/lib/shared-socket'
 import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
 import { TabTransferModal } from './TabTransferModal'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
+import { LastCallDialog } from '@/components/tabs/LastCallDialog'
 import { toast } from '@/stores/toast-store'
+import { hasPermission } from '@/lib/auth-utils'
 
 interface OpenOrder {
   id: string
@@ -146,6 +148,7 @@ interface OpenOrdersPanelProps {
   onToggleExpand?: () => void
   forceDark?: boolean
   currentOrderId?: string
+  lastCallEnabled?: boolean
 }
 
 type SortOption = 'newest' | 'oldest' | 'alpha_first' | 'alpha_last' | 'total_high' | 'total_low' | 'employee'
@@ -222,7 +225,7 @@ function getOrderTypeDisplay(order: OpenOrder, dark: boolean): { icon: string; l
 export function OpenOrdersPanel({
   locationId, employeeId, employeePermissions = [], onSelectOrder, onViewOrder, onNewTab,
   refreshTrigger, onViewReceipt, onClosedOrderAction, onOpenTipAdjustment, isExpanded = false, onToggleExpand, forceDark = false,
-  currentOrderId,
+  currentOrderId, lastCallEnabled = false,
 }: OpenOrdersPanelProps) {
   const [orders, setOrders] = useState<OpenOrder[]>([])
   const [closedOrders, setClosedOrders] = useState<OpenOrder[]>([])
@@ -246,8 +249,10 @@ export function OpenOrdersPanel({
   const [bulkProcessing, setBulkProcessing] = useState(false)
   const [tabTransferOrder, setTabTransferOrder] = useState<OpenOrder | null>(null)
   const [loadError, setLoadError] = useState(false)
+  const [showLastCall, setShowLastCall] = useState(false)
 
   const dark = isExpanded || forceDark
+  const isManagerUser = hasPermission(employeePermissions, 'manage_orders') || hasPermission(employeePermissions, 'admin') || hasPermission(employeePermissions, 'all')
 
   const loadOrders = useCallback(async (forPreviousDay = false) => {
     if (!locationId) return
@@ -1092,6 +1097,16 @@ export function OpenOrdersPanel({
           {renderSearchIcon()}
         </div>
         <div className="flex items-center gap-2">
+          {viewMode === 'open' && lastCallEnabled && isManagerUser && orders.length > 0 && (
+            <Button
+              variant="glass"
+              size="sm"
+              onClick={() => setShowLastCall(true)}
+              className="!bg-amber-600/80 hover:!bg-amber-600 !text-white"
+            >
+              Last Call
+            </Button>
+          )}
           {viewMode === 'open' && onNewTab && (
             <Button
               variant={dark ? 'glass' : 'primary'}
@@ -1557,6 +1572,16 @@ export function OpenOrdersPanel({
             setTabTransferOrder(null)
             loadOrders()
           }}
+        />
+      )}
+      {showLastCall && employeeId && (
+        <LastCallDialog
+          open={showLastCall}
+          onClose={() => {
+            setShowLastCall(false)
+            loadOrders()
+          }}
+          employeeId={employeeId}
         />
       )}
     </>

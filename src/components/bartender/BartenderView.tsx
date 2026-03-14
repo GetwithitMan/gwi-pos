@@ -1497,6 +1497,7 @@ export function BartenderView({
             onNewTab={handleQuickTab}
             onClosedOrderAction={() => setTabRefreshTrigger(t => t + 1)}
             refreshTrigger={tabRefreshTrigger + (externalRefreshTrigger || 0)}
+            lastCallEnabled={true}
           />
           </SilentErrorBoundary>
         </motion.div>

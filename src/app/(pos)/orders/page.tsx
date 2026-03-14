@@ -1388,6 +1388,7 @@ export default function OrdersPage() {
         setShowShiftStartModal={setShowShiftStartModal}
         showShiftCloseoutModal={showShiftCloseoutModal}
         pricing={pricing}
+        lastCallEnabled={barOperations.lastCallEnabled}
       />
 
       {/* Weight Capture Modal */}

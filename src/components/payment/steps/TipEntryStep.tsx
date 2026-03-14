@@ -18,6 +18,7 @@ interface TipEntryStepProps {
   tipPercentages?: number[]
   calculateOn?: 'subtotal' | 'total'
   total?: number
+  tipExemptAmount?: number
 }
 
 export function TipEntryStep({
@@ -31,8 +32,10 @@ export function TipEntryStep({
   tipPercentages = [15, 18, 20, 25],
   calculateOn = 'subtotal',
   total,
+  tipExemptAmount,
 }: TipEntryStepProps) {
-  const baseAmount = calculateOn === 'total' && total ? total : subtotal
+  const rawBase = calculateOn === 'total' && total ? total : subtotal
+  const baseAmount = tipExemptAmount ? Math.max(0, rawBase - tipExemptAmount) : rawBase
 
   const calculateTip = (percent: number) => {
     return Math.round(baseAmount * (percent / 100) * 100) / 100

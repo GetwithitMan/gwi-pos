@@ -7,7 +7,8 @@ import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settin
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { BarTabSettings, PaymentSettings } from '@/lib/settings'
+import type { BarTabSettings, PaymentSettings, BarOperationsSettings } from '@/lib/settings'
+import { DEFAULT_BAR_OPERATIONS } from '@/lib/settings'
 
 export default function TabSettingsPage() {
   const { employee } = useRequireAuth()
@@ -18,6 +19,7 @@ export default function TabSettingsPage() {
 
   const [barTabs, setBarTabs] = useState<BarTabSettings | null>(null)
   const [payments, setPayments] = useState<PaymentSettings | null>(null)
+  const [barOperations, setBarOperations] = useState<BarOperationsSettings | null>(null)
 
   useUnsavedWarning(isDirty)
 
@@ -29,6 +31,7 @@ export default function TabSettingsPage() {
         const data = await loadSettingsApi(controller.signal)
         setBarTabs(data.settings.barTabs)
         setPayments(data.settings.payments)
+        setBarOperations(data.settings.barOperations ?? DEFAULT_BAR_OPERATIONS)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load settings')
@@ -46,12 +49,13 @@ export default function TabSettingsPage() {
   }, [loadSettings])
 
   const handleSave = async () => {
-    if (!barTabs || !payments) return
+    if (!barTabs || !payments || !barOperations) return
     try {
       setIsSaving(true)
-      const data = await saveSettingsApi({ barTabs, payments }, employee?.id)
+      const data = await saveSettingsApi({ barTabs, payments, barOperations }, employee?.id)
       setBarTabs(data.settings.barTabs)
       setPayments(data.settings.payments)
+      setBarOperations(data.settings.barOperations ?? DEFAULT_BAR_OPERATIONS)
       setIsDirty(false)
       toast.success('Tab settings saved')
     } catch (err) {
@@ -71,7 +75,12 @@ export default function TabSettingsPage() {
     setIsDirty(true)
   }
 
-  if (isLoading || !barTabs || !payments) {
+  const updateBarOperations = <K extends keyof BarOperationsSettings>(key: K, value: BarOperationsSettings[K]) => {
+    setBarOperations(prev => prev ? { ...prev, [key]: value } : prev)
+    setIsDirty(true)
+  }
+
+  if (isLoading || !barTabs || !payments || !barOperations) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
         <AdminPageHeader
@@ -325,6 +334,35 @@ export default function TabSettingsPage() {
                 className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
             </div>
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 5: Last Call (Batch Tab Close)
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Last Call</h2>
+          <p className="text-sm text-gray-600 mb-5">Batch-close all open bar tabs at end of night. Managers can trigger &quot;Last Call&quot; from the open orders panel to close every remaining tab at once, with auto-gratuity applied to tabs that have no tip.</p>
+
+          <div className="space-y-0">
+            <ToggleRow
+              label="Enable Last Call"
+              description="Show the Last Call button in the open orders panel for managers. When triggered, all open bar tabs are closed at once."
+              checked={barOperations.lastCallEnabled}
+              onChange={v => updateBarOperations('lastCallEnabled', v)}
+            />
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+            <NumberRow
+              label="Auto-Gratuity Percentage"
+              description="Tip percentage to apply to tabs that don't already have a tip when Last Call is triggered. Set to 0 to close without adding gratuity."
+              value={barOperations.lastCallAutoGratuityPercent}
+              onChange={v => updateBarOperations('lastCallAutoGratuityPercent', v)}
+              suffix="%"
+              min={0}
+              max={50}
+            />
           </div>
         </section>
 

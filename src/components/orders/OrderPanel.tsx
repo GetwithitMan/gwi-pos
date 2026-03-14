@@ -1978,6 +1978,7 @@ export const OrderPanel = memo(function OrderPanel({
           onTransferItems={onTransferItems}
           onTransferOrder={onTransferOrder}
           onMergeOrders={onMergeOrders}
+          tableId={tableId}
         />
       </div>
 

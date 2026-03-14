@@ -47,6 +47,7 @@ interface PaymentModalProps {
   waitForOrderReady?: () => Promise<void>  // Await background items persist before /pay
   pricingProgram?: PricingProgram  // Pricing program support
   feedbackSettings?: CustomerFeedbackSettings  // Post-payment feedback prompt
+  tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip suggestion basis
 }
 
 interface PendingPayment {
@@ -150,6 +151,7 @@ export function PaymentModal({
   waitForOrderReady,
   pricingProgram,
   feedbackSettings,
+  tipExemptAmount,
 }: PaymentModalProps) {
   // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
   // Permission check for manual card entry (manager-level feature)
@@ -709,7 +711,7 @@ export function PaymentModal({
     if (percent === null) {
       setTipAmount(0)
     } else {
-      const tip = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal)
+      const tip = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal, tipExemptAmount)
       setTipAmount(tip)
     }
     setCustomTip('')
@@ -1542,7 +1544,7 @@ export function PaymentModal({
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                 {tipSettings.suggestedPercentages.map(percent => {
-                  const tipForPercent = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal)
+                  const tipForPercent = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal, tipExemptAmount)
                   const isSelected = tipAmount === tipForPercent
                   return (
                     <button
@@ -1891,6 +1893,7 @@ export function PaymentModal({
               orderId={orderId}
               amount={currentTotal}
               subtotal={effectiveSubtotal}
+              tipExemptAmount={tipExemptAmount}
               tipSettings={tipSettings}
               terminalId={terminalId}
               employeeId={employeeId}

@@ -190,6 +190,8 @@ export async function GET(
             name: true,
             quantity: true,
             price: true,
+            itemTotal: true,
+            tipExempt: true,
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -213,6 +215,11 @@ export async function GET(
 
     const amount = Number(link.amount)
 
+    // Compute tip-exempt amount from order items
+    const tipExemptAmount = order.items
+      .filter((i: any) => i.tipExempt)
+      .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || Number(i.price) * (i.quantity || 1)), 0)
+
     return NextResponse.json({
       data: {
         venueName: location?.name || 'Restaurant',
@@ -229,6 +236,7 @@ export async function GET(
         allowTip: textToPaySettings.allowTipOnLink,
         tipSuggestions: settings?.tips?.suggestedPercentages || [15, 18, 20],
         expiresAt: link.expiresAt,
+        ...(tipExemptAmount > 0 ? { tipExemptAmount } : {}),
       },
     })
   } catch (error) {

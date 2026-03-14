@@ -21,12 +21,14 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
 
   if (!data) return null
 
+  const tipBasis = data.tipExemptAmount ? Math.max(0, data.orderTotal - data.tipExemptAmount) : data.orderTotal
+
   const computeTipDollars = (sel: TipSelection): number => {
     if (sel.type === 'none') return 0
     if (sel.type === 'custom') return sel.amount
     // preset
     if (data.isPercent) {
-      return Math.round(data.orderTotal * sel.value) / 100
+      return Math.round(tipBasis * sel.value) / 100
     }
     return sel.value
   }
@@ -37,7 +39,7 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
   // Max tip validation: tips > 50% of order total require confirmation
   const submitTip = (amount: number, isPercent: boolean) => {
     const dollars = isPercent
-      ? Math.round(data.orderTotal * amount) / 100
+      ? Math.round(tipBasis * amount) / 100
       : amount
     if (dollars > data.orderTotal * 0.5) {
       setConfirmingTip({ amount, isPercent, tipDollars: dollars })
@@ -206,7 +208,7 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
           {data.suggestions.map((value, index) => {
             const isSelected = selection?.type === 'preset' && selection.index === index
             const tipAmount = data.isPercent
-              ? Math.round(data.orderTotal * value) / 100
+              ? Math.round(tipBasis * value) / 100
               : value
 
             return (

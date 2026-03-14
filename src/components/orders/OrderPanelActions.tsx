@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef, memo } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import { roundToCents } from '@/lib/pricing'
 import { useDatacap, type DatacapResult } from '@/hooks/useDatacap'
 import { ReaderStatusIndicator } from '@/components/payment/ReaderStatusIndicator'
 import { toast } from '@/stores/toast-store'
 import { SwapConfirmationModal } from '@/components/payment/SwapConfirmationModal'
+import { useOrderStore } from '@/stores/order-store'
 
 export interface OrderPanelActionsItem {
   id: string
@@ -69,6 +70,8 @@ interface OrderPanelActionsProps {
   onSchedule?: () => void  // Schedule order for later (pre-order)
   isScheduled?: boolean    // Whether this order is already scheduled
   scheduledForDisplay?: string | null // Display string for scheduled time
+  tableId?: string         // Current table ID — enables "Repeat Last" button
+  tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip suggestion basis
 }
 
 export const OrderPanelActions = memo(function OrderPanelActions({
@@ -123,6 +126,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   onSchedule,
   isScheduled = false,
   scheduledForDisplay,
+  tableId,
+  tipExemptAmount,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
@@ -144,6 +149,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   const paymentCancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Transfer chooser dropdown state
   const [showTransferChooser, setShowTransferChooser] = useState(false)
+  // Repeat Last Order loading state
+  const [repeatLoading, setRepeatLoading] = useState(false)
 
   // Detect isSending transition (true → false) to flash "Sent!" confirmation
   useEffect(() => {
@@ -241,6 +248,88 @@ export const OrderPanelActions = memo(function OrderPanelActions({
     }
   }
 
+  // ─── Repeat Last Order handler ───────────────────────────────────────
+  const handleRepeatLastOrder = useCallback(async () => {
+    if (!tableId || !orderId || repeatLoading) return
+    setRepeatLoading(true)
+    try {
+      const res = await fetch(`/api/orders/last-for-table?tableId=${encodeURIComponent(tableId)}&excludeOrderId=${encodeURIComponent(orderId)}`)
+      if (!res.ok) {
+        toast.error('Failed to fetch previous order')
+        return
+      }
+      const json = await res.json()
+      if (!json.data) {
+        toast.info('No previous order found for this table')
+        return
+      }
+      const { items: prevItems, orderNumber, unavailableItems } = json.data as {
+        items: Array<{
+          menuItemId: string
+          name: string
+          price: number
+          quantity: number
+          pourSize: string | null
+          pourMultiplier: number | null
+          specialNotes: string | null
+          categoryType: string | null
+          is86d: boolean
+          modifiers: Array<{ modifierId: string; name: string; price: number; preModifier: string | null; depth: number }>
+        }>
+        orderNumber: string
+        unavailableItems: string[]
+      }
+
+      // Warn about 86'd items
+      if (unavailableItems.length > 0) {
+        toast.warning(`Unavailable (86'd): ${unavailableItems.join(', ')}`)
+      }
+
+      // Filter to available items only
+      const availableItems = prevItems.filter(i => !i.is86d)
+      if (availableItems.length === 0) {
+        toast.info('All items from the previous order are currently unavailable')
+        return
+      }
+
+      // Add each available item to the order store
+      const store = useOrderStore.getState()
+      let addedCount = 0
+      for (const item of availableItems) {
+        store.addItem({
+          menuItemId: item.menuItemId,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          modifiers: item.modifiers.map(m => ({
+            id: m.modifierId,
+            modifierId: m.modifierId,
+            name: m.name,
+            price: m.price,
+            preModifier: m.preModifier ?? null,
+            depth: m.depth ?? 0,
+            spiritTier: null,
+            linkedBottleProductId: null,
+            parentModifierId: null,
+          })),
+          sentToKitchen: false,
+          categoryType: item.categoryType ?? undefined,
+          pourSize: item.pourSize ?? undefined,
+          pourMultiplier: item.pourMultiplier ?? undefined,
+          specialNotes: item.specialNotes ?? undefined,
+        })
+        addedCount += item.quantity
+      }
+
+      toast.success(`Added ${addedCount} item${addedCount !== 1 ? 's' : ''} from order #${orderNumber}`)
+    } catch (err) {
+      console.error('[RepeatLastOrder] Failed:', err)
+      toast.error('Failed to repeat last order')
+    } finally {
+      setRepeatLoading(false)
+    }
+  }, [tableId, orderId, repeatLoading])
+
   const handleCancelPayment = () => {
     datacap.cancelTransaction()
     setShowPaymentProcessor(false)
@@ -273,7 +362,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
 
   // Suggested tip percentages
   const tipPercentages = [15, 18, 20, 25]
-  const tipBasis = displaySubtotal || displayTotal
+  const rawTipBasis = displaySubtotal || displayTotal
+  const tipBasis = tipExemptAmount ? Math.max(0, rawTipBasis - tipExemptAmount) : rawTipBasis
 
   // ─── PAYMENT PROCESSOR VIEW ───────────────────────────────────────────
   if (showPaymentProcessor) {
@@ -1130,6 +1220,36 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               Merge
             </button>
           )}
+        </div>
+      )}
+
+      {/* Repeat Last Order — only when table order has an active order */}
+      {tableId && orderId && (
+        <div style={{ marginBottom: '8px' }}>
+          <button
+            onClick={handleRepeatLastOrder}
+            disabled={repeatLoading}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              background: 'rgba(34, 197, 94, 0.1)',
+              color: repeatLoading ? '#64748b' : '#4ade80',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: repeatLoading ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              opacity: repeatLoading ? 0.6 : 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>{repeatLoading ? '\u23F3' : '\u21BB'}</span>
+            {repeatLoading ? 'Loading...' : 'Repeat Last'}
+          </button>
         </div>
       )}
 

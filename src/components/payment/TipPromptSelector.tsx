@@ -12,6 +12,7 @@ interface TipPromptSelectorProps {
   requireCustomForZeroTip: boolean   // Must tap Custom → enter 0 to skip
   onSelectTip: (amount: number) => void
   onCancel?: () => void
+  tipExemptAmount?: number           // Sum of tip-exempt item totals — excluded from tip basis
 }
 
 /**
@@ -29,10 +30,12 @@ export function TipPromptSelector({
   requireCustomForZeroTip,
   onSelectTip,
   onCancel,
+  tipExemptAmount,
 }: TipPromptSelectorProps) {
   const [showCustom, setShowCustom] = useState(false)
   const [customAmount, setCustomAmount] = useState('')
 
+  const tipBasis = tipExemptAmount ? Math.max(0, orderAmount - tipExemptAmount) : orderAmount
   const isUnderThreshold = orderAmount < tipDollarAmountThreshold
 
   const handleCustomSubmit = () => {
@@ -108,7 +111,7 @@ export function TipPromptSelector({
           // Percentage buttons (over threshold)
           <>
             {tipPercentSuggestions.map((percent) => {
-              const tipAmount = Math.round(orderAmount * (percent / 100) * 100) / 100
+              const tipAmount = Math.round(tipBasis * (percent / 100) * 100) / 100
               return (
                 <Button
                   key={percent}

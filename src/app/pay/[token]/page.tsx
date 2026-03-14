@@ -27,6 +27,7 @@ interface OrderData {
   allowTip: boolean
   tipSuggestions: number[]
   expiresAt: string
+  tipExemptAmount?: number
 }
 
 type PageState = 'loading' | 'ready' | 'processing' | 'success' | 'error' | 'expired' | 'completed'
@@ -95,7 +96,10 @@ export default function PayPage() {
       return parseFloat(customTip) || 0
     }
     if (selectedTipPercent !== null) {
-      return Math.round(orderData.amountDue * selectedTipPercent) / 100
+      const tipBasis = orderData.tipExemptAmount
+        ? Math.max(0, orderData.amountDue - orderData.tipExemptAmount)
+        : orderData.amountDue
+      return Math.round(tipBasis * selectedTipPercent) / 100
     }
     return 0
   }, [orderData, tipMode, customTip, selectedTipPercent])
@@ -310,7 +314,10 @@ export default function PayPage() {
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                   {orderData.tipSuggestions.map((pct) => {
                     const isSelected = tipMode === 'percent' && selectedTipPercent === pct
-                    const tipDollar = Math.round(orderData.amountDue * pct) / 100
+                    const payTipBasis = orderData.tipExemptAmount
+                      ? Math.max(0, orderData.amountDue - orderData.tipExemptAmount)
+                      : orderData.amountDue
+                    const tipDollar = Math.round(payTipBasis * pct) / 100
                     return (
                       <button
                         key={pct}

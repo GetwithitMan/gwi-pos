@@ -98,6 +98,13 @@ export function ModifierModal({
   // Quick pre-modifier: when set, the next modifier tapped gets this prefix
   const [pendingQuickPreMod, setPendingQuickPreMod] = useState<string | null>(null)
 
+  // ── Hot Buttons: collect all modifiers with showAsHotButton across all groups ──
+  const hotButtons = modifierGroups.flatMap(group =>
+    group.modifiers
+      .filter(mod => mod.showAsHotButton && !mod.is86d)
+      .map(mod => ({ group, modifier: mod }))
+  )
+
   // Show the quick pre-mod bar when we have buttons and modifiers exist
   const showQuickPreModBar = quickPreModifiersEnabled && quickPreModifiers && quickPreModifiers.length > 0 && modifierGroups.length > 0
 
@@ -190,6 +197,50 @@ export function ModifierModal({
             Tap a modifier to apply &quot;{pendingQuickPreMod}&quot; prefix
           </div>
         )}
+      </div>
+    )
+  }
+
+  // Render hot button quick-add bar
+  const renderHotButtons = () => {
+    if (hotButtons.length === 0) return null
+
+    return (
+      <div className="bg-gradient-to-r from-indigo-600/20 to-blue-600/20 rounded-lg p-2 mb-3 border border-indigo-500/30">
+        <div className="text-indigo-300 text-[10px] font-medium mb-1.5 uppercase tracking-wider flex items-center gap-1">
+          <span className="text-yellow-400">&#9733;</span> Quick Add
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {hotButtons.map(({ group, modifier }) => {
+            const selected = isSelected(group.id, modifier.id)
+            const count = getSelectionCount(group.id, modifier.id)
+            const displayPrice = modifier.price * cpm
+
+            return (
+              <button
+                key={`${group.id}-${modifier.id}`}
+                onClick={() => handleToggleModifier(group, modifier, undefined)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  selected
+                    ? 'bg-indigo-500 text-white shadow-lg ring-1 ring-indigo-400 scale-[1.02]'
+                    : 'bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/40 border border-indigo-500/30'
+                }`}
+              >
+                <span>{modifier.name}</span>
+                {displayPrice > 0 && (
+                  <span className={`ml-1 text-[10px] ${selected ? 'text-white/80' : 'text-emerald-400'}`}>
+                    +{formatCurrency(displayPrice)}
+                  </span>
+                )}
+                {count > 1 && (
+                  <span className="ml-1 text-[10px] bg-yellow-500 text-black font-bold rounded-full inline-flex items-center justify-center w-4 h-4">
+                    {count}x
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
     )
   }
@@ -440,6 +491,9 @@ export function ModifierModal({
             <>
               {/* Pour Size Buttons */}
               {renderPourSizeButtons()}
+
+              {/* Hot Button Quick Add */}
+              {renderHotButtons()}
 
               {/* Quick Pre-Modifier Bar */}
               {renderQuickPreModBar()}

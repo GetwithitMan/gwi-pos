@@ -117,6 +117,8 @@ interface OrderItem {
   // Pricing option (size/variant selection)
   pricingOptionId?: string
   pricingOptionLabel?: string
+  // Tip-exempt — excluded from tip suggestion basis
+  tipExempt?: boolean
 }
 
 export interface CourseDelay {
@@ -229,6 +231,8 @@ interface LoadedOrderData {
     // Pricing option
     pricingOptionId?: string | null
     pricingOptionLabel?: string | null
+    // Tip-exempt
+    tipExempt?: boolean
   }[]
   subtotal: number
   discountTotal?: number
@@ -490,6 +494,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       // Pricing option
       pricingOptionId: item.pricingOptionId || undefined,
       pricingOptionLabel: item.pricingOptionLabel || undefined,
+      tipExempt: (item as any).tipExempt ?? false,
     }))
 
     // Recover any pending items from localStorage before setting state

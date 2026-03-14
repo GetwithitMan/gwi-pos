@@ -282,7 +282,7 @@ export const POST = withVenue(async function POST(
       const menuItemIds = items.map(item => item.menuItemId)
       const menuItemsWithCommission = await tx.menuItem.findMany({
         where: { id: { in: menuItemIds } },
-        select: { id: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, categoryId: true, category: { select: { categoryType: true } } },
+        select: { id: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, categoryId: true, category: { select: { categoryType: true } }, tipExempt: true },
       })
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
 

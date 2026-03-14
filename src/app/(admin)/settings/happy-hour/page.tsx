@@ -141,8 +141,8 @@ export default function PricingRulesPage() {
     ]).then(([settingsData, catData, itemData]) => {
       const settings: LocationSettings = settingsData?.data?.settings ?? DEFAULT_SETTINGS
       const loaded = Array.isArray(settings.pricingRules) ? settings.pricingRules : []
-      setCategories(catData?.data ?? [])
-      setMenuItems(itemData?.data ?? [])
+      setCategories(catData?.data?.categories ?? catData?.data ?? [])
+      setMenuItems(itemData?.data?.items ?? itemData?.data ?? [])
 
       // autoDelete cleanup: remove expired one-time rules with autoDelete
       const now = new Date()
@@ -562,17 +562,18 @@ function RuleModal({
   }
 
   // Sample items for live price preview
-  const sampleItems = useMemo(() => menuItems.slice(0, 5), [menuItems])
+  const sampleItems = useMemo(() => Array.isArray(menuItems) ? menuItems.slice(0, 5) : [], [menuItems])
 
   // Ghost ID detection
-  const catIdSet = useMemo(() => new Set(categories.map(c => c.id)), [categories])
-  const itemIdSet = useMemo(() => new Set(menuItems.map(i => i.id)), [menuItems])
+  const catIdSet = useMemo(() => new Set((Array.isArray(categories) ? categories : []).map(c => c.id)), [categories])
+  const itemIdSet = useMemo(() => new Set((Array.isArray(menuItems) ? menuItems : []).map(i => i.id)), [menuItems])
 
   // Filtered items for scope picker
   const filteredItems = useMemo(() => {
-    if (!itemSearch) return menuItems
+    const items = Array.isArray(menuItems) ? menuItems : []
+    if (!itemSearch) return items
     const q = itemSearch.toLowerCase()
-    return menuItems.filter(i => i.name.toLowerCase().includes(q) || i.category?.name?.toLowerCase().includes(q))
+    return items.filter(i => i.name.toLowerCase().includes(q) || i.category?.name?.toLowerCase().includes(q))
   }, [menuItems, itemSearch])
 
   const itemsByCategory = useMemo(() => {

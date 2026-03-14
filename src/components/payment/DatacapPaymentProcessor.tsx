@@ -13,6 +13,7 @@ interface DatacapPaymentProcessorProps {
   orderId: string
   amount: number
   subtotal?: number
+  tipExemptAmount?: number
   tipSettings?: {
     enabled: boolean
     suggestedPercentages: number[]
@@ -36,6 +37,7 @@ export function DatacapPaymentProcessor({
   orderId,
   amount,
   subtotal,
+  tipExemptAmount,
   tipSettings,
   terminalId,
   employeeId,
@@ -136,7 +138,8 @@ export function DatacapPaymentProcessor({
   }, [processingStatus, reader?.id, readerId, locationId])
 
   const totalToCharge = amount + tipAmount
-  const tipBasis = subtotal || amount
+  const rawTipBasis = subtotal || amount
+  const tipBasis = tipExemptAmount ? Math.max(0, rawTipBasis - tipExemptAmount) : rawTipBasis
 
   // Dispatch CFD events based on processing status changes (fire-and-forget)
   const prevStatusRef = useRef<string>('idle')

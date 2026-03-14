@@ -2623,6 +2623,12 @@ model OrderItem {
   // Cost snapshot at time of sale (for historically accurate food cost reports)
   costAtSale Decimal? // Total ingredient cost (base recipe + pricing option links) at time of order
 
+  // Tip-exempt — snapshot from MenuItem at time of order. Excluded from tip suggestion basis.
+  tipExempt Boolean @default(false)
+
+  // Pricing rule applied at time of order (audit/reporting) — PricingAdjustment JSON
+  pricingRuleApplied Json?
+
   // Shared Table Ownership (Skill 253) - who added this item
   addedByEmployeeId String?
   addedByEmployee   Employee? @relation("OrderItemAddedBy", fields: [addedByEmployeeId], references: [id])

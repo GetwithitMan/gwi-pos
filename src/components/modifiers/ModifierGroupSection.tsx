@@ -242,6 +242,9 @@ export function ModifierGroupSection({
                 }}
               >
                 <span className="truncate flex-1 text-left">
+                  {modifier.showAsHotButton && (
+                    <span className="text-yellow-400 mr-0.5 text-[10px]" title="Quick Add">&#9733;</span>
+                  )}
                   {modifier.name}
                 </span>
 

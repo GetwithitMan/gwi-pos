@@ -284,7 +284,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const menuItemIds = items.map(item => item.menuItemId)
     const menuItems = await db.menuItem.findMany({
       where: { id: { in: menuItemIds } },
-      select: { id: true, commissionType: true, commissionValue: true, category: { select: { categoryType: true } } },
+      select: { id: true, commissionType: true, commissionValue: true, category: { select: { categoryType: true } }, tipExempt: true },
     })
     const menuItemMap = new Map(menuItems.map(mi => [mi.id, mi]))
 
@@ -377,6 +377,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         unitPrice: item.unitPrice ?? null,
         grossWeight: item.grossWeight ?? null,
         tareWeight: item.tareWeight ?? null,
+        ...({ tipExempt: (menuItem as any)?.tipExempt ?? false } as any),
         modifiers: {
           create: item.modifiers.map(mod => ({
             locationId,

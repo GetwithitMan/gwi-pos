@@ -49,6 +49,7 @@ export interface CFDTipPromptEvent {
   tax: number
   orderTotal: number
   isUnderThreshold: boolean
+  tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip basis
 }
 
 /** POS → CFD: Request signature on CFD screen */

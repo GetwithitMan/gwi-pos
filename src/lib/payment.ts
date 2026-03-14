@@ -87,14 +87,19 @@ export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   house_account: 'House Account',
 }
 
-// Calculate tip amount from percentage
+// Calculate tip amount from percentage.
+// tipExemptAmount: sum of tip-exempt item totals to exclude from the basis.
 export function calculateTip(
   subtotal: number,
   tipPercent: number,
   calculateOn: 'subtotal' | 'total',
-  total?: number
+  total?: number,
+  tipExemptAmount?: number
 ): number {
-  const base = calculateOn === 'total' && total ? total : subtotal
+  let base = calculateOn === 'total' && total ? total : subtotal
+  if (tipExemptAmount && tipExemptAmount > 0) {
+    base = Math.max(0, base - tipExemptAmount)
+  }
   return Math.round(base * (tipPercent / 100) * 100) / 100
 }
 
@@ -103,9 +108,13 @@ export function calculateTipPercent(
   tipAmount: number,
   subtotal: number,
   calculateOn: 'subtotal' | 'total',
-  total?: number
+  total?: number,
+  tipExemptAmount?: number
 ): number {
-  const base = calculateOn === 'total' && total ? total : subtotal
+  let base = calculateOn === 'total' && total ? total : subtotal
+  if (tipExemptAmount && tipExemptAmount > 0) {
+    base = Math.max(0, base - tipExemptAmount)
+  }
   if (base === 0) return 0
   return Math.round((tipAmount / base) * 100 * 10) / 10
 }

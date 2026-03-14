@@ -7,6 +7,7 @@
 
 import type { TxClient, AddItemInput, ItemPrepData } from './types'
 import { isValidModifierId, calculateItemCardPrice } from './item-calculations'
+import { calculateItemTotal } from '@/lib/order-calculations'
 import { getBestPricingRuleForItem } from '@/lib/settings'
 import type { PricingRule, PricingAdjustment } from '@/lib/settings'
 
@@ -45,10 +46,11 @@ export async function createOrderItem(
     idempotencyKey,
     pricingRules,
   } = params
-  const { item, effectivePrice, fullItemTotal, itemCommission, menuItem, catType, itemTaxInclusive } = prepData
+  const { item, effectivePrice, fullItemTotal: preRuleItemTotal, itemCommission, menuItem, catType, itemTaxInclusive } = prepData
 
   // Apply pricing rule (catalog-priced items only, skip manual/open price overrides)
   let finalPrice = effectivePrice
+  let finalItemTotal = preRuleItemTotal
   let pricingRuleApplied: PricingAdjustment | null = null
   const isManualPrice = item.pricingOptionId || item.soldByWeight || item.blockTimeMinutes || item.pizzaConfig
   if (!isManualPrice && pricingRules?.length) {
@@ -58,6 +60,8 @@ export async function createOrderItem(
     )
     if (pricingRuleApplied) {
       finalPrice = pricingRuleApplied.adjustedPrice
+      // Recalculate itemTotal with the adjusted price so order totals stay correct
+      finalItemTotal = calculateItemTotal({ ...item, price: finalPrice })
     }
   }
 
@@ -74,7 +78,7 @@ export async function createOrderItem(
       quantity: item.quantity,
       pourSize: item.pourSize ?? null,
       pourMultiplier: item.pourMultiplier ?? null,
-      itemTotal: fullItemTotal,
+      itemTotal: finalItemTotal,
       commissionAmount: itemCommission,
       addedByEmployeeId: requestingEmployeeId || null,
       specialNotes: item.specialNotes || null,
@@ -94,6 +98,7 @@ export async function createOrderItem(
       pricingOptionId: item.pricingOptionId ?? null,
       pricingOptionLabel: item.pricingOptionLabel ?? null,
       ...(pricingRuleApplied ? { pricingRuleApplied: pricingRuleApplied as object } : {}),
+      ...({ tipExempt: (menuItem as any)?.tipExempt ?? false } as any),
       lastMutatedBy: 'local',
       // Modifiers
       modifiers: item.modifiers?.length ? {

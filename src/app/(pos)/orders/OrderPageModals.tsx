@@ -265,6 +265,9 @@ export interface OrderPageModalsProps {
     isDualPricingEnabled: boolean
     cashDiscountRate: number
   }
+
+  // Last Call batch tab close
+  lastCallEnabled?: boolean
 }
 
 export function OrderPageModals(props: OrderPageModalsProps) {
@@ -468,6 +471,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             onClosedOrderAction={onClosedOrderAction}
             onOpenTipAdjustment={onOpenTipAdjustment}
             onViewReceipt={onViewReceipt}
+            lastCallEnabled={props.lastCallEnabled}
           />
           </SilentErrorBoundary>
         </div>
@@ -603,6 +607,11 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             orderTotal={currentOrder?.total ?? 0}
             subtotal={currentOrder?.subtotal}
             remainingBalance={currentOrder?.total ?? 0}
+            tipExemptAmount={
+              currentOrder?.items
+                ?.filter((i: any) => i.tipExempt && i.status !== 'voided')
+                .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || (Number(i.price) * (i.quantity || 1))), 0) || undefined
+            }
             tabCards={paymentTabCards}
             onTabCardsChanged={onTabCardsChanged}
             dualPricing={dualPricing}

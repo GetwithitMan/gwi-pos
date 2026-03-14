@@ -143,6 +143,7 @@ export interface MenuItemInfo {
   name: string
   categoryId: string | null
   category: { categoryType: string | null } | null
+  tipExempt?: boolean
 }
 
 // ─── Item Prep Data (pre-computed item data for creation) ───────────────────
