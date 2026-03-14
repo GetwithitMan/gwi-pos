@@ -532,6 +532,49 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const { currentOrder } = get()
     if (!currentOrder) return null
 
+    // BUG-M2/M3 FIX: Dedup rapid taps — if an identical unsent item already exists,
+    // increment its quantity instead of creating a duplicate.
+    // Only dedup simple items (no special notes, no modifiers that differ, no pizza, no weight, no timed rental).
+    const existingMatch = currentOrder.items.find(existing => {
+      // Only merge into unsent items with temp IDs (not yet persisted)
+      if (!isTempId(existing.id)) return false
+      if (existing.sentToKitchen) return false
+      // Must be same menu item at same price
+      if (existing.menuItemId !== item.menuItemId) return false
+      if (existing.price !== item.price) return false
+      // Skip dedup for items with special characteristics
+      if (item.specialNotes || existing.specialNotes) return false
+      if (item.pizzaConfig || existing.pizzaConfig) return false
+      if (item.soldByWeight || existing.soldByWeight) return false
+      if (item.blockTimeMinutes || existing.blockTimeMinutes) return false
+      if (item.pricingOptionId !== existing.pricingOptionId) return false
+      if (item.pourSize !== existing.pourSize) return false
+      // Compare modifiers: same count and same IDs
+      const itemModIds = (item.modifiers || []).map(m => m.id || m.modifierId || '').sort().join(',')
+      const existingModIds = (existing.modifiers || []).map(m => m.id || m.modifierId || '').sort().join(',')
+      if (itemModIds !== existingModIds) return false
+      // Compare ingredient modifications
+      const itemIngMods = (item.ingredientModifications || []).map(m => `${m.ingredientId}:${m.modificationType}`).sort().join(',')
+      const existingIngMods = (existing.ingredientModifications || []).map(m => `${m.ingredientId}:${m.modificationType}`).sort().join(',')
+      if (itemIngMods !== existingIngMods) return false
+      return true
+    })
+
+    if (existingMatch) {
+      // Increment quantity on existing item instead of adding duplicate
+      const newQuantity = existingMatch.quantity + (item.quantity || 1)
+      const updatedOrder = {
+        ...currentOrder,
+        items: currentOrder.items.map(i =>
+          i.id === existingMatch.id ? { ...i, quantity: newQuantity } : i
+        ),
+      }
+      const totals = computeTotals(updatedOrder, get().estimatedTaxRate)
+      set({ currentOrder: { ...updatedOrder, ...totals } })
+      debouncedPersist(updatedOrder.id, updatedOrder.items)
+      return existingMatch.id
+    }
+
     const newItem: OrderItem = {
       ...item,
       id: generateTempItemId(),

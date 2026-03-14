@@ -66,6 +66,17 @@ interface TimedItem {
 
 type OvertimeMode = 'multiplier' | 'custom_rate' | 'flat_fee' | 'per_minute'
 
+interface PricingWindowForm {
+  id: string
+  name: string
+  percentAdjust: number   // -50 = 50% off, +25 = 25% extra
+  dollarAdjust: number    // per minute: -0.05 = $0.05/min off, +0.10 = $0.10/min extra
+  startTime: string       // "13:00"
+  endTime: string         // "16:00"
+  days: string[]
+  enabled: boolean
+}
+
 interface ItemBuilderForm {
   name: string
   visualType: EntertainmentVisualType
@@ -73,12 +84,8 @@ interface ItemBuilderForm {
   gracePeriodMinutes: number
   // Prepaid packages
   prepaidPackages: PrepaidPackage[]
-  // Happy hour
-  happyHourEnabled: boolean
-  happyHourPrice: number | null  // Simple HH price instead of full config
-  happyHourStart: string         // 24h format e.g. "13:00"
-  happyHourEnd: string           // 24h format e.g. "18:00"
-  happyHourDays: string[]        // e.g. ["monday","tuesday",...]
+  // Pricing windows (replaces single happy hour)
+  pricingWindows: PricingWindowForm[]
   // Overtime pricing
   overtimeEnabled: boolean
   overtimeMode: OvertimeMode
@@ -120,11 +127,7 @@ export function TimedRentalsContent() {
     ratePerMinute: DEFAULT_PRICING.ratePerMinute,
     gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
     prepaidPackages: DEFAULT_PREPAID_PACKAGES,
-    happyHourEnabled: false,
-    happyHourPrice: null,
-    happyHourStart: '13:00',
-    happyHourEnd: '18:00',
-    happyHourDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    pricingWindows: [],
     overtimeEnabled: false,
     overtimeMode: 'multiplier',
     overtimeMultiplier: 1.5,
@@ -228,11 +231,7 @@ export function TimedRentalsContent() {
         ratePerMinute: DEFAULT_PRICING.ratePerMinute,
         gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
         prepaidPackages: DEFAULT_PREPAID_PACKAGES,
-        happyHourEnabled: false,
-        happyHourPrice: null,
-        happyHourStart: '13:00',
-        happyHourEnd: '18:00',
-        happyHourDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+        pricingWindows: [],
         overtimeEnabled: false,
         overtimeMode: 'multiplier',
         overtimeMultiplier: 1.5,
@@ -243,18 +242,41 @@ export function TimedRentalsContent() {
       })
       setShowBuilder(true)
     } else {
-      // Load existing item — fetch from individual item endpoint to get MenuItem-level happy hour columns
+      // Load existing item — fetch from individual item endpoint to get MenuItem-level columns
       const item = timedItems.find(i => i.id === itemIdFromUrl)
       if (item) {
         const perHour = item.timedPricing?.perHour || item.price || 15
         const ratePerMinute = perHour / 60
 
-        // Start with fallback values from timedPricing JSON
-        let hhEnabled = (item.timedPricing as any)?.happyHour?.enabled || false
-        let hhPrice: number | null = (item.timedPricing as any)?.happyHour?.price || null
-        let hhStart = '13:00'
-        let hhEnd = '18:00'
-        let hhDays: string[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+        // Load pricing windows from timedPricing JSON, or convert legacy happyHour
+        let pricingWindows: PricingWindowForm[] = []
+        const storedWindows = (item.timedPricing as any)?.pricingWindows
+        if (Array.isArray(storedWindows) && storedWindows.length > 0) {
+          // Migrate old type/value format to percentAdjust/dollarAdjust
+          pricingWindows = storedWindows.map((w: any) => {
+            if (w.percentAdjust !== undefined) return w
+            const pct = w.type === 'discount' ? -(w.value || 0) : w.type === 'surcharge' ? (w.value || 0) : 0
+            const dollar = w.type === 'fixed_rate' ? (w.value || 0) - ratePerMinute : 0
+            return { ...w, percentAdjust: pct, dollarAdjust: dollar }
+          })
+        } else if ((item.timedPricing as any)?.happyHour?.enabled) {
+          // Convert legacy single happy hour to a pricing window
+          const legacyHH = (item.timedPricing as any).happyHour
+          const legacyPrice = legacyHH.price || 0
+          const discountPct = ratePerMinute > 0 && legacyPrice > 0
+            ? Math.round((1 - legacyPrice / ratePerMinute) * 100)
+            : 50
+          pricingWindows = [{
+            id: 'legacy-hh',
+            name: 'Happy Hour',
+            percentAdjust: -discountPct,
+            dollarAdjust: 0,
+            startTime: '13:00',
+            endTime: '18:00',
+            days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+            enabled: true,
+          }]
+        }
 
         // Extract overtime fields from timedPricing JSON (fallback defaults)
         const overtime = (item.timedPricing as any)?.overtime
@@ -272,11 +294,7 @@ export function TimedRentalsContent() {
             ratePerMinute,
             gracePeriodMinutes: item.gracePeriodMinutes || DEFAULT_PRICING.graceMinutes,
             prepaidPackages: (item.timedPricing as any)?.prepaidPackages || DEFAULT_PREPAID_PACKAGES,
-            happyHourEnabled: hhEnabled,
-            happyHourPrice: hhPrice,
-            happyHourStart: hhStart,
-            happyHourEnd: hhEnd,
-            happyHourDays: hhDays,
+            pricingWindows,
             overtimeEnabled: otEnabled,
             overtimeMode: otMode,
             overtimeMultiplier: otMultiplier,
@@ -288,7 +306,7 @@ export function TimedRentalsContent() {
           setShowBuilder(true)
         }
 
-        // Fetch full item detail for authoritative happy hour columns
+        // Fetch full item detail for authoritative columns
         void (async () => {
           try {
             const detailRes = await fetch(`/api/menu/items/${itemIdFromUrl}?locationId=${employee?.location?.id}`)
@@ -296,13 +314,19 @@ export function TimedRentalsContent() {
               const detailData = await detailRes.json()
               const detail = detailData.data?.item
               if (detail) {
-                hhEnabled = detail.happyHourEnabled || false
-                hhStart = detail.happyHourStart || '13:00'
-                hhEnd = detail.happyHourEnd || '18:00'
-                hhDays = Array.isArray(detail.happyHourDays) ? detail.happyHourDays : ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-                // Reverse-calculate HH price from discount percentage
-                if (hhEnabled && detail.happyHourDiscount != null && ratePerMinute > 0) {
-                  hhPrice = ratePerMinute * (1 - Number(detail.happyHourDiscount) / 100)
+                // Convert legacy happyHour* columns into a pricing window if no pricingWindows exist
+                if (detail.happyHourEnabled && pricingWindows.length === 0) {
+                  const discountPct = detail.happyHourDiscount != null ? Number(detail.happyHourDiscount) : 50
+                  pricingWindows = [{
+                    id: 'legacy-hh',
+                    name: 'Happy Hour',
+                    percentAdjust: -discountPct,
+                    dollarAdjust: 0,
+                    startTime: detail.happyHourStart || '13:00',
+                    endTime: detail.happyHourEnd || '16:00',
+                    days: Array.isArray(detail.happyHourDays) ? detail.happyHourDays : ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                    enabled: true,
+                  }]
                 }
                 // Populate overtime fields from MenuItem columns if present
                 if (detail.overtimeEnabled != null) otEnabled = detail.overtimeEnabled
@@ -408,11 +432,39 @@ export function TimedRentalsContent() {
     }
   }
 
+  // Check if two time ranges overlap on any shared day
+  const windowsOverlap = (a: PricingWindowForm, b: PricingWindowForm): boolean => {
+    if (!a.enabled || !b.enabled) return false
+    if (!a.days.some(d => b.days.includes(d))) return false
+    // Normalize to minutes for comparison
+    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+    const aStart = toMin(a.startTime), aEnd = toMin(a.endTime)
+    const bStart = toMin(b.startTime), bEnd = toMin(b.endTime)
+    const aOvernight = aStart >= aEnd
+    const bOvernight = bStart >= bEnd
+    if (!aOvernight && !bOvernight) return aStart < bEnd && bStart < aEnd
+    if (aOvernight && !bOvernight) return bStart >= aStart || bEnd <= aEnd
+    if (!aOvernight && bOvernight) return aStart >= bStart || aEnd <= bEnd
+    return true // both overnight — always overlap
+  }
+
   const handleSaveItem = async () => {
     if (!employee?.location?.id) return
     if (!builderForm.name.trim()) {
       toast.warning('Please enter an item name')
       return
+    }
+
+    // Check for overlapping pricing windows
+    const enabled = builderForm.pricingWindows.filter(w => w.enabled)
+    for (let i = 0; i < enabled.length; i++) {
+      for (let j = i + 1; j < enabled.length; j++) {
+        if (windowsOverlap(enabled[i], enabled[j])) {
+          const sharedDays = enabled[i].days.filter(d => enabled[j].days.includes(d))
+          toast.error(`"${enabled[i].name}" and "${enabled[j].name}" overlap on ${sharedDays.map(d => d.charAt(0).toUpperCase() + d.slice(1, 3)).join(', ')}`)
+          return
+        }
+      }
     }
 
     setIsSaving(true)
@@ -422,11 +474,16 @@ export function TimedRentalsContent() {
         ? '/api/menu/items'
         : `/api/menu/items/${itemIdFromUrl}`
 
-      // Calculate happy hour discount percentage from price difference
-      // e.g. base $0.25/min, HH $0.125/min → (1 - 0.125/0.25) * 100 = 50% discount
-      const hhDiscount = builderForm.happyHourEnabled && builderForm.happyHourPrice && builderForm.ratePerMinute > 0
-        ? Math.round((1 - (builderForm.happyHourPrice / builderForm.ratePerMinute)) * 100)
+      // Sync first discount-type window to happyHour* columns for backward compat
+      const firstDiscount = builderForm.pricingWindows.find(w => {
+        if (!w.enabled) return false
+        const eff = builderForm.ratePerMinute * (1 + (w.percentAdjust || 0) / 100) + (w.dollarAdjust || 0)
+        return eff < builderForm.ratePerMinute
+      })
+      const hhDiscount = firstDiscount && builderForm.ratePerMinute > 0
+        ? Math.round((1 - (builderForm.ratePerMinute * (1 + (firstDiscount.percentAdjust || 0) / 100) + (firstDiscount.dollarAdjust || 0)) / builderForm.ratePerMinute) * 100)
         : null
+      const hhEnabled = !!firstDiscount
 
       const body = {
         locationId: employee.location.id,
@@ -436,9 +493,11 @@ export function TimedRentalsContent() {
         timedPricing: {
           ratePerMinute: builderForm.ratePerMinute,
           prepaidPackages: builderForm.prepaidPackages,
-          happyHour: builderForm.happyHourEnabled ? {
+          pricingWindows: builderForm.pricingWindows,
+          // Keep legacy happyHour for backward compat (reading code may still check this)
+          happyHour: firstDiscount ? {
             enabled: true,
-            price: builderForm.happyHourPrice,
+            price: builderForm.ratePerMinute * (1 + (firstDiscount.percentAdjust || 0) / 100) + (firstDiscount.dollarAdjust || 0),
           } : null,
           overtime: builderForm.overtimeEnabled ? {
             enabled: true,
@@ -454,13 +513,12 @@ export function TimedRentalsContent() {
         visualType: builderForm.visualType,
         // Ensure it's in entertainment category
         categoryId: null, // Will need to set entertainment category
-        // MenuItem-level happy hour columns — these are what the pricing engine
-        // (block-time DELETE, entertainment-expiry cron) actually reads
-        happyHourEnabled: builderForm.happyHourEnabled,
+        // Sync to MenuItem columns for backward compat with pricing engine
+        happyHourEnabled: hhEnabled,
         happyHourDiscount: hhDiscount,
-        happyHourStart: builderForm.happyHourEnabled ? builderForm.happyHourStart : null,
-        happyHourEnd: builderForm.happyHourEnabled ? builderForm.happyHourEnd : null,
-        happyHourDays: builderForm.happyHourEnabled ? builderForm.happyHourDays : [],
+        happyHourStart: firstDiscount?.startTime || null,
+        happyHourEnd: firstDiscount?.endTime || null,
+        happyHourDays: firstDiscount?.days || [],
         // MenuItem-level overtime columns
         overtimeEnabled: builderForm.overtimeEnabled,
         overtimeMode: builderForm.overtimeEnabled ? builderForm.overtimeMode : null,
@@ -756,84 +814,147 @@ export function TimedRentalsContent() {
                   </div>
                 </div>
 
-                {/* Happy Hour checkbox + price */}
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={builderForm.happyHourEnabled}
-                    onChange={e => setBuilderForm({...builderForm, happyHourEnabled: e.target.checked})}
-                    className="rounded"
-                  />
-                  <span className="text-amber-700">Happy Hour:</span>
-                  {builderForm.happyHourEnabled && (
-                    <>
-                      <span className="text-gray-900">$</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        value={builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5}
-                        onChange={e => setBuilderForm({...builderForm, happyHourPrice: parseFloat(e.target.value) || 0})}
-                        className="w-16 px-2 py-1 border rounded text-right text-sm"
-                      />
-                      <span className="text-gray-900 text-sm">/min</span>
-                      <span className="text-amber-600 text-sm ml-1">(${((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60).toFixed(2)}/hr)</span>
-                      {isDualPricingEnabled && (builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) > 0 && (
-                        <span className="text-xs text-gray-900 ml-1">Card: ${calculateCardPrice((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60, cashDiscountPct).toFixed(2)}/hr</span>
-                      )}
-                    </>
-                  )}
-                </label>
+              </div>
 
-                {/* Happy Hour schedule (start/end time + days) — only shown when enabled */}
-                {builderForm.happyHourEnabled && (
-                  <div className="ml-6 mt-2 space-y-2">
-                    {/* Time range */}
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-900">From</span>
-                      <input
-                        type="time"
-                        value={builderForm.happyHourStart}
-                        onChange={e => setBuilderForm({...builderForm, happyHourStart: e.target.value})}
-                        className="px-2 py-1 border rounded text-sm"
-                      />
-                      <span className="text-gray-900">to</span>
-                      <input
-                        type="time"
-                        value={builderForm.happyHourEnd}
-                        onChange={e => setBuilderForm({...builderForm, happyHourEnd: e.target.value})}
-                        className="px-2 py-1 border rounded text-sm"
-                      />
-                    </div>
-                    {/* Days of week */}
-                    <div className="flex flex-wrap gap-1">
-                      {(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const).map(day => (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() => {
-                            const days = builderForm.happyHourDays.includes(day)
-                              ? builderForm.happyHourDays.filter(d => d !== day)
-                              : [...builderForm.happyHourDays, day]
-                            setBuilderForm({...builderForm, happyHourDays: days})
-                          }}
-                          className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            builderForm.happyHourDays.includes(day)
-                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                              : 'bg-gray-100 text-gray-900 border border-gray-200'
-                          }`}
-                        >
-                          {day.charAt(0).toUpperCase() + day.slice(1, 3)}
-                        </button>
-                      ))}
-                    </div>
-                    {builderForm.happyHourPrice && builderForm.ratePerMinute > 0 && (
-                      <div className="text-xs text-amber-600">
-                        {Math.round((1 - (builderForm.happyHourPrice / builderForm.ratePerMinute)) * 100)}% discount applied during happy hour
-                      </div>
-                    )}
-                  </div>
+              {/* Pricing Schedule (multiple windows) */}
+              <div className="border-t pt-3 mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-900">Pricing Schedule</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const newWindow: PricingWindowForm = {
+                        id: `pw-${Date.now()}`,
+                        name: builderForm.pricingWindows.length === 0 ? 'Happy Hour' : `Window ${builderForm.pricingWindows.length + 1}`,
+                        percentAdjust: -50,
+                        dollarAdjust: 0,
+                        startTime: '13:00',
+                        endTime: '18:00',
+                        days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+                        enabled: true,
+                      }
+                      setBuilderForm({...builderForm, pricingWindows: [...builderForm.pricingWindows, newWindow]})
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                  >
+                    + Add Pricing Window
+                  </button>
+                </div>
+
+                {builderForm.pricingWindows.length === 0 && (
+                  <p className="text-xs text-gray-500 italic">No pricing windows configured. Base rate applies at all times.</p>
                 )}
+
+                {builderForm.pricingWindows.map((window, index) => {
+                  const updateWindow = (updates: Partial<PricingWindowForm>) => {
+                    const windows = [...builderForm.pricingWindows]
+                    windows[index] = { ...windows[index], ...updates }
+                    setBuilderForm({...builderForm, pricingWindows: windows})
+                  }
+                  const removeWindow = () => {
+                    setBuilderForm({...builderForm, pricingWindows: builderForm.pricingWindows.filter((_, i) => i !== index)})
+                  }
+                  // Calculate effective rate for display
+                  const effectiveRate = Math.max(0, builderForm.ratePerMinute * (1 + (window.percentAdjust || 0) / 100) + (window.dollarAdjust || 0))
+                  const isDiscount = effectiveRate < builderForm.ratePerMinute
+
+                  return (
+                    <div key={window.id} className={`mb-3 p-3 rounded-lg border ${window.enabled ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'}`}>
+                      {/* Header row: enable toggle, name, remove */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <input
+                          type="checkbox"
+                          checked={window.enabled}
+                          onChange={e => updateWindow({ enabled: e.target.checked })}
+                          className="rounded"
+                        />
+                        <input
+                          type="text"
+                          value={window.name}
+                          onChange={e => updateWindow({ name: e.target.value })}
+                          placeholder="Window name"
+                          className="flex-1 px-2 py-1 border rounded text-sm font-medium"
+                        />
+                        <button type="button" onClick={removeWindow} className="text-red-400 hover:text-red-600 text-sm px-1">Remove</button>
+                      </div>
+
+                      {/* Adjustments row: % and $ side by side */}
+                      <div className="flex items-center gap-4 mb-2 ml-6">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            step="5"
+                            value={window.percentAdjust}
+                            onChange={e => updateWindow({ percentAdjust: parseFloat(e.target.value) || 0 })}
+                            className="w-20 px-2 py-1 border rounded text-right text-sm"
+                          />
+                          <span className="text-gray-900 text-sm">%</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-900 text-sm">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={window.dollarAdjust}
+                            onChange={e => updateWindow({ dollarAdjust: parseFloat(e.target.value) || 0 })}
+                            className="w-20 px-2 py-1 border rounded text-right text-sm"
+                          />
+                          <span className="text-gray-900 text-sm">/min</span>
+                        </div>
+                        <span className={`text-xs font-medium ${isDiscount ? 'text-green-600' : effectiveRate > builderForm.ratePerMinute ? 'text-red-600' : 'text-gray-500'}`}>
+                          = ${(effectiveRate * 60).toFixed(2)}/hr
+                          {isDiscount ? ' (discount)' : effectiveRate > builderForm.ratePerMinute ? ' (premium)' : ''}
+                        </span>
+                        {isDualPricingEnabled && effectiveRate > 0 && (
+                          <span className="text-xs text-gray-500">Card: ${calculateCardPrice(effectiveRate * 60, cashDiscountPct).toFixed(2)}/hr</span>
+                        )}
+                      </div>
+
+                      {/* Schedule row */}
+                      <div className="ml-6 space-y-2">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-gray-900">From</span>
+                          <input
+                            type="time"
+                            value={window.startTime}
+                            onChange={e => updateWindow({ startTime: e.target.value })}
+                            className="px-2 py-1 border rounded text-sm"
+                          />
+                          <span className="text-gray-900">to</span>
+                          <input
+                            type="time"
+                            value={window.endTime}
+                            onChange={e => updateWindow({ endTime: e.target.value })}
+                            className="px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const).map(day => (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => {
+                                const days = window.days.includes(day)
+                                  ? window.days.filter(d => d !== day)
+                                  : [...window.days, day]
+                                updateWindow({ days })
+                              }}
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                window.days.includes(day)
+                                  ? isDiscount
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : 'bg-red-100 text-red-800 border border-red-300'
+                                  : 'bg-gray-100 text-gray-900 border border-gray-200'
+                              }`}
+                            >
+                              {day.charAt(0).toUpperCase() + day.slice(1, 3)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
 
               {/* Overtime Pricing */}

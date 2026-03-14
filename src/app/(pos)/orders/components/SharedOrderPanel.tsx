@@ -745,6 +745,85 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
             className="w-full py-4 rounded-lg bg-gray-600 hover:bg-gray-700 text-white text-lg font-semibold"
             onClick={() => {
               setShowTabMethodChoice(false)
+              // BUG-M4 FIX: Set the tab name callback before showing the prompt.
+              // Without this, the name-only path had no callback to create the tab.
+              setTabNameCallback(() => async () => {
+                const store = useOrderStore.getState()
+                const tabName = store.currentOrder?.tabName
+                if (!tabName) return
+
+                const capturedOrder = store.currentOrder
+                if (!capturedOrder || capturedOrder.items.length === 0) return
+                const capturedItems = [...capturedOrder.items]
+                const capturedEmployeeId = employeeId
+                const capturedLocationId = capturedOrder.locationId || locationId
+
+                clearOrder()
+                setSavedOrderId(null)
+                setOrderSent(false)
+                setSelectedOrderType(null)
+                setOrderCustomFields({})
+
+                const sendingToastId = toast.info('Sending to kitchen...', 0)
+
+                void (async () => {
+                  try {
+                    const res = await fetch('/api/orders', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        employeeId: capturedEmployeeId,
+                        locationId: capturedLocationId,
+                        orderType: 'bar_tab',
+                        tabName,
+                        guestCount: capturedOrder.guestCount || 1,
+                        items: capturedItems.map(item => ({
+                          menuItemId: item.menuItemId,
+                          name: item.name,
+                          price: item.price,
+                          quantity: item.quantity,
+                          modifiers: item.modifiers?.map(m => ({
+                            modifierId: m.modifierId || m.id,
+                            name: m.name,
+                            price: m.price,
+                            preModifier: m.preModifier,
+                            depth: m.depth,
+                          })) || [],
+                        })),
+                        idempotencyKey: uuid(),
+                      }),
+                    })
+
+                    if (!res.ok) {
+                      console.error('[onStartTab] Background create failed')
+                      toast.dismiss(sendingToastId)
+                      toast.error('Failed to send — check open orders')
+                      return
+                    }
+
+                    const created = await res.json()
+
+                    const sendRes = await fetch(`/api/orders/${created.id}/send`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                    })
+                    toast.dismiss(sendingToastId)
+                    if (!sendRes.ok) {
+                      console.error('[onStartTab] Background send failed')
+                      toast.error('Failed to send — check open orders')
+                    } else {
+                      toast.success('Order sent to kitchen')
+                    }
+                  } catch (err) {
+                    console.error('[onStartTab] Background tab creation failed:', err)
+                    toast.dismiss(sendingToastId)
+                    toast.error('Failed to send — check open orders')
+                  } finally {
+                    setTabsRefreshTrigger(prev => prev + 1)
+                  }
+                })()
+              })
               setShowTabNamePrompt(true)
             }}
           >

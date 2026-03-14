@@ -11,6 +11,7 @@ import type {
   OvertimeConfig,
   ChargeBreakdown,
   HappyHourConfig,
+  PricingWindow,
 } from '@/lib/entertainment-pricing'
 
 // ─── Transaction Client ─────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ export type {
   OvertimeConfig,
   ChargeBreakdown,
   HappyHourConfig,
+  PricingWindow,
 }
 
 // ─── Menu Item Fields ────────────────────────────────────────────────────────
@@ -51,6 +53,7 @@ export interface MenuItemPricingFields {
   overtimeFlatFee: unknown // Decimal | null
   overtimeGraceMinutes: number | null
   prepaidPackages?: unknown // Json | null
+  pricingWindows?: PricingWindow[] // from timedPricing JSON
 }
 
 // ─── Session Start ───────────────────────────────────────────────────────────

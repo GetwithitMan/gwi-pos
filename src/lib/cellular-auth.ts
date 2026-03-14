@@ -594,11 +594,30 @@ export function isRevoked(terminalId: string): boolean {
  * Fail-closed: if the DB check errors (table doesn't exist, connection issue),
  * we deny the request rather than allowing a potentially revoked device through.
  */
+/** Whether the CellularDevice table exists on this NUC (cached after first check) */
+let _cellularDeviceTableChecked: boolean | null = null
+
 async function isRevokedFromDb(terminalId: string, locationId: string): Promise<boolean> {
   try {
     // Dynamic import to avoid top-level dependency on db module
     // (cellular-auth.ts is loaded in edge-compatible contexts)
     const { db } = await import('@/lib/db')
+
+    // Check table existence once — avoids repeated "relation does not exist" errors
+    // on NUCs where the CellularDevice table hasn't been created yet (pre-migration 045).
+    // If the table doesn't exist, there can be no revocations in it → return false.
+    if (_cellularDeviceTableChecked === null) {
+      try {
+        const result = await db.$queryRawUnsafe<Array<{ exists: boolean }>>(
+          `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'CellularDevice') as exists`
+        )
+        _cellularDeviceTableChecked = result[0]?.exists ?? false
+      } catch {
+        _cellularDeviceTableChecked = false
+      }
+    }
+    if (!_cellularDeviceTableChecked) return false
+
     const revoked = await db.$queryRawUnsafe<Array<{ id: string }>>(
       `SELECT id FROM "CellularDevice" WHERE "terminalId" = $1 AND "locationId" = $2 AND status IN ('revoked', 'quarantined') LIMIT 1`,
       terminalId,
@@ -611,7 +630,13 @@ async function isRevokedFromDb(terminalId: string, locationId: string): Promise<
     }
     return false
   } catch (error) {
-    // Fail-closed: if we can't verify a device's revocation status, reject the request
+    const errMsg = error instanceof Error ? error.message : String(error)
+    // "relation does not exist" = table missing — not a security risk, just missing migration
+    if (errMsg.includes('does not exist') || errMsg.includes('relation')) {
+      _cellularDeviceTableChecked = false
+      return false
+    }
+    // Fail-closed: if we can't verify a device's revocation status for other reasons, reject
     console.error('[cellular-auth] DB revocation check failed, denying request:', error)
     return true
   }

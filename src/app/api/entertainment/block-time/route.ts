@@ -1,16 +1,72 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import type { OvertimeConfig } from '@/lib/entertainment-pricing'
 
-import { recalculatePercentDiscounts } from '@/lib/order-calculations'
+import { recalculateOrderTotals } from '@/lib/domain/order-items'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+
+/**
+ * BUG-L1 FIX: Recalculate full order totals (subtotal, tax, total) after
+ * entertainment price changes. Previously only discounts were recalculated,
+ * leaving taxTotal and total stale after block-time start/stop/extend/override.
+ */
+async function recalculateOrderAfterPriceChange(
+  orderId: string,
+  locationId: string
+): Promise<void> {
+  try {
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      select: {
+        tipTotal: true,
+        discountTotal: true,
+        isTaxExempt: true,
+        location: { select: { settings: true } },
+      },
+    })
+    if (!order) return
+
+    const totals = await recalculateOrderTotals(
+      db,
+      orderId,
+      order.location.settings,
+      Number(order.tipTotal) || 0,
+      order.isTaxExempt
+    )
+
+    await db.order.update({
+      where: { id: orderId },
+      data: {
+        subtotal: totals.subtotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        commissionTotal: totals.commissionTotal,
+        itemCount: totals.itemCount,
+      },
+    })
+
+    // Dispatch real-time totals update so all terminals see the corrected tax
+    void dispatchOrderTotalsUpdate(locationId, orderId, {
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      tipTotal: Number(order.tipTotal) || 0,
+      discountTotal: Number(order.discountTotal) || 0,
+      total: totals.total,
+      commissionTotal: totals.commissionTotal,
+    }, { async: true }).catch(console.error)
+  } catch (err) {
+    console.error('[block-time] Failed to recalculate order totals after price change:', err)
+  }
+}
 
 import {
   validateStartRequest,
@@ -143,29 +199,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const updatedItem = result.updatedItem!
 
-    // Fire-and-forget discount recalculation (price changed from default to initial block price)
-    void (async () => {
-      try {
-        const activeItems = await db.orderItem.findMany({
-          where: { orderId: orderItem.orderId, status: 'active', deletedAt: null },
-          include: { modifiers: true },
-        })
-        let newSubtotal = 0
-        for (const ai of activeItems) {
-          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
-        }
-        const newDiscountTotal = await recalculatePercentDiscounts(db, orderItem.orderId, newSubtotal)
-        if (newDiscountTotal > 0) {
-          await db.order.update({
-            where: { id: orderItem.orderId },
-            data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
-          })
-        }
-      } catch (err) {
-        console.error('[block-time] Failed to recalculate discounts after start:', err)
-      }
-    })()
+    // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
+    void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
 
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
@@ -355,29 +390,8 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
 
     const { updatedItem, newExpiresAt, newTotalMinutes, newPrice } = txResult
 
-    // Recalculate percent-based discounts if price changed (extension changes subtotal)
-    void (async () => {
-      try {
-        const activeItems = await db.orderItem.findMany({
-          where: { orderId: orderItem.orderId, status: 'active', deletedAt: null },
-          include: { modifiers: true },
-        })
-        let newSubtotal = 0
-        for (const ai of activeItems) {
-          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
-        }
-        const newDiscountTotal = await recalculatePercentDiscounts(db, orderItem.orderId, newSubtotal)
-        if (newDiscountTotal > 0) {
-          await db.order.update({
-            where: { id: orderItem.orderId },
-            data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
-          })
-        }
-      } catch (err) {
-        console.error('[block-time] Failed to recalculate discounts after extend:', err)
-      }
-    })()
+    // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
+    void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
 
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync (extend)
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
@@ -530,29 +544,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       })
     })
 
-    // Fire-and-forget discount recalculation
-    void (async () => {
-      try {
-        const activeItems = await db.orderItem.findMany({
-          where: { orderId: orderItem.orderId, status: 'active', deletedAt: null },
-          include: { modifiers: true },
-        })
-        let newSubtotal = 0
-        for (const ai of activeItems) {
-          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
-        }
-        const newDiscountTotal = await recalculatePercentDiscounts(db, orderItem.orderId, newSubtotal)
-        if (newDiscountTotal > 0) {
-          await db.order.update({
-            where: { id: orderItem.orderId },
-            data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
-          })
-        }
-      } catch (err) {
-        console.error('[block-time] Failed to recalculate discounts after time override:', err)
-      }
-    })()
+    // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
+    void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
 
     // Fire-and-forget: emit ITEM_UPDATED for event-sourced sync
     void emitOrderEvent(orderItem.order.locationId, orderItem.order.id, 'ITEM_UPDATED', {
@@ -729,29 +722,8 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
 
     const { actualMinutes, calculatedCharge, breakdown, overtimeBreakdown, updatedMenuItem } = txResult
 
-    // Fire-and-forget discount recalculation (price changed to final charge)
-    void (async () => {
-      try {
-        const activeItems = await db.orderItem.findMany({
-          where: { orderId: orderItem.orderId, status: 'active', deletedAt: null },
-          include: { modifiers: true },
-        })
-        let newSubtotal = 0
-        for (const ai of activeItems) {
-          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
-        }
-        const newDiscountTotal = await recalculatePercentDiscounts(db, orderItem.orderId, newSubtotal)
-        if (newDiscountTotal > 0) {
-          await db.order.update({
-            where: { id: orderItem.orderId },
-            data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
-          })
-        }
-      } catch (err) {
-        console.error('[block-time] Failed to recalculate discounts after stop:', err)
-      }
-    })()
+    // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
+    void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
 
     // Determine event type based on reason
     const eventType = (reason === 'void' || reason === 'comp') ? 'COMP_VOID_APPLIED' as const : 'ITEM_UPDATED' as const

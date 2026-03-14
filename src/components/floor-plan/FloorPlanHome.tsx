@@ -771,12 +771,42 @@ export function FloorPlanHome({
   // Load data on mount — skip loadCategories if parent owns menu data (prop defined, even if empty while loading)
   // Skip loadFloorPlanData if parent provided initialSnapshot from bootstrap
   // initialSnapshot: undefined = bootstrap pending (wait), null = no bootstrap (fetch), object = hydrate
+  // BUG-C2: Restore extraSeats from snapshot tables so getTotalSeats returns
+  // the correct count even when Table has no pre-generated Seat rows (only `capacity`).
+  // Without this, tables using capacity-only layout lose their extra seats on refresh
+  // because extraSeats state resets to empty and getTotalSeats returns max(seatsLen, cap)
+  // which ignores the order's extraSeatCount.
+  const restoreExtraSeatsFromTables = useCallback((tables: FloorPlanTable[]) => {
+    const newExtraSeats = new Map<string, number>()
+    for (const table of tables) {
+      if (table.currentOrder) {
+        const physicalSeats = Math.max(table.seats?.length || 0, table.capacity || 0)
+        const orderGuests = table.currentOrder.guestCount || 0
+        if (orderGuests > physicalSeats) {
+          newExtraSeats.set(table.id, orderGuests - physicalSeats)
+        }
+      }
+    }
+    if (newExtraSeats.size > 0) {
+      setExtraSeats(prev => {
+        // Merge: keep any in-session extras for tables without orders
+        const merged = new Map(prev)
+        for (const [id, count] of newExtraSeats) {
+          merged.set(id, count)
+        }
+        return merged
+      })
+    }
+  }, [])
+
   useEffect(() => {
     if (initialSnapshot && typeof initialSnapshot === 'object') {
       setTables(initialSnapshot.tables || [])
       setSections(initialSnapshot.sections || [])
       setElements(initialSnapshot.elements || [])
       setOpenOrdersCount(initialSnapshot.openOrdersCount ?? 0)
+      // BUG-C2: Restore extraSeats on bootstrap path too (was only in loadFloorPlanData)
+      restoreExtraSeatsFromTables(initialSnapshot.tables || [])
       setLoading(false)
     } else if (initialSnapshot === null) {
       loadFloorPlanData() // snapshot includes openOrdersCount
@@ -785,7 +815,7 @@ export function FloorPlanHome({
     if (initialCategories === undefined) {
       loadCategories()
     }
-   
+
   }, [locationId, initialSnapshot])
 
   // Socket.io: primary update mechanism for all floor plan data
@@ -1138,29 +1168,8 @@ export function FloorPlanHome({
         setElements(payload.elements || [])
         setOpenOrdersCount(payload.openOrdersCount ?? 0)
 
-        // BUG-C2 fix: Restore extraSeats from snapshot for tables with active orders
-        // whose guestCount exceeds physical seat count. Without this, extra seats
-        // disappear on page refresh because extraSeats state resets to empty.
-        const newExtraSeats = new Map<string, number>()
-        for (const table of (payload.tables || [])) {
-          if (table.currentOrder) {
-            const physicalSeats = Math.max(table.seats?.length || 0, table.capacity || 0)
-            const orderGuests = table.currentOrder.guestCount || 0
-            if (orderGuests > physicalSeats) {
-              newExtraSeats.set(table.id, orderGuests - physicalSeats)
-            }
-          }
-        }
-        if (newExtraSeats.size > 0) {
-          setExtraSeats(prev => {
-            // Merge: keep any in-session extras for tables without orders
-            const merged = new Map(prev)
-            for (const [id, count] of newExtraSeats) {
-              merged.set(id, count)
-            }
-            return merged
-          })
-        }
+        // BUG-C2 fix: Restore extraSeats via shared helper
+        restoreExtraSeatsFromTables(payload.tables || [])
       }
     } catch (error) {
       console.error('[FloorPlanHome] Snapshot load error:', error)

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { recalculatePercentDiscounts } from '@/lib/order-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 
 import { stopAllSessions } from '@/lib/domain/entertainment'
+import { recalculateOrderTotals } from '@/lib/domain/order-items'
 
 // POST - Force-stop all active entertainment sessions (closing time)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -103,29 +103,42 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const totalCharges = txResult.results.reduce((sum, r) => sum + r.charge, 0)
 
-    // Fire-and-forget: recalculate discounts for each affected order
+    // Fire-and-forget: recalculate full order totals (subtotal, tax, total) for each affected order
     const affectedOrderIds = [...new Set(txResult.results.map(r => r.orderId))]
     for (const orderId of affectedOrderIds) {
       void (async () => {
         try {
-          const activeItems = await db.orderItem.findMany({
-            where: { orderId, status: 'active', deletedAt: null },
-            include: { modifiers: true },
+          const order = await db.order.findUnique({
+            where: { id: orderId },
+            select: { tipTotal: true, isTaxExempt: true, locationId: true, location: { select: { settings: true } } },
           })
-          let newSubtotal = 0
-          for (const ai of activeItems) {
-            const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-            newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
-          }
-          const newDiscountTotal = await recalculatePercentDiscounts(db, orderId, newSubtotal)
-          if (newDiscountTotal > 0) {
-            await db.order.update({
-              where: { id: orderId },
-              data: { subtotal: newSubtotal, discountTotal: Math.min(newDiscountTotal, newSubtotal) },
-            })
-          }
+          if (!order) return
+          const totals = await recalculateOrderTotals(
+            db, orderId, order.location.settings,
+            Number(order.tipTotal) || 0, order.isTaxExempt
+          )
+          await db.order.update({
+            where: { id: orderId },
+            data: {
+              subtotal: totals.subtotal,
+              taxTotal: totals.taxTotal,
+              taxFromInclusive: totals.taxFromInclusive,
+              taxFromExclusive: totals.taxFromExclusive,
+              total: totals.total,
+              commissionTotal: totals.commissionTotal,
+              itemCount: totals.itemCount,
+            },
+          })
+          void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+            subtotal: totals.subtotal,
+            taxTotal: totals.taxTotal,
+            tipTotal: Number(order.tipTotal) || 0,
+            discountTotal: 0,
+            total: totals.total,
+            commissionTotal: totals.commissionTotal,
+          }, { async: true }).catch(console.error)
         } catch (err) {
-          console.error(`[stop-all] Failed to recalculate discounts for order ${orderId}:`, err)
+          console.error(`[stop-all] Failed to recalculate order totals for order ${orderId}:`, err)
         }
       })()
     }

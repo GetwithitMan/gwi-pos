@@ -571,6 +571,12 @@ export function DatacapPaymentProcessor({
                 Pay Cash Instead
               </button>
             )}
+            <button
+              onClick={() => { cancelTransaction(); onCancel() }}
+              className="mt-3 px-8 py-3 bg-white/10 text-red-100 rounded-xl font-bold text-sm"
+            >
+              Back to Order
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

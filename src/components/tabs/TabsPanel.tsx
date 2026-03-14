@@ -10,6 +10,7 @@ import { AuthStatusBadge } from './AuthStatusBadge'
 import { MultiCardBadges } from './MultiCardBadges'
 import BottleServiceBanner from './BottleServiceBanner'
 import { useSocket } from '@/hooks/useSocket'
+import { toast } from '@/stores/toast-store'
 
 interface TabCard {
   id: string
@@ -93,10 +94,17 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
       clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(loadTabs, 300)
     }
-    socket.on('tab:updated', debouncedRefresh)
+    // BUG-H3: Show toast immediately when auto-increment auth fails
+    const onTabUpdated = (data: { orderId: string; status?: string }) => {
+      debouncedRefresh()
+      if (data.status === 'increment_failed') {
+        toast.error('Card limit reached — take a new card or cash.', 10000)
+      }
+    }
+    socket.on('tab:updated', onTabUpdated)
     socket.on('orders:list-changed', debouncedRefresh)
     return () => {
-      socket.off('tab:updated', debouncedRefresh)
+      socket.off('tab:updated', onTabUpdated)
       socket.off('orders:list-changed', debouncedRefresh)
       clearTimeout(debounceRef.current)
     }

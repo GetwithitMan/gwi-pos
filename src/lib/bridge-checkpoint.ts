@@ -29,6 +29,9 @@ const HEARTBEAT_INTERVAL = 30_000 // 30s
 
 let checkpointTimer: ReturnType<typeof setInterval> | null = null
 
+/** Whether the BridgeCheckpoint table exists (cached after first check to avoid log spam) */
+let _bridgeTableExists: boolean | null = null
+
 // ── Lease Management ──────────────────────────────────────────────────────────
 
 /**
@@ -37,6 +40,23 @@ let checkpointTimer: ReturnType<typeof setInterval> | null = null
  */
 async function renewLease(): Promise<void> {
   if (!LOCATION_ID) return
+
+  // Check table existence once — avoids "relation does not exist" error spam
+  // every 30s on NUCs where migration 045 hasn't run yet.
+  if (_bridgeTableExists === null) {
+    try {
+      const result = await masterClient.$queryRawUnsafe<Array<{ exists: boolean }>>(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'BridgeCheckpoint') as exists`
+      )
+      _bridgeTableExists = result[0]?.exists ?? false
+      if (!_bridgeTableExists) {
+        console.warn('[BridgeCheckpoint] Table does not exist — lease management disabled until migration runs')
+      }
+    } catch {
+      _bridgeTableExists = false
+    }
+  }
+  if (!_bridgeTableExists) return
 
   const role = process.env.NUC_ROLE || 'primary'
   const leaseExpiresAt = new Date(Date.now() + LEASE_DURATION).toISOString()
@@ -80,6 +100,7 @@ async function renewLease(): Promise<void> {
  */
 export async function isLeaseActive(): Promise<boolean> {
   if (!LOCATION_ID) return false
+  if (_bridgeTableExists === false) return false
 
   try {
     const rows = await masterClient.$queryRawUnsafe<Array<{ leaseExpiresAt: Date }>>(
@@ -108,6 +129,7 @@ export async function isLeaseActive(): Promise<boolean> {
  */
 export async function shouldClaimBridge(): Promise<boolean> {
   if (!LOCATION_ID) return false
+  if (_bridgeTableExists === false) return false
 
   try {
     const activeLeases = await masterClient.$queryRawUnsafe<Array<{ nodeId: string }>>(

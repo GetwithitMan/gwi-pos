@@ -13,6 +13,7 @@ import {
   type OvertimeConfig,
   type HappyHourConfig,
   type ChargeBreakdown,
+  type PricingWindow,
 } from '@/lib/entertainment-pricing'
 import type { MenuItemPricingFields } from './types'
 
@@ -63,6 +64,7 @@ export function buildPricingConfig(menuItem: {
   overtimePerMinuteRate?: unknown
   overtimeFlatFee?: unknown
   overtimeGraceMinutes?: unknown
+  pricingWindows?: unknown
 }): EntertainmentPricing {
   return {
     ratePerMinute: Number(menuItem.ratePerMinute) || 0,
@@ -79,6 +81,7 @@ export function buildPricingConfig(menuItem: {
         }
       : undefined,
     overtime: buildOvertimeConfig(menuItem),
+    pricingWindows: Array.isArray(menuItem.pricingWindows) ? menuItem.pricingWindows as PricingWindow[] : undefined,
   }
 }
 
@@ -189,6 +192,24 @@ export function calculateTimeOverridePrice(
   return calculateInitialBlockPrice(newDurationMinutes, menuItem)
 }
 
+// ─── Pricing Window Extraction ───────────────────────────────────────────────
+
+/**
+ * Extract pricingWindows from either a top-level field or nested in timedPricing JSON.
+ * This handles the common case where Prisma returns timedPricing as a JSON blob
+ * containing the pricingWindows array, but the pricing functions need it as a flat field.
+ */
+function extractPricingWindows(menuItem: { pricingWindows?: PricingWindow[]; timedPricing?: unknown }): PricingWindow[] | undefined {
+  if (menuItem.pricingWindows?.length) return menuItem.pricingWindows
+  if (menuItem.timedPricing && typeof menuItem.timedPricing === 'object') {
+    const tp = menuItem.timedPricing as Record<string, unknown>
+    if (Array.isArray(tp.pricingWindows) && tp.pricingWindows.length > 0) {
+      return tp.pricingWindows as PricingWindow[]
+    }
+  }
+  return undefined
+}
+
 // ─── Stop Session Price ──────────────────────────────────────────────────────
 
 /**
@@ -229,9 +250,10 @@ export function calculateStopCharge(
       }
     }
 
-    // Apply happy hour rate if active (use session start time for consistency)
+    // Apply happy hour / pricing window rate if active (use session start time for consistency)
     const sessionStart = sessionStartTime || now
-    const { rate: activeRate } = getActiveRate(pricing.ratePerMinute, happyHour, sessionStart)
+    const windows = extractPricingWindows(menuItem)
+    const { rate: activeRate } = getActiveRate(pricing.ratePerMinute, happyHour, sessionStart, windows)
     const effectivePricing: EntertainmentPricing = {
       ...pricing,
       ratePerMinute: activeRate,
@@ -305,6 +327,7 @@ export function calculateExpiryCharge(
     overtimePerMinuteRate: unknown
     overtimeFlatFee: unknown
     overtimeGraceMinutes: number | null
+    pricingWindows?: PricingWindow[]
   },
   sessionStartTime: Date
 ): number {
@@ -312,10 +335,12 @@ export function calculateExpiryCharge(
 
   if (menuItem.ratePerMinute != null && Number(menuItem.ratePerMinute) > 0) {
     const pricing = buildPricingConfig(menuItem)
+    const windows = extractPricingWindows(menuItem)
     const { rate: activeRate } = getActiveRate(
       pricing.ratePerMinute,
       pricing.happyHour,
-      sessionStartTime
+      sessionStartTime,
+      windows
     )
     const adjustedPricing: EntertainmentPricing = {
       ...pricing,

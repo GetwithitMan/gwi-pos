@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { logger } from '@/lib/logger'
 
@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
 
-    let body: { action?: string; employeeId?: string; locationId?: string }
+    let body: { action?: string; reason?: string; employeeId?: string; locationId?: string }
     try {
       body = await request.json()
     } catch {
@@ -24,13 +24,19 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Invalid action. Expected "write-off"' }, { status: 400 })
     }
 
-    const { employeeId, locationId } = body
+    const { reason, locationId } = body
 
     if (!locationId) {
       return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
     }
 
-    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
+    if (!reason || !reason.trim()) {
+      return NextResponse.json({ error: 'Missing reason for write-off' }, { status: 400 })
+    }
+
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status ?? 403 })
     }
@@ -52,16 +58,48 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Cannot write off a collected retry' }, { status: 409 })
     }
 
-    const updated = await db.walkoutRetry.update({
-      where: { id },
+    const now = new Date()
+
+    // Atomic transaction: update walkout retry + create audit log
+    const [updated] = await db.$transaction([
+      db.walkoutRetry.update({
+        where: { id },
+        data: {
+          writtenOffAt: now,
+          writtenOffBy: resolvedEmployeeId || null,
+          status: 'written_off',
+          lastRetryError: `Written off: ${reason.trim()}`,
+        },
+      }),
+      db.auditLog.create({
+        data: {
+          locationId,
+          employeeId: resolvedEmployeeId || null,
+          action: 'walkout_written_off',
+          entityType: 'walkout_retry',
+          entityId: id,
+          details: {
+            walkoutRetryId: id,
+            orderId: retry.orderId,
+            amount: Number(retry.amount),
+            reason: reason.trim(),
+            retryCount: retry.retryCount,
+          },
+        },
+      }),
+    ])
+
+    return NextResponse.json({
       data: {
-        writtenOffAt: new Date(),
-        writtenOffBy: employeeId || null,
-        status: 'written_off',
+        id: updated.id,
+        orderId: updated.orderId,
+        amount: Number(updated.amount),
+        status: updated.status,
+        writtenOffAt: updated.writtenOffAt?.toISOString(),
+        writtenOffBy: updated.writtenOffBy,
+        reason: reason.trim(),
       },
     })
-
-    return NextResponse.json({ data: updated })
   } catch (error) {
     logger.error('datacap', 'Failed to write off walkout retry', error)
     return NextResponse.json({ error: 'Failed to write off walkout retry' }, { status: 500 })

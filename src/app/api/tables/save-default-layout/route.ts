@@ -68,7 +68,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     // Notify POS terminals of default layout save
-    dispatchFloorPlanUpdate(locationId, { async: true })
+    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
 
     return NextResponse.json({
       data: {

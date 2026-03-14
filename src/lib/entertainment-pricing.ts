@@ -28,6 +28,20 @@ export interface OvertimeConfig {
   graceMinutes?: number     // grace before overtime kicks in (default 5)
 }
 
+export interface PricingWindow {
+  id: string                // unique ID for UI key/tracking
+  name: string              // "Happy Hour", "Weekend Premium", "Late Night"
+  percentAdjust: number     // -50 = 50% off, +25 = 25% extra, 0 = no % change
+  dollarAdjust: number      // per minute: -0.05 = $0.05/min off, +0.10 = $0.10/min extra
+  startTime: string         // "13:00" (24h format)
+  endTime: string           // "16:00" (24h format)
+  days: string[]            // ["monday", "tuesday", ...]
+  enabled: boolean
+  // Legacy fields (backward compat with old type/value format)
+  type?: 'discount' | 'surcharge' | 'fixed_rate'
+  value?: number
+}
+
 export interface EntertainmentPricing {
   ratePerMinute: number    // e.g., 0.25 = $0.25/min
   minimumCharge: number    // e.g., 15.00 = $15 minimum (backward compat)
@@ -36,6 +50,7 @@ export interface EntertainmentPricing {
   prepaidPackages?: PrepaidPackage[]
   happyHour?: HappyHourConfig
   overtime?: OvertimeConfig
+  pricingWindows?: PricingWindow[]
 }
 
 export interface ChargeBreakdown {
@@ -231,6 +246,66 @@ export const DEFAULT_PRICING: EntertainmentPricing = {
 }
 
 /**
+ * Find the first active pricing window that matches the given time.
+ * Returns null if no window matches. First match wins (order matters).
+ */
+export function findActivePricingWindow(
+  time: Date,
+  windows?: PricingWindow[]
+): PricingWindow | null {
+  if (!windows?.length) return null
+
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  const dayName = dayNames[time.getDay()]
+  const hours = time.getHours().toString().padStart(2, '0')
+  const minutes = time.getMinutes().toString().padStart(2, '0')
+  const currentTime = `${hours}:${minutes}`
+
+  for (const w of windows) {
+    if (!w.enabled) continue
+    if (!w.days.includes(dayName)) continue
+
+    // Handle overnight windows (e.g., 22:00 → 02:00)
+    if (w.startTime > w.endTime) {
+      if (currentTime >= w.startTime || currentTime < w.endTime) return w
+    } else {
+      if (currentTime >= w.startTime && currentTime < w.endTime) return w
+    }
+  }
+
+  return null
+}
+
+/**
+ * Apply a pricing window to a base rate.
+ * Combines percentage adjustment and dollar adjustment:
+ *   effectiveRate = baseRate * (1 + percentAdjust/100) + dollarAdjust
+ * Falls back to legacy type/value format for backward compat.
+ */
+export function applyPricingWindow(
+  baseRate: number,
+  window: PricingWindow
+): number {
+  // New format: percentAdjust + dollarAdjust
+  if (window.percentAdjust !== undefined && window.dollarAdjust !== undefined) {
+    const pct = window.percentAdjust || 0
+    const dollar = window.dollarAdjust || 0
+    return Math.max(0, baseRate * (1 + pct / 100) + dollar)
+  }
+  // Legacy format: type + value
+  switch (window.type) {
+    case 'discount':
+      return baseRate * (1 - (window.value || 0) / 100)
+    case 'surcharge':
+      return baseRate * (1 + (window.value || 0) / 100)
+    case 'fixed_rate':
+      return window.value || baseRate
+    default:
+      return baseRate
+  }
+}
+
+/**
  * Check if current time falls within happy hour
  */
 export function isHappyHour(
@@ -254,19 +329,32 @@ export function isHappyHour(
 }
 
 /**
- * Get the active rate based on time (applies happy hour if active)
+ * Get the active rate based on time (applies pricing windows or happy hour if active)
  */
 export function getActiveRate(
   baseRate: number,
   happyHour?: HappyHourConfig,
-  time: Date = new Date()
-): { rate: number; isHappyHour: boolean; discount: number } {
+  time: Date = new Date(),
+  pricingWindows?: PricingWindow[]
+): { rate: number; isHappyHour: boolean; discount: number; activeWindow: PricingWindow | null } {
+  // Check pricing windows first (new system)
+  if (pricingWindows?.length) {
+    const window = findActivePricingWindow(time, pricingWindows)
+    if (window) {
+      const rate = applyPricingWindow(baseRate, window)
+      // For backward compat: compute effective discount %, set isHappyHour if rate is lower
+      const effectiveDiscount = baseRate > 0 ? Math.round((1 - rate / baseRate) * 100) : 0
+      return { rate, isHappyHour: rate < baseRate, discount: effectiveDiscount, activeWindow: window }
+    }
+  }
+
+  // Fallback to legacy happy hour
   if (isHappyHour(time, happyHour)) {
     const discount = happyHour!.discount
     const rate = baseRate * (1 - discount / 100)
-    return { rate, isHappyHour: true, discount }
+    return { rate, isHappyHour: true, discount, activeWindow: null }
   }
-  return { rate: baseRate, isHappyHour: false, discount: 0 }
+  return { rate: baseRate, isHappyHour: false, discount: 0, activeWindow: null }
 }
 
 /**
@@ -288,7 +376,8 @@ export function calculateChargeWithPrepaid(
   const { rate: activeRate, isHappyHour: isHH } = getActiveRate(
     pricing.ratePerMinute,
     pricing.happyHour,
-    sessionStartTime
+    sessionStartTime,
+    pricing.pricingWindows
   )
 
   // If prepaid and still within prepaid time

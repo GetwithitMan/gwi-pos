@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 
 const VALID_STATUSES = ['open', 'responded', 'won', 'lost'] as const
@@ -14,7 +14,7 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { status, notes, respondedBy } = body
+    const { status, notes, resolution, respondedBy, employeeId } = body
 
     // Find the case first to get locationId
     const existing = await db.chargebackCase.findUnique({ where: { id } })
@@ -22,9 +22,10 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Chargeback case not found' }, { status: 404 })
     }
 
-    // Auth: require manager.void_payments permission
-    const employeeId = request.headers.get('x-employee-id')
-    const auth = await requirePermission(employeeId, existing.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
+    // Auth: resolve employee from cookie or body, require manager.void_payments permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? employeeId
+    const auth = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
@@ -41,6 +42,7 @@ export const PUT = withVenue(async function PUT(
     const data: Record<string, unknown> = { updatedAt: new Date() }
     if (status) data.status = status
     if (notes !== undefined) data.notes = notes
+    if (resolution !== undefined) data.responseNotes = resolution
 
     // If status is 'won' or 'lost', set resolvedAt
     if (status === 'won' || status === 'lost') {
@@ -50,15 +52,36 @@ export const PUT = withVenue(async function PUT(
     // If status is 'responded', set respondedAt and respondedBy
     if (status === 'responded') {
       data.respondedAt = new Date()
-      data.respondedBy = respondedBy || auth.employee.id
+      data.respondedBy = respondedBy || resolvedEmployeeId || null
     }
 
-    const updated = await db.chargebackCase.update({
-      where: { id },
-      data,
-    })
+    // Atomic transaction: update chargeback + create audit log
+    const [updated] = await db.$transaction([
+      db.chargebackCase.update({
+        where: { id },
+        data,
+      }),
+      db.auditLog.create({
+        data: {
+          locationId: existing.locationId,
+          employeeId: resolvedEmployeeId || null,
+          action: 'chargeback_updated',
+          entityType: 'chargeback',
+          entityId: id,
+          details: {
+            chargebackCaseId: id,
+            previousStatus: existing.status,
+            newStatus: status || existing.status,
+            amount: Number(existing.amount),
+            cardLast4: existing.cardLast4,
+            resolution: resolution || null,
+            notes: notes || null,
+          },
+        },
+      }),
+    ])
 
-    // Emit socket event
+    // Emit socket event (fire-and-forget)
     void emitToLocation(existing.locationId, 'chargeback:updated', {
       id: updated.id,
       status: updated.status,

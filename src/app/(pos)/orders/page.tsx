@@ -1198,6 +1198,11 @@ export default function OrdersPage() {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                }).then(res => res.json()).then(json => {
+                  const d = json?.data
+                  if (d?.action === 'increment_failed') {
+                    toast.error('Card limit reached — take a new card or cash.', 10000)
+                  }
                 }).catch(() => {})
               } catch (err) {
                 console.error('[CardTab] Background send failed:', err)

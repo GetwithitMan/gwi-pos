@@ -4,11 +4,13 @@ import {
   dispatchFloorPlanUpdate,
   dispatchEntertainmentStatusChanged,
   dispatchEntertainmentUpdate,
+  dispatchOrderTotalsUpdate,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 
 import { expireSession } from '@/lib/domain/entertainment'
+import { recalculateOrderTotals } from '@/lib/domain/order-items'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -104,6 +106,45 @@ export async function GET(request: NextRequest) {
         if (result.skipped) continue
 
         locationIdsToRefresh.add(item.order.locationId)
+
+        // BUG-L1 FIX: Recalculate order totals after entertainment price change
+        if (!result.closedOrder) {
+          void (async () => {
+            try {
+              const order = await db.order.findUnique({
+                where: { id: item.order.id },
+                select: { tipTotal: true, isTaxExempt: true, location: { select: { settings: true } } },
+              })
+              if (!order) return
+              const totals = await recalculateOrderTotals(
+                db, item.order.id, order.location.settings,
+                Number(order.tipTotal) || 0, order.isTaxExempt
+              )
+              await db.order.update({
+                where: { id: item.order.id },
+                data: {
+                  subtotal: totals.subtotal,
+                  taxTotal: totals.taxTotal,
+                  taxFromInclusive: totals.taxFromInclusive,
+                  taxFromExclusive: totals.taxFromExclusive,
+                  total: totals.total,
+                  commissionTotal: totals.commissionTotal,
+                  itemCount: totals.itemCount,
+                },
+              })
+              void dispatchOrderTotalsUpdate(item.order.locationId, item.order.id, {
+                subtotal: totals.subtotal,
+                taxTotal: totals.taxTotal,
+                tipTotal: Number(order.tipTotal) || 0,
+                discountTotal: 0,
+                total: totals.total,
+                commissionTotal: totals.commissionTotal,
+              }, { async: true }).catch(console.error)
+            } catch (err) {
+              console.error('[entertainment-expiry] Failed to recalculate order totals:', err)
+            }
+          })()
+        }
 
         // Fire-and-forget socket events (outside transaction)
         void dispatchEntertainmentStatusChanged(item.order.locationId, {

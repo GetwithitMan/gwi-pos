@@ -136,6 +136,10 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   // "Sent!" flash state — briefly shows confirmation after successful send
   const [justSent, setJustSent] = useState(false)
   const prevIsSendingRef = useRef(false)
+  // BUG-C1: Track that payment was just cancelled to prevent "Cancel Order" from appearing
+  // immediately after a payment decline + cancel (prevents accidental tab destruction)
+  const [justCancelledPayment, setJustCancelledPayment] = useState(false)
+  const paymentCancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Detect isSending transition (true → false) to flash "Sent!" confirmation
   useEffect(() => {
@@ -239,6 +243,11 @@ export const OrderPanelActions = memo(function OrderPanelActions({
     setTipAmount(0)
     setCustomTip('')
     setShowCustomTip(false)
+    // BUG-C1: Set flag to prevent "Cancel Order" from appearing immediately after
+    // a payment cancel — clears after 5s so it's only a confusion guard, not permanent
+    setJustCancelledPayment(true)
+    if (paymentCancelTimerRef.current) clearTimeout(paymentCancelTimerRef.current)
+    paymentCancelTimerRef.current = setTimeout(() => setJustCancelledPayment(false), 5000)
     onPaymentCancel?.()
   }
 
@@ -457,7 +466,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
           </div>
         )}
 
-        {/* Declined Display */}
+        {/* Declined Display — BUG-C1: Added "Pay Cash Instead" option */}
         {datacap.processingStatus === 'declined' && (
           <div style={{
             textAlign: 'center',
@@ -470,6 +479,28 @@ export const OrderPanelActions = memo(function OrderPanelActions({
             <div style={{ fontSize: '24px', marginBottom: '4px' }}>❌</div>
             <div style={{ fontSize: '18px', fontWeight: 900, color: '#f87171' }}>DECLINED</div>
             <div style={{ fontSize: '11px', color: '#fca5a5', marginTop: '4px' }}>{datacap.error || 'Card was declined'}</div>
+            {onPay && (
+              <button
+                onClick={() => {
+                  datacap.cancelTransaction()
+                  setShowPaymentProcessor(false)
+                  onPay('cash')
+                }}
+                style={{
+                  marginTop: '10px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: 'rgba(34, 197, 94, 0.25)',
+                  color: '#4ade80',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Pay Cash Instead
+              </button>
+            )}
           </div>
         )}
 
@@ -492,7 +523,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               opacity: datacap.isProcessing ? 0.5 : 1,
             }}
           >
-            Cancel
+            {/* BUG-C1: Clarify label when declined — "Back to Order" instead of "Cancel" */}
+            {datacap.processingStatus === 'declined' ? 'Back to Order' : 'Cancel'}
           </button>
           <button
             onClick={handleCollectPayment}
@@ -1003,7 +1035,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
 
       {/* Secondary actions */}
       {hasItems && (onDiscount || onClear || onCancelOrder || onSplit || onQuickSplitEvenly) && (
-        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems && !justCancelledPayment), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems && !justCancelledPayment), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
           {onSplit && (
             <button
               onClick={onSplit}
@@ -1061,8 +1093,9 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               Discount
             </button>
           )}
-          {/* Cancel Order — only when NO items have been sent to kitchen */}
-          {onCancelOrder && !hasSentItems && (
+          {/* Cancel Order — only when NO items have been sent to kitchen
+              BUG-C1: Also hidden briefly after a payment cancel to prevent accidental tab destruction */}
+          {onCancelOrder && !hasSentItems && !justCancelledPayment && (
             <button
               onClick={() => {
                 if (!hasItems) {
