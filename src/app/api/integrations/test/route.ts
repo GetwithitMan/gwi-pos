@@ -3,6 +3,7 @@ import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { resolveSlackWebhookUrl } from '@/lib/alert-service'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const { service, employeeId, locationId: bodyLocationId } = await request.json()
@@ -32,12 +33,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (service === 'slack') {
-      const webhookUrl = process.env.SLACK_WEBHOOK_URL
-      if (!webhookUrl) throw new Error('Slack webhook URL not configured')
+      const webhookUrl = await resolveSlackWebhookUrl(locationId)
+      if (!webhookUrl) throw new Error('Slack webhook URL not configured — add it in Settings > Integrations > Slack')
       const res = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: 'GWI POS test connection successful' }),
+        signal: AbortSignal.timeout(5000),
       })
       if (!res.ok) throw new Error('Slack webhook returned error')
       return NextResponse.json({ data: { success: true, message: 'Test message sent to Slack' } })

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { normalizePhone } from '@/lib/utils'
 
 // GET - Get customer details with order history
 export const GET = withVenue(async function GET(
@@ -123,6 +124,23 @@ export const GET = withVenue(async function GET(
     )
     const savedCardsCount = Number(savedCardsResult[0]?.count ?? 0)
 
+    // Recognized card profiles (auto-linked from payment card recognition)
+    const cardProfiles = await db.cardProfile.findMany({
+      where: { customerId: id, locationId, deletedAt: null },
+      orderBy: { lastSeenAt: 'desc' },
+      take: 10,
+      select: {
+        id: true,
+        cardType: true,
+        cardLast4: true,
+        cardholderName: true,
+        visitCount: true,
+        totalSpend: true,
+        firstSeenAt: true,
+        lastSeenAt: true,
+      },
+    })
+
     // Fetch memberships with plan info (raw SQL — not in Prisma schema)
     const memberships = await db.$queryRawUnsafe<any[]>(`
       SELECT
@@ -206,6 +224,16 @@ export const GET = withVenue(async function GET(
         paymentTerms: houseAccount.paymentTerms,
       } : null,
       savedCardsCount,
+      recognizedCards: cardProfiles.map(cp => ({
+        id: cp.id,
+        cardType: cp.cardType,
+        cardLast4: cp.cardLast4,
+        cardholderName: cp.cardholderName,
+        visitCount: cp.visitCount,
+        totalSpend: Number(cp.totalSpend),
+        firstSeenAt: cp.firstSeenAt.toISOString(),
+        lastSeenAt: cp.lastSeenAt.toISOString(),
+      })),
       memberships: memberships.map((m: any) => ({
         id: m.id,
         status: m.status,
@@ -275,6 +303,9 @@ export const PUT = withVenue(async function PUT(
       loyaltyPoints,
     } = body
 
+    // Normalize phone for consistent storage
+    const normalizedPhone = phone !== undefined ? (normalizePhone(phone) || phone || null) : undefined
+
     // Check for duplicate email if changing
     if (email && email !== customer.email) {
       const existingEmail = await db.customer.findFirst({
@@ -294,11 +325,12 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Check for duplicate phone if changing
-    if (phone && phone !== customer.phone) {
+    const phoneToCheck = normalizedPhone !== undefined ? normalizedPhone : phone
+    if (phoneToCheck && phoneToCheck !== customer.phone) {
       const existingPhone = await db.customer.findFirst({
         where: {
           locationId: customer.locationId,
-          phone,
+          phone: phoneToCheck,
           isActive: true,
           id: { not: id },
         },
@@ -318,7 +350,7 @@ export const PUT = withVenue(async function PUT(
         ...(lastName !== undefined && { lastName }),
         ...(displayName !== undefined && { displayName: displayName || null }),
         ...(email !== undefined && { email: email || null }),
-        ...(phone !== undefined && { phone: phone || null }),
+        ...(normalizedPhone !== undefined && { phone: normalizedPhone }),
         ...(notes !== undefined && { notes: notes || null }),
         ...(allergies !== undefined && { allergies: allergies || null }),
         ...(favoriteDrink !== undefined && { favoriteDrink: favoriteDrink || null }),

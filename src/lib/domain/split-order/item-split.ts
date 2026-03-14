@@ -36,6 +36,7 @@ function buildItemCreateData(
       blockTimeMinutes: item.blockTimeMinutes,
       blockTimeStartedAt: item.blockTimeStartedAt,
       blockTimeExpiresAt: item.blockTimeExpiresAt,
+      ...(item.pricingRuleApplied ? { pricingRuleApplied: item.pricingRuleApplied as object } : {}),
       modifiers: {
         create: item.modifiers.map(mod => ({
           locationId,

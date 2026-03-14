@@ -86,6 +86,17 @@ interface OrdersPagination {
   totalPages: number
 }
 
+interface RecognizedCard {
+  id: string
+  cardType: string
+  cardLast4: string
+  cardholderName: string | null
+  visitCount: number
+  totalSpend: number
+  firstSeenAt: string
+  lastSeenAt: string
+}
+
 interface CustomerDetail extends Customer {
   recentOrders: {
     id: string
@@ -104,6 +115,7 @@ interface CustomerDetail extends Customer {
     orderCount: number
     totalQuantity: number
   }[]
+  recognizedCards?: RecognizedCard[]
 }
 
 export default function CustomersPage() {
@@ -916,6 +928,38 @@ export default function CustomersPage() {
               locationId={employee?.location?.id || ''}
               employeeId={employee?.id || ''}
             />
+
+            {/* Recognized Cards (from card recognition / auto-linked) */}
+            {viewingCustomer.recognizedCards && viewingCustomer.recognizedCards.length > 0 && (
+              <div>
+                <h4 className="font-medium text-gray-900 mb-2">Recognized Cards</h4>
+                <p className="text-xs text-gray-500 mb-2">Cards automatically linked from previous payments</p>
+                <div className="space-y-1.5">
+                  {viewingCustomer.recognizedCards.map(card => (
+                    <div
+                      key={card.id}
+                      className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-200"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-semibold text-gray-700">
+                          {card.cardType}
+                        </span>
+                        <span className="text-sm text-gray-600">
+                          ****{card.cardLast4}
+                        </span>
+                        {card.cardholderName && (
+                          <span className="text-xs text-gray-400">{card.cardholderName}</span>
+                        )}
+                      </div>
+                      <div className="text-right text-xs text-gray-500">
+                        <div>{card.visitCount} visit{card.visitCount !== 1 ? 's' : ''}</div>
+                        <div>{formatCurrency(card.totalSpend)} spent</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Memberships */}
             <CustomerMemberships customerId={viewingCustomer.id} locationId={employee?.location?.id || ''} employeeId={employee?.id || ''} />

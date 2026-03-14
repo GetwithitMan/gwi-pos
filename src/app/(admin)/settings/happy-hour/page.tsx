@@ -106,6 +106,7 @@ function newRule(): PricingRule {
     priority: 10,
     showBadge: true,
     showOriginalPrice: true,
+    showCfdCountdown: false,
     autoDelete: false,
     createdAt: new Date().toISOString(),
   }
@@ -828,6 +829,10 @@ function RuleModal({
                     )}
                   </>
                 )}
+                <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                  <input type="checkbox" checked={draft.showCfdCountdown ?? false} onChange={e => update('showCfdCountdown', e.target.checked)} className="accent-gray-800" />
+                  CFD countdown
+                </label>
                 {draft.type === 'one-time' && (
                   <label className="flex items-center gap-1.5 cursor-pointer text-sm">
                     <input type="checkbox" checked={draft.autoDelete} onChange={e => update('autoDelete', e.target.checked)} className="accent-gray-800" />

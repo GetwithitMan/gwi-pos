@@ -104,6 +104,7 @@ export interface OrderPageModalsProps {
   comboTemplate: ComboTemplate | null
   setComboTemplate: (v: ComboTemplate | null) => void
   onComboConfirm: (selections: Record<string, Record<string, string[]>>) => void
+  inlineComboCallbackRef?: React.MutableRefObject<((modifiers: { id: string; name: string; price: number; depth?: number }[]) => void) | null>
 
   // Entertainment
   showEntertainmentStart: boolean
@@ -322,6 +323,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     comboTemplate,
     setComboTemplate,
     onComboConfirm,
+    inlineComboCallbackRef,
     showEntertainmentStart,
     setShowEntertainmentStart,
     entertainmentItem,
@@ -531,6 +533,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
               setShowComboModal(false)
               setSelectedComboItem(null)
               setComboTemplate(null)
+              if (inlineComboCallbackRef) inlineComboCallbackRef.current = null
             }}
           />
         </Suspense>

@@ -94,6 +94,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Fire-and-forget: card recognition (Phase 8)
     // Use server-relative URL to avoid exposing internal endpoints via NEXT_PUBLIC_ vars
+    // Pass orderId so card-profiles can auto-link CardProfile → Customer when the order has one
     if (response.cmdStatus === 'Approved' && response.cardholderIdHash) {
       const baseUrl = process.env.INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'
       fetch(`${baseUrl}/api/card-profiles`, {
@@ -109,6 +110,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           cardLast4: response.cardLast4 || '????',
           cardholderName: response.cardholderName,
           spendAmount: roundToCents(parseFloat(response.authorize || '0')) || amount,
+          orderId: body.orderId || null,
         }),
       }).catch(err => console.warn('[Card Recognition] Background update failed:', err))
     }

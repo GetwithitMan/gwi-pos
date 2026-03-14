@@ -29,15 +29,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Card not found' }, { status: 404 })
     }
 
-    // Load linked customer name if customerId exists
+    // Load linked customer info if customerId exists
     let customerName: string | null = null
+    let customerPhone: string | null = null
     if (profile.customerId) {
       const customer = await db.customer.findUnique({
         where: { id: profile.customerId },
-        select: { firstName: true, lastName: true },
+        select: { firstName: true, lastName: true, displayName: true, phone: true },
       })
       if (customer) {
-        customerName = `${customer.firstName} ${customer.lastName}`.trim()
+        customerName = customer.displayName || `${customer.firstName} ${customer.lastName}`.trim()
+        customerPhone = customer.phone
       }
     }
 
@@ -92,6 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         lastSeenAt: profile.lastSeenAt.toISOString(),
         customerId: profile.customerId,
         customerName,
+        customerPhone,
         recentOrders,
       },
     })

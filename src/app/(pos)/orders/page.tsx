@@ -233,6 +233,7 @@ export default function OrdersPage() {
   const inlineModifierCallbackRef = useRef<((modifiers: any[], ingredientModifications?: any[]) => void) | null>(null)
   const inlineTimedRentalCallbackRef = useRef<((price: number, blockMinutes: number) => void) | null>(null)
   const inlinePizzaCallbackRef = useRef<((config: PizzaOrderConfig) => void) | null>(null)
+  const inlineComboCallbackRef = useRef<((modifiers: { id: string; name: string; price: number; depth?: number }[]) => void) | null>(null)
 
   // ── Quick order type + tables click refs ──
   const quickOrderTypeRef = useRef<((orderType: string) => void) | null>(null)
@@ -295,6 +296,21 @@ export default function OrdersPage() {
     onOpenPricingOptionPicker: (item, onComplete) => {
       pricingPickerCallbackRef.current = onComplete
       setPricingPickerItem(item)
+    },
+    onOpenComboBuilder: async (item, onComplete) => {
+      inlineComboCallbackRef.current = onComplete
+      setSelectedComboItem(item as MenuItem)
+      setComboSelections({})
+      setShowComboModal(true)
+      try {
+        const response = await fetch(`/api/combos/${item.id}`)
+        if (response.ok) {
+          const data = await response.json()
+          setComboTemplate(data.data?.template)
+        }
+      } catch (error) {
+        console.error('Failed to load combo template:', error)
+      }
     },
   })
 
@@ -856,6 +872,21 @@ export default function OrdersPage() {
               pricingPickerCallbackRef.current = onComplete
               setPricingPickerItem(item)
             }}
+            onOpenComboBuilder={async (item, onComplete) => {
+              inlineComboCallbackRef.current = onComplete
+              setSelectedComboItem(item as MenuItem)
+              setComboSelections({})
+              setShowComboModal(true)
+              try {
+                const response = await fetch(`/api/combos/${item.id}`)
+                if (response.ok) {
+                  const data = await response.json()
+                  setComboTemplate(data.data?.template)
+                }
+              } catch (error) {
+                console.error('Failed to load combo template:', error)
+              }
+            }}
             orderToLoad={orderToLoad}
             onOrderLoaded={() => setOrderToLoad(null)}
             paidOrderId={paidOrderId}
@@ -925,6 +956,21 @@ export default function OrdersPage() {
           initialCategories={bootstrap.categories}
           initialMenuItems={bootstrap.menuItems}
           onSelectedTabChange={(tabId) => setSavedOrderId(tabId)}
+          onOpenComboBuilder={async (item, onComplete) => {
+            inlineComboCallbackRef.current = onComplete
+            setSelectedComboItem(item as MenuItem)
+            setComboSelections({})
+            setShowComboModal(true)
+            try {
+              const response = await fetch(`/api/combos/${item.id}`)
+              if (response.ok) {
+                const data = await response.json()
+                setComboTemplate(data.data?.template)
+              }
+            } catch (error) {
+              console.error('Failed to load combo template:', error)
+            }
+          }}
         >
           {sharedOrderPanel}
         </BartenderView>
@@ -1025,7 +1071,64 @@ export default function OrdersPage() {
         setSelectedComboItem={setSelectedComboItem}
         comboTemplate={comboTemplate}
         setComboTemplate={setComboTemplate}
-        onComboConfirm={handlers.handleAddComboToOrderWithSelections}
+        inlineComboCallbackRef={inlineComboCallbackRef}
+        onComboConfirm={(selections) => {
+          if (inlineComboCallbackRef.current) {
+            // Engine-triggered combo: build modifiers and call engine onComplete
+            const modifiers: { id: string; name: string; price: number; depth?: number }[] = []
+            if (comboTemplate) {
+              for (const component of comboTemplate.components) {
+                if (component.menuItem) {
+                  modifiers.push({
+                    id: `combo-item-${component.id}`,
+                    name: component.displayName,
+                    price: 0,
+                    depth: 0,
+                  })
+                  const componentSelections = selections[component.id] || {}
+                  for (const mg of component.menuItem.modifierGroups || []) {
+                    const groupSelections = componentSelections[mg.modifierGroup.id] || []
+                    for (const modifierId of groupSelections) {
+                      const modifier = mg.modifierGroup.modifiers.find((m: any) => m.id === modifierId)
+                      if (modifier) {
+                        const overridePrice = component.modifierPriceOverrides?.[modifier.id]
+                        const price = overridePrice !== undefined ? overridePrice : 0
+                        modifiers.push({
+                          id: `combo-${component.id}-${modifier.id}`,
+                          name: `  - ${modifier.name}`,
+                          price,
+                          depth: 1,
+                        })
+                      }
+                    }
+                  }
+                } else if (component.options && component.options.length > 0) {
+                  const legacySelections = (selections[component.id] as unknown as string[]) || []
+                  for (const optionId of legacySelections) {
+                    const option = component.options.find((o: any) => o.id === optionId)
+                    if (option) {
+                      modifiers.push({
+                        id: `combo-${component.id}-${option.id}`,
+                        name: `${component.displayName}: ${option.name}`,
+                        price: option.upcharge,
+                        depth: 0,
+                      })
+                    }
+                  }
+                }
+              }
+            }
+            inlineComboCallbackRef.current(modifiers)
+            inlineComboCallbackRef.current = null
+          } else {
+            // Direct combo add (from useOrderHandlers)
+            handlers.handleAddComboToOrderWithSelections(selections)
+          }
+          setShowComboModal(false)
+          setSelectedComboItem(null)
+          setComboTemplate(null)
+          setComboSelections({})
+        }}
         showEntertainmentStart={showEntertainmentStart}
         setShowEntertainmentStart={setShowEntertainmentStart}
         entertainmentItem={entertainmentItem}

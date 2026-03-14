@@ -112,9 +112,15 @@ export type OnOpenPricingOptionPicker = (
   onComplete: (option: EnginePricingOption) => void
 ) => void
 
+/** What the engine needs the parent to provide for combo builder step flow */
+export type OnOpenComboBuilder = (
+  item: EngineMenuItem,
+  onComplete: (modifiers: EngineModifier[]) => void
+) => void
+
 /** Pending item waiting for modal completion */
 export interface PendingItem {
-  type: 'modifier' | 'pizza' | 'timed_rental'
+  type: 'modifier' | 'pizza' | 'timed_rental' | 'combo'
   menuItem: EngineMenuItem
   existingModifiers?: EngineModifier[]
   existingIngredientMods?: EngineIngredientMod[]
@@ -138,6 +144,7 @@ export interface UseOrderingEngineOptions {
   onOpenPizzaBuilder?: OnOpenPizzaBuilder
   onOpenTimedRental?: OnOpenTimedRental
   onOpenPricingOptionPicker?: OnOpenPricingOptionPicker
+  onOpenComboBuilder?: OnOpenComboBuilder
 }
 
 // ============================================================================
@@ -156,6 +163,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     onOpenPizzaBuilder,
     onOpenTimedRental,
     onOpenPricingOptionPicker,
+    onOpenComboBuilder,
   } = options
 
   // Use refs for values that change frequently to avoid stale closures
@@ -401,7 +409,44 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       return
     }
 
-    // 1. Timed rental → check pending lock + in-use, then open rate picker
+    // 1a. Combo → open combo builder step flow
+    if (item.itemType === 'combo') {
+      if (onOpenComboBuilder) {
+        setPendingItem({ type: 'combo', menuItem: item })
+        onOpenComboBuilder(item, (comboModifiers: EngineModifier[]) => {
+          ensureOrder()
+          const store = useOrderStore.getState()
+          // Combo base price on the item; modifier upcharges are on the modifiers
+          // computeTotals sums item.price + sum(mod.price), so base price goes here
+          store.addItem({
+            menuItemId: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: 1,
+            modifiers: comboModifiers.map(m => ({
+              id: m.id || m.modifierId || '',
+              modifierId: m.modifierId || m.id,
+              name: m.name,
+              price: Number(m.price),
+              depth: m.depth ?? 0,
+              preModifier: m.preModifier ?? null,
+              spiritTier: m.spiritTier ?? null,
+              linkedBottleProductId: m.linkedBottleProductId ?? null,
+              parentModifierId: m.parentModifierId ?? null,
+            })),
+            seatNumber: seatNumberRef.current || undefined,
+            sourceTableId: sourceTableIdRef.current || undefined,
+            sentToKitchen: false,
+            categoryType: item.categoryType,
+          })
+          setPendingItem(null)
+          if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10)
+        })
+      }
+      return
+    }
+
+    // 1b. Timed rental → check pending lock + in-use, then open rate picker
     if (item.itemType === 'timed_rental') {
       const { pendingStartIds, markPending } = useEntertainmentUiStore.getState()
 
@@ -730,7 +775,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       quantity: quantityMultiplierRef.current,
       categoryType: item.categoryType,
     })
-  }, [onOpenModifiers, onOpenPizzaBuilder, onOpenTimedRental, onOpenPricingOptionPicker, addItemDirectly, ensureOrder])
+  }, [onOpenModifiers, onOpenPizzaBuilder, onOpenTimedRental, onOpenPricingOptionPicker, onOpenComboBuilder, addItemDirectly, ensureOrder])
 
   /**
    * Open modifier modal for editing an existing order item's modifiers.

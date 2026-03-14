@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 
 // POST - Recognize or create a card profile after payment
 // Called automatically when a card is used (if card recognition is enabled)
+// Optionally links CardProfile to Customer when orderId is provided and order has a customer
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -14,6 +15,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       cardLast4,
       cardholderName,
       spendAmount,
+      orderId,
     } = body
 
     if (!locationId || !cardholderIdHash || !cardType || !cardLast4) {
@@ -21,6 +23,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const now = new Date()
+
+    // If orderId provided, look up the order's linked customer to auto-associate
+    let orderCustomerId: string | null = null
+    if (orderId) {
+      try {
+        const order = await db.order.findUnique({
+          where: { id: orderId },
+          select: { customerId: true },
+        })
+        orderCustomerId = order?.customerId ?? null
+      } catch {
+        // Non-critical — continue without customer link
+      }
+    }
 
     // Upsert: find existing profile or create new one
     const existing = await db.cardProfile.findUnique({
@@ -30,10 +46,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           cardholderIdHash,
         },
       },
+      include: {
+        customer: {
+          select: { id: true, firstName: true, lastName: true, displayName: true },
+        },
+      },
     })
 
     if (existing) {
-      // Update existing profile
+      // Determine if we should link/update the customer association
+      // Only set customerId if profile doesn't already have one, and order has a customer
+      const shouldLinkCustomer = !existing.customerId && orderCustomerId
+
       const updated = await db.cardProfile.update({
         where: { id: existing.id },
         data: {
@@ -42,6 +66,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           totalSpend: Number(existing.totalSpend) + (spendAmount || 0),
           // Update name if we got a better one from chip
           ...(cardholderName && !existing.cardholderName ? { cardholderName } : {}),
+          // Auto-link to customer if order has one and profile doesn't
+          ...(shouldLinkCustomer ? { customerId: orderCustomerId } : {}),
+        },
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true, displayName: true },
+          },
         },
       })
 
@@ -54,11 +85,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           firstSeenAt: updated.firstSeenAt.toISOString(),
           lastSeenAt: updated.lastSeenAt.toISOString(),
           cardholderName: updated.cardholderName,
+          // Customer recognition data — allows frontend to show welcome-back toast
+          customerId: updated.customerId,
+          customerName: updated.customer
+            ? (updated.customer.displayName || `${updated.customer.firstName} ${updated.customer.lastName}`)
+            : null,
         },
       })
     }
 
-    // Create new profile
+    // Create new profile — link to customer if order has one
     const profile = await db.cardProfile.create({
       data: {
         locationId,
@@ -70,6 +106,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         totalSpend: spendAmount || 0,
         firstSeenAt: now,
         lastSeenAt: now,
+        ...(orderCustomerId ? { customerId: orderCustomerId } : {}),
       },
     })
 
@@ -82,6 +119,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         firstSeenAt: profile.firstSeenAt.toISOString(),
         lastSeenAt: profile.lastSeenAt.toISOString(),
         cardholderName: profile.cardholderName,
+        customerId: profile.customerId,
+        customerName: null, // New profile — no name to return (caller can fetch if needed)
       },
     })
   } catch (error) {
@@ -111,6 +150,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             cardholderIdHash,
           },
         },
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true, displayName: true, phone: true },
+          },
+        },
       })
 
       if (!profile) {
@@ -127,6 +171,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           totalSpend: Number(profile.totalSpend),
           firstSeenAt: profile.firstSeenAt.toISOString(),
           lastSeenAt: profile.lastSeenAt.toISOString(),
+          customerId: profile.customerId,
+          customerName: profile.customer
+            ? (profile.customer.displayName || `${profile.customer.firstName} ${profile.customer.lastName}`)
+            : null,
+          customerPhone: profile.customer?.phone ?? null,
         },
       })
     }
@@ -137,6 +186,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: { locationId, cardLast4, deletedAt: null },
         orderBy: { lastSeenAt: 'desc' },
         take: 10,
+        include: {
+          customer: {
+            select: { id: true, firstName: true, lastName: true, displayName: true },
+          },
+        },
       })
 
       return NextResponse.json({
@@ -149,6 +203,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           totalSpend: Number(p.totalSpend),
           firstSeenAt: p.firstSeenAt.toISOString(),
           lastSeenAt: p.lastSeenAt.toISOString(),
+          customerId: p.customerId,
+          customerName: p.customer
+            ? (p.customer.displayName || `${p.customer.firstName} ${p.customer.lastName}`)
+            : null,
         })),
       })
     }

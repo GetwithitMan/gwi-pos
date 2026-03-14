@@ -64,12 +64,13 @@ async function renewLease(): Promise<void> {
 
   try {
     await masterClient.$executeRawUnsafe(
-      `INSERT INTO "BridgeCheckpoint" ("locationId", "nodeId", role, "leaseExpiresAt", "lastHeartbeat")
-       VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)
+      `INSERT INTO "BridgeCheckpoint" ("id", "locationId", "nodeId", role, "leaseExpiresAt", "lastHeartbeat", "updatedAt")
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $4::timestamptz, $5::timestamptz, $5::timestamptz)
        ON CONFLICT ("locationId", "nodeId")
        DO UPDATE SET
          "leaseExpiresAt" = $4::timestamptz,
          "lastHeartbeat" = $5::timestamptz,
+         "updatedAt" = $5::timestamptz,
          role = $3`,
       LOCATION_ID,
       NODE_ID,

@@ -1,32 +1,99 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/stores/toast-store'
 import { useAuthStore } from '@/stores/auth-store'
-
-interface SlackStatus {
-  configured: boolean
-}
+import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
+import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
+import type { AlertSettings } from '@/lib/settings'
 
 export default function SlackIntegrationPage() {
   const employeeId = useAuthStore(s => s.employee?.id)
-  const [status, setStatus] = useState<SlackStatus | null>(null)
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [savedUrl, setSavedUrl] = useState('')
+  const [alertSettings, setAlertSettings] = useState<AlertSettings | null>(null)
   const [testing, setTesting] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [envConfigured, setEnvConfigured] = useState(false)
+
+  const isDirty = webhookUrl !== savedUrl
+  useUnsavedWarning(isDirty)
+
+  // Load settings from DB + check env status
+  const loadData = useCallback(() => {
+    const controller = new AbortController()
+    ;(async () => {
+      try {
+        setLoading(true)
+        const [settingsData, statusRes] = await Promise.all([
+          loadSettingsApi(controller.signal),
+          fetch('/api/integrations/status', { signal: controller.signal }).then(r => r.json()),
+        ])
+        setAlertSettings(settingsData.settings.alerts)
+        const dbUrl = settingsData.settings.alerts?.slackWebhookUrl || ''
+        setWebhookUrl(dbUrl)
+        setSavedUrl(dbUrl)
+        // Status route returns true if EITHER DB or env is configured
+        // We only show "env configured" if there's no DB URL but status says configured
+        setEnvConfigured(!dbUrl && !!statusRes.data?.slack?.configured)
+      } catch (err) {
+        if ((err as DOMException).name !== 'AbortError') {
+          toast.error('Failed to load settings')
+        }
+      } finally {
+        setLoading(false)
+      }
+    })()
+    return () => controller.abort()
+  }, [])
 
   useEffect(() => {
-    fetch('/api/integrations/status')
-      .then(res => res.json())
-      .then(data => {
-        setStatus(data.slack)
-        setLoading(false)
-      })
-      .catch(() => {
-        setLoading(false)
-      })
-  }, [])
+    const cleanup = loadData()
+    return cleanup
+  }, [loadData])
+
+  const configured = !!(webhookUrl || envConfigured)
+
+  async function handleSave() {
+    if (!alertSettings) return
+    setSaving(true)
+    try {
+      const data = await saveSettingsApi({
+        alerts: { ...alertSettings, slackWebhookUrl: webhookUrl || undefined },
+      }, employeeId)
+      setAlertSettings(data.settings.alerts)
+      const newUrl = data.settings.alerts?.slackWebhookUrl || ''
+      setSavedUrl(newUrl)
+      setWebhookUrl(newUrl)
+      toast.success('Slack webhook URL saved')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRemove() {
+    if (!alertSettings) return
+    setSaving(true)
+    try {
+      const updated = { ...alertSettings }
+      delete updated.slackWebhookUrl
+      const data = await saveSettingsApi({ alerts: updated }, employeeId)
+      setAlertSettings(data.settings.alerts)
+      const newUrl = data.settings.alerts?.slackWebhookUrl || ''
+      setSavedUrl(newUrl)
+      setWebhookUrl(newUrl)
+      toast.success('Slack webhook URL removed')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to save settings')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function handleTest() {
     setTesting(true)
@@ -37,10 +104,10 @@ export default function SlackIntegrationPage() {
         body: JSON.stringify({ service: 'slack', employeeId }),
       })
       const data = await res.json()
-      if (data.data.success) {
+      if (data.data?.success) {
         toast.success(data.data.message)
       } else {
-        toast.error(data.data.message)
+        toast.error(data.data?.message || 'Test failed')
       }
     } catch {
       toast.error('Failed to test connection')
@@ -48,8 +115,6 @@ export default function SlackIntegrationPage() {
       setTesting(false)
     }
   }
-
-  const configured = status?.configured ?? false
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -76,17 +141,69 @@ export default function SlackIntegrationPage() {
             <ul className="space-y-2 text-sm text-gray-600">
               <li className="flex items-start gap-2">
                 <span className="text-blue-500 mt-0.5">&#8226;</span>
-                <span><strong>Real-Time Error Alerts</strong> -- Critical system errors are posted to your Slack channel immediately.</span>
+                <span><strong>Real-Time Error Alerts</strong> -- Critical and high-severity system errors are posted to your Slack channel immediately.</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-gray-600 mt-0.5">&#8226;</span>
-                <span><strong>Order Notifications</strong> -- High-value orders, voids, and comps posted to Slack for manager visibility. <em className="text-gray-600">(Coming soon)</em></span>
+                <span className="text-blue-500 mt-0.5">&#8226;</span>
+                <span><strong>Low Stock Alerts</strong> -- Inventory items below threshold trigger Slack notifications.</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-gray-600 mt-0.5">&#8226;</span>
-                <span><strong>Low Stock Alerts</strong> -- Inventory items below threshold trigger Slack notifications. <em className="text-gray-600">(Coming soon)</em></span>
+                <span className="text-blue-500 mt-0.5">&#8226;</span>
+                <span><strong>Walkout / Failed Payment Alerts</strong> -- Walkouts and failed payments are flagged for manager visibility.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-500 mt-0.5">&#8226;</span>
+                <span><strong>Shift Variance Alerts</strong> -- Large cash drawer variances at shift close.</span>
               </li>
             </ul>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Webhook URL</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="webhook-url" className="block text-sm font-medium text-gray-700 mb-1">
+                  Slack Incoming Webhook URL
+                </label>
+                <input
+                  id="webhook-url"
+                  type="url"
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://hooks.slack.com/services/T00/B00/xxxx"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  disabled={loading}
+                />
+                {envConfigured && !webhookUrl && (
+                  <p className="text-xs text-green-700 mt-1">
+                    Using webhook URL from server environment variable (SLACK_WEBHOOK_URL). Adding a URL here will override it.
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleSave}
+                  disabled={!isDirty || saving || loading}
+                  size="sm"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+                {savedUrl && (
+                  <Button
+                    onClick={handleRemove}
+                    disabled={saving || loading}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -127,12 +244,12 @@ export default function SlackIntegrationPage() {
             <ol className="space-y-3 text-sm text-gray-600 list-decimal list-inside">
               <li>Open your Slack workspace and go to <strong>Apps</strong> &gt; <strong>Incoming Webhooks</strong></li>
               <li>Create a new webhook and select the channel for alerts</li>
-              <li>Copy the webhook URL and add it to your <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">.env.local</code> file:</li>
+              <li>Copy the webhook URL and paste it in the <strong>Webhook URL</strong> field above</li>
+              <li>Click <strong>Save</strong>, then use <strong>Test Connection</strong> to verify</li>
             </ol>
-            <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto mt-3">
-{`SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00/B00/xxxx`}
-            </pre>
-            <p className="text-sm text-gray-900 mt-3">4. Restart the POS server for changes to take effect.</p>
+            <p className="text-xs text-gray-500 mt-4">
+              Alternatively, you can set the <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">SLACK_WEBHOOK_URL</code> environment variable on the server (requires restart). The URL saved here takes priority over the environment variable.
+            </p>
           </CardContent>
         </Card>
       </div>

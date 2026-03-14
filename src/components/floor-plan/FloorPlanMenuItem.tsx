@@ -209,11 +209,11 @@ export const FloorPlanMenuItem = memo(function FloorPlanMenuItem({ item, customS
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               {pricingAdjustment.showOriginalPrice && (
                 <span style={{ fontSize: '10px', fontWeight: 400, color: '#94a3b8', textDecoration: 'line-through' }}>
-                  ${(item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2)}
+                  ${(Math.round(item.price * (1 + pricing.cashDiscountRate / 100) * 100) / 100).toFixed(2)}
                 </span>
               )}
               <span style={{ fontSize: '14px', fontWeight: 600, color: '#60a5fa' }}>
-                ${(pricingAdjustment.adjustedPrice * (1 + pricing.cashDiscountRate / 100)).toFixed(2)}
+                ${(Math.round(pricingAdjustment.adjustedPrice * (1 + pricing.cashDiscountRate / 100) * 100) / 100).toFixed(2)}
               </span>
               <span style={{ fontSize: '12px', fontWeight: 600, color: '#4ade80' }}>
                 ${pricingAdjustment.adjustedPrice.toFixed(2)}

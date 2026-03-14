@@ -18,6 +18,8 @@
  */
 
 import { db } from './db'
+import { getLocationSettings } from './location-cache'
+import { parseSettings } from './settings'
 
 // ============================================
 // Type Definitions
@@ -263,13 +265,33 @@ async function sendEmailAlert(payload: AlertPayload): Promise<void> {
 // ============================================
 
 /**
+ * Resolve Slack webhook URL from location settings (DB) or env var fallback.
+ */
+export async function resolveSlackWebhookUrl(locationId?: string): Promise<string | undefined> {
+  // 1. Try DB settings (per-location, no restart required)
+  if (locationId) {
+    try {
+      const raw = await getLocationSettings(locationId)
+      const settings = parseSettings(raw)
+      if (settings.alerts?.slackWebhookUrl) {
+        return settings.alerts.slackWebhookUrl
+      }
+    } catch {
+      // Non-fatal — fall through to env var
+    }
+  }
+  // 2. Fallback: env var
+  return process.env.SLACK_WEBHOOK_URL || undefined
+}
+
+/**
  * Send Slack alert via webhook
  */
 async function sendSlackAlert(payload: AlertPayload): Promise<void> {
-  const webhookUrl = process.env.SLACK_WEBHOOK_URL
+  const webhookUrl = await resolveSlackWebhookUrl(payload.locationId)
 
   if (!webhookUrl) {
-    console.warn('Slack alerts not configured (missing SLACK_WEBHOOK_URL)')
+    console.warn('Slack alerts not configured (set webhook URL in Settings > Integrations > Slack, or SLACK_WEBHOOK_URL env var)')
     return
   }
 

@@ -4,6 +4,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
+import { normalizePhone } from '@/lib/utils'
 
 // GET - List customers with optional search
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -31,6 +32,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Build search filter (case-insensitive)
+    // For phone search, also try normalized digits for consistent matching
+    const normalizedSearch = normalizePhone(search || '')
     const searchFilter = search ? {
       OR: [
         { firstName: { contains: search, mode: 'insensitive' as const } },
@@ -38,6 +41,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { displayName: { contains: search, mode: 'insensitive' as const } },
         { email: { contains: search, mode: 'insensitive' as const } },
         { phone: { contains: search } },
+        // Also search by normalized phone digits (handles "5551234567" matching "(555) 123-4567")
+        ...(normalizedSearch ? [{ phone: { contains: normalizedSearch } }] : []),
       ],
     } : {}
 
@@ -142,6 +147,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    // Normalize phone for consistent storage and dedup
+    const normalizedPhone = normalizePhone(phone) || phone || null
+
     // Check for duplicate email or phone
     if (email) {
       const existingEmail = await db.customer.findFirst({
@@ -155,9 +163,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    if (phone) {
+    if (normalizedPhone) {
       const existingPhone = await db.customer.findFirst({
-        where: { locationId, phone, isActive: true },
+        where: { locationId, phone: normalizedPhone, isActive: true },
       })
       if (existingPhone) {
         return NextResponse.json(
@@ -184,7 +192,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lastName,
         displayName: displayName || null,
         email: email || null,
-        phone: phone || null,
+        phone: normalizedPhone,
         notes: notes || null,
         allergies: allergies || null,
         favoriteDrink: favoriteDrink || null,

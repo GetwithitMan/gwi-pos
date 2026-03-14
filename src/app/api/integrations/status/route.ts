@@ -9,6 +9,7 @@ export const GET = withVenue(async function GET() {
   let oraclePmsConfigured = false
   let sevenShiftsConfigured = false
   let marginEdgeConfigured = false
+  let slackConfigured = !!process.env.SLACK_WEBHOOK_URL
   try {
     const location = await db.location.findFirst({ select: { id: true } })
     if (location) {
@@ -19,6 +20,10 @@ export const GET = withVenue(async function GET() {
       sevenShiftsConfigured = !!(s7?.enabled && s7.clientId && s7.clientSecret && s7.companyId && s7.companyGuid)
       const me = settings.marginEdge
       marginEdgeConfigured = !!(me?.enabled && me.apiKey)
+      // Slack: DB setting takes priority, env var is fallback
+      if (settings.alerts?.slackWebhookUrl) {
+        slackConfigured = true
+      }
     }
   } catch {
     // Non-fatal — status check should not throw
@@ -33,7 +38,7 @@ export const GET = withVenue(async function GET() {
       configured: !!process.env.RESEND_API_KEY,
     },
     slack: {
-      configured: !!process.env.SLACK_WEBHOOK_URL,
+      configured: slackConfigured,
     },
     oraclePms: {
       configured: oraclePmsConfigured,

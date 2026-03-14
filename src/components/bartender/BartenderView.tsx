@@ -70,8 +70,10 @@ interface MenuItem {
   name: string
   price: number
   categoryId: string
+  categoryType?: string
   hasModifiers?: boolean
   hasOtherModifiers?: boolean // Has non-spirit modifier groups
+  itemType?: string // 'standard' | 'combo' | 'timed_rental' | 'pizza'
   pourSizes?: Record<string, number | { label: string; multiplier: number; customPrice?: number | null }> | null // { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
   defaultPourSize?: string | null
   spiritTiers?: SpiritTiers | null // Spirit upgrade options by tier
@@ -124,6 +126,8 @@ interface BartenderViewProps {
   refreshTrigger?: number
   // Notify parent when a tab is selected/deselected so savedOrderId stays in sync
   onSelectedTabChange?: (tabId: string | null) => void
+  // Combo builder modal callback
+  onOpenComboBuilder?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number }[]) => void) => void
 }
 
 // Menu sections - bar, food, or entertainment (standalone)
@@ -494,6 +498,7 @@ export function BartenderView({
   onRegisterDeselectTab,
   refreshTrigger: externalRefreshTrigger,
   onSelectedTabChange,
+  onOpenComboBuilder,
 }: BartenderViewProps) {
   // ---------------------------------------------------------------------------
   // STATE
@@ -598,6 +603,7 @@ export function BartenderView({
       pricingPickerCallbackRef.current = onComplete
       setPricingPickerItem(item as unknown as MenuItem)
     },
+    onOpenComboBuilder: onOpenComboBuilder as any,
   })
 
   // orderItems — read-only projection from Zustand store via useActiveOrder hook
@@ -1120,7 +1126,9 @@ export function BartenderView({
       name: item.name,
       price: item.price,
       categoryId: item.categoryId,
+      categoryType: item.categoryType,
       hasModifiers: item.hasModifiers,
+      itemType: item.itemType,
     }
     engine.handleMenuItemTap(engineItem)
   }, [engine])

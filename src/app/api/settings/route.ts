@@ -188,6 +188,32 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
+    // Validate pricingRules array if provided
+    if (settings.pricingRules !== undefined) {
+      if (!Array.isArray(settings.pricingRules)) {
+        return NextResponse.json({ error: 'pricingRules must be an array' }, { status: 400 })
+      }
+      if (settings.pricingRules.length > 500) {
+        return NextResponse.json({ error: 'Maximum 500 pricing rules allowed' }, { status: 400 })
+      }
+      for (const rule of settings.pricingRules) {
+        if (!rule || typeof rule !== 'object') {
+          return NextResponse.json({ error: 'Invalid pricing rule entry' }, { status: 400 })
+        }
+        // Sanitize string fields — strip HTML tags
+        if (typeof rule.name === 'string') rule.name = rule.name.replace(/<[^>]*>/g, '')
+        if (typeof rule.badgeText === 'string') rule.badgeText = rule.badgeText.replace(/<[^>]*>/g, '')
+        if (typeof rule.description === 'string') rule.description = rule.description.replace(/<[^>]*>/g, '')
+        // Guard against NaN/Infinity in numeric fields
+        if (typeof rule.adjustmentValue === 'number' && !isFinite(rule.adjustmentValue)) {
+          return NextResponse.json({ error: `Pricing rule "${rule.name}" has invalid adjustment value` }, { status: 400 })
+        }
+        if (typeof rule.priority === 'number' && !isFinite(rule.priority)) {
+          rule.priority = 10 // Fallback to default
+        }
+      }
+    }
+
     // Validate dual pricing: cashDiscountPercent must be 0-10%
     if (settings.dualPricing?.cashDiscountPercent !== undefined) {
       const pct = settings.dualPricing.cashDiscountPercent

@@ -940,6 +940,15 @@ export function PaymentModal({
       // Payment succeeded — now update pending payments state
       setPendingPayments(payments)
 
+      // Card recognition: show toast when we recognize a returning customer on an unlinked order
+      if (result.recognizedCustomer) {
+        const rc = result.recognizedCustomer
+        toast.info(
+          `Returning customer: ${rc.name}${rc.visitCount > 1 ? ` (${rc.visitCount} visits)` : ''} — ${rc.cardType} ****${rc.cardLast4}`,
+          8000
+        )
+      }
+
       if (result.orderStatus === 'paid') {
         if (cardTiming) { completePaymentTiming(cardTiming, 'success'); cardTimingRef.current = null }
         maybeShowFeedback(result.receiptData)

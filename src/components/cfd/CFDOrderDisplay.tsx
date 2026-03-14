@@ -1,6 +1,7 @@
 'use client'
 
 import type { CFDShowOrderEvent } from '@/types/multi-surface'
+import { CFDPricingCountdown } from './CFDPricingCountdown'
 
 interface CFDOrderDisplayProps {
   data: CFDShowOrderEvent | null
@@ -10,7 +11,11 @@ export default function CFDOrderDisplay({ data }: CFDOrderDisplayProps) {
   if (!data) return null
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 p-8">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900">
+      {/* Pricing rule countdown banner (only if showCfdCountdown enabled) */}
+      <CFDPricingCountdown />
+
+      <div className="flex-1 flex flex-col p-8 overflow-hidden">
       {/* Header */}
       <div className="text-center mb-8">
         <h2 className="text-2xl font-light text-white/60">Your Order</h2>
@@ -62,6 +67,7 @@ export default function CFDOrderDisplay({ data }: CFDOrderDisplayProps) {
           <span>Total</span>
           <span className="tabular-nums">${data.total.toFixed(2)}</span>
         </div>
+      </div>
       </div>
     </div>
   )

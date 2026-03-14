@@ -188,6 +188,7 @@ export interface AlertSettings {
   frequentDiscountLimit: number       // Per employee per day — above this triggers alert (default: 10)
   overtimeWarningMinutes: number      // Minutes before overtime to warn (default: 30)
   cashDrawerAlertEnabled: boolean     // Alert on cash drawer events (default: true)
+  slackWebhookUrl?: string            // Slack incoming webhook URL — overrides SLACK_WEBHOOK_URL env var (default: undefined)
 }
 
 export interface SecuritySettings {
@@ -403,6 +404,7 @@ export interface PricingRule {
   showBadge: boolean
   showOriginalPrice: boolean
   badgeText?: string            // max 20 chars, defaults to rule name
+  showCfdCountdown: boolean     // Show "X min left" countdown on customer-facing display
 
   // Lifecycle
   autoDelete: boolean           // one-time events only
@@ -1872,6 +1874,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
             priority: 10,
             showBadge: hh.showBadge ?? true,
             showOriginalPrice: hh.showOriginalPrice ?? true,
+            showCfdCountdown: false,
             autoDelete: false,
             createdAt: new Date().toISOString(),
           }] as PricingRule[]
@@ -2369,6 +2372,7 @@ export function getActivePricingRules(rules: PricingRule[], now?: Date): Pricing
  * All prices in DOLLARS. Result clamped >= 0, rounded to 2dp.
  */
 export function getAdjustedPrice(originalPrice: number, rule: PricingRule): number {
+  if (!isFinite(originalPrice) || !isFinite(rule.adjustmentValue)) return originalPrice
   let result: number
   switch (rule.adjustmentType) {
     case 'percent-off':
@@ -2407,10 +2411,11 @@ export function getBestPricingRuleForItem(
   const active = getActivePricingRules(rules, now)
 
   // Filter to rules that match this item's scope
+  // Guard: empty/null IDs never match — prevents ghost scope bypass
   const matching = active.filter(r => {
     if (r.appliesTo === 'all') return true
-    if (r.appliesTo === 'categories') return r.categoryIds.includes(categoryId)
-    if (r.appliesTo === 'items') return r.itemIds.includes(itemId)
+    if (r.appliesTo === 'categories') return categoryId && r.categoryIds.includes(categoryId)
+    if (r.appliesTo === 'items') return itemId && r.itemIds.includes(itemId)
     return false
   })
 
@@ -2634,6 +2639,8 @@ export function validatePricingRule(rule: PricingRule): string[] {
     errors.push('Name is required')
   } else if (rule.name.length > 50) {
     errors.push('Name must be 50 characters or less')
+  } else if (/<[^>]*>/.test(rule.name)) {
+    errors.push('Name must not contain HTML tags')
   }
 
   // Color
@@ -2686,7 +2693,13 @@ export function validatePricingRule(rule: PricingRule): string[] {
     }
   }
 
-  // Adjustment value
+  // Adjustment value — guard against NaN/Infinity
+  if (!isFinite(rule.adjustmentValue)) {
+    errors.push('Adjustment value must be a finite number')
+  }
+  if (!isFinite(rule.priority)) {
+    errors.push('Priority must be a finite number')
+  }
   if (rule.adjustmentType === 'override-price') {
     if (rule.adjustmentValue < 0) {
       errors.push('Override price must be >= 0')

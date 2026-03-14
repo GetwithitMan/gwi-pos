@@ -1747,6 +1747,44 @@ export const POST = withVenue(withTiming(async function POST(
           }
         } catch { return {} }
       })(),
+      // Card recognition: when order has NO customer, check if we recognize this card
+      // via CardProfile and suggest linking to the known customer
+      ...await (async () => {
+        try {
+          if (order.customer?.id) return {} // Already has a customer — no suggestion needed
+          if (!settings.tabs.cardRecognitionEnabled) return {}
+          const cardPayment = ingestResult.bridgedPayments.find(
+            (p: any) => (p.paymentMethod === 'credit' || p.paymentMethod === 'debit') && p.cardLast4
+          )
+          if (!cardPayment) return {}
+          // Look up CardProfile by last4 (fast indexed query) that has a linked customer
+          const matchedProfile = await db.cardProfile.findFirst({
+            where: {
+              locationId: order.locationId,
+              cardLast4: cardPayment.cardLast4,
+              customerId: { not: null },
+              deletedAt: null,
+            },
+            include: {
+              customer: {
+                select: { id: true, firstName: true, lastName: true, displayName: true, phone: true },
+              },
+            },
+            orderBy: { lastSeenAt: 'desc' },
+          })
+          if (!matchedProfile?.customer) return {}
+          return {
+            recognizedCustomer: {
+              customerId: matchedProfile.customer.id,
+              name: matchedProfile.customer.displayName || `${matchedProfile.customer.firstName} ${matchedProfile.customer.lastName}`,
+              phone: matchedProfile.customer.phone,
+              visitCount: matchedProfile.visitCount,
+              cardType: matchedProfile.cardType,
+              cardLast4: matchedProfile.cardLast4,
+            },
+          }
+        } catch { return {} }
+      })(),
     } })
   } catch (error) {
     console.error('Failed to process payment:', error)
