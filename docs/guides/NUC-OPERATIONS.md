@@ -62,10 +62,18 @@ Two scripts handle schema migrations across environments:
 The pre-start script (`/opt/gwi-pos/pre-start.sh`) runs on **every** NUC boot/restart before the POS service starts. It:
 
 1. **Regenerates the Prisma client** (`prisma generate`) — ensures the client matches the deployed `schema.prisma`, even if the build was interrupted or `npm ci` was partial. This eliminates the "stale Prisma client" bug that previously required manual `npx prisma generate` on venues after updates.
-2. **Pushes the schema** (`prisma db push --accept-data-loss --skip-generate`) — syncs local PG to match the Prisma schema (creates new tables/columns).
+2. **Pushes the schema** (`prisma db push --skip-generate`) — syncs local PG to match the Prisma schema (creates new tables/columns). **No `--accept-data-loss` flag** — if the code's schema is older than the DB, Prisma blocks instead of dropping columns.
 3. **Runs custom migrations** (`nuc-pre-migrate.js`) — applies any pending `scripts/migrations/NNN-*.js` files.
 
 **This means:** A NUC that crashes mid-update, loses power during build, or gets a partial `npm ci` will self-heal on the next restart. No manual Prisma intervention needed.
+
+### Migration Safety Rules (updated 2026-03-14)
+
+1. **Database only moves forward** — NEVER roll back the database schema. Rollback = deploy previous app code only.
+2. **No `--accept-data-loss`** — Pre-start script uses `prisma db push` WITHOUT this flag. If the code's schema is older than the DB, Prisma blocks instead of dropping columns.
+3. **Startup schema verification** — `schema-verify.ts` checks critical tables/columns on boot. Missing elements are logged as CRITICAL errors.
+4. **One-version compatibility** — New migrations must be backward-compatible with N-1 code. Add columns as nullable, never rename or drop in the same release.
+5. **Forward-only migrations** — `scripts/migrations/NNN-*.js` have `up()` only, no `down()`. The tracking table (`_gwi_migrations`) prevents re-runs.
 
 ### P3005 Baseline (db-push → migrate deploy transition)
 

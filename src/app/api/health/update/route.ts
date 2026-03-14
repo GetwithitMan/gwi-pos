@@ -9,12 +9,16 @@
 
 import { NextResponse } from 'next/server'
 import { getUpdateAgentStatus, runPreflightChecks } from '@/lib/update-agent'
+import { verifySchema } from '@/lib/schema-verify'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const status = getUpdateAgentStatus()
-  const preflight = await runPreflightChecks()
+  const [preflight, schema] = await Promise.all([
+    runPreflightChecks(),
+    verifySchema(),
+  ])
 
   return NextResponse.json({
     version: status.currentVersion,
@@ -23,6 +27,11 @@ export async function GET() {
     preflight: {
       passed: preflight.passed,
       checks: preflight.checks,
+    },
+    schema: {
+      passed: schema.passed,
+      missing: schema.missing,
+      checked: schema.checked,
     },
   })
 }

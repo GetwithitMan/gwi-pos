@@ -237,6 +237,12 @@ async function main() {
     console.log(`[Server] GWI POS ready on http://${hostname}:${port}`)
     console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
     console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
+
+    // Schema verification (non-blocking, logs warnings)
+    void import('./src/lib/schema-verify').then(({ verifySchema }) =>
+      verifySchema()
+    ).catch(console.error)
+
     startCloudEventWorker()
     startEodScheduler()
     startDraftCleanupInterval()
