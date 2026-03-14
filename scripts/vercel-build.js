@@ -24,6 +24,10 @@ const { execSync } = require('child_process')
  * so they always start with the correct schema — this only covers existing ones.
  */
 async function syncVenueSchemas() {
+  if (!process.env.DATABASE_URL) {
+    console.warn('[vercel-build] DATABASE_URL not set — skipping venue sync')
+    return
+  }
   const { neon } = require('@neondatabase/serverless')
   const sql = neon(process.env.DATABASE_URL)
 
@@ -96,7 +100,15 @@ async function main() {
   execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' })
 
   // 4. Sync schema to all existing venue DBs (same Neon project, different DB name per venue)
-  await syncVenueSchemas()
+  // Wrapped in try/catch — venue sync failure must not block main deployment.
+  // Individual venue failures are already non-fatal (caught inside syncVenueSchemas),
+  // but the venue enumeration query itself could fail (e.g., pg_database permission denied).
+  try {
+    await syncVenueSchemas()
+  } catch (err) {
+    console.error('[vercel-build] WARNING: Venue schema sync failed (non-fatal):', err.message)
+    console.error('[vercel-build] Main DB is synced. Venue DBs may need manual sync.')
+  }
 
   // 5. Build Next.js
   console.log('[vercel-build] Running next build...')

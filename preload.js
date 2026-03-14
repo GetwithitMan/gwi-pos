@@ -30,7 +30,12 @@ try {
         const eqIdx = trimmed.indexOf('=')
         if (eqIdx < 1) continue
         const key = trimmed.slice(0, eqIdx)
-        const val = trimmed.slice(eqIdx + 1)
+        let val = trimmed.slice(eqIdx + 1)
+        // Strip surrounding quotes (single or double) — systemd EnvironmentFile
+        // and some .env generators produce PORT="3005" which breaks parseInt
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1)
+        }
         if (!(key in process.env)) {
           process.env[key] = val
         }

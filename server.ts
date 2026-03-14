@@ -183,6 +183,12 @@ function startWalkoutRetryScheduler() {
 }
 
 async function main() {
+  // Guard: detect bad PORT values (e.g. PORT="3005" with quotes → NaN)
+  if (isNaN(port) || port < 1 || port > 65535) {
+    console.error(`[Server] Invalid port: ${process.env.PORT} (parsed as ${port}). Check .env for quoted values like PORT="3005" — remove the quotes.`)
+    process.exit(1)
+  }
+
   const app = next({ dev, hostname, port })
   const handle = app.getRequestHandler()
 
@@ -233,6 +239,16 @@ async function main() {
     }
   }
 
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[Server] Port ${port} is already in use. Another process is running on this port.`)
+      console.error('[Server] Run: lsof -i :' + port + '  to find the process.')
+      process.exit(1)
+    }
+    console.error('[Server] HTTP server error:', err)
+    process.exit(1)
+  })
+
   httpServer.listen(port, () => {
     console.log(`[Server] GWI POS ready on http://${hostname}:${port}`)
     console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
@@ -255,13 +271,19 @@ async function main() {
     if (process.env.SYNC_ENABLED === 'true') {
       if (process.env.STATION_ROLE === 'backup') {
         console.warn('[Server] STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
+      } else if (!process.env.NEON_DATABASE_URL) {
+        console.error('[Server] SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
       } else {
         startUpstreamSyncWorker()
         startDownstreamSyncWorker()
         startOutageReplayWorker()
         startFulfillmentBridge()
         startBridgeCheckpoint()
-        startCloudRelayClient()
+        try {
+          startCloudRelayClient()
+        } catch (err) {
+          console.error('[Server] Cloud relay client failed to start:', err instanceof Error ? err.message : err)
+        }
         console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
       }
     }

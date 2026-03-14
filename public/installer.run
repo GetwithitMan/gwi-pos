@@ -1666,22 +1666,37 @@ cd "$APP_DIR"
 echo "[pre-start] Cleaning stale Prisma cache..."
 rm -rf node_modules/.prisma 2>/dev/null || true
 
+# Guard: DATABASE_URL must be set for any DB operations
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  echo "[pre-start] FATAL: DATABASE_URL is not set. Check /opt/gwi-pos/.env"
+  exit 1
+fi
+
 echo "[pre-start] Regenerating Prisma client..."
-if npx --yes prisma generate 2>&1; then
+if timeout 60 npx --yes prisma generate 2>&1; then
   echo "[pre-start] Prisma client regenerated."
 else
-  echo "[pre-start] WARNING: prisma generate failed — continuing with existing client."
+  EXIT_CODE=$?
+  if [[ $EXIT_CODE -eq 124 ]]; then
+    echo "[pre-start] WARNING: prisma generate timed out after 60s — continuing with existing client."
+  else
+    echo "[pre-start] WARNING: prisma generate failed — continuing with existing client."
+  fi
 fi
 
 echo "[pre-start] Checking database schema..."
 # SAFETY: Never use --accept-data-loss. If schema has destructive changes
 # (column drops, type changes), prisma db push will FAIL instead of
 # silently destroying data. This is intentional — the DB only moves forward.
-PUSH_OUTPUT=$(npx --yes prisma db push 2>&1) && {
+# TIMEOUT: 120s prevents hung process from blocking POS startup indefinitely.
+PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
   echo "[pre-start] Schema sync complete."
 } || {
+  EXIT_CODE=$?
+  if [[ $EXIT_CODE -eq 124 ]]; then
+    echo "[pre-start] WARNING: prisma db push timed out after 120s — continuing with existing schema."
   # Check if the failure is because of data loss warnings
-  if echo "$PUSH_OUTPUT" | grep -qi "data loss\|destructive\|drop\|remove"; then
+  elif echo "$PUSH_OUTPUT" | grep -qi "data loss\|destructive\|drop\|remove"; then
     echo "[pre-start] BLOCKED: prisma db push detected destructive schema changes."
     echo "[pre-start] This usually means the code is OLDER than the database schema."
     echo "[pre-start] The database only moves forward — deploy a newer version instead."
@@ -1695,9 +1710,17 @@ PUSH_OUTPUT=$(npx --yes prisma db push 2>&1) && {
 }
 
 # Run custom migrations if the script exists
+# TIMEOUT: 300s (5min) matches the internal timeout in nuc-pre-migrate.js
 if [[ -f scripts/nuc-pre-migrate.js ]]; then
   echo "[pre-start] Running custom migrations..."
-  node scripts/nuc-pre-migrate.js 2>&1 || echo "[pre-start] WARNING: custom migrations had issues — continuing."
+  timeout 300 node scripts/nuc-pre-migrate.js 2>&1 || {
+    EXIT_CODE=$?
+    if [[ $EXIT_CODE -eq 124 ]]; then
+      echo "[pre-start] WARNING: custom migrations timed out after 300s — continuing."
+    else
+      echo "[pre-start] WARNING: custom migrations had issues (exit $EXIT_CODE) — continuing."
+    fi
+  }
 fi
 PSEOF
   chmod +x "$PRE_START"

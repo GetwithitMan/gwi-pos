@@ -13,18 +13,42 @@
  *
  * Requires: DATABASE_URL in environment (loaded from /opt/gwi-pos/.env by systemd)
  */
-const { config } = require('dotenv')
-config({ path: '.env.local', override: true })
-config({ path: '.env' })
+// Guard: dotenv must be installed
+let dotenvConfig
+try {
+  dotenvConfig = require('dotenv').config
+} catch {
+  console.error('[nuc-pre-migrate] FATAL: dotenv not installed. Run: npm ci')
+  process.exit(1)
+}
+dotenvConfig({ path: '.env.local', override: true })
+dotenvConfig({ path: '.env' })
 
-// tsx/cjs/api registers TypeScript loader so we can require the generated Prisma 7 client
-require('tsx/cjs/api').register()
-const { PrismaClient } = require('../src/generated/prisma/client')
+// Guard: tsx/cjs/api must be installed (registers TS loader for Prisma 7 generated client)
+try {
+  require('tsx/cjs/api').register()
+} catch {
+  console.error('[nuc-pre-migrate] FATAL: tsx not installed. Run: npm ci')
+  process.exit(1)
+}
+
+// Guard: Prisma client must be generated
+let PrismaClient
+try {
+  PrismaClient = require('../src/generated/prisma/client').PrismaClient
+} catch {
+  console.error('[nuc-pre-migrate] FATAL: Prisma client not generated at src/generated/prisma/client. Run: npx prisma generate')
+  process.exit(1)
+}
+
 const { PrismaPg } = require('@prisma/adapter-pg')
 const fs = require('fs')
 const path = require('path')
 
 const PREFIX = '[nuc-pre-migrate]'
+// Timeout for the entire migration run (5 minutes). Prevents hung processes
+// from blocking NUC service start or Vercel builds indefinitely.
+const MIGRATION_TIMEOUT_MS = 5 * 60 * 1000
 
 async function runPrePushMigrations() {
   // Support NEON_MIGRATE flag — when set, run migrations against Neon cloud DB
@@ -34,15 +58,21 @@ async function runPrePushMigrations() {
     return
   }
 
+  const dbUrl = isNeon ? process.env.NEON_DATABASE_URL : process.env.DATABASE_URL
+  if (!dbUrl) {
+    console.error(`${PREFIX} FATAL: ${isNeon ? 'NEON_DATABASE_URL' : 'DATABASE_URL'} is not set`)
+    process.exit(1)
+  }
+
   const targetHost = isNeon
-    ? (process.env.NEON_DATABASE_URL || '').split('@')[1]?.split('/')[0] || 'neon'
+    ? dbUrl.split('@')[1]?.split('/')[0] || 'neon'
     : 'local PG'
   console.log(`${PREFIX} Target: ${targetHost}`)
 
-  const dbUrl = isNeon ? process.env.NEON_DATABASE_URL : process.env.DATABASE_URL
   const adapter = new PrismaPg({ connectionString: dbUrl })
   const prisma = new PrismaClient({ adapter })
 
+  let lockAcquired = false
   try {
     console.log(`${PREFIX} Running pre-push migrations...`)
 
@@ -63,6 +93,7 @@ async function runPrePushMigrations() {
       console.log(`${PREFIX} Another migration runner is active — skipping`)
       return
     }
+    lockAcquired = true
     console.log(`${PREFIX} Acquired advisory lock`)
 
     // --- Discover and run pending migrations ---
@@ -102,6 +133,9 @@ async function runPrePushMigrations() {
 
       try {
         const migration = require(path.join(migrationsDir, file))
+        if (typeof migration.up !== 'function') {
+          throw new Error(`Migration ${file} does not export an up() function`)
+        }
         await migration.up(prisma)
         await prisma.$executeRawUnsafe(
           `INSERT INTO "_gwi_migrations" (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, name
@@ -119,13 +153,22 @@ async function runPrePushMigrations() {
     }
     console.log(`${PREFIX} Pre-push migrations complete (${applied} applied, ${skipped} skipped)`)
   } finally {
-    // Release advisory lock
-    try {
-      await prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(20250101)`)
-    } catch { /* best-effort */ }
+    // Only release advisory lock if we acquired it
+    if (lockAcquired) {
+      try {
+        await prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(20250101)`)
+      } catch { /* best-effort */ }
+    }
     await prisma.$disconnect()
   }
 }
+
+// Global timeout — kill the process if migrations hang (e.g., lock wait, unreachable DB)
+const timeout = setTimeout(() => {
+  console.error(`${PREFIX} FATAL: Migration runner timed out after ${MIGRATION_TIMEOUT_MS / 1000}s — killing process`)
+  process.exit(2)
+}, MIGRATION_TIMEOUT_MS)
+timeout.unref() // Don't prevent Node from exiting normally
 
 runPrePushMigrations().catch((err) => {
   console.error(`${PREFIX} Fatal error:`, err.message)

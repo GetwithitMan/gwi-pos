@@ -237,6 +237,9 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     pingTimeout: 60000,
     pingInterval: 25000,
     transports: ['websocket', 'polling'],
+    // Limit inbound payload size — POS events are small JSON (<10KB typical).
+    // Default 1MB is too generous; 100KB prevents memory exhaustion attacks.
+    maxHttpBufferSize: 100 * 1024, // 100KB
   })
 
   // Rehydrate CFD-to-register map from Terminal.metadata (survives restarts)

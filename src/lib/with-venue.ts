@@ -49,7 +49,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
         } catch (err) {
           console.error(`[withVenue] DB routing error for slug "${slug}":`, err)
           return new Response(
-            JSON.stringify({ error: `Invalid venue slug or DB routing error: ${slug}` }),
+            JSON.stringify({ error: 'DB routing error' }),
             { status: 500, headers: { 'Content-Type': 'application/json' } }
           )
         }

@@ -115,9 +115,29 @@ export async function runPreflightChecks(): Promise<PreflightResult> {
  * Execute a version-targeted update.
  * Called when heartbeat returns a targetVersion different from current.
  */
+/** Validate targetVersion is a safe semver-like string (no shell metacharacters) */
+function isValidVersion(version: string): boolean {
+  // Allow: 1.0.50, 1.0.50-beta.1, 1.0.50-rc1+build123
+  return /^[a-zA-Z0-9][a-zA-Z0-9._\-+]*$/.test(version) && version.length <= 64
+}
+
 export async function executeUpdate(targetVersion: string): Promise<UpdateResult> {
   const startTime = Date.now()
   const previousVersion = getCurrentVersion()
+
+  // Defense-in-depth: reject shell metacharacters in targetVersion
+  // even though the API endpoint requires auth. Prevents command injection
+  // via execSync interpolation (git rev-parse, git reset --hard).
+  if (!isValidVersion(targetVersion)) {
+    return {
+      success: false,
+      previousVersion,
+      targetVersion,
+      preflightResult: { passed: false, checks: [{ name: 'version_format', passed: false, detail: 'Invalid version string' }] },
+      error: `Invalid targetVersion format: "${targetVersion.slice(0, 32)}"`,
+      durationMs: 0,
+    }
+  }
 
   if (isUpdating) {
     return {

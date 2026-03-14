@@ -20,8 +20,10 @@ function createNeonClient(): PrismaClient | null {
   const neonUrl = process.env.NEON_DATABASE_URL
   if (!neonUrl) return null
 
-  const poolSize = parseInt(process.env.DB_POOL_SIZE || '10', 10) // Lower pool for sync client
-  const poolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
+  const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || '10', 10)
+  const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 10 : rawPoolSize // Lower pool for sync client
+  const rawPoolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
+  const poolTimeout = Number.isNaN(rawPoolTimeout) || rawPoolTimeout < 1 ? 10 : rawPoolTimeout
 
   const adapter = new PrismaPg({
     connectionString: neonUrl,

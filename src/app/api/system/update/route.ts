@@ -15,13 +15,15 @@ import { emitCloudEvent } from '@/lib/cloud-events'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  // Optional: verify internal secret if configured
+  // REQUIRED: verify internal secret — this endpoint triggers git reset + deploy
   const secret = process.env.INTERNAL_API_SECRET
-  if (secret) {
-    const authHeader = req.headers.get('authorization')
-    if (authHeader !== `Bearer ${secret}`) {
-      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!secret) {
+    console.error('[UpdateAPI] INTERNAL_API_SECRET not set — rejecting update request for safety')
+    return NextResponse.json({ success: false, error: 'INTERNAL_API_SECRET not configured' }, { status: 503 })
+  }
+  const authHeader = req.headers.get('authorization')
+  if (authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: { targetVersion?: string }
