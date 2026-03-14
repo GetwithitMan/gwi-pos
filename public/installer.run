@@ -1837,34 +1837,51 @@ SVCEOF
     log "POS will start automatically on promotion via promote.sh."
   else
     systemctl enable thepasspos
-    # Server role: start POS app + kiosk
-    if [[ "$KIOSK_OK" == "true" ]]; then
-      systemctl enable thepasspos-kiosk
-    else
-      track_warn "Skipping kiosk service — preflight failed (Chromium missing or Wayland)."
-      systemctl disable thepasspos-kiosk 2>/dev/null || true
-    fi
+
+    # Don't enable kiosk yet — enable AFTER POS is confirmed ready.
+    # If enabled now, systemd's Wants= dependency auto-starts kiosk
+    # when POS starts, causing duplicate Chromium tabs.
+    systemctl disable thepasspos-kiosk 2>/dev/null || true
+    systemctl stop thepasspos-kiosk 2>/dev/null || true
+
+    # Kill any stale Chromium kiosk processes from previous installs
+    pkill -u "$POSUSER" -f "chromium.*kiosk" 2>/dev/null || true
+    pkill -u "$POSUSER" -f "chromium-browser.*kiosk" 2>/dev/null || true
 
     log "Starting POS server..."
     systemctl restart thepasspos || track_warn "POS service restart failed — will retry on reboot"
 
     # Wait for POS to be ready before starting kiosk
-    if [[ "$KIOSK_OK" == "true" ]]; then
-      log "Waiting for POS to start (up to 120s)..."
-      for i in $(seq 1 60); do
-        if curl -fsS http://localhost:3005/api/health >/dev/null 2>&1; then
-          log "POS is ready!"
-          break
-        fi
-        sleep 2
-      done
-
-      systemctl restart thepasspos-kiosk || track_warn "Kiosk service restart failed — will retry on reboot"
-      # Verify kiosk process actually launched
-      sleep 5
-      if ! pgrep -u "$POSUSER" -f "${CHROMIUM_BIN:-chromium}" >/dev/null 2>&1; then
-        track_warn "Kiosk process not detected — check display, graphics drivers, or X11 session"
+    log "Waiting for POS to start (up to 120s)..."
+    POS_READY=false
+    for i in $(seq 1 60); do
+      if curl -fsS http://localhost:3005/api/health >/dev/null 2>&1; then
+        log "POS is ready!"
+        POS_READY=true
+        break
       fi
+      sleep 2
+    done
+
+    if [[ "$KIOSK_OK" == "true" ]]; then
+      if [[ "$POS_READY" == "true" ]]; then
+        # POS is healthy — NOW enable and start kiosk
+        systemctl enable thepasspos-kiosk
+        systemctl restart thepasspos-kiosk || track_warn "Kiosk service restart failed — will retry on reboot"
+
+        # Verify kiosk process actually launched
+        sleep 5
+        if ! pgrep -u "$POSUSER" -f "${CHROMIUM_BIN:-chromium}" >/dev/null 2>&1; then
+          track_warn "Kiosk process not detected — check display, graphics drivers, or X11 session"
+        fi
+      else
+        # POS didn't start in time — enable kiosk for reboot but don't start now
+        systemctl enable thepasspos-kiosk
+        track_warn "POS not ready after 120s — kiosk enabled for next reboot"
+        track_warn "Check: sudo journalctl -u thepasspos -f"
+      fi
+    else
+      track_warn "Skipping kiosk service — preflight failed (Chromium missing or Wayland)."
     fi
     log "Services configured and started."
   fi
