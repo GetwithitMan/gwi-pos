@@ -57,6 +57,16 @@ Two scripts handle schema migrations across environments:
 
 **Problem solved:** Prisma `db push` fails on String→Enum cast. Fix: pre-flight SQL with `ALTER COLUMN TYPE ... USING cast`.
 
+### Pre-Start Script: Automatic Prisma Client Regeneration
+
+The pre-start script (`/opt/gwi-pos/pre-start.sh`) runs on **every** NUC boot/restart before the POS service starts. It:
+
+1. **Regenerates the Prisma client** (`prisma generate`) — ensures the client matches the deployed `schema.prisma`, even if the build was interrupted or `npm ci` was partial. This eliminates the "stale Prisma client" bug that previously required manual `npx prisma generate` on venues after updates.
+2. **Pushes the schema** (`prisma db push --accept-data-loss --skip-generate`) — syncs local PG to match the Prisma schema (creates new tables/columns).
+3. **Runs custom migrations** (`nuc-pre-migrate.js`) — applies any pending `scripts/migrations/NNN-*.js` files.
+
+**This means:** A NUC that crashes mid-update, loses power during build, or gets a partial `npm ci` will self-heal on the next restart. No manual Prisma intervention needed.
+
 ### P3005 Baseline (db-push → migrate deploy transition)
 
 NUCs originally provisioned with `prisma db push` have no `_prisma_migrations` table. When the installer switched to `prisma migrate deploy`, it fails with P3005 ("schema not empty"). The installer and sync agent handle this automatically:

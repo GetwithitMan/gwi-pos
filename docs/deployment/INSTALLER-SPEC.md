@@ -81,7 +81,11 @@ curl installer.run | sudo bash
         │    ├─ Create DB + user (idempotent)
         │    ├─ Clone/pull repo → /opt/gwi-pos/app
         │    ├─ npm ci + prisma generate + db push + build
-        │    ├─ Create thepasspos.service
+        │    ├─ Create pre-start.sh (runs on every boot/restart)
+        │    │    1. prisma generate (regenerate client)
+        │    │    2. prisma db push (sync schema)
+        │    │    3. nuc-pre-migrate.js (custom migrations)
+        │    ├─ Create thepasspos.service (ExecStartPre=pre-start.sh)
         │    ├─ Create thepasspos-kiosk.service (→ localhost:3005)
         │    ├─ Create thepasspos-sync.service (sync agent)
         │    ├─ Install heartbeat.sh + cron (every 60s)

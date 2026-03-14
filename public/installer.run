@@ -1663,6 +1663,13 @@ set -euo pipefail
 APP_DIR="/opt/gwi-pos/app"
 cd "$APP_DIR"
 
+echo "[pre-start] Regenerating Prisma client..."
+if npx --yes prisma generate 2>&1; then
+  echo "[pre-start] Prisma client regenerated."
+else
+  echo "[pre-start] WARNING: prisma generate failed — continuing with existing client."
+fi
+
 echo "[pre-start] Syncing database schema..."
 if npx --yes prisma db push --accept-data-loss --skip-generate 2>&1; then
   echo "[pre-start] Schema sync complete."

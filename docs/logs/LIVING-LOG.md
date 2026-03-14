@@ -14,7 +14,8 @@
 - Phase 6: Socket Monitoring API (/api/health/sockets, in-memory metrics)
 - Phase 7: SAF Payment Audit Trail (needsReconciliation flag, /api/reports/outage-payments)
 - Phase 8: Deployment Control Plane documented (planned, next priority after hardening)
-- Branches: feat/phase-{1,2,3,6,7}-*
+- **Installer fix:** Pre-start script now runs `prisma generate` before `prisma db push` on every NUC boot — eliminates stale Prisma client errors after updates (dual-repo sync: gwi-pos + gwi-mission-control)
+- Commits: `59e5be49`, `4ce0f255`
 
 ---
 
