@@ -355,7 +355,8 @@ if [[ -d "$APP_BASE" ]]; then
     elif [[ "$PREV_ROLE" == "backup" ]] && [[ "$STATION_ROLE" == "server" ]]; then
       log "Promoting backup → server: removing standby config..."
       systemctl disable --now keepalived 2>/dev/null || true
-      rm -f /var/lib/postgresql/16/main/standby.signal 2>/dev/null || true
+      PG_VER_DETECTED=$(pg_lsclusters -h 2>/dev/null | awk 'NR==1{print $1}' || echo "16")
+      rm -f "/var/lib/postgresql/${PG_VER_DETECTED}/main/standby.signal" 2>/dev/null || true
       sed -i '/^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
       log "Removed standby.signal and PRIMARY_NUC_IP (will reconfigure as primary)"
     elif [[ "$PREV_ROLE" == "server" ]] && [[ "$STATION_ROLE" == "backup" ]]; then
@@ -890,7 +891,8 @@ cat > /opt/gwi-pos/clear-kiosk-session.sh <<'CLEAREOF'
 # the POS comes back up. Wipe session/cache so kiosk always starts fresh.
 SNAP_PROFILE="$HOME/snap/chromium/common/chromium/Default"
 NATIVE_PROFILE="$HOME/.config/chromium/Default"
-for PROFILE in "$SNAP_PROFILE" "$NATIVE_PROFILE"; do
+KIOSK_PROFILE="/opt/gwi-pos/kiosk-profile/Default"
+for PROFILE in "$SNAP_PROFILE" "$NATIVE_PROFILE" "$KIOSK_PROFILE"; do
   if [ -d "$PROFILE" ]; then
     rm -rf "$PROFILE/Sessions" "$PROFILE/Session Storage" \
            "$PROFILE/Cache" "$PROFILE/Code Cache" \
@@ -1254,14 +1256,17 @@ REPLSQL
       sed -i "s|^REPL_PASSWORD=.*|REPL_PASSWORD=$REPL_PASSWORD|" "$ENV_FILE"
     fi
 
-    # Add pg_hba entry allowing replication connections from any local subnet
+    # Add pg_hba entry allowing replication connections from the local subnet only
     REPL_HBA_MARKER="# GWI POS HA — replication access"
+    # Get the local subnet for replication (e.g., 192.168.1.0/24 or 172.16.1.0/24)
+    LOCAL_IP=$(hostname -I | awk '{print $1}')
+    LOCAL_SUBNET=$(echo "$LOCAL_IP" | sed 's/\.[0-9]*$/\.0\/24/')
     if ! grep -qF "$REPL_HBA_MARKER" "$PG_HBA" 2>/dev/null; then
-      log "Adding replication access to pg_hba.conf..."
+      log "Adding replication access to pg_hba.conf (subnet: ${LOCAL_SUBNET})..."
       cat >> "$PG_HBA" <<REPHBA
 
 $REPL_HBA_MARKER
-host    replication     replicator      0.0.0.0/0       md5
+host    replication     replicator      ${LOCAL_SUBNET}       md5
 REPHBA
     fi
 
@@ -1316,7 +1321,9 @@ if [[ "$STATION_ROLE" == "backup" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   systemctl stop postgresql
 
   # Clear existing data directory for fresh base backup
-  PG_DATA="/var/lib/postgresql/16/main"
+  # Detect installed PostgreSQL version (may be 16 or 17)
+  PG_VERSION=$(pg_lsclusters -h 2>/dev/null | awk 'NR==1{print $1}' || echo "16")
+  PG_DATA="/var/lib/postgresql/${PG_VERSION}/main"
   if [[ -d "$PG_DATA" ]]; then
     log "Clearing existing PostgreSQL data directory..."
     rm -rf "$PG_DATA"
@@ -1450,6 +1457,14 @@ exit 0
 HACHKEOF
   chmod +x /opt/gwi-pos/scripts/ha-check.sh
 
+  # Generate per-venue VRRP auth password (read from .env if already set, else generate)
+  VRRP_AUTH_PASS=$(grep "^VRRP_AUTH_PASS=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
+  if [[ -z "$VRRP_AUTH_PASS" ]]; then
+    VRRP_AUTH_PASS=$(head -c 6 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 8)
+  fi
+  # Persist to .env so the backup NUC can use the same password
+  grep -q "^VRRP_AUTH_PASS=" "$ENV_FILE" || echo "VRRP_AUTH_PASS=$VRRP_AUTH_PASS" >> "$ENV_FILE"
+
   # Generate keepalived.conf
   cat > /etc/keepalived/keepalived.conf <<KAEOF
 # GWI POS HA — keepalived configuration
@@ -1473,7 +1488,7 @@ vrrp_instance GWI_POS {
 
     authentication {
         auth_type PASS
-        auth_pass gwip0sha
+        auth_pass $VRRP_AUTH_PASS
     }
 
     virtual_ipaddress {
@@ -1808,17 +1823,20 @@ SVCEOF
 Description=ThePassPOS Kiosk
 After=graphical.target thepasspos.service
 Wants=thepasspos.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
 ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh
-ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 http://localhost:3005
+ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile http://localhost:3005
 Restart=always
-RestartSec=5
+RestartSec=10
 
 [Install]
 WantedBy=graphical.target
@@ -2120,8 +2138,8 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
     fi
   fi
 
-  # Kill any existing Chromium instances before starting kiosk
-  pkill -f "$TERM_CHROMIUM" 2>/dev/null || true
+  # Kill any existing kiosk Chromium instances before starting kiosk (user-scoped)
+  pkill -u "$POSUSER" -f "${TERM_CHROMIUM}.*kiosk" 2>/dev/null || true
   sleep 1
 
   # thepasspos-kiosk.service — Chromium pointing at server (SERVER_URL via Environment for safety)
@@ -2130,6 +2148,8 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
 Description=ThePassPOS Kiosk (Terminal)
 After=graphical.target network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -2137,11 +2157,12 @@ User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
 Environment=POS_SERVER_URL=$SERVER_URL
+ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
 ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh $SERVER_URL
-ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 $SERVER_URL
+ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile $SERVER_URL
 Restart=always
-RestartSec=5
+RestartSec=10
 
 [Install]
 WantedBy=graphical.target
