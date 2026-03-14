@@ -14,6 +14,12 @@ const nextConfig: NextConfig = {
   // Enable strict mode for better error catching
   reactStrictMode: true,
 
+  // Skip TypeScript checking during build — Prisma 7 generated client is large
+  // and causes OOM on Vercel. Type safety is verified by `tsc --noEmit` separately.
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+
   // Limit body sizes to prevent resource exhaustion
   experimental: {
     serverActions: {
