@@ -282,6 +282,12 @@ export const POST = withVenue(async function POST(
 
     // Queue outage writes if in outage mode (fire-and-forget)
     if (isInOutageMode()) {
+      // Flag void processed during outage for reconciliation
+      void db.payment.update({
+        where: { id: paymentId },
+        data: { needsReconciliation: true },
+      }).catch(console.error)
+
       const fullPayment = await db.payment.findUnique({ where: { id: paymentId } })
       if (fullPayment) void queueOutageWrite('Payment', paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
       const fullOrder = await db.order.findUnique({ where: { id: orderId } })

@@ -1174,11 +1174,20 @@ export const POST = withVenue(withTiming(async function POST(
     } = txResult as any
 
     if (isInOutageMode()) {
+      // Flag payments processed during outage for reconciliation visibility
+      const paymentIds = ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id)
+      if (paymentIds.length > 0) {
+        void db.payment.updateMany({
+          where: { id: { in: paymentIds } },
+          data: { needsReconciliation: true },
+        }).catch(console.error)
+      }
+
       // Read back full Payment rows from local PG — BridgedPayment is missing
       // NOT NULL columns (locationId, createdAt, updatedAt, processedAt) that
       // would cause constraint violations on Neon replay.
       const fullPayments = await db.payment.findMany({
-        where: { id: { in: ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id) } }
+        where: { id: { in: paymentIds } }
       })
       for (const fp of fullPayments) {
         void queueOutageWrite('Payment', fp.id, 'INSERT', fp as unknown as Record<string, unknown>, order.locationId).catch(console.error)
