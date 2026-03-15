@@ -87,6 +87,7 @@ export async function createTableSplit(
         blockTimeStartedAt: item.blockTimeStartedAt,
         blockTimeExpiresAt: item.blockTimeExpiresAt,
         isTaxInclusive: item.isTaxInclusive ?? false,
+        ...(item.pricingRuleApplied ? { pricingRuleApplied: item.pricingRuleApplied as object } : {}),
         modifiers: {
           create: item.modifiers.map(mod => ({
             locationId: order.locationId,

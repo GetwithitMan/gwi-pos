@@ -132,7 +132,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         SELECT
           COALESCE(o."orderType", 'Unknown') AS order_type,
           COUNT(*)::int AS count,
-          COALESCE(SUM(o.subtotal + o."taxTotal"), 0)::float AS gross,
+          COALESCE(SUM(o.subtotal + o."taxFromExclusive"), 0)::float AS gross,
           COALESCE(SUM(o.subtotal - o."discountTotal"), 0)::float AS net
         FROM "Order" o
         WHERE o."locationId" = ${locationId}

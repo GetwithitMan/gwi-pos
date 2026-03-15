@@ -149,6 +149,9 @@ export const POST = withVenue(async function POST(
 
     // 7. Minimum order amount
     const subtotal = Number(order.subtotal)
+    if (!isFinite(subtotal) || subtotal < 0) {
+      return NextResponse.json({ error: 'Invalid order subtotal' }, { status: 400 })
+    }
     if (coupon.minimumOrder && subtotal < Number(coupon.minimumOrder)) {
       return NextResponse.json(
         { error: `Minimum order of $${Number(coupon.minimumOrder).toFixed(2)} required for this coupon` },

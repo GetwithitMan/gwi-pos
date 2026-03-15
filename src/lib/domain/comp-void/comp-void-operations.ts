@@ -203,7 +203,21 @@ export async function applyCompVoid(
   const discountTotal = roundToCents(orderLevelDiscount + itemLevelDiscount)
 
   const taxRate = getLocationTaxRate(locationSettings)
-  const splitTax = calculateSplitTax(split.inclusiveSubtotal, split.exclusiveSubtotal, taxRate)
+  // Get inclusive tax rate from location settings (may differ from exclusive rate)
+  const inclusiveTaxRateRaw = (locationSettings as any)?.tax?.inclusiveTaxRate
+  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+    ? inclusiveTaxRateRaw / 100 : undefined
+
+  // Allocate discount proportionally between inclusive/exclusive, compute tax on post-discount amounts
+  let discOnIncl = 0, discOnExcl = 0
+  if (discountTotal > 0 && split.subtotal > 0) {
+    const inclShare = split.inclusiveSubtotal / split.subtotal
+    discOnIncl = roundToCents(discountTotal * inclShare)
+    discOnExcl = roundToCents(discountTotal - discOnIncl)
+  }
+  const postDiscIncl = roundToCents(Math.max(0, split.inclusiveSubtotal - discOnIncl))
+  const postDiscExcl = roundToCents(Math.max(0, split.exclusiveSubtotal - discOnExcl))
+  const splitTax = calculateSplitTax(postDiscIncl, postDiscExcl, taxRate, inclusiveRate)
   const totals = buildOrderTotals(
     split.inclusiveSubtotal, split.exclusiveSubtotal, split.subtotal,
     discountTotal, splitTax,
@@ -300,7 +314,21 @@ export async function applyRestore(
   const discountTotal = roundToCents(orderLevelDiscount + itemLevelDiscount)
 
   const taxRate = getLocationTaxRate(locationSettings)
-  const splitTax = calculateSplitTax(split.inclusiveSubtotal, split.exclusiveSubtotal, taxRate)
+  // Get inclusive tax rate from location settings (may differ from exclusive rate)
+  const inclusiveTaxRateRaw = (locationSettings as any)?.tax?.inclusiveTaxRate
+  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+    ? inclusiveTaxRateRaw / 100 : undefined
+
+  // Allocate discount proportionally between inclusive/exclusive, compute tax on post-discount amounts
+  let discOnIncl = 0, discOnExcl = 0
+  if (discountTotal > 0 && split.subtotal > 0) {
+    const inclShare = split.inclusiveSubtotal / split.subtotal
+    discOnIncl = roundToCents(discountTotal * inclShare)
+    discOnExcl = roundToCents(discountTotal - discOnIncl)
+  }
+  const postDiscIncl = roundToCents(Math.max(0, split.inclusiveSubtotal - discOnIncl))
+  const postDiscExcl = roundToCents(Math.max(0, split.exclusiveSubtotal - discOnExcl))
+  const splitTax = calculateSplitTax(postDiscIncl, postDiscExcl, taxRate, inclusiveRate)
   const totals = buildOrderTotals(
     split.inclusiveSubtotal, split.exclusiveSubtotal, split.subtotal,
     discountTotal, splitTax,
