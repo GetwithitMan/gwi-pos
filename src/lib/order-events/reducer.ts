@@ -76,6 +76,7 @@ function handleItemAdded(
     costAtSaleCents: payload.costAtSaleCents ?? null,
     pourSize: payload.pourSize ?? null,
     pourMultiplier: payload.pourMultiplier ?? null,
+    isTaxInclusive: payload.isTaxInclusive ?? false,
     status: 'active',
     isCompleted: false,
     resendCount: 0,

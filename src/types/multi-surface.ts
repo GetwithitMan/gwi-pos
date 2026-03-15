@@ -17,6 +17,8 @@ export interface CFDShowOrderEvent {
   tax: number
   total: number
   discountTotal?: number
+  taxFromInclusive?: number
+  taxFromExclusive?: number
 }
 
 /** POS → CFD: Show order confirmation with full item detail before payment */
@@ -33,6 +35,8 @@ export interface CFDShowOrderDetailEvent {
   tax: number
   total: number
   discountTotal?: number
+  taxFromInclusive?: number
+  taxFromExclusive?: number
 }
 
 /** POS → CFD: Payment initiated, show payment screen */
@@ -50,6 +54,8 @@ export interface CFDTipPromptEvent {
   orderTotal: number
   isUnderThreshold: boolean
   tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip basis
+  taxFromInclusive?: number
+  taxFromExclusive?: number
 }
 
 /** POS → CFD: Request signature on CFD screen */
@@ -129,6 +135,8 @@ export interface CFDOrderUpdatedEvent {
   tax: number
   total: number
   discountTotal?: number
+  taxFromInclusive?: number
+  taxFromExclusive?: number
 }
 
 // CFD screen states

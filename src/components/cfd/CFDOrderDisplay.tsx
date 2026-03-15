@@ -10,6 +10,9 @@ interface CFDOrderDisplayProps {
 export default function CFDOrderDisplay({ data }: CFDOrderDisplayProps) {
   if (!data) return null
 
+  const allInclusive = (data.taxFromInclusive ?? 0) > 0 && (data.taxFromExclusive ?? 0) === 0
+  const taxLabel = allInclusive ? 'Tax (included)' : 'Tax'
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900">
       {/* Pricing rule countdown banner (only if showCfdCountdown enabled) */}
@@ -60,7 +63,7 @@ export default function CFDOrderDisplay({ data }: CFDOrderDisplayProps) {
           </div>
         )}
         <div className="flex justify-between text-white/50">
-          <span>Tax</span>
+          <span>{taxLabel}</span>
           <span className="tabular-nums">${data.tax.toFixed(2)}</span>
         </div>
         <div className="flex justify-between text-white text-2xl font-bold pt-2 border-t border-white/20">

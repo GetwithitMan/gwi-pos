@@ -297,6 +297,8 @@ export function PaymentModal({
                 tax: Number(data.taxTotal ?? 0),
                 total: Number(data.total ?? orderTotal),
                 discountTotal: Number(data.discountTotal ?? 0),
+                taxFromInclusive: Number(data.taxFromInclusive ?? 0),
+                taxFromExclusive: Number(data.taxFromExclusive ?? 0),
               },
             }),
           }).catch(() => {})

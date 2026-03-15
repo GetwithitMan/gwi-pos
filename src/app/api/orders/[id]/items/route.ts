@@ -474,6 +474,7 @@ export const POST = withVenue(async function POST(
         costAtSaleCents: item.costAtSale ? Math.round(Number(item.costAtSale) * 100) : null,
         pourSize: item.pourSize || null,
         pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
+        isTaxInclusive: item.isTaxInclusive ?? false,
         itemType: result.menuItemMap.get(item.menuItemId)?.itemType || null,
       },
     })))

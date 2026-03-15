@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { getLocationTaxRate, calculateTax, isItemTaxInclusive } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
@@ -94,8 +94,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const menuItemsMap = new Map(
         (await tx.menuItem.findMany({
           where: { id: { in: menuItemIds } },
+          include: { category: { select: { categoryType: true } } },
         })).map(mi => [mi.id, mi])
       )
+
+      // Get tax rate and inclusive settings from location
+      const location = await tx.location.findUnique({
+        where: { id: locationId },
+      })
+      const locSettings = location?.settings as { tax?: { defaultRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean } } | null
+      const taxRate = getLocationTaxRate(locSettings)
+      const taxIncSettings = {
+        taxInclusiveLiquor: locSettings?.tax?.taxInclusiveLiquor ?? false,
+        taxInclusiveFood: locSettings?.tax?.taxInclusiveFood ?? false,
+      }
 
       // Calculate totals from items
       let subtotal = 0
@@ -125,14 +137,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           specialNotes: item.specialNotes || null,
           status: 'pending',
           modifiers: item.modifiers || [],
+          isTaxInclusive: isItemTaxInclusive(menuItem.category?.categoryType, taxIncSettings),
         })
       }
 
-      // Get tax rate from location settings
-      const location = await tx.location.findUnique({
-        where: { id: locationId },
-      })
-      const taxRate = getLocationTaxRate(location?.settings as { tax?: { defaultRate?: number } })
       const taxTotal = calculateTax(subtotal, taxRate)
       const total = Math.round((subtotal + taxTotal) * 100) / 100
 

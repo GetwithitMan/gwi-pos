@@ -664,6 +664,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           employeeId, // WHO added this item
           isHeld: item.isHeld || false,
           soldByWeight: item.soldByWeight || false,
+          isTaxInclusive: item.isTaxInclusive ?? false,
         },
       })),
     ])

@@ -91,6 +91,7 @@ export interface PriceRoundingSettings {
 
 export interface TaxSettings {
   defaultRate: number
+  inclusiveTaxRate?: number     // Sum of inclusive tax rule rates (percentage, e.g. 7.0 = 7%)
   calculateAfterDiscount: boolean
   taxInclusiveLiquor: boolean   // Liquor & alcohol prices include tax (categoryType: 'liquor', 'drinks')
   taxInclusiveFood: boolean     // Food prices include tax (categoryType: 'food', 'pizza', 'combos')

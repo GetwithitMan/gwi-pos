@@ -4,6 +4,8 @@
  * Per-seat balance calculations and status determination.
  */
 
+import { calculateSplitTax } from '@/lib/order-calculations'
+
 // Module-level tax rate, updated by useOrderSettings when location settings load.
 // Starts at 0 (not hardcoded 8%) — if settings fail to load, zero tax is obvious to the user.
 // Callers can pass an explicit taxRate to override; this is the fallback default.
@@ -36,6 +38,7 @@ export interface OrderItemForSeat {
   seatNumber?: number | null
   price: number
   quantity: number
+  isTaxInclusive?: boolean
   kitchenStatus?: string
   status?: string
   createdAt?: Date | string
@@ -135,26 +138,50 @@ export function getSeatBorderColor(seatNumber: number | null | undefined): strin
 
 /**
  * Calculate per-seat balance
+ *
+ * Supports tax-inclusive items: when items carry `isTaxInclusive: true`, their
+ * tax is backed out rather than added on top. Pass `inclusiveTaxRate` when the
+ * inclusive rate differs from the standard `taxRate`.
  */
 export function calculateSeatBalance(
   items: OrderItemForSeat[],
   seatNumber: number,
-  taxRate: number = _locationTaxRate
+  taxRate: number = _locationTaxRate,
+  inclusiveTaxRate?: number
 ): { subtotal: number; taxAmount: number; total: number; itemCount: number } {
   const seatItems = items.filter(item => item.seatNumber === seatNumber)
 
-  const subtotal = seatItems.reduce((sum, item) => {
+  let inclusiveSubtotal = 0
+  let exclusiveSubtotal = 0
+
+  for (const item of seatItems) {
     const itemBase = Number(item.price) * item.quantity
     const modTotal = (item.modifiers || []).reduce((m, mod) => m + Number(mod.price), 0) * item.quantity
-    return sum + itemBase + modTotal
-  }, 0)
+    const lineTotal = itemBase + modTotal
 
-  const taxAmount = Math.round(subtotal * taxRate * 100) / 100
-  const total = Math.round((subtotal + taxAmount) * 100) / 100
+    if (item.isTaxInclusive) {
+      inclusiveSubtotal += lineTotal
+    } else {
+      exclusiveSubtotal += lineTotal
+    }
+  }
+
+  const subtotal = Math.round((inclusiveSubtotal + exclusiveSubtotal) * 100) / 100
+  inclusiveSubtotal = Math.round(inclusiveSubtotal * 100) / 100
+  exclusiveSubtotal = Math.round(exclusiveSubtotal * 100) / 100
+
+  const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
+    inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate
+  )
+
+  // Display tax is the combined amount (inclusive backed-out + exclusive added)
+  const taxAmount = totalTax
+  // Total = subtotal + exclusive tax only (inclusive tax is already embedded in price)
+  const total = Math.round((subtotal + taxFromExclusive) * 100) / 100
   const itemCount = seatItems.reduce((sum, item) => sum + item.quantity, 0)
 
   return {
-    subtotal: Math.round(subtotal * 100) / 100,
+    subtotal,
     taxAmount,
     total,
     itemCount,
@@ -204,12 +231,13 @@ export function calculateAllSeatBalances(
   items: OrderItemForSeat[],
   totalSeats: number,
   payments: PaymentForSeat[] = [],
-  taxRate: number = _locationTaxRate
+  taxRate: number = _locationTaxRate,
+  inclusiveTaxRate?: number
 ): SeatInfo[] {
   const seats: SeatInfo[] = []
 
   for (let seatNum = 1; seatNum <= totalSeats; seatNum++) {
-    const balance = calculateSeatBalance(items, seatNum, taxRate)
+    const balance = calculateSeatBalance(items, seatNum, taxRate, inclusiveTaxRate)
     const status = determineSeatStatus(items, seatNum, payments)
 
     seats.push({

@@ -1123,6 +1123,8 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
   subtotal: number
   tax: number
   total: number
+  taxFromInclusive?: number
+  taxFromExclusive?: number
 }): void {
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
@@ -1146,6 +1148,8 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
   tax: number
   total: number
   discountTotal?: number
+  taxFromInclusive?: number
+  taxFromExclusive?: number
 }): void {
   if (cfdTerminalId) {
     void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch(console.error)
@@ -1312,6 +1316,8 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
   tax: number
   total: number
   discountTotal?: number
+  taxFromInclusive?: number
+  taxFromExclusive?: number
 }): void {
   void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, data).catch(console.error)
 }

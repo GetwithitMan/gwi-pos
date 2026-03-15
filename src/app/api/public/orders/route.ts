@@ -12,6 +12,7 @@ import { getDbForVenue } from '@/lib/db'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
+import { isItemTaxInclusive } from '@/lib/order-calculations'
 
 // ── Simple in-memory rate limiter ───────────────────────────────────────────
 const orderRateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
         taxRate: true,
         isTaxExempt: true,
         categoryId: true,
+        category: { select: { categoryType: true } },
       },
     })
 
@@ -185,6 +187,10 @@ export async function POST(request: NextRequest) {
 
     // Calculate totals
     const defaultTaxRate = settings.tax.defaultRate || 0
+    const taxIncSettings = {
+      taxInclusiveLiquor: settings.tax.taxInclusiveLiquor,
+      taxInclusiveFood: settings.tax.taxInclusiveFood,
+    }
     let subtotal = 0
     const orderItemsData: {
       locationId: string
@@ -196,6 +202,7 @@ export async function POST(request: NextRequest) {
       taxRate: number
       taxAmount: number
       isTaxExempt: boolean
+      isTaxInclusive: boolean
       categoryId: string
       seatNumber: number
       sortOrder: number
@@ -209,6 +216,7 @@ export async function POST(request: NextRequest) {
       const itemTotal = price * qty
       const taxRate = mi.isTaxExempt ? 0 : (Number(mi.taxRate) || defaultTaxRate)
       const taxAmount = Math.round(itemTotal * (taxRate / 100) * 100) / 100
+      const itemTaxInclusive = isItemTaxInclusive(mi.category?.categoryType, taxIncSettings)
 
       subtotal += itemTotal
 
@@ -222,6 +230,7 @@ export async function POST(request: NextRequest) {
         taxRate,
         taxAmount,
         isTaxExempt: mi.isTaxExempt,
+        isTaxInclusive: itemTaxInclusive,
         categoryId: mi.categoryId,
         seatNumber: 1,
         sortOrder: i,
@@ -287,6 +296,7 @@ export async function POST(request: NextRequest) {
             taxRate: oi.taxRate,
             taxAmount: oi.taxAmount,
             isTaxExempt: oi.isTaxExempt,
+            isTaxInclusive: oi.isTaxInclusive,
             categoryId: oi.categoryId,
             seatNumber: oi.seatNumber,
             sortOrder: oi.sortOrder,

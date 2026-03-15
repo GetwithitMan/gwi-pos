@@ -214,6 +214,8 @@ export const POST = withVenue(async function POST(
             tax: totals.taxTotal,
             total: totals.total,
             discountTotal: totals.discountTotal,
+            taxFromInclusive: totals.taxFromInclusive,
+            taxFromExclusive: totals.taxFromExclusive,
           })
 
           return NextResponse.json({ data: {
@@ -510,6 +512,8 @@ export const POST = withVenue(async function POST(
         tax: totals.taxTotal,
         total: totals.total,
         discountTotal: totals.discountTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
       })
 
       // Track for post-transaction alert dispatch
@@ -798,6 +802,8 @@ export const DELETE = withVenue(async function DELETE(
         tax: totals.taxTotal,
         total: totals.total,
         discountTotal: totals.discountTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
       })
 
       return NextResponse.json({ data: {

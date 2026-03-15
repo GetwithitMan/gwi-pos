@@ -21,6 +21,9 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
 
   if (!data) return null
 
+  const allInclusive = (data.taxFromInclusive ?? 0) > 0 && (data.taxFromExclusive ?? 0) === 0
+  const taxLabel = allInclusive ? 'Tax (included)' : 'Tax'
+
   const tipBasis = data.tipExemptAmount ? Math.max(0, data.orderTotal - data.tipExemptAmount) : data.orderTotal
 
   const computeTipDollars = (sel: TipSelection): number => {
@@ -192,7 +195,7 @@ export default function CFDTipScreen({ data, onTipSelected }: CFDTipScreenProps)
             <span className="tabular-nums">${data.subtotal.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-white/50 text-lg">
-            <span>Tax</span>
+            <span>{taxLabel}</span>
             <span className="tabular-nums">${data.tax.toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-white text-xl font-bold pt-2 border-t border-white/10">

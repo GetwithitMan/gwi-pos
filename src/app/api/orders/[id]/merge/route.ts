@@ -308,6 +308,8 @@ export const POST = withVenue(async function POST(
       tax: Number(updatedOrder!.taxTotal),
       total: Number(updatedOrder!.total),
       discountTotal: Number(updatedOrder!.discountTotal),
+      taxFromInclusive: Number(updatedOrder!.taxFromInclusive ?? 0),
+      taxFromExclusive: Number(updatedOrder!.taxFromExclusive ?? 0),
     })
 
     return NextResponse.json({ data: {

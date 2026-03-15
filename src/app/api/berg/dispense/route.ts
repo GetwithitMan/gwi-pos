@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { validateBridgeHMAC, decryptBridgeSecret } from '@/lib/berg/hmac'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { getBusinessDateForTimestamp } from '@/lib/business-day'
+import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { createHash } from 'crypto'
 
 // Default 500ms — tight enough that real double-pours (>500ms apart) aren't deduplicated,
@@ -218,6 +219,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   })
   const settings = location?.settings as Record<string, unknown> | null
   const dayStartTime = (settings?.dayStartTime as string) || '04:00'
+  const taxSettings = settings?.tax as { taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean } | undefined
+  const taxIncSettings = {
+    taxInclusiveLiquor: taxSettings?.taxInclusiveLiquor ?? false,
+    taxInclusiveFood: taxSettings?.taxInclusiveFood ?? false,
+  }
 
   const businessDateStr = getBusinessDateForTimestamp(receivedAtDate, dayStartTime)
   const businessDate = new Date(businessDateStr + 'T00:00:00')
@@ -292,7 +298,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 if (menuItem) pourCost = menuItem.price
               }
             } else if (result.order && autoRingMode === 'AUTO_RING' && resolvedPlu?.menuItemId) {
-              const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
+              const menuItem = await db.menuItem.findUnique({
+                where: { id: resolvedPlu.menuItemId },
+                include: { category: { select: { categoryType: true } } },
+              })
               if (menuItem) {
                 const oi = await db.orderItem.create({
                   data: {
@@ -303,6 +312,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                     price: menuItem.price,
                     quantity: 1,
                     status: 'active',
+                    isTaxInclusive: isItemTaxInclusive(menuItem.category?.categoryType, taxIncSettings),
                   },
                 })
                 orderId = result.order.id
@@ -374,7 +384,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       orderId = result.order.id
 
       if (autoRingMode === 'AUTO_RING' && resolvedPlu.menuItemId) {
-        const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
+        const menuItem = await db.menuItem.findUnique({
+          where: { id: resolvedPlu.menuItemId },
+          include: { category: { select: { categoryType: true } } },
+        })
         if (menuItem) {
           const oi = await db.orderItem.create({
             data: {
@@ -385,6 +398,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               price: menuItem.price,
               quantity: 1,
               status: 'active',
+              isTaxInclusive: isItemTaxInclusive(menuItem.category?.categoryType, taxIncSettings),
             },
           })
           orderItemId = oi.id

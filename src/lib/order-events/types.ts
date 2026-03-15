@@ -49,6 +49,7 @@ export interface ItemAddedPayload {
   name: string
   priceCents: number
   quantity: number
+  isTaxInclusive?: boolean
   modifiersJson?: string | null
   specialNotes?: string | null
   seatNumber?: number | null
@@ -242,6 +243,7 @@ export interface OrderLineItem {
   costAtSaleCents?: number | null
   pourSize?: string | null
   pourMultiplier?: number | null
+  isTaxInclusive?: boolean
   itemDiscounts: Record<string, ItemDiscount>
 
   // --- New snapshot bridge fields (optional, safe defaults) ---

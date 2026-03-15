@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
+import { isItemTaxInclusive } from '@/lib/order-calculations'
 
 export const maxDuration = 60
 
@@ -119,8 +120,22 @@ export async function GET(request: NextRequest) {
             if (menuItem) pourCost = menuItem.price
           }
         } else if (result.order && device.autoRingMode === 'AUTO_RING' && resolvedPlu.menuItemId) {
-          const menuItem = await db.menuItem.findUnique({ where: { id: resolvedPlu.menuItemId } })
+          const menuItem = await db.menuItem.findUnique({
+            where: { id: resolvedPlu.menuItemId },
+            include: { category: { select: { categoryType: true } } },
+          })
           if (menuItem) {
+            // Load tax-inclusive settings for this location
+            const loc = await db.location.findUnique({
+              where: { id: device.locationId },
+              select: { settings: true },
+            })
+            const locSettings = loc?.settings as Record<string, unknown> | null
+            const taxCfg = locSettings?.tax as { taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean } | undefined
+            const taxIncSettings = {
+              taxInclusiveLiquor: taxCfg?.taxInclusiveLiquor ?? false,
+              taxInclusiveFood: taxCfg?.taxInclusiveFood ?? false,
+            }
             const oi = await db.orderItem.create({
               data: {
                 locationId: device.locationId,
@@ -130,6 +145,7 @@ export async function GET(request: NextRequest) {
                 price: menuItem.price,
                 quantity: 1,
                 status: 'active',
+                isTaxInclusive: isItemTaxInclusive(menuItem.category?.categoryType, taxIncSettings),
               },
             })
             orderId = result.order.id

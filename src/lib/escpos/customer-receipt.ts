@@ -62,6 +62,8 @@ export interface ReceiptTotals {
   subtotal: number
   discount: number
   tax: number
+  taxFromInclusive?: number   // Tax backed out of inclusive-priced items
+  taxFromExclusive?: number   // Tax added on top of exclusive-priced items
   tipTotal: number
   total: number
   surchargeAmount?: number
@@ -172,7 +174,20 @@ export function buildCustomerReceipt(
     const surchargePctLabel = totals.surchargePercent ? ` (${totals.surchargePercent}%)` : ''
     content.push(twoColumnLine(`CC Surcharge${surchargePctLabel}:`, `$${totals.surchargeAmount.toFixed(2)}`, width))
   }
-  content.push(twoColumnLine('Tax:', `$${totals.tax.toFixed(2)}`, width))
+  // Tax line(s) — show breakdown if enabled and both inclusive/exclusive present
+  const showBreakdown = s.receipt?.totals?.showTaxBreakdown ?? false
+  const inclTax = totals.taxFromInclusive ?? 0
+  const exclTax = totals.taxFromExclusive ?? 0
+  const allInclusive = inclTax > 0 && exclTax === 0
+  const hasBoth = inclTax > 0 && exclTax > 0
+
+  if (showBreakdown && hasBoth) {
+    content.push(twoColumnLine('Tax (included):', `$${inclTax.toFixed(2)}`, width))
+    content.push(twoColumnLine('Tax (added):', `$${exclTax.toFixed(2)}`, width))
+  } else {
+    const taxLabel = allInclusive ? 'Tax (included):' : 'Tax:'
+    content.push(twoColumnLine(taxLabel, `$${totals.tax.toFixed(2)}`, width))
+  }
   content.push(TALL)
   content.push(ESCPOS.BOLD_ON)
   content.push(twoColumnLine('TOTAL:', `$${totals.total.toFixed(2)}`, width))

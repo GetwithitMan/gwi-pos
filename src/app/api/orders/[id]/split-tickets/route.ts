@@ -715,6 +715,7 @@ export const PATCH = withVenue(async function PATCH(
               price: price,
               quantity: item.quantity,
               itemTotal: price,
+              isTaxInclusive: item.isTaxInclusive,
               seatNumber: item.seatNumber,
               courseNumber: item.courseNumber,
               status: item.status,

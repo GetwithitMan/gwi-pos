@@ -67,6 +67,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 name: item.name,
                 quantity: item.quantity || 1,
                 price: item.price || 0,
+                isTaxInclusive: item.isTaxInclusive ?? false,
                 notes: item.notes || null,
                 modifiers: item.modifiers ? {
                   create: item.modifiers.map((mod: any) => ({

@@ -89,6 +89,8 @@ function CFDContent() {
           tax: data.tax,
           total: data.total,
           discountTotal: data.discountTotal,
+          taxFromInclusive: data.taxFromInclusive,
+          taxFromExclusive: data.taxFromExclusive,
         })
         // Stay in current screen state — don't switch
       }

@@ -118,10 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
     const isDualCard = dualPricingEnabled && hasCardPayment
 
-    // Tax computation
-    const taxRateDecimal = (locationSettings.tax?.defaultRate ?? 0) / 100
-    const calcAfterDiscount = locationSettings.tax?.calculateAfterDiscount ?? true
-
+    // Tax: use stored split values (authoritative), fall back to recompute for legacy orders
     const activeItems = order.items.filter(
       (i) => !i.status || i.status === 'active'
     )
@@ -129,20 +126,32 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       Math.round(activeItems.reduce((sum, i) => sum + Number(i.itemTotal), 0) * 100) / 100
     const discountTotal = Math.round(Number(order.discountTotal) * 100) / 100
 
+    const storedTaxFromInclusive = Number(order.taxFromInclusive ?? 0)
+    const storedTaxFromExclusive = Number(order.taxFromExclusive ?? 0)
+
     let subtotal: number
     let taxTotal: number
+    let taxFromInclusive: number
+    let taxFromExclusive: number
 
     if (isDualCard) {
       subtotal = calculateCardPrice(cashSubtotal, cashDiscountPercent)
-      const taxable = calcAfterDiscount ? Math.max(0, subtotal - discountTotal) : subtotal
-      taxTotal = Math.round(taxable * taxRateDecimal * 100) / 100
+      // For dual pricing card receipts, use stored order tax (already computed correctly)
+      taxTotal = Math.round(Number(order.taxTotal) * 100) / 100
+      taxFromInclusive = storedTaxFromInclusive
+      taxFromExclusive = storedTaxFromExclusive
     } else {
       subtotal = cashSubtotal
-      const taxable = calcAfterDiscount ? Math.max(0, subtotal - discountTotal) : subtotal
-      taxTotal = Math.round(taxable * taxRateDecimal * 100) / 100
+      taxTotal = Math.round(Number(order.taxTotal) * 100) / 100
+      taxFromInclusive = storedTaxFromInclusive
+      taxFromExclusive = storedTaxFromExclusive
     }
 
-    const total = Math.round((subtotal - discountTotal + taxTotal) * 100) / 100
+    // For inclusive orders: total = subtotal - discount + exclusive tax only
+    // For legacy/all-exclusive: taxFromExclusive = taxTotal, so same result
+    const hasStoredSplit = taxFromInclusive > 0 || taxFromExclusive > 0
+    const addedTax = hasStoredSplit ? taxFromExclusive : taxTotal
+    const total = Math.round((subtotal - discountTotal + addedTax) * 100) / 100
     const tipTotal = Number(order.tipTotal)
 
     // Surcharge info
@@ -198,6 +207,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         subtotal,
         discount: discountTotal,
         tax: taxTotal,
+        taxFromInclusive,
+        taxFromExclusive,
         tipTotal,
         total,
         surchargeDisclosure,

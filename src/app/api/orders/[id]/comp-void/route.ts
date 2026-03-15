@@ -491,6 +491,8 @@ export const POST = withVenue(async function POST(
           tax: totals.taxTotal,
           total: totals.total,
           discountTotal: totals.discountTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
         })
       } catch (err) {
         console.error('[CompVoid] CFD dispatch failed:', err)
