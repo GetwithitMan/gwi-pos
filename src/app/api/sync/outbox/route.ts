@@ -53,6 +53,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             notes: orderData.notes || null,
             subtotal: orderData.subtotal || 0,
             taxTotal: orderData.tax || 0,
+            taxFromInclusive: orderData.taxFromInclusive ?? 0,
+            taxFromExclusive: orderData.taxFromExclusive ?? (orderData.tax || 0),
             total: orderData.total || 0,
             offlineId: orderData.offlineId,
             offlineLocalId: orderData.offlineLocalId || null,

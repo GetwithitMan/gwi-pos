@@ -78,13 +78,15 @@ export function buildOrderTotals(
   exclusiveSubtotal: number,
   subtotal: number,
   discountTotal: number,
-  splitTax: { totalTax: number; taxFromExclusive: number },
-): { subtotal: number; discountTotal: number; taxTotal: number; total: number } {
+  splitTax: { totalTax: number; taxFromExclusive: number; taxFromInclusive: number },
+): { subtotal: number; discountTotal: number; taxTotal: number; taxFromInclusive: number; taxFromExclusive: number; total: number } {
   const effectiveDiscount = Math.min(discountTotal, subtotal)
   return {
     subtotal,
     discountTotal: effectiveDiscount,
     taxTotal: splitTax.totalTax,
+    taxFromInclusive: splitTax.taxFromInclusive,
+    taxFromExclusive: splitTax.taxFromExclusive,
     total: roundToCents(inclusiveSubtotal + exclusiveSubtotal + splitTax.taxFromExclusive - effectiveDiscount),
   }
 }

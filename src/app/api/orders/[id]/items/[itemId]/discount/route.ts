@@ -122,7 +122,7 @@ export const POST = withVenue(async function POST(
           )
           const updatedOrder = await tx.order.update({
             where: { id: orderId },
-            data: { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, total: totals.total },
+            data: { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, taxFromInclusive: totals.taxFromInclusive, taxFromExclusive: totals.taxFromExclusive, total: totals.total },
             select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
           })
           void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
@@ -190,6 +190,8 @@ export const POST = withVenue(async function POST(
         data: {
           discountTotal: totals.discountTotal,
           taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
           total: totals.total,
         },
         select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
@@ -337,6 +339,8 @@ export const DELETE = withVenue(async function DELETE(
         data: {
           discountTotal: totals.discountTotal,
           taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
           total: totals.total,
         },
         select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },

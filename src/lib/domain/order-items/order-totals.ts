@@ -165,6 +165,8 @@ export async function recalculateParentOrderTotals(
     select: {
       subtotal: true,
       taxTotal: true,
+      taxFromInclusive: true,
+      taxFromExclusive: true,
       total: true,
       discountTotal: true,
       tipTotal: true,
@@ -175,6 +177,8 @@ export async function recalculateParentOrderTotals(
 
   const parentSubtotal = siblings.reduce((sum, s) => sum + Number(s.subtotal), 0)
   const parentTax = siblings.reduce((sum, s) => sum + Number(s.taxTotal), 0)
+  const parentTaxFromInclusive = siblings.reduce((sum, s) => sum + Number(s.taxFromInclusive || 0), 0)
+  const parentTaxFromExclusive = siblings.reduce((sum, s) => sum + Number(s.taxFromExclusive || 0), 0)
   const parentTotal = siblings.reduce((sum, s) => sum + Number(s.total), 0)
   const parentDiscount = siblings.reduce((sum, s) => sum + Number(s.discountTotal), 0)
   const parentTip = siblings.reduce((sum, s) => sum + Number(s.tipTotal), 0)
@@ -186,6 +190,8 @@ export async function recalculateParentOrderTotals(
     data: {
       subtotal: parentSubtotal,
       taxTotal: parentTax,
+      taxFromInclusive: parentTaxFromInclusive,
+      taxFromExclusive: parentTaxFromExclusive,
       total: parentTotal,
       discountTotal: parentDiscount,
       tipTotal: parentTip,

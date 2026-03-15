@@ -120,6 +120,8 @@ export interface SplitSourceOrder {
   subtotal: any // Prisma Decimal
   discountTotal: any
   taxTotal: any
+  taxFromInclusive: any
+  taxFromExclusive: any
   total: any
   notes: string | null
   items: SplitOrderItem[]

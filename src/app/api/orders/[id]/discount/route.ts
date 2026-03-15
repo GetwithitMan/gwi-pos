@@ -153,6 +153,8 @@ export const POST = withVenue(async function POST(
             data: {
               discountTotal: totals.discountTotal,
               taxTotal: totals.taxTotal,
+              taxFromInclusive: totals.taxFromInclusive,
+              taxFromExclusive: totals.taxFromExclusive,
               total: totals.total,
               version: { increment: 1 },
             },
@@ -444,6 +446,8 @@ export const POST = withVenue(async function POST(
         data: {
           discountTotal: totals.discountTotal,
           taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
           total: totals.total,
           version: { increment: 1 },
         },
@@ -734,6 +738,8 @@ export const DELETE = withVenue(async function DELETE(
         data: {
           discountTotal: totals.discountTotal,
           taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
           total: totals.total,
           version: { increment: 1 },
         },

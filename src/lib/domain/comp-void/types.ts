@@ -54,6 +54,8 @@ export interface OrderTotals {
   subtotal: number
   discountTotal: number
   taxTotal: number
+  taxFromInclusive: number
+  taxFromExclusive: number
   total: number
 }
 

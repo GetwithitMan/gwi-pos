@@ -43,6 +43,12 @@ export async function createEvenSplit(
       const splitDiscount = i === numWays - 1
         ? Math.round((Number(order.discountTotal) - Math.floor((Number(order.discountTotal) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
         : Math.floor((Number(order.discountTotal) / numWays) * 100) / 100
+      const splitTaxFromInclusive = i === numWays - 1
+        ? Math.round((Number(order.taxFromInclusive) - Math.floor((Number(order.taxFromInclusive) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
+        : Math.floor((Number(order.taxFromInclusive) / numWays) * 100) / 100
+      const splitTaxFromExclusive = i === numWays - 1
+        ? Math.round((Number(order.taxFromExclusive) - Math.floor((Number(order.taxFromExclusive) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
+        : Math.floor((Number(order.taxFromExclusive) / numWays) * 100) / 100
 
       // Last split: compute total FROM its own components to avoid penny drift
       const splitTotal = i === numWays - 1
@@ -64,6 +70,8 @@ export async function createEvenSplit(
           subtotal: splitSubtotal,
           discountTotal: splitDiscount,
           taxTotal: splitTax,
+          taxFromInclusive: splitTaxFromInclusive,
+          taxFromExclusive: splitTaxFromExclusive,
           tipTotal: 0,
           total: splitTotal,
           parentOrderId: order.id,

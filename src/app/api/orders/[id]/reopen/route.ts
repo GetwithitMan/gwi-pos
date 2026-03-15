@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
-import { calculateSimpleOrderTotals } from '@/lib/order-calculations'
+import { calculateOrderTotals } from '@/lib/order-calculations'
+import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -239,28 +240,33 @@ export const POST = withVenue(async function POST(
         deletedAt: null,
         status: { not: 'voided' },
       },
-      select: {
-        itemTotal: true,
-        modifierTotal: true,
-        quantity: true,
+      include: {
+        modifiers: true,
       },
     })
 
-    const recalcSubtotal = activeItems.reduce(
-      (sum, item) => sum + Number(item.itemTotal) + Number(item.modifierTotal || 0),
-      0
-    )
-
-    // Use canonical order calculation utility for tax + total
+    // Use canonical order calculation utility for tax + total (with split tax support)
     const locationSettings = await db.location.findUnique({
       where: { id: order.locationId },
       select: { settings: true },
     })
     const locSettings = (locationSettings?.settings as Record<string, unknown>) || {}
-    const recalcTotals = calculateSimpleOrderTotals(
-      recalcSubtotal,
+    const calcItems: OrderItemForCalculation[] = activeItems.map(i => ({
+      price: Number(i.price),
+      quantity: i.quantity,
+      status: i.status,
+      itemTotal: Number(i.itemTotal),
+      isTaxInclusive: (i as any).isTaxInclusive ?? false,
+      modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+    }))
+    const recalcTotals = calculateOrderTotals(
+      calcItems,
+      locSettings as { tax?: { defaultRate?: number } },
       Number(order.discountTotal) || 0,
-      { tax: { defaultRate: ((locSettings?.tax as Record<string, unknown>)?.defaultRate as number) ?? 0 } }
+      0,
+      undefined,
+      'card',
+      order.isTaxExempt
     )
 
     // Update order to open status
@@ -273,6 +279,8 @@ export const POST = withVenue(async function POST(
         closedAt: null,
         subtotal: recalcTotals.subtotal,
         taxTotal: recalcTotals.taxTotal,
+        taxFromInclusive: recalcTotals.taxFromInclusive,
+        taxFromExclusive: recalcTotals.taxFromExclusive,
         total: recalcTotals.total,
         tipTotal: 0,
         reopenedAt: new Date(),

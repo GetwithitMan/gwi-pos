@@ -270,7 +270,7 @@ export async function applyRestore(
   itemId: string,
   locationSettings: { tax?: { defaultRate?: number } },
   isBottleService: boolean,
-): Promise<{ totals: { subtotal: number; discountTotal: number; taxTotal: number; total: number } }> {
+): Promise<{ totals: { subtotal: number; discountTotal: number; taxTotal: number; taxFromInclusive: number; taxFromExclusive: number; total: number } }> {
   // 1. Restore the item
   await (tx as any).orderItem.update({
     where: { id: itemId },
@@ -334,6 +334,8 @@ async function recalcParentTotals(
     select: {
       subtotal: true,
       taxTotal: true,
+      taxFromInclusive: true,
+      taxFromExclusive: true,
       total: true,
       discountTotal: true,
       items: {
@@ -345,6 +347,8 @@ async function recalcParentTotals(
 
   const parentSubtotal = siblings.reduce((sum: number, s: any) => sum + Number(s.subtotal), 0)
   const parentTaxTotal = siblings.reduce((sum: number, s: any) => sum + Number(s.taxTotal), 0)
+  const parentTaxFromInclusive = siblings.reduce((sum: number, s: any) => sum + Number(s.taxFromInclusive ?? 0), 0)
+  const parentTaxFromExclusive = siblings.reduce((sum: number, s: any) => sum + Number(s.taxFromExclusive ?? 0), 0)
   const parentTotal = siblings.reduce((sum: number, s: any) => sum + Number(s.total), 0)
   const parentDiscountTotal = siblings.reduce((sum: number, s: any) => sum + Number(s.discountTotal), 0)
   const parentItemCount = siblings.reduce(
@@ -356,6 +360,8 @@ async function recalcParentTotals(
     data: {
       subtotal: parentSubtotal,
       taxTotal: parentTaxTotal,
+      taxFromInclusive: parentTaxFromInclusive,
+      taxFromExclusive: parentTaxFromExclusive,
       total: parentTotal,
       discountTotal: parentDiscountTotal,
       itemCount: parentItemCount,
@@ -365,6 +371,8 @@ async function recalcParentTotals(
   return {
     subtotal: parentSubtotal,
     taxTotal: parentTaxTotal,
+    taxFromInclusive: parentTaxFromInclusive,
+    taxFromExclusive: parentTaxFromExclusive,
     total: parentTotal,
     discountTotal: parentDiscountTotal,
     itemCount: parentItemCount,
