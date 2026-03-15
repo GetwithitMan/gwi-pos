@@ -107,7 +107,12 @@ function postJsonLocal(urlPath, data) {
   return new Promise(function(resolve, reject) {
     var body = JSON.stringify(data)
     var url = new URL(urlPath, 'http://localhost:3005')
-    var req = http.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, function(res) {
+    var headers = { 'Content-Type': 'application/json' }
+    // Auth for internal endpoints (e.g., /api/system/update)
+    if (env.INTERNAL_API_SECRET) {
+      headers['Authorization'] = 'Bearer ' + env.INTERNAL_API_SECRET
+    }
+    var req = http.request(url, { method: 'POST', headers: headers }, function(res) {
       var d = ''
       res.on('data', function(c) { d += c })
       res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
