@@ -1108,9 +1108,15 @@ if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   # Reuse existing password from .env on re-runs; generate random on first install
   # Try 3 sources: DATABASE_URL in .env → .pgpass → generate new
   # If generating new, ALTER ROLE will sync PG to match (idempotent)
+  # Try 4 sources: DB_PASSWORD in .env → DATABASE_URL in .env → .pgpass → generate new
   EXISTING_DB_PW=""
   if [[ -f "$ENV_FILE" ]]; then
-    EXISTING_DB_PW=$(grep -oP '^DATABASE_URL="?postgresql://[^:]+:\K[^@]+' "$ENV_FILE" 2>/dev/null | head -1 || echo "")
+    # Prefer explicit DB_PASSWORD var (avoids URL parsing)
+    EXISTING_DB_PW=$(grep "^DB_PASSWORD=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 | head -1 || echo "")
+    # Fallback: parse from DATABASE_URL (less reliable for special chars)
+    if [[ -z "$EXISTING_DB_PW" ]]; then
+      EXISTING_DB_PW=$(grep "^DATABASE_URL=" "$ENV_FILE" 2>/dev/null | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p' | head -1 || echo "")
+    fi
   fi
   if [[ -z "$EXISTING_DB_PW" ]] && [[ -f "$POSUSER_HOME/.pgpass" ]]; then
     EXISTING_DB_PW=$(grep "localhost:5432:$DB_NAME:$DB_USER:" "$POSUSER_HOME/.pgpass" 2>/dev/null | cut -d: -f5 | head -1 || echo "")
@@ -1200,10 +1206,16 @@ HBAEOF
     echo "DIRECT_URL=$DIRECT_URL" >> "$ENV_FILE"
   fi
 
-  # Also add DB_USER/DB_NAME for backup script
+  # Also add DB_USER/DB_NAME/DB_PASSWORD for backup script and re-run password detection
   if ! grep -q "^DB_USER=" "$ENV_FILE" 2>/dev/null; then
     echo "DB_USER=$DB_USER" >> "$ENV_FILE"
     echo "DB_NAME=$DB_NAME" >> "$ENV_FILE"
+  fi
+  # Persist DB_PASSWORD separately — avoids fragile DATABASE_URL regex parsing on re-runs
+  if grep -q "^DB_PASSWORD=" "$ENV_FILE" 2>/dev/null; then
+    sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" "$ENV_FILE"
+  else
+    echo "DB_PASSWORD=$DB_PASSWORD" >> "$ENV_FILE"
   fi
 
   log "PostgreSQL ready: $DB_NAME owned by $DB_USER"
@@ -1457,13 +1469,31 @@ exit 0
 HACHKEOF
   chmod +x /opt/gwi-pos/scripts/ha-check.sh
 
-  # Generate per-venue VRRP auth password (read from .env if already set, else generate)
+  # VRRP auth password — must match between primary and backup for HA to work.
+  # Primary generates it; backup must be given the same value.
   VRRP_AUTH_PASS=$(grep "^VRRP_AUTH_PASS=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
   if [[ -z "$VRRP_AUTH_PASS" ]]; then
-    VRRP_AUTH_PASS=$(head -c 6 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 8)
+    if [[ "$STATION_ROLE" == "backup" ]]; then
+      # Backup: prompt for primary's VRRP password (same as REPL_PASSWORD pattern)
+      echo ""
+      echo "Enter the VRRP auth password from the primary server."
+      echo "(Found in the primary's /opt/gwi-pos/.env as VRRP_AUTH_PASS)"
+      echo ""
+      read -rp "VRRP auth password: " VRRP_AUTH_PASS < /dev/tty
+      if [[ -z "$VRRP_AUTH_PASS" ]]; then
+        # Generate one but warn — HA may not authenticate
+        VRRP_AUTH_PASS=$(head -c 6 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 8)
+        warn "No VRRP password entered — generated random. HA may fail if primary uses a different password."
+      fi
+    else
+      # Primary: generate fresh password
+      VRRP_AUTH_PASS=$(head -c 6 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 8)
+    fi
   fi
-  # Persist to .env so the backup NUC can use the same password
-  grep -q "^VRRP_AUTH_PASS=" "$ENV_FILE" || echo "VRRP_AUTH_PASS=$VRRP_AUTH_PASS" >> "$ENV_FILE"
+  # Persist to .env
+  grep -q "^VRRP_AUTH_PASS=" "$ENV_FILE" 2>/dev/null && \
+    sed -i "s/^VRRP_AUTH_PASS=.*/VRRP_AUTH_PASS=$VRRP_AUTH_PASS/" "$ENV_FILE" || \
+    echo "VRRP_AUTH_PASS=$VRRP_AUTH_PASS" >> "$ENV_FILE"
 
   # Generate keepalived.conf
   cat > /etc/keepalived/keepalived.conf <<KAEOF
