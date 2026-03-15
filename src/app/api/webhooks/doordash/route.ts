@@ -44,9 +44,13 @@ export async function POST(request: NextRequest) {
   // Validate HMAC signature
   const signature = request.headers.get('x-doordash-signature')
     || request.headers.get('x-signature')
-  if (location.webhookSecret && !validateHmacSignature(rawBody, signature, location.webhookSecret)) {
-    console.error('[doordash/webhook] HMAC validation failed')
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  if (location.webhookSecret) {
+    if (!validateHmacSignature(rawBody, signature, location.webhookSecret)) {
+      console.error('[doordash/webhook] HMAC validation failed')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+  } else {
+    console.warn('[doordash/webhook] No webhookSecret configured — HMAC validation skipped for location', location.locationId)
   }
 
   const { locationId } = location

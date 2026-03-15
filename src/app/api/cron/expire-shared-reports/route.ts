@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -12,10 +13,8 @@ export const maxDuration = 30
  * Intended to be called by cron (Vercel Cron or NUC crontab).
  */
 export const GET = withVenue(async function GET(request: NextRequest) {
-  const cronSecret = request.headers.get('authorization')
-  if (cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(request.headers.get('authorization'))
+  if (cronAuthError) return cronAuthError
   try {
     const result = await db.$executeRawUnsafe(
       `DELETE FROM "SharedReport" WHERE "expiresAt" < NOW()`

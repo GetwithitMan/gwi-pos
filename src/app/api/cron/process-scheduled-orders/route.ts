@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged, dispatchNewOrder } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -11,10 +12,8 @@ export const maxDuration = 30
 // Moves them from draft/open+scheduled to open (ready for prep).
 // Designed to be called by an external cron every 1-2 minutes.
 export async function GET(request: NextRequest) {
-  const cronSecret = request.headers.get('authorization')
-  if (cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(request.headers.get('authorization'))
+  if (cronAuthError) return cronAuthError
 
   try {
     const now = new Date()

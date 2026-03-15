@@ -181,6 +181,9 @@ export const POST = withVenue(withTiming(async function POST(
 
       const amountVal = Number(roomPayment.amount || 0)
       const tipVal = Number(roomPayment.tipAmount || 0)
+      if (!isFinite(amountVal) || amountVal < 0 || !isFinite(tipVal) || tipVal < 0) {
+        return NextResponse.json({ error: 'Invalid payment amount' }, { status: 400 })
+      }
       const amountCents = Math.round((amountVal + tipVal) * 100)
       const idempotencyKey_pms = `${orderId}:${sel.reservationId}:${amountCents}:${pms.chargeCode}`
 

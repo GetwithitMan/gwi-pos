@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 export const maxDuration = 60
 
@@ -42,9 +43,8 @@ async function findOpenOrderForTerminal(
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(authHeader)
+  if (cronAuthError) return cronAuthError
 
   const now = Date.now()
   const staleThreshold = new Date(now - STALE_THRESHOLD_MS)

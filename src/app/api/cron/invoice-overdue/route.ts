@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { sendEmail } from '@/lib/email-service'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -15,10 +16,8 @@ const BILLING_SOURCE = 'api' as never
 // 2. Send reminder emails for invoices approaching due date
 // 3. Apply late fees if configured
 export const GET = withVenue(async function GET(request: NextRequest) {
-  const cronSecret = request.headers.get('authorization')
-  if (cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(request.headers.get('authorization'))
+  if (cronAuthError) return cronAuthError
 
   try {
     const now = new Date()

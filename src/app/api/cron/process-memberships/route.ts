@@ -3,15 +3,14 @@ import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_MEMBERSHIP_SETTINGS } from '@/lib/settings'
 import { processMembershipBilling } from '@/lib/membership/billing-processor'
 import { processDunning } from '@/lib/membership/dunning'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
-  const cronSecret = request.headers.get('authorization')
-  if (cronSecret !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(request.headers.get('authorization'))
+  if (cronAuthError) return cronAuthError
 
   try {
     const locations = await db.location.findMany({

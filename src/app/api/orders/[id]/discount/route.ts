@@ -294,7 +294,7 @@ export const POST = withVenue(async function POST(
         }
       } else {
         // Manual/custom discount
-        if (!body.type || !body.value || body.value <= 0) {
+        if (!body.type || !body.value || !isFinite(body.value) || body.value <= 0) {
           return NextResponse.json(
             { error: 'Discount type and value are required' },
             { status: 400 }

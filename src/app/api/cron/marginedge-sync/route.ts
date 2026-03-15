@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { MarginEdgeClient } from '@/lib/marginedge-client'
 import { syncInvoicesForLocation } from '@/app/api/integrations/marginedge/_helpers'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 async function updateSyncStatus(locationId: string, updates: Record<string, unknown>): Promise<void> {
   try {
@@ -18,10 +19,8 @@ async function updateSyncStatus(locationId: string, updates: Record<string, unkn
 
 export async function GET(request: NextRequest) {
   // Verify cron secret
-  const authHeader = request.headers.get('Authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(request.headers.get('Authorization'))
+  if (cronAuthError) return cronAuthError
 
   const locations = await db.location.findMany({
     where: { deletedAt: null },

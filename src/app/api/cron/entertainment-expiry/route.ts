@@ -8,6 +8,7 @@ import {
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 import { expireSession } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
@@ -19,9 +20,8 @@ export const maxDuration = 30
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(authHeader)
+  if (cronAuthError) return cronAuthError
 
   const now = new Date()
   let expiredSessionCount = 0

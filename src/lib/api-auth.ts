@@ -233,6 +233,7 @@ export async function requirePermission(
       if (adminEmployee) {
         const adminPerms = (adminEmployee.role.permissions as string[]) || []
         if (hasPermission(adminPerms, permission)) {
+          console.warn(`[api-auth] Location-admin fallback: resolved employeeId=${adminEmployee.id} for locationId=${locationId}, permission=${permission}`)
           employeeId = adminEmployee.id
           setCachedEmployee(adminEmployee.id, locationId, adminEmployee)
         }

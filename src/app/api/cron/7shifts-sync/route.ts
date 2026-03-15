@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { createReceipt, createTimePunch, listShifts } from '@/lib/7shifts-client'
+import { verifyCronSecret } from '@/lib/cron-auth'
 
 function getBusinessDate(timezone: string, daysOffset = -1): string {
   const target = new Date(Date.now() + daysOffset * 24 * 60 * 60 * 1000)
@@ -37,10 +38,8 @@ async function updateSyncStatus(locationId: string, updates: Record<string, unkn
 
 export async function GET(request: NextRequest) {
   // Verify cron secret
-  const authHeader = request.headers.get('Authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const cronAuthError = verifyCronSecret(request.headers.get('Authorization'))
+  if (cronAuthError) return cronAuthError
 
   const locations = await db.location.findMany({
     where: { deletedAt: null },
