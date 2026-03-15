@@ -259,6 +259,12 @@ async function main() {
       verifySchema()
     ).catch(console.error)
 
+    // Sync coverage validation — ensures every DB table is in sync config.
+    // Logs CRITICAL error if any table is missing (prevents silent sync gaps).
+    void import('./src/lib/sync/sync-config').then(({ validateSyncCoverage }) =>
+      validateSyncCoverage(masterClient)
+    ).catch(console.error)
+
     startCloudEventWorker()
     startEodScheduler()
     startDraftCleanupInterval()

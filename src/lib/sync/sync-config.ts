@@ -292,3 +292,51 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
   process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '5000',
   10
 )
+
+/**
+ * SYNC COVERAGE VALIDATOR
+ *
+ * Called at server startup. Queries the database for all tables and
+ * verifies every one is in SYNC_MODELS. If any table is missing,
+ * logs a CRITICAL error so it's impossible to miss.
+ *
+ * This prevents the "58 missing models" problem from ever happening again.
+ * New tables added via migration MUST be added to SYNC_MODELS before deploy.
+ */
+export async function validateSyncCoverage(db: { $queryRawUnsafe: Function }): Promise<void> {
+  try {
+    const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public'
+       AND table_type = 'BASE TABLE'
+       AND table_name NOT LIKE '\\_%'`
+    )
+
+    const configuredModels = new Set(Object.keys(SYNC_MODELS))
+    // Internal/system tables that are NOT Prisma models — skip these
+    const systemTables = new Set([
+      '_prisma_migrations', '_gwi_migrations', '_gwi_sync_state',
+      '_pending_datacap_sales', '_pending_captures',
+    ])
+
+    const missing: string[] = []
+    for (const { table_name } of tables) {
+      if (systemTables.has(table_name)) continue
+      if (!configuredModels.has(table_name)) {
+        missing.push(table_name)
+      }
+    }
+
+    if (missing.length > 0) {
+      console.error('[SYNC CONFIG] ⚠️  CRITICAL: ' + missing.length + ' tables NOT in sync config!')
+      console.error('[SYNC CONFIG] These tables will NOT sync between NUC and Neon:')
+      missing.forEach(t => console.error('[SYNC CONFIG]   ✗ ' + t))
+      console.error('[SYNC CONFIG] Add them to SYNC_MODELS in src/lib/sync/sync-config.ts')
+    } else {
+      console.log('[SYNC CONFIG] ✓ All ' + tables.length + ' tables covered in sync config')
+    }
+  } catch (err) {
+    // Non-fatal — don't prevent server from starting
+    console.warn('[SYNC CONFIG] Coverage check failed:', err instanceof Error ? err.message : err)
+  }
+}
