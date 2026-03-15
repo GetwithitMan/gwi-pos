@@ -11,6 +11,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { roundToCents } from '@/lib/pricing'
 
 interface TipAdjustment {
   orderId: string
@@ -188,7 +189,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           )
 
           // Recalculate Order.total to include new tip total (BUG #410 fix)
-          const newOrderTotal = Number(order.subtotal) + Number(order.taxTotal) - Number(order.discountTotal) + newOrderTipTotal
+          const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxTotal) - Number(order.discountTotal) + newOrderTipTotal)
 
           orderUpdates.push(
             tx.order.update({

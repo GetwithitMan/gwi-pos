@@ -155,6 +155,7 @@ export async function mapThirdPartyOrder(
     subtotal += itemTotal
   }
 
+  // Note: delivery orders currently assume all items are tax-exclusive
   const tax = taxRate > 0 ? Math.round(subtotal * (taxRate / 100) * 100) / 100 : 0
   const total = Math.round((subtotal + tax) * 100) / 100
 

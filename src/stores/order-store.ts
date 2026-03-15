@@ -360,7 +360,8 @@ function computeTotals(order: Order, taxRate: number): { subtotal: number; taxTo
   })
 
   const afterDiscount = subtotal - order.discountTotal
-  // Client-side estimate only — server totals via syncServerTotals are authoritative
+  // Client-side estimate only — server totals via syncServerTotals are authoritative.
+  // Note: does not split tax-inclusive vs tax-exclusive items — server handles that via calculateOrderTotals.
   const taxTotal = Math.round(afterDiscount * taxRate * 100) / 100
   const total = Math.round((afterDiscount + taxTotal) * 100) / 100
 

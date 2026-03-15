@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
 import { dispatchFloorPlanUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -69,7 +69,10 @@ export const GET = withVenue(async function GET(
     const totalSeats = order.baseSeatCount + order.extraSeatCount
 
     // Get tax rate from location settings
-    const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
+    const locSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
+    const taxRate = getLocationTaxRate(locSettings)
+    const inclusiveTaxRate = locSettings?.tax?.inclusiveTaxRate != null
+      ? locSettings.tax.inclusiveTaxRate / 100 : undefined
 
     // Calculate per-seat balances
     const seatTimestamps = (order.seatTimestamps as SeatTimestamps) || {}
@@ -93,15 +96,19 @@ export const GET = withVenue(async function GET(
       const seatItems = order.items.filter(item => item.seatNumber === seatNum)
       const itemCount = seatItems.reduce((sum, item) => sum + item.quantity, 0)
 
-      // Calculate subtotal including modifiers
-      const subtotal = seatItems.reduce((sum, item) => {
-        const itemBase = Number(item.price) * item.quantity
-        const modTotal = item.modifiers.reduce((m, mod) => m + Number(mod.price), 0) * item.quantity
-        return sum + itemBase + modTotal
-      }, 0)
+      // Calculate subtotal including modifiers, split by tax-inclusive flag
+      let seatInclSub = 0, seatExclSub = 0
+      for (const item of seatItems) {
+        const lineTotal = (Number(item.price) * item.quantity)
+          + item.modifiers.reduce((m, mod) => m + Number(mod.price), 0) * item.quantity
+        if (item.isTaxInclusive) seatInclSub += lineTotal; else seatExclSub += lineTotal
+      }
+      const subtotal = seatInclSub + seatExclSub
 
-      const taxAmount = calculateTax(subtotal, taxRate)
-      const total = subtotal + taxAmount
+      const seatTax = calculateSplitTax(seatInclSub, seatExclSub, taxRate, inclusiveTaxRate)
+      const taxAmount = seatTax.totalTax
+      // Inclusive items already contain tax; only add exclusive tax on top
+      const total = subtotal + seatTax.taxFromExclusive
 
       // Determine seat status
       let status: SeatBalance['status'] = 'empty'

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getLocationTaxRate, calculateTax, isItemTaxInclusive } from '@/lib/order-calculations'
+import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
@@ -102,7 +102,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const location = await tx.location.findUnique({
         where: { id: locationId },
       })
-      const locSettings = location?.settings as { tax?: { defaultRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean } } | null
+      const locSettings = location?.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean } } | null
       const taxRate = getLocationTaxRate(locSettings)
       const taxIncSettings = {
         taxInclusiveLiquor: locSettings?.tax?.taxInclusiveLiquor ?? false,
@@ -141,8 +141,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
       }
 
-      const taxTotal = calculateTax(subtotal, taxRate)
-      const total = Math.round((subtotal + taxTotal) * 100) / 100
+      // Split subtotals by tax-inclusive status
+      let inclusiveSubtotal = 0
+      let exclusiveSubtotal = 0
+      for (const oi of orderItems) {
+        const itemTotal = Number(oi.price) * (oi.quantity || 1)
+        if (oi.isTaxInclusive) {
+          inclusiveSubtotal += itemTotal
+        } else {
+          exclusiveSubtotal += itemTotal
+        }
+      }
+
+      // Use split-aware tax calculation
+      const inclusiveTaxRateRaw = locSettings?.tax?.inclusiveTaxRate
+      const inclusiveTaxRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+        ? inclusiveTaxRateRaw / 100 : undefined
+      const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
+        inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate
+      )
+      // Inclusive items already contain tax; only exclusive tax is added on top
+      const total = Math.round((subtotal + taxFromExclusive) * 100) / 100
 
       // Create the order
       const newOrder = await tx.order.create({
@@ -156,6 +175,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           status: 'open',
           subtotal,
           taxTotal,
+          taxFromInclusive,
+          taxFromExclusive,
           total,
           offlineId: offlineId || null,
           offlineLocalId: localId || null,

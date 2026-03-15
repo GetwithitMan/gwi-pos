@@ -221,6 +221,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const deliveryFee = deliveryAddress ? cateringConfig.deliveryFee : 0
 
     // Fetch tax rate
+    // Note: catering orders currently assume all items are tax-exclusive
     const taxRules = await db.taxRule.findMany({
       where: { locationId, isActive: true, isInclusive: false, deletedAt: null },
       select: { rate: true },

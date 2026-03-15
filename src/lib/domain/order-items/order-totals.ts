@@ -29,6 +29,7 @@ export function mapItemsForCalculation(items: Array<any>): Array<any> {
     weight: i.weight ? Number(i.weight) : undefined,
     unitPrice: i.unitPrice ? Number(i.unitPrice) : undefined,
     soldByWeight: i.soldByWeight ?? false,
+    isTaxInclusive: i.isTaxInclusive ?? false,
     modifiers: i.modifiers.map((m: any) => ({ ...m, price: Number(m.price) })),
     ingredientModifications: i.ingredientModifications.map((ing: any) => ({
       ...ing,

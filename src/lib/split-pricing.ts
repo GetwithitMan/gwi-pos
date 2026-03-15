@@ -2,6 +2,7 @@
 // Hybrid pricing strategy: proportional discounts, nickel rounding, remainder bucket
 
 import { roundPrice } from './pricing'
+import { calculateSplitTax } from './order-calculations'
 
 // ============================================
 // Types
@@ -39,6 +40,7 @@ export interface OrderItemInput {
     price: number
   }>
   itemDiscount?: number      // Per-item discount amount
+  isTaxInclusive?: boolean   // True if item price includes tax
 }
 
 export type RoundingIncrement = 'none' | '0.05' | '0.10' | '0.25' | '0.50' | '1.00'
@@ -109,7 +111,8 @@ export function calculateSplitTicketPricing(
   roundTo: RoundingIncrement = '0.05',
   isLastTicket: boolean = false,
   expectedTotal?: number,
-  previousTicketsTotal?: number
+  previousTicketsTotal?: number,
+  inclusiveTaxRate?: number
 ): SplitPricingResult {
   // Calculate proportional discounts for each item
   const proportionalDiscounts = calculateProportionalDiscount(items, orderDiscount, orderSubtotal)
@@ -149,12 +152,18 @@ export function calculateSplitTicketPricing(
   // Calculate adjusted subtotal (after discounts)
   const adjustedSubtotal = splitItems.reduce((sum, item) => sum + item.adjustedPrice, 0)
 
-  // Calculate tax
-  const rawTax = adjustedSubtotal * taxRate
-  const taxAmount = roundPrice(rawTax, roundTo, 'nearest')
+  // Calculate tax — split by inclusive/exclusive items
+  let inclAdj = 0, exclAdj = 0
+  for (const item of splitItems) {
+    const src = items.find(i => i.id === item.id)
+    if (src?.isTaxInclusive) inclAdj += item.adjustedPrice; else exclAdj += item.adjustedPrice
+  }
+  const splitTax = calculateSplitTax(inclAdj, exclAdj, taxRate, inclusiveTaxRate)
+  const taxAmount = roundPrice(splitTax.totalTax, roundTo, 'nearest')
 
   // Calculate total before remainder adjustment
-  let total = roundPrice(adjustedSubtotal + taxAmount, roundTo, 'nearest')
+  // Inclusive items already contain tax; only add exclusive tax on top
+  let total = roundPrice(adjustedSubtotal + roundPrice(splitTax.taxFromExclusive, roundTo, 'nearest'), roundTo, 'nearest')
   let roundingAdjustment = 0
 
   // If this is the last ticket and we have expected total, apply remainder
@@ -213,15 +222,30 @@ export function calculateMultiSplitPricing(
   assignments: TicketAssignment[],
   orderDiscount: number,
   taxRate: number,
-  roundTo: RoundingIncrement = '0.05'
+  roundTo: RoundingIncrement = '0.05',
+  inclusiveTaxRate?: number
 ): MultiSplitResult {
   // Calculate original order totals
   const allItems = assignments.flatMap(a => a.items)
   const originalSubtotal = allItems.reduce((sum, item) => sum + getItemTotal(item), 0)
   const itemDiscounts = allItems.reduce((sum, item) => sum + (item.itemDiscount || 0), 0)
   const adjustedSubtotal = originalSubtotal - itemDiscounts - orderDiscount
-  const originalTax = roundPrice(adjustedSubtotal * taxRate, roundTo, 'nearest')
-  const originalTotal = roundPrice(adjustedSubtotal + originalTax, roundTo, 'nearest')
+  // Split-aware tax for the original total
+  let origInclAdj = 0, origExclAdj = 0
+  for (const item of allItems) {
+    const t = getItemTotal(item) - (item.itemDiscount || 0)
+    if (item.isTaxInclusive) origInclAdj += t; else origExclAdj += t
+  }
+  // Distribute order discount proportionally
+  const origAdj = origInclAdj + origExclAdj
+  if (orderDiscount > 0 && origAdj > 0) {
+    const inclShare = origInclAdj / origAdj
+    origInclAdj = Math.max(0, origInclAdj - orderDiscount * inclShare)
+    origExclAdj = Math.max(0, origExclAdj - orderDiscount * (1 - inclShare))
+  }
+  const origSplitTax = calculateSplitTax(origInclAdj, origExclAdj, taxRate, inclusiveTaxRate)
+  const originalTax = roundPrice(origSplitTax.totalTax, roundTo, 'nearest')
+  const originalTotal = roundPrice(adjustedSubtotal + roundPrice(origSplitTax.taxFromExclusive, roundTo, 'nearest'), roundTo, 'nearest')
 
   // Sort assignments by ticket index
   const sortedAssignments = [...assignments].sort((a, b) => a.ticketIndex - b.ticketIndex)
@@ -241,7 +265,8 @@ export function calculateMultiSplitPricing(
       roundTo,
       isLastTicket,
       originalTotal,
-      previousTicketsTotal
+      previousTicketsTotal,
+      inclusiveTaxRate
     )
 
     tickets.push({

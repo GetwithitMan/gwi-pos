@@ -144,6 +144,7 @@ export const POST = withVenue(async function POST(
         categoryType: 'retail',
         itemTotal: amount,
         status: 'active',
+        isTaxInclusive: false, // House account payments are always tax-exclusive
         kitchenStatus: 'delivered', // No kitchen routing needed
       },
     })

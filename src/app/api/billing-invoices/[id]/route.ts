@@ -188,6 +188,7 @@ export const PUT = withVenue(withAuth('INVENTORY_MANAGE', async function PUT(
       const taxableSubtotal = newLineItems
         .filter(li => li.unit === 'taxable')
         .reduce((sum, li) => sum + li.totalCost, 0)
+      // Invoice billing uses exclusive tax only — not affected by tax-inclusive menu pricing
       const taxAmount = taxRate > 0 ? (taxableSubtotal * taxRate) / 100 : 0
       const totalAmount = subtotal + taxAmount
 

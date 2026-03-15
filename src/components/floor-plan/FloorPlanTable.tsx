@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FloorPlanTable as TableType, FloorPlanSeat } from './use-floor-plan'
-import { SeatInfo, determineSeatStatus, SEAT_STATUS_COLORS } from '@/lib/seat-utils'
+import { SeatInfo, determineSeatStatus, SEAT_STATUS_COLORS, getLocationTaxRate } from '@/lib/seat-utils'
 
 interface FloorPlanTableProps {
   table: TableType
@@ -93,7 +93,7 @@ export function FloorPlanTable({
       const orderItems = table.currentOrder?.items || []
       const seatItems = orderItems.filter((item: any) => item.seatNumber === seat.seatNumber)
       const subtotal = seatItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0)
-      const taxAmount = subtotal * 0.0825
+      const taxAmount = subtotal * getLocationTaxRate()
       const seatTotal = subtotal + taxAmount
 
       return {

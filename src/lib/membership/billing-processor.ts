@@ -193,6 +193,7 @@ async function processOneMembership(
 
   // Calculate amounts
   const subtotal = parseFloat(mbr.priceAtSignup || '0')
+  // Membership billing uses exclusive tax only — not affected by tax-inclusive pricing
   const tax = Math.round(subtotal * taxRate) / 100 // taxRate is a percentage (e.g. 8.25)
   const total = Math.round((subtotal + tax) * 100) / 100
   const invoiceNo = `MBR-${mbr.id.slice(-6)}-${Date.now()}`

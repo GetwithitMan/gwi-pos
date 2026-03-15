@@ -12,7 +12,7 @@ import { getDbForVenue } from '@/lib/db'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
-import { isItemTaxInclusive } from '@/lib/order-calculations'
+import { isItemTaxInclusive, calculateSplitTax } from '@/lib/order-calculations'
 
 // ── Simple in-memory rate limiter ───────────────────────────────────────────
 const orderRateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -237,8 +237,26 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const taxTotal = orderItemsData.reduce((sum, oi) => sum + oi.taxAmount, 0)
-    const total = Math.round((subtotal + taxTotal) * 100) / 100
+    // Split subtotals by tax-inclusive status
+    let inclusiveSubtotal = 0
+    let exclusiveSubtotal = 0
+    for (const oi of orderItemsData) {
+      if (oi.isTaxInclusive) {
+        inclusiveSubtotal += oi.total
+      } else {
+        exclusiveSubtotal += oi.total
+      }
+    }
+
+    // Use split-aware tax calculation
+    const inclusiveTaxRateRaw = settings.tax.inclusiveTaxRate
+    const inclusiveTaxRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+      ? inclusiveTaxRateRaw / 100 : undefined
+    const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
+      inclusiveSubtotal, exclusiveSubtotal, defaultTaxRate / 100, inclusiveTaxRate
+    )
+    // Inclusive items already contain tax; only exclusive tax is added on top
+    const total = Math.round((subtotal + taxFromExclusive) * 100) / 100
 
     // Resolve a fallback employee (QR orders have no employee — use first active employee)
     const fallbackEmployee = await venueDb.employee.findFirst({
@@ -267,8 +285,8 @@ export async function POST(request: NextRequest) {
           subtotal,
           discountTotal: 0,
           taxTotal,
-          taxFromInclusive: 0,
-          taxFromExclusive: taxTotal,
+          taxFromInclusive,
+          taxFromExclusive,
           tipTotal: 0,
           total,
           commissionTotal: 0,
