@@ -1,6 +1,6 @@
 {
   "name": "gwi-pos",
-  "version": "1.0.50",
+  "version": "1.0.55",
   "private": true,
   "scripts": {
     "dev": "NODE_OPTIONS='--max-old-space-size=8192' dotenv -e .env.local -- tsx -r ./preload.js server.ts",
