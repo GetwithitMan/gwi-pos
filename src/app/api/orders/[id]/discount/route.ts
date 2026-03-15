@@ -99,7 +99,7 @@ export const POST = withVenue(async function POST(
       if (body.discountRuleId) {
         // Using a preset discount rule
         const rule = await tx.discountRule.findUnique({
-          where: { id: body.discountRuleId },
+          where: { id: body.discountRuleId, deletedAt: null },
         })
 
         if (!rule) {

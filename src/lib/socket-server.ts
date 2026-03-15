@@ -245,8 +245,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   // Rehydrate CFD-to-register map from Terminal.metadata (survives restarts)
   void (async () => {
     try {
+      // NUCs are single-tenant (one locationId per server), so no cross-tenant risk here.
+      // All terminals on this NUC belong to the same location.
       const pairings = await db.$queryRawUnsafe<Array<{ id: string; metadata: { cfdTerminalId?: string } }>>(
-        `SELECT id, metadata FROM "Terminal" WHERE metadata->>'cfdTerminalId' IS NOT NULL`
+        `SELECT id, metadata FROM "Terminal" WHERE metadata->>'cfdTerminalId' IS NOT NULL AND "deletedAt" IS NULL`
       )
       for (const t of pairings) {
         if (t.metadata?.cfdTerminalId) {

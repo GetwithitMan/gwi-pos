@@ -219,8 +219,9 @@ async function cleanupAll(): Promise<void> {
     const db = await getDb()
     await db.$executeRawUnsafe(
       `DELETE FROM "SocketEventLog" WHERE id IN (
-        SELECT id FROM "SocketEventLog" WHERE "createdAt" < NOW() - INTERVAL '${SOCKET_EVENT_TTL_MINUTES} minutes' LIMIT 5000
-      )`
+        SELECT id FROM "SocketEventLog" WHERE "createdAt" < NOW() - ($1 || ' minutes')::INTERVAL LIMIT 5000
+      )`,
+      String(SOCKET_EVENT_TTL_MINUTES),
     )
   } catch {
     // PG cleanup failed — non-critical
