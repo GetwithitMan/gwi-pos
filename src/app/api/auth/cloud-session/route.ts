@@ -108,15 +108,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   // Build cloud employee for the auth store
+  // MC super_admin/sub_admin get full permissions (all reports, all settings)
+  const isStaff = payload.role === 'super_admin' || payload.role === 'sub_admin'
   const nameParts = payload.name.split(' ')
   const employee = {
     id: `cloud-${payload.sub}`,
     firstName: nameParts[0] || 'Cloud',
     lastName: nameParts.slice(1).join(' ') || 'Admin',
     displayName: payload.name,
-    role: { id: 'cloud-admin', name: 'Cloud Admin' },
+    role: { id: isStaff ? 'super-admin' : 'cloud-admin', name: isStaff ? 'Super Admin' : 'Cloud Admin' },
     location: { id: locationId, name: locationName },
-    permissions: ['admin'],
+    permissions: isStaff
+      ? ['admin', 'reports', 'settings', 'employees', 'inventory', 'menu', 'orders', 'payments', 'shifts', 'tips', 'discounts', 'tables', 'kds', 'hardware', 'system']
+      : ['admin'],
     isDevAccess: false,
   }
 
