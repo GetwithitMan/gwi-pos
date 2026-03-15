@@ -150,6 +150,91 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   InventorySettings:      { direction: 'downstream', owner: 'cloud', priority: 68, batchSize: 10 },
   CfdSettings:            { direction: 'downstream', owner: 'cloud', priority: 69, batchSize: 10 },
 
+  // ── Liquor Builder + Spirit Upgrades (NUC → Neon) ────────────────────
+  SpiritCategory:         { direction: 'upstream', owner: 'nuc', priority: 70, batchSize: 50 },
+  BottleProduct:          { direction: 'upstream', owner: 'nuc', priority: 71, batchSize: 100 },
+  SpiritModifierGroup:    { direction: 'upstream', owner: 'nuc', priority: 72, batchSize: 50 },
+  SpiritUpsellEvent:      { direction: 'upstream', owner: 'nuc', priority: 73, batchSize: 100 },
+
+  // ── Pizza Builder (NUC → Neon) ──────────────────────────────────────
+  PizzaConfig:            { direction: 'upstream', owner: 'nuc', priority: 74, batchSize: 10 },
+  PizzaSize:              { direction: 'upstream', owner: 'nuc', priority: 75, batchSize: 50 },
+  PizzaCrust:             { direction: 'upstream', owner: 'nuc', priority: 76, batchSize: 50 },
+  PizzaSauce:             { direction: 'upstream', owner: 'nuc', priority: 77, batchSize: 50 },
+  PizzaCheese:            { direction: 'upstream', owner: 'nuc', priority: 78, batchSize: 50 },
+  PizzaTopping:           { direction: 'upstream', owner: 'nuc', priority: 79, batchSize: 100 },
+  PizzaSpecialty:         { direction: 'upstream', owner: 'nuc', priority: 80, batchSize: 50 },
+
+  // ── Tips + Payroll (NUC → Neon) ─────────────────────────────────────
+  PaidInOut:              { direction: 'upstream', owner: 'nuc', priority: 81, batchSize: 100 },
+  TipGroupTemplate:       { direction: 'upstream', owner: 'nuc', priority: 82, batchSize: 50 },
+  TipGroup:               { direction: 'upstream', owner: 'nuc', priority: 83, batchSize: 50 },
+  TipGroupMembership:     { direction: 'upstream', owner: 'nuc', priority: 84, batchSize: 100 },
+  TipGroupSegment:        { direction: 'upstream', owner: 'nuc', priority: 85, batchSize: 100 },
+  TipAdjustment:          { direction: 'upstream', owner: 'nuc', priority: 86, batchSize: 100 },
+  PayrollPeriod:          { direction: 'upstream', owner: 'nuc', priority: 87, batchSize: 50 },
+  PayStub:                { direction: 'upstream', owner: 'nuc', priority: 88, batchSize: 100 },
+  PayrollSettings:        { direction: 'upstream', owner: 'nuc', priority: 89, batchSize: 10 },
+
+  // ── Inventory + Recipes (NUC → Neon) ────────────────────────────────
+  InventoryTransaction:   { direction: 'upstream', owner: 'nuc', priority: 90, batchSize: 100 },
+  StockAlert:             { direction: 'upstream', owner: 'nuc', priority: 91, batchSize: 100 },
+  InventoryCount:         { direction: 'upstream', owner: 'nuc', priority: 92, batchSize: 50 },
+  InventoryCountItem:     { direction: 'upstream', owner: 'nuc', priority: 93, batchSize: 100 },
+  InventoryCountEntry:    { direction: 'upstream', owner: 'nuc', priority: 94, batchSize: 100 },
+  WasteLog:               { direction: 'upstream', owner: 'nuc', priority: 95, batchSize: 50 },
+  WasteLogEntry:          { direction: 'upstream', owner: 'nuc', priority: 96, batchSize: 100 },
+  RecipeIngredient:       { direction: 'upstream', owner: 'nuc', priority: 97, batchSize: 100 },
+  MenuItemRecipeIngredient: { direction: 'upstream', owner: 'nuc', priority: 98, batchSize: 100 },
+  MenuItemIngredient:     { direction: 'upstream', owner: 'nuc', priority: 99, batchSize: 100 },
+  IngredientSwapGroup:    { direction: 'upstream', owner: 'nuc', priority: 100, batchSize: 50 },
+  IngredientStockAdjustment: { direction: 'upstream', owner: 'nuc', priority: 101, batchSize: 100 },
+  IngredientRecipe:       { direction: 'upstream', owner: 'nuc', priority: 102, batchSize: 100 },
+  IngredientCostHistory:  { direction: 'upstream', owner: 'nuc', priority: 103, batchSize: 100 },
+  VendorOrder:            { direction: 'upstream', owner: 'nuc', priority: 104, batchSize: 50 },
+  VendorOrderLineItem:    { direction: 'upstream', owner: 'nuc', priority: 105, batchSize: 100 },
+  MarginEdgeProductMapping: { direction: 'upstream', owner: 'nuc', priority: 106, batchSize: 50 },
+  PendingDeduction:       { direction: 'upstream', owner: 'nuc', priority: 107, batchSize: 100 },
+  DeductionRun:           { direction: 'upstream', owner: 'nuc', priority: 108, batchSize: 50 },
+
+  // ── Orders + Events (NUC → Neon) ────────────────────────────────────
+  OrderEvent:             { direction: 'upstream', owner: 'nuc', priority: 109, batchSize: 100 },
+  OrderSnapshot:          { direction: 'upstream', owner: 'nuc', priority: 110, batchSize: 50 },
+  OrderItemSnapshot:      { direction: 'upstream', owner: 'nuc', priority: 111, batchSize: 100 },
+
+  // ── Seating + Timed Sessions (NUC → Neon) ───────────────────────────
+  Seat:                   { direction: 'upstream', owner: 'nuc', priority: 112, batchSize: 100 },
+  TimedSession:           { direction: 'upstream', owner: 'nuc', priority: 113, batchSize: 50 },
+
+  // ── Payments + Cards (NUC → Neon) ───────────────────────────────────
+  CardProfile:            { direction: 'upstream', owner: 'nuc', priority: 114, batchSize: 100 },
+  WalkoutRetry:           { direction: 'upstream', owner: 'nuc', priority: 115, batchSize: 50 },
+  PaymentReaderLog:       { direction: 'upstream', owner: 'nuc', priority: 116, batchSize: 100 },
+  ChargebackCase:         { direction: 'upstream', owner: 'nuc', priority: 117, batchSize: 50 },
+  PmsChargeAttempt:       { direction: 'upstream', owner: 'nuc', priority: 118, batchSize: 50 },
+
+  // ── Scheduling + Shifts (NUC → Neon) ────────────────────────────────
+  ShiftSwapRequest:       { direction: 'upstream', owner: 'nuc', priority: 119, batchSize: 50 },
+  DailyPrepCount:         { direction: 'upstream', owner: 'nuc', priority: 120, batchSize: 50 },
+  DailyPrepCountItem:     { direction: 'upstream', owner: 'nuc', priority: 121, batchSize: 100 },
+
+  // ── Bottle Service + Online Ordering (NUC → Neon) ───────────────────
+  BottleServiceTier:      { direction: 'upstream', owner: 'nuc', priority: 122, batchSize: 50 },
+
+  // ── Misc Config (downstream — cloud-owned) ─────────────────────────
+  ReasonAccess:           { direction: 'downstream', owner: 'cloud', priority: 70, batchSize: 50 },
+  QuickBarPreference:     { direction: 'downstream', owner: 'cloud', priority: 71, batchSize: 50 },
+  QuickBarDefault:        { direction: 'downstream', owner: 'cloud', priority: 72, batchSize: 50 },
+
+  // ── Operational Logs (NUC → Neon, lower priority) ───────────────────
+  VenueLog:               { direction: 'upstream', owner: 'nuc', priority: 130, batchSize: 100 },
+  SevenShiftsDailySalesPush: { direction: 'upstream', owner: 'nuc', priority: 131, batchSize: 50 },
+
+  // ── NUC-local only (device registration, sessions — not synced) ─────
+  RegisteredDevice:       { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 },
+  MobileSession:          { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 },
+  ServerRegistrationToken: { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 },
+
   // ── Special / None ────────────────────────────────────────────────────
   HardwareCommand:        { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
   CloudEventQueue:        { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
@@ -160,6 +245,7 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   FulfillmentEvent:       { direction: 'none', owner: 'nuc', priority: 80, batchSize: 100 },
   BridgeCheckpoint:       { direction: 'none', owner: 'nuc', priority: 81, batchSize: 10 },
   OutageQueueEntry:       { direction: 'none', owner: 'nuc', priority: 82, batchSize: 100 },
+  SocketEventLog:         { direction: 'none', owner: 'nuc', priority: 83, batchSize: 0 },
 }
 
 /** Return upstream models sorted by FK-dependency priority (lowest first).
