@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
 
 // POST — update an order item's special notes
 export const POST = withVenue(async function POST(
@@ -49,6 +49,17 @@ export const POST = withVenue(async function POST(
 
     // Notify other terminals so order lists, KDS, and prints reflect the updated note
     void dispatchOpenOrdersChanged(order.locationId, { trigger: 'item_updated', orderId }).catch(console.error)
+
+    // If item has already been sent to kitchen, notify KDS so it refetches
+    if (updated.kitchenStatus && updated.kitchenStatus !== 'pending') {
+      void dispatchItemStatus(order.locationId, {
+        orderId,
+        itemId,
+        status: updated.kitchenStatus,
+        stationId: '',
+        updatedBy: 'system',
+      }, { async: true }).catch(console.error)
+    }
 
     return NextResponse.json({ data: { item: updated } })
   } catch (error) {

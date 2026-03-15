@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -268,6 +268,17 @@ export const PUT = withVenue(async function PUT(
         orderId: order.id,
       }).catch(() => {})
 
+      // If item has already been sent to kitchen, notify KDS so it refetches
+      if (item.kitchenStatus && item.kitchenStatus !== 'pending') {
+        void dispatchItemStatus(order.locationId, {
+          orderId,
+          itemId,
+          status: item.kitchenStatus,
+          stationId: '',
+          updatedBy: 'system',
+        }, { async: true }).catch(console.error)
+      }
+
       // Emit ITEM_UPDATED event for quantity change (fire-and-forget)
       void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', {
         lineItemId: itemId,
@@ -287,6 +298,17 @@ export const PUT = withVenue(async function PUT(
     void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', itemUpdatedPayload)
 
     await db.order.update({ where: { id: orderId }, data: { version: { increment: 1 } } })
+
+    // If item has already been sent to kitchen, notify KDS so it refetches
+    if (updated.kitchenStatus && updated.kitchenStatus !== 'pending') {
+      void dispatchItemStatus(order.locationId, {
+        orderId,
+        itemId,
+        status: updated.kitchenStatus,
+        stationId: '',
+        updatedBy: 'system',
+      }, { async: true }).catch(console.error)
+    }
 
     return NextResponse.json({ data: {
       success: true,

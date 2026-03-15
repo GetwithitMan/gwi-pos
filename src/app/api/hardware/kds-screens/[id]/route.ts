@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET single KDS screen
 export const GET = withVenue(async function GET(
@@ -134,6 +135,9 @@ export const PUT = withVenue(async function PUT(
         },
       },
     })
+
+    // Notify all terminals that KDS screen config changed
+    void emitToLocation(existingScreen.locationId, 'settings:updated', { source: 'kds-screen', action: 'updated', screenId: id }).catch(console.error)
 
     return NextResponse.json({ data: { screen: completeScreen } })
   } catch (error) {

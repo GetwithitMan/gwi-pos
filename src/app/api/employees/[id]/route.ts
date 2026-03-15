@@ -294,6 +294,8 @@ export const PUT = withVenue(async function PUT(
 
     // Real-time cross-terminal update
     void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})
+    // Also emit employee:updated for Android/PAX devices
+    void emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: employee.id,
@@ -379,6 +381,8 @@ export const DELETE = withVenue(async function DELETE(
 
     // Real-time cross-terminal update
     void emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(() => {})
+    // Also emit employee:updated for Android/PAX devices
+    void emitToLocation(employee.locationId, 'employee:updated', { action: 'deleted', employeeId: id }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

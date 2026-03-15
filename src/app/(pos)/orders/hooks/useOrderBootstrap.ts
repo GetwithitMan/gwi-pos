@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { getDraftOrder, clearDraftOrder } from '@/lib/draft-order-persistence'
 import { toast } from '@/stores/toast-store'
 import type { Category, MenuItem, FloorPlanSnapshot } from '../types'
@@ -277,6 +278,23 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
       // This callback is for panel dismissal and floor plan cleanup only.
     },
   })
+
+  // Socket: live-refresh menu when items are updated from admin/other terminal
+  const throttledLoadMenuRef = useRef(throttledLoadMenu)
+  throttledLoadMenuRef.current = throttledLoadMenu
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const onMenuUpdated = () => { throttledLoadMenuRef.current() }
+    socket.on('menu:updated', onMenuUpdated)
+    socket.on('menu:item-changed', onMenuUpdated)
+    socket.on('menu:structure-changed', onMenuUpdated)
+    return () => {
+      socket.off('menu:updated', onMenuUpdated)
+      socket.off('menu:item-changed', onMenuUpdated)
+      socket.off('menu:structure-changed', onMenuUpdated)
+      releaseSharedSocket()
+    }
+  }, [])
 
   // Visibility-change fallback for entertainment status
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)

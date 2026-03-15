@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -85,6 +85,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { id: { in: toResetTableIds } },
         data: { status: 'available' },
       })
+      // Dispatch table:status-changed for each reset table
+      for (const tableId of toResetTableIds) {
+        void dispatchTableStatusChanged(locationId, { tableId, status: 'available' }).catch(console.error)
+      }
     }
 
     // Emit ORDER_CLOSED events for each cancelled order (fire-and-forget)

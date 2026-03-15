@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -314,6 +314,32 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         total: info.total,
         commissionTotal: info.commissionTotal,
       }, { async: true }).catch(() => {})
+
+      // Dispatch orders:list-changed for cross-terminal awareness (fire-and-forget)
+      void dispatchOpenOrdersChanged(info.locationId, {
+        trigger: 'payment_updated',
+        orderId: info.orderId,
+      }, { async: true }).catch(console.error)
+
+      // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+      void dispatchOrderSummaryUpdated(info.locationId, {
+        orderId: info.orderId,
+        orderNumber: 0,
+        status: 'paid',
+        tableId: null,
+        tableName: null,
+        tabName: null,
+        guestCount: 0,
+        employeeId: null,
+        subtotalCents: Math.round(info.subtotal * 100),
+        taxTotalCents: Math.round(info.taxTotal * 100),
+        discountTotalCents: Math.round(info.discountTotal * 100),
+        tipTotalCents: Math.round(info.tipTotal * 100),
+        totalCents: Math.round(info.total * 100),
+        itemCount: 0,
+        updatedAt: new Date().toISOString(),
+        locationId: info.locationId,
+      }, { async: true }).catch(console.error)
     }
 
     const adjusted = results.filter(r => r.success).length

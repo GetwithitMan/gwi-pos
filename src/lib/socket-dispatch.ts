@@ -1297,6 +1297,25 @@ export function dispatchCFDIdle(locationId: string, cfdTerminalId: string | null
   }
 }
 
+/**
+ * Dispatch CFD order updated event
+ *
+ * Called after order mutations (discount, void, merge, comp) so the
+ * customer-facing display shows the latest items and totals instantly.
+ * Broadcasts to location (all CFDs will filter by orderId).
+ */
+export function dispatchCFDOrderUpdated(locationId: string, data: {
+  orderId: string
+  orderNumber: number
+  items: Array<{ name: string; quantity: number; price: number; modifiers?: string[]; status?: string }>
+  subtotal: number
+  tax: number
+  total: number
+  discountTotal?: number
+}): void {
+  void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, data).catch(console.error)
+}
+
 // ==================== Order Summary Events (Android cross-terminal sync) ====================
 
 /**
@@ -1753,26 +1772,6 @@ export async function dispatchShiftRequestUpdate(
     return true
   }
   return doEmit()
-}
-
-/**
- * Notify all clients at a location that the server has been updated.
- * Idle clients auto-refresh; active payment/order screens defer.
- */
-export async function dispatchUpdateRequired(
-  locationId: string,
-  newVersion: string
-): Promise<boolean> {
-  try {
-    await emitToLocation(locationId, 'system:update-required', {
-      version: newVersion,
-      timestamp: new Date().toISOString(),
-    })
-    return true
-  } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch system:update-required:', error)
-    return false
-  }
 }
 
 /**

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
+import { emitToLocation } from '@/lib/socket-server'
 
 /**
  * POST /api/inventory/86-status/bulk
@@ -60,6 +62,35 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         is86d: true
       }
     })
+
+    // Fetch affected menu items for socket dispatch
+    const affectedMenuItemLinks = await db.menuItemIngredient.findMany({
+      where: {
+        ingredientId: { in: ingredientIds },
+        deletedAt: null,
+      },
+      select: {
+        menuItem: { select: { id: true } },
+      },
+    })
+    const affectedMenuItemIds = [...new Set(affectedMenuItemLinks.map(l => l.menuItem.id))]
+
+    // Dispatch stock status change for each affected menu item (fire-and-forget)
+    for (const itemId of affectedMenuItemIds) {
+      void dispatchMenuStockChanged(locationId, {
+        itemId,
+        stockStatus: is86d ? 'out_of_stock' : 'in_stock',
+        isOrderableOnline: !is86d,
+      }).catch(console.error)
+    }
+
+    // Emit inventory:86-status-changed for admin UI refresh
+    void emitToLocation(locationId, 'inventory:86-status-changed', {
+      ingredientIds,
+      is86d,
+      affectedMenuItemIds,
+      bulk: true,
+    }).catch(console.error)
 
     return NextResponse.json({
       data: {

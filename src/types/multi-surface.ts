@@ -105,6 +105,7 @@ export const CFD_EVENTS = {
   PROCESSING: 'cfd:processing',
   APPROVED: 'cfd:approved',
   DECLINED: 'cfd:declined',
+  ORDER_UPDATED: 'cfd:order-updated',
   IDLE: 'cfd:idle',
   RECEIPT_SENT: 'cfd:receipt-sent',
   // CFD → POS
@@ -112,6 +113,23 @@ export const CFD_EVENTS = {
   SIGNATURE_DONE: 'cfd:signature-done',
   RECEIPT_CHOICE: 'cfd:receipt-choice',
 } as const
+
+/** POS → CFD: Order mutated (discount, void, item change) — refresh display */
+export interface CFDOrderUpdatedEvent {
+  orderId: string
+  orderNumber: number
+  items: Array<{
+    name: string
+    quantity: number
+    price: number
+    modifiers?: string[]
+    status?: string
+  }>
+  subtotal: number
+  tax: number
+  total: number
+  discountTotal?: number
+}
 
 // CFD screen states
 export type CFDScreenState = 'idle' | 'order' | 'order-detail' | 'payment' | 'tip' | 'signature' | 'processing' | 'approved' | 'declined' | 'receipt'

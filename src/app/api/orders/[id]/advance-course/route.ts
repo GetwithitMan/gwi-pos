@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRouter } from '@/lib/order-router'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchOrderUpdated, dispatchNewOrder, dispatchItemStatus } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 // POST - Advance to next course
@@ -102,6 +103,34 @@ export const POST = withVenue(async function POST(
         changes: ['course-advanced', `course-${nextCourse}`],
       }).catch(() => {})
 
+      // Dispatch kds:item-status for current course items marked as served/delivered
+      if (markServed && currentCourseItems.length > 0) {
+        for (const item of currentCourseItems) {
+          void dispatchItemStatus(order.locationId, {
+            orderId,
+            itemId: item.id,
+            status: 'delivered',
+            stationId: '',
+            updatedBy: 'system',
+          }, { async: true }).catch(console.error)
+        }
+      }
+
+      // Route fired course items to KDS stations (same pattern as fire-course)
+      const firedItemIds = order.items
+        .filter(item => item.courseNumber === nextCourse && item.courseStatus === 'pending' && !item.isHeld)
+        .map(item => item.id)
+      if (firedItemIds.length > 0) {
+        void (async () => {
+          try {
+            const routingResult = await OrderRouter.resolveRouting(orderId, firedItemIds)
+            await dispatchNewOrder(order.locationId, routingResult, { async: true })
+          } catch (err) {
+            console.error('[API /advance-course] KDS routing dispatch failed:', err)
+          }
+        })()
+      }
+
       // Emit event-sourced domain events (fire-and-forget)
       const advanceEvents: Array<{ type: 'ITEM_UPDATED' | 'ORDER_METADATA_UPDATED'; payload: Record<string, unknown> }> = []
       if (markServed) {
@@ -134,6 +163,19 @@ export const POST = withVenue(async function POST(
       orderId,
       changes: ['courses-complete'],
     }).catch(() => {})
+
+    // Dispatch kds:item-status for current course items marked as served/delivered
+    if (markServed && currentCourseItems.length > 0) {
+      for (const item of currentCourseItems) {
+        void dispatchItemStatus(order.locationId, {
+          orderId,
+          itemId: item.id,
+          status: 'delivered',
+          stationId: '',
+          updatedBy: 'system',
+        }, { async: true }).catch(console.error)
+      }
+    }
 
     // Emit event-sourced events for served items (fire-and-forget)
     if (markServed && currentCourseItems.length > 0) {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import Link from 'next/link'
 
 interface Ingredient86Status {
@@ -85,6 +86,21 @@ export default function Quick86Page() {
 
   useEffect(() => {
     fetchData()
+  }, [fetchData])
+
+  // Socket: live-refresh on inventory changes from other terminals
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const handler = () => { fetchData() }
+    socket.on('inventory:adjustment', handler)
+    socket.on('inventory:stock-change', handler)
+    socket.on('inventory:changed', handler)
+    return () => {
+      socket.off('inventory:adjustment', handler)
+      socket.off('inventory:stock-change', handler)
+      socket.off('inventory:changed', handler)
+      releaseSharedSocket()
+    }
   }, [fetchData])
 
   // Toggle 86 status for a single item

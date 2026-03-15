@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, dispatchCFDOrderUpdated } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
@@ -197,6 +197,22 @@ export const POST = withVenue(async function POST(
             updatedAt: new Date().toISOString(),
             locationId: order.locationId,
           }, { async: true }).catch(() => {})
+
+          // CFD: update customer display with new totals (fire-and-forget)
+          void dispatchCFDOrderUpdated(order.locationId, {
+            orderId,
+            orderNumber: order.orderNumber,
+            items: order.items.filter(i => i.status === 'active').map(i => ({
+              name: i.name,
+              quantity: i.quantity,
+              price: Number(i.itemTotal),
+              modifiers: i.modifiers.map(m => m.name),
+            })),
+            subtotal: totals.subtotal,
+            tax: totals.taxTotal,
+            total: totals.total,
+            discountTotal: totals.discountTotal,
+          })
 
           return NextResponse.json({ data: {
             toggled: 'off',
@@ -476,6 +492,22 @@ export const POST = withVenue(async function POST(
         locationId: order.locationId,
       }, { async: true }).catch(() => {})
 
+      // CFD: update customer display with new totals (fire-and-forget)
+      void dispatchCFDOrderUpdated(order.locationId, {
+        orderId,
+        orderNumber: order.orderNumber,
+        items: order.items.filter(i => i.status === 'active').map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: Number(i.itemTotal),
+          modifiers: i.modifiers.map(m => m.name),
+        })),
+        subtotal: totals.subtotal,
+        tax: totals.taxTotal,
+        total: totals.total,
+        discountTotal: totals.discountTotal,
+      })
+
       // Track for post-transaction alert dispatch
       alertRef.info = {
         locationId: order.locationId,
@@ -745,6 +777,22 @@ export const DELETE = withVenue(async function DELETE(
         updatedAt: new Date().toISOString(),
         locationId: order.locationId,
       }, { async: true }).catch(() => {})
+
+      // CFD: update customer display with new totals (fire-and-forget)
+      void dispatchCFDOrderUpdated(order.locationId, {
+        orderId,
+        orderNumber: order.orderNumber,
+        items: order.items.filter(i => i.status === 'active').map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: Number(i.itemTotal),
+          modifiers: i.modifiers.map(m => m.name),
+        })),
+        subtotal: totals.subtotal,
+        tax: totals.taxTotal,
+        total: totals.total,
+        discountTotal: totals.discountTotal,
+      })
 
       return NextResponse.json({ data: {
         success: true,

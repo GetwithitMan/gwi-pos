@@ -13,6 +13,7 @@ import type {
   CFDScreenState,
   CFDShowOrderEvent,
   CFDShowOrderDetailEvent,
+  CFDOrderUpdatedEvent,
   CFDTipPromptEvent,
   CFDSignatureRequestEvent,
   CFDApprovedEvent,
@@ -34,6 +35,8 @@ function CFDContent() {
   const locationId = searchParams.get('locationId')
 
   const [screenState, setScreenState] = useState<CFDScreenState>('idle')
+  const screenStateRef = useRef<CFDScreenState>('idle')
+  screenStateRef.current = screenState
   const [orderData, setOrderData] = useState<CFDShowOrderEvent | null>(null)
   const [orderDetailData, setOrderDetailData] = useState<CFDShowOrderDetailEvent | null>(null)
   const [tipData, setTipData] = useState<CFDTipPromptEvent | null>(null)
@@ -71,6 +74,26 @@ function CFDContent() {
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
 
+    // Order mutation handler — updates CFD when discount/void/merge changes the order
+    const onOrderUpdated = (data: CFDOrderUpdatedEvent) => {
+      // Only update if CFD is currently showing an order (not during payment/idle)
+      if (screenStateRef.current === 'order' || screenStateRef.current === 'order-detail') {
+        setOrderData({
+          items: data.items.map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: i.price,
+            modifiers: i.modifiers,
+          })),
+          subtotal: data.subtotal,
+          tax: data.tax,
+          total: data.total,
+          discountTotal: data.discountTotal,
+        })
+        // Stay in current screen state — don't switch
+      }
+    }
+
     // POS → CFD event handlers
     const onShowOrder = (data: CFDShowOrderEvent) => {
       setOrderData(data)
@@ -101,6 +124,7 @@ function CFDContent() {
     const onIdle = () => setScreenState('idle')
     const onReceiptSent = () => setScreenState('receipt')
 
+    socket.on(CFD_EVENTS.ORDER_UPDATED, onOrderUpdated)
     socket.on(CFD_EVENTS.SHOW_ORDER, onShowOrder)
     socket.on(CFD_EVENTS.SHOW_ORDER_DETAIL, onShowOrderDetail)
     socket.on(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)
@@ -119,6 +143,7 @@ function CFDContent() {
       socket.emit('unsubscribe', `terminal:${terminalId}`)
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
+      socket.off(CFD_EVENTS.ORDER_UPDATED, onOrderUpdated)
       socket.off(CFD_EVENTS.SHOW_ORDER, onShowOrder)
       socket.off(CFD_EVENTS.SHOW_ORDER_DETAIL, onShowOrderDetail)
       socket.off(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)

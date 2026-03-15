@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
+import { emitToLocation } from '@/lib/socket-server'
 
 /**
  * GET /api/inventory/86-status
@@ -319,6 +321,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       name: mod.name,
       groupName: mod.modifierGroup?.name || 'Unknown'
     }))
+
+    // Dispatch stock status change to all terminals (fire-and-forget)
+    // Notify menu displays that affected items may now be 86'd or back in stock
+    for (const item of affectedMenuItems) {
+      void dispatchMenuStockChanged(ingredient.locationId, {
+        itemId: item.id,
+        stockStatus: is86d ? 'out_of_stock' : 'in_stock',
+        isOrderableOnline: !is86d,
+      }).catch(console.error)
+    }
+
+    // Emit inventory:86-status-changed for admin UI refresh
+    void emitToLocation(ingredient.locationId, 'inventory:86-status-changed', {
+      ingredientId: updated.id,
+      name: updated.name,
+      is86d: updated.is86d,
+      affectedMenuItemIds: affectedMenuItems.map(m => m.id),
+    }).catch(console.error)
 
     return NextResponse.json({
       data: {

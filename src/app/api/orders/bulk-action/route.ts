@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -110,7 +110,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
       }
 
-      await db.$transaction(async (tx) => {
+      const cancelledTableIds = await db.$transaction(async (tx) => {
         // Fetch the orders to get their tableIds for cleanup
         const targetOrders = await tx.order.findMany({
           where: {
@@ -161,7 +161,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             },
           },
         })
+
+        return tableIds
       })
+
+      // Dispatch table:status-changed for each reset table (outside transaction)
+      for (const tableId of cancelledTableIds) {
+        void dispatchTableStatusChanged(locationId, { tableId, status: 'available' }).catch(console.error)
+      }
 
     } else if (action === 'transfer') {
       if (!toEmployeeId) {

@@ -54,6 +54,24 @@ interface UseOrderSocketsOptions {
   onOrderReleased?: (data: {
     orderId: string
   }) => void
+  onOrderSummaryUpdated?: (data: {
+    orderId: string
+    orderNumber: number
+    status: string
+    tableId: string | null
+    tableName: string | null
+    tabName: string | null
+    guestCount: number
+    employeeId: string | null
+    subtotalCents: number
+    taxTotalCents: number
+    discountTotalCents: number
+    tipTotalCents: number
+    totalCents: number
+    itemCount: number
+    updatedAt: string
+    locationId: string
+  }) => void
 }
 
 export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected: boolean } {
@@ -154,6 +172,28 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       callbacksRef.current.onOrderReleased?.(payload)
     }
 
+    const onOrderSummaryUpdated = (data: unknown) => {
+      const payload = data as {
+        orderId: string
+        orderNumber: number
+        status: string
+        tableId: string | null
+        tableName: string | null
+        tabName: string | null
+        guestCount: number
+        employeeId: string | null
+        subtotalCents: number
+        taxTotalCents: number
+        discountTotalCents: number
+        tipTotalCents: number
+        totalCents: number
+        itemCount: number
+        updatedAt: string
+        locationId: string
+      }
+      callbacksRef.current.onOrderSummaryUpdated?.(payload)
+    }
+
     socket.on('connect', onConnect)
     socket.on('disconnect', onDisconnect)
     socket.on('connect_error', onConnectError)
@@ -164,6 +204,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     socket.on('order:closed', onOrderClosed)
     socket.on('order:claimed', onOrderClaimed)
     socket.on('order:released', onOrderReleased)
+    socket.on('order:summary-updated', onOrderSummaryUpdated)
 
     // If already connected (shared socket was created by another consumer), join immediately
     if (socket.connected) {
@@ -182,6 +223,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       socket.off('order:closed', onOrderClosed)
       socket.off('order:claimed', onOrderClaimed)
       socket.off('order:released', onOrderReleased)
+      socket.off('order:summary-updated', onOrderSummaryUpdated)
       socketRef.current = null
       releaseSharedSocket()
     }

@@ -8,7 +8,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 
@@ -272,6 +272,13 @@ export const POST = withVenue(async function POST(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(console.error)
+
+    // Dispatch payment:processed with refunded status (fire-and-forget)
+    void dispatchPaymentProcessed(order.locationId, {
+      orderId: id,
+      paymentId,
+      status: 'refunded',
+    }).catch(console.error)
 
     // Queue outage write if Neon is unreachable — read back full row to
     // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)

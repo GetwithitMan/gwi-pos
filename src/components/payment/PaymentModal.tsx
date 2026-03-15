@@ -273,30 +273,10 @@ export function PaymentModal({
           setTabIncrementFailed(true)
         }
 
-        // 3. CFD: dispatch show-order + show-order-detail (fire and forget)
+        // 3. CFD: dispatch show-order-detail for pre-payment confirmation (fire and forget)
+        // Note: show-order (live running tally) is dispatched during order building
+        // via order-events/batch. At payment time only the detail confirmation matters.
         if (locationId) {
-          const itemsBasic = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string }) => ({
-            name: i.name,
-            quantity: i.quantity,
-            price: Number(i.price),
-          }))
-          void fetch('/api/cfd/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              event: 'show-order',
-              locationId,
-              payload: {
-                orderId: data.id ?? orderId,
-                orderNumber: data.orderNumber ?? 0,
-                items: itemsBasic,
-                subtotal: Number(data.subtotal ?? 0),
-                tax: Number(data.taxTotal ?? 0),
-                total: Number(data.total ?? orderTotal),
-              },
-            }),
-          }).catch(() => {})
-
           const itemsDetailed = (data.items ?? []).map((i: { name: string; quantity: number; price: number | string; modifiers?: Array<{ name: string }> }) => ({
             name: i.name,
             quantity: i.quantity,

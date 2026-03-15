@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
-import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchOrderClosed } from '@/lib/socket-dispatch'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
@@ -317,6 +317,17 @@ export const POST = withVenue(async function POST(
 
     // Dispatch open orders changed for cross-terminal awareness (fire-and-forget)
     void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }, { async: true }).catch(console.error)
+
+    // Dispatch order:closed when all payments are voided (Android cross-terminal sync)
+    if (newOrderStatus === 'voided') {
+      void dispatchOrderClosed(order.locationId, {
+        orderId,
+        status: 'voided',
+        closedAt: new Date().toISOString(),
+        closedByEmployeeId: managerId,
+        locationId: order.locationId,
+      }, { async: true }).catch(console.error)
+    }
 
     // Reverse tip allocations for this voided payment (fire-and-forget)
     // The chargeback policy (BUSINESS_ABSORBS vs EMPLOYEE_CHARGEBACK) is

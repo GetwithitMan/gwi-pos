@@ -177,6 +177,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Real-time cross-terminal update
     void emitToLocation(locationId, 'employees:changed', { action: 'created', employeeId: employee.id }).catch(() => {})
+    // Also emit employee:updated for Android/PAX devices
+    void emitToLocation(locationId, 'employee:updated', { action: 'created', employeeId: employee.id }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: employee.id,

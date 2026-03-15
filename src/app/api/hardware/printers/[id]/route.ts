@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET single printer
 export const GET = withVenue(async function GET(
@@ -88,6 +89,9 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    // Notify all terminals that hardware config changed
+    void emitToLocation(existingPrinter.locationId, 'settings:updated', { source: 'printer', action: 'updated', printerId: id }).catch(console.error)
+
     return NextResponse.json({ data: { printer } })
   } catch (error) {
     console.error('Failed to update printer:', error)
@@ -117,6 +121,9 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    // Notify all terminals that hardware config changed
+    void emitToLocation(printer.locationId, 'settings:updated', { source: 'printer', action: 'deleted', printerId: id }).catch(console.error)
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

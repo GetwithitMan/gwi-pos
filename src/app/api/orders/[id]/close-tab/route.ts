@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -575,6 +575,21 @@ export const POST = withVenue(async function POST(
     void cleanupTemporarySeats(orderId)
       .then(() => dispatchFloorPlanUpdate(locationId, { async: true }))
       .catch(console.error)
+
+    // Dispatch payment:processed for cross-terminal sync (fire-and-forget)
+    void dispatchPaymentProcessed(locationId, {
+      orderId,
+      paymentId: createdPaymentId,
+      status: 'completed',
+      method: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+      amount: purchaseAmount,
+      tipAmount: finalTipAmount,
+      totalAmount: totalCaptured,
+      employeeId: order.employeeId || null,
+      isClosed: true,
+      cardBrand: capturedCard.cardType || null,
+      cardLast4: capturedCard.cardLast4 || null,
+    }).catch(console.error)
 
     // Dispatch tab:updated for tab close (fire-and-forget)
     void dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(() => {})

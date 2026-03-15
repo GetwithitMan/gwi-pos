@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchFloorPlanUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 
@@ -127,6 +127,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // --- Socket events (fire-and-forget) ---
+    void dispatchTableStatusChanged(locationId, { tableId: sourceTableId, status: 'available' }).catch(console.error)
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
 
     for (const order of openOrders) {

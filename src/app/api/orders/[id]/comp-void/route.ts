@@ -4,7 +4,7 @@ import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventory
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents, calculateCardPrice } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, dispatchOrderClosed, dispatchTabItemsUpdated, dispatchEntertainmentStatusChanged, dispatchCFDOrderUpdated, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { getDatacapClient } from '@/lib/datacap/helpers'
@@ -423,6 +423,7 @@ export const POST = withVenue(async function POST(
       // C12: Release the table when all items are voided/comped (prevent zombie tables)
       if (order.tableId) {
         await db.table.update({ where: { id: order.tableId }, data: { status: 'available' } })
+        void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId, status: 'available' }).catch(console.error)
         void dispatchFloorPlanUpdate(order.locationId).catch(console.error)
       }
 
@@ -469,6 +470,32 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch order totals update:', err)
     })
+
+    // CFD: update customer display after void/comp (fire-and-forget)
+    void (async () => {
+      try {
+        const updatedItems = await db.orderItem.findMany({
+          where: { orderId, status: 'active', deletedAt: null },
+          include: { modifiers: true },
+        })
+        dispatchCFDOrderUpdated(order.locationId, {
+          orderId,
+          orderNumber: order.orderNumber,
+          items: updatedItems.map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            price: Number(i.itemTotal),
+            modifiers: i.modifiers.map(m => m.name),
+          })),
+          subtotal: totals.subtotal,
+          tax: totals.taxTotal,
+          total: totals.total,
+          discountTotal: totals.discountTotal,
+        })
+      } catch (err) {
+        console.error('[CompVoid] CFD dispatch failed:', err)
+      }
+    })()
 
     // M6: Notify mobile tab clients that items changed (comp/void updates item count)
     dispatchTabItemsUpdated(order.locationId, {

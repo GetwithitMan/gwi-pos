@@ -7,6 +7,9 @@ import {
   dispatchTabUpdated,
   dispatchTabStatusUpdate,
   dispatchFloorPlanUpdate,
+  dispatchPaymentProcessed,
+  dispatchOrderClosed,
+  dispatchOrderSummaryUpdated,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 
@@ -147,6 +150,46 @@ export const POST = withVenue(async function POST(
     if (order.tableId) {
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
     }
+
+    // Dispatch payment:processed for cross-terminal sync (fire-and-forget)
+    void dispatchPaymentProcessed(locationId, {
+      orderId,
+      status: 'completed',
+      method: 'card',
+      amount: totalPaid - effectiveTip,
+      tipAmount: effectiveTip,
+      totalAmount: totalPaid,
+      isClosed: true,
+    }).catch(console.error)
+
+    // Dispatch order:closed for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderClosed(locationId, {
+      orderId,
+      status: 'paid',
+      closedAt: new Date().toISOString(),
+      closedByEmployeeId: employeeId || null,
+      locationId,
+    }, { async: true }).catch(console.error)
+
+    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    void dispatchOrderSummaryUpdated(locationId, {
+      orderId,
+      orderNumber: 0, // Not available in this select
+      status: 'paid',
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: null,
+      guestCount: 0,
+      employeeId: null,
+      subtotalCents: Math.round((totalPaid - effectiveTip) * 100),
+      taxTotalCents: 0,
+      discountTotalCents: 0,
+      tipTotalCents: Math.round(effectiveTip * 100),
+      totalCents: Math.round(totalPaid * 100),
+      itemCount: 0,
+      updatedAt: new Date().toISOString(),
+      locationId,
+    }, { async: true }).catch(console.error)
 
     // Event emission: pay-at-table completed — payment(s) applied + order closed
     const patEvents: Array<{ type: 'PAYMENT_APPLIED' | 'ORDER_CLOSED'; payload: Record<string, unknown> }> = []

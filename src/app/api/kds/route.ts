@@ -407,6 +407,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }, { async: true }).catch(err => {
           console.error('Failed to dispatch order bumped:', err)
         })
+        // Also dispatch per-item kds:item-status so Android terminals (which listen
+        // for kds:item-status but not kds:order-bumped) update kitchen status
+        for (const iid of itemIds) {
+          dispatchItemStatus(locationId, {
+            orderId,
+            itemId: iid,
+            status: 'completed',
+            stationId: body.stationId || '',
+            updatedBy: body.employeeId || firstItemForDispatch.order.employeeId || '',
+          }, { async: true }).catch(err => {
+            console.error('Failed to dispatch bump item status:', err)
+          })
+        }
       } else if (action === 'resend') {
         // W1-K2: Dispatch resend event so all KDS screens re-show the resent items
         for (const iid of itemIds) {

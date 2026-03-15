@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchPaymentProcessed, dispatchOrderClosed, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 // deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
 // import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -238,8 +238,40 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(() => {})
 
     if (parentOrder.tableId) {
+      void dispatchTableStatusChanged(parentOrder.locationId, { tableId: parentOrder.tableId, status: 'available' }).catch(console.error)
       void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
     }
+
+    // Dispatch payment:processed for each split payment (fire-and-forget)
+    for (const split of unpaidSplits) {
+      const cashSplitTotal = roundToCents(Number(split.total))
+      const splitTotal = dualPricingApplies
+        ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
+        : cashSplitTotal
+      void dispatchPaymentProcessed(parentOrder.locationId, {
+        orderId: split.id,
+        paymentId: splitPaymentMap.get(split.id),
+        status: 'completed',
+        method,
+        amount: splitTotal,
+        tipAmount: 0,
+        totalAmount: splitTotal,
+        employeeId: split.employeeId || employeeId || null,
+        isClosed: true,
+        parentOrderId: parentOrderId,
+        allSiblingsPaid: true,
+        sourceTerminalId: terminalId || undefined,
+      }).catch(console.error)
+    }
+
+    // Dispatch order:closed for the parent order (Android cross-terminal sync)
+    void dispatchOrderClosed(parentOrder.locationId, {
+      orderId: parentOrderId,
+      status: 'paid',
+      closedAt: now.toISOString(),
+      closedByEmployeeId: employeeId || null,
+      locationId: parentOrder.locationId,
+    }, { async: true }).catch(console.error)
 
     // Event emission: PAYMENT_APPLIED + ORDER_CLOSED per split, then parent ORDER_CLOSED
     for (const split of unpaidSplits) {

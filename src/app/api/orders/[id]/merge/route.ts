@@ -4,7 +4,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchCFDOrderUpdated, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -222,6 +222,7 @@ export const POST = withVenue(async function POST(
     const locationId = targetOrder.locationId
     if (sourceOrder.tableId && sourceOrder.tableId !== targetOrder.tableId) {
       await db.table.update({ where: { id: sourceOrder.tableId }, data: { status: 'available' } })
+      void dispatchTableStatusChanged(locationId, { tableId: sourceOrder.tableId, status: 'available' }).catch(console.error)
       void dispatchFloorPlanUpdate(locationId).catch(console.error)
     }
 
@@ -273,6 +274,27 @@ export const POST = withVenue(async function POST(
       discountTotal: Number(updatedOrder!.discountTotal),
       total: Number(updatedOrder!.total),
     }, { async: true }).catch(() => {})
+
+    // BUG: Merge was missing dispatchTabUpdated — Transfer had it, Merge didn't
+    void dispatchTabUpdated(targetOrder.locationId, {
+      orderId: targetOrderId,
+    }).catch(console.error)
+
+    // CFD: update customer display with merged order (fire-and-forget)
+    dispatchCFDOrderUpdated(targetOrder.locationId, {
+      orderId: targetOrderId,
+      orderNumber: targetOrder.orderNumber,
+      items: updatedOrder!.items.filter(i => i.status === 'active').map(i => ({
+        name: i.name,
+        quantity: i.quantity,
+        price: Number(i.itemTotal),
+        modifiers: i.modifiers.map(m => m.name),
+      })),
+      subtotal: Number(updatedOrder!.subtotal),
+      tax: Number(updatedOrder!.taxTotal),
+      total: Number(updatedOrder!.total),
+      discountTotal: Number(updatedOrder!.discountTotal),
+    })
 
     return NextResponse.json({ data: {
       success: true,

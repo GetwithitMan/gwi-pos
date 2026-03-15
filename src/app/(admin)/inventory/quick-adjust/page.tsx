@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 
 interface StockItem {
   id: string
@@ -99,6 +100,21 @@ export default function QuickStockAdjustPage() {
 
   useEffect(() => {
     loadData()
+  }, [loadData])
+
+  // Socket: live-refresh on inventory changes from other terminals
+  useEffect(() => {
+    const socket = getSharedSocket()
+    const handler = () => { loadData() }
+    socket.on('inventory:adjustment', handler)
+    socket.on('inventory:stock-change', handler)
+    socket.on('inventory:changed', handler)
+    return () => {
+      socket.off('inventory:adjustment', handler)
+      socket.off('inventory:stock-change', handler)
+      socket.off('inventory:changed', handler)
+      releaseSharedSocket()
+    }
   }, [loadData])
 
   // Get current stock (local override or original)

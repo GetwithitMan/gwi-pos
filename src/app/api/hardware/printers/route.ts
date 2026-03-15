@@ -5,6 +5,7 @@ import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/prin
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET all printers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -127,6 +128,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         printSettings: printSettings || defaultSettings,
       },
     })
+
+    // Notify all terminals that hardware config changed
+    void emitToLocation(locationId, 'settings:updated', { source: 'printer', action: 'created', printerId: printer.id }).catch(console.error)
 
     return NextResponse.json({ data: { printer } })
   } catch (error) {

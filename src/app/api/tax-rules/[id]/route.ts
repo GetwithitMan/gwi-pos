@@ -5,6 +5,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 import { invalidateTaxCache } from '@/lib/tax-cache'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET - Get a single tax rule
 export const GET = withVenue(async function GET(
@@ -79,6 +80,9 @@ export const PUT = withVenue(async function PUT(
     await syncTaxRateToSettings(existing.locationId)
     invalidateTaxCache(existing.locationId)
 
+    // Emit settings:updated so all terminals refresh tax configuration
+    void emitToLocation(existing.locationId, 'settings:updated', { trigger: 'tax-rule-updated', taxRuleId: taxRule.id }).catch(console.error)
+
     return NextResponse.json({ data: {
       taxRule: {
         id: taxRule.id,
@@ -117,6 +121,10 @@ export const DELETE = withVenue(async function DELETE(
     await prisma.taxRule.update({ where: { id }, data: { deletedAt: new Date() } })
     await syncTaxRateToSettings(taxRule.locationId)
     invalidateTaxCache(taxRule.locationId)
+
+    // Emit settings:updated so all terminals refresh tax configuration
+    void emitToLocation(taxRule.locationId, 'settings:updated', { trigger: 'tax-rule-deleted', taxRuleId: id }).catch(console.error)
+
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete tax rule:', error)

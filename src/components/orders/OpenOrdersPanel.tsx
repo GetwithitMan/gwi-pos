@@ -374,6 +374,42 @@ export function OpenOrdersPanel({
     ))
   }, [])
 
+  // Handle order:summary-updated — delta update totals without full API refetch
+  const handleOrderSummaryUpdated = useCallback((data: {
+    orderId: string
+    orderNumber: number
+    status: string
+    tableId: string | null
+    tableName: string | null
+    tabName: string | null
+    guestCount: number
+    employeeId: string | null
+    subtotalCents: number
+    taxTotalCents: number
+    discountTotalCents: number
+    tipTotalCents: number
+    totalCents: number
+    itemCount: number
+    updatedAt: string
+    locationId: string
+  }) => {
+    if (viewMode !== 'open') return
+    setOrders(prev => prev.map(o =>
+      o.id === data.orderId
+        ? {
+            ...o,
+            subtotal: data.subtotalCents / 100,
+            taxTotal: data.taxTotalCents / 100,
+            tipTotal: data.tipTotalCents / 100,
+            total: data.totalCents / 100,
+            itemCount: data.itemCount,
+            guestCount: data.guestCount,
+            status: data.status,
+          }
+        : o
+    ))
+  }, [viewMode])
+
   const { isConnected } = useOrderSockets({
     locationId,
     enabled: viewMode === 'open',
@@ -387,6 +423,7 @@ export function OpenOrdersPanel({
     },
     onOrderClaimed: handleOrderClaimed,
     onOrderReleased: handleOrderReleased,
+    onOrderSummaryUpdated: handleOrderSummaryUpdated,
   })
 
   // 30s polling fallback when socket is disconnected (Item 10)

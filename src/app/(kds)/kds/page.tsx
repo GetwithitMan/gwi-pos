@@ -13,6 +13,24 @@ import { ToastContainer } from '@/components/ui/ToastContainer'
 const DEVICE_TOKEN_KEY = 'kds_device_token'
 const SCREEN_CONFIG_KEY = 'kds_screen_config'
 
+function playNotificationSound() {
+  try {
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const oscillator = audioCtx.createOscillator()
+    const gainNode = audioCtx.createGain()
+    oscillator.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+    oscillator.frequency.value = 800
+    oscillator.type = 'sine'
+    gainNode.gain.value = 0.3
+    oscillator.start()
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5)
+    oscillator.stop(audioCtx.currentTime + 0.5)
+  } catch (e) {
+    // Audio not available
+  }
+}
+
 interface IngredientMod {
   id: string
   ingredientName: string
@@ -436,6 +454,7 @@ function KDSContent() {
   const [socketConnected, setSocketConnected] = useState(false)
   const [expoMode, setExpoMode] = useState(false)
   const [showKdsClockModal, setShowKdsClockModal] = useState(false)
+  const [flashActive, setFlashActive] = useState(false)
   const socketRef = useRef<Socket | null>(null)
 
   // Authenticate device on mount (after hydration so employee fallback works)
@@ -592,11 +611,20 @@ function KDSContent() {
       }, 50)
     }
 
-    const onOrderReceived = () => debouncedLoadOrders()
+    const onOrderReceived = () => {
+      if (screenConfig?.playSound) playNotificationSound()
+      if (screenConfig?.flashOnNew) {
+        setFlashActive(true)
+        setTimeout(() => setFlashActive(false), 500)
+      }
+      debouncedLoadOrders()
+    }
     const onItemStatus = () => debouncedLoadOrders()
     const onOrderBumped = () => debouncedLoadOrders()
     const onOrderCreated = () => debouncedLoadOrders()
     const onOrderClosed = () => debouncedLoadOrders()
+    const onListChanged = () => debouncedLoadOrders()
+    const onOrderUpdated = () => debouncedLoadOrders()
     const onDisconnect = () => setSocketConnected(false)
 
     // Entertainment timer expiry: when a timed rental expires, the cron emits
@@ -614,6 +642,8 @@ function KDSContent() {
     socket.on('kds:order-bumped', onOrderBumped)
     socket.on('order:created', onOrderCreated)
     socket.on('order:closed', onOrderClosed)
+    socket.on('orders:list-changed', onListChanged)
+    socket.on('order:updated', onOrderUpdated)
     socket.on('entertainment:session-update', onEntertainmentSessionUpdate)
     socket.on('disconnect', onDisconnect)
 
@@ -630,6 +660,8 @@ function KDSContent() {
       socket.off('kds:order-bumped', onOrderBumped)
       socket.off('order:created', onOrderCreated)
       socket.off('order:closed', onOrderClosed)
+      socket.off('orders:list-changed', onListChanged)
+      socket.off('order:updated', onOrderUpdated)
       socket.off('entertainment:session-update', onEntertainmentSessionUpdate)
       socket.off('disconnect', onDisconnect)
       socketRef.current = null
@@ -1026,7 +1058,17 @@ function KDSContent() {
   const locationName = employee?.location?.name || screenConfig?.locationId || ''
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white relative">
+    <div className={`min-h-screen bg-gray-900 text-white relative ${flashActive ? 'kds-flash' : ''}`}>
+      {/* Flash-on-new-order keyframe */}
+      {flashActive && (
+        <style>{`
+          @keyframes kdsFlash {
+            0% { background-color: rgba(59, 130, 246, 0.3); }
+            100% { background-color: transparent; }
+          }
+          .kds-flash { animation: kdsFlash 0.5s ease-out; }
+        `}</style>
+      )}
       {/* Disconnect overlay */}
       {!socketConnected && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">

@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, clearPermissionCache } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
+import { emitToLocation } from '@/lib/socket-server'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -143,6 +144,9 @@ export const PUT = withVenue(async function PUT(
     if (permissions !== undefined) {
       clearPermissionCache()
     }
+
+    // Emit employees:changed so all terminals refresh employee/permission data
+    void emitToLocation(existing.locationId, 'employees:changed', { action: 'role_updated', roleId: id }).catch(console.error)
 
     return NextResponse.json({ data: {
       role: {
