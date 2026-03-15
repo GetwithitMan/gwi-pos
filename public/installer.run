@@ -1062,17 +1062,17 @@ apt-get install -y chromium-browser 2>/dev/null \
 
 log "Browser installed."
 
-# Install Node.js 20 if not present or too old
+# Install Node.js 20 via pinned apt repo (no shell script execution)
 install_node20() {
   log "Setting up NodeSource repository for Node.js 20..."
-  local SETUP_SCRIPT="/tmp/nodesource-setup-20.sh"
-  curl -fsSL https://deb.nodesource.com/setup_20.x -o "$SETUP_SCRIPT"
-  if [[ ! -s "$SETUP_SCRIPT" ]]; then
-    err "Failed to download NodeSource setup script."
-    exit 1
-  fi
-  bash "$SETUP_SCRIPT"
-  rm -f "$SETUP_SCRIPT"
+  local KEYRING="/usr/share/keyrings/nodesource.gpg"
+  # Download and install the GPG key
+  curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+    | gpg --dearmor -o "$KEYRING" 2>/dev/null
+  # Add the repo with pinned key
+  echo "deb [signed-by=$KEYRING] https://deb.nodesource.com/node_20.x nodistro main" \
+    > /etc/apt/sources.list.d/nodesource.list
+  apt-get update -qq
   apt-get install -y nodejs
 }
 
@@ -1329,13 +1329,25 @@ if [[ "$STATION_ROLE" == "backup" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
     exit 1
   fi
 
-  # Stop PostgreSQL before pg_basebackup
-  systemctl stop postgresql
-
-  # Clear existing data directory for fresh base backup
   # Detect installed PostgreSQL version (may be 16 or 17)
   PG_VERSION=$(pg_lsclusters -h 2>/dev/null | awk 'NR==1{print $1}' || echo "16")
   PG_DATA="/var/lib/postgresql/${PG_VERSION}/main"
+
+  # SAFETY: Verify primary is reachable and credentials work BEFORE deleting data.
+  # A failed pg_basebackup after data deletion leaves an empty, unrecoverable box.
+  log "Verifying replication connectivity to primary ($PRIMARY_NUC_IP)..."
+  if ! PGPASSWORD="$REPL_PASSWORD" psql -h "$PRIMARY_NUC_IP" -U replicator -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+    err "Cannot connect to primary NUC at $PRIMARY_NUC_IP as replicator."
+    err "Fix the connection before proceeding — NOT deleting local data."
+    err "Check: IP reachable, REPL_PASSWORD correct, pg_hba.conf allows this IP."
+    exit 1
+  fi
+  log "Primary replication connection verified."
+
+  # Stop PostgreSQL before pg_basebackup
+  systemctl stop postgresql
+
+  # Clear existing data directory for fresh base backup (safe — we verified primary first)
   if [[ -d "$PG_DATA" ]]; then
     log "Clearing existing PostgreSQL data directory..."
     rm -rf "$PG_DATA"
@@ -2189,7 +2201,7 @@ Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
 Environment=POS_SERVER_URL=$SERVER_URL
 ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
 ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
-ExecStartPre=/opt/gwi-pos/wait-for-pos.sh $SERVER_URL
+ExecStartPre=/opt/gwi-pos/wait-for-pos.sh ${SERVER_URL}/login
 ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile $SERVER_URL
 Restart=always
 RestartSec=10
