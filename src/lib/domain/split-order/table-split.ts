@@ -6,7 +6,7 @@
  */
 
 import { OrderItemStatus } from '@prisma/client'
-import { calculateTax } from '@/lib/order-calculations'
+import { calculateSplitTax } from '@/lib/order-calculations'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, TableSplitResult } from './types'
 
@@ -22,6 +22,7 @@ export async function createTableSplit(
   taxRate: number,
   tablesWithItems: string[],
   tableNameMap: Map<string, string>,
+  inclusiveTaxRate?: number,
 ): Promise<TableSplitResult> {
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
 
@@ -100,8 +101,16 @@ export async function createTableSplit(
       }
     })
 
-    const tableTax = calculateTax(tableSubtotal, taxRate)
-    const tableTotal = Math.round((tableSubtotal + tableTax) * 100) / 100
+    // Split-aware tax for this table's items
+    let tblInclSub = 0, tblExclSub = 0
+    for (const item of tableItems) {
+      const t = Number(item.price) * item.quantity
+        + item.modifiers.reduce((s, m) => s + Number(m.price), 0) * item.quantity
+      if (item.isTaxInclusive) tblInclSub += t; else tblExclSub += t
+    }
+    const tableTaxResult = calculateSplitTax(tblInclSub, tblExclSub, taxRate, inclusiveTaxRate)
+    const tableTax = tableTaxResult.totalTax
+    const tableTotal = Math.round((tableSubtotal + tableTaxResult.taxFromExclusive) * 100) / 100
 
     // Create split order for this table
     const splitOrder = await tx.order.create({
@@ -119,6 +128,8 @@ export async function createTableSplit(
         subtotal: tableSubtotal,
         discountTotal: 0,
         taxTotal: tableTax,
+        taxFromInclusive: tableTaxResult.taxFromInclusive,
+        taxFromExclusive: tableTaxResult.taxFromExclusive,
         tipTotal: 0,
         total: tableTotal,
         itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
@@ -220,12 +231,26 @@ export async function createTableSplit(
       const totalChildDisc = childDiscAccum.get(child.id) || 0
       if (totalChildDisc > 0) {
         const childSub = childSubtotals.get(child.id) || 0
-        const childTax = calculateTax(childSub, taxRate)
-        const newChildTotal = Math.round((childSub - totalChildDisc + childTax) * 100) / 100
+        const childTableItems = itemsByTable.get(child.tableId) || []
+        let cInclSub = 0, cExclSub = 0
+        for (const ci of childTableItems) {
+          const t = Number(ci.price) * ci.quantity
+            + ci.modifiers.reduce((s, m) => s + Number(m.price), 0) * ci.quantity
+          if (ci.isTaxInclusive) cInclSub += t; else cExclSub += t
+        }
+        const discOnIncl = childSub > 0 ? Math.round(totalChildDisc * (cInclSub / childSub) * 100) / 100 : 0
+        const discOnExcl = Math.round((totalChildDisc - discOnIncl) * 100) / 100
+        const childTaxResult = calculateSplitTax(
+          Math.max(0, cInclSub - discOnIncl), Math.max(0, cExclSub - discOnExcl), taxRate, inclusiveTaxRate
+        )
+        const newChildTotal = Math.round((childSub + childTaxResult.taxFromExclusive - totalChildDisc) * 100) / 100
         await tx.order.update({
           where: { id: child.id },
           data: {
             discountTotal: totalChildDisc,
+            taxTotal: childTaxResult.totalTax,
+            taxFromInclusive: childTaxResult.taxFromInclusive,
+            taxFromExclusive: childTaxResult.taxFromExclusive,
             total: Math.max(0, newChildTotal),
           },
         })
@@ -237,14 +262,18 @@ export async function createTableSplit(
   // Recalculate original order totals (for items without table assignment)
   const remainingItems = (itemsByTable.get(null) || []) as SplitOrderItem[]
   let remainingSubtotal = 0
+  let remInclSub = 0, remExclSub = 0
   remainingItems.forEach(item => {
     const itemTotal = Number(item.price) * item.quantity
     const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
-    remainingSubtotal += itemTotal + modifiersTotal
+    const t = itemTotal + modifiersTotal
+    remainingSubtotal += t
+    if (item.isTaxInclusive) remInclSub += t; else remExclSub += t
   })
 
-  const remainingTax = calculateTax(remainingSubtotal, taxRate)
-  const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
+  const remTaxResult = calculateSplitTax(remInclSub, remExclSub, taxRate, inclusiveTaxRate)
+  const remainingTax = remTaxResult.totalTax
+  const remainingTotal = Math.round((remainingSubtotal + remTaxResult.taxFromExclusive) * 100) / 100
 
   // Update original order totals and mark as 'split'
   await tx.order.update({
@@ -254,6 +283,8 @@ export async function createTableSplit(
       subtotal: remainingSubtotal,
       discountTotal: 0,
       taxTotal: remainingTax,
+      taxFromInclusive: remTaxResult.taxFromInclusive,
+      taxFromExclusive: remTaxResult.taxFromExclusive,
       total: remainingTotal,
       itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
       notes: order.notes

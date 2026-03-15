@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderStatus } from '@prisma/client'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
-import { getLocationTaxRate } from '@/lib/order-calculations'
+import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
@@ -115,9 +115,11 @@ export const DELETE = withVenue(async function DELETE(
       })
 
       const settings = location?.settings as {
-        tax?: { defaultRate?: number }
+        tax?: { defaultRate?: number; inclusiveTaxRate?: number }
       } | null
       const taxRate = getLocationTaxRate(settings)
+      const autoMergeInclusiveRate = settings?.tax?.inclusiveTaxRate != null
+        ? settings.tax.inclusiveTaxRate / 100 : undefined
 
       await db.$transaction(async (tx) => {
         // Move all items back to parent
@@ -126,12 +128,15 @@ export const DELETE = withVenue(async function DELETE(
           data: { orderId: id },
         })
 
-        // Recalculate parent totals from moved items
-        const subtotal = lastSplitItems.reduce(
-          (sum, item) => sum + Number(item.price) * item.quantity, 0
-        )
-        const tax = Math.round(subtotal * taxRate * 100) / 100
-        const total = Math.round((subtotal + tax) * 100) / 100
+        // Recalculate parent totals from moved items (split-aware tax)
+        let amInclSub = 0, amExclSub = 0
+        for (const item of lastSplitItems) {
+          const t = Number(item.price) * item.quantity
+          if (item.isTaxInclusive) amInclSub += t; else amExclSub += t
+        }
+        const subtotal = amInclSub + amExclSub
+        const amTax = calculateSplitTax(amInclSub, amExclSub, taxRate, autoMergeInclusiveRate)
+        const total = Math.round((subtotal + amTax.taxFromExclusive) * 100) / 100
 
         // Restore parent order
         await tx.order.update({
@@ -139,7 +144,9 @@ export const DELETE = withVenue(async function DELETE(
           data: {
             status: 'open',
             subtotal,
-            taxTotal: tax,
+            taxTotal: amTax.totalTax,
+            taxFromInclusive: amTax.taxFromInclusive,
+            taxFromExclusive: amTax.taxFromExclusive,
             total,
             notes: null,
           },

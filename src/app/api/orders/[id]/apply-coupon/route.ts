@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateOrderTotals } from '@/lib/order-calculations'
+import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -34,8 +35,8 @@ export const POST = withVenue(async function POST(
         location: true,
         discounts: { where: { deletedAt: null } },
         items: {
-          where: { status: { not: 'voided' } },
-          select: { id: true, menuItemId: true },
+          where: { status: { not: 'voided' }, deletedAt: null },
+          include: { modifiers: true },
         },
       },
     })
@@ -263,13 +264,16 @@ export const POST = withVenue(async function POST(
         data: { usageCount: { increment: 1 } },
       })
 
-      // Recalculate order totals
+      // Recalculate order totals with split-aware tax
       const newDiscountTotal = currentDiscountTotal + discountAmount
+      const couponCalcItems: OrderItemForCalculation[] = order.items.map(i => ({
+        price: Number(i.price), quantity: i.quantity, status: i.status,
+        itemTotal: Number(i.itemTotal), isTaxInclusive: i.isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
       const totals = calculateOrderTotals(
-        subtotal,
-        newDiscountTotal,
-        order.location.settings as { tax?: { defaultRate?: number } },
-        order.isTaxExempt
+        couponCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
+        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
       )
 
       await tx.order.update({

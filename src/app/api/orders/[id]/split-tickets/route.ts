@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getLocationTaxRate } from '@/lib/order-calculations'
+import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { validateRequest } from '@/lib/validations'
 import { z } from 'zod'
@@ -248,7 +248,7 @@ export const POST = withVenue(async function POST(
 
     // Get settings for tax rate and rounding
     const settings = parentOrder.location.settings as {
-      tax?: { defaultRate?: number }
+      tax?: { defaultRate?: number; inclusiveTaxRate?: number }
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
     const taxRate = getLocationTaxRate(settings)
@@ -620,10 +620,12 @@ export const PATCH = withVenue(async function PATCH(
       if (!item) throw new ValidationError('Item not found in source split')
 
       const settings = parentOrder.location.settings as {
-        tax?: { defaultRate?: number }
+        tax?: { defaultRate?: number; inclusiveTaxRate?: number }
         priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
       } | null
       const taxRate = getLocationTaxRate(settings)
+      const inclusiveRate = settings?.tax?.inclusiveTaxRate != null
+        ? settings.tax.inclusiveTaxRate / 100 : undefined
 
       const fullPrice = Number(item.price) * item.quantity
       const fractionPrice = Math.floor((fullPrice / ways) * 100) / 100
@@ -680,20 +682,27 @@ export const PATCH = withVenue(async function PATCH(
           })
         }
 
-        // Recalculate totals on all affected splits
+        // Recalculate totals on all affected splits (split-aware tax)
         for (const split of parentOrder.splitOrders) {
           if (split.payments.length > 0) continue
           const freshItems = await tx.orderItem.findMany({
             where: { orderId: split.id, deletedAt: null },
           })
-          const subtotal = freshItems.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0)
-          const tax = Math.round(subtotal * taxRate * 100) / 100
+          let inclSub = 0, exclSub = 0
+          for (const fi of freshItems) {
+            const t = Number(fi.price) * fi.quantity
+            if (fi.isTaxInclusive) inclSub += t; else exclSub += t
+          }
+          const subtotal = inclSub + exclSub
+          const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(inclSub, exclSub, taxRate, inclusiveRate)
           await tx.order.update({
             where: { id: split.id },
             data: {
               subtotal,
-              taxTotal: tax,
-              total: Math.round((subtotal + tax) * 100) / 100,
+              taxTotal: totalTax,
+              taxFromInclusive,
+              taxFromExclusive,
+              total: Math.round((subtotal + taxFromExclusive) * 100) / 100,
             },
           })
         }
@@ -754,10 +763,12 @@ export const PATCH = withVenue(async function PATCH(
 
     // Move item and recalculate totals
     const settings = parentOrder.location.settings as {
-      tax?: { defaultRate?: number }
+      tax?: { defaultRate?: number; inclusiveTaxRate?: number }
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
     const taxRate = getLocationTaxRate(settings)
+    const inclusiveRate = settings?.tax?.inclusiveTaxRate != null
+      ? settings.tax.inclusiveTaxRate / 100 : undefined
 
     await db.$transaction(async (tx) => {
       // Move item to destination split
@@ -766,29 +777,43 @@ export const PATCH = withVenue(async function PATCH(
         data: { orderId: toSplitId },
       })
 
-      // Recalculate source split totals
+      // Recalculate source split totals (split-aware tax)
       const fromItems = fromSplit.items.filter(i => i.id !== itemId)
-      const fromSubtotal = fromItems.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0)
-      const fromTax = Math.round(fromSubtotal * taxRate * 100) / 100
+      let fromInclSub = 0, fromExclSub = 0
+      for (const i of fromItems) {
+        const t = Number(i.price) * i.quantity
+        if (i.isTaxInclusive) fromInclSub += t; else fromExclSub += t
+      }
+      const fromSubtotal = fromInclSub + fromExclSub
+      const fromTax = calculateSplitTax(fromInclSub, fromExclSub, taxRate, inclusiveRate)
       await tx.order.update({
         where: { id: fromSplitId },
         data: {
           subtotal: fromSubtotal,
-          taxTotal: fromTax,
-          total: Math.round((fromSubtotal + fromTax) * 100) / 100,
+          taxTotal: fromTax.totalTax,
+          taxFromInclusive: fromTax.taxFromInclusive,
+          taxFromExclusive: fromTax.taxFromExclusive,
+          total: Math.round((fromSubtotal + fromTax.taxFromExclusive) * 100) / 100,
         },
       })
 
-      // Recalculate destination split totals
+      // Recalculate destination split totals (split-aware tax)
       const toItems = [...toSplit.items, item]
-      const toSubtotal = toItems.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0)
-      const toTax = Math.round(toSubtotal * taxRate * 100) / 100
+      let toInclSub = 0, toExclSub = 0
+      for (const i of toItems) {
+        const t = Number(i.price) * i.quantity
+        if (i.isTaxInclusive) toInclSub += t; else toExclSub += t
+      }
+      const toSubtotal = toInclSub + toExclSub
+      const toTax = calculateSplitTax(toInclSub, toExclSub, taxRate, inclusiveRate)
       await tx.order.update({
         where: { id: toSplitId },
         data: {
           subtotal: toSubtotal,
-          taxTotal: toTax,
-          total: Math.round((toSubtotal + toTax) * 100) / 100,
+          taxTotal: toTax.totalTax,
+          taxFromInclusive: toTax.taxFromInclusive,
+          taxFromExclusive: toTax.taxFromExclusive,
+          total: Math.round((toSubtotal + toTax.taxFromExclusive) * 100) / 100,
         },
       })
     })
@@ -905,11 +930,28 @@ export const DELETE = withVenue(async function DELETE(
         return sum + (Number(item.price) + mods) * item.quantity
       }, 0)
 
-      const settings = parentOrder.location?.settings as { tax?: { defaultRate?: number } } | null
+      const settings = parentOrder.location?.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
       const taxRate = getLocationTaxRate(settings)
-      const taxableAmount = Math.max(0, parentSubtotal - childDiscountTotal)
-      const parentTaxTotal = Math.round(taxableAmount * taxRate * 100) / 100
-      const parentTotal = Math.round((taxableAmount + parentTaxTotal) * 100) / 100
+      const mergeInclusiveRate = settings?.tax?.inclusiveTaxRate != null
+        ? settings.tax.inclusiveTaxRate / 100 : undefined
+
+      // Split items by tax-inclusive flag for proper split tax calculation
+      let mergeInclSub = 0, mergeExclSub = 0
+      for (const item of restoredItems) {
+        const t = (Number(item.price) + item.modifiers.reduce((s, m) => s + Number(m.price), 0)) * item.quantity
+        if (item.isTaxInclusive) mergeInclSub += t; else mergeExclSub += t
+      }
+      // Allocate discount proportionally between inclusive and exclusive
+      let discOnIncl = 0, discOnExcl = 0
+      if (childDiscountTotal > 0 && parentSubtotal > 0) {
+        const inclShare = mergeInclSub / parentSubtotal
+        discOnIncl = Math.round(childDiscountTotal * inclShare * 100) / 100
+        discOnExcl = Math.round((childDiscountTotal - discOnIncl) * 100) / 100
+      }
+      const postDiscInclusive = Math.max(0, mergeInclSub - discOnIncl)
+      const postDiscExclusive = Math.max(0, mergeExclSub - discOnExcl)
+      const mergeTax = calculateSplitTax(postDiscInclusive, postDiscExclusive, taxRate, mergeInclusiveRate)
+      const parentTotal = Math.round((mergeInclSub + mergeExclSub + mergeTax.taxFromExclusive - childDiscountTotal) * 100) / 100
       const parentItemCount = restoredItems.reduce((sum, i) => sum + i.quantity, 0)
 
       // Restore parent order with recalculated totals
@@ -919,7 +961,9 @@ export const DELETE = withVenue(async function DELETE(
           status: 'open',
           subtotal: parentSubtotal,
           discountTotal: childDiscountTotal,
-          taxTotal: parentTaxTotal,
+          taxTotal: mergeTax.totalTax,
+          taxFromInclusive: mergeTax.taxFromInclusive,
+          taxFromExclusive: mergeTax.taxFromExclusive,
           total: parentTotal,
           itemCount: parentItemCount,
           notes: parentOrder.notes?.replace(/\n?\[Split into \d+ tickets\]/, '') || null,

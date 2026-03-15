@@ -25,7 +25,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
-import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 
@@ -254,10 +254,11 @@ export async function POST(request: NextRequest) {
 
     // ── 2d. Fetch location settings for tax rate ─────────────────────────────
 
-    const taxRate = getLocationTaxRate(locSettings as { tax?: { defaultRate?: number } })
-    const taxTotal = calculateTax(subtotal, taxRate)
-    const taxFromExclusive = taxTotal // Online orders use exclusive tax (added on top)
-    const total = subtotal + taxTotal
+    const onlineLocSettings = locSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
+    const taxRate = getLocationTaxRate(onlineLocSettings)
+    // Online orders are all exclusive (no tax-inclusive items online)
+    const { taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(0, subtotal, taxRate)
+    const total = subtotal + taxFromExclusive
     const chargeAmount = total + tip // Total charged to card includes tip
 
     // ── 3. Find or create a dedicated online employee (BUG #398) ─────────────

@@ -19,7 +19,7 @@ import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing, type OvertimeConfig } from '@/lib/entertainment-pricing'
-import { getLocationTaxRate, recalculatePercentDiscounts } from '@/lib/order-calculations'
+import { getLocationTaxRate, recalculatePercentDiscounts, calculateSplitTax } from '@/lib/order-calculations'
 import { ingestAndProject, type IngestEvent } from '@/lib/order-events/ingester'
 import { OrderRouter } from '@/lib/order-router'
 import { batchUpdateOrderItemStatus } from '@/lib/batch-updates'
@@ -521,7 +521,10 @@ export const POST = withVenue(withTiming(async function POST(
     )
     if (perMinuteItems.length > 0) {
       const now = new Date()
-      const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
+      const payLocSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
+      const taxRate = getLocationTaxRate(payLocSettings)
+      const payInclusiveRate = payLocSettings?.tax?.inclusiveTaxRate != null
+        ? payLocSettings.tax.inclusiveTaxRate / 100 : undefined
 
       // Batch-fetch all menu items for per-minute settlement in ONE query (N+1 fix)
       const perMinuteMenuItemIds = [...new Set(perMinuteItems.map((item: any) => item.menuItemId))]
@@ -598,8 +601,24 @@ export const POST = withVenue(withTiming(async function POST(
         const newDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
         const effectiveDiscount = Math.min(newDiscountTotal, newSubtotal)
 
-        const newTaxTotal = roundToCents((newSubtotal - effectiveDiscount) * taxRate)
-        const newTotal = roundToCents(newSubtotal + newTaxTotal - effectiveDiscount)
+        // Split-aware tax recalculation after entertainment settlement
+        let payInclSub = 0, payExclSub = 0
+        for (const ai of activeItems) {
+          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
+          const t = (Number(ai.price) + modTotal) * ai.quantity
+          if ((ai as any).isTaxInclusive) payInclSub += t; else payExclSub += t
+        }
+        // Allocate discount proportionally between inclusive and exclusive
+        let payDiscIncl = 0, payDiscExcl = 0
+        if (effectiveDiscount > 0 && newSubtotal > 0) {
+          payDiscIncl = roundToCents(effectiveDiscount * (payInclSub / newSubtotal))
+          payDiscExcl = roundToCents(effectiveDiscount - payDiscIncl)
+        }
+        const payTaxResult = calculateSplitTax(
+          Math.max(0, payInclSub - payDiscIncl), Math.max(0, payExclSub - payDiscExcl), taxRate, payInclusiveRate
+        )
+        const newTaxTotal = payTaxResult.totalTax
+        const newTotal = roundToCents(newSubtotal + payTaxResult.taxFromExclusive - effectiveDiscount)
 
         await tx.order.update({
           where: { id: orderId },
@@ -607,6 +626,8 @@ export const POST = withVenue(withTiming(async function POST(
             subtotal: newSubtotal,
             discountTotal: effectiveDiscount,
             taxTotal: newTaxTotal,
+            taxFromInclusive: payTaxResult.taxFromInclusive,
+            taxFromExclusive: payTaxResult.taxFromExclusive,
             total: newTotal,
           },
         })

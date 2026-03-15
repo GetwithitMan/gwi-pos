@@ -62,6 +62,7 @@ export interface SplitOrderItem {
   blockTimeMinutes: number | null
   blockTimeStartedAt: Date | null
   blockTimeExpiresAt: Date | null
+  isTaxInclusive?: boolean
   pricingRuleApplied?: unknown  // PricingAdjustment JSONB — preserved through splits
   modifiers: SplitOrderItemModifier[]
   menuItem?: { id: string; itemType: string | null } | null

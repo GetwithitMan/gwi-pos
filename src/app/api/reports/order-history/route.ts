@@ -113,6 +113,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           guestCount: true,
           subtotal: true,
           taxTotal: true,
+          taxFromInclusive: true,
+          taxFromExclusive: true,
           discountTotal: true,
           total: true,
           createdAt: true,
@@ -156,6 +158,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         _sum: {
           subtotal: true,
           taxTotal: true,
+          taxFromInclusive: true,
+          taxFromExclusive: true,
           total: true,
           discountTotal: true,
         },
@@ -222,11 +226,24 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         : null
       const displaySubtotal = cardSubtotal ?? computedCashSubtotal
       const discountTotal = Math.round(Number(order.discountTotal) * 100) / 100
-      // Tax: compute from location settings (not stored values which may be buggy)
-      const cashTaxable = calculateAfterDiscount ? Math.max(0, computedCashSubtotal - discountTotal) : computedCashSubtotal
-      const computedCashTax = Math.round(cashTaxable * taxRateDecimal * 100) / 100
-      const cardTaxable = calculateAfterDiscount ? Math.max(0, displaySubtotal - discountTotal) : displaySubtotal
-      const cardTax = Math.round(cardTaxable * taxRateDecimal * 100) / 100
+      // Use stored split tax values (taxFromInclusive + taxFromExclusive) when available,
+      // falling back to single-rate computation for legacy orders
+      const storedTaxFromInclusive = Number(order.taxFromInclusive ?? 0)
+      const storedTaxFromExclusive = Number(order.taxFromExclusive ?? 0)
+      const hasStoredSplitTax = storedTaxFromInclusive > 0 || storedTaxFromExclusive > 0
+      let computedCashTax: number
+      let cardTax: number
+      if (hasStoredSplitTax) {
+        // Stored split tax is authoritative — use it directly
+        computedCashTax = Math.round((storedTaxFromInclusive + storedTaxFromExclusive) * 100) / 100
+        cardTax = computedCashTax // Split tax already correct for both pricing modes
+      } else {
+        // Legacy fallback: single-rate computation
+        const cashTaxable = calculateAfterDiscount ? Math.max(0, computedCashSubtotal - discountTotal) : computedCashSubtotal
+        computedCashTax = Math.round(cashTaxable * taxRateDecimal * 100) / 100
+        const cardTaxable = calculateAfterDiscount ? Math.max(0, displaySubtotal - discountTotal) : displaySubtotal
+        cardTax = Math.round(cardTaxable * taxRateDecimal * 100) / 100
+      }
       const computedCashTotal = Math.round((computedCashSubtotal - discountTotal + computedCashTax) * 100) / 100
       const displayTotal = Math.round((displaySubtotal - discountTotal + cardTax) * 100) / 100
 
@@ -322,9 +339,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         const cashBasePriceSum = Number(cardPriceStats._sum.price || 0)
         const summaryMultiplier = cashBasePriceSum > 0 ? cardBasePriceSum / cashBasePriceSum : 1
         const subtotal = summaryMultiplier > 1 ? Math.round(cashSubtotal * summaryMultiplier * 100) / 100 : cashSubtotal
-        // Recompute tax from settings
-        const taxableAmount = calculateAfterDiscount ? Math.max(0, subtotal - discountTotalSum) : subtotal
-        const taxTotal = Math.round(taxableAmount * taxRateDecimal * 100) / 100
+        // Use stored split tax sums when available, fallback to single-rate computation
+        const sumTaxFromInclusive = Number(stats._sum.taxFromInclusive || 0)
+        const sumTaxFromExclusive = Number(stats._sum.taxFromExclusive || 0)
+        const hasSumSplitTax = sumTaxFromInclusive > 0 || sumTaxFromExclusive > 0
+        let taxTotal: number
+        if (hasSumSplitTax) {
+          taxTotal = Math.round((sumTaxFromInclusive + sumTaxFromExclusive) * 100) / 100
+        } else {
+          const taxableAmount = calculateAfterDiscount ? Math.max(0, subtotal - discountTotalSum) : subtotal
+          taxTotal = Math.round(taxableAmount * taxRateDecimal * 100) / 100
+        }
         const total = Math.round((subtotal - discountTotalSum + taxTotal) * 100) / 100
         return {
           orderCount: stats._count,

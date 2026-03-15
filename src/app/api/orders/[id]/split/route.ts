@@ -131,7 +131,10 @@ export const POST = withVenue(async function POST(
     const isAlreadySplit = order.parentOrderId !== null || order.splitOrders.length > 0
 
     // Get tax rate from location settings
-    const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
+    const locSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
+    const taxRate = getLocationTaxRate(locSettings)
+    const inclusiveTaxRate = locSettings?.tax?.inclusiveTaxRate != null
+      ? locSettings.tax.inclusiveTaxRate / 100 : undefined
 
     // Cast to domain type (Prisma result is structurally compatible)
     const splitOrder = order as unknown as SplitSourceOrder
@@ -265,7 +268,7 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create child order + soft-delete items from parent + recalc parent atomically ===
       const { newOrder, remainingSubtotal, remainingTax, remainingTotal, remainingItems, baseOrderNumber, nextSplitIndex } = await db.$transaction(async (tx) => {
-        return createItemSplit(tx, splitOrder, itemIds, taxRate)
+        return createItemSplit(tx, splitOrder, itemIds, taxRate, inclusiveTaxRate)
       }, { timeout: 15000 })
 
       // Dispatch socket events for split (fire-and-forget)
@@ -391,7 +394,7 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all seat children + soft-delete items + update parent atomically ===
       const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
-        return createSeatSplit(tx, splitOrder, taxRate)
+        return createSeatSplit(tx, splitOrder, taxRate, inclusiveTaxRate)
       }, { timeout: 20000 })
 
       // Dispatch socket events for seat splits (fire-and-forget)
@@ -515,7 +518,7 @@ export const POST = withVenue(async function POST(
 
       // === TRANSACTION: create all table children + soft-delete items + update parent atomically ===
       const { splitOrders, itemIdsToRemove, remainingItems, remainingTotal } = await db.$transaction(async (tx) => {
-        return createTableSplit(tx, splitOrder, taxRate, tablesWithItems, tableNameMap)
+        return createTableSplit(tx, splitOrder, taxRate, tablesWithItems, tableNameMap, inclusiveTaxRate)
       }, { timeout: 20000 })
 
       // Dispatch socket events for table splits (fire-and-forget)

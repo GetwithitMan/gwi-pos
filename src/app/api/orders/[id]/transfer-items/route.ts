@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateOrderTotals } from '@/lib/order-calculations'
+import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
@@ -164,12 +165,25 @@ export const POST = withVenue(async function POST(
         newSubtotal += itemPrice + modifiersPrice
       }
 
-      const destTotals = calculateOrderTotals(newSubtotal, Number(toOrder.discountTotal), settings)
+      const destCalcItems: OrderItemForCalculation[] = destItems.map(i => ({
+        price: Number(i.price), quantity: i.quantity, status: i.status,
+        itemTotal: Number(i.itemTotal), isTaxInclusive: i.isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
+      const destTotals = calculateOrderTotals(
+        destCalcItems, fromOrder.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
+        Number(toOrder.discountTotal), 0, undefined, 'card', toOrder.isTaxExempt
+      )
 
       await tx.order.update({
         where: { id: toOrderId },
         data: {
-          ...destTotals,
+          subtotal: destTotals.subtotal,
+          taxTotal: destTotals.taxTotal,
+          taxFromInclusive: destTotals.taxFromInclusive,
+          taxFromExclusive: destTotals.taxFromExclusive,
+          discountTotal: destTotals.discountTotal,
+          total: destTotals.total,
           itemCount: destItems.reduce((sum, i) => sum + i.quantity, 0),
           version: { increment: 1 },
         },
@@ -191,12 +205,25 @@ export const POST = withVenue(async function POST(
         sourceSubtotal += itemPrice + modifiersPrice
       }
 
-      const sourceTotals = calculateOrderTotals(sourceSubtotal, Number(fromOrder.discountTotal), settings)
+      const sourceCalcItems: OrderItemForCalculation[] = sourceItems.map(i => ({
+        price: Number(i.price), quantity: i.quantity, status: i.status,
+        itemTotal: Number(i.itemTotal), isTaxInclusive: i.isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
+      const sourceTotals = calculateOrderTotals(
+        sourceCalcItems, fromOrder.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
+        Number(fromOrder.discountTotal), 0, undefined, 'card', fromOrder.isTaxExempt
+      )
 
       await tx.order.update({
         where: { id: fromOrderId },
         data: {
-          ...sourceTotals,
+          subtotal: sourceTotals.subtotal,
+          taxTotal: sourceTotals.taxTotal,
+          taxFromInclusive: sourceTotals.taxFromInclusive,
+          taxFromExclusive: sourceTotals.taxFromExclusive,
+          discountTotal: sourceTotals.discountTotal,
+          total: sourceTotals.total,
           itemCount: sourceItems.reduce((sum, i) => sum + i.quantity, 0),
           version: { increment: 1 },
         },

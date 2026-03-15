@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateOrderTotals } from '@/lib/order-calculations'
+import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchCFDOrderUpdated, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -163,9 +164,17 @@ export const POST = withVenue(async function POST(
       })
       const discountTotal = allDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
 
-      // Recalculate order totals using centralized tax engine
+      // Recalculate order totals using centralized split-aware tax engine
       const locationSettings = await getLocationSettings(targetOrder.locationId)
-      const totals = calculateOrderTotals(subtotal, discountTotal, locationSettings)
+      const mergeCalcItems: OrderItemForCalculation[] = allItems.map(i => ({
+        price: Number(i.price), quantity: i.quantity, status: i.status,
+        itemTotal: Number(i.itemTotal), isTaxInclusive: i.isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
+      const totals = calculateOrderTotals(
+        mergeCalcItems, locationSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
+        discountTotal, 0, undefined, 'card', targetOrder.isTaxExempt
+      )
 
       // Update target order totals and guest count
       const newGuestCount = (targetOrder.guestCount || 1) + (sourceOrder.guestCount || 1)
@@ -173,7 +182,12 @@ export const POST = withVenue(async function POST(
       await tx.order.update({
         where: { id: targetOrderId },
         data: {
-          ...totals,
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
+          discountTotal: totals.discountTotal,
+          total: totals.total,
           commissionTotal,
           itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
           guestCount: newGuestCount,

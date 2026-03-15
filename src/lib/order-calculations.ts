@@ -43,6 +43,7 @@ export interface OrderItemForCalculation {
 export interface LocationTaxSettings {
   tax?: {
     defaultRate?: number // Stored as percentage (e.g. 8 for 8%), converted to decimal internally
+    inclusiveTaxRate?: number // Separate rate for tax-inclusive items (percentage, e.g. 10 for 10%)
   }
 }
 
@@ -157,6 +158,7 @@ function buildTotalsCacheKey(
     }
   }
   hash = (hash * 31 + (locationSettings?.tax?.defaultRate ?? 0) * 100) | 0
+  hash = (hash * 31 + (locationSettings?.tax?.inclusiveTaxRate ?? 0) * 100) | 0
   hash = (hash * 31 + discountTotal * 100) | 0
   hash = (hash * 31 + tipTotal * 100) | 0
   return `${items.length}:${hash}:${paymentMethod}:${priceRounding ? 1 : 0}`
@@ -274,8 +276,10 @@ export function calculateOrderTotals(
   const postDiscountExclusive = roundToCents(Math.max(0, exclusiveSubtotal - discountOnExclusive))
 
   // Split tax on post-discount amounts — rounded to cents for compliance
+  const inclusiveTaxRateRaw = locationSettings?.tax?.inclusiveTaxRate
+  const inclusiveRate = inclusiveTaxRateRaw != null ? inclusiveTaxRateRaw / 100 : undefined
   const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
-    postDiscountInclusive, postDiscountExclusive, taxRate
+    postDiscountInclusive, postDiscountExclusive, taxRate, inclusiveRate
   )
 
   // 3. Total before rounding
@@ -394,12 +398,16 @@ export function splitSubtotalsByTaxInclusion(
 export function calculateSplitTax(
   inclusiveSubtotal: number,
   exclusiveSubtotal: number,
-  taxRate: number
+  taxRate: number,
+  inclusiveTaxRate?: number
 ): { taxFromInclusive: number; taxFromExclusive: number; totalTax: number } {
-  const taxFromInclusive = inclusiveSubtotal > 0
-    ? roundToCents(inclusiveSubtotal - (inclusiveSubtotal / (1 + taxRate)))
+  const inclRate = inclusiveTaxRate ?? taxRate
+  const taxFromInclusive = inclusiveSubtotal > 0 && inclRate > 0
+    ? roundToCents(inclusiveSubtotal - (inclusiveSubtotal / (1 + inclRate)))
     : 0
-  const taxFromExclusive = roundToCents(exclusiveSubtotal * taxRate)
+  const taxFromExclusive = exclusiveSubtotal > 0 && taxRate > 0
+    ? roundToCents(exclusiveSubtotal * taxRate)
+    : 0
 
   return {
     taxFromInclusive,

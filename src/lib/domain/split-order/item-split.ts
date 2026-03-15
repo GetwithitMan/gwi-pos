@@ -6,9 +6,20 @@
  */
 
 import { OrderItemStatus } from '@prisma/client'
-import { calculateTax } from '@/lib/order-calculations'
+import { calculateSplitTax } from '@/lib/order-calculations'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, ItemSplitResult } from './types'
+
+/** Split items into inclusive/exclusive subtotals */
+function splitSubtotals(items: SplitOrderItem[]): { inclSub: number; exclSub: number } {
+  let inclSub = 0, exclSub = 0
+  for (const item of items) {
+    const t = Number(item.price) * item.quantity
+      + item.modifiers.reduce((s, m) => s + Number(m.price), 0) * item.quantity
+    if (item.isTaxInclusive) inclSub += t; else exclSub += t
+  }
+  return { inclSub, exclSub }
+}
 
 /**
  * Build Prisma create data for copying items to a new split child order.
@@ -64,6 +75,7 @@ export async function createItemSplit(
   order: SplitSourceOrder,
   itemIds: string[],
   taxRate: number,
+  inclusiveTaxRate?: number,
 ): Promise<ItemSplitResult> {
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
 
@@ -84,8 +96,10 @@ export async function createItemSplit(
 
   // Build item create data
   const { newItems, newSubtotal } = buildItemCreateData(validItemsToMove, order.locationId)
-  const newTax = calculateTax(newSubtotal, taxRate)
-  const newTotal = Math.round((newSubtotal + newTax) * 100) / 100
+  const newSplit = splitSubtotals(validItemsToMove)
+  const newTaxResult = calculateSplitTax(newSplit.inclSub, newSplit.exclSub, taxRate, inclusiveTaxRate)
+  const newTax = newTaxResult.totalTax
+  const newTotal = Math.round((newSubtotal + newTaxResult.taxFromExclusive) * 100) / 100
 
   // Get the next split index
   const maxSplit = await tx.order.aggregate({
@@ -113,6 +127,8 @@ export async function createItemSplit(
       subtotal: newSubtotal,
       discountTotal: 0,
       taxTotal: newTax,
+      taxFromInclusive: newTaxResult.taxFromInclusive,
+      taxFromExclusive: newTaxResult.taxFromExclusive,
       tipTotal: 0,
       total: newTotal,
       itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
@@ -263,8 +279,10 @@ export async function createItemSplit(
   )
   const totalParentDiscount = remainingItemDiscountTotal + remainingOrderDiscountTotal
 
-  const remainingTax = calculateTax(remainingSubtotal, taxRate)
-  const remainingTotal = Math.round((remainingSubtotal - totalParentDiscount + remainingTax) * 100) / 100
+  const remSplit = splitSubtotals(remainingItems)
+  const remTaxResult = calculateSplitTax(remSplit.inclSub, remSplit.exclSub, taxRate, inclusiveTaxRate)
+  const remainingTax = remTaxResult.totalTax
+  const remainingTotal = Math.round((remainingSubtotal + remTaxResult.taxFromExclusive - totalParentDiscount) * 100) / 100
 
   // Update original order totals and mark as 'split'
   await tx.order.update({
@@ -274,6 +292,8 @@ export async function createItemSplit(
       subtotal: remainingSubtotal,
       discountTotal: totalParentDiscount,
       taxTotal: remainingTax,
+      taxFromInclusive: remTaxResult.taxFromInclusive,
+      taxFromExclusive: remTaxResult.taxFromExclusive,
       total: Math.max(0, remainingTotal),
       itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
       version: { increment: 1 },

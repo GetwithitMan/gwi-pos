@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateOrderTotals } from '@/lib/order-calculations'
+import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { requirePermission } from '@/lib/api-auth'
@@ -50,10 +51,13 @@ export const POST = withVenue(async function POST(
       // Lock the Order row to prevent concurrent discount applications from producing incorrect totals
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-      // Fetch order
+      // Fetch order with items for split-aware tax
       const order = await tx.order.findFirst({
         where: { id: orderId, deletedAt: null },
-        include: { location: true },
+        include: {
+          location: true,
+          items: { where: { deletedAt: null, status: 'active' }, include: { modifiers: true } },
+        },
       })
 
       if (!order) {
@@ -107,11 +111,14 @@ export const POST = withVenue(async function POST(
             data: { deletedAt: new Date() },
           })
           const newDiscountTotal = Math.max(0, Number(order.discountTotal) - removedAmount)
+          const calcItems: OrderItemForCalculation[] = order.items.map(i => ({
+            price: Number(i.price), quantity: i.quantity, status: i.status,
+            itemTotal: Number(i.itemTotal), isTaxInclusive: i.isTaxInclusive ?? false,
+            modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+          }))
           const totals = calculateOrderTotals(
-            Number(order.subtotal),
-            newDiscountTotal,
-            order.location.settings as { tax?: { defaultRate?: number } },
-            order.isTaxExempt
+            calcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
+            newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
           )
           const updatedOrder = await tx.order.update({
             where: { id: orderId },
@@ -168,11 +175,14 @@ export const POST = withVenue(async function POST(
 
       // Update Order.discountTotal (increment) and recalculate total via calculateOrderTotals
       const newDiscountTotal = Number(order.discountTotal) + discountAmount
+      const applyCalcItems: OrderItemForCalculation[] = order.items.map(i => ({
+        price: Number(i.price), quantity: i.quantity, status: i.status,
+        itemTotal: Number(i.itemTotal), isTaxInclusive: i.isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
       const totals = calculateOrderTotals(
-        Number(order.subtotal),
-        newDiscountTotal,
-        order.location.settings as { tax?: { defaultRate?: number } },
-        order.isTaxExempt
+        applyCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
+        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
       )
 
       const updatedOrder = await tx.order.update({
@@ -279,10 +289,13 @@ export const DELETE = withVenue(async function DELETE(
         )
       }
 
-      // Fetch order for total recalculation
+      // Fetch order with items for split-aware tax recalculation
       const order = await tx.order.findFirst({
         where: { id: orderId, deletedAt: null },
-        include: { location: true },
+        include: {
+          location: true,
+          items: { where: { deletedAt: null, status: 'active' }, include: { modifiers: true } },
+        },
       })
 
       if (!order) {
@@ -309,11 +322,14 @@ export const DELETE = withVenue(async function DELETE(
 
       // Update Order.discountTotal (decrement) and recalculate total via calculateOrderTotals
       const newDiscountTotal = Math.max(0, Number(order.discountTotal) - discountAmount)
+      const delCalcItems: OrderItemForCalculation[] = order.items.map(i => ({
+        price: Number(i.price), quantity: i.quantity, status: i.status,
+        itemTotal: Number(i.itemTotal), isTaxInclusive: i.isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
       const totals = calculateOrderTotals(
-        Number(order.subtotal),
-        newDiscountTotal,
-        order.location.settings as { tax?: { defaultRate?: number } },
-        order.isTaxExempt
+        delCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
+        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
       )
 
       const updatedOrder = await tx.order.update({
