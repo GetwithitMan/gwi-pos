@@ -199,6 +199,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
   }
 
+  // Fetch shared/global modifier groups (menuItemId IS NULL) — these include
+  // spirit upgrade groups created via the liquor builder that aren't tied to a
+  // specific menu item. Without this, 5 of 6 spirit groups are invisible on Android.
+  const sharedModifierGroups = await db.modifierGroup.findMany({
+    where: { locationId, menuItemId: null, deletedAt: null },
+    include: {
+      modifiers: {
+        where: { deletedAt: null, isActive: true },
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
+    orderBy: { sortOrder: 'asc' },
+  })
+
   // Collect child modifier groups via BFS (supports unlimited nesting depth).
   // ownedModifierGroups only carries top-level groups; child groups are referenced
   // by Modifier.childModifierGroupId and must be fetched separately so Android
@@ -341,7 +355,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }))
 
   const responseData = {
-      menu: { categories: mappedCategories, childModifierGroups },
+      menu: {
+        categories: mappedCategories,
+        childModifierGroups: [
+          ...childModifierGroups,
+          // Include shared/global modifier groups (menuItemId IS NULL) — spirit upgrades
+          ...sharedModifierGroups.map(g => ({
+            ...g,
+            modifiers: g.modifiers.map((m: any) => normalizeModifier(m)),
+          })),
+        ],
+      },
       // PIN hash intentionally excluded — Android must use POST /api/auth/verify-pin instead of local bcrypt compare.
       // Coordinated removal: update Android before deploying this change to production.
       employees: employees.map(e => ({ id: e.id, firstName: e.firstName, lastName: e.lastName, displayName: e.displayName, locationId: e.locationId, role: e.role, posLayoutSettings: e.posLayoutSettings ?? null })),
