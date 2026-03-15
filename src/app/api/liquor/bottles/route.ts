@@ -3,6 +3,10 @@ import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitToLocation } from '@/lib/socket-server'
+import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -38,6 +42,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const tier = searchParams.get('tier')
     const spiritCategoryId = searchParams.get('spiritCategoryId')
     const isActive = searchParams.get('isActive')
+    const take = Math.min(parseInt(searchParams.get('take') || '500', 10) || 500, 500)
+    const skip = parseInt(searchParams.get('skip') || '0', 10) || 0
 
     // Get the location
     const locationId = await getLocationId()
@@ -115,6 +121,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { tier: 'asc' },
         { name: 'asc' },
       ],
+      take,
+      skip,
     })
 
     return NextResponse.json(
@@ -135,7 +143,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         containerType: bottle.containerType,
         alcoholSubtype: bottle.alcoholSubtype,
         vintage: bottle.vintage,
-        currentStock: bottle.currentStock,
+        currentStock: getDerivedBottleStock(bottle), // @deprecated — derived from InventoryItem
         lowStockAlert: bottle.lowStockAlert,
         isActive: bottle.isActive,
         sortOrder: bottle.sortOrder,
@@ -231,18 +239,36 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    if (!bottleSizeMl || bottleSizeMl <= 0) {
+    if (!bottleSizeMl || bottleSizeMl < 50 || bottleSizeMl > 5000) {
       return NextResponse.json(
-        { error: 'Valid bottle size (mL) is required' },
+        { error: 'Bottle size must be between 50 and 5000 mL' },
         { status: 400 }
       )
     }
 
-    if (unitCost === undefined || unitCost < 0) {
+    if (unitCost === undefined || unitCost < 0.01 || unitCost > 10000) {
       return NextResponse.json(
-        { error: 'Valid unit cost is required' },
+        { error: 'Unit cost must be between $0.01 and $10,000' },
         { status: 400 }
       )
+    }
+
+    if (pourSizeOz !== undefined && pourSizeOz !== null && (pourSizeOz < 0.25 || pourSizeOz > 6.0)) {
+      return NextResponse.json(
+        { error: 'Pour size must be between 0.25 and 6.0 oz' },
+        { status: 400 }
+      )
+    }
+
+    // Get the location for permission check
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Verify spirit category exists and get location + category name
@@ -340,7 +366,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           pourSizeOz: pourSizeOz || null,
           poursPerBottle: metrics.poursPerBottle,
           pourCost: metrics.pourCost,
-          currentStock: currentStock || 0,
+          // currentStock: deprecated — stock derived from InventoryItem
           lowStockAlert: lowStockAlert || null,
           containerType: containerType || 'bottle',
           alcoholSubtype: alcoholSubtype || null,
@@ -369,6 +395,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       bottleId: result.bottle.id,
       name: result.bottle.name,
     }).catch(() => {})
+    void emitToLocation(spiritCategory.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: result.bottle.id,
@@ -387,7 +414,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       containerType: result.bottle.containerType,
       alcoholSubtype: result.bottle.alcoholSubtype,
       vintage: result.bottle.vintage,
-      currentStock: result.bottle.currentStock,
+      currentStock: currentStock || 0, // Reflects what was just created
       lowStockAlert: result.bottle.lowStockAlert,
       isActive: result.bottle.isActive,
       sortOrder: result.bottle.sortOrder,

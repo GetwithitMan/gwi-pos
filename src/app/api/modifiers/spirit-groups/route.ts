@@ -11,7 +11,10 @@ export const dynamic = 'force-dynamic'
  * These apply to all cocktails as upsell options.
  */
 export const GET = withVenue(async (req: NextRequest) => {
-  const locationId = await getLocationId(req)
+  const locationId = await getLocationId()
+  if (!locationId) {
+    return NextResponse.json({ error: 'No location found' }, { status: 400 })
+  }
 
   const groups = await db.modifierGroup.findMany({
     where: {

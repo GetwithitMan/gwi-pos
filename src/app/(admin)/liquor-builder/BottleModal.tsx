@@ -98,6 +98,7 @@ export function BottleModal({
 }: BottleModalProps) {
   // Core fields — use defaultValues for pre-filling variant bottles
   const [name, setName]                   = useState(bottle?.name || '')
+  const [displayName, setDisplayName]     = useState(bottle?.displayName || '')
   const [brand, setBrand]                 = useState(bottle?.brand || defaultValues?.brand || '')
   const [spiritCategoryId, setSpiritCategoryId] = useState(bottle?.spiritCategoryId || defaultValues?.spiritCategoryId || categories[0]?.id || '')
   const [tier, setTier]                   = useState(bottle?.tier || defaultValues?.tier || 'well')
@@ -214,6 +215,7 @@ export function BottleModal({
     setSaving(true)
     await onSave({
       name: name.trim(),
+      displayName: displayName.trim() || undefined,
       brand: brand.trim() || undefined,
       spiritCategoryId,
       tier,
@@ -260,6 +262,16 @@ export function BottleModal({
               placeholder={isBeer ? 'e.g., Anheuser-Busch' : isWine ? 'e.g., Josh Cellars' : 'e.g., Patron'}
             />
           </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-0.5">Display Name <span className="text-gray-400 font-normal">(optional — shown on POS instead of product name)</span></label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={e => setDisplayName(e.target.value)}
+            className="w-full border rounded px-2.5 py-1.5 text-sm"
+            placeholder={name ? `${name}${tier ? ` - ${tier.toUpperCase()}` : ''}` : 'e.g., Patron Silver - WELL'}
+          />
         </div>
 
         {/* ── Category + Tier ───────────────────────────────────────────── */}

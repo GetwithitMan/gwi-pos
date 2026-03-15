@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitToLocation } from '@/lib/socket-server'
+import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -71,6 +76,12 @@ export const GET = withVenue(async function GET(
       )
     }
 
+    // Tenant verify
+    const locationId = await getLocationId()
+    if (locationId && bottle.locationId !== locationId) {
+      return NextResponse.json({ error: 'Bottle not found' }, { status: 404 })
+    }
+
     return NextResponse.json({ data: {
       id: bottle.id,
       name: bottle.name,
@@ -88,7 +99,7 @@ export const GET = withVenue(async function GET(
       containerType: bottle.containerType,
       alcoholSubtype: bottle.alcoholSubtype,
       vintage: bottle.vintage,
-      currentStock: bottle.currentStock,
+      currentStock: getDerivedBottleStock(bottle), // @deprecated — derived from InventoryItem
       lowStockAlert: bottle.lowStockAlert,
       isActive: bottle.isActive,
       inventoryItemId: bottle.inventoryItemId,
@@ -141,6 +152,27 @@ export const PUT = withVenue(async function PUT(
       verifiedBy,
       sortOrder,
     } = body
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // Bounds validation
+    if (bottleSizeMl !== undefined && (bottleSizeMl < 50 || bottleSizeMl > 5000)) {
+      return NextResponse.json({ error: 'Bottle size must be between 50 and 5000 mL' }, { status: 400 })
+    }
+    if (unitCost !== undefined && (unitCost < 0.01 || unitCost > 10000)) {
+      return NextResponse.json({ error: 'Unit cost must be between $0.01 and $10,000' }, { status: 400 })
+    }
+    if (pourSizeOz !== undefined && pourSizeOz !== null && (pourSizeOz < 0.25 || pourSizeOz > 6.0)) {
+      return NextResponse.json({ error: 'Pour size must be between 0.25 and 6.0 oz' }, { status: 400 })
+    }
 
     // Get existing bottle to check if metrics need recalculation
     const existing = await db.bottleProduct.findUnique({
@@ -217,7 +249,7 @@ export const PUT = withVenue(async function PUT(
           ...(bottleSizeMl !== undefined && { bottleSizeMl }),
           ...(unitCost !== undefined && { unitCost }),
           ...(pourSizeOz !== undefined && { pourSizeOz: pourSizeOz || null }),
-          ...(currentStock !== undefined && { currentStock }),
+          // currentStock: deprecated — stock lives in InventoryItem only
           ...(lowStockAlert !== undefined && { lowStockAlert: lowStockAlert || null }),
           ...(isActive !== undefined && { isActive }),
           ...(containerType !== undefined && { containerType }),
@@ -289,6 +321,7 @@ export const PUT = withVenue(async function PUT(
       bottleId: id,
       name: bottle.name,
     }).catch(() => {})
+    void emitToLocation(existing.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: bottle.id,
@@ -307,7 +340,7 @@ export const PUT = withVenue(async function PUT(
       containerType: bottle.containerType,
       alcoholSubtype: bottle.alcoholSubtype,
       vintage: bottle.vintage,
-      currentStock: bottle.currentStock,
+      currentStock: currentStock !== undefined ? currentStock : bottle.currentStock, // @deprecated — derive from InventoryItem
       lowStockAlert: bottle.lowStockAlert,
       isActive: bottle.isActive,
       sortOrder: bottle.sortOrder,
@@ -338,6 +371,16 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     // Check if bottle is used in any modifiers or recipes
     const bottle = await db.bottleProduct.findUnique({
@@ -389,6 +432,8 @@ export const DELETE = withVenue(async function DELETE(
         })
       }
     })
+
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

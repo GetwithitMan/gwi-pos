@@ -134,6 +134,16 @@ export const LIQUOR_DEFAULTS = {
 } as const
 
 /**
+ * Default pour size multipliers (used by Liquor Builder, BartenderView, validation)
+ */
+export const DEFAULT_POUR_SIZES: Record<string, number> = {
+  shot: 1.0,
+  double: 2.0,
+  tall: 1.5,
+  short: 0.75,
+} as const
+
+/**
  * Common bottle sizes (mL)
  */
 export const BOTTLE_SIZES = [

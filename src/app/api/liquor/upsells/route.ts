@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * POST /api/liquor/upsells
@@ -42,6 +44,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     const upsellEvent = await db.spiritUpsellEvent.create({
       data: {
         locationId,
@@ -50,7 +57,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         employeeId,
         baseModifierId: baseModifierId || '',
         baseTier: baseTier || 'well',
-        baseBottleName: baseBottleName || '',
+        baseBottleName: baseBottleName?.trim() || 'Unknown',
         upsellModifierId: upsellModifierId || '',
         upsellTier: upsellTier || 'premium',
         upsellBottleName: upsellBottleName || '',
@@ -91,6 +98,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { error: 'No location found' },
         { status: 400 }
       )
+    }
+
+    const auth = await requirePermission(employeeId || null, locationId, PERMISSIONS.REPORTS_INVENTORY)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     const where: any = {

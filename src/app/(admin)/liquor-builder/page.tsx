@@ -291,6 +291,7 @@ function LiquorBuilderContent() {
       }
     } catch {
       setDrinkRecipeIngredients([])
+      toast.error('Failed to load drink recipe')
     }
   }
 
@@ -304,6 +305,7 @@ function LiquorBuilderContent() {
       }
     } catch {
       setDrinkModifierGroups([])
+      toast.error('Failed to load modifier groups')
     }
   }
   const reloadDrinkModifiersRef = useRef(reloadDrinkModifiers)
@@ -312,6 +314,7 @@ function LiquorBuilderContent() {
   // Load drink fields + modifier groups when selection changes
   useEffect(() => {
     if (!selectedDrink) return
+    let cancelled = false
     setEditingDrinkName(selectedDrink.name)
     setEditingDrinkPrice(String(selectedDrink.price))
     // Standard pour is implicit (base item tap), strip it from quick pick buttons
@@ -335,8 +338,15 @@ function LiquorBuilderContent() {
     setSpiritMode(false)
     setSpiritGroupId(null)
     setSpiritEntries([])
-    reloadDrinkModifiersRef.current(selectedDrink.id)
-    loadDrinkRecipe(selectedDrink.id)
+    // Await async loads to prevent race conditions when clicking drinks quickly
+    const loadAsync = async () => {
+      await Promise.all([
+        reloadDrinkModifiersRef.current(selectedDrink.id),
+        loadDrinkRecipe(selectedDrink.id),
+      ])
+    }
+    loadAsync()
+    return () => { cancelled = true }
   }, [selectedDrink?.id])
 
   // Auto-select newly created item after drinks list reloads
@@ -598,6 +608,10 @@ function LiquorBuilderContent() {
     if (!inlineBottleName.trim() || !inlineBottleCategoryId || !inlineBottleCost) return
     setCreatingInlineBottle(true)
     try {
+      // Derive containerType and alcoholSubtype from the selected spirit category
+      const inlineCat = categories.find(c => c.id === inlineBottleCategoryId)
+      const inlineCatType = inlineCat?.categoryType || 'spirit'
+      const derivedContainerType = inlineCatType === 'beer' ? 'can' : 'bottle'
       const res = await fetch('/api/liquor/bottles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -608,6 +622,7 @@ function LiquorBuilderContent() {
           tier: inlineBottleTier,
           bottleSizeMl: parseInt(inlineBottleSizeMl) || 750,
           unitCost: parseFloat(inlineBottleCost) || 0,
+          containerType: derivedContainerType,
           needsVerification: true,
         }),
       })
@@ -1132,8 +1147,10 @@ function LiquorBuilderContent() {
                           {(() => {
                             const search = bottleLinkSearch.toLowerCase()
                             const filtered = bottles.filter((b: BottleProduct) =>
-                              b.name.toLowerCase().includes(search) ||
-                              b.spiritCategory?.name?.toLowerCase().includes(search)
+                              b.isActive !== false && (
+                                b.name.toLowerCase().includes(search) ||
+                                b.spiritCategory?.name?.toLowerCase().includes(search)
+                              )
                             )
                             // Group by spirit category
                             const grouped = new Map<string, BottleProduct[]>()
@@ -1173,7 +1190,12 @@ function LiquorBuilderContent() {
                                           className="w-full text-left px-3 py-2 rounded-lg border border-gray-200 bg-white hover:border-blue-400 hover:bg-blue-50 transition-colors disabled:opacity-50"
                                         >
                                           <div className="flex items-center justify-between">
-                                            <span className="text-sm font-medium text-gray-800">{b.name}</span>
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-sm font-medium text-gray-800">{b.name}</span>
+                                              {b.needsVerification && (
+                                                <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="Needs verification" />
+                                              )}
+                                            </div>
                                             <div className="flex items-center gap-2">
                                               <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
                                                 b.tier === 'well' ? 'bg-gray-200 text-gray-900'
@@ -1744,13 +1766,22 @@ function LiquorBuilderContent() {
                       {Object.keys(enabledPourSizes).length > 0 && (
                         <>
                           <p className="text-xs text-gray-600 mt-1 ml-6">
-                            Price on POS: base price x multiplier (e.g. ${(parseFloat(editingDrinkPrice) || 0).toFixed(2)} x 1.5 = ${((parseFloat(editingDrinkPrice) || 0) * 1.5).toFixed(2)} for Tall), or set a custom price to override.
+                            Price on POS: base price x multiplier, or set a custom price to override.
                           </p>
-                          {isDualPricingEnabled && parseFloat(editingDrinkPrice) > 0 && (
-                            <p className="text-xs text-indigo-400 mt-0.5 ml-6">
-                              Card: ${calculateCardPrice((parseFloat(editingDrinkPrice) || 0) * 1.5, cashDiscountPct).toFixed(2)} for Tall (auto)
-                            </p>
-                          )}
+                          <div className="ml-6 mt-0.5 space-y-0.5">
+                            {Object.entries(enabledPourSizes).map(([key, cfg]) => {
+                              const base = parseFloat(editingDrinkPrice) || 0
+                              const pourPrice = cfg.customPrice != null ? cfg.customPrice : base * cfg.multiplier
+                              return (
+                                <p key={key} className="text-xs text-gray-500">
+                                  {cfg.label}: ${pourPrice.toFixed(2)}{cfg.customPrice != null ? ' (custom)' : ` (${base.toFixed(2)} x ${cfg.multiplier})`}
+                                  {isDualPricingEnabled && base > 0 && (
+                                    <span className="text-indigo-400 ml-2">Card: ${calculateCardPrice(pourPrice, cashDiscountPct).toFixed(2)}</span>
+                                  )}
+                                </p>
+                              )
+                            })}
+                          </div>
                         </>
                       )}
                     </>

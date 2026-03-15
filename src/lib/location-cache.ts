@@ -20,6 +20,8 @@ export interface LocationSettings {
   tax?: {
     defaultRate?: number
   }
+  /** Feature flag: enables v2 liquor inventory with server-side spirit tier validation + pour multiplier propagation. Default false. */
+  liquorInventoryV2?: boolean
   [key: string]: unknown
 }
 

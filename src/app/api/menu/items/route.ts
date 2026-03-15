@@ -55,6 +55,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 name: true,
                 price: true,
                 spiritTier: true,
+                linkedBottleProductId: true,
+                linkedBottleProduct: {
+                  select: { currentStock: true },
+                },
               },
               orderBy: { sortOrder: 'asc' },
             },
@@ -135,19 +139,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         const spiritModifiers = spiritGroup?.modifiers || []
 
         // Group spirit modifiers by tier
+        const mapSpirit = (m: typeof spiritModifiers[0]) => ({
+          id: m.id,
+          name: m.name,
+          price: Number(m.price),
+          spiritTier: m.spiritTier || null,
+          linkedBottleProductId: m.linkedBottleProductId || null,
+          currentStock: m.linkedBottleProduct?.currentStock ?? null,
+        })
         const spiritTiers = spiritModifiers.length > 0 ? {
-          well: spiritModifiers.filter(m => m.spiritTier === 'well').map(m => ({
-            id: m.id, name: m.name, price: Number(m.price)
-          })),
-          call: spiritModifiers.filter(m => m.spiritTier === 'call').map(m => ({
-            id: m.id, name: m.name, price: Number(m.price)
-          })),
-          premium: spiritModifiers.filter(m => m.spiritTier === 'premium').map(m => ({
-            id: m.id, name: m.name, price: Number(m.price)
-          })),
-          top_shelf: spiritModifiers.filter(m => m.spiritTier === 'top_shelf').map(m => ({
-            id: m.id, name: m.name, price: Number(m.price)
-          })),
+          well: spiritModifiers.filter(m => m.spiritTier === 'well').map(mapSpirit),
+          call: spiritModifiers.filter(m => m.spiritTier === 'call').map(mapSpirit),
+          premium: spiritModifiers.filter(m => m.spiritTier === 'premium').map(mapSpirit),
+          top_shelf: spiritModifiers.filter(m => m.spiritTier === 'top_shelf').map(mapSpirit),
         } : null
 
         // Get stock status

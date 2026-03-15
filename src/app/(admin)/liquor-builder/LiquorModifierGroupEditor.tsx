@@ -50,6 +50,7 @@ interface LiquorModifierGroupEditorProps {
 export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorModifierGroupEditorProps) {
   const employee = useAuthStore(s => s.employee)
   const [groupName, setGroupName] = useState(group.name)
+  const [groupDisplayName, setGroupDisplayName] = useState(group.displayName || '')
   const [minSel, setMinSel] = useState(group.minSelections)
   const [maxSel, setMaxSel] = useState(group.maxSelections)
   const [isRequired, setIsRequired] = useState(group.isRequired)
@@ -72,6 +73,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
   // Reset state when the selected group changes
   useEffect(() => {
     setGroupName(group.name)
+    setGroupDisplayName(group.displayName || '')
     setMinSel(group.minSelections)
     setMaxSel(group.maxSelections)
     setIsRequired(group.isRequired)
@@ -125,6 +127,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: groupName.trim(),
+          displayName: groupDisplayName.trim() || null,
           minSelections: minSel,
           maxSelections: maxSel,
           isRequired,
@@ -163,13 +166,23 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
       <div>
         <h3 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-3">Group Settings</h3>
         <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
+          <div>
             <label className="block text-xs text-gray-900 mb-1">Group Name</label>
             <input
               type="text"
               value={groupName}
               onChange={e => setGroupName(e.target.value)}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-900 mb-1">Display Name <span className="text-gray-400 font-normal">(POS)</span></label>
+            <input
+              type="text"
+              value={groupDisplayName}
+              onChange={e => setGroupDisplayName(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              placeholder={groupName || 'Optional'}
             />
           </div>
           <div>

@@ -12,6 +12,7 @@
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import { deductInventoryForOrder } from '@/lib/inventory'
+import { emitCriticalToLocation } from '@/lib/socket-server'
 // NOTE: processLiquorInventory was removed from this processor (2026-03-09).
 // deductInventoryForOrder() already handles liquor items via recipeIngredients
 // (BottleProduct → InventoryItem) with spirit substitution support. Running both
@@ -102,6 +103,27 @@ export async function processNextDeduction(): Promise<{
 
       if (isDead) {
         console.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
+        // Create audit trail for dead-lettered deduction
+        void db.inventoryItemTransaction.create({
+          data: {
+            locationId: job.locationId,
+            inventoryItemId: 'SYSTEM',
+            type: 'deduction_failed',
+            quantityBefore: 0,
+            quantityChange: 0,
+            quantityAfter: 0,
+            unitCost: 0,
+            totalCost: 0,
+            reason: `Dead-lettered after ${job.attempts} attempts: ${errorMessage}`,
+            referenceType: 'order',
+            referenceId: job.orderId,
+          },
+        }).catch(err => console.error('[deduction-processor] Failed to create dead-letter transaction:', err))
+        // Alert all terminals
+        void emitCriticalToLocation(job.locationId, 'inventory:deduction-failed', {
+          orderId: job.orderId,
+          reason: errorMessage,
+        }).catch(() => {})
       }
 
       console.error(`[deduction-processor] Order ${job.orderId} deduction failed (attempt ${job.attempts}):`, errorMessage)
@@ -162,6 +184,25 @@ export async function processNextDeduction(): Promise<{
 
     if (isDead) {
       console.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
+      void db.inventoryItemTransaction.create({
+        data: {
+          locationId: job.locationId,
+          inventoryItemId: 'SYSTEM',
+          type: 'deduction_failed',
+          quantityBefore: 0,
+          quantityChange: 0,
+          quantityAfter: 0,
+          unitCost: 0,
+          totalCost: 0,
+          reason: `Dead-lettered after ${job.attempts} attempts: ${errorMessage}`,
+          referenceType: 'order',
+          referenceId: job.orderId,
+        },
+      }).catch(e => console.error('[deduction-processor] Failed to create dead-letter transaction:', e))
+      void emitCriticalToLocation(job.locationId, 'inventory:deduction-failed', {
+        orderId: job.orderId,
+        reason: errorMessage,
+      }).catch(() => {})
     }
 
     console.error(`[deduction-processor] Order ${job.orderId} failed (attempt ${job.attempts}):`, errorMessage)

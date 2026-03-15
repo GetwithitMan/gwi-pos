@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - List bottle service tiers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId')
-
+    const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'Missing locationId' }, { status: 400 })
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     const tiers = await db.bottleServiceTier.findMany({
@@ -40,10 +41,28 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, name, description, color, depositAmount, minimumSpend, autoGratuityPercent, sortOrder } = body
+    const { name, description, color, depositAmount, minimumSpend, autoGratuityPercent, sortOrder } = body
 
-    if (!locationId || !name || depositAmount == null || minimumSpend == null) {
-      return NextResponse.json({ error: 'Missing required fields: locationId, name, depositAmount, minimumSpend' }, { status: 400 })
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    if (!name || depositAmount == null || minimumSpend == null) {
+      return NextResponse.json({ error: 'Missing required fields: name, depositAmount, minimumSpend' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.SETTINGS_EDIT)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // App-level uniqueness guard
+    const existing = await db.bottleServiceTier.findFirst({
+      where: { locationId, name, deletedAt: null },
+    })
+    if (existing) {
+      return NextResponse.json({ error: `A tier named "${name}" already exists` }, { status: 409 })
     }
 
     const tier = await db.bottleServiceTier.create({

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 /**
@@ -19,13 +20,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const locationId = searchParams.get('locationId')
     const employeeId = searchParams.get('employeeId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || employeeId
 
+    // Resolve locationId from server context, not client params
+    const locationId = await getLocationId()
     if (!locationId) {
       return NextResponse.json(
-        { error: 'Location ID is required' },
+        { error: 'No location found' },
         { status: 400 }
       )
     }
@@ -35,13 +37,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date filters (orderDateFilter uses businessDayDate OR-fallback for Order queries)
-    const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}
+    // Build date filters — timezone-aware half-open interval
+    // Dates from client are local (YYYY-MM-DD). We treat them as local date boundaries:
+    // start of startDate (00:00:00) to start of endDate+1 (exclusive).
+    const dateFilter: { createdAt?: { gte?: Date; lt?: Date } } = {}
     const orderDateFilter: Record<string, unknown> = {}
     if (startDate || endDate) {
-      const dateRange: { gte?: Date; lte?: Date } = {}
-      if (startDate) dateRange.gte = new Date(startDate)
-      if (endDate) dateRange.lte = new Date(endDate + 'T23:59:59')
+      const dateRange: { gte?: Date; lt?: Date } = {}
+      if (startDate) dateRange.gte = new Date(startDate + 'T00:00:00')
+      if (endDate) {
+        // Half-open: < next day start instead of <= 23:59:59 (avoids sub-second gaps)
+        const nextDay = new Date(endDate + 'T00:00:00')
+        nextDay.setDate(nextDay.getDate() + 1)
+        dateRange.lt = nextDay
+      }
       dateFilter.createdAt = dateRange
       orderDateFilter.OR = [
         { businessDayDate: dateRange },

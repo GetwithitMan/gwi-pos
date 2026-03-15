@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitToLocation } from '@/lib/socket-server'
+import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 
 /**
  * GET /api/liquor/categories/[id]
@@ -28,10 +33,13 @@ export const GET = withVenue(async function GET(
             displayName: true,
             tier: true,
             bottleSizeMl: true,
+            bottleSizeOz: true,
             unitCost: true,
             pourCost: true,
-            currentStock: true,
             isActive: true,
+            inventoryItem: {
+              select: { currentStock: true },
+            },
           },
         },
         spiritModifierGroups: {
@@ -60,6 +68,12 @@ export const GET = withVenue(async function GET(
       )
     }
 
+    // Tenant verify
+    const locationId = await getLocationId()
+    if (locationId && (category as any).locationId && (category as any).locationId !== locationId) {
+      return NextResponse.json({ error: 'Spirit category not found' }, { status: 404 })
+    }
+
     return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
@@ -76,6 +90,7 @@ export const GET = withVenue(async function GET(
         ...b,
         unitCost: Number(b.unitCost),
         pourCost: b.pourCost ? Number(b.pourCost) : null,
+        currentStock: getDerivedBottleStock(b),
       })),
       modifierGroups: category.spiritModifierGroups.map((smg) => ({
         id: smg.modifierGroup.id,
@@ -107,6 +122,16 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { name, displayName, description, sortOrder, isActive, categoryType } = body
 
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     const existing = await db.spiritCategory.findUnique({
       where: { id },
     })
@@ -137,6 +162,8 @@ export const PUT = withVenue(async function PUT(
         },
       },
     })
+
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: category.id,
@@ -170,6 +197,16 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     // Check if category has bottles
     const usage = await db.spiritCategory.findUnique({
@@ -212,6 +249,8 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await db.spiritCategory.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

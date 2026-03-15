@@ -3,6 +3,20 @@ import { getLocationId } from '@/lib/location-cache'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 
+/**
+ * Derive bottle stock (in bottles) from the linked InventoryItem stock (in oz).
+ * BottleProduct.currentStock is deprecated — use this instead.
+ */
+export function getDerivedBottleStock(bottle: {
+  bottleSizeOz?: any
+  inventoryItem?: { currentStock?: any } | null
+}): number {
+  const invStock = Number(bottle.inventoryItem?.currentStock || 0)
+  const sizeOz = Number(bottle.bottleSizeOz || 0)
+  if (sizeOz <= 0 || invStock <= 0) return 0
+  return Math.round((invStock / sizeOz) * 100) / 100
+}
+
 interface InventoryDeduction {
   bottleProductId: string
   bottleProductName: string

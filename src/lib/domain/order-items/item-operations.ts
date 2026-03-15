@@ -10,6 +10,7 @@ import { isValidModifierId, calculateItemCardPrice } from './item-calculations'
 import { calculateItemTotal } from '@/lib/order-calculations'
 import { getBestPricingRuleForItem } from '@/lib/settings'
 import type { PricingRule, PricingAdjustment } from '@/lib/settings'
+import { validateSpiritTier, validatePourMultiplier } from '@/lib/liquor-validation'
 
 // ─── Create Order Item ──────────────────────────────────────────────────────
 
@@ -65,6 +66,70 @@ export async function createOrderItem(
     }
   }
 
+  // Validate spirit tier on modifiers — re-derive linkedBottleProductId if missing
+  const validatedModifiers = item.modifiers?.length
+    ? await Promise.all(item.modifiers.map(async (mod) => {
+        if (!mod.spiritTier && !mod.linkedBottleProductId) return mod
+        const result = await validateSpiritTier(
+          item.menuItemId,
+          isValidModifierId(mod.modifierId) ? mod.modifierId : null,
+          mod.linkedBottleProductId || null
+        )
+        if (result.correctedBottleId !== mod.linkedBottleProductId) {
+          console.log('[liquor-audit]', JSON.stringify({
+            event: 'spirit_backfill',
+            orderId,
+            menuItemId: item.menuItemId,
+            modifierId: mod.modifierId,
+            clientSentBottleId: mod.linkedBottleProductId || null,
+            correctedBottleId: result.correctedBottleId,
+          }))
+        }
+        if (!mod.spiritTier && !mod.linkedBottleProductId && result.spiritTier) {
+          console.log('[liquor-audit]', JSON.stringify({
+            event: 'old_client_detected',
+            orderId,
+            menuItemId: item.menuItemId,
+            modifierId: mod.modifierId,
+            note: 'Client sent spirit modifier with neither spiritTier nor linkedBottleProductId',
+          }))
+        }
+        return {
+          ...mod,
+          spiritTier: result.spiritTier || mod.spiritTier,
+          linkedBottleProductId: result.correctedBottleId || mod.linkedBottleProductId,
+        }
+      }))
+    : item.modifiers
+
+  // Validate pour multiplier — re-derive from menu config if missing
+  let validatedPourMultiplier = item.pourMultiplier ?? null
+  if (item.pourSize && validatedPourMultiplier == null) {
+    const pourResult = await validatePourMultiplier(item.menuItemId, item.pourSize)
+    validatedPourMultiplier = pourResult.multiplier
+    console.log('[liquor-audit]', JSON.stringify({
+      event: 'pour_multiplier_backfill',
+      orderId,
+      menuItemId: item.menuItemId,
+      pourSize: item.pourSize,
+      resolvedMultiplier: pourResult.multiplier,
+      valid: pourResult.valid,
+    }))
+    if (!pourResult.valid) {
+      console.warn('[liquor-audit]', JSON.stringify({
+        event: 'pour_multiplier_rejected',
+        menuItemId: item.menuItemId, pourSize: item.pourSize, defaulted: pourResult.multiplier,
+      }))
+    }
+  } else if (validatedPourMultiplier != null && (validatedPourMultiplier <= 0 || validatedPourMultiplier > 10)) {
+    console.warn('[liquor-audit]', JSON.stringify({
+      event: 'pour_multiplier_out_of_range',
+      orderId,
+      menuItemId: item.menuItemId, pourMultiplier: validatedPourMultiplier,
+    }))
+    validatedPourMultiplier = 1.0
+  }
+
   const createdItem = await tx.orderItem.create({
     data: {
       orderId,
@@ -77,7 +142,7 @@ export async function createOrderItem(
       categoryType: catType,
       quantity: item.quantity,
       pourSize: item.pourSize ?? null,
-      pourMultiplier: item.pourMultiplier ?? null,
+      pourMultiplier: validatedPourMultiplier,
       itemTotal: finalItemTotal,
       commissionAmount: itemCommission,
       addedByEmployeeId: requestingEmployeeId || null,
@@ -101,8 +166,8 @@ export async function createOrderItem(
       ...({ tipExempt: (menuItem as any)?.tipExempt ?? false } as any),
       lastMutatedBy: 'local',
       // Modifiers
-      modifiers: item.modifiers?.length ? {
-        create: item.modifiers.map(mod => ({
+      modifiers: validatedModifiers?.length ? {
+        create: validatedModifiers.map(mod => ({
           locationId,
           modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
           name: mod.name,

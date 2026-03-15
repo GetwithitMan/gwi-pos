@@ -66,6 +66,23 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
     }
 
+    // Check active orders before deactivation
+    if (isActive === false && existing.isActive) {
+      const activeOrders = await db.order.count({
+        where: {
+          locationId,
+          bottleServiceTierId: id,
+          status: { in: ['open', 'in_progress', 'sent'] },
+        },
+      })
+      if (activeOrders > 0) {
+        return NextResponse.json(
+          { error: `Cannot deactivate tier with ${activeOrders} active order(s)` },
+          { status: 400 }
+        )
+      }
+    }
+
     const tier = await db.bottleServiceTier.update({
       where: { id, locationId },
       data: {
@@ -118,6 +135,21 @@ export const DELETE = withVenue(async function DELETE(
 
     if (!existing) {
       return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
+    }
+
+    // Check active orders before deletion
+    const activeOrders = await db.order.count({
+      where: {
+        locationId,
+        bottleServiceTierId: id,
+        status: { in: ['open', 'in_progress', 'sent'] },
+      },
+    })
+    if (activeOrders > 0) {
+      return NextResponse.json(
+        { error: `Cannot delete tier with ${activeOrders} active order(s)` },
+        { status: 400 }
+      )
     }
 
     await db.bottleServiceTier.update({

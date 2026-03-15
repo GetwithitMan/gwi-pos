@@ -18,6 +18,7 @@ import type { PrismaClient } from '@prisma/client'
 export interface RequestContext {
   slug: string
   prisma: PrismaClient
+  locationId?: string
 }
 
 export const requestStore = new AsyncLocalStorage<RequestContext>()
@@ -30,4 +31,17 @@ export function getRequestPrisma(): PrismaClient | undefined {
 /** Get the venue slug for the current request. */
 export function getRequestSlug(): string | undefined {
   return requestStore.getStore()?.slug
+}
+
+/** Get the locationId stored in the current request context (synchronous). */
+export function getRequestLocationId(): string | undefined {
+  return requestStore.getStore()?.locationId
+}
+
+/** Store the locationId in the current request context for synchronous access by Prisma extensions. */
+export function setRequestLocationId(id: string): void {
+  const store = requestStore.getStore()
+  if (store) {
+    store.locationId = id
+  }
 }

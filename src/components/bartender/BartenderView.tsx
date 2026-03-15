@@ -56,6 +56,9 @@ interface SpiritOption {
   id: string
   name: string
   price: number
+  spiritTier?: string | null
+  linkedBottleProductId?: string | null
+  currentStock?: number | null
 }
 
 interface SpiritTiers {
@@ -1157,7 +1160,13 @@ export function BartenderView({
         menuItemId: item.id,
         name: item.name,
         price: item.price,
-        modifiers: [{ id: spirit.id, name: spirit.name, price: spirit.price }],
+        modifiers: [{
+          id: spirit.id,
+          name: spirit.name,
+          price: spirit.price,
+          spiritTier: spirit.spiritTier || tier,
+          linkedBottleProductId: spirit.linkedBottleProductId || null,
+        }],
       })
       return
     }
@@ -1175,13 +1184,19 @@ export function BartenderView({
       menuItemId: spiritPopupItem.id,
       name: spiritPopupItem.name,
       price: spiritPopupItem.price,
-      modifiers: [{ id: spirit.id, name: spirit.name, price: spirit.price }],
+      modifiers: [{
+        id: spirit.id,
+        name: spirit.name,
+        price: spirit.price,
+        spiritTier: spirit.spiritTier || selectedSpiritTier || null,
+        linkedBottleProductId: spirit.linkedBottleProductId || null,
+      }],
     })
 
     // Close popup
     setSpiritPopupItem(null)
     setSelectedSpiritTier(null)
-  }, [spiritPopupItem, engine])
+  }, [spiritPopupItem, selectedSpiritTier, engine])
 
   // Close spirit popup
   const handleCloseSpiritPopup = useCallback(() => {
@@ -1227,10 +1242,17 @@ export function BartenderView({
   const handlePourSizeClick = useCallback((item: MenuItem, _size: string, pourPrice: number) => {
     const config = POUR_SIZE_CONFIG[_size]
     if (!config) return
+    // Derive multiplier from pourSizes config
+    const pourConfig = item.pourSizes?.[_size]
+    const multiplier = typeof pourConfig === 'number'
+      ? pourConfig
+      : (pourConfig as any)?.multiplier ?? 1.0
     engine.addItemDirectly({
       menuItemId: item.id,
       name: `${item.name} (${config.label})`,
       price: pourPrice,
+      pourSize: _size,
+      pourMultiplier: multiplier,
     })
   }, [engine])
 

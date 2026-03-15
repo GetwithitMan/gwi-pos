@@ -234,6 +234,8 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     pricingOptionId?: string
     pricingOptionLabel?: string
     pizzaConfig?: PizzaOrderConfig
+    pourSize?: string
+    pourMultiplier?: number
   }) => {
     ensureOrder()
     const store = useOrderStore.getState()
@@ -270,6 +272,8 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       pricingOptionId: item.pricingOptionId,
       pricingOptionLabel: item.pricingOptionLabel,
       pizzaConfig: item.pizzaConfig,
+      pourSize: item.pourSize ?? null,
+      pourMultiplier: item.pourMultiplier ?? null,
     })
 
     // Haptic feedback

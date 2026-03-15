@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate, dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * POST /api/liquor/bottles/[id]/create-menu-item
@@ -36,6 +39,17 @@ export const POST = withVenue(async function POST(
         { error: 'Bottle not found' },
         { status: 404 }
       )
+    }
+
+    // Tenant verify
+    const locationId = await getLocationId()
+    if (locationId && bottle.locationId !== locationId) {
+      return NextResponse.json({ error: 'Bottle not found' }, { status: 404 })
+    }
+
+    const auth = await requirePermission(body.employeeId || null, bottle.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Check if bottle already has a menu item

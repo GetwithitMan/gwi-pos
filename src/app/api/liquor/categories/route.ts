@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitToLocation } from '@/lib/socket-server'
 
 /**
  * GET /api/liquor/categories
@@ -111,6 +114,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     // Get max sort order
     const maxSortOrder = await db.spiritCategory.aggregate({
       where: { locationId },
@@ -127,6 +135,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
       },
     })
+
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: category.id,

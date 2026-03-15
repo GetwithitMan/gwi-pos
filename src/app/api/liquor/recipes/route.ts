@@ -81,26 +81,29 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const cocktails = menuItems.map((item) => {
       const ingredients = item.recipeIngredients
         .filter((ing) => ing.bottleProduct) // Only include spirit ingredients in this report
-        .map((ing) => ({
-        id: ing.id,
-        bottleProductId: ing.bottleProductId,
-        bottleProductName: ing.bottleProduct!.name,
-        spiritCategory: ing.bottleProduct!.spiritCategory.name,
-        tier: ing.bottleProduct!.tier,
-        pourCount: Number(ing.pourCount),
-        pourCost: ing.bottleProduct!.pourCost ? Number(ing.bottleProduct!.pourCost) : 0,
-        isSubstitutable: ing.isSubstitutable,
-        ingredientCost: ing.bottleProduct!.pourCost
-          ? Number(ing.bottleProduct!.pourCost) * Number(ing.pourCount)
-          : 0,
-      }))
+        .map((ing) => {
+        // Prisma Decimal fields return as string-like objects — guard against NaN
+        const pourCount = Number(ing.pourCount) || 1
+        const pourCost = Number(ing.bottleProduct!.pourCost) || 0
+        return {
+          id: ing.id,
+          bottleProductId: ing.bottleProductId,
+          bottleProductName: ing.bottleProduct!.name,
+          spiritCategory: ing.bottleProduct!.spiritCategory.name,
+          tier: ing.bottleProduct!.tier,
+          pourCount,
+          pourCost,
+          isSubstitutable: ing.isSubstitutable,
+          ingredientCost: pourCost * pourCount,
+        }
+      })
 
       const totalPourCost = ingredients.reduce(
         (sum, ing) => sum + ing.ingredientCost,
         0
       )
 
-      const sellPrice = Number(item.price)
+      const sellPrice = Number(item.price) || 0
       const profitMargin = sellPrice > 0 ? ((sellPrice - totalPourCost) / sellPrice) * 100 : 0
 
       return {

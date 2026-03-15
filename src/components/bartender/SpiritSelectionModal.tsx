@@ -8,6 +8,9 @@ interface SpiritOption {
   id: string
   name: string
   price: number
+  spiritTier?: string | null
+  linkedBottleProductId?: string | null
+  currentStock?: number | null
 }
 
 interface SpiritTiers {
@@ -62,12 +65,16 @@ export function SpiritSelectionModal({ item, selectedTier, dualPricing, onSelect
               const displayPrice = dualPricing.enabled ? prices.cardPrice : prices.cashPrice
               const upgradePrices = getDualPrices(spirit.price, dualPricing)
               const upgradeDisplayPrice = dualPricing.enabled ? upgradePrices.cardPrice : upgradePrices.cashPrice
+              const isOutOfStock = spirit.currentStock != null && spirit.currentStock <= 0
               return (
                 <button
                   key={spirit.id}
                   onClick={() => onSelect(spirit)}
-                  className={`flex-1 min-w-[100px] max-w-[160px] p-3 rounded-xl text-center transition-all ${SPIRIT_TIER_CONFIG[selectedTier]?.color || 'bg-slate-700'} hover:brightness-110 active:scale-95`}
+                  className={`flex-1 min-w-[100px] max-w-[160px] p-3 rounded-xl text-center transition-all ${isOutOfStock ? 'bg-slate-700/50 opacity-60' : (SPIRIT_TIER_CONFIG[selectedTier]?.color || 'bg-slate-700')} hover:brightness-110 active:scale-95 relative`}
                 >
+                  {isOutOfStock && (
+                    <span className="absolute top-1 right-1 bg-red-600 text-white text-[9px] font-bold px-1 py-0.5 rounded">86&apos;d</span>
+                  )}
                   <div className="text-white font-bold text-sm leading-tight">{spirit.name}</div>
                   <div className="text-white/90 text-lg font-bold mt-1">
                     {formatCurrency(displayPrice)}

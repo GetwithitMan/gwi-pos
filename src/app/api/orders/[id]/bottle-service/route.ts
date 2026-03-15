@@ -31,6 +31,18 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
+    // Idempotency: if already bottle service, return existing state
+    if (order.isBottleService === true) {
+      return NextResponse.json({
+        data: {
+          approved: true,
+          tabStatus: order.tabStatus,
+          isBottleService: true,
+          alreadyActive: true,
+        },
+      })
+    }
+
     // Get tier
     const tier = await db.bottleServiceTier.findFirst({
       where: { id: tierId, locationId: order.locationId, deletedAt: null, isActive: true },

@@ -2,10 +2,44 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { headers } from 'next/headers'
 import { orderWriteGuardExtension } from './order-write-guard'
-import { getRequestPrisma } from './request-context'
+import { getRequestPrisma, getRequestLocationId, setRequestLocationId } from './request-context'
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required')
+}
+
+// ---------------------------------------------------------------------------
+// Tenant-scoping: models that have a locationId column and should be
+// automatically filtered by the current request's location.
+// ---------------------------------------------------------------------------
+const TENANT_SCOPED_MODELS = new Set([
+  'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'RecipeIngredient',
+  'SpiritUpsellEvent', 'BottleServiceTier', 'MenuItem', 'Category',
+  'Modifier', 'ModifierGroup', 'Order', 'OrderItem',
+  'InventoryItem', 'InventoryItemTransaction', 'Employee',
+])
+
+/**
+ * Resolve the locationId for tenant scoping.
+ * First checks the synchronous request context cache, then falls back to the
+ * async getLocationId() (which itself is cached per-venue with 5min TTL).
+ * Returns undefined during startup/migrations/cron — caller must skip scoping.
+ */
+async function resolveTenantLocationId(): Promise<string | undefined> {
+  // Fast path: already cached in this request's AsyncLocalStorage
+  const cached = getRequestLocationId()
+  if (cached) return cached
+
+  // Slow path: async lookup (DB-backed, but cached per venue slug)
+  // Lazy import to avoid circular dependency (location-cache.ts imports db.ts)
+  const { getLocationId } = await import('./location-cache')
+  const id = await getLocationId()
+  if (id) {
+    setRequestLocationId(id)
+    return id
+  }
+
+  return undefined
 }
 
 const globalForPrisma = globalThis as unknown as {
@@ -144,7 +178,117 @@ function createPrismaClient(url?: string) {
   // Chain: soft-delete guard (reads) → legacy write guard (Order/OrderItem writes)
   const guarded = extended.$extends(orderWriteGuardExtension)
 
-  return guarded as unknown as PrismaClient
+  // ---------------------------------------------------------------------------
+  // Tenant-scoping extension
+  //
+  // Auto-injects `locationId` into WHERE clauses for tenant-scoped models.
+  // Only active when a locationId is available from the request context.
+  // Safe for startup/migrations/cron: if no locationId, does nothing.
+  // ---------------------------------------------------------------------------
+  const tenantScoped = guarded.$extends({
+    query: {
+      $allModels: {
+        async findMany({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid }
+          }
+          return query(args)
+        },
+        async findFirst({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid }
+          }
+          return query(args)
+        },
+        async findFirstOrThrow({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid }
+          }
+          return query(args)
+        },
+        async findUnique({ model, args, query }) {
+          const result = await query(args) as any
+          if (result && TENANT_SCOPED_MODELS.has(model)) {
+            const lid = await resolveTenantLocationId()
+            if (lid && result.locationId && result.locationId !== lid) {
+              console.log('[tenant-scope] MISMATCH', JSON.stringify({
+                model, operation: 'findUnique', expected: lid, actual: result.locationId,
+              }))
+              return null
+            }
+          }
+          return result
+        },
+        async findUniqueOrThrow({ model, args, query }) {
+          const result = await query(args) as any
+          if (result && TENANT_SCOPED_MODELS.has(model)) {
+            const lid = await resolveTenantLocationId()
+            if (lid && result.locationId && result.locationId !== lid) {
+              console.log('[tenant-scope] MISMATCH', JSON.stringify({
+                model, operation: 'findUniqueOrThrow', expected: lid, actual: result.locationId,
+              }))
+              throw new Error(`[tenant-scope] ${model} record belongs to a different location`)
+            }
+          }
+          return result
+        },
+        async count({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid }
+          }
+          return query(args)
+        },
+        async aggregate({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid }
+          }
+          return query(args)
+        },
+        async groupBy({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            (args as any).where = { ...(args as any).where, locationId: lid }
+          }
+          return query(args)
+        },
+        async update({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid } as any
+          }
+          return query(args)
+        },
+        async updateMany({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid }
+          }
+          return query(args)
+        },
+        async delete({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid } as any
+          }
+          return query(args)
+        },
+        async deleteMany({ model, args, query }) {
+          const lid = await resolveTenantLocationId()
+          if (lid && TENANT_SCOPED_MODELS.has(model)) {
+            args.where = { ...args.where, locationId: lid }
+          }
+          return query(args)
+        },
+      },
+    },
+  })
+
+  return tenantScoped as unknown as PrismaClient
 }
 
 // ============================================================================
@@ -245,6 +389,70 @@ export const db: PrismaClient = new Proxy(masterClient, {
     return value
   },
 })
+
+// ============================================================================
+// Admin database client — soft-delete only, NO tenant scoping.
+// Use for cross-tenant operations: MC sync, migrations, cron jobs.
+// ============================================================================
+
+function createAdminClient(url?: string): PrismaClient {
+  const connectionString = url || process.env.DATABASE_URL || ''
+  const adapter = new PrismaPg({ connectionString, max: 5 })
+  const client = new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+  })
+
+  // Only soft-delete extension — no tenant scoping, no write guard
+  const extended = client.$extends({
+    query: {
+      $allModels: {
+        async findMany({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async findFirst({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async findUnique({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async count({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+      },
+    },
+  })
+
+  return extended as unknown as PrismaClient
+}
+
+const globalForAdminDb = globalThis as unknown as { adminDb: PrismaClient | undefined }
+export const adminDb: PrismaClient = globalForAdminDb.adminDb ?? createAdminClient()
+globalForAdminDb.adminDb = adminDb
 
 /**
  * Get a PrismaClient for a specific venue database.

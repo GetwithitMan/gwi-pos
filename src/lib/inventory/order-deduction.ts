@@ -83,7 +83,10 @@ export const ORDER_INVENTORY_INCLUDE = {
           // Liquor recipes from Liquor Builder (RecipeIngredient -> BottleProduct -> InventoryItem)
           recipeIngredients: {
             where: { deletedAt: null },
-            include: {
+            select: {
+              pourCount: true,
+              pourSizeOz: true,
+              isSubstitutable: true,
               bottleProduct: {
                 include: {
                   inventoryItem: {
@@ -399,7 +402,10 @@ export async function deductInventoryForOrder(
             },
             recipeIngredients: {
               where: { deletedAt: null },
-              include: {
+              select: {
+                pourCount: true,
+                pourSizeOz: true,
+                isSubstitutable: true,
                 bottleProduct: {
                   include: {
                     inventoryItem: {
@@ -566,9 +572,19 @@ export async function deductInventoryForOrder(
         for (const ing of recipeIngredients) {
           // Check for spirit substitution — if the customer upgraded their spirit tier,
           // deduct from the substituted bottle's InventoryItem instead of the default.
-          const substitution = ing.bottleProduct?.spiritCategoryId
+          const substitution = (ing.isSubstitutable !== false && ing.bottleProduct?.spiritCategoryId)
             ? spiritSubstitutions.get(ing.bottleProduct.spiritCategoryId)
             : undefined
+          if (substitution) {
+            console.log('[inventory-audit]', JSON.stringify({
+              event: 'spirit_substitution',
+              orderId,
+              orderItemId: orderItem.id,
+              fromBottle: ing.bottleProduct?.id,
+              toBottle: substitution.inventoryItem.id,
+              spiritCategory: ing.bottleProduct?.spiritCategoryId,
+            }))
+          }
           const inventoryItem = substitution?.inventoryItem ?? ing.bottleProduct?.inventoryItem
           if (!inventoryItem) continue
 
@@ -910,28 +926,70 @@ export async function deductInventoryForOrder(
         // Skip items with inventory tracking disabled
         const invCheck = await tx.inventoryItem.findUnique({
           where: { id: item.inventoryItemId },
-          select: { trackInventory: true },
+          select: { trackInventory: true, version: true },
         })
         if (invCheck?.trackInventory === false) continue
 
         const totalCost = item.quantity * item.costPerUnit
+        const currentVersion = invCheck?.version ?? 0
 
-        // Decrement stock first
-        const updated = await tx.inventoryItem.update({
-          where: { id: item.inventoryItemId },
-          data: {
-            currentStock: { decrement: item.quantity },
-          },
-          select: { currentStock: true },
-        })
+        // Optimistic concurrency: decrement with version check, retry once on conflict
+        let updated: { currentStock: Decimal }[] | null = null
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const ver = attempt === 0 ? currentVersion : currentVersion + 1
+          const rows: { currentStock: Decimal }[] = await tx.$queryRaw(Prisma.sql`
+            UPDATE "InventoryItem"
+            SET "currentStock" = "currentStock" - ${new Decimal(item.quantity)},
+                "version" = "version" + 1,
+                "updatedAt" = NOW()
+            WHERE id = ${item.inventoryItemId}
+              AND "version" = ${ver}
+            RETURNING "currentStock"
+          `)
+          if (rows.length > 0) {
+            updated = rows
+            break
+          }
+          // Version mismatch — re-read version for retry
+          if (attempt === 0) {
+            const fresh = await tx.inventoryItem.findUnique({
+              where: { id: item.inventoryItemId },
+              select: { version: true },
+            })
+            if (!fresh) break
+          }
+        }
+
+        // Fallback: if optimistic update failed both times, do unconditional decrement
+        if (!updated) {
+          const fallback = await tx.inventoryItem.update({
+            where: { id: item.inventoryItemId },
+            data: { currentStock: { decrement: item.quantity } },
+            select: { currentStock: true },
+          })
+          updated = [{ currentStock: fallback.currentStock as unknown as Decimal }]
+          console.warn(`[inventory] Version conflict on ${item.inventoryItemId}, used fallback decrement`)
+        }
 
         // Post-decrement stock is the authoritative "after" value
-        const quantityAfter = toNumber(updated.currentStock)
+        const quantityAfter = toNumber(updated[0].currentStock)
         const quantityBefore = quantityAfter + item.quantity
 
         // Track items that hit zero for auto-86
         if (quantityAfter <= 0 && quantityBefore > 0) {
           depletedInventoryItemIds.push(item.inventoryItemId)
+        }
+
+        // Observability: log when stock goes negative
+        if (quantityAfter < 0) {
+          console.log('[inventory-audit]', JSON.stringify({
+            event: 'stock_negative',
+            orderId,
+            inventoryItemId: item.inventoryItemId,
+            quantityBefore,
+            deducted: item.quantity,
+            quantityAfter,
+          }))
         }
 
         // Create transaction record with accurate snapshot

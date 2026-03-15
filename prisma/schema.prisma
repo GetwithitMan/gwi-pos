@@ -4526,6 +4526,9 @@ model InventoryItem {
   isActive       Boolean @default(true)
   trackInventory Boolean @default(true)
 
+  // Optimistic concurrency control for deduction
+  version Int @default(0)
+
   // COGS extensions
   lastInvoiceCost     Decimal?  @db.Decimal(10, 4) // most recent invoice unit cost
   lastInvoiceDate     DateTime? // when last invoice was processed

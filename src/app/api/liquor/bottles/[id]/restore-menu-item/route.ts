@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * POST /api/liquor/bottles/[id]/restore-menu-item
@@ -14,10 +17,21 @@ export const POST = withVenue(async function POST(
   try {
     const { id: bottleId } = await params
 
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     // Find the soft-deleted menu item for this bottle
     const deletedMenuItem = await db.menuItem.findFirst({
       where: {
         linkedBottleProductId: bottleId,
+        locationId,
         deletedAt: { not: null },
       },
       orderBy: { deletedAt: 'desc' }, // Get most recently deleted
