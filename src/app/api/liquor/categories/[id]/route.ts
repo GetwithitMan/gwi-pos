@@ -203,7 +203,7 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
-    const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    const auth = await requirePermission(null, locationId, PERMISSIONS.MENU_EDIT_ITEMS)  // DELETE has no body — session fallback handles auth
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

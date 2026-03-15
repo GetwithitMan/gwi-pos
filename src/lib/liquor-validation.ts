@@ -78,7 +78,7 @@ export async function validatePourMultiplier(
 
   if (typeof config === 'number') {
     multiplier = config
-  } else if (config && typeof config === 'object' && config.multiplier) {
+  } else if (config && typeof config === 'object' && config.multiplier !== undefined) {
     multiplier = Number(config.multiplier)
   } else {
     // Fallback defaults

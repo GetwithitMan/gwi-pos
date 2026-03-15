@@ -1361,7 +1361,7 @@ function LiquorBuilderContent() {
                           top_shelf: 'text-amber-700',
                         }
                         const addedBottleIds = new Set(tierEntries.map(e => e.bottleProductId))
-                        const availableBottles = (bottles as any[]).filter((b: any) => b.tier === tier && !addedBottleIds.has(b.id))
+                        const availableBottles = (bottles as any[]).filter((b: any) => b.tier === tier && b.isActive !== false && !addedBottleIds.has(b.id))
                         return (
                           <div key={tier} className={`rounded-lg border p-3 ${tierColors[tier]}`}>
                             <div className={`text-xs font-bold uppercase tracking-wide mb-2 ${tierTextColor[tier]}`}>{tierLabel}</div>

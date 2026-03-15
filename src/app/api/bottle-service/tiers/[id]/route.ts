@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get a single bottle service tier
 export const GET = withVenue(async function GET(
@@ -57,6 +59,11 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const body = await request.json()
     const { name, description, color, depositAmount, minimumSpend, autoGratuityPercent, sortOrder, isActive } = body
+
+    const auth = await requirePermission(body.employeeId || null, locationId, PERMISSIONS.SETTINGS_EDIT)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     const existing = await db.bottleServiceTier.findFirst({
       where: { id, locationId, deletedAt: null },
@@ -128,6 +135,11 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     const { id } = await params
+
+    const auth = await requirePermission(null, locationId, PERMISSIONS.SETTINGS_EDIT)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     const existing = await db.bottleServiceTier.findFirst({
       where: { id, locationId, deletedAt: null },
