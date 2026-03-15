@@ -269,6 +269,22 @@ async function handleForceUpdate(payload) {
   try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
   try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
 
+  // Stamp target version into package.json so NUC reports correct version to MC
+  if (targetVersion) {
+    try {
+      var pkgPath = path.join(APP_DIR, 'package.json')
+      var pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'))
+      if (pkg.version !== targetVersion) {
+        pkg.version = targetVersion
+        fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
+        log('  Stamped version ' + targetVersion + ' into package.json')
+        steps.push('version-stamp OK')
+      }
+    } catch (e) {
+      log('  Version stamp failed: ' + (e.message || '').slice(0, 100))
+    }
+  }
+
   if (!step('npm install', 'npm install --production=false', false, 180)) {
     return { ok: false, error: 'npm install failed', steps: steps }
   }

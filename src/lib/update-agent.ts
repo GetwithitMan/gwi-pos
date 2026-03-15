@@ -201,6 +201,20 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env')) } catch {}
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env.local')) } catch {}
 
+    // Stamp target version into package.json so NUC reports correct version to MC
+    try {
+      const pkgPath = path.join(APP_DIR, 'package.json')
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+      if (pkg.version !== targetVersion) {
+        pkg.version = targetVersion
+        const { writeFileSync } = await import('fs')
+        writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
+        console.log(`[UpdateAgent] Stamped version ${targetVersion} into package.json`)
+      }
+    } catch (err) {
+      console.warn('[UpdateAgent] Version stamp failed:', err instanceof Error ? err.message : err)
+    }
+
     // Install dependencies
     console.log('[UpdateAgent] Running npm install...')
     execSync('npm install --production=false', { cwd: APP_DIR, timeout: 180_000 })
