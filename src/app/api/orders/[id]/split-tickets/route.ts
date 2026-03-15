@@ -252,6 +252,8 @@ export const POST = withVenue(async function POST(
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
     const taxRate = getLocationTaxRate(settings)
+    const inclusiveRate = settings?.tax?.inclusiveTaxRate != null
+      ? settings.tax.inclusiveTaxRate / 100 : undefined
     const roundTo: RoundingIncrement = settings?.priceRounding?.enabled
       ? (settings.priceRounding.increment || '0.05')
       : 'none'
@@ -320,6 +322,8 @@ export const POST = withVenue(async function POST(
       items: typeof parentOrder.items
       fractionalEntries: FractionalItemEntry[]
       pricing: ReturnType<typeof calculateSplitTicketPricing>
+      taxFromInclusive: number
+      taxFromExclusive: number
     }
 
     const ticketDataList: TicketData[] = []
@@ -358,22 +362,66 @@ export const POST = withVenue(async function POST(
         })),
       ]
 
+      // Use calculateSplitTicketPricing for discount allocation only (not last-ticket remainder)
       const pricing = calculateSplitTicketPricing(
         orderItemInputs,
         orderDiscount,
         orderSubtotal,
         taxRate,
         roundTo,
-        isLastTicket,
-        originalTotal,
-        previousTicketsTotal
+        false,       // never isLastTicket — we handle remainder ourselves after tax override
+        undefined,
+        undefined
       )
+
+      // Override single-rate tax with split-aware calculation
+      let ticketInclSub = 0, ticketExclSub = 0
+      for (const ti of ticketItems) {
+        const mods = ti.modifiers.reduce((s, m) => s + Number(m.price), 0)
+        const t = (Number(ti.price) + mods) * ti.quantity
+        if (ti.isTaxInclusive) ticketInclSub += t; else ticketExclSub += t
+      }
+      for (const fe of fractionalEntries) {
+        if (fe.originalItem.isTaxInclusive) ticketInclSub += fe.fractionalPrice
+        else ticketExclSub += fe.fractionalPrice
+      }
+
+      const ticketSub = ticketInclSub + ticketExclSub
+      let discIncl = 0, discExcl = 0
+      if (pricing.discountTotal > 0 && ticketSub > 0) {
+        discIncl = Math.round(pricing.discountTotal * (ticketInclSub / ticketSub) * 100) / 100
+        discExcl = Math.round((pricing.discountTotal - discIncl) * 100) / 100
+      }
+
+      const ticketTax = calculateSplitTax(
+        Math.max(0, ticketInclSub - discIncl),
+        Math.max(0, ticketExclSub - discExcl),
+        taxRate,
+        inclusiveRate
+      )
+
+      // Override tax with split-aware values
+      pricing.taxAmount = ticketTax.totalTax
+      // Total = subtotal + exclusive_tax_only - discount (inclusive tax NOT added)
+      let ticketTotal = Math.round((ticketSub + ticketTax.taxFromExclusive - pricing.discountTotal) * 100) / 100
+
+      // Last ticket gets remainder to match parent total exactly
+      if (isLastTicket) {
+        const targetTotal = originalTotal - previousTicketsTotal
+        pricing.roundingAdjustment = Math.round((targetTotal - ticketTotal) * 100) / 100
+        ticketTotal = targetTotal
+      } else {
+        pricing.roundingAdjustment = 0
+      }
+      pricing.total = ticketTotal
 
       ticketDataList.push({
         ticketIndex: assignment.ticketIndex,
         items: ticketItems,
         fractionalEntries,
         pricing,
+        taxFromInclusive: ticketTax.taxFromInclusive,
+        taxFromExclusive: ticketTax.taxFromExclusive,
       })
 
       previousTicketsTotal += pricing.total
@@ -396,6 +444,7 @@ export const POST = withVenue(async function POST(
             price: item.price,
             quantity: item.quantity,
             itemTotal: item.itemTotal,
+            isTaxInclusive: item.isTaxInclusive,
             specialNotes: item.specialNotes,
             seatNumber: item.seatNumber,
             courseNumber: item.courseNumber,
@@ -431,6 +480,7 @@ export const POST = withVenue(async function POST(
               price: basePrice,
               quantity: 1,
               itemTotal: fe.fractionalPrice,
+              isTaxInclusive: fe.originalItem.isTaxInclusive,
               specialNotes: fe.originalItem.specialNotes,
               seatNumber: fe.originalItem.seatNumber,
               courseNumber: fe.originalItem.courseNumber,
@@ -468,6 +518,8 @@ export const POST = withVenue(async function POST(
             subtotal: ticketData.pricing.subtotal,
             discountTotal: ticketData.pricing.discountTotal,
             taxTotal: ticketData.pricing.taxAmount,
+            taxFromInclusive: ticketData.taxFromInclusive,
+            taxFromExclusive: ticketData.taxFromExclusive,
             total: ticketData.pricing.total,
             notes: parentOrder.notes,
             items: {
@@ -504,6 +556,8 @@ export const POST = withVenue(async function POST(
           status: 'split',
           subtotal: 0,
           taxTotal: 0,
+          taxFromInclusive: 0,
+          taxFromExclusive: 0,
           total: 0,
           notes: parentOrder.notes
             ? `${parentOrder.notes}\n[Split into ${splits.length} tickets]`
