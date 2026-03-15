@@ -267,6 +267,8 @@ async function handleForceUpdate(payload) {
   if (!step('npm install', 'npm install --production=false', false, 180)) {
     return { ok: false, error: 'npm install failed', steps: steps }
   }
+  // Clean stale Prisma v6 cache (Prisma 7 generates to src/generated/prisma/)
+  step('clean-prisma-cache', 'rm -rf node_modules/.prisma', true, 10)
   step('prisma generate', 'npx prisma generate', true, 120)
   step('pre-migrate', 'node scripts/nuc-pre-migrate.js', true, 180)
 
@@ -293,7 +295,7 @@ async function handleForceUpdate(payload) {
         })
         // db push creates any missing tables the baselined migrations would have created
         log('  Running db push to create missing tables...')
-        run('npx prisma db push', APP_DIR, 180)
+        run('npx prisma db push --accept-data-loss', APP_DIR, 180)
         migrateOk = true
         steps.push('prisma migrate (baselined + db push) OK')
       } catch (baseErr) {
@@ -309,7 +311,7 @@ async function handleForceUpdate(payload) {
   // Also migrate Neon cloud database (if configured for offline-first mode)
   if (env.NEON_DATABASE_URL) {
     step('neon-pre-migrate', 'NEON_MIGRATE=true node scripts/nuc-pre-migrate.js', true, 180)
-    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push', true, 180)
+    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push --accept-data-loss', true, 180)
   }
   if (!step('build', 'npm run build', false, 600)) {
     return { ok: false, error: 'build failed', steps: steps }
