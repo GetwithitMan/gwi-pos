@@ -351,6 +351,7 @@ function LiquorBuilderContent() {
   }, [pendingItemId, drinks])
 
   // Update spirit state when drink modifier groups are (re)loaded
+  // Check item-specific groups first, then fall back to shared/global spirit groups
   useEffect(() => {
     const spiritGroup = drinkModifierGroups.find((mg: any) => mg.isSpiritGroup)
     if (spiritGroup) {
@@ -366,12 +367,40 @@ function LiquorBuilderContent() {
           isDefault: m.isDefault || false,
         }))
       )
+    } else if (selectedDrink) {
+      // No item-specific spirit group — check for shared/global spirit groups
+      // These have menuItemId = NULL and apply to all cocktails
+      fetch(`/api/modifiers/spirit-groups?locationId=${selectedDrink.locationId || ''}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          const shared = data?.data?.[0] // Use first shared spirit group
+          if (shared) {
+            setSpiritGroupId(shared.id)
+            setSpiritMode(true)
+            setSpiritEntries(
+              shared.modifiers.map((m: any) => ({
+                id: m.id,
+                bottleProductId: m.linkedBottleProductId || '',
+                bottleName: m.linkedBottleProduct?.name || m.name,
+                tier: m.spiritTier || 'call',
+                price: Number(m.price) || 0,
+                isDefault: m.isDefault || false,
+              }))
+            )
+          } else {
+            setSpiritGroupId(null)
+            setSpiritEntries([])
+          }
+        })
+        .catch(() => {
+          setSpiritGroupId(null)
+          setSpiritEntries([])
+        })
     } else {
       setSpiritGroupId(null)
       setSpiritEntries([])
-      // Don't force-reset spiritMode — user may have toggled it manually
     }
-  }, [drinkModifierGroups])
+  }, [drinkModifierGroups, selectedDrink])
 
   // Spirit tier helpers
   const ensureSpiritGroup = async (itemId: string): Promise<string | null> => {
