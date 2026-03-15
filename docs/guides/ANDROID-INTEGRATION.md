@@ -109,6 +109,40 @@ val cardTotal = order.total + surcharge
 
 ---
 
+## Tax-Inclusive Pricing (Bootstrap Fields)
+
+Bootstrap sends these fields for Android to compute tax locally:
+
+| SyncMeta Key | Type | Source | Purpose |
+|--------------|------|--------|---------|
+| `taxRate` | `Double` | `settings.tax.defaultRate / 100` | Exclusive tax rate (decimal, e.g. 0.08) |
+| `inclusiveTaxRate` | `Double` | Sum of inclusive TaxRule rates | Inclusive tax rate (decimal, e.g. 0.07) |
+| `taxInclusiveLiquor` | `Boolean` | Derived from TaxRules with `isInclusive` + liquor/drinks categories | Whether liquor/drinks prices include tax |
+| `taxInclusiveFood` | `Boolean` | Derived from TaxRules with `isInclusive` + food/pizza/combos categories | Whether food prices include tax |
+
+### How Android Uses These
+
+1. **At item creation** (`AddItemUseCase`): `TaxInclusionResolver.resolve(categoryType, taxInclusiveLiquor, taxInclusiveFood)` stamps `isTaxInclusive` on the `ItemAdded` event payload
+2. **In `recomputeTotals()`** (`OrderState`): `TaxSplitHelper.compute(inclSub, exclSub, discountTotal, exclRate, inclRate)` splits tax into two buckets
+3. **In checkout** (`DefaultCheckoutEvaluationEngine`): Same `TaxSplitHelper` for card/cash pricing with surcharge
+
+### Key Rules
+- `isTaxInclusive` is locked at item creation — the reducer trusts the event payload, no live menu lookups
+- Items with no category default to `false` (exclusive)
+- `total = subtotal + exclusiveTax - discount` — inclusive tax is NOT added to total
+- When inclusive flags change in bootstrap, `BootstrapWorker` triggers a one-time projection rebuild for open orders
+- Rate-only changes do NOT require rebuild (rates are read fresh from SyncMeta on every order reload)
+
+### Category Type Mapping
+| Flag | Category Types | When `true` |
+|------|---------------|-------------|
+| `taxInclusiveLiquor` | `liquor`, `drinks` | Prices include tax |
+| `taxInclusiveFood` | `food`, `pizza`, `combos` | Prices include tax |
+| *(neither)* | `entertainment`, `retail` | Always exclusive |
+| *(no category)* | Manual charges, open items | Always exclusive |
+
+---
+
 ## Touch & UI Rules
 
 - Min **48×48dp** touch targets everywhere
@@ -200,3 +234,5 @@ Accessible from the hamburger menu. Two tabs: **Pending Tips** and **My Tips**.
 - [ ] New sync endpoints documented in the API table above
 - [ ] Socket events scoped by `locationId` (never global broadcast)
 - [ ] Offline behavior tested (outbox queues, not drops)
+- [ ] Tax-inclusive: new items stamp `isTaxInclusive` from category + bootstrap flags
+- [ ] Tax-inclusive: any new `taxTotal` write also writes `taxFromInclusive` + `taxFromExclusive`

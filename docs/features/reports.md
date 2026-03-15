@@ -273,6 +273,30 @@ Ingredient, StockCount (inventory reports)
 
 ---
 
+## Tax-Inclusive Reporting
+
+Orders track three tax columns:
+
+| Column | Meaning | When Non-Zero |
+|--------|---------|---------------|
+| `taxTotal` | Combined tax (inclusive + exclusive) | Always |
+| `taxFromInclusive` | Tax backed out of inclusive-priced items | Location has `taxInclusiveLiquor` or `taxInclusiveFood` enabled |
+| `taxFromExclusive` | Tax added on top of exclusive-priced items | Location has any non-inclusive tax rules |
+
+### How Reports Use These
+- **Daily report / Sales report**: Read stored `taxFromInclusive` and `taxFromExclusive` — never recompute from rate
+- **Gross sales**: `subtotal` already includes embedded tax for inclusive items. To get net sales: `subtotal - taxFromInclusive`
+- **Tax collected (for government filing)**: `taxTotal = taxFromInclusive + taxFromExclusive`
+- **Order history**: Uses stored values, not recomputed — historical accuracy preserved
+- **Accounting journal**: Full collected tax (`taxTotal`) credited to tax liability account
+
+### Key Rules
+- Reports MUST use stored tax values, never recompute from current tax rate (rates may have changed since order was placed)
+- `taxFromInclusive` and `taxFromExclusive` may be 0/NULL for orders created before the tax-inclusive feature was deployed — these are treated as all-exclusive (historically correct)
+- All-exclusive locations: `taxFromInclusive = 0`, `taxFromExclusive = taxTotal` — no behavior change
+
+---
+
 ## Known Constraints & Limits
 - ALL reports read from `OrderSnapshot`, NEVER from legacy `Order` table
 - All date ranges use business day boundaries, not calendar midnight

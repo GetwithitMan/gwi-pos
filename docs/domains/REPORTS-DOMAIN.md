@@ -56,9 +56,14 @@ PM Mode: Reports
 | 105 | Tip Share Report | DONE |
 | 135 | Theoretical vs Actual | DONE |
 
+## Tax-Inclusive Reporting
+
+Orders store three tax columns: `taxTotal`, `taxFromInclusive`, `taxFromExclusive`. Reports MUST read stored values — never recompute from current rates. See `docs/features/reports.md` → "Tax-Inclusive Reporting" for full details and rules.
+
 ## Integration Points
 
 - **Orders Domain**: Order data for sales analysis
+- **Tax Rules**: `taxFromInclusive`/`taxFromExclusive` columns for split tax reporting
 - **Employees Domain**: Labor hours, shift data
 - **Payments Domain**: Payment and tip data
 - **Inventory Domain**: Stock data for variance analysis

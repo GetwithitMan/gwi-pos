@@ -194,8 +194,12 @@ getEffectiveTaxRate(itemTaxRate, itemTaxExempt, locationTaxRate):
 ---
 
 ## Android-Specific Notes
-- Tax displayed in order totals
-- Tax-inclusive items show price with tax already included
+- Tax displayed in order totals via `TaxSplitHelper.compute()` (same formula as server)
+- Tax-inclusive items show price with tax already included — `total = subtotal` for all-inclusive orders
+- Bootstrap sends `inclusiveTaxRate`, `taxInclusiveLiquor`, `taxInclusiveFood` → stored in SyncMeta
+- `TaxInclusionResolver.resolve(categoryType, flags)` stamps `isTaxInclusive` at item creation
+- `BootstrapWorker` triggers projection rebuild when inclusive flags change (one-time per flag change)
+- See `docs/guides/ANDROID-INTEGRATION.md` → "Tax-Inclusive Pricing" for full bootstrap field reference
 
 ---
 
@@ -217,4 +221,4 @@ See `docs/skills/479-TAX-RULES-PAGE-BUG-FIXES.md` for full details on:
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-15*

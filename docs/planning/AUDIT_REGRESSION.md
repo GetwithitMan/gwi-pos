@@ -113,6 +113,22 @@ If a future PR touches the areas below, check the corresponding invariant before
 - **INV1**: `deductInventoryForOrder()` MUST return `success: false` when a paid/closed order has 0 items — prevents false-succeeded deductions when OrderItems haven't synced yet
 - **INV2**: Modifier creation API MUST return 409 (not 500) on unique constraint violation — Prisma error code P2002 check in catch block
 
+## Tax-Inclusive Pricing Invariants (2026-03-15)
+
+> Added after full-stack tax-inclusive implementation across 3 repos. These invariants prevent tax miscalculation for locations with tax-inclusive pricing.
+
+| # | Invariant | Where Enforced | Test Trigger |
+|---|-----------|----------------|--------------|
+| TAX1 | `isTaxInclusive` MUST be stamped on OrderItem at creation and NEVER re-resolved after — it survives splits, transfers, comps, voids | `prepareItemData()` in `item-calculations.ts`; `isItemTaxInclusive()` in `order-calculations.ts` | Enable inclusive pricing, add item, split order, transfer item → `isTaxInclusive` unchanged throughout |
+| TAX2 | Items with no `categoryType` (manual charges, open items) MUST default to `isTaxInclusive: false` (exclusive) | `isItemTaxInclusive()` — returns `false` when `categoryType` is null/undefined | Add open-price item with no category on inclusive location → exclusive tax applied |
+| TAX3 | `calculateSplitTax()` with `inclusiveSubtotal = 0` MUST return `taxFromInclusive = 0` (pure no-op for exclusive-only locations) | `order-calculations.ts:405` — guard `inclusiveSubtotal > 0` | All-exclusive location: verify `taxFromInclusive = 0` on every order |
+| TAX4 | Every DB write of `taxTotal` MUST also write `taxFromInclusive` and `taxFromExclusive` — no path may store one without the other | All order mutation routes, split routes, comp/void operations | Audit any route that calls `tx.order.update` with `taxTotal` — both split fields must be present |
+| TAX5 | `total = subtotal + taxFromExclusive - discount + tip` — inclusive tax is NEVER added to total | `calculateOrderTotals()` line 288; all split domain files; checkout engine | Place order with only inclusive items → total equals subtotal (tax backed out, not added) |
+| TAX6 | `taxInclusiveLiquor` and `taxInclusiveFood` are derived from DB TaxRule records in bootstrap, not stored as user settings | `bootstrap/route.ts` lines 273-312 | Change TaxRule `isInclusive` → bootstrap returns updated flags on next device sync |
+| TAX7 | Changing TaxRule.isInclusive does NOT retroactively update existing OrderItem.isTaxInclusive stamps — only new items get the new treatment | By design — `isTaxInclusive` locked at creation | Toggle inclusive flag, verify existing open order items unchanged, new items get new flag |
+| TAX8 | `calculateSplitTax()` with `inclusiveTaxRate = undefined` MUST fall back to `taxRate` (backward compat for locations without separate inclusive rate) | `order-calculations.ts:404` — `inclRate = inclusiveTaxRate ?? taxRate` | Location with single tax rule: verify `calculateSplitTax` uses same rate for both |
+| TAX9 | Android `TaxSplitHelper.compute()` MUST produce identical output to server `calculateSplitTax()` for the same inputs — verified by golden parity tests | `TaxSplitHelper.kt`; `order-calculations.ts` | Run same 10+ test vectors on both platforms → outputs match to the cent |
+
 ---
 
 ## How to Use This List
@@ -121,4 +137,4 @@ If a future PR touches the areas below, check the corresponding invariant before
 2. **After a schema change** to `Payment`, `Order`, `Shift`, or `TipLedgerEntry` — re-run P1–P5 and T1–T5.
 3. **After any event sourcing change** — re-run O2 and O3.
 
-The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. All 47 represent the highest re-regression risk.
+The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. The 9 tax-inclusive invariants (2026-03-15) cover the full-stack tax-inclusive pricing implementation. All 56 represent the highest re-regression risk.

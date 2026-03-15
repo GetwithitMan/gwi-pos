@@ -105,6 +105,18 @@ ORDER_METADATA_UPDATED                  COMP_VOID_APPLIED
 
 ---
 
+## Tax-Inclusive Flag on OrderItem
+
+Every OrderItem has an `isTaxInclusive` boolean stamped at creation time:
+- Resolved via `isItemTaxInclusive(categoryType, taxIncSettings)` in `item-calculations.ts`
+- `liquor`/`drinks` → inclusive if `taxInclusiveLiquor` is enabled
+- `food`/`pizza`/`combos` → inclusive if `taxInclusiveFood` is enabled
+- `entertainment`/`retail`/no category → always exclusive (`false`)
+- **Locked at creation** — never re-resolved after initial stamp. Survives splits, transfers, comps, voids.
+- On Android: persisted in `ItemAdded` event payload. Reducer trusts the payload, no menu lookups.
+
+---
+
 ## Comp/Void Flow
 
 - Comps and voids use `COMP_VOID_APPLIED` event type
