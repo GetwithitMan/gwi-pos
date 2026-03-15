@@ -25,9 +25,17 @@ set -euo pipefail
 
 APP_BASE="/opt/gwi-pos"
 APP_DIR="$APP_BASE/app"
+INSTALL_START=$(date +%s)
 # Health tracker — accumulates non-fatal warnings for honest summary
 INSTALL_WARNINGS=()
 track_warn() { INSTALL_WARNINGS+=("$1"); warn "$1"; }
+# Section timing — logs elapsed time per deploy step
+SECTION_START=0
+start_timer() { SECTION_START=$(date +%s); }
+end_timer() {
+  local elapsed=$(( $(date +%s) - SECTION_START ))
+  log "$1 completed in ${elapsed}s"
+}
 ENV_FILE="$APP_BASE/.env"
 KEY_DIR="$APP_BASE/keys"
 BACKUP_DIR="$APP_BASE/backups"
@@ -112,10 +120,23 @@ fi
 log "Service user: $POSUSER (home: $POSUSER_HOME)"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Disk Space Check — abort if less than 2GB free
+# ─────────────────────────────────────────────────────────────────────────────
+
+FREE_MB=$(df -BM /opt 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'M')
+if [[ -n "$FREE_MB" ]] && [[ "$FREE_MB" -lt 2000 ]]; then
+  err "Insufficient disk space: ${FREE_MB}MB free, need at least 2000MB."
+  err "Free up space before running the installer."
+  exit 1
+fi
+log "Disk space: ${FREE_MB}MB free — OK"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Install Essential Tools (BEFORE registration — jq and openssl required)
 # ─────────────────────────────────────────────────────────────────────────────
 
 header "Installing Essential Tools"
+start_timer
 
 apt-get update -y
 apt-get install -y curl git jq openssl ca-certificates gnupg chrony
@@ -2542,12 +2563,17 @@ log "  Quick launch: $LAUNCHER_SCRIPT"
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 
+TOTAL_ELAPSED=$(( $(date +%s) - INSTALL_START ))
+TOTAL_MINS=$(( TOTAL_ELAPSED / 60 ))
+TOTAL_SECS=$(( TOTAL_ELAPSED % 60 ))
+
 if [[ ${#INSTALL_WARNINGS[@]} -eq 0 ]]; then
   header "Installation Complete!"
 else
   header "Installation Complete (with warnings)"
 fi
 
+echo -e "  ${GREEN}Total time:${NC} ${TOTAL_MINS}m ${TOTAL_SECS}s"
 echo -e "  ${GREEN}Role:${NC}     $STATION_ROLE"
 echo -e "  ${GREEN}Location:${NC} $LOCATION_NAME"
 
