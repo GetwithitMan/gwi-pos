@@ -303,6 +303,35 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
  * This prevents the "58 missing models" problem from ever happening again.
  * New tables added via migration MUST be added to SYNC_MODELS before deploy.
  */
+/**
+ * SYNC COVERAGE VALIDATOR + AUTO-REGISTER
+ *
+ * Called at server startup. Queries the database for all tables and
+ * verifies every one is in SYNC_MODELS. If any table is missing,
+ * it is AUTOMATICALLY added as upstream sync (NUC → Neon) with
+ * default settings. No manual intervention needed.
+ *
+ * This means: add a model to schema.prisma, run migration, deploy.
+ * The sync system picks it up automatically. Zero gaps. Ever.
+ *
+ * Tables that should NOT sync (operational/local-only) are explicitly
+ * listed in LOCAL_ONLY_TABLES below.
+ */
+
+/** Tables that must NEVER sync — operational/ephemeral NUC-local data */
+const LOCAL_ONLY_TABLES = new Set([
+  'HardwareCommand', 'CloudEventQueue', 'SyncAuditEntry', 'HealthCheck',
+  'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog',
+  'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
+  'PaymentSession', // local payment state machine
+])
+
+/** System/internal tables that are not Prisma models */
+const SYSTEM_TABLES = new Set([
+  '_prisma_migrations', '_gwi_migrations', '_gwi_sync_state',
+  '_pending_datacap_sales', '_pending_captures',
+])
+
 export async function validateSyncCoverage(db: { $queryRawUnsafe: Function }): Promise<void> {
   try {
     const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
@@ -313,30 +342,37 @@ export async function validateSyncCoverage(db: { $queryRawUnsafe: Function }): P
     )
 
     const configuredModels = new Set(Object.keys(SYNC_MODELS))
-    // Internal/system tables that are NOT Prisma models — skip these
-    const systemTables = new Set([
-      '_prisma_migrations', '_gwi_migrations', '_gwi_sync_state',
-      '_pending_datacap_sales', '_pending_captures',
-    ])
+    let autoRegistered = 0
 
-    const missing: string[] = []
     for (const { table_name } of tables) {
-      if (systemTables.has(table_name)) continue
-      if (!configuredModels.has(table_name)) {
-        missing.push(table_name)
+      if (SYSTEM_TABLES.has(table_name)) continue
+      if (configuredModels.has(table_name)) continue
+
+      if (LOCAL_ONLY_TABLES.has(table_name)) {
+        // Known local-only — register as none
+        SYNC_MODELS[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
+        console.log('[SYNC CONFIG] Registered local-only table:', table_name)
+      } else {
+        // Unknown table — auto-register as upstream sync (safe default)
+        const nextPriority = Math.max(...Object.values(SYNC_MODELS).map(c => c.priority)) + 1
+        SYNC_MODELS[table_name] = {
+          direction: 'upstream',
+          owner: 'nuc',
+          priority: nextPriority,
+          batchSize: 50,
+        }
+        autoRegistered++
+        console.warn('[SYNC CONFIG] Auto-registered NEW table for sync:', table_name, '(upstream, priority:', nextPriority + ')')
       }
     }
 
-    if (missing.length > 0) {
-      console.error('[SYNC CONFIG] ⚠️  CRITICAL: ' + missing.length + ' tables NOT in sync config!')
-      console.error('[SYNC CONFIG] These tables will NOT sync between NUC and Neon:')
-      missing.forEach(t => console.error('[SYNC CONFIG]   ✗ ' + t))
-      console.error('[SYNC CONFIG] Add them to SYNC_MODELS in src/lib/sync/sync-config.ts')
-    } else {
-      console.log('[SYNC CONFIG] ✓ All ' + tables.length + ' tables covered in sync config')
+    if (autoRegistered > 0) {
+      console.warn('[SYNC CONFIG] ⚠️  ' + autoRegistered + ' table(s) auto-registered. Add them to sync-config.ts for permanent config.')
     }
+
+    const totalSynced = Object.values(SYNC_MODELS).filter(c => c.direction !== 'none').length
+    console.log('[SYNC CONFIG] ✓ ' + totalSynced + ' tables syncing, ' + Object.keys(SYNC_MODELS).length + ' total configured')
   } catch (err) {
-    // Non-fatal — don't prevent server from starting
     console.warn('[SYNC CONFIG] Coverage check failed:', err instanceof Error ? err.message : err)
   }
 }
