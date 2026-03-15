@@ -47,6 +47,7 @@ function buildItemCreateData(
       blockTimeMinutes: item.blockTimeMinutes,
       blockTimeStartedAt: item.blockTimeStartedAt,
       blockTimeExpiresAt: item.blockTimeExpiresAt,
+      isTaxInclusive: item.isTaxInclusive ?? false,
       ...(item.pricingRuleApplied ? { pricingRuleApplied: item.pricingRuleApplied as object } : {}),
       modifiers: {
         create: item.modifiers.map(mod => ({

@@ -23,68 +23,81 @@ export async function computeTaxRuleRate(locationId: string): Promise<number> {
  * Call after any TaxRule create/update/delete.
  */
 export async function syncTaxRateToSettings(locationId: string): Promise<void> {
-  const rules = await db.taxRule.findMany({
-    where: { locationId, deletedAt: null, isActive: true },
-    select: { rate: true, isInclusive: true, appliesTo: true, categoryIds: true },
-  })
+  try {
+    const rules = await db.taxRule.findMany({
+      where: { locationId, deletedAt: null, isActive: true },
+      select: { rate: true, isInclusive: true, appliesTo: true, categoryIds: true },
+    })
 
-  const exclusiveRules = rules.filter(r => !r.isInclusive)
-  const inclusiveRules = rules.filter(r => r.isInclusive)
+    const exclusiveRules = rules.filter(r => !r.isInclusive)
+    const inclusiveRules = rules.filter(r => r.isInclusive)
 
-  const exclusiveRate = exclusiveRules.reduce((sum, r) => sum + Number(r.rate), 0)
-  const inclusiveRate = inclusiveRules.reduce((sum, r) => sum + Number(r.rate), 0)
+    const exclusiveRate = exclusiveRules.reduce((sum, r) => sum + Number(r.rate), 0)
+    const inclusiveRate = inclusiveRules.reduce((sum, r) => sum + Number(r.rate), 0)
 
-  const defaultRatePercent = Math.round(exclusiveRate * 100 * 10000) / 10000
-  const inclusiveRatePercent = Math.round(inclusiveRate * 100 * 10000) / 10000
-
-  // Derive taxInclusiveLiquor / taxInclusiveFood from inclusive rules
-  let taxInclusiveLiquor = false
-  let taxInclusiveFood = false
-
-  for (const rule of inclusiveRules) {
-    if (rule.appliesTo === 'all') {
-      taxInclusiveLiquor = true
-      taxInclusiveFood = true
-      break
+    // Validate computed rates are finite
+    if (!Number.isFinite(exclusiveRate) || !Number.isFinite(inclusiveRate)) {
+      console.error(`[tax-sync] Invalid computed rates for location ${locationId}: excl=${exclusiveRate}, incl=${inclusiveRate}`)
+      return
     }
-    if (rule.appliesTo === 'category' && rule.categoryIds) {
-      const catIds = Array.isArray(rule.categoryIds) ? rule.categoryIds : []
-      // Load categories to check types
-      if (catIds.length > 0) {
-        const cats = await db.category.findMany({
-          where: { id: { in: catIds as string[] } },
-          select: { categoryType: true },
-        })
-        for (const cat of cats) {
-          if (cat.categoryType && LIQUOR_TYPES.includes(cat.categoryType)) taxInclusiveLiquor = true
-          if (cat.categoryType && FOOD_TYPES.includes(cat.categoryType)) taxInclusiveFood = true
+
+    const defaultRatePercent = Math.round(exclusiveRate * 100 * 10000) / 10000
+    const inclusiveRatePercent = Math.round(inclusiveRate * 100 * 10000) / 10000
+
+    // Derive taxInclusiveLiquor / taxInclusiveFood from inclusive rules
+    let taxInclusiveLiquor = false
+    let taxInclusiveFood = false
+
+    for (const rule of inclusiveRules) {
+      if (rule.appliesTo === 'all') {
+        taxInclusiveLiquor = true
+        taxInclusiveFood = true
+        break
+      }
+      if (rule.appliesTo === 'category' && rule.categoryIds) {
+        const catIds = Array.isArray(rule.categoryIds) ? rule.categoryIds : []
+        if (catIds.length > 0) {
+          const cats = await db.category.findMany({
+            where: { id: { in: catIds as string[] } },
+            select: { categoryType: true },
+          })
+          for (const cat of cats) {
+            const ct = cat.categoryType?.toLowerCase()
+            if (ct && LIQUOR_TYPES.includes(ct)) taxInclusiveLiquor = true
+            if (ct && FOOD_TYPES.includes(ct)) taxInclusiveFood = true
+          }
         }
       }
     }
+
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    if (!location) {
+      console.error(`[tax-sync] Location ${locationId} not found`)
+      return
+    }
+
+    const currentSettings = (location.settings as Record<string, unknown>) || {}
+    const updatedSettings = {
+      ...currentSettings,
+      tax: {
+        ...(currentSettings.tax as Record<string, unknown> | undefined),
+        defaultRate: defaultRatePercent,
+        inclusiveTaxRate: inclusiveRatePercent,
+        taxInclusiveLiquor,
+        taxInclusiveFood,
+      },
+    }
+
+    await db.location.update({
+      where: { id: locationId },
+      data: { settings: updatedSettings },
+    })
+
+    invalidateLocationCache(locationId)
+  } catch (err) {
+    console.error(`[tax-sync] Failed to sync tax settings for location ${locationId}:`, err)
   }
-
-  const location = await db.location.findUnique({
-    where: { id: locationId },
-    select: { settings: true },
-  })
-  if (!location) return
-
-  const currentSettings = (location.settings as Record<string, unknown>) || {}
-  const updatedSettings = {
-    ...currentSettings,
-    tax: {
-      ...(currentSettings.tax as Record<string, unknown> | undefined),
-      defaultRate: defaultRatePercent,
-      inclusiveTaxRate: inclusiveRatePercent,
-      taxInclusiveLiquor,
-      taxInclusiveFood,
-    },
-  }
-
-  await db.location.update({
-    where: { id: locationId },
-    data: { settings: updatedSettings },
-  })
-
-  invalidateLocationCache(locationId)
 }

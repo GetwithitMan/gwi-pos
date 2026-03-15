@@ -320,6 +320,7 @@ export const POST = withVenue(async function POST(
             soldByWeight: false,
             seatNumber: item.seatNumber,
             specialNotes: item.specialNotes,
+            isTaxInclusive: item.isTaxInclusive ?? false,
           },
         })),
       ])
@@ -453,6 +454,7 @@ export const POST = withVenue(async function POST(
               soldByWeight: false,
               seatNumber: item.seatNumber,
               specialNotes: item.specialNotes,
+              isTaxInclusive: item.isTaxInclusive ?? false,
             },
           })),
         ])
@@ -577,6 +579,7 @@ export const POST = withVenue(async function POST(
               soldByWeight: false,
               seatNumber: item.seatNumber,
               specialNotes: item.specialNotes,
+              isTaxInclusive: item.isTaxInclusive ?? false,
             },
           })),
         ])

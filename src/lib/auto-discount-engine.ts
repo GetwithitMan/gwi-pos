@@ -19,7 +19,7 @@
  */
 
 import { db } from '@/lib/db'
-import { calculateSimpleOrderTotals } from '@/lib/order-calculations'
+import { calculateOrderTotals } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 
@@ -116,6 +116,10 @@ export async function evaluateAutoDiscounts(
           include: {
             menuItem: {
               select: { id: true, categoryId: true },
+            },
+            modifiers: {
+              where: { deletedAt: null },
+              select: { price: true },
             },
           },
         },
@@ -267,10 +271,20 @@ export async function evaluateAutoDiscounts(
       })
       const newDiscountTotal = allDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
 
-      const totals = calculateSimpleOrderTotals(
-        Number(order.subtotal),
-        newDiscountTotal,
+      const totals = calculateOrderTotals(
+        order.items.filter(i => i.status === 'active' && !i.deletedAt).map(i => ({
+          price: Number(i.price),
+          quantity: i.quantity,
+          isTaxInclusive: i.isTaxInclusive ?? false,
+          status: i.status,
+          modifiers: (i.modifiers ?? []).map(m => ({ price: Number(m.price) })),
+          commissionAmount: Number(i.commissionAmount ?? 0),
+        })),
         order.location.settings as { tax?: { defaultRate?: number } },
+        newDiscountTotal,
+        Number(order.tipTotal ?? 0),
+        undefined, // priceRounding
+        'card',
         order.isTaxExempt
       )
 
@@ -279,6 +293,8 @@ export async function evaluateAutoDiscounts(
         data: {
           discountTotal: totals.discountTotal,
           taxTotal: totals.taxTotal,
+          taxFromInclusive: totals.taxFromInclusive,
+          taxFromExclusive: totals.taxFromExclusive,
           total: totals.total,
           version: { increment: 1 },
         },

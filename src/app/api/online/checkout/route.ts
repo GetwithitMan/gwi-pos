@@ -25,7 +25,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
-import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
+import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 
@@ -154,6 +154,7 @@ export async function POST(request: NextRequest) {
         name: true,
         price: true,
         onlinePrice: true,
+        category: { select: { categoryType: true } },
       },
     })
 
@@ -254,10 +255,28 @@ export async function POST(request: NextRequest) {
 
     // ── 2d. Fetch location settings for tax rate ─────────────────────────────
 
-    const onlineLocSettings = locSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
+    const onlineLocSettings = locSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean } } | null
     const taxRate = getLocationTaxRate(onlineLocSettings)
-    // Online orders are all exclusive (no tax-inclusive items online)
-    const { taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(0, subtotal, taxRate)
+    const taxIncSettings: TaxInclusiveSettings = {
+      taxInclusiveLiquor: onlineLocSettings?.tax?.taxInclusiveLiquor ?? false,
+      taxInclusiveFood: onlineLocSettings?.tax?.taxInclusiveFood ?? false,
+    }
+    // Split items by tax-inclusive status based on category
+    let inclusiveSubtotal = 0
+    let exclusiveSubtotal = 0
+    for (const { mi, lineTotal } of lineItems) {
+      const itemInclusive = isItemTaxInclusive(mi.category?.categoryType, taxIncSettings)
+      if (itemInclusive) {
+        inclusiveSubtotal += lineTotal
+      } else {
+        exclusiveSubtotal += lineTotal
+      }
+    }
+    const inclusiveTaxRate = onlineLocSettings?.tax?.inclusiveTaxRate != null
+      ? onlineLocSettings.tax.inclusiveTaxRate / 100 : undefined
+    const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
+      inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate
+    )
     const total = subtotal + taxFromExclusive
     const chargeAmount = total + tip // Total charged to card includes tip
 
@@ -364,7 +383,7 @@ export async function POST(request: NextRequest) {
           subtotal,
           discountTotal: 0,
           taxTotal,
-          taxFromInclusive: 0,
+          taxFromInclusive,
           taxFromExclusive,
           tipTotal: tip,
           total: chargeAmount,
@@ -387,6 +406,7 @@ export async function POST(request: NextRequest) {
               quantity: item.quantity,
               itemTotal: lineTotal,
               commissionAmount: 0,
+              isTaxInclusive: isItemTaxInclusive(mi.category?.categoryType, taxIncSettings),
               modifiers: item.modifiers.length > 0
                 ? {
                     create: item.modifiers.map(mod => {

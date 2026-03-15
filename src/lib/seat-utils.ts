@@ -5,6 +5,7 @@
  */
 
 import { calculateSplitTax } from '@/lib/order-calculations'
+import { roundToCents } from '@/lib/pricing'
 
 // Module-level tax rate, updated by useOrderSettings when location settings load.
 // Starts at 0 (not hardcoded 8%) — if settings fail to load, zero tax is obvious to the user.
@@ -166,9 +167,9 @@ export function calculateSeatBalance(
     }
   }
 
-  const subtotal = Math.round((inclusiveSubtotal + exclusiveSubtotal) * 100) / 100
-  inclusiveSubtotal = Math.round(inclusiveSubtotal * 100) / 100
-  exclusiveSubtotal = Math.round(exclusiveSubtotal * 100) / 100
+  const subtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
+  inclusiveSubtotal = roundToCents(inclusiveSubtotal)
+  exclusiveSubtotal = roundToCents(exclusiveSubtotal)
 
   const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
     inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate
@@ -177,7 +178,7 @@ export function calculateSeatBalance(
   // Display tax is the combined amount (inclusive backed-out + exclusive added)
   const taxAmount = totalTax
   // Total = subtotal + exclusive tax only (inclusive tax is already embedded in price)
-  const total = Math.round((subtotal + taxFromExclusive) * 100) / 100
+  const total = roundToCents(subtotal + taxFromExclusive)
   const itemCount = seatItems.reduce((sum, item) => sum + item.quantity, 0)
 
   return {

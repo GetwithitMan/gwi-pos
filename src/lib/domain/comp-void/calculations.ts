@@ -53,7 +53,7 @@ export function calculateSubtotalSplit(
   items.forEach(item => {
     const mods = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
     const itemTotal = (Number(item.price) + mods) * item.quantity
-    if ((item as any).isTaxInclusive) {
+    if (item.isTaxInclusive === true) {
       inclusiveSubtotal += itemTotal
     } else {
       exclusiveSubtotal += itemTotal

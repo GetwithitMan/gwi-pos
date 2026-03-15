@@ -162,6 +162,7 @@ export interface ItemSplitResult {
       price: any
       seatNumber: number | null
       specialNotes: string | null
+      isTaxInclusive: boolean
       modifiers: SplitOrderItemModifier[]
     }>
   }

@@ -81,6 +81,7 @@ export async function createSeatSplit(
         blockTimeMinutes: item.blockTimeMinutes,
         blockTimeStartedAt: item.blockTimeStartedAt,
         blockTimeExpiresAt: item.blockTimeExpiresAt,
+        isTaxInclusive: item.isTaxInclusive ?? false,
         modifiers: {
           create: item.modifiers.map(mod => ({
             locationId: order.locationId,

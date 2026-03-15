@@ -241,7 +241,8 @@ export function calculateOrderTotals(
   const cached = _totalsCache.get(cacheKey)
   if (cached && !isTaxExempt) return cached
 
-  const taxRate = isTaxExempt ? 0 : (locationSettings?.tax?.defaultRate ?? 0) / 100
+  const rawRate = locationSettings?.tax?.defaultRate ?? 0
+  const taxRate = isTaxExempt ? 0 : (Number.isFinite(rawRate) ? rawRate : 0) / 100
   const commissionTotal = calculateOrderCommission(items)
 
   // 1. Split items into tax-inclusive vs tax-exclusive
@@ -277,7 +278,8 @@ export function calculateOrderTotals(
 
   // Split tax on post-discount amounts — rounded to cents for compliance
   const inclusiveTaxRateRaw = locationSettings?.tax?.inclusiveTaxRate
-  const inclusiveRate = inclusiveTaxRateRaw != null ? inclusiveTaxRateRaw / 100 : undefined
+  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+    ? inclusiveTaxRateRaw / 100 : undefined
   const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
     postDiscountInclusive, postDiscountExclusive, taxRate, inclusiveRate
   )
@@ -358,8 +360,9 @@ export function isItemTaxInclusive(
   settings: TaxInclusiveSettings
 ): boolean {
   if (!categoryType) return false
-  if (settings.taxInclusiveLiquor && LIQUOR_CATEGORY_TYPES.includes(categoryType)) return true
-  if (settings.taxInclusiveFood && FOOD_CATEGORY_TYPES.includes(categoryType)) return true
+  const ct = categoryType.toLowerCase()
+  if (settings.taxInclusiveLiquor && LIQUOR_CATEGORY_TYPES.includes(ct)) return true
+  if (settings.taxInclusiveFood && FOOD_CATEGORY_TYPES.includes(ct)) return true
   return false
 }
 
@@ -402,11 +405,14 @@ export function calculateSplitTax(
   inclusiveTaxRate?: number
 ): { taxFromInclusive: number; taxFromExclusive: number; totalTax: number } {
   const inclRate = inclusiveTaxRate ?? taxRate
-  const taxFromInclusive = inclusiveSubtotal > 0 && inclRate > 0
-    ? roundToCents(inclusiveSubtotal - (inclusiveSubtotal / (1 + inclRate)))
+  // Guard: rates must be finite and non-negative to produce valid tax
+  const safeInclRate = Number.isFinite(inclRate) && inclRate > 0 ? inclRate : 0
+  const safeExclRate = Number.isFinite(taxRate) && taxRate > 0 ? taxRate : 0
+  const taxFromInclusive = inclusiveSubtotal > 0 && safeInclRate > 0
+    ? roundToCents(inclusiveSubtotal - (inclusiveSubtotal / (1 + safeInclRate)))
     : 0
-  const taxFromExclusive = exclusiveSubtotal > 0 && taxRate > 0
-    ? roundToCents(exclusiveSubtotal * taxRate)
+  const taxFromExclusive = exclusiveSubtotal > 0 && safeExclRate > 0
+    ? roundToCents(exclusiveSubtotal * safeExclRate)
     : 0
 
   return {
@@ -447,8 +453,9 @@ export function calculateTax(subtotal: number, taxRate: number): number {
 }
 
 /**
- * Simplified order totals (subtotal-only signature).
- * For full support (tax-inclusive, rounding), use calculateOrderTotals above.
+ * @deprecated Use calculateOrderTotals() instead — this function uses single-rate
+ * tax math and does NOT support tax-inclusive pricing. Remaining callers should
+ * be migrated.
  */
 export function calculateSimpleOrderTotals(
   subtotal: number,

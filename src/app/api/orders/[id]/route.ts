@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
-import { recalculateTotalWithTip, calculateSimpleOrderTotals } from '@/lib/order-calculations'
+import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -393,6 +393,20 @@ export const PUT = withVenue(async function PUT(
         version: true,
         employeeId: true,
         location: { select: { settings: true } },
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          select: {
+            price: true,
+            quantity: true,
+            isTaxInclusive: true,
+            status: true,
+            commissionAmount: true,
+            modifiers: {
+              where: { deletedAt: null },
+              select: { price: true },
+            },
+          },
+        },
       },
     })
 
@@ -444,15 +458,30 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Recalculate totals when tax exemption status changes
-    let taxExemptTotals: { taxTotal: number; total: number } | undefined
+    let taxExemptTotals: { taxTotal: number; total: number; taxFromInclusive: number; taxFromExclusive: number } | undefined
     if (isTaxExempt !== undefined && isTaxExempt !== existingOrder.isTaxExempt) {
-      const simpleTotals = calculateSimpleOrderTotals(
-        Number(existingOrder.subtotal),
-        Number(existingOrder.discountTotal),
+      const orderTotals = calculateOrderTotals(
+        existingOrder.items.filter(i => i.status === 'active').map(i => ({
+          price: Number(i.price),
+          quantity: i.quantity,
+          isTaxInclusive: i.isTaxInclusive ?? false,
+          status: i.status,
+          modifiers: (i.modifiers ?? []).map(m => ({ price: Number(m.price) })),
+          commissionAmount: Number(i.commissionAmount ?? 0),
+        })),
         existingOrder.location.settings as { tax?: { defaultRate?: number } },
+        Number(existingOrder.discountTotal),
+        Number(existingOrder.tipTotal ?? 0),
+        undefined,
+        'card',
         isTaxExempt
       )
-      taxExemptTotals = { taxTotal: simpleTotals.taxTotal, total: simpleTotals.total }
+      taxExemptTotals = {
+        taxTotal: orderTotals.taxTotal,
+        total: orderTotals.total,
+        taxFromInclusive: orderTotals.taxFromInclusive,
+        taxFromExclusive: orderTotals.taxFromExclusive,
+      }
     }
 
     // Build update data object with only defined fields
@@ -466,8 +495,8 @@ export const PUT = withVenue(async function PUT(
       updateData.isTaxExempt = isTaxExempt
       if (taxExemptTotals) {
         updateData.taxTotal = taxExemptTotals.taxTotal
-        updateData.taxFromInclusive = 0
-        updateData.taxFromExclusive = isTaxExempt ? 0 : taxExemptTotals.taxTotal
+        updateData.taxFromInclusive = taxExemptTotals.taxFromInclusive
+        updateData.taxFromExclusive = taxExemptTotals.taxFromExclusive
         updateData.total = taxExemptTotals.total
       }
     }
@@ -688,7 +717,7 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // Quick existence + status check (no includes)
+    // Quick existence + status check (includes items for tax-inclusive recalc)
     const existing = await db.order.findUnique({
       where: { id },
       select: {
@@ -698,7 +727,23 @@ export const PATCH = withVenue(async function PATCH(
         subtotal: true,
         taxTotal: true,
         discountTotal: true,
+        tipTotal: true,
         isTaxExempt: true,
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          select: {
+            price: true,
+            quantity: true,
+            isTaxInclusive: true,
+            status: true,
+            commissionAmount: true,
+            modifiers: {
+              where: { deletedAt: null },
+              select: { price: true },
+            },
+          },
+        },
+        location: { select: { settings: true } },
       },
     })
 
@@ -742,17 +787,30 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Recalculate totals when tax exemption status changes
-    let taxExemptTotals: { taxTotal: number; total: number } | undefined
+    let taxExemptTotals: { taxTotal: number; total: number; taxFromInclusive: number; taxFromExclusive: number } | undefined
     if (isTaxExempt !== undefined && isTaxExempt !== existing.isTaxExempt) {
-      const locSettings = await getLocationSettings(existing.locationId)
-      const parsed = parseSettings(locSettings as Record<string, unknown>)
-      const simpleTotals = calculateSimpleOrderTotals(
-        Number(existing.subtotal),
+      const orderTotals = calculateOrderTotals(
+        existing.items.filter(i => i.status === 'active').map(i => ({
+          price: Number(i.price),
+          quantity: i.quantity,
+          isTaxInclusive: i.isTaxInclusive ?? false,
+          status: i.status,
+          modifiers: (i.modifiers ?? []).map(m => ({ price: Number(m.price) })),
+          commissionAmount: Number(i.commissionAmount ?? 0),
+        })),
+        existing.location.settings as { tax?: { defaultRate?: number } },
         Number(existing.discountTotal),
-        parsed as { tax?: { defaultRate?: number } },
+        Number(existing.tipTotal ?? 0),
+        undefined,
+        'card',
         isTaxExempt
       )
-      taxExemptTotals = { taxTotal: simpleTotals.taxTotal, total: simpleTotals.total }
+      taxExemptTotals = {
+        taxTotal: orderTotals.taxTotal,
+        total: orderTotals.total,
+        taxFromInclusive: orderTotals.taxFromInclusive,
+        taxFromExclusive: orderTotals.taxFromExclusive,
+      }
     }
 
     const updateData: Record<string, any> = {}
@@ -769,8 +827,8 @@ export const PATCH = withVenue(async function PATCH(
       updateData.isTaxExempt = isTaxExempt
       if (taxExemptTotals) {
         updateData.taxTotal = taxExemptTotals.taxTotal
-        updateData.taxFromInclusive = 0
-        updateData.taxFromExclusive = isTaxExempt ? 0 : taxExemptTotals.taxTotal
+        updateData.taxFromInclusive = taxExemptTotals.taxFromInclusive
+        updateData.taxFromExclusive = taxExemptTotals.taxFromExclusive
         updateData.total = taxExemptTotals.total
       }
     }

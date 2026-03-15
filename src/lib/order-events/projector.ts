@@ -173,6 +173,7 @@ export function projectItemSnapshots(
     costAtSaleCents: item.costAtSaleCents ?? null,
     pourSize: item.pourSize ?? null,
     pourMultiplier: item.pourMultiplier ?? null,
+    isTaxInclusive: item.isTaxInclusive ?? false,
     itemDiscountsJson: serializeItemDiscounts(item.itemDiscounts),
 
     // --- New snapshot bridge fields ---
