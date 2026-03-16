@@ -97,8 +97,14 @@ function validateModifier(draft: Modifier, group: ModifierGroup, stalePrices: bo
   // Custom pre-modifier validation
   const customPreMods = draft.customPreModifiers ?? []
   for (const cpm of customPreMods) {
-    if (cpm.name.length > 10 && !cpm.shortLabel) {
+    if (!cpm.name || cpm.name.trim() === '') {
+      errors.push('Each custom pre-modifier must have a name')
+    }
+    if (cpm.name && cpm.name.length > 10 && !cpm.shortLabel) {
       warnings.push(`Custom pre-mod "${cpm.name}" exceeds 10 chars — add a short label`)
+    }
+    if (cpm.shortLabel && cpm.shortLabel.length > 12) {
+      errors.push(`Short label "${cpm.shortLabel}" exceeds 12 character limit`)
     }
   }
   const shortLabels = customPreMods.map(c => c.shortLabel).filter(Boolean)
@@ -561,6 +567,12 @@ export function ModifierDetailPanel({
 
     const changes = getChanges(draft, original)
     if (Object.keys(changes).length === 0) return
+
+    // Strip out custom pre-mods with empty names (user added but didn't fill in)
+    if (changes.customPreModifiers && Array.isArray(changes.customPreModifiers)) {
+      changes.customPreModifiers = (changes.customPreModifiers as CustomPreMod[]).filter(c => c.name && c.name.trim() !== '')
+      if (changes.customPreModifiers.length === 0) changes.customPreModifiers = null as any
+    }
 
     // Refresh swap target snapshot prices before saving
     if (changes.swapTargets && Array.isArray(changes.swapTargets)) {

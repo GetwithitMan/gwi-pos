@@ -186,11 +186,14 @@ export default function MenuManagementPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modifierId, ...updates }),
       })
-      if (!res.ok) throw new Error('Failed to update modifier')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to update modifier')
+      }
       loadMenu()
       setRefreshKey(prev => prev + 1)
-    } catch {
-      toast.error('Failed to update modifier')
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update modifier')
     }
   }, [selectedItemForEditor?.id, selectedGroupId, loadMenu, setRefreshKey])
 
