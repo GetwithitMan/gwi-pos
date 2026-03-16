@@ -273,6 +273,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let adjustedGrossSales = 0
     let totalDiscounts = 0
     let totalTax = 0
+    let totalTaxFromInclusive = 0
+    let totalTaxFromExclusive = 0
     const totalSurcharge = 0
     let totalTips = 0
     const totalGratuity = 0
@@ -307,6 +309,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     orders.forEach(order => {
       const orderSubtotal = Number(order.subtotal) || 0
       const orderTax = Number(order.taxTotal) || 0
+      const orderTaxFromInclusive = Number(order.taxFromInclusive) || 0
+      const orderTaxFromExclusive = Number(order.taxFromExclusive) || 0
       const orderTip = Number(order.tipTotal) || 0
       const orderDiscount = Number(order.discountTotal) || 0
       const orderCommission = Number(order.commissionTotal) || 0
@@ -314,6 +318,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       adjustedGrossSales += orderSubtotal
       totalDiscounts += orderDiscount
       totalTax += orderTax
+      totalTaxFromInclusive += orderTaxFromInclusive
+      totalTaxFromExclusive += orderTaxFromExclusive
       totalTips += orderTip
       totalCommission += orderCommission
 
@@ -357,7 +363,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     })
 
-    const netSales = adjustedGrossSales - totalDiscounts
+    // Back out inclusive tax from subtotal (inclusive items already contain embedded tax)
+    const preTaxGrossSales = adjustedGrossSales - totalTaxFromInclusive
+    const netSales = preTaxGrossSales - totalDiscounts
     const grossSales = netSales + totalTax + totalSurcharge
     const totalCollected = grossSales + totalTips - totalRefunds
 
@@ -643,10 +651,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
 
       revenue: {
-        adjustedGrossSales: round(adjustedGrossSales),
+        adjustedGrossSales: round(preTaxGrossSales),
         discounts: round(totalDiscounts),
         netSales: round(netSales),
         salesTax: round(totalTax),
+        taxFromInclusive: round(totalTaxFromInclusive),
+        taxFromExclusive: round(totalTaxFromExclusive),
         surcharge: round(totalSurcharge),
         grossSales: round(grossSales),
         tips: round(totalTips),

@@ -180,6 +180,8 @@ export interface ReceiptData {
   subtotal: number
   discountTotal: number
   taxTotal: number
+  taxFromInclusive?: number
+  taxFromExclusive?: number
   tipTotal: number
   total: number
   createdAt: string

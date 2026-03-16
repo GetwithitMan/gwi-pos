@@ -18,6 +18,8 @@ interface ReceiptOrder {
   subtotal: unknown
   discountTotal: unknown
   taxTotal: unknown
+  taxFromInclusive?: unknown
+  taxFromExclusive?: unknown
   tipTotal: unknown
   total: unknown
   createdAt: Date
@@ -152,6 +154,8 @@ export function buildReceiptData(
     subtotal: Number(order.subtotal ?? 0),
     discountTotal: Number(order.discountTotal ?? 0),
     taxTotal: Number(order.taxTotal ?? 0),
+    taxFromInclusive: Number(order.taxFromInclusive ?? 0) || undefined,
+    taxFromExclusive: Number(order.taxFromExclusive ?? 0) || undefined,
     tipTotal: Number(order.tipTotal ?? 0),
     total,
     createdAt: order.createdAt.toISOString(),

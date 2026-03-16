@@ -80,6 +80,9 @@ export interface ReceiptData {
   cashSubtotal?: number
   cashTax?: number
   cashTotal?: number
+  // Tax-inclusive breakdown (present when inclusive items exist)
+  taxFromInclusive?: number
+  taxFromExclusive?: number
   // Surcharge disclosure (present when pricing program is 'surcharge')
   surchargeDisclosure?: string | null
 }
@@ -317,7 +320,11 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                 </div>
               )}
               <div className="flex justify-between text-xs">
-                <span>Tax:</span>
+                <span>
+                  {data.taxFromInclusive && data.taxFromInclusive > 0 && (!data.taxFromExclusive || data.taxFromExclusive === 0)
+                    ? 'Tax (included):'
+                    : 'Tax:'}
+                </span>
                 <span>{formatCurrency(data.taxTotal)}</span>
               </div>
               {data.tipTotal > 0 && (

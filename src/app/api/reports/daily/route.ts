@@ -159,6 +159,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               ELSE 0 END
           ), 0)::float AS gross,
           COALESCE(SUM(
+            CASE WHEN oi.status = 'active' AND oi."isTaxInclusive" = true
+              THEN (oi.price * oi.quantity) + COALESCE(mod_totals.mod_total, 0)
+              ELSE 0 END
+          ), 0)::float AS inclusive_gross,
+          COALESCE(SUM(
             CASE WHEN oi.status = 'active' AND o."subtotal" > 0 AND o."discountTotal" > 0
               THEN (oi.price * oi.quantity)::float / NULLIF(o."subtotal"::float, 0) * o."discountTotal"::float
               ELSE 0 END
@@ -636,6 +641,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
+    // Get inclusive tax rate for backing out embedded tax from category gross
+    const inclTaxRateRaw = locationSettings.tax?.inclusiveTaxRate
+    const catInclRate = (inclTaxRateRaw != null && Number.isFinite(inclTaxRateRaw) && inclTaxRateRaw > 0)
+      ? inclTaxRateRaw / 100 : 0
+
     // Merge SQL category sales
     categorySales.forEach(row => {
       const id = row.category_id
@@ -651,7 +661,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       }
       catMap[id].units = Number(row.units) || 0
-      catMap[id].gross = Number(row.gross) || 0
+      // Back out inclusive tax from category gross so it matches preTaxGrossSales
+      const rawGross = Number(row.gross) || 0
+      const inclusiveGross = Number(row.inclusive_gross) || 0
+      const backedOutTax = (catInclRate > 0 && inclusiveGross > 0)
+        ? Math.round((inclusiveGross - inclusiveGross / (1 + catInclRate)) * 100) / 100
+        : 0
+      catMap[id].gross = rawGross - backedOutTax
       catMap[id].discounts = Number(row.discount_share) || 0
     })
 
@@ -1170,6 +1186,7 @@ interface CategorySalesRow {
   category_type: string
   units: number
   gross: number
+  inclusive_gross: number
   discount_share: number
 }
 
