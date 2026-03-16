@@ -4,16 +4,23 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/reports/delivery — Delivery performance report
+ * GET /api/reports/delivery — Delivery analytics report
  *
- * Query params: dateFrom, dateTo
+ * Query params: startDate, endDate, groupBy? (zone|driver|day)
  *
- * Metrics: total deliveries, average delivery time, on-time %,
- *          per-driver stats, delivery revenue, fee revenue
+ * Metrics:
+ *   - Total deliveries, completed, failed, cancelled
+ *   - On-time % (delivered within promisedAt or estimatedMinutes)
+ *   - Avg door-to-door time (dispatchedAt -> deliveredAt)
+ *   - Per-zone breakdown: count, avg time, revenue (deliveryFee sum)
+ *   - Per-driver breakdown: count, avg time, on-time %
+ *   - Cash variance total
+ *   - Cost per delivery (mileage + per-delivery pay)
  */
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -24,29 +31,35 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Auth check
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.REPORTS_VIEW)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_REPORTS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId, { subfeature: 'deliveryReportsProvisioned' })
+    if (featureGate) return featureGate
+
     const searchParams = request.nextUrl.searchParams
-    const dateFrom = searchParams.get('dateFrom')
-    const dateTo = searchParams.get('dateTo')
+    const startDateParam = searchParams.get('startDate')
+    const endDateParam = searchParams.get('endDate')
+    const groupBy = searchParams.get('groupBy') // zone | driver | day
 
     // Default: today
-    const startDate = dateFrom ? new Date(dateFrom) : new Date(new Date().setHours(0, 0, 0, 0))
-    const endDate = dateTo ? new Date(dateTo) : new Date()
+    const startDate = startDateParam ? new Date(startDateParam) : new Date(new Date().setHours(0, 0, 0, 0))
+    const endDate = endDateParam ? new Date(endDateParam) : new Date()
 
-    // Overall metrics
-    const overallStats: any[] = await db.$queryRawUnsafe(`
+    // ── Summary Metrics ────────────────────────────────────────────────────────
+    const summaryRows: any[] = await db.$queryRawUnsafe(`
       SELECT
         COUNT(*)::int as "totalDeliveries",
         COUNT(*) FILTER (WHERE status = 'delivered')::int as "completedDeliveries",
-        COUNT(*) FILTER (WHERE status = 'cancelled')::int as "cancelledDeliveries",
-        COUNT(*) FILTER (WHERE status IN ('pending', 'preparing', 'ready_for_pickup', 'out_for_delivery'))::int as "activeDeliveries",
+        COUNT(*) FILTER (WHERE status IN ('failed_delivery', 'returned_to_store'))::int as "failedDeliveries",
+        COUNT(*) FILTER (WHERE status IN ('cancelled_before_dispatch', 'cancelled_after_dispatch'))::int as "cancelledDeliveries",
+        COUNT(*) FILTER (WHERE status NOT IN ('delivered', 'failed_delivery', 'returned_to_store', 'cancelled_before_dispatch', 'cancelled_after_dispatch'))::int as "activeDeliveries",
         AVG(
           CASE WHEN "deliveredAt" IS NOT NULL AND "dispatchedAt" IS NOT NULL
           THEN EXTRACT(EPOCH FROM ("deliveredAt" - "dispatchedAt")) / 60
           END
-        )::float as "avgDeliveryMinutes",
+        )::float as "avgDoorToDoorMinutes",
         AVG(
           CASE WHEN "deliveredAt" IS NOT NULL
           THEN EXTRACT(EPOCH FROM ("deliveredAt" - "createdAt")) / 60
@@ -55,7 +68,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         COALESCE(SUM("deliveryFee"), 0)::float as "totalFeeRevenue",
         COUNT(*) FILTER (
           WHERE "deliveredAt" IS NOT NULL
-          AND EXTRACT(EPOCH FROM ("deliveredAt" - "createdAt")) / 60 <= "estimatedMinutes"
+          AND (
+            ("promisedAt" IS NOT NULL AND "deliveredAt" <= "promisedAt")
+            OR
+            ("promisedAt" IS NULL AND "estimatedMinutes" IS NOT NULL
+             AND EXTRACT(EPOCH FROM ("deliveredAt" - "createdAt")) / 60 <= "estimatedMinutes")
+          )
         )::int as "onTimeCount"
       FROM "DeliveryOrder"
       WHERE "locationId" = $1
@@ -63,98 +81,169 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         AND "createdAt" <= $3
     `, locationId, startDate, endDate)
 
-    const stats = overallStats[0] || {}
-    const completedCount = stats.completedDeliveries || 0
+    const summary = summaryRows[0] || {}
+    const completedCount = summary.completedDeliveries || 0
     const onTimePercent = completedCount > 0
-      ? Math.round((stats.onTimeCount / completedCount) * 100)
+      ? Math.round((summary.onTimeCount / completedCount) * 100)
       : 0
 
-    // Per-driver stats
-    const driverStats: any[] = await db.$queryRawUnsafe(`
+    // ── Cash Variance Total ─────────────────────────────────────────────────────
+    const varianceRows: any[] = await db.$queryRawUnsafe(`
+      SELECT COALESCE(SUM("cashCollectedCents" - "cashExpectedCents"), 0)::int as "totalVarianceCents"
+      FROM "DeliveryDriverSession"
+      WHERE "locationId" = $1
+        AND "startedAt" >= $2
+        AND "startedAt" <= $3
+        AND "endedAt" IS NOT NULL
+    `, locationId, startDate, endDate)
+    const totalVarianceCents = varianceRows[0]?.totalVarianceCents || 0
+
+    // ── Per-Zone Breakdown ──────────────────────────────────────────────────────
+    const byZone: any[] = await db.$queryRawUnsafe(`
       SELECT
-        d."driverId",
-        e."firstName",
-        e."lastName",
+        dz.id as "zoneId",
+        dz."name" as "zoneName",
         COUNT(*)::int as "totalDeliveries",
-        COUNT(*) FILTER (WHERE d.status = 'delivered')::int as "completedDeliveries",
+        COUNT(*) FILTER (WHERE do_.status = 'delivered')::int as "completedDeliveries",
         AVG(
-          CASE WHEN d."deliveredAt" IS NOT NULL AND d."dispatchedAt" IS NOT NULL
-          THEN EXTRACT(EPOCH FROM (d."deliveredAt" - d."dispatchedAt")) / 60
+          CASE WHEN do_."deliveredAt" IS NOT NULL AND do_."dispatchedAt" IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (do_."deliveredAt" - do_."dispatchedAt")) / 60
           END
-        )::float as "avgDeliveryMinutes",
-        COUNT(*) FILTER (
-          WHERE d."deliveredAt" IS NOT NULL
-          AND EXTRACT(EPOCH FROM (d."deliveredAt" - d."createdAt")) / 60 <= d."estimatedMinutes"
-        )::int as "onTimeCount"
-      FROM "DeliveryOrder" d
-      JOIN "Employee" e ON e.id = d."driverId"
-      WHERE d."locationId" = $1
-        AND d."createdAt" >= $2
-        AND d."createdAt" <= $3
-        AND d."driverId" IS NOT NULL
-      GROUP BY d."driverId", e."firstName", e."lastName"
+        )::float as "avgDoorToDoorMinutes",
+        COALESCE(SUM(do_."deliveryFee"), 0)::float as "feeRevenue"
+      FROM "DeliveryOrder" do_
+      LEFT JOIN "DeliveryZone" dz ON dz.id = do_."zoneId"
+      WHERE do_."locationId" = $1
+        AND do_."createdAt" >= $2
+        AND do_."createdAt" <= $3
+      GROUP BY dz.id, dz."name"
       ORDER BY "completedDeliveries" DESC
     `, locationId, startDate, endDate)
 
-    const driverMetrics = driverStats.map(d => ({
+    const byZoneEnriched = byZone.map(z => ({
+      zoneId: z.zoneId,
+      zoneName: z.zoneName || 'Unzoned',
+      totalDeliveries: z.totalDeliveries,
+      completedDeliveries: z.completedDeliveries,
+      avgDoorToDoorMinutes: z.avgDoorToDoorMinutes ? Math.round(z.avgDoorToDoorMinutes) : null,
+      feeRevenue: z.feeRevenue,
+    }))
+
+    // ── Per-Driver Breakdown ────────────────────────────────────────────────────
+    const byDriver: any[] = await db.$queryRawUnsafe(`
+      SELECT
+        dd.id as "driverId",
+        e."firstName", e."lastName",
+        COUNT(*)::int as "totalDeliveries",
+        COUNT(*) FILTER (WHERE do_.status = 'delivered')::int as "completedDeliveries",
+        AVG(
+          CASE WHEN do_."deliveredAt" IS NOT NULL AND do_."dispatchedAt" IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (do_."deliveredAt" - do_."dispatchedAt")) / 60
+          END
+        )::float as "avgDoorToDoorMinutes",
+        COUNT(*) FILTER (
+          WHERE do_."deliveredAt" IS NOT NULL
+          AND (
+            (do_."promisedAt" IS NOT NULL AND do_."deliveredAt" <= do_."promisedAt")
+            OR
+            (do_."promisedAt" IS NULL AND do_."estimatedMinutes" IS NOT NULL
+             AND EXTRACT(EPOCH FROM (do_."deliveredAt" - do_."createdAt")) / 60 <= do_."estimatedMinutes")
+          )
+        )::int as "onTimeCount"
+      FROM "DeliveryOrder" do_
+      JOIN "DeliveryDriver" dd ON dd.id = do_."driverId"
+      JOIN "Employee" e ON e.id = dd."employeeId"
+      WHERE do_."locationId" = $1
+        AND do_."createdAt" >= $2
+        AND do_."createdAt" <= $3
+        AND do_."driverId" IS NOT NULL
+      GROUP BY dd.id, e."firstName", e."lastName"
+      ORDER BY "completedDeliveries" DESC
+    `, locationId, startDate, endDate)
+
+    const byDriverEnriched = byDriver.map(d => ({
       driverId: d.driverId,
       name: `${d.firstName} ${d.lastName}`.trim(),
       totalDeliveries: d.totalDeliveries,
       completedDeliveries: d.completedDeliveries,
-      avgDeliveryMinutes: d.avgDeliveryMinutes ? Math.round(d.avgDeliveryMinutes) : null,
+      avgDoorToDoorMinutes: d.avgDoorToDoorMinutes ? Math.round(d.avgDoorToDoorMinutes) : null,
       onTimePercent: d.completedDeliveries > 0
         ? Math.round((d.onTimeCount / d.completedDeliveries) * 100)
         : 0,
     }))
 
-    // Delivery revenue (order totals for delivered orders)
-    const revenueResult: any[] = await db.$queryRawUnsafe(`
-      SELECT COALESCE(SUM(sub.subtotal), 0)::float as "totalRevenue"
-      FROM (
-        SELECT COALESCE(SUM(oi.price * oi.quantity), 0) as subtotal
-        FROM "DeliveryOrder" d
-        JOIN "Order" o ON o.id = d."orderId"
-        JOIN "OrderItem" oi ON oi."orderId" = o.id AND oi."deletedAt" IS NULL AND oi."voidedAt" IS NULL
-        WHERE d."locationId" = $1
-          AND d."createdAt" >= $2
-          AND d."createdAt" <= $3
-          AND d.status = 'delivered'
-        GROUP BY d.id
-      ) sub
-    `, locationId, startDate, endDate)
-
-    // Hourly distribution
-    const hourlyDist: any[] = await db.$queryRawUnsafe(`
+    // ── Per-Day Breakdown ───────────────────────────────────────────────────────
+    const byDay: any[] = await db.$queryRawUnsafe(`
       SELECT
-        EXTRACT(HOUR FROM "createdAt")::int as hour,
-        COUNT(*)::int as count
+        DATE("createdAt") as "date",
+        COUNT(*)::int as "totalDeliveries",
+        COUNT(*) FILTER (WHERE status = 'delivered')::int as "completedDeliveries",
+        COUNT(*) FILTER (WHERE status IN ('failed_delivery', 'returned_to_store'))::int as "failedDeliveries",
+        COUNT(*) FILTER (WHERE status IN ('cancelled_before_dispatch', 'cancelled_after_dispatch'))::int as "cancelledDeliveries",
+        AVG(
+          CASE WHEN "deliveredAt" IS NOT NULL AND "dispatchedAt" IS NOT NULL
+          THEN EXTRACT(EPOCH FROM ("deliveredAt" - "dispatchedAt")) / 60
+          END
+        )::float as "avgDoorToDoorMinutes",
+        COALESCE(SUM("deliveryFee"), 0)::float as "feeRevenue"
       FROM "DeliveryOrder"
       WHERE "locationId" = $1
         AND "createdAt" >= $2
         AND "createdAt" <= $3
-      GROUP BY hour
-      ORDER BY hour
+      GROUP BY DATE("createdAt")
+      ORDER BY "date" ASC
     `, locationId, startDate, endDate)
 
+    const byDayEnriched = byDay.map(d => ({
+      date: d.date,
+      totalDeliveries: d.totalDeliveries,
+      completedDeliveries: d.completedDeliveries,
+      failedDeliveries: d.failedDeliveries,
+      cancelledDeliveries: d.cancelledDeliveries,
+      avgDoorToDoorMinutes: d.avgDoorToDoorMinutes ? Math.round(d.avgDoorToDoorMinutes) : null,
+      feeRevenue: d.feeRevenue,
+    }))
+
+    // ── Cost Per Delivery ───────────────────────────────────────────────────────
+    // Sum of mileage cost + per-delivery pay from driver sessions in the period
+    const costRows: any[] = await db.$queryRawUnsafe(`
+      SELECT
+        COALESCE(SUM(ds."totalMileageCostCents"), 0)::int as "totalMileageCostCents",
+        COALESCE(SUM(ds."totalDeliveryPayCents"), 0)::int as "totalDeliveryPayCents"
+      FROM "DeliveryDriverSession" ds
+      WHERE ds."locationId" = $1
+        AND ds."startedAt" >= $2
+        AND ds."startedAt" <= $3
+        AND ds."endedAt" IS NOT NULL
+    `, locationId, startDate, endDate)
+
+    const totalCostCents = (costRows[0]?.totalMileageCostCents || 0) + (costRows[0]?.totalDeliveryPayCents || 0)
+    const costPerDelivery = completedCount > 0
+      ? Math.round(totalCostCents / completedCount) / 100
+      : 0
+
     return NextResponse.json({
-      data: {
+      report: {
         dateRange: {
           from: startDate.toISOString(),
           to: endDate.toISOString(),
         },
         summary: {
-          totalDeliveries: stats.totalDeliveries || 0,
+          totalDeliveries: summary.totalDeliveries || 0,
           completedDeliveries: completedCount,
-          cancelledDeliveries: stats.cancelledDeliveries || 0,
-          activeDeliveries: stats.activeDeliveries || 0,
-          avgDeliveryMinutes: stats.avgDeliveryMinutes ? Math.round(stats.avgDeliveryMinutes) : null,
-          avgTotalMinutes: stats.avgTotalMinutes ? Math.round(stats.avgTotalMinutes) : null,
+          failedDeliveries: summary.failedDeliveries || 0,
+          cancelledDeliveries: summary.cancelledDeliveries || 0,
+          activeDeliveries: summary.activeDeliveries || 0,
           onTimePercent,
-          totalFeeRevenue: stats.totalFeeRevenue || 0,
-          totalDeliveryRevenue: revenueResult[0]?.totalRevenue || 0,
+          avgDoorToDoorMinutes: summary.avgDoorToDoorMinutes ? Math.round(summary.avgDoorToDoorMinutes) : null,
+          avgTotalMinutes: summary.avgTotalMinutes ? Math.round(summary.avgTotalMinutes) : null,
+          totalFeeRevenue: summary.totalFeeRevenue || 0,
+          cashVarianceCents: totalVarianceCents,
+          costPerDelivery,
         },
-        driverMetrics,
-        hourlyDistribution: hourlyDist,
+        byZone: byZoneEnriched,
+        byDriver: byDriverEnriched,
+        byDay: byDayEnriched,
       },
     })
   } catch (error) {

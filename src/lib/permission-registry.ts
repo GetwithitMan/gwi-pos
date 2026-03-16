@@ -1431,6 +1431,154 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
 
   // =========================================================================
+  // DELIVERY — SHIFT_SERVICE + BUSINESS_SETUP
+  // =========================================================================
+  'delivery.view': {
+    label: 'View Deliveries',
+    description: 'Lets this employee see the delivery queue, active runs, and delivery status board.',
+    details: [
+      'Read-only access to the delivery management screen',
+      'Can see driver assignments, order status, and ETAs',
+      'Cannot dispatch, reassign, or modify deliveries',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Server', 'Manager'],
+  },
+  'delivery.create': {
+    label: 'Create Delivery Orders',
+    description: 'Lets this employee create new delivery orders from the POS.',
+    details: [
+      'Can enter customer address, phone, and delivery details',
+      'Creates the order in the delivery queue for dispatch',
+      'Does not grant ability to assign drivers or dispatch',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Server', 'Cashier', 'Manager'],
+  },
+  'delivery.manage': {
+    label: 'Manage Deliveries',
+    description: 'Lets this employee edit delivery orders, update status, and reassign drivers.',
+    details: [
+      'Can modify delivery addresses, ETAs, and special instructions',
+      'Can reassign orders between drivers',
+      'Can mark orders as delivered or returned',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager'],
+  },
+  'delivery.dispatch': {
+    label: 'Dispatch Deliveries',
+    description: 'Lets this employee assign drivers to orders and send them out for delivery.',
+    details: [
+      'Can assign orders to available drivers',
+      'Can build multi-order runs when enabled',
+      'Can override dispatch policy warnings (e.g. zone mismatch)',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager'],
+  },
+  'delivery.settings': {
+    label: 'Delivery Settings',
+    description: 'Lets this employee configure delivery fees, radius, dispatch policy, and all delivery system settings.',
+    details: [
+      'Controls delivery fees, free delivery thresholds, and zone configuration',
+      'Can modify dispatch assignment strategy and driver pay settings',
+      'Can enable/disable SMS notifications and customer tracking',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Owner', 'Manager'],
+  },
+  'delivery.zones.manage': {
+    label: 'Manage Delivery Zones',
+    description: 'Lets this employee create, edit, and delete delivery zones and their fee schedules.',
+    details: [
+      'Can draw zone boundaries on the map',
+      'Can set per-zone delivery fees and minimum order amounts',
+      'Can enable or disable zones without deleting them',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'delivery.drivers.manage': {
+    label: 'Manage Drivers',
+    description: 'Lets this employee manage driver profiles, vehicles, shifts, and starting banks.',
+    details: [
+      'Can add and remove drivers from the delivery roster',
+      'Can set driver pay rates and vehicle information',
+      'Can manage driver cash banks and reconciliation',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'delivery.reports': {
+    label: 'Delivery Reports',
+    description: 'Lets this employee view delivery performance, driver efficiency, and revenue reports.',
+    details: [
+      'Access to delivery-specific analytics and KPIs',
+      'Includes driver mileage, tip, and pay reports',
+      'Can view zone performance and customer satisfaction metrics',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'delivery.audit': {
+    label: 'Delivery Audit',
+    description: 'Lets this employee view the delivery audit trail including cash handling, proof of delivery, and exceptions.',
+    details: [
+      'Read-only access to delivery audit logs',
+      'Can review proof-of-delivery photos and signatures',
+      'Can view cash drop history and shortage reports',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'delivery.exceptions': {
+    label: 'Delivery Exceptions',
+    description: 'Lets this employee handle delivery exceptions like late orders, refused deliveries, and customer complaints.',
+    details: [
+      'Can flag and resolve delivery issues',
+      'Can approve refunds or credits for delivery failures',
+      'Can suspend customers from future deliveries',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager'],
+  },
+  'delivery.policy_override': {
+    label: 'Delivery Policy Override',
+    description: 'Lets this employee override delivery dispatch policies such as zone restrictions, cash limits, and proof requirements.',
+    details: [
+      'Can dispatch outside valid zones when blockDispatchWithoutValidZone is enabled',
+      'Can override cash-on-delivery limits and prepayment requirements',
+      'Can bypass proof-of-delivery requirements for specific orders',
+      'All overrides are logged in the audit trail',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+
+  // =========================================================================
   // ADMIN FLAGS — BUSINESS_SETUP
   // =========================================================================
   'admin': {

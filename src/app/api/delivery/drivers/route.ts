@@ -2,15 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
-import { emitToLocation } from '@/lib/socket-server'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * GET /api/delivery/drivers — List available drivers
- *
- * Returns employees who have the 'driver' permission or role,
- * with their current delivery count and status.
+ * GET /api/delivery/drivers — List driver profiles enriched with active session status
  */
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -19,65 +18,72 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
-    // Get all active employees who could be drivers
-    // A "driver" is any active employee (the host/manager assigns them)
-    // In practice, filter to employees clocked in or with driver-related roles
-    const drivers = await db.employee.findMany({
-      where: {
-        locationId,
-        isActive: true,
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        role: { select: { name: true } },
-      },
-      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
-    })
+    // Auth check
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Get active delivery counts per driver
-    const activeCounts: any[] = await db.$queryRawUnsafe(`
-      SELECT "driverId", COUNT(*)::int as "activeCount"
-      FROM "DeliveryOrder"
-      WHERE "locationId" = $1
-        AND "driverId" IS NOT NULL
-        AND status IN ('out_for_delivery')
-      GROUP BY "driverId"
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId)
+    if (featureGate) return featureGate
+
+    const rows: any[] = await db.$queryRawUnsafe(`
+      SELECT dd.*,
+             e."firstName" as "employeeFirstName",
+             e."lastName" as "employeeLastName",
+             e."displayName" as "employeeDisplayName",
+             e."phone" as "employeePhone",
+             ds.id as "sessionId",
+             ds.status as "sessionStatus",
+             ds."startedAt" as "sessionStartedAt",
+             ds."startingBankCents" as "sessionStartingBankCents",
+             ds."cashCollectedCents" as "sessionCashCollectedCents",
+             ds."cashDroppedCents" as "sessionCashDroppedCents"
+      FROM "DeliveryDriver" dd
+      LEFT JOIN "Employee" e ON e.id = dd."employeeId"
+      LEFT JOIN "DeliveryDriverSession" ds
+        ON ds."driverId" = dd.id
+        AND ds."endedAt" IS NULL
+        AND ds."locationId" = $1
+      WHERE dd."locationId" = $1
+        AND dd."deletedAt" IS NULL
+      ORDER BY e."firstName" ASC, e."lastName" ASC
     `, locationId)
 
-    const countMap = new Map(activeCounts.map(c => [c.driverId, c.activeCount]))
+    const drivers = rows.map(row => ({
+      id: row.id,
+      employeeId: row.employeeId,
+      vehicleType: row.vehicleType,
+      vehicleMake: row.vehicleMake,
+      vehicleModel: row.vehicleModel,
+      vehicleColor: row.vehicleColor,
+      licensePlate: row.licensePlate,
+      isActive: row.isActive,
+      isSuspended: row.isSuspended,
+      suspendedAt: row.suspendedAt,
+      suspendedReason: row.suspendedReason,
+      mileageRateOverride: row.mileageRateOverride != null ? Number(row.mileageRateOverride) : null,
+      preferredZoneIds: row.preferredZoneIds,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      employeeName: row.employeeFirstName
+        ? `${row.employeeFirstName} ${row.employeeLastName}`.trim()
+        : null,
+      employeeDisplayName: row.employeeDisplayName,
+      employeePhone: row.employeePhone,
+      activeSession: row.sessionId
+        ? {
+            id: row.sessionId,
+            status: row.sessionStatus,
+            startedAt: row.sessionStartedAt,
+            startingBankCents: row.sessionStartingBankCents,
+            cashCollectedCents: row.sessionCashCollectedCents,
+            cashDroppedCents: row.sessionCashDroppedCents,
+          }
+        : null,
+    }))
 
-    // Get last delivery time per driver
-    const lastDeliveries: any[] = await db.$queryRawUnsafe(`
-      SELECT DISTINCT ON ("driverId") "driverId", "deliveredAt"
-      FROM "DeliveryOrder"
-      WHERE "locationId" = $1
-        AND "driverId" IS NOT NULL
-        AND status = 'delivered'
-      ORDER BY "driverId", "deliveredAt" DESC
-    `, locationId)
-
-    const lastDeliveryMap = new Map(
-      lastDeliveries.map(d => [d.driverId, d.deliveredAt?.toISOString() ?? null])
-    )
-
-    const enriched = drivers.map(d => {
-      const activeCount = countMap.get(d.id) ?? 0
-      return {
-        id: d.id,
-        name: `${d.firstName} ${d.lastName}`.trim(),
-        phone: d.phone,
-        role: d.role.name,
-        activeDeliveryCount: activeCount,
-        status: activeCount > 0 ? 'on_delivery' : 'available',
-        lastDeliveryAt: lastDeliveryMap.get(d.id) ?? null,
-      }
-    })
-
-    return NextResponse.json({ data: enriched })
+    return NextResponse.json({ drivers })
   } catch (error) {
     console.error('[Delivery/Drivers] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch drivers' }, { status: 500 })
@@ -85,9 +91,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 /**
- * POST /api/delivery/drivers — Assign delivery to driver
+ * POST /api/delivery/drivers — Create a new driver profile
  *
- * Payload: { deliveryId, driverId }
+ * Body: { employeeId, vehicleType?, vehicleMake?, vehicleModel?, vehicleColor?,
+ *         licensePlate?, mileageRateOverride?, preferredZoneIds? }
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -96,63 +103,78 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
+    // Auth check
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DRIVERS_MANAGE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId)
+    if (featureGate) return featureGate
+
     const body = await request.json()
-    const { deliveryId, driverId } = body
+    const {
+      employeeId,
+      vehicleType,
+      vehicleMake,
+      vehicleModel,
+      vehicleColor,
+      licensePlate,
+      mileageRateOverride,
+      preferredZoneIds,
+    } = body
 
-    if (!deliveryId || !driverId) {
-      return NextResponse.json({ error: 'deliveryId and driverId are required' }, { status: 400 })
+    if (!employeeId || typeof employeeId !== 'string') {
+      return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
     }
 
-    // Verify delivery exists
-    const delivery: any[] = await db.$queryRawUnsafe(`
-      SELECT id, status FROM "DeliveryOrder"
-      WHERE id = $1 AND "locationId" = $2
-    `, deliveryId, locationId)
-
-    if (!delivery.length) {
-      return NextResponse.json({ error: 'Delivery order not found' }, { status: 404 })
-    }
-
-    if (delivery[0].status === 'delivered' || delivery[0].status === 'cancelled') {
-      return NextResponse.json({ error: 'Cannot assign driver to a completed or cancelled delivery' }, { status: 400 })
-    }
-
-    // Verify driver exists
-    const driver = await db.employee.findFirst({
-      where: { id: driverId, locationId, isActive: true, deletedAt: null },
+    // Validate employee exists and belongs to location
+    const employee = await db.employee.findFirst({
+      where: { id: employeeId, locationId, deletedAt: null },
       select: { id: true, firstName: true, lastName: true },
     })
 
-    if (!driver) {
-      return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+    if (!employee) {
+      return NextResponse.json({ error: 'Employee not found at this location' }, { status: 404 })
     }
 
-    // Assign driver
-    const updated: any[] = await db.$queryRawUnsafe(`
-      UPDATE "DeliveryOrder"
-      SET "driverId" = $1, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE id = $2 AND "locationId" = $3
+    // Check for existing driver profile
+    const existing: any[] = await db.$queryRawUnsafe(`
+      SELECT id FROM "DeliveryDriver"
+      WHERE "employeeId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+      LIMIT 1
+    `, employeeId, locationId)
+
+    if (existing.length) {
+      return NextResponse.json({ error: 'Driver profile already exists for this employee' }, { status: 409 })
+    }
+
+    // Insert driver profile
+    const inserted: any[] = await db.$queryRawUnsafe(`
+      INSERT INTO "DeliveryDriver" (
+        "id", "locationId", "employeeId", "vehicleType", "vehicleMake", "vehicleModel",
+        "vehicleColor", "licensePlate", "mileageRateOverride", "preferredZoneIds",
+        "isActive", "isSuspended", "createdAt", "updatedAt"
+      ) VALUES (
+        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb,
+        true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
       RETURNING *
-    `, driverId, deliveryId, locationId)
+    `,
+      locationId,
+      employeeId,
+      vehicleType?.trim() || null,
+      vehicleMake?.trim() || null,
+      vehicleModel?.trim() || null,
+      vehicleColor?.trim() || null,
+      licensePlate?.trim() || null,
+      mileageRateOverride != null ? Number(mileageRateOverride) : null,
+      preferredZoneIds ? JSON.stringify(preferredZoneIds) : null,
+    )
 
-    // Fire-and-forget socket dispatch
-    void emitToLocation(locationId, 'delivery:updated', {
-      action: 'driver_assigned',
-      deliveryId,
-      driverId,
-      driverName: `${driver.firstName} ${driver.lastName}`.trim(),
-    }).catch(console.error)
-
-    return NextResponse.json({
-      data: {
-        ...updated[0],
-        deliveryFee: Number(updated[0]?.deliveryFee ?? 0),
-        driverName: `${driver.firstName} ${driver.lastName}`.trim(),
-      },
-      message: `Assigned to ${driver.firstName} ${driver.lastName}`,
-    })
+    return NextResponse.json({ driver: inserted[0] }, { status: 201 })
   } catch (error) {
     console.error('[Delivery/Drivers] POST error:', error)
-    return NextResponse.json({ error: 'Failed to assign driver' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to create driver profile' }, { status: 500 })
   }
 })

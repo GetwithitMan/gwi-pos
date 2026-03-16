@@ -175,6 +175,19 @@ export const PERMISSIONS = {
   PAYROLL_VIEW: 'payroll.view',
   PAYROLL_MANAGE: 'payroll.manage',
 
+  // === DELIVERY ===
+  DELIVERY_VIEW: 'delivery.view',
+  DELIVERY_CREATE: 'delivery.create',
+  DELIVERY_MANAGE: 'delivery.manage',
+  DELIVERY_DISPATCH: 'delivery.dispatch',
+  DELIVERY_SETTINGS: 'delivery.settings',
+  DELIVERY_ZONES_MANAGE: 'delivery.zones.manage',
+  DELIVERY_DRIVERS_MANAGE: 'delivery.drivers.manage',
+  DELIVERY_REPORTS: 'delivery.reports',
+  DELIVERY_AUDIT: 'delivery.audit',
+  DELIVERY_EXCEPTIONS: 'delivery.exceptions',
+  DELIVERY_POLICY_OVERRIDE: 'delivery.policy_override',
+
   // === ADMIN LEVELS ===
   ADMIN: 'admin',
   MANAGER: 'manager',

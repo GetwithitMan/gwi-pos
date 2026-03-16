@@ -1,0 +1,225 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
+import { getLocationId, getLocationSettings } from '@/lib/location-cache'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
+import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { canAssignDriver } from '@/lib/delivery/dispatch-policy'
+import { dispatchRunEvent, dispatchDriverStatusChanged } from '@/lib/delivery/dispatch-events'
+
+export const dynamic = 'force-dynamic'
+
+/**
+ * POST /api/delivery/runs/[id]/reassign — Reassign run to a different driver
+ *
+ * Body: { newDriverId, reason }
+ */
+export const POST = withVenue(async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    // Auth check
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_DISPATCH)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId)
+    if (featureGate) return featureGate
+
+    const body = await request.json()
+    const { newDriverId, reason } = body
+
+    if (!newDriverId || typeof newDriverId !== 'string') {
+      return NextResponse.json({ error: 'newDriverId is required' }, { status: 400 })
+    }
+    if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+      return NextResponse.json({ error: 'reason is required for reassignment' }, { status: 400 })
+    }
+
+    // Load dispatch policy
+    const rawSettings = await getLocationSettings(locationId)
+    const settings = mergeWithDefaults(rawSettings as any)
+    const deliveryConfig = settings.delivery ?? DEFAULT_DELIVERY
+    const policy = deliveryConfig.dispatchPolicy
+
+    const result = await db.$transaction(async (tx) => {
+      // Fetch the run
+      const runs: any[] = await tx.$queryRawUnsafe(
+        `SELECT * FROM "DeliveryRun" WHERE id = $1 AND "locationId" = $2 FOR UPDATE`,
+        id,
+        locationId,
+      )
+
+      if (!runs.length) {
+        throw new Error('Run not found')
+      }
+
+      const run = runs[0]
+      const oldDriverId = run.driverId
+
+      if (oldDriverId === newDriverId) {
+        throw new Error('New driver is the same as the current driver')
+      }
+
+      // Run must not be in terminal state
+      if (['completed', 'returned', 'cancelled'].includes(run.status)) {
+        throw new Error(`Cannot reassign a run in '${run.status}' status`)
+      }
+
+      // Validate new driver exists and is eligible
+      const newDrivers: any[] = await tx.$queryRawUnsafe(
+        `SELECT dd.*, e."firstName", e."lastName"
+         FROM "DeliveryDriver" dd
+         JOIN "Employee" e ON e.id = dd."employeeId"
+         WHERE dd.id = $1 AND dd."locationId" = $2`,
+        newDriverId,
+        locationId,
+      )
+
+      if (!newDrivers.length) {
+        throw new Error('New driver not found')
+      }
+
+      const newDriver = newDrivers[0]
+      const driverCheck = canAssignDriver(policy, {
+        isSuspended: newDriver.isSuspended ?? false,
+        isActive: newDriver.isActive ?? true,
+      })
+      if (!driverCheck.allowed) {
+        throw new Error(driverCheck.reason || 'New driver cannot be assigned')
+      }
+
+      // Check new driver has no active run
+      const newDriverActiveRuns: any[] = await tx.$queryRawUnsafe(
+        `SELECT id FROM "DeliveryRun"
+         WHERE "driverId" = $1 AND "locationId" = $2
+           AND status NOT IN ('completed', 'returned', 'cancelled')
+           AND id != $3
+         LIMIT 1`,
+        newDriverId,
+        locationId,
+        id,
+      )
+      if (newDriverActiveRuns.length > 0) {
+        throw new Error('New driver already has an active run')
+      }
+
+      // 1. Update DeliveryRun
+      const updatedRun: any[] = await tx.$queryRawUnsafe(
+        `UPDATE "DeliveryRun"
+         SET "driverId" = $1, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE id = $2 AND "locationId" = $3
+         RETURNING *`,
+        newDriverId,
+        id,
+        locationId,
+      )
+
+      // 2. Update all DeliveryOrders in run
+      await tx.$queryRawUnsafe(
+        `UPDATE "DeliveryOrder"
+         SET "driverId" = $1, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "runId" = $2 AND "locationId" = $3`,
+        newDriverId,
+        id,
+        locationId,
+      )
+
+      // 3. Update old driver session → available
+      if (oldDriverId) {
+        const oldSessions: any[] = await tx.$queryRawUnsafe(
+          `UPDATE "DeliveryDriverSession"
+           SET "status" = 'available', "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "driverId" = $1 AND "locationId" = $2
+             AND "endedAt" IS NULL AND status = 'on_delivery'
+           RETURNING *`,
+          oldDriverId,
+          locationId,
+        )
+        if (oldSessions.length > 0) {
+          void dispatchDriverStatusChanged(locationId, oldSessions[0]).catch(console.error)
+        }
+      }
+
+      // 4. Update new driver session → on_delivery
+      const newSessions: any[] = await tx.$queryRawUnsafe(
+        `UPDATE "DeliveryDriverSession"
+         SET "status" = 'on_delivery', "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "driverId" = $1 AND "locationId" = $2
+           AND "endedAt" IS NULL AND status != 'off_duty'
+         RETURNING *`,
+        newDriverId,
+        locationId,
+      )
+      if (newSessions.length > 0) {
+        void dispatchDriverStatusChanged(locationId, newSessions[0]).catch(console.error)
+      }
+
+      // Get old driver name for audit
+      let oldDriverName = 'unknown'
+      if (oldDriverId) {
+        const oldDrivers: any[] = await tx.$queryRawUnsafe(
+          `SELECT e."firstName", e."lastName"
+           FROM "DeliveryDriver" dd
+           JOIN "Employee" e ON e.id = dd."employeeId"
+           WHERE dd.id = $1`,
+          oldDriverId,
+        )
+        if (oldDrivers.length > 0) {
+          oldDriverName = `${oldDrivers[0].firstName} ${oldDrivers[0].lastName}`.trim()
+        }
+      }
+
+      return {
+        run: updatedRun[0],
+        oldDriverId,
+        oldDriverName,
+        newDriverName: `${newDriver.firstName} ${newDriver.lastName}`.trim(),
+      }
+    })
+
+    // Write audit log (outside tx for non-blocking)
+    void writeDeliveryAuditLog({
+      locationId,
+      action: 'reassignment',
+      runId: id,
+      driverId: newDriverId,
+      employeeId: actor.employeeId,
+      previousValue: { driverId: result.oldDriverId, driverName: result.oldDriverName },
+      newValue: { driverId: newDriverId, driverName: result.newDriverName },
+      reason: reason.trim(),
+    }).catch(console.error)
+
+    // Fire socket events
+    void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(console.error)
+
+    return NextResponse.json({
+      run: result.run,
+      message: `Run reassigned from ${result.oldDriverName} to ${result.newDriverName}`,
+    })
+  } catch (error: any) {
+    console.error('[Delivery/Runs/Reassign] POST error:', error)
+    const message = error?.message || 'Failed to reassign run'
+    if (
+      message.includes('not found') ||
+      message.includes('same as the current') ||
+      message.includes('Cannot reassign') ||
+      message.includes('active run') ||
+      message.includes('cannot be assigned')
+    ) {
+      return NextResponse.json({ error: message }, { status: 400 })
+    }
+    return NextResponse.json({ error: 'Failed to reassign run' }, { status: 500 })
+  }
+})

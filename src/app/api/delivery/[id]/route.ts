@@ -5,6 +5,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { advanceDeliveryStatus, writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +23,10 @@ export const GET = withVenue(async function GET(
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
+
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId)
+    if (featureGate) return featureGate
 
     // Auth check
     const actor = await getActorFromRequest(request)
@@ -77,8 +83,9 @@ export const GET = withVenue(async function GET(
  *
  * Payload: { status?, driverId?, estimatedMinutes?, notes?, cancelReason? }
  *
- * Status transitions: pending -> preparing -> ready_for_pickup -> out_for_delivery -> delivered
- *                     Any status -> cancelled
+ * If `status` is provided, uses the state machine (advanceDeliveryStatus) for validated
+ * transitions, audit logging, and socket events. Other field updates (driverId, notes, etc.)
+ * are applied directly and also audit-logged.
  */
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
@@ -91,6 +98,10 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId)
+    if (featureGate) return featureGate
+
     // Auth check
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
@@ -99,7 +110,88 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { status, driverId, estimatedMinutes, notes, cancelReason } = body
 
-    // Fetch existing
+    // ── Status change via state machine ─────────────────────────────────
+    if (status) {
+      const result = await advanceDeliveryStatus({
+        deliveryOrderId: id,
+        locationId,
+        newStatus: status,
+        employeeId: auth.employee.id,
+        cancelReason,
+      })
+
+      if (!result.success) {
+        return NextResponse.json({ error: result.error }, { status: 400 })
+      }
+
+      let delivery = result.deliveryOrder
+
+      // If there are also non-status field updates, apply them after the status change
+      const hasFieldUpdates = driverId !== undefined || estimatedMinutes !== undefined || notes !== undefined
+      if (hasFieldUpdates) {
+        const fieldUpdates: string[] = ['"updatedAt" = CURRENT_TIMESTAMP']
+        const fieldParams: any[] = []
+        let paramIdx = 1
+
+        if (driverId !== undefined) {
+          fieldUpdates.push(`"driverId" = $${paramIdx}`)
+          fieldParams.push(driverId || null)
+          paramIdx++
+        }
+
+        if (estimatedMinutes !== undefined) {
+          fieldUpdates.push(`"estimatedMinutes" = $${paramIdx}`)
+          fieldParams.push(Number(estimatedMinutes))
+          paramIdx++
+        }
+
+        if (notes !== undefined) {
+          fieldUpdates.push(`"notes" = $${paramIdx}`)
+          fieldParams.push(notes)
+          paramIdx++
+        }
+
+        const idParamIdx = paramIdx
+        const locParamIdx = paramIdx + 1
+        fieldParams.push(id, locationId)
+
+        const updated: any[] = await db.$queryRawUnsafe(`
+          UPDATE "DeliveryOrder"
+          SET ${fieldUpdates.join(', ')}
+          WHERE id = $${idParamIdx} AND "locationId" = $${locParamIdx}
+          RETURNING *
+        `, ...fieldParams)
+
+        if (updated.length) {
+          delivery = updated[0]
+        }
+
+        // Audit log for field changes
+        void writeDeliveryAuditLog({
+          locationId,
+          action: 'field_update',
+          deliveryOrderId: id,
+          employeeId: auth.employee.id,
+          newValue: {
+            ...(driverId !== undefined ? { driverId } : {}),
+            ...(estimatedMinutes !== undefined ? { estimatedMinutes } : {}),
+            ...(notes !== undefined ? { notes } : {}),
+          },
+        }).catch(console.error)
+      }
+
+      return NextResponse.json({
+        data: {
+          ...delivery,
+          deliveryFee: Number(delivery.deliveryFee),
+        },
+        message: `Delivery status updated to ${status}`,
+      })
+    }
+
+    // ── Non-status field updates only ───────────────────────────────────
+
+    // Fetch existing for audit diff
     const existing: any[] = await db.$queryRawUnsafe(`
       SELECT * FROM "DeliveryOrder"
       WHERE id = $1 AND "locationId" = $2
@@ -111,69 +203,38 @@ export const PUT = withVenue(async function PUT(
 
     const current = existing[0]
 
-    // Build update fields
     const updates: string[] = ['"updatedAt" = CURRENT_TIMESTAMP']
     const updateParams: any[] = []
     let paramIdx = 1
-
-    if (status) {
-      // Validate status transition
-      const validTransitions: Record<string, string[]> = {
-        pending: ['preparing', 'cancelled'],
-        preparing: ['ready_for_pickup', 'cancelled'],
-        ready_for_pickup: ['out_for_delivery', 'cancelled'],
-        out_for_delivery: ['delivered', 'cancelled'],
-        delivered: [],
-        cancelled: [],
-      }
-
-      const allowed = validTransitions[current.status] || []
-      if (!allowed.includes(status)) {
-        return NextResponse.json(
-          { error: `Cannot transition from '${current.status}' to '${status}'` },
-          { status: 400 }
-        )
-      }
-
-      updates.push(`"status" = $${paramIdx}`)
-      updateParams.push(status)
-      paramIdx++
-
-      // Set timestamp fields based on status
-      if (status === 'preparing') {
-        updates.push(`"preparedAt" = CURRENT_TIMESTAMP`)
-      } else if (status === 'ready_for_pickup') {
-        updates.push(`"readyAt" = CURRENT_TIMESTAMP`)
-      } else if (status === 'out_for_delivery') {
-        updates.push(`"dispatchedAt" = CURRENT_TIMESTAMP`)
-      } else if (status === 'delivered') {
-        updates.push(`"deliveredAt" = CURRENT_TIMESTAMP`)
-      } else if (status === 'cancelled') {
-        updates.push(`"cancelledAt" = CURRENT_TIMESTAMP`)
-        if (cancelReason) {
-          updates.push(`"cancelReason" = $${paramIdx}`)
-          updateParams.push(cancelReason)
-          paramIdx++
-        }
-      }
-    }
+    const changes: Record<string, any> = {}
+    const previousValues: Record<string, any> = {}
 
     if (driverId !== undefined) {
       updates.push(`"driverId" = $${paramIdx}`)
       updateParams.push(driverId || null)
       paramIdx++
+      changes.driverId = driverId || null
+      previousValues.driverId = current.driverId
     }
 
     if (estimatedMinutes !== undefined) {
       updates.push(`"estimatedMinutes" = $${paramIdx}`)
       updateParams.push(Number(estimatedMinutes))
       paramIdx++
+      changes.estimatedMinutes = Number(estimatedMinutes)
+      previousValues.estimatedMinutes = current.estimatedMinutes
     }
 
     if (notes !== undefined) {
       updates.push(`"notes" = $${paramIdx}`)
       updateParams.push(notes)
       paramIdx++
+      changes.notes = notes
+      previousValues.notes = current.notes
+    }
+
+    if (updateParams.length === 0) {
+      return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
 
     // Add id and locationId params at the end
@@ -194,9 +255,19 @@ export const PUT = withVenue(async function PUT(
 
     const delivery = updated[0]
 
+    // Audit log for field changes
+    void writeDeliveryAuditLog({
+      locationId,
+      action: 'field_update',
+      deliveryOrderId: id,
+      employeeId: auth.employee.id,
+      previousValue: previousValues,
+      newValue: changes,
+    }).catch(console.error)
+
     // Fire-and-forget socket dispatch
     void emitToLocation(locationId, 'delivery:updated', {
-      action: status ? `status_${status}` : 'updated',
+      action: 'updated',
       deliveryId: delivery.id,
       status: delivery.status,
       driverId: delivery.driverId,
@@ -207,7 +278,7 @@ export const PUT = withVenue(async function PUT(
         ...delivery,
         deliveryFee: Number(delivery.deliveryFee),
       },
-      message: status ? `Delivery status updated to ${status}` : 'Delivery order updated',
+      message: 'Delivery order updated',
     })
   } catch (error) {
     console.error('[Delivery/Detail] PUT error:', error)

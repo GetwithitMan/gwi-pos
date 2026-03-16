@@ -134,6 +134,18 @@ export type {
   PayrollExportData,
 } from './tip-payroll-export'
 
+// ─── Delivery Tip Split ──────────────────────────────────────────────────────
+
+export {
+  processDeliveryTipSplit,
+} from './delivery-tip-split'
+
+export type {
+  DeliveryTipMode,
+  DeliveryTipSplitParams,
+  DeliveryTipSplitResult,
+} from './delivery-tip-split'
+
 // ─── Tip Compliance ──────────────────────────────────────────────────────────
 
 export {

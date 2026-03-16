@@ -963,15 +963,117 @@ export const DEFAULT_HOST_VIEW: HostViewSettings = {
 
 // ─── Delivery Management Settings ───────────────────────────────────────────
 
+export interface DeliveryDispatchPolicy {
+  assignmentStrategy: 'manual' | 'round_robin' | 'least_loaded' | 'zone_affinity'
+  driverAcceptanceRequired: boolean
+  cashOnDeliveryAllowed: boolean
+  requirePrepaymentAboveAmount: number
+  maxLateThresholdMinutes: number
+  maxCashBeforeForcedDrop: number
+  maxOrdersPerDriverByTimeOfDay: { peak: number; offPeak: number }
+  blockDispatchWithoutValidZone: boolean
+  voidAfterDispatchRequiresManager: boolean
+  cashShortageApprovalRequired: boolean
+  proofRequiredForFlaggedCustomers: boolean
+  proofRequiredForCashOrders: boolean
+  proofRequiredAboveAmount: number
+  proofRequiredForAlcohol: boolean
+  proofRequiredForApartments: boolean
+  driverCannotEndShiftWithOpenRun: boolean
+  cannotDispatchSuspendedWithoutOverride: boolean
+  cannotMarkDeliveredWithoutRequiredProof: boolean
+  holdReadyUntilAllItemsComplete: boolean
+}
+
 export interface DeliverySettings {
-  enabled: boolean              // Master toggle (default: false)
-  deliveryFee: number           // Default delivery fee in dollars (default: 5.00)
-  freeDeliveryMinimum: number   // Order minimum for free delivery, 0 = no free delivery (default: 0)
-  maxDeliveryRadius: number     // Maximum delivery radius in miles (default: 10)
-  estimatedDeliveryMinutes: number // Estimated delivery time in minutes (default: 45)
-  requirePhone: boolean         // Require phone number for delivery orders (default: true)
-  requireAddress: boolean       // Require address for delivery orders (default: true)
-  maxActiveDeliveries: number   // Maximum concurrent active deliveries (default: 20)
+  // Existing (preserved)
+  enabled: boolean
+  deliveryFee: number
+  freeDeliveryMinimum: number
+  maxDeliveryRadius: number
+  estimatedDeliveryMinutes: number
+  requirePhone: boolean
+  requireAddress: boolean
+  maxActiveDeliveries: number
+
+  // Zone management
+  feeMode: 'flat' | 'zone_based'
+  locationCoordinates: { lat: number; lng: number } | null
+
+  // Dispatch policy
+  dispatchPolicy: DeliveryDispatchPolicy
+
+  // Runs
+  multiRunEnabled: boolean
+  maxOrdersPerRun: number
+
+  // Mileage
+  mileageTrackingMode: 'none' | 'odometer' | 'route_calculated'
+  mileageReimbursementRate: number
+
+  // Driver pay
+  driverPayMode: 'hourly' | 'per_delivery' | 'hourly_plus_delivery'
+  perDeliveryPayAmount: number
+
+  // Cash management
+  cashDropThreshold: number
+  requireStartingBank: boolean
+  defaultStartingBank: number
+  requireCashReconciliation: boolean
+
+  // Notifications
+  smsNotificationsEnabled: boolean
+  smsTemplates: Record<string, string>
+  smsMaxRetries: number
+  smsRetryAfterSeconds: number
+
+  // Customer tracking
+  customerTrackingEnabled: boolean
+  shareDriverInfo: boolean
+  hideDriverLocationUntilNearby: boolean
+  nearbyThresholdMeters: number
+
+  // Proof of delivery
+  proofOfDeliveryMode: 'none' | 'photo' | 'signature' | 'photo_and_signature'
+
+  // Scheduled orders
+  deferredOrdersEnabled: boolean
+  maxDeferredDaysAhead: number
+
+  // Driver tips
+  driverTipMode: 'driver_keeps_100' | 'pool_with_kitchen' | 'custom_split'
+  driverTipSplitPercent: number
+  kitchenTipSplitPercent: number
+  deliveryAutoGratuityEnabled: boolean
+  deliveryAutoGratuityPercent: number
+
+  // Peak hours
+  peakHours: { start: string; end: string }[]
+
+  // Overflow (model now, build later)
+  dispatchProvider: 'in_house'
+}
+
+export const DEFAULT_DISPATCH_POLICY: DeliveryDispatchPolicy = {
+  assignmentStrategy: 'manual',
+  driverAcceptanceRequired: false,
+  cashOnDeliveryAllowed: true,
+  requirePrepaymentAboveAmount: 0,
+  maxLateThresholdMinutes: 15,
+  maxCashBeforeForcedDrop: 100,
+  maxOrdersPerDriverByTimeOfDay: { peak: 3, offPeak: 5 },
+  blockDispatchWithoutValidZone: true,
+  voidAfterDispatchRequiresManager: true,
+  cashShortageApprovalRequired: true,
+  proofRequiredForFlaggedCustomers: true,
+  proofRequiredForCashOrders: false,
+  proofRequiredAboveAmount: 0,
+  proofRequiredForAlcohol: false,
+  proofRequiredForApartments: false,
+  driverCannotEndShiftWithOpenRun: true,
+  cannotDispatchSuspendedWithoutOverride: true,
+  cannotMarkDeliveredWithoutRequiredProof: true,
+  holdReadyUntilAllItemsComplete: true,
 }
 
 export const DEFAULT_DELIVERY: DeliverySettings = {
@@ -983,6 +1085,41 @@ export const DEFAULT_DELIVERY: DeliverySettings = {
   requirePhone: true,
   requireAddress: true,
   maxActiveDeliveries: 20,
+  feeMode: 'flat',
+  locationCoordinates: null,
+  dispatchPolicy: DEFAULT_DISPATCH_POLICY,
+  multiRunEnabled: false,
+  maxOrdersPerRun: 4,
+  mileageTrackingMode: 'none',
+  mileageReimbursementRate: 0.70,
+  driverPayMode: 'hourly',
+  perDeliveryPayAmount: 3.00,
+  cashDropThreshold: 100,
+  requireStartingBank: false,
+  defaultStartingBank: 50,
+  requireCashReconciliation: true,
+  smsNotificationsEnabled: false,
+  smsTemplates: {
+    orderConfirmed: 'Your order #{orderNumber} from {venue} is being prepared! Estimated delivery: {eta} minutes.',
+    outForDelivery: 'Your order from {venue} is on the way! Track: {trackingUrl}',
+    delivered: 'Your order from {venue} has been delivered. Thank you!',
+  },
+  smsMaxRetries: 2,
+  smsRetryAfterSeconds: 30,
+  customerTrackingEnabled: false,
+  shareDriverInfo: false,
+  hideDriverLocationUntilNearby: false,
+  nearbyThresholdMeters: 500,
+  proofOfDeliveryMode: 'none',
+  deferredOrdersEnabled: false,
+  maxDeferredDaysAhead: 7,
+  driverTipMode: 'driver_keeps_100',
+  driverTipSplitPercent: 80,
+  kitchenTipSplitPercent: 20,
+  deliveryAutoGratuityEnabled: false,
+  deliveryAutoGratuityPercent: 0,
+  peakHours: [],
+  dispatchProvider: 'in_house',
 }
 
 // ─── Third-Party Delivery Settings ──────────────────────────────────────────
@@ -2033,7 +2170,23 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ? { ...DEFAULT_HOST_VIEW, ...partial.hostView }
       : undefined,
     delivery: partial.delivery
-      ? { ...DEFAULT_DELIVERY, ...partial.delivery }
+      ? {
+          ...DEFAULT_DELIVERY,
+          ...partial.delivery,
+          dispatchPolicy: {
+            ...DEFAULT_DISPATCH_POLICY,
+            ...(partial.delivery.dispatchPolicy || {}),
+            maxOrdersPerDriverByTimeOfDay: {
+              ...DEFAULT_DISPATCH_POLICY.maxOrdersPerDriverByTimeOfDay,
+              ...(partial.delivery.dispatchPolicy?.maxOrdersPerDriverByTimeOfDay || {}),
+            },
+          },
+          smsTemplates: {
+            ...DEFAULT_DELIVERY.smsTemplates,
+            ...(partial.delivery.smsTemplates || {}),
+          },
+          peakHours: partial.delivery.peakHours ?? DEFAULT_DELIVERY.peakHours,
+        }
       : undefined,
     textToPay: partial.textToPay
       ? { ...DEFAULT_TEXT_TO_PAY, ...partial.textToPay }

@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { hasPermission, isAdmin, PERMISSIONS } from '@/lib/auth-utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
+import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 
 const CLOUD_PARENT_DOMAINS = [
   '.ordercontrolcenter.com',
@@ -263,6 +264,18 @@ const settingsSections: SettingsSection[] = [
   },
 ]
 
+const deliverySection: SettingsSection = {
+  title: 'Delivery',
+  icon: '🚗',
+  permission: PERMISSIONS.DELIVERY_SETTINGS,
+  items: [
+    { name: 'Delivery Settings', href: '/settings/delivery' },
+    { name: 'Zones', href: '/settings/delivery/zones' },
+    { name: 'Drivers', href: '/settings/delivery/drivers' },
+    { name: 'Dispatch Policy', href: '/settings/delivery/dispatch-policy' },
+  ],
+}
+
 export function SettingsNav() {
   const pathname = usePathname()
   const employee = useAuthStore(s => s.employee)
@@ -270,6 +283,7 @@ export function SettingsNav() {
   const clearOrder = useOrderStore(s => s.clearOrder)
   const permissions = employee?.permissions || []
   const userIsAdmin = isAdmin(permissions)
+  const isDeliveryActive = useDeliveryFeature()
 
   const isCloud = useMemo(() => {
     if (typeof window === 'undefined') return false
@@ -287,8 +301,21 @@ export function SettingsNav() {
     window.location.href = MISSION_CONTROL_URL
   }, [logout, clearOrder])
 
+  // Build sections list — conditionally include Delivery when feature is active
+  const allSections = useMemo(() => {
+    if (!isDeliveryActive) return settingsSections
+    // Insert delivery section after "Online Ordering"
+    const idx = settingsSections.findIndex(s => s.title === 'Online Ordering')
+    const insertAt = idx >= 0 ? idx + 1 : settingsSections.length
+    return [
+      ...settingsSections.slice(0, insertAt),
+      deliverySection,
+      ...settingsSections.slice(insertAt),
+    ]
+  }, [isDeliveryActive])
+
   const getActiveSection = () => {
-    for (const section of settingsSections) {
+    for (const section of allSections) {
       const allItems = [...section.items, ...(section.adminItems || [])]
       for (const item of allItems) {
         if (pathname === item.href || pathname.startsWith(item.href + '/')) {
@@ -323,7 +350,7 @@ export function SettingsNav() {
     return hasPermission(permissions, permission)
   }
 
-  const filteredSections = settingsSections
+  const filteredSections = allSections
     .map((section) => {
       const visibleItems = section.items
       const adminItems = userIsAdmin && section.adminItems ? section.adminItems : []
