@@ -153,7 +153,7 @@ export const PATCH = withVenue(async function PATCH(
       )
 
       // Bug 15: Recalculate Order.total to include new tip total
-      const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxTotal) - Number(order.discountTotal) + newOrderTipTotal)
+      const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxFromExclusive || 0) - Number(order.discountTotal) + newOrderTipTotal)
 
       await tx.order.update({
         where: { id: orderId },

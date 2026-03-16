@@ -189,7 +189,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           )
 
           // Recalculate Order.total to include new tip total (BUG #410 fix)
-          const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxTotal) - Number(order.discountTotal) + newOrderTipTotal)
+          const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxFromExclusive || 0) - Number(order.discountTotal) + newOrderTipTotal)
 
           orderUpdates.push(
             tx.order.update({
