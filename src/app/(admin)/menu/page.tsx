@@ -25,6 +25,7 @@ import { ItemsBar } from './components/ItemsBar'
 import { CategoryModal } from './components/CategoryModal'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { X } from 'lucide-react'
 import type { Modifier, ModifierGroup } from '@/components/menu/item-editor-types'
 
 export default function MenuManagementPage() {
@@ -387,33 +388,61 @@ export default function MenuManagementPage() {
             />
           </div>
 
-          {/* FAR RIGHT: Detail Panel (group settings or modifier detail) */}
-          {rightPanelMode === 'group' && selectedGroupId && selectedItemForEditor && findSelectedGroup() && (
-            <div className="w-80 border-l overflow-y-auto shrink-0">
-              <ModifierGroupSettingsPanel
-                group={findSelectedGroup()!}
-                mode="full"
-                onUpdate={(field, value) => handleGroupFieldUpdate(selectedGroupId, field, value)}
-              />
-            </div>
-          )}
-          {rightPanelMode === 'modifier' && selectedModifierId && selectedGroupId && selectedItemForEditor && findSelectedModifier() && findSelectedGroup() && (
-            <div className="w-96 border-l overflow-y-auto shrink-0">
-              <ModifierDetailPanel
-                modifier={findSelectedModifier()!}
-                group={findSelectedGroup()!}
-                menuItemId={selectedItemForEditor.id}
-                ingredients={ingredientsLibrary}
-                printers={printers}
-                onSave={handleModifierSave}
-                onDiscard={() => {
-                  setSelectedModifierId(null)
-                  setRightPanelMode(selectedGroupId ? 'group' : null)
-                }}
-              />
-            </div>
-          )}
         </div>
+
+        {/* Slide-over panel for modifier detail / group settings */}
+        {rightPanelMode && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 bg-black/20 z-40"
+              onClick={() => {
+                setSelectedModifierId(null)
+                setSelectedGroupId(null)
+                setRightPanelMode(null)
+              }}
+            />
+            {/* Panel */}
+            <div className="fixed top-0 right-0 h-full w-[420px] bg-white shadow-xl z-50 overflow-y-auto border-l">
+              {/* Close button */}
+              <button
+                onClick={() => {
+                  setSelectedModifierId(null)
+                  setSelectedGroupId(null)
+                  setRightPanelMode(null)
+                }}
+                className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 z-10"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {rightPanelMode === 'group' && selectedGroupId && selectedItemForEditor && findSelectedGroup() && (
+                <div className="p-4">
+                  <h3 className="text-sm font-semibold mb-3">Group Settings</h3>
+                  <ModifierGroupSettingsPanel
+                    group={findSelectedGroup()!}
+                    mode="full"
+                    onUpdate={(field, value) => handleGroupFieldUpdate(selectedGroupId, field, value)}
+                  />
+                </div>
+              )}
+              {rightPanelMode === 'modifier' && selectedModifierId && selectedGroupId && selectedItemForEditor && findSelectedModifier() && findSelectedGroup() && (
+                <ModifierDetailPanel
+                  modifier={findSelectedModifier()!}
+                  group={findSelectedGroup()!}
+                  menuItemId={selectedItemForEditor.id}
+                  ingredients={ingredientsLibrary}
+                  printers={printers}
+                  onSave={handleModifierSave}
+                  onDiscard={() => {
+                    setSelectedModifierId(null)
+                    setRightPanelMode(selectedGroupId ? 'group' : null)
+                  }}
+                />
+              )}
+            </div>
+          </>
+        )}
 
         {/* Category Modal */}
         {showCategoryModal && (

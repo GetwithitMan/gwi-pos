@@ -14,7 +14,7 @@ import { useModifierGroupManager } from './useModifierGroupManager'
 import { useModifierEditor } from './useModifierEditor'
 import { useIngredientCreation } from './useIngredientCreation'
 import { ModifierGroupSettingsPanel } from './ModifierGroupSettingsPanel'
-import { ChevronUp, ChevronDown, Zap, Star, Link2 } from 'lucide-react'
+import { ChevronUp, ChevronDown, Zap, Star } from 'lucide-react'
 import type { IngredientLibraryItem, IngredientCategory, Modifier, ModifierGroup, MenuItem } from './item-editor-types'
 
 // Re-export types for external consumers
@@ -552,19 +552,21 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           {mod.isDefault && (
             <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
           )}
-          {(mod.allowNo || mod.allowLite || mod.allowExtra || mod.allowOnSide) && (
-            <div className="flex gap-0.5 shrink-0">
-              {mod.allowNo && <span className="text-[9px] px-1 bg-red-100 text-red-600 rounded">No</span>}
-              {mod.allowLite && <span className="text-[9px] px-1 bg-yellow-100 text-yellow-600 rounded">Lite</span>}
-              {mod.allowExtra && <span className="text-[9px] px-1 bg-green-100 text-green-600 rounded">Extra</span>}
-              {mod.allowOnSide && <span className="text-[9px] px-1 bg-blue-100 text-blue-600 rounded">Side</span>}
-            </div>
-          )}
+          {/* Only show pre-mod pills if modifier has at least 2 pre-mods enabled (No alone is default, not interesting) */}
+          {(() => {
+            const enabledPreMods = [mod.allowNo, mod.allowLite, mod.allowExtra, mod.allowOnSide].filter(Boolean)
+            if (enabledPreMods.length < 2) return null
+            return (
+              <div className="flex gap-0.5 shrink-0">
+                {mod.allowNo && <span className="text-[9px] px-1 bg-red-100 text-red-600 rounded">No</span>}
+                {mod.allowLite && <span className="text-[9px] px-1 bg-yellow-100 text-yellow-600 rounded">Lite</span>}
+                {mod.allowExtra && <span className="text-[9px] px-1 bg-green-100 text-green-600 rounded">Extra</span>}
+                {mod.allowOnSide && <span className="text-[9px] px-1 bg-blue-100 text-blue-600 rounded">Side</span>}
+              </div>
+            )
+          })()}
           {mod.swapEnabled && (mod.swapTargets?.length ?? 0) > 0 && (
             <span className="text-[9px] px-1 py-0.5 bg-purple-100 text-purple-600 rounded shrink-0">⇄ {mod.swapTargets!.length}</span>
-          )}
-          {mod.ingredientId && (
-            <Link2 className="w-3 h-3 text-purple-500 shrink-0" />
           )}
 
           {/* RIGHT SIDE: All controls */}
