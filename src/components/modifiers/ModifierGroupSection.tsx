@@ -72,7 +72,11 @@ export function ModifierGroupSection({
 
   // Spirit group rendering — compact box version
   if (isSpiritGroup && handleSpiritSelection && getModifiersByTier) {
-    const modifiersByTier = getModifiersByTier(group.modifiers)
+    // Filter out inactive and non-POS modifiers for spirit groups too
+    const visibleSpiritMods = group.modifiers.filter(mod =>
+      mod.isActive !== false && mod.showOnPOS !== false
+    )
+    const modifiersByTier = getModifiersByTier(visibleSpiritMods)
     const currentSelection = selections[0]
     const selectedTier = currentSelection?.spiritTier as SpiritTier | undefined
 
@@ -129,9 +133,9 @@ export function ModifierGroupSection({
 
           {/* All options expandable */}
           <details className="mt-auto">
-            <summary className="text-[10px] text-gray-700 cursor-pointer">All {group.modifiers.length} options</summary>
+            <summary className="text-[10px] text-gray-700 cursor-pointer">All {visibleSpiritMods.length} options</summary>
             <div className="flex flex-col gap-1 mt-1">
-              {group.modifiers.map(mod => {
+              {visibleSpiritMods.map(mod => {
                 const isModSelected = currentSelection?.id === mod.id
                 const tier = mod.spiritTier as SpiritTier || 'well'
                 const is86d = mod.is86d || false
@@ -148,7 +152,7 @@ export function ModifierGroupSection({
                     }`}
                     onClick={() => {
                       if (is86d) {
-                        toast.warning(`${mod.name} is 86'd (out of stock)`)
+                        toast.warning(`${mod.displayName || mod.name} is 86'd (out of stock)`)
                       } else {
                         handleSpiritSelection(group, mod, tier)
                       }
@@ -266,11 +270,11 @@ export function ModifierGroupSection({
                 style={selected && !isStacked && !selectedPreMod ? { backgroundColor: groupColor, borderColor: groupColor } : undefined}
                 onClick={() => {
                   if (is86d) {
-                    toast.warning(`${modifier.name} is 86'd (out of stock)`)
+                    toast.warning(`${modifier.displayName || modifier.name} is 86'd (out of stock)`)
                     return
                   }
                   if (isExcluded) {
-                    toast.warning(`${modifier.name} is already selected in another group`)
+                    toast.warning(`${modifier.displayName || modifier.name} is already selected in another group`)
                     return
                   }
                   onToggle(group, modifier, undefined)

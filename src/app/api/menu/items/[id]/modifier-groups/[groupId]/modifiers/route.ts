@@ -292,8 +292,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       }
     }
 
-    // Validate swapTargets
-    if (swapEnabled && (!swapTargets || !Array.isArray(swapTargets) || swapTargets.length === 0)) {
+    // Validate swapTargets — check existing DB targets when payload doesn't include new ones
+    const effectiveSwapEnabled = swapEnabled !== undefined ? swapEnabled : modifier.swapEnabled
+    const effectiveSwapTargets = swapTargets !== undefined ? swapTargets : (modifier.swapTargets as any[] | null)
+    if (effectiveSwapEnabled && (!effectiveSwapTargets || !Array.isArray(effectiveSwapTargets) || effectiveSwapTargets.length === 0)) {
       return NextResponse.json({ error: 'Swap enabled requires at least one swap target' }, { status: 400 })
     }
     if (swapTargets && Array.isArray(swapTargets)) {
@@ -327,12 +329,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     if (!effectiveIngredientId && (inventoryDeductionAmount !== undefined || inventoryDeductionUnit !== undefined)) {
       // Clear orphaned deduction config if no ingredient linked
     }
-    if (effectiveIngredientId && inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && !inventoryDeductionUnit) {
+    const effectiveUnit = inventoryDeductionUnit !== undefined ? inventoryDeductionUnit : modifier.inventoryDeductionUnit
+    if (effectiveIngredientId && inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && !effectiveUnit) {
       return NextResponse.json({ error: 'inventoryDeductionUnit is required when inventoryDeductionAmount is set' }, { status: 400 })
     }
 
-    // Validate commission
-    if (commissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
+    // Validate commission — check existing commissionType when not in payload
+    const effectiveCommissionType = commissionType !== undefined ? commissionType : modifier.commissionType
+    if (effectiveCommissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
       return NextResponse.json({ error: 'Percent commission cannot exceed 100' }, { status: 400 })
     }
 

@@ -89,8 +89,9 @@ export default function MenuManagementPage() {
   const [rightPanelMode, setRightPanelMode] = useState<'group' | 'modifier' | null>(null)
   const [itemModifierGroups, setItemModifierGroups] = useState<ModifierGroup[]>([])
 
-  // Clear modifier selection when item changes
+  // Clear modifier/group selection when item changes
   useEffect(() => {
+    setSelectedGroupId(null)
     setSelectedModifierId(null)
     setRightPanelMode(null)
   }, [selectedItemForEditor?.id])
@@ -141,6 +142,23 @@ export default function MenuManagementPage() {
     const group = findSelectedGroup()
     return group?.modifiers.find(m => m.id === selectedModifierId)
   }, [selectedModifierId, selectedGroupId, findSelectedGroup])
+
+  // Clear stale selection when a group/modifier is deleted
+  useEffect(() => {
+    if (!selectedGroupId || itemModifierGroups.length === 0) return
+    const found = findSelectedGroup()
+    if (!found) {
+      setSelectedGroupId(null)
+      setSelectedModifierId(null)
+      setRightPanelMode(null)
+    } else if (selectedModifierId) {
+      const modFound = found.modifiers.some(m => m.id === selectedModifierId)
+      if (!modFound) {
+        setSelectedModifierId(null)
+        setRightPanelMode('group')
+      }
+    }
+  }, [itemModifierGroups, selectedGroupId, selectedModifierId, findSelectedGroup, setSelectedGroupId])
 
   // API handlers for right panel edits
   const handleGroupFieldUpdate = useCallback(async (groupId: string, field: string, value: any) => {

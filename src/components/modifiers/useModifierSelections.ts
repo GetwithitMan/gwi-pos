@@ -425,7 +425,7 @@ export function useModifierSelections(
             if (!initial[group.id]) initial[group.id] = []
             initial[group.id].push({
               id: existingMod.id,
-              name: matchingMod.name,
+              name: matchingMod.displayName || matchingMod.name,
               price: existingMod.price,
               preModifier: existingMod.preModifier,
               childModifierGroupId: matchingMod.childModifierGroupId,
@@ -439,10 +439,10 @@ export function useModifierSelections(
     } else {
       modifierGroups.forEach(group => {
         const defaults = group.modifiers
-          .filter(mod => mod.isDefault)
+          .filter(mod => mod.isDefault && mod.isActive !== false && mod.showOnPOS !== false)
           .map(mod => ({
             id: mod.id,
-            name: mod.name,
+            name: mod.displayName || mod.name,
             price: mod.price,
             childModifierGroupId: mod.childModifierGroupId,
             depth: 0,
@@ -608,7 +608,7 @@ export function useModifierSelections(
               : modifier.price
             const newMod: SelectedModifier = {
               id: modifier.id,
-              name: modifier.name,
+              name: modifier.displayName || modifier.name,
               price: stackedPrice,
               preModifier: undefined,
               childModifierGroupId: modifier.childModifierGroupId,
@@ -636,7 +636,7 @@ export function useModifierSelections(
       const price = computePrice(preModifier)
       const newMod: SelectedModifier = {
         id: modifier.id,
-        name: modifier.name,
+        name: modifier.displayName || modifier.name,
         price,
         preModifier,
         childModifierGroupId: modifier.childModifierGroupId,
@@ -793,7 +793,7 @@ export function useModifierSelections(
 
     const newMod: SelectedModifier = {
       id: modifier.id,
-      name: modifier.name,
+      name: modifier.displayName || modifier.name,
       price: modifier.price,
       childModifierGroupId: modifier.childModifierGroupId,
       depth,
@@ -809,11 +809,8 @@ export function useModifierSelections(
   }
 
   // Apply a swap target to a selected modifier
+  // Uses functional updater to avoid stale closure when called immediately after toggleModifier
   const applySwap = (groupId: string, modifierId: string, target: { menuItemId: string; name: string; pricingMode: 'target_price' | 'fixed_price' | 'no_charge'; fixedPrice?: number | null; snapshotPrice: number }) => {
-    const current = selections[groupId] || []
-    const index = current.findIndex(s => s.id === modifierId)
-    if (index < 0) return
-
     // Resolve the effective price based on pricingMode
     let swapEffectivePrice = 0
     if (target.pricingMode === 'no_charge') {
@@ -824,44 +821,52 @@ export function useModifierSelections(
       swapEffectivePrice = target.snapshotPrice
     }
 
-    const updated: SelectedModifier = {
-      ...current[index],
-      price: swapEffectivePrice,
-      swapTargetName: target.name,
-      swapTargetItemId: target.menuItemId,
-      swapPricingMode: target.pricingMode,
-      swapEffectivePrice,
-    }
+    setSelections(prev => {
+      const current = prev[groupId] || []
+      const index = current.findIndex(s => s.id === modifierId)
+      if (index < 0) return prev
 
-    setSelections(prev => ({
-      ...prev,
-      [groupId]: prev[groupId].map((s, i) => i === index ? updated : s),
-    }))
+      const updated: SelectedModifier = {
+        ...current[index],
+        price: swapEffectivePrice,
+        swapTargetName: target.name,
+        swapTargetItemId: target.menuItemId,
+        swapPricingMode: target.pricingMode,
+        swapEffectivePrice,
+      }
+
+      return {
+        ...prev,
+        [groupId]: current.map((s, i) => i === index ? updated : s),
+      }
+    })
   }
 
   // Clear swap from a selected modifier (revert to original price)
   const clearSwap = (groupId: string, modifierId: string) => {
-    const current = selections[groupId] || []
-    const index = current.findIndex(s => s.id === modifierId)
-    if (index < 0) return
-
     // Find original modifier to restore price
     const origMod = modifierGroups.flatMap(g => g.modifiers).find(m => m.id === modifierId)
       || Object.values(childGroups).flatMap(g => g.modifiers).find(m => m.id === modifierId)
 
-    const updated: SelectedModifier = {
-      ...current[index],
-      price: origMod?.price ?? current[index].price,
-      swapTargetName: undefined,
-      swapTargetItemId: undefined,
-      swapPricingMode: undefined,
-      swapEffectivePrice: undefined,
-    }
+    setSelections(prev => {
+      const current = prev[groupId] || []
+      const index = current.findIndex(s => s.id === modifierId)
+      if (index < 0) return prev
 
-    setSelections(prev => ({
-      ...prev,
-      [groupId]: prev[groupId].map((s, i) => i === index ? updated : s),
-    }))
+      const updated: SelectedModifier = {
+        ...current[index],
+        price: origMod?.price ?? current[index].price,
+        swapTargetName: undefined,
+        swapTargetItemId: undefined,
+        swapPricingMode: undefined,
+        swapEffectivePrice: undefined,
+      }
+
+      return {
+        ...prev,
+        [groupId]: current.map((s, i) => i === index ? updated : s),
+      }
+    })
   }
 
   // Get the current selection's preModifier for a modifier

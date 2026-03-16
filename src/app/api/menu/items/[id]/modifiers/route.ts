@@ -92,6 +92,8 @@ export const GET = withVenue(async function GET(
           modifierTypes: (group.modifierTypes as string[]) || ['universal'],
           tieredPricingConfig: group.tieredPricingConfig,
           exclusionGroupKey: group.exclusionGroupKey,
+          allowOpenEntry: group.allowOpenEntry,
+          autoAdvance: group.autoAdvance,
           showOnline: true,
           spiritConfig: group.spiritConfig ? {
             spiritCategoryId: group.spiritConfig.spiritCategoryId,

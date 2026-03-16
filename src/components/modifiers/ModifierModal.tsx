@@ -144,7 +144,7 @@ export function ModifierModal({
   // ── Hot Buttons: collect all modifiers with showAsHotButton across all groups ──
   const hotButtons = modifierGroups.flatMap(group =>
     group.modifiers
-      .filter(mod => mod.showAsHotButton && !mod.is86d)
+      .filter(mod => mod.showAsHotButton && !mod.is86d && mod.isActive !== false && mod.showOnPOS !== false)
       .map(mod => ({ group, modifier: mod }))
   )
 

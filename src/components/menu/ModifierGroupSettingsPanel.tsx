@@ -56,7 +56,7 @@ export function ModifierGroupSettingsPanel({
             value={group.minSelections}
             onChange={(e) => {
               const val = parseInt(e.target.value, 10)
-              onUpdate('minSelections', Number.isFinite(val) ? val : 0)
+              onUpdate('minSelections', Number.isFinite(val) ? Math.max(val, 0) : 0)
             }}
             className="w-16 px-2 py-1 border rounded text-center text-sm"
             min="0"
@@ -225,7 +225,7 @@ export function ModifierGroupSettingsPanel({
               value={group.minSelections}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10)
-                onUpdate('minSelections', Number.isFinite(val) ? val : 0)
+                onUpdate('minSelections', Number.isFinite(val) ? Math.max(val, 0) : 0)
               }}
               className="w-20 px-2 py-1.5 border rounded text-center text-sm"
               min="0"

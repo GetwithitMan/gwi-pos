@@ -358,6 +358,7 @@ export function ModifierDetailPanel({
   const [showSwitchDialog, setShowSwitchDialog] = useState(false)
   const [stalePriceWarning, setStalePriceWarning] = useState(false)
   const errorBannerRef = useRef<HTMLDivElement>(null)
+  const switchSavingRef = useRef(false)
 
   // Dirty check against original (not current prop)
   const isDirty = !eq(draft, original)
@@ -368,6 +369,7 @@ export function ModifierDetailPanel({
   // ── Entity switch behavior ────────────────────────────────────────────
   useEffect(() => {
     if (modifier.id === original.id) return
+    if (switchSavingRef.current) return // Guard against rapid switching during in-flight save
 
     const dirtyCheck = !eq(draft, original)
     if (!dirtyCheck) {
@@ -387,17 +389,29 @@ export function ModifierDetailPanel({
       // Auto-save then switch
       const changes = getChanges(draft, original)
       if (Object.keys(changes).length > 0) {
-        void onSave(original.id, changes).then(() => {
-          setOriginal({ ...modifier })
-          setDraft({ ...modifier })
-          setIngredientSearch('')
-          setStalePriceWarning(false)
-        })
+        switchSavingRef.current = true
+        void onSave(original.id, changes)
+          .then(() => {
+            setOriginal({ ...modifier })
+            setDraft({ ...modifier })
+            setIngredientSearch('')
+            setStalePriceWarning(false)
+            setPendingSwitch(null)
+          })
+          .catch(() => {
+            // Save failed — show switch dialog so user can discard or fix
+            setPendingSwitch(modifier)
+            setShowSwitchDialog(true)
+          })
+          .finally(() => {
+            switchSavingRef.current = false
+          })
       } else {
         setOriginal({ ...modifier })
         setDraft({ ...modifier })
         setIngredientSearch('')
         setStalePriceWarning(false)
+        setPendingSwitch(null)
       }
       return
     }
@@ -453,7 +467,7 @@ export function ModifierDetailPanel({
     if (Object.keys(changes).length === 0) return
 
     // Refresh swap target snapshot prices before saving
-    if (changes.swapTargets) {
+    if (changes.swapTargets && Array.isArray(changes.swapTargets)) {
       const targets = changes.swapTargets as SwapTarget[]
       if (targets.length > 0) {
         try {
@@ -895,7 +909,7 @@ export function ModifierDetailPanel({
         </Section>
 
         {/* ── Section 5: Swap Options ──────────────────────────────── */}
-        <Section title="Swap Options" visible={draft.swapEnabled === true || true}>
+        <Section title="Swap Options">
           <Toggle
             checked={draft.swapEnabled === true}
             onChange={v => patch({ swapEnabled: v })}

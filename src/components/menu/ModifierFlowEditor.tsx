@@ -27,6 +27,23 @@ export function ModifierFlowEditor({
 
   // Load group data when selectedGroupId changes
   useEffect(() => {
+    // Flush any pending debounced saves from the previous group before switching
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+      saveTimeoutRef.current = null
+      const pending = { ...pendingUpdatesRef.current }
+      pendingUpdatesRef.current = {}
+      if (Object.keys(pending).length > 0 && item?.id) {
+        // Fire-and-forget: save previous group's pending changes
+        // Use the previous selectedGroupId from the ref (captured before this effect runs)
+        void fetch(`/api/menu/items/${item.id}/modifier-groups/${group?.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(pending),
+        }).catch(() => {})
+      }
+    }
+
     if (!item?.id || !selectedGroupId) {
       setGroup(null)
       return
@@ -42,6 +59,8 @@ export function ModifierFlowEditor({
           const foundGroup = groups.find((g: ModifierGroup) => g.id === selectedGroupId)
           if (foundGroup) {
             setGroup(foundGroup)
+          } else {
+            setGroup(null) // Group not found (deleted or switched items)
           }
         }
       } catch (error) {
