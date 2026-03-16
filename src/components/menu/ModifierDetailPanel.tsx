@@ -184,15 +184,15 @@ function Section({
   const [open, setOpen] = useState(defaultOpen)
   if (!visible) return null
   return (
-    <div className="border-t border-zinc-700">
+    <div className="border-t border-gray-200">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-zinc-300 hover:bg-zinc-800/50 transition-colors"
+        className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
       >
         {title}
         <svg
-          className={`h-4 w-4 text-zinc-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -211,9 +211,9 @@ function Section({
 function Field({ label, helper, children }: { label: string; helper?: string; children: ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-zinc-400 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-gray-500 mb-1">{label}</label>
       {children}
-      {helper && <p className="text-[11px] text-zinc-500 mt-0.5">{helper}</p>}
+      {helper && <p className="text-[11px] text-gray-400 mt-0.5">{helper}</p>}
     </div>
   )
 }
@@ -237,7 +237,7 @@ function TextInput({
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${large ? 'text-base font-semibold py-2' : ''} ${className}`}
+      className={`w-full rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 ${large ? 'text-base font-semibold py-2' : ''} ${className}`}
     />
   )
 }
@@ -253,14 +253,14 @@ function CurrencyInput({
 }) {
   return (
     <div className="relative">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500">$</span>
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">$</span>
       <input
         type="number"
         step="0.01"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder ?? '0.00'}
-        className="w-full rounded-md border border-zinc-700 bg-zinc-800 pl-7 pr-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-full rounded-md border border-gray-200 bg-white pl-7 pr-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
       />
     </div>
   )
@@ -284,7 +284,7 @@ function NumberInput({
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      className="w-full rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
     />
   )
 }
@@ -315,7 +315,7 @@ function Toggle({
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-          checked ? (color ? colorMap[color] : 'bg-blue-500') : 'bg-zinc-600'
+          checked ? (color ? colorMap[color] : 'bg-blue-500') : 'bg-gray-300'
         }`}
       >
         <span
@@ -325,7 +325,7 @@ function Toggle({
         />
       </button>
       {dotColor && checked && <span className={`h-2 w-2 rounded-full ${dotColor}`} />}
-      <span className="text-sm text-zinc-300">{label}</span>
+      <span className="text-sm text-gray-700">{label}</span>
     </label>
   )
 }
@@ -343,7 +343,7 @@ function SelectInput({
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="w-full rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      className="w-full rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
     >
       {options.map(o => (
         <option key={o.value} value={o.value}>{o.label}</option>
@@ -653,16 +653,16 @@ export function ModifierDetailPanel({
   const swapTargets = draft.swapTargets ?? []
 
   return (
-    <div className="flex flex-col h-full bg-zinc-900 border-l border-zinc-700 relative">
+    <div className="flex flex-col h-full bg-white border-l border-gray-200 relative">
       {/* ── Sticky Header ─────────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-zinc-700 bg-zinc-900 px-4 py-3">
-        <h2 className="text-sm font-semibold text-zinc-100 truncate flex-1">
+      <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-gray-200 bg-white px-4 py-3">
+        <h2 className="text-sm font-semibold text-gray-900 truncate flex-1">
           {draft.name || 'Untitled Modifier'}
         </h2>
         {isDirty && (
           <span className="h-2.5 w-2.5 rounded-full bg-blue-500 shrink-0" title="Unsaved changes" />
         )}
-        <span className="text-[11px] text-zinc-500 shrink-0">{group.name}</span>
+        <span className="text-[11px] text-gray-400 shrink-0">{group.name}</span>
       </div>
 
       {/* ── Scrollable Body ───────────────────────────────────────── */}
@@ -715,18 +715,18 @@ export function ModifierDetailPanel({
               <button
                 type="button"
                 onClick={() => patch({ isDefault: !draft.isDefault })}
-                className={`text-lg ${draft.isDefault ? 'text-yellow-400' : 'text-zinc-600'} hover:text-yellow-300 transition-colors`}
+                className={`text-lg ${draft.isDefault ? 'text-yellow-400' : 'text-gray-500'} hover:text-yellow-300 transition-colors`}
                 title={draft.isDefault ? 'Default selection (click to remove)' : 'Set as default selection'}
               >
                 {draft.isDefault ? '★' : '☆'}
               </button>
-              <span className="text-sm text-zinc-300">Default selection</span>
+              <span className="text-sm text-gray-700">Default selection</span>
             </label>
           </div>
 
           {/* Pre-modifier toggles */}
-          <div className="space-y-3 rounded-lg border border-zinc-700/50 bg-zinc-800/30 p-3">
-            <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Pre-Modifiers</p>
+          <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Pre-Modifiers</p>
 
             <Toggle
               checked={draft.allowNo === true}
@@ -792,9 +792,9 @@ export function ModifierDetailPanel({
           </div>
 
           {/* Custom Pre-Modifiers */}
-          <div className="mt-4 pt-4 border-t border-zinc-700/50">
+          <div className="mt-4 pt-4 border-t border-gray-200">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Custom Pre-Modifiers</h4>
+              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Custom Pre-Modifiers</h4>
               <button
                 type="button"
                 onClick={addCustomPreMod}
@@ -809,7 +809,7 @@ export function ModifierDetailPanel({
               <select
                 onChange={(e) => { applyPreset(e.target.value); e.target.value = '' }}
                 value=""
-                className="text-xs rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400 focus:border-blue-500 focus:outline-none"
+                className="text-xs rounded-md border border-gray-200 bg-white px-2 py-1 text-gray-500 focus:border-blue-500 focus:outline-none"
               >
                 <option value="">Quick presets...</option>
                 <option value="temperature">Temperature (Rare → Well Done)</option>
@@ -820,7 +820,7 @@ export function ModifierDetailPanel({
 
             {/* Custom pre-mod rows */}
             {(draft.customPreModifiers || []).map((cpm, idx, arr) => (
-              <div key={idx} className="flex items-start gap-2 p-2 bg-zinc-800/50 rounded-md mb-1.5 text-sm border border-zinc-700/30">
+              <div key={idx} className="flex items-start gap-2 p-2 bg-gray-50 rounded-md mb-1.5 text-sm border border-gray-100">
                 <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                   <div className="flex gap-2">
                     <input
@@ -828,7 +828,7 @@ export function ModifierDetailPanel({
                       placeholder="Name (e.g., Well Done)"
                       value={cpm.name}
                       onChange={e => updateCustomPreMod(idx, 'name', e.target.value)}
-                      className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <div className="relative">
                       <input
@@ -837,9 +837,9 @@ export function ModifierDetailPanel({
                         value={cpm.shortLabel || ''}
                         onChange={e => updateCustomPreMod(idx, 'shortLabel', e.target.value || undefined)}
                         maxLength={12}
-                        className="w-20 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="w-20 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
-                      <span className={`absolute right-1 top-1 text-[9px] ${(cpm.shortLabel?.length || 0) > 8 ? ((cpm.shortLabel?.length || 0) > 12 ? 'text-red-500' : 'text-yellow-500') : 'text-zinc-500'}`}>
+                      <span className={`absolute right-1 top-1 text-[9px] ${(cpm.shortLabel?.length || 0) > 8 ? ((cpm.shortLabel?.length || 0) > 12 ? 'text-red-500' : 'text-yellow-500') : 'text-gray-400'}`}>
                         {cpm.shortLabel?.length || 0}/8
                       </span>
                     </div>
@@ -850,7 +850,7 @@ export function ModifierDetailPanel({
                       placeholder="Kitchen label"
                       value={cpm.kitchenLabel || ''}
                       onChange={e => updateCustomPreMod(idx, 'kitchenLabel', e.target.value || undefined)}
-                      className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <input
                       type="number"
@@ -858,7 +858,7 @@ export function ModifierDetailPanel({
                       value={cpm.priceAdjustment ? (cpm.priceAdjustment / 100).toFixed(2) : ''}
                       onChange={e => updateCustomPreMod(idx, 'priceAdjustment', Math.round(parseFloat(e.target.value || '0') * 100))}
                       step="0.01"
-                      className="w-20 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-20 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <input
                       type="number"
@@ -867,7 +867,7 @@ export function ModifierDetailPanel({
                       onChange={e => updateCustomPreMod(idx, 'multiplier', parseFloat(e.target.value || '1'))}
                       step="0.1"
                       min="0"
-                      className="w-16 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-16 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -876,7 +876,7 @@ export function ModifierDetailPanel({
                     type="button"
                     onClick={() => moveCustomPreMod(idx, -1)}
                     disabled={idx === 0}
-                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <ChevronUp className="w-3 h-3" />
                   </button>
@@ -884,7 +884,7 @@ export function ModifierDetailPanel({
                     type="button"
                     onClick={() => moveCustomPreMod(idx, 1)}
                     disabled={idx === arr.length - 1}
-                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed"
                   >
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -895,7 +895,7 @@ export function ModifierDetailPanel({
                   className="p-0.5 shrink-0"
                   title={cpm.isActive ? 'Active' : 'Inactive'}
                 >
-                  {cpm.isActive ? <Eye className="w-3.5 h-3.5 text-green-500" /> : <EyeOff className="w-3.5 h-3.5 text-zinc-500" />}
+                  {cpm.isActive ? <Eye className="w-3.5 h-3.5 text-green-500" /> : <EyeOff className="w-3.5 h-3.5 text-gray-400" />}
                 </button>
                 <button
                   type="button"
@@ -908,7 +908,7 @@ export function ModifierDetailPanel({
             ))}
 
             {(draft.customPreModifiers || []).length === 0 && (
-              <p className="text-xs text-zinc-500 italic">No custom pre-modifiers. Use presets or add manually.</p>
+              <p className="text-xs text-gray-400 italic">No custom pre-modifiers. Use presets or add manually.</p>
             )}
           </div>
         </div>
@@ -921,7 +921,7 @@ export function ModifierDetailPanel({
               onChange={v => patch({ price: parseNum(v) ?? 0 })}
             />
             {showDualPricing && draft.price > 0 && (
-              <p className="text-[11px] text-zinc-400 mt-1">
+              <p className="text-[11px] text-gray-500 mt-1">
                 Cash: {formatCurrency(draft.price)} | Card: {formatCurrency(calculateCardPrice(draft.price, cashDiscountPct!))}
               </p>
             )}
@@ -1007,14 +1007,14 @@ export function ModifierDetailPanel({
           <Field label="Ingredient">
             {selectedIngredient ? (
               <div className="flex items-center gap-2">
-                <span className="text-sm text-zinc-200">{selectedIngredient.name}</span>
+                <span className="text-sm text-gray-800">{selectedIngredient.name}</span>
                 {selectedIngredient.category && (
-                  <span className="text-[11px] text-zinc-500">({selectedIngredient.category})</span>
+                  <span className="text-[11px] text-gray-400">({selectedIngredient.category})</span>
                 )}
                 <button
                   type="button"
                   onClick={() => patch({ ingredientId: null, ingredientName: null })}
-                  className="ml-auto text-xs text-zinc-500 hover:text-red-400"
+                  className="ml-auto text-xs text-gray-400 hover:text-red-400"
                 >
                   Clear
                 </button>
@@ -1027,9 +1027,9 @@ export function ModifierDetailPanel({
                   placeholder="Search ingredients..."
                 />
                 {ingredientSearch.trim() && (
-                  <div className="max-h-32 overflow-y-auto rounded border border-zinc-700 bg-zinc-800">
+                  <div className="max-h-32 overflow-y-auto rounded border border-gray-200 bg-white">
                     {filteredIngredients.length === 0 ? (
-                      <p className="p-2 text-xs text-zinc-500">No matches</p>
+                      <p className="p-2 text-xs text-gray-400">No matches</p>
                     ) : (
                       filteredIngredients.slice(0, 20).map(ing => (
                         <button
@@ -1039,16 +1039,16 @@ export function ModifierDetailPanel({
                             patch({ ingredientId: ing.id, ingredientName: ing.name })
                             setIngredientSearch('')
                           }}
-                          className="w-full text-left px-2 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+                          className="w-full text-left px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
                         >
                           {ing.name}
-                          {ing.category && <span className="text-zinc-500 ml-1 text-xs">({ing.category})</span>}
+                          {ing.category && <span className="text-gray-400 ml-1 text-xs">({ing.category})</span>}
                         </button>
                       ))
                     )}
                   </div>
                 )}
-                <p className="text-[11px] text-zinc-500">None</p>
+                <p className="text-[11px] text-gray-400">None</p>
               </div>
             )}
           </Field>
@@ -1114,9 +1114,9 @@ export function ModifierDetailPanel({
                             : [...current, p.id]
                           patch({ printerIds: next })
                         }}
-                        className="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
+                        className="h-4 w-4 rounded border-gray-300 bg-white text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
                       />
-                      <span className="text-sm text-zinc-300">{p.name}</span>
+                      <span className="text-sm text-gray-700">{p.name}</span>
                     </label>
                   )
                 })}
@@ -1143,8 +1143,8 @@ export function ModifierDetailPanel({
       </div>
 
       {/* ── Effective Preview ──────────────────────────────────────── */}
-      <div className="border-t border-zinc-700 bg-zinc-800/50 px-3 py-2.5 text-xs text-zinc-400 space-y-0.5">
-        <div className="font-medium text-zinc-300 text-[11px] uppercase tracking-wider">Effective Preview</div>
+      <div className="border-t border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500 space-y-0.5">
+        <div className="font-medium text-gray-700 text-[11px] uppercase tracking-wider">Effective Preview</div>
         <div>
           Visible on POS: {draft.showOnPOS !== false ? 'Yes' : 'No'}
           {' | '}Online: {draft.showOnline !== false ? 'Yes' : 'No'}
@@ -1164,7 +1164,7 @@ export function ModifierDetailPanel({
       </div>
 
       {/* ── Sticky Footer ─────────────────────────────────────────── */}
-      <div className="sticky bottom-0 flex items-center gap-2 border-t border-zinc-700 bg-zinc-900 px-4 py-3">
+      <div className="sticky bottom-0 flex items-center gap-2 border-t border-gray-200 bg-white px-4 py-3">
         <button
           type="button"
           disabled={!isDirty || saving || errors.length > 0}
@@ -1172,7 +1172,7 @@ export function ModifierDetailPanel({
           className={`flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors ${
             isDirty && !saving && errors.length === 0
               ? 'bg-blue-600 text-white hover:bg-blue-500'
-              : 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
           }`}
         >
           {saving ? 'Saving...' : errors.length > 0 && isDirty ? 'Fix Errors' : 'Save'}
@@ -1181,7 +1181,7 @@ export function ModifierDetailPanel({
         <button
           type="button"
           onClick={onDiscard}
-          className="rounded-md border border-zinc-700 px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200 transition-colors"
+          className="rounded-md border border-gray-200 px-4 py-2 text-sm text-gray-500 hover:bg-white hover:text-gray-800 transition-colors"
         >
           Discard
           <span className="ml-1 text-[11px] opacity-60">(Esc)</span>
@@ -1190,17 +1190,17 @@ export function ModifierDetailPanel({
 
       {/* ── Switch Prompt Dialog (overlay) ─────────────────────────── */}
       {showSwitchDialog && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="mx-4 max-w-sm rounded-lg border border-zinc-600 bg-zinc-800 p-5 shadow-2xl">
-            <h3 className="text-sm font-semibold text-zinc-100 mb-2">Unsaved Changes with Errors</h3>
-            <p className="text-xs text-zinc-400 mb-4">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="mx-4 max-w-sm rounded-lg border border-gray-300 bg-white p-5 shadow-2xl">
+            <h3 className="text-sm font-semibold text-gray-900 mb-2">Unsaved Changes with Errors</h3>
+            <p className="text-xs text-gray-500 mb-4">
               Your changes have validation errors that must be fixed before saving.
             </p>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={handleDiscardAndSwitch}
-                className="flex-1 rounded-md border border-zinc-600 px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-zinc-700 transition-colors"
+                className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors"
               >
                 Discard Changes
               </button>
