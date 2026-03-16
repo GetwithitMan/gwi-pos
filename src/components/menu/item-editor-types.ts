@@ -44,6 +44,16 @@ export interface IngredientCategory {
   needsVerification?: boolean
 }
 
+export interface CustomPreMod {
+  name: string
+  shortLabel?: string
+  kitchenLabel?: string
+  priceAdjustment: number  // in cents
+  multiplier: number       // default 1.0
+  sortOrder: number
+  isActive: boolean
+}
+
 export interface SwapTarget {
   menuItemId: string
   name: string
@@ -88,6 +98,7 @@ export interface Modifier {
   inventoryDeductionUnit?: string | null  // 'oz' | 'ml' | 'unit' | 'g'
   swapEnabled?: boolean
   swapTargets?: SwapTarget[] | null
+  customPreModifiers?: CustomPreMod[] | null
   spiritTier?: string | null
   linkedBottleProductId?: string | null
 }

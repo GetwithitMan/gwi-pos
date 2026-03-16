@@ -2,7 +2,7 @@
 
 import { Plus } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
-import type { SelectedModifier, Modifier, ModifierGroup } from '@/types'
+import type { SelectedModifier, Modifier, ModifierGroup, CustomPreMod } from '@/types'
 import { PRE_MODIFIER_CONFIG, type SpiritTier, SPIRIT_TIER_CONFIG, hasPreModifier } from './useModifierSelections'
 import { EightySixBadge } from './EightySixBadge'
 import { toast } from '@/stores/toast-store'
@@ -25,6 +25,8 @@ interface ModifierGroupSectionProps {
   getExcludedModifierIds?: (currentGroupId: string, exclusionGroupKey: string | null | undefined) => Set<string>
   cardPriceMultiplier?: number
   onOpenCustomEntry?: (groupId: string) => void
+  onToggleCustomPreMod?: (groupId: string, modifierId: string, cpm: CustomPreMod) => void
+  getSelectedCustomPreMod?: (groupId: string, modifierId: string) => CustomPreMod | undefined
 }
 
 export function ModifierGroupSection({
@@ -45,6 +47,8 @@ export function ModifierGroupSection({
   getExcludedModifierIds,
   cardPriceMultiplier,
   onOpenCustomEntry,
+  onToggleCustomPreMod,
+  getSelectedCustomPreMod,
 }: ModifierGroupSectionProps) {
   const cpm = cardPriceMultiplier || 1
   const selectedCount = selections.length
@@ -347,6 +351,41 @@ export function ModifierGroupSection({
                   })}
                 </div>
               )}
+
+              {/* Custom Pre-Modifier buttons — "More Options" row */}
+              {!is86d && selected && (() => {
+                const customPreMods = modifier.customPreModifiers?.filter(cp => cp.isActive) || []
+                if (customPreMods.length === 0 || !onToggleCustomPreMod) return null
+                const selectedCpm = getSelectedCustomPreMod?.(group.id, modifier.id)
+                return (
+                  <div className="flex flex-wrap gap-0.5 px-1 py-0.5">
+                    {customPreMods
+                      .sort((a, b) => a.sortOrder - b.sortOrder)
+                      .map((cp, i) => {
+                        const isCpmSelected = selectedCpm?.name === cp.name
+                        const label = cp.shortLabel || cp.name
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => onToggleCustomPreMod(group.id, modifier.id, cp)}
+                            className={`px-1.5 py-0.5 text-[9px] rounded transition-all ${
+                              isCpmSelected
+                                ? 'bg-gray-700 text-white font-semibold ring-1 ring-offset-1'
+                                : 'bg-gray-100 text-gray-700 opacity-70 hover:opacity-100'
+                            }`}
+                          >
+                            {label}
+                            {cp.priceAdjustment !== 0 && (
+                              <span className="ml-0.5 text-[8px] opacity-75">
+                                {cp.priceAdjustment > 0 ? '+' : ''}{(cp.priceAdjustment / 100).toFixed(2)}
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                  </div>
+                )
+              })()}
             </div>
           )
         })}

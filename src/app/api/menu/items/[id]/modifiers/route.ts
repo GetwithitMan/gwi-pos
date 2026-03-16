@@ -135,6 +135,7 @@ export const GET = withVenue(async function GET(
             extraMultiplier: mod.extraMultiplier ? Number(mod.extraMultiplier) : null,
             swapEnabled: mod.swapEnabled ?? false,
             swapTargets: mod.swapTargets as any[] | null,
+            customPreModifiers: mod.customPreModifiers,
             inventoryDeductionAmount: mod.inventoryDeductionAmount ? Number(mod.inventoryDeductionAmount) : null,
             inventoryDeductionUnit: mod.inventoryDeductionUnit ?? null,
           })),

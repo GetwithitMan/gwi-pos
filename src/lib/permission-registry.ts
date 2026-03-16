@@ -950,6 +950,50 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     applicableTo: ['BOH', 'ADMIN'],
     risk: 'MED',
   },
+  'menu.templates.create': {
+    label: 'Create Modifier Templates',
+    description: 'Lets this employee create reusable modifier group templates.',
+    details: [
+      'Create templates from scratch or from existing modifier groups',
+      'Templates can be applied when building new modifier groups',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'LOW',
+  },
+  'menu.templates.edit': {
+    label: 'Edit Modifier Templates',
+    description: 'Lets this employee edit existing modifier group templates.',
+    details: [
+      'Modify template name, settings, and modifier list',
+      'Changes do not affect groups already created from the template',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'LOW',
+  },
+  'menu.templates.delete': {
+    label: 'Delete Modifier Templates',
+    description: 'Lets this employee delete modifier group templates.',
+    details: [
+      'Soft-deletes the template so it no longer appears in the list',
+      'Does not affect groups already created from the template',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+  },
+  'menu.templates.apply': {
+    label: 'Apply Modifier Templates',
+    description: 'Lets this employee apply a template when creating modifier groups on menu items.',
+    details: [
+      'Use templates to quickly populate a new modifier group with pre-defined modifiers',
+      'Requires menu.edit_modifiers to actually create the group on an item',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'LOW',
+  },
 
   // =========================================================================
   // BUSINESS_SETUP — Inventory

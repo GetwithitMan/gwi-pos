@@ -14,7 +14,8 @@ import { useModifierGroupManager } from './useModifierGroupManager'
 import { useModifierEditor } from './useModifierEditor'
 import { useIngredientCreation } from './useIngredientCreation'
 import { ModifierGroupSettingsPanel } from './ModifierGroupSettingsPanel'
-import { ChevronUp, ChevronDown, Zap, Star } from 'lucide-react'
+import { ChevronUp, ChevronDown, Zap, Star, BookmarkPlus } from 'lucide-react'
+import { TemplatePickerModal } from './TemplatePickerModal'
 import type { IngredientLibraryItem, IngredientCategory, Modifier, ModifierGroup, MenuItem } from './item-editor-types'
 
 // Re-export types for external consumers
@@ -62,6 +63,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
   // Item settings modal state
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
 
   // Printer routing state
   const [printers, setPrinters] = useState<Array<{ id: string; name: string }>>([])
@@ -283,6 +285,47 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     newCategoryName, setNewCategoryName,
     createCategory, createInventoryItem, createPrepItem,
   } = ingredientCreation
+
+  const saveAsTemplate = async (groupId: string, groupName: string) => {
+    try {
+      const res = await fetch('/api/menu/modifier-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: groupName + ' Template', sourceGroupId: groupId }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to save template')
+        return
+      }
+      toast.success('Saved as template')
+    } catch {
+      toast.error('Failed to save template')
+    }
+  }
+
+  const applyTemplate = async (templateId: string, templateName: string) => {
+    if (!item?.id) return
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: templateName, templateId }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        toast.error(err.error || 'Failed to apply template')
+        return
+      }
+      toast.success('Group added from template')
+      await loadData()
+    } catch {
+      toast.error('Failed to apply template')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   // Helper to render a choice row (navigation modifier with child group)
   const renderChoiceRow = (groupId: string, mod: Modifier, depth: number = 0, siblingIndex: number = 0, totalModifiers: number = 0) => {
@@ -1075,6 +1118,14 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               ⧉
             </button>
             <button
+              onClick={(e) => { e.stopPropagation(); saveAsTemplate(childGroup.id, childGroup.name) }}
+              className="text-gray-500 hover:text-emerald-600 text-xs px-0.5"
+              title="Save as Template"
+              disabled={saving}
+            >
+              <BookmarkPlus className="w-3 h-3" />
+            </button>
+            <button
               onClick={(e) => { e.stopPropagation(); deleteGroup(childGroup.id) }}
               className="text-gray-500 hover:text-red-600 text-xs px-0.5"
               title="Delete Group"
@@ -1560,15 +1611,26 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                   <span className="font-semibold text-indigo-900">⚙️ Modifier Groups</span>
                   <span className="text-sm text-indigo-600">({modifierGroups.length})</span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-indigo-600 text-xs"
-                  onClick={() => setShowNewGroupForm(true)}
-                  disabled={saving}
-                >
-                  + Add Group
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-indigo-600 text-xs"
+                    onClick={() => setShowTemplatePicker(true)}
+                    disabled={saving}
+                  >
+                    + From Template
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-indigo-600 text-xs"
+                    onClick={() => setShowNewGroupForm(true)}
+                    disabled={saving}
+                  >
+                    + Add Group
+                  </Button>
+                </div>
               </div>
 
               {/* New Group Form */}
@@ -1751,6 +1813,14 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           >
                             ⧉
                           </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); saveAsTemplate(group.id, group.name) }}
+                            className="text-gray-500 hover:text-emerald-600 text-xs px-0.5"
+                            title="Save as Template"
+                            disabled={saving}
+                          >
+                            <BookmarkPlus className="w-3.5 h-3.5" />
+                          </button>
                         </div>
 
                         {/* Expanded: Modifiers */}
@@ -1889,6 +1959,13 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           onCategoryCreated={onCategoryCreated}
         />
       )}
+
+      {/* Template Picker Modal */}
+      <TemplatePickerModal
+        isOpen={showTemplatePicker}
+        onClose={() => setShowTemplatePicker(false)}
+        onApply={applyTemplate}
+      />
     </div>
   )
 }

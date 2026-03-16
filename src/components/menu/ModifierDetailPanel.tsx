@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
+import { Plus, ChevronUp, ChevronDown, Eye, EyeOff, X } from 'lucide-react'
 import { SwapTargetPicker } from './SwapTargetPicker'
-import type { Modifier, ModifierGroup, SwapTarget } from './item-editor-types'
+import type { Modifier, ModifierGroup, SwapTarget, CustomPreMod } from './item-editor-types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,18 @@ function validateModifier(draft: Modifier, group: ModifierGroup, stalePrices: bo
     errors.push('Inventory deduction amount cannot be negative')
   }
 
+  // Custom pre-modifier validation
+  const customPreMods = draft.customPreModifiers ?? []
+  for (const cpm of customPreMods) {
+    if (cpm.name.length > 10 && !cpm.shortLabel) {
+      warnings.push(`Custom pre-mod "${cpm.name}" exceeds 10 chars — add a short label`)
+    }
+  }
+  const shortLabels = customPreMods.map(c => c.shortLabel).filter(Boolean)
+  if (new Set(shortLabels).size !== shortLabels.length) {
+    warnings.push('Duplicate short labels in custom pre-modifiers')
+  }
+
   if (draft.isDefault && draft.showOnPOS === false) {
     warnings.push('Default modifier hidden from POS')
   }
@@ -124,6 +137,8 @@ function getPreModSummary(draft: Modifier): string {
     parts.push(`Extra (${mult}x${extra})`)
   }
   if (draft.allowOnSide) parts.push('Side')
+  const customCount = (draft.customPreModifiers ?? []).filter(c => c.isActive).length
+  if (customCount > 0) parts.push(`${customCount} custom`)
   return parts.join(', ')
 }
 
@@ -453,6 +468,87 @@ export function ModifierDetailPanel({
     })
   }, [])
 
+  // ── Custom Pre-Modifier helpers ──────────────────────────────────────
+  const addCustomPreMod = () => {
+    const current = draft.customPreModifiers || []
+    patch({
+      customPreModifiers: [...current, {
+        name: '',
+        shortLabel: undefined,
+        kitchenLabel: undefined,
+        priceAdjustment: 0,
+        multiplier: 1.0,
+        sortOrder: current.length,
+        isActive: true,
+      }]
+    })
+  }
+
+  const removeCustomPreMod = (idx: number) => {
+    const current = [...(draft.customPreModifiers || [])]
+    current.splice(idx, 1)
+    current.forEach((c, i) => c.sortOrder = i)
+    patch({ customPreModifiers: current.length > 0 ? current : null })
+  }
+
+  const updateCustomPreMod = (idx: number, field: keyof CustomPreMod, value: any) => {
+    const current = [...(draft.customPreModifiers || [])]
+    current[idx] = { ...current[idx], [field]: value }
+    patch({ customPreModifiers: current })
+  }
+
+  const moveCustomPreMod = (idx: number, direction: number) => {
+    const current = [...(draft.customPreModifiers || [])]
+    const newIdx = idx + direction
+    if (newIdx < 0 || newIdx >= current.length) return
+    ;[current[idx], current[newIdx]] = [current[newIdx], current[idx]]
+    current.forEach((c, i) => c.sortOrder = i)
+    patch({ customPreModifiers: current })
+  }
+
+  const toggleCustomPreModActive = (idx: number) => {
+    const current = [...(draft.customPreModifiers || [])]
+    current[idx] = { ...current[idx], isActive: !current[idx].isActive }
+    patch({ customPreModifiers: current })
+  }
+
+  const applyPreset = (preset: string) => {
+    const presets: Record<string, Array<{ name: string; shortLabel?: string }>> = {
+      temperature: [
+        { name: 'Rare', shortLabel: 'R' },
+        { name: 'Medium Rare', shortLabel: 'MR' },
+        { name: 'Medium', shortLabel: 'M' },
+        { name: 'Medium Well', shortLabel: 'MW' },
+        { name: 'Well Done', shortLabel: 'WD' },
+      ],
+      cook_style: [
+        { name: 'Grilled' },
+        { name: 'Fried' },
+        { name: 'Baked' },
+        { name: 'Blackened' },
+        { name: 'Sautéed' },
+      ],
+      sauce: [
+        { name: 'Extra Sauce', shortLabel: 'XS' },
+        { name: 'No Sauce', shortLabel: 'NS' },
+        { name: 'Sauce on Side', shortLabel: 'SoS' },
+      ],
+    }
+    const items = presets[preset]
+    if (!items) return
+    const current = draft.customPreModifiers || []
+    const newMods: CustomPreMod[] = items.map((item, i) => ({
+      name: item.name,
+      shortLabel: item.shortLabel,
+      kitchenLabel: undefined,
+      priceAdjustment: 0,
+      multiplier: 1.0,
+      sortOrder: current.length + i,
+      isActive: true,
+    }))
+    patch({ customPreModifiers: [...current, ...newMods] })
+  }
+
   // ── Save handler ──────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!isDirty || saving) return
@@ -553,7 +649,7 @@ export function ModifierDetailPanel({
     ? ingredients.find(i => i.id === draft.ingredientId)
     : null
 
-  const hasAnyPreMod = draft.allowNo || draft.allowLite || draft.allowExtra || draft.allowOnSide
+  const hasAnyPreMod = draft.allowNo || draft.allowLite || draft.allowExtra || draft.allowOnSide || (draft.customPreModifiers ?? []).length > 0
   const swapTargets = draft.swapTargets ?? []
 
   return (
@@ -693,6 +789,127 @@ export function ModifierDetailPanel({
               label="Side"
               color="blue"
             />
+          </div>
+
+          {/* Custom Pre-Modifiers */}
+          <div className="mt-4 pt-4 border-t border-zinc-700/50">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Custom Pre-Modifiers</h4>
+              <button
+                type="button"
+                onClick={addCustomPreMod}
+                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> Add Custom
+              </button>
+            </div>
+
+            {/* Quick presets dropdown */}
+            <div className="mb-2">
+              <select
+                onChange={(e) => { applyPreset(e.target.value); e.target.value = '' }}
+                value=""
+                className="text-xs rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-zinc-400 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="">Quick presets...</option>
+                <option value="temperature">Temperature (Rare → Well Done)</option>
+                <option value="cook_style">Cook Style (Grilled, Fried, Baked...)</option>
+                <option value="sauce">Sauce Options (Extra, No, Side)</option>
+              </select>
+            </div>
+
+            {/* Custom pre-mod rows */}
+            {(draft.customPreModifiers || []).map((cpm, idx, arr) => (
+              <div key={idx} className="flex items-start gap-2 p-2 bg-zinc-800/50 rounded-md mb-1.5 text-sm border border-zinc-700/30">
+                <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Name (e.g., Well Done)"
+                      value={cpm.name}
+                      onChange={e => updateCustomPreMod(idx, 'name', e.target.value)}
+                      className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Label"
+                        value={cpm.shortLabel || ''}
+                        onChange={e => updateCustomPreMod(idx, 'shortLabel', e.target.value || undefined)}
+                        maxLength={12}
+                        className="w-20 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <span className={`absolute right-1 top-1 text-[9px] ${(cpm.shortLabel?.length || 0) > 8 ? ((cpm.shortLabel?.length || 0) > 12 ? 'text-red-500' : 'text-yellow-500') : 'text-zinc-500'}`}>
+                        {cpm.shortLabel?.length || 0}/8
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Kitchen label"
+                      value={cpm.kitchenLabel || ''}
+                      onChange={e => updateCustomPreMod(idx, 'kitchenLabel', e.target.value || undefined)}
+                      className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <input
+                      type="number"
+                      placeholder="$0.00"
+                      value={cpm.priceAdjustment ? (cpm.priceAdjustment / 100).toFixed(2) : ''}
+                      onChange={e => updateCustomPreMod(idx, 'priceAdjustment', Math.round(parseFloat(e.target.value || '0') * 100))}
+                      step="0.01"
+                      className="w-20 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <input
+                      type="number"
+                      placeholder="1.0"
+                      value={cpm.multiplier}
+                      onChange={e => updateCustomPreMod(idx, 'multiplier', parseFloat(e.target.value || '1'))}
+                      step="0.1"
+                      min="0"
+                      className="w-16 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100 placeholder-zinc-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => moveCustomPreMod(idx, -1)}
+                    disabled={idx === 0}
+                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronUp className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveCustomPreMod(idx, 1)}
+                    disabled={idx === arr.length - 1}
+                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => toggleCustomPreModActive(idx)}
+                  className="p-0.5 shrink-0"
+                  title={cpm.isActive ? 'Active' : 'Inactive'}
+                >
+                  {cpm.isActive ? <Eye className="w-3.5 h-3.5 text-green-500" /> : <EyeOff className="w-3.5 h-3.5 text-zinc-500" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeCustomPreMod(idx)}
+                  className="p-0.5 text-red-400 hover:text-red-300 shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+
+            {(draft.customPreModifiers || []).length === 0 && (
+              <p className="text-xs text-zinc-500 italic">No custom pre-modifiers. Use presets or add manually.</p>
+            )}
           </div>
         </div>
 

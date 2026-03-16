@@ -46,6 +46,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       inventoryDeductionUnit,
       swapEnabled = false,
       swapTargets,
+      customPreModifiers,
     } = body
 
     // Verify group belongs to this item
@@ -106,6 +107,30 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return NextResponse.json({ error: 'inventoryDeductionUnit is required when inventoryDeductionAmount is set' }, { status: 400 })
     }
 
+    // Validate customPreModifiers
+    if (customPreModifiers !== undefined && customPreModifiers !== null) {
+      if (!Array.isArray(customPreModifiers)) {
+        return NextResponse.json({ error: 'customPreModifiers must be an array' }, { status: 400 })
+      }
+      for (const cpm of customPreModifiers) {
+        if (!cpm.name || typeof cpm.name !== 'string' || cpm.name.trim() === '') {
+          return NextResponse.json({ error: 'Each custom pre-modifier must have a name' }, { status: 400 })
+        }
+        if (cpm.name.length > 100) {
+          return NextResponse.json({ error: 'Custom pre-modifier name must be 100 characters or less' }, { status: 400 })
+        }
+        if (cpm.shortLabel && cpm.shortLabel.length > 12) {
+          return NextResponse.json({ error: 'Custom pre-modifier shortLabel must be 12 characters or less' }, { status: 400 })
+        }
+        if (typeof cpm.priceAdjustment !== 'number' || !Number.isFinite(cpm.priceAdjustment)) {
+          return NextResponse.json({ error: 'Custom pre-modifier priceAdjustment must be a valid number' }, { status: 400 })
+        }
+        if (typeof cpm.multiplier !== 'number' || !Number.isFinite(cpm.multiplier) || cpm.multiplier < 0) {
+          return NextResponse.json({ error: 'Custom pre-modifier multiplier must be a non-negative number' }, { status: 400 })
+        }
+      }
+    }
+
     // Validate commission
     if (commissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
       return NextResponse.json({ error: 'Percent commission cannot exceed 100' }, { status: 400 })
@@ -154,6 +179,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         inventoryDeductionUnit: ingredientId ? (inventoryDeductionUnit || null) : null,
         swapEnabled,
         swapTargets: swapTargets ? swapTargets : Prisma.DbNull,
+        customPreModifiers: customPreModifiers ? customPreModifiers : Prisma.DbNull,
       },
       include: {
         ingredient: {
@@ -208,6 +234,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         inventoryDeductionUnit: modifier.inventoryDeductionUnit,
         swapEnabled: modifier.swapEnabled,
         swapTargets: modifier.swapTargets,
+        customPreModifiers: modifier.customPreModifiers,
         spiritTier: modifier.spiritTier,
         linkedBottleProductId: modifier.linkedBottleProductId,
       },
@@ -263,6 +290,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       inventoryDeductionUnit,
       swapEnabled,
       swapTargets,
+      customPreModifiers,
     } = body
 
     if (!modifierId) {
@@ -334,6 +362,30 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       return NextResponse.json({ error: 'inventoryDeductionUnit is required when inventoryDeductionAmount is set' }, { status: 400 })
     }
 
+    // Validate customPreModifiers
+    if (customPreModifiers !== undefined && customPreModifiers !== null) {
+      if (!Array.isArray(customPreModifiers)) {
+        return NextResponse.json({ error: 'customPreModifiers must be an array' }, { status: 400 })
+      }
+      for (const cpm of customPreModifiers) {
+        if (!cpm.name || typeof cpm.name !== 'string' || cpm.name.trim() === '') {
+          return NextResponse.json({ error: 'Each custom pre-modifier must have a name' }, { status: 400 })
+        }
+        if (cpm.name.length > 100) {
+          return NextResponse.json({ error: 'Custom pre-modifier name must be 100 characters or less' }, { status: 400 })
+        }
+        if (cpm.shortLabel && cpm.shortLabel.length > 12) {
+          return NextResponse.json({ error: 'Custom pre-modifier shortLabel must be 12 characters or less' }, { status: 400 })
+        }
+        if (typeof cpm.priceAdjustment !== 'number' || !Number.isFinite(cpm.priceAdjustment)) {
+          return NextResponse.json({ error: 'Custom pre-modifier priceAdjustment must be a valid number' }, { status: 400 })
+        }
+        if (typeof cpm.multiplier !== 'number' || !Number.isFinite(cpm.multiplier) || cpm.multiplier < 0) {
+          return NextResponse.json({ error: 'Custom pre-modifier multiplier must be a non-negative number' }, { status: 400 })
+        }
+      }
+    }
+
     // Validate commission — check existing commissionType when not in payload
     const effectiveCommissionType = commissionType !== undefined ? commissionType : modifier.commissionType
     if (effectiveCommissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
@@ -400,6 +452,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         inventoryDeductionUnit: ingredientId === null ? null : (inventoryDeductionUnit !== undefined ? (inventoryDeductionUnit || null) : undefined),
         swapEnabled: swapEnabled !== undefined ? swapEnabled : undefined,
         swapTargets: swapTargets !== undefined ? (swapTargets ? swapTargets : Prisma.DbNull) : undefined,
+        customPreModifiers: customPreModifiers !== undefined ? (customPreModifiers ? customPreModifiers : Prisma.DbNull) : undefined,
       },
       include: {
         ingredient: {
@@ -454,6 +507,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         inventoryDeductionUnit: updated.inventoryDeductionUnit,
         swapEnabled: updated.swapEnabled,
         swapTargets: updated.swapTargets,
+        customPreModifiers: updated.customPreModifiers,
         spiritTier: updated.spiritTier,
         linkedBottleProductId: updated.linkedBottleProductId,
       },

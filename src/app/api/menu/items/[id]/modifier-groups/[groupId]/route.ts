@@ -133,6 +133,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
           inventoryDeductionUnit: m.inventoryDeductionUnit,
           swapEnabled: m.swapEnabled,
           swapTargets: m.swapTargets,
+          customPreModifiers: m.customPreModifiers,
           spiritTier: m.spiritTier,
           linkedBottleProductId: m.linkedBottleProductId,
           childModifierGroup: m.childModifierGroup ? {
@@ -185,6 +186,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
               inventoryDeductionUnit: cm.inventoryDeductionUnit,
               swapEnabled: cm.swapEnabled,
               swapTargets: cm.swapTargets,
+              customPreModifiers: cm.customPreModifiers,
               spiritTier: cm.spiritTier,
               linkedBottleProductId: cm.linkedBottleProductId,
             })),

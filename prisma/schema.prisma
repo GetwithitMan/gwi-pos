@@ -1877,6 +1877,7 @@ model Modifier {
   // Swap — allow substituting this modifier with an alternate item at POS
   swapEnabled            Boolean  @default(false)
   swapTargets            Json?    // SwapTarget[] — targets with pricing modes
+  customPreModifiers     Json?    // CustomPreMod[] — custom pre-modifier options (Well Done, Blackened, etc.)
   // Inventory deduction override
   inventoryDeductionAmount Decimal? // Amount of ingredient to deduct per selection
   inventoryDeductionUnit   String?  // Unit for deduction (oz, ml, unit, g)

@@ -91,6 +91,19 @@ export interface MenuItem {
 }
 
 /**
+ * Custom pre-modifier for a modifier (e.g., "Well Done", "Medium Rare")
+ */
+export interface CustomPreMod {
+  name: string
+  shortLabel?: string
+  kitchenLabel?: string
+  priceAdjustment: number  // cents
+  multiplier: number
+  sortOrder: number
+  isActive: boolean
+}
+
+/**
  * Modifier within a modifier group
  */
 export interface Modifier {
@@ -128,6 +141,7 @@ export interface Modifier {
   // Swap — substitute this modifier with an alternate item
   swapEnabled?: boolean
   swapTargets?: { menuItemId: string; name: string; snapshotPrice: number; pricingMode: 'target_price' | 'fixed_price' | 'no_charge'; fixedPrice?: number | null; sortOrder: number }[] | null
+  customPreModifiers?: CustomPreMod[] | null
 }
 
 /**
@@ -192,6 +206,7 @@ export interface SelectedModifier {
   swapTargetItemId?: string
   swapPricingMode?: 'target_price' | 'fixed_price' | 'no_charge'
   swapEffectivePrice?: number
+  customPreModifier?: string  // Name of selected custom pre-mod (e.g., "Well Done")
 }
 
 /**

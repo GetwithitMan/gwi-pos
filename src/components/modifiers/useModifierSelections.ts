@@ -3,7 +3,7 @@ import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { toast } from '@/stores/toast-store'
 import type { DualPricingSettings } from '@/lib/settings'
-import type { MenuItem, ModifierGroup, SelectedModifier, Modifier } from '@/types'
+import type { MenuItem, ModifierGroup, SelectedModifier, Modifier, CustomPreMod } from '@/types'
 
 // Custom entry selection for open-entry modifier groups
 export interface CustomEntrySelection {
@@ -283,6 +283,9 @@ export function useModifierSelections(
   const [initialized, setInitialized] = useState(false)
   const [specialNotes, setSpecialNotes] = useState(initialNotes || '')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+
+  // Custom pre-modifier selections: key is `${groupId}:${modifierId}`
+  const [customPreModSelections, setCustomPreModSelections] = useState<Record<string, CustomPreMod>>({})
 
   // Restore ingredient modifications immediately on edit (before API fetch)
   useEffect(() => {
@@ -579,7 +582,18 @@ export function useModifierSelections(
 
       // If clicking with a preModifier — toggle that token in/out of compound
       if (preModifier) {
-        const newCompound = togglePreModifierToken(existingMod.preModifier, preModifier)
+        // Clear any custom pre-mod when a standard pre-mod is toggled
+        const cpmKey = `${group.id}:${modifier.id}`
+        const hadCustomPreMod = !!customPreModSelections[cpmKey]
+        if (hadCustomPreMod) {
+          setCustomPreModSelections(prev => {
+            const { [cpmKey]: _, ...rest } = prev
+            return rest
+          })
+        }
+        // If replacing a custom pre-mod, start fresh with the standard pre-mod token
+        const basePreMod = hadCustomPreMod ? undefined : existingMod.preModifier
+        const newCompound = togglePreModifierToken(basePreMod, preModifier)
         const updatedMod: SelectedModifier = {
           ...existingMod,
           price: computePrice(newCompound),
@@ -733,11 +747,14 @@ export function useModifierSelections(
       const group = modifierGroups.find(g => g.id === groupId)
         || Object.values(childGroups).find(g => g.id === groupId)
       groupSels.forEach((sel, index) => {
+        const cpmKey = `${groupId}:${sel.id}`
+        const customCpm = customPreModSelections[cpmKey]
+        const extra = customCpm ? { customPreModifier: customCpm.name } : {}
         if (group?.tieredPricingConfig?.enabled && !sel.preModifier) {
           const tieredPrice = getTieredPrice(group, { price: sel.price } as Modifier, index)
-          result.push({ ...sel, price: tieredPrice })
+          result.push({ ...sel, price: tieredPrice, ...extra })
         } else {
-          result.push(sel)
+          result.push({ ...sel, ...extra })
         }
       })
     }
@@ -875,6 +892,51 @@ export function useModifierSelections(
     return selection?.preModifier
   }
 
+  // Toggle a custom pre-modifier on a selected modifier (mutually exclusive with standard pre-mods)
+  const toggleCustomPreMod = (groupId: string, modifierId: string, cpm: CustomPreMod) => {
+    const key = `${groupId}:${modifierId}`
+    const current = customPreModSelections[key]
+
+    // Find the modifier to get its base price
+    const group = modifierGroups.find(g => g.id === groupId)
+      || Object.values(childGroups).find(g => g.id === groupId)
+    const modifier = group?.modifiers.find(m => m.id === modifierId)
+    if (!modifier) return
+
+    if (current?.name === cpm.name) {
+      // Deselect — revert to base price, clear preModifier
+      setCustomPreModSelections(prev => {
+        const { [key]: _, ...rest } = prev
+        return rest
+      })
+      setSelections(prev => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).map(s =>
+          s.id === modifierId ? { ...s, price: modifier.price, preModifier: undefined } : s
+        ),
+      }))
+    } else {
+      // Select — clear any standard pre-mod, apply custom pricing
+      setCustomPreModSelections(prev => ({ ...prev, [key]: cpm }))
+      // Flat priceType: ignore custom pre-mod multiplier/priceAdjustment
+      const isFlatPrice = (modifier as any).priceType === 'flat'
+      const newPrice = isFlatPrice
+        ? modifier.price
+        : (modifier.price * cpm.multiplier) + (cpm.priceAdjustment / 100)
+      setSelections(prev => ({
+        ...prev,
+        [groupId]: (prev[groupId] || []).map(s =>
+          s.id === modifierId ? { ...s, price: newPrice, preModifier: cpm.name } : s
+        ),
+      }))
+    }
+  }
+
+  // Get the selected custom pre-modifier for a modifier
+  const getSelectedCustomPreMod = (groupId: string, modifierId: string): CustomPreMod | undefined => {
+    return customPreModSelections[`${groupId}:${modifierId}`]
+  }
+
   return {
     // Pour
     selectedPourSize,
@@ -910,6 +972,9 @@ export function useModifierSelections(
     getSelectionCount,
     getActiveChildGroups,
     getSelectedPreModifier,
+    // Custom pre-modifiers
+    toggleCustomPreMod,
+    getSelectedCustomPreMod,
     handleSpiritSelection,
     getModifiersByTier,
     // Validation

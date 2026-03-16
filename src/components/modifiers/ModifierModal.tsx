@@ -84,6 +84,8 @@ export function ModifierModal({
     getSelectionCount,
     getActiveChildGroups,
     getSelectedPreModifier,
+    toggleCustomPreMod,
+    getSelectedCustomPreMod,
     handleSpiritSelection,
     getModifiersByTier,
     canConfirm,
@@ -442,6 +444,8 @@ export function ModifierModal({
           getExcludedModifierIds={getExcludedModifierIds}
           cardPriceMultiplier={cpm}
           onOpenCustomEntry={handleOpenCustomEntry}
+          onToggleCustomPreMod={toggleCustomPreMod}
+          getSelectedCustomPreMod={getSelectedCustomPreMod}
         />
         {renderCustomEntrySection(group.id)}
 
@@ -470,6 +474,8 @@ export function ModifierModal({
               getExcludedModifierIds={getExcludedModifierIds}
               cardPriceMultiplier={cpm}
               onOpenCustomEntry={handleOpenCustomEntry}
+              onToggleCustomPreMod={toggleCustomPreMod}
+              getSelectedCustomPreMod={getSelectedCustomPreMod}
             />
             {renderCustomEntrySection(childGroup.id)}
 
@@ -497,6 +503,8 @@ export function ModifierModal({
                   getExcludedModifierIds={getExcludedModifierIds}
                   cardPriceMultiplier={cpm}
                   onOpenCustomEntry={handleOpenCustomEntry}
+                  onToggleCustomPreMod={toggleCustomPreMod}
+                  getSelectedCustomPreMod={getSelectedCustomPreMod}
                 />
                 {renderCustomEntrySection(grandChild.id)}
               </div>
@@ -696,6 +704,8 @@ export function ModifierModal({
                             getExcludedModifierIds={getExcludedModifierIds}
                             cardPriceMultiplier={cpm}
                             onOpenCustomEntry={handleOpenCustomEntry}
+                            onToggleCustomPreMod={toggleCustomPreMod}
+                            getSelectedCustomPreMod={getSelectedCustomPreMod}
                           />
                           {renderCustomEntrySection(group.id)}
                         </div>
@@ -730,6 +740,8 @@ export function ModifierModal({
                             getExcludedModifierIds={getExcludedModifierIds}
                             cardPriceMultiplier={cpm}
                             onOpenCustomEntry={handleOpenCustomEntry}
+                            onToggleCustomPreMod={toggleCustomPreMod}
+                            getSelectedCustomPreMod={getSelectedCustomPreMod}
                           />
                           {renderCustomEntrySection(childGroup.id)}
                         </div>
