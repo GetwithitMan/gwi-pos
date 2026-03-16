@@ -41,7 +41,7 @@ async function fetchDeliverySettings(): Promise<DeliverySettingsCache | null> {
 
   const promise = (async () => {
     try {
-      const response = await fetch('/api/settings')
+      const response = await fetch('/api/settings', { credentials: 'include' })
       if (response.ok) {
         const raw = await response.json()
         const data = raw.data ?? raw
@@ -53,6 +53,8 @@ async function fetchDeliverySettings(): Promise<DeliverySettingsCache | null> {
         cachedSettings = result
         cacheTime = Date.now()
         return result
+      } else {
+        console.warn('[useDeliveryFeature] /api/settings returned', response.status)
       }
     } catch (error) {
       console.error('[useDeliveryFeature] Failed to load settings:', error)

@@ -917,6 +917,7 @@ export interface LocationSettings {
   thirdPartyDelivery?: ThirdPartyDeliverySettings     // DoorDash/UberEats/Grubhub delivery integration (optional for backward compat)
   hostView?: HostViewSettings                         // Host management station — seating, waitlist, server rotation (optional for backward compat)
   delivery?: DeliverySettings                         // In-house delivery management (optional for backward compat)
+  deliveryFeatures?: Record<string, unknown>  // MC-synced delivery feature flags (optional — set by MC config sync)
   textToPay?: TextToPaySettings                       // Text-to-Pay / Payment Links via SMS/email (optional for backward compat)
   memberships?: MembershipSettings                     // Recurring membership billing (optional for backward compat)
   entertainment?: EntertainmentSettings                 // Entertainment / timed rental policies (optional for backward compat)
@@ -2188,6 +2189,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
           peakHours: partial.delivery.peakHours ?? DEFAULT_DELIVERY.peakHours,
         }
       : undefined,
+    deliveryFeatures: partial.deliveryFeatures,  // MC-synced feature flags — pass-through, no defaults
     textToPay: partial.textToPay
       ? { ...DEFAULT_TEXT_TO_PAY, ...partial.textToPay }
       : undefined,
