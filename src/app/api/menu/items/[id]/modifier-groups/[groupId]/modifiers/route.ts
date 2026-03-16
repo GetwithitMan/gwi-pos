@@ -31,6 +31,21 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       printerIds,
       spiritTier,
       linkedBottleProductId,
+      isActive = true,
+      displayName,
+      showOnPOS = true,
+      showOnline = true,
+      showAsHotButton = false,
+      cost,
+      commissionType,
+      commissionValue,
+      upsellPrice,
+      priceType = 'upcharge',
+      linkedMenuItemId,
+      inventoryDeductionAmount,
+      inventoryDeductionUnit,
+      swapEnabled = false,
+      swapTargets,
     } = body
 
     // Verify group belongs to this item
@@ -52,6 +67,48 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     }
     if (extraPrice !== undefined && (typeof extraPrice !== 'number' || !Number.isFinite(extraPrice))) {
       return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
+    }
+
+    // Validate swapTargets
+    if (swapEnabled && (!swapTargets || !Array.isArray(swapTargets) || swapTargets.length === 0)) {
+      return NextResponse.json({ error: 'Swap enabled requires at least one swap target' }, { status: 400 })
+    }
+    if (swapTargets && Array.isArray(swapTargets)) {
+      const seenIds = new Set()
+      for (const target of swapTargets) {
+        if (!target.menuItemId || !target.name || target.snapshotPrice === undefined || !target.pricingMode) {
+          return NextResponse.json({ error: 'Each swap target must have menuItemId, name, snapshotPrice, and pricingMode' }, { status: 400 })
+        }
+        if (!['target_price', 'fixed_price', 'no_charge'].includes(target.pricingMode)) {
+          return NextResponse.json({ error: 'Invalid pricingMode. Must be target_price, fixed_price, or no_charge' }, { status: 400 })
+        }
+        if (target.pricingMode === 'fixed_price' && (target.fixedPrice === undefined || target.fixedPrice === null)) {
+          return NextResponse.json({ error: 'fixedPrice is required when pricingMode is fixed_price' }, { status: 400 })
+        }
+        if (target.name && target.name.length > 100) {
+          return NextResponse.json({ error: 'Swap target name must be 100 characters or less' }, { status: 400 })
+        }
+        if (seenIds.has(target.menuItemId)) {
+          return NextResponse.json({ error: 'Duplicate menuItemId in swap targets' }, { status: 400 })
+        }
+        seenIds.add(target.menuItemId)
+      }
+    }
+
+    // Validate inventoryDeductionAmount
+    if (inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && inventoryDeductionAmount < 0) {
+      return NextResponse.json({ error: 'inventoryDeductionAmount must be >= 0' }, { status: 400 })
+    }
+    if (!ingredientId && (inventoryDeductionAmount !== undefined || inventoryDeductionUnit !== undefined)) {
+      // Clear orphaned deduction config if no ingredient linked
+    }
+    if (ingredientId && inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && !inventoryDeductionUnit) {
+      return NextResponse.json({ error: 'inventoryDeductionUnit is required when inventoryDeductionAmount is set' }, { status: 400 })
+    }
+
+    // Validate commission
+    if (commissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
+      return NextResponse.json({ error: 'Percent commission cannot exceed 100' }, { status: 400 })
     }
 
     // Get max sort order
@@ -82,6 +139,21 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         spiritTier: spiritTier || null,
         linkedBottleProductId: linkedBottleProductId || null,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
+        isActive,
+        displayName: displayName || null,
+        showOnPOS,
+        showOnline,
+        showAsHotButton,
+        cost: cost !== undefined ? cost : null,
+        commissionType: commissionType || null,
+        commissionValue: commissionValue !== undefined ? commissionValue : null,
+        upsellPrice: upsellPrice !== undefined ? upsellPrice : null,
+        priceType,
+        linkedMenuItemId: linkedMenuItemId || null,
+        inventoryDeductionAmount: ingredientId ? (inventoryDeductionAmount !== undefined ? inventoryDeductionAmount : null) : null,
+        inventoryDeductionUnit: ingredientId ? (inventoryDeductionUnit || null) : null,
+        swapEnabled,
+        swapTargets: swapTargets ? swapTargets : Prisma.DbNull,
       },
       include: {
         ingredient: {
@@ -121,6 +193,23 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         isLabel: modifier.isLabel,
         printerRouting: modifier.printerRouting,
         printerIds: modifier.printerIds,
+        isActive: modifier.isActive,
+        displayName: modifier.displayName,
+        showOnPOS: modifier.showOnPOS,
+        showOnline: modifier.showOnline,
+        showAsHotButton: modifier.showAsHotButton,
+        cost: modifier.cost !== null ? Number(modifier.cost) : null,
+        commissionType: modifier.commissionType,
+        commissionValue: modifier.commissionValue !== null ? Number(modifier.commissionValue) : null,
+        upsellPrice: modifier.upsellPrice !== null ? Number(modifier.upsellPrice) : null,
+        priceType: modifier.priceType,
+        linkedMenuItemId: modifier.linkedMenuItemId,
+        inventoryDeductionAmount: modifier.inventoryDeductionAmount !== null ? Number(modifier.inventoryDeductionAmount) : null,
+        inventoryDeductionUnit: modifier.inventoryDeductionUnit,
+        swapEnabled: modifier.swapEnabled,
+        swapTargets: modifier.swapTargets,
+        spiritTier: modifier.spiritTier,
+        linkedBottleProductId: modifier.linkedBottleProductId,
       },
     })
   } catch (error) {
@@ -159,6 +248,21 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       printerIds,
       spiritTier,
       linkedBottleProductId,
+      isActive,
+      displayName,
+      showOnPOS,
+      showOnline,
+      showAsHotButton,
+      cost,
+      commissionType,
+      commissionValue,
+      upsellPrice,
+      priceType,
+      linkedMenuItemId,
+      inventoryDeductionAmount,
+      inventoryDeductionUnit,
+      swapEnabled,
+      swapTargets,
     } = body
 
     if (!modifierId) {
@@ -186,6 +290,50 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       if (!Number.isFinite(parsed)) {
         return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
       }
+    }
+
+    // Validate swapTargets
+    if (swapEnabled && (!swapTargets || !Array.isArray(swapTargets) || swapTargets.length === 0)) {
+      return NextResponse.json({ error: 'Swap enabled requires at least one swap target' }, { status: 400 })
+    }
+    if (swapTargets && Array.isArray(swapTargets)) {
+      const seenIds = new Set()
+      for (const target of swapTargets) {
+        if (!target.menuItemId || !target.name || target.snapshotPrice === undefined || !target.pricingMode) {
+          return NextResponse.json({ error: 'Each swap target must have menuItemId, name, snapshotPrice, and pricingMode' }, { status: 400 })
+        }
+        if (!['target_price', 'fixed_price', 'no_charge'].includes(target.pricingMode)) {
+          return NextResponse.json({ error: 'Invalid pricingMode. Must be target_price, fixed_price, or no_charge' }, { status: 400 })
+        }
+        if (target.pricingMode === 'fixed_price' && (target.fixedPrice === undefined || target.fixedPrice === null)) {
+          return NextResponse.json({ error: 'fixedPrice is required when pricingMode is fixed_price' }, { status: 400 })
+        }
+        if (target.name && target.name.length > 100) {
+          return NextResponse.json({ error: 'Swap target name must be 100 characters or less' }, { status: 400 })
+        }
+        if (seenIds.has(target.menuItemId)) {
+          return NextResponse.json({ error: 'Duplicate menuItemId in swap targets' }, { status: 400 })
+        }
+        seenIds.add(target.menuItemId)
+      }
+    }
+
+    // Validate inventoryDeductionAmount
+    if (inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && inventoryDeductionAmount < 0) {
+      return NextResponse.json({ error: 'inventoryDeductionAmount must be >= 0' }, { status: 400 })
+    }
+    // Clear orphaned deduction config if ingredient is being removed
+    const effectiveIngredientId = ingredientId !== undefined ? ingredientId : modifier.ingredientId
+    if (!effectiveIngredientId && (inventoryDeductionAmount !== undefined || inventoryDeductionUnit !== undefined)) {
+      // Clear orphaned deduction config if no ingredient linked
+    }
+    if (effectiveIngredientId && inventoryDeductionAmount !== undefined && inventoryDeductionAmount !== null && !inventoryDeductionUnit) {
+      return NextResponse.json({ error: 'inventoryDeductionUnit is required when inventoryDeductionAmount is set' }, { status: 400 })
+    }
+
+    // Validate commission
+    if (commissionType === 'percent' && commissionValue !== undefined && commissionValue > 100) {
+      return NextResponse.json({ error: 'Percent commission cannot exceed 100' }, { status: 400 })
     }
 
     // Enforce maxSelections when setting isDefault: true
@@ -233,6 +381,21 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         printerIds: printerIds !== undefined ? (printerIds ? printerIds : Prisma.DbNull) : undefined,
         spiritTier: spiritTier !== undefined ? (spiritTier || null) : undefined,
         linkedBottleProductId: linkedBottleProductId !== undefined ? (linkedBottleProductId || null) : undefined,
+        isActive: isActive !== undefined ? isActive : undefined,
+        displayName: displayName !== undefined ? (displayName || null) : undefined,
+        showOnPOS: showOnPOS !== undefined ? showOnPOS : undefined,
+        showOnline: showOnline !== undefined ? showOnline : undefined,
+        showAsHotButton: showAsHotButton !== undefined ? showAsHotButton : undefined,
+        cost: cost !== undefined ? (cost !== null ? cost : null) : undefined,
+        commissionType: commissionType !== undefined ? (commissionType || null) : undefined,
+        commissionValue: commissionValue !== undefined ? (commissionValue !== null ? commissionValue : null) : undefined,
+        upsellPrice: upsellPrice !== undefined ? (upsellPrice !== null ? upsellPrice : null) : undefined,
+        priceType: priceType !== undefined ? priceType : undefined,
+        linkedMenuItemId: linkedMenuItemId !== undefined ? (linkedMenuItemId || null) : undefined,
+        inventoryDeductionAmount: ingredientId === null ? null : (inventoryDeductionAmount !== undefined ? (inventoryDeductionAmount !== null ? inventoryDeductionAmount : null) : undefined),
+        inventoryDeductionUnit: ingredientId === null ? null : (inventoryDeductionUnit !== undefined ? (inventoryDeductionUnit || null) : undefined),
+        swapEnabled: swapEnabled !== undefined ? swapEnabled : undefined,
+        swapTargets: swapTargets !== undefined ? (swapTargets ? swapTargets : Prisma.DbNull) : undefined,
       },
       include: {
         ingredient: {
@@ -272,6 +435,23 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         isLabel: updated.isLabel,
         printerRouting: updated.printerRouting,
         printerIds: updated.printerIds,
+        isActive: updated.isActive,
+        displayName: updated.displayName,
+        showOnPOS: updated.showOnPOS,
+        showOnline: updated.showOnline,
+        showAsHotButton: updated.showAsHotButton,
+        cost: updated.cost !== null ? Number(updated.cost) : null,
+        commissionType: updated.commissionType,
+        commissionValue: updated.commissionValue !== null ? Number(updated.commissionValue) : null,
+        upsellPrice: updated.upsellPrice !== null ? Number(updated.upsellPrice) : null,
+        priceType: updated.priceType,
+        linkedMenuItemId: updated.linkedMenuItemId,
+        inventoryDeductionAmount: updated.inventoryDeductionAmount !== null ? Number(updated.inventoryDeductionAmount) : null,
+        inventoryDeductionUnit: updated.inventoryDeductionUnit,
+        swapEnabled: updated.swapEnabled,
+        swapTargets: updated.swapTargets,
+        spiritTier: updated.spiritTier,
+        linkedBottleProductId: updated.linkedBottleProductId,
       },
     })
   } catch (error) {

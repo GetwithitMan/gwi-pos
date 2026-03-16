@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
-    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline, isSpiritGroup } = body
+    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline, isSpiritGroup, displayName, modifierTypes, allowOpenEntry, autoAdvance } = body
 
     // Validate inputs
     if (name !== undefined && typeof name === 'string' && name.trim() === '') {
@@ -47,6 +47,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         tieredPricingConfig: tieredPricingConfig !== undefined ? (tieredPricingConfig ?? Prisma.JsonNull) : undefined,
         exclusionGroupKey: exclusionGroupKey !== undefined ? (exclusionGroupKey || null) : undefined,
         isSpiritGroup: isSpiritGroup !== undefined ? isSpiritGroup : undefined,
+        displayName: displayName !== undefined ? (displayName || null) : undefined,
+        modifierTypes: modifierTypes !== undefined ? modifierTypes : undefined,
+        allowOpenEntry: allowOpenEntry !== undefined ? allowOpenEntry : undefined,
+        autoAdvance: autoAdvance !== undefined ? autoAdvance : undefined,
+        showOnline: showOnline !== undefined ? showOnline : undefined,
       },
       include: {
         modifiers: {
@@ -70,14 +75,6 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       },
     })
 
-    // Update showOnline directly on ModifierGroup
-    if (showOnline !== undefined) {
-      await db.modifierGroup.update({
-        where: { id: groupId },
-        data: { showOnline },
-      })
-    }
-
     // Fire-and-forget socket dispatch for real-time menu structure updates
     void dispatchMenuStructureChanged(group.locationId, {
       action: 'modifier-group-updated',
@@ -96,6 +93,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         sortOrder: updated.sortOrder,
         tieredPricingConfig: updated.tieredPricingConfig,
         exclusionGroupKey: updated.exclusionGroupKey,
+        displayName: updated.displayName,
+        modifierTypes: updated.modifierTypes,
+        showOnline: updated.showOnline,
+        allowOpenEntry: updated.allowOpenEntry,
+        autoAdvance: updated.autoAdvance,
         modifiers: updated.modifiers.map((m: any) => ({
           id: m.id,
           name: m.name,
@@ -113,6 +115,23 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
           childModifierGroupId: m.childModifierGroupId,
           printerRouting: m.printerRouting,
           printerIds: m.printerIds,
+          displayName: m.displayName,
+          isActive: m.isActive,
+          showOnPOS: m.showOnPOS,
+          showOnline: m.showOnline,
+          showAsHotButton: m.showAsHotButton,
+          cost: m.cost !== null ? Number(m.cost) : null,
+          commissionType: m.commissionType,
+          commissionValue: m.commissionValue !== null ? Number(m.commissionValue) : null,
+          upsellPrice: m.upsellPrice !== null ? Number(m.upsellPrice) : null,
+          priceType: m.priceType,
+          linkedMenuItemId: m.linkedMenuItemId,
+          liteMultiplier: m.liteMultiplier !== null ? Number(m.liteMultiplier) : null,
+          extraMultiplier: m.extraMultiplier !== null ? Number(m.extraMultiplier) : null,
+          inventoryDeductionAmount: m.inventoryDeductionAmount !== null ? Number(m.inventoryDeductionAmount) : null,
+          inventoryDeductionUnit: m.inventoryDeductionUnit,
+          swapEnabled: m.swapEnabled,
+          swapTargets: m.swapTargets,
           childModifierGroup: m.childModifierGroup ? {
             id: m.childModifierGroup.id,
             name: m.childModifierGroup.name,
@@ -140,6 +159,23 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
               childModifierGroupId: cm.childModifierGroupId,
               printerRouting: cm.printerRouting,
               printerIds: cm.printerIds,
+              displayName: cm.displayName,
+              isActive: cm.isActive,
+              showOnPOS: cm.showOnPOS,
+              showOnline: cm.showOnline,
+              showAsHotButton: cm.showAsHotButton,
+              cost: cm.cost !== null ? Number(cm.cost) : null,
+              commissionType: cm.commissionType,
+              commissionValue: cm.commissionValue !== null ? Number(cm.commissionValue) : null,
+              upsellPrice: cm.upsellPrice !== null ? Number(cm.upsellPrice) : null,
+              priceType: cm.priceType,
+              linkedMenuItemId: cm.linkedMenuItemId,
+              liteMultiplier: cm.liteMultiplier !== null ? Number(cm.liteMultiplier) : null,
+              extraMultiplier: cm.extraMultiplier !== null ? Number(cm.extraMultiplier) : null,
+              inventoryDeductionAmount: cm.inventoryDeductionAmount !== null ? Number(cm.inventoryDeductionAmount) : null,
+              inventoryDeductionUnit: cm.inventoryDeductionUnit,
+              swapEnabled: cm.swapEnabled,
+              swapTargets: cm.swapTargets,
             })),
           } : null,
         })),

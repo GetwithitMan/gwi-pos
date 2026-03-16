@@ -127,7 +127,7 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   SectionAssignment:      { direction: 'downstream', owner: 'cloud', priority: 45, batchSize: 50 },
   BergDevice:             { direction: 'downstream', owner: 'cloud', priority: 46, batchSize: 50 },
   BergPluMapping:         { direction: 'downstream', owner: 'cloud', priority: 47, batchSize: 100 },
-  BottleProduct:          { direction: 'downstream', owner: 'cloud', priority: 48, batchSize: 100 },
+  BottleProduct:          { direction: 'bidirectional', owner: 'both', priority: 48, batchSize: 100 },
   Invoice:                { direction: 'downstream', owner: 'cloud', priority: 49, batchSize: 100 },
   InvoiceLineItem:        { direction: 'downstream', owner: 'cloud', priority: 50, batchSize: 100 },
   Schedule:               { direction: 'downstream', owner: 'cloud', priority: 51, batchSize: 50 },
@@ -145,15 +145,13 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   PrepItem:               { direction: 'downstream', owner: 'cloud', priority: 63, batchSize: 100 },
   PrepItemIngredient:     { direction: 'downstream', owner: 'cloud', priority: 64, batchSize: 100 },
   PricingOptionInventoryLink: { direction: 'downstream', owner: 'cloud', priority: 65, batchSize: 100 },
-  SpiritCategory:         { direction: 'downstream', owner: 'cloud', priority: 66, batchSize: 50 },
-  SpiritModifierGroup:    { direction: 'downstream', owner: 'cloud', priority: 67, batchSize: 50 },
+  SpiritCategory:         { direction: 'bidirectional', owner: 'both', priority: 66, batchSize: 50 },
+  SpiritModifierGroup:    { direction: 'bidirectional', owner: 'both', priority: 67, batchSize: 50 },
   InventorySettings:      { direction: 'downstream', owner: 'cloud', priority: 68, batchSize: 10 },
   CfdSettings:            { direction: 'downstream', owner: 'cloud', priority: 69, batchSize: 10 },
 
   // ── Liquor Builder + Spirit Upgrades (NUC → Neon) ────────────────────
-  SpiritCategory:         { direction: 'upstream', owner: 'nuc', priority: 70, batchSize: 50 },
-  BottleProduct:          { direction: 'upstream', owner: 'nuc', priority: 71, batchSize: 100 },
-  SpiritModifierGroup:    { direction: 'upstream', owner: 'nuc', priority: 72, batchSize: 50 },
+  // SpiritCategory, BottleProduct, SpiritModifierGroup moved to bidirectional above
   SpiritUpsellEvent:      { direction: 'upstream', owner: 'nuc', priority: 73, batchSize: 100 },
 
   // ── Pizza Builder (NUC → Neon) ──────────────────────────────────────
@@ -332,7 +330,7 @@ const SYSTEM_TABLES = new Set([
   '_pending_datacap_sales', '_pending_captures',
 ])
 
-export async function validateSyncCoverage(db: { $queryRawUnsafe: Function }): Promise<void> {
+export async function validateSyncCoverage(db: { $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T> }): Promise<void> {
   try {
     const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
       `SELECT table_name FROM information_schema.tables

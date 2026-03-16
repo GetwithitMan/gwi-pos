@@ -128,6 +128,11 @@ export const GET = withVenue(async function GET(
               pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
             } : null,
             is86d: false, // Field is on Ingredient, not Modifier — POS expects it so default to false
+            showAsHotButton: mod.showAsHotButton ?? false,
+            liteMultiplier: mod.liteMultiplier ? Number(mod.liteMultiplier) : null,
+            extraMultiplier: mod.extraMultiplier ? Number(mod.extraMultiplier) : null,
+            swapEnabled: mod.swapEnabled ?? false,
+            swapTargets: mod.swapTargets as any[] | null,
           })),
         }
       }),

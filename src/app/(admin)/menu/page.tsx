@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -16,12 +16,16 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ItemTreeView } from '@/components/menu/ItemTreeView'
 import { ItemEditor } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
+import { ModifierDetailPanel } from '@/components/menu/ModifierDetailPanel'
+import { ModifierGroupSettingsPanel } from '@/components/menu/ModifierGroupSettingsPanel'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useMenuData } from './hooks/useMenuData'
 import { CategoriesBar } from './components/CategoriesBar'
 import { ItemsBar } from './components/ItemsBar'
 import { CategoryModal } from './components/CategoryModal'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
+import type { Modifier, ModifierGroup } from '@/components/menu/item-editor-types'
 
 export default function MenuManagementPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/menu' })
@@ -79,6 +83,97 @@ export default function MenuManagementPage() {
     toggleItemSelection,
     handleMoveItems,
   } = useMenuData()
+
+  // --- Right panel selection state ---
+  const [selectedModifierId, setSelectedModifierId] = useState<string | null>(null)
+  const [rightPanelMode, setRightPanelMode] = useState<'group' | 'modifier' | null>(null)
+  const [itemModifierGroups, setItemModifierGroups] = useState<ModifierGroup[]>([])
+
+  // Clear modifier selection when item changes
+  useEffect(() => {
+    setSelectedModifierId(null)
+    setRightPanelMode(null)
+  }, [selectedItemForEditor?.id])
+
+  const handleSelectGroup = useCallback((groupId: string | null) => {
+    if (groupId === selectedGroupId) {
+      setSelectedGroupId(null)
+      setSelectedModifierId(null)
+      setRightPanelMode(null)
+    } else {
+      setSelectedGroupId(groupId)
+      setSelectedModifierId(null)
+      setRightPanelMode(groupId ? 'group' : null)
+    }
+  }, [selectedGroupId, setSelectedGroupId])
+
+  const handleSelectModifier = useCallback((modifierId: string, groupId: string) => {
+    if (modifierId === selectedModifierId) {
+      setSelectedModifierId(null)
+      setRightPanelMode(selectedGroupId ? 'group' : null)
+    } else {
+      setSelectedGroupId(groupId)
+      setSelectedModifierId(modifierId)
+      setRightPanelMode('modifier')
+    }
+  }, [selectedModifierId, selectedGroupId, setSelectedGroupId])
+
+  // Find selected group/modifier from the item's modifier groups (recursive search)
+  const findSelectedGroup = useCallback((): ModifierGroup | undefined => {
+    if (!selectedGroupId) return undefined
+    const search = (groups: ModifierGroup[]): ModifierGroup | undefined => {
+      for (const g of groups) {
+        if (g.id === selectedGroupId) return g
+        for (const m of g.modifiers) {
+          if (m.childModifierGroup) {
+            const found = search([m.childModifierGroup])
+            if (found) return found
+          }
+        }
+      }
+      return undefined
+    }
+    return search(itemModifierGroups)
+  }, [selectedGroupId, itemModifierGroups])
+
+  const findSelectedModifier = useCallback((): Modifier | undefined => {
+    if (!selectedModifierId || !selectedGroupId) return undefined
+    const group = findSelectedGroup()
+    return group?.modifiers.find(m => m.id === selectedModifierId)
+  }, [selectedModifierId, selectedGroupId, findSelectedGroup])
+
+  // API handlers for right panel edits
+  const handleGroupFieldUpdate = useCallback(async (groupId: string, field: string, value: any) => {
+    if (!selectedItemForEditor?.id) return
+    try {
+      const res = await fetch(`/api/menu/items/${selectedItemForEditor.id}/modifier-groups/${groupId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      })
+      if (!res.ok) throw new Error('Failed to update group')
+      loadMenu()
+      setRefreshKey(prev => prev + 1)
+    } catch {
+      toast.error('Failed to update modifier group')
+    }
+  }, [selectedItemForEditor?.id, loadMenu, setRefreshKey])
+
+  const handleModifierSave = useCallback(async (modifierId: string, updates: Partial<Modifier>) => {
+    if (!selectedItemForEditor?.id || !selectedGroupId) return
+    try {
+      const res = await fetch(`/api/menu/items/${selectedItemForEditor.id}/modifier-groups/${selectedGroupId}/modifiers`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modifierId, ...updates }),
+      })
+      if (!res.ok) throw new Error('Failed to update modifier')
+      loadMenu()
+      setRefreshKey(prev => prev + 1)
+    } catch {
+      toast.error('Failed to update modifier')
+    }
+  }, [selectedItemForEditor?.id, selectedGroupId, loadMenu, setRefreshKey])
 
   // Track which item is being dragged for the overlay
   const [activeDragItem, setActiveDragItem] = useState<{ id: string; name: string; price?: number } | null>(null)
@@ -238,7 +333,11 @@ export default function MenuManagementPage() {
                 ingredientCategories={ingredientCategories}
                 locationId={employee?.location?.id || ''}
                 refreshKey={refreshKey}
-                onSelectGroup={setSelectedGroupId}
+                selectedGroupId={selectedGroupId}
+                selectedModifierId={selectedModifierId}
+                onSelectGroup={handleSelectGroup}
+                onSelectModifier={handleSelectModifier}
+                onModifierGroupsChanged={setItemModifierGroups}
                 onItemUpdated={() => {
                   loadMenu()
                   setRefreshKey(prev => prev + 1)
@@ -269,6 +368,33 @@ export default function MenuManagementPage() {
               }}
             />
           </div>
+
+          {/* FAR RIGHT: Detail Panel (group settings or modifier detail) */}
+          {rightPanelMode === 'group' && selectedGroupId && selectedItemForEditor && findSelectedGroup() && (
+            <div className="w-80 border-l overflow-y-auto shrink-0">
+              <ModifierGroupSettingsPanel
+                group={findSelectedGroup()!}
+                mode="full"
+                onUpdate={(field, value) => handleGroupFieldUpdate(selectedGroupId, field, value)}
+              />
+            </div>
+          )}
+          {rightPanelMode === 'modifier' && selectedModifierId && selectedGroupId && selectedItemForEditor && findSelectedModifier() && findSelectedGroup() && (
+            <div className="w-96 border-l overflow-y-auto shrink-0">
+              <ModifierDetailPanel
+                modifier={findSelectedModifier()!}
+                group={findSelectedGroup()!}
+                menuItemId={selectedItemForEditor.id}
+                ingredients={ingredientsLibrary}
+                printers={printers}
+                onSave={handleModifierSave}
+                onDiscard={() => {
+                  setSelectedModifierId(null)
+                  setRightPanelMode(selectedGroupId ? 'group' : null)
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Category Modal */}

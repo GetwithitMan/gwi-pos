@@ -1,5 +1,6 @@
 'use client'
 
+import { Plus } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import type { SelectedModifier, Modifier, ModifierGroup } from '@/types'
 import { PRE_MODIFIER_CONFIG, type SpiritTier, SPIRIT_TIER_CONFIG, hasPreModifier } from './useModifierSelections'
@@ -23,6 +24,7 @@ interface ModifierGroupSectionProps {
   getTieredPrice?: (group: ModifierGroup, modifier: Modifier, selectionIndex: number) => number
   getExcludedModifierIds?: (currentGroupId: string, exclusionGroupKey: string | null | undefined) => Set<string>
   cardPriceMultiplier?: number
+  onOpenCustomEntry?: (groupId: string) => void
 }
 
 export function ModifierGroupSection({
@@ -42,6 +44,7 @@ export function ModifierGroupSection({
   getTieredPrice,
   getExcludedModifierIds,
   cardPriceMultiplier,
+  onOpenCustomEntry,
 }: ModifierGroupSectionProps) {
   const cpm = cardPriceMultiplier || 1
   const selectedCount = selections.length
@@ -151,7 +154,7 @@ export function ModifierGroupSection({
                       }
                     }}
                   >
-                    <span className="truncate">{mod.name}</span>
+                    <span className="truncate">{mod.displayName || mod.name}</span>
                     {mod.price > 0 && (
                       <span className="text-[10px] text-emerald-400 flex-shrink-0">+{formatCurrency(mod.price * cpm)}</span>
                     )}
@@ -164,6 +167,15 @@ export function ModifierGroupSection({
       </div>
     )
   }
+
+  // Filter out inactive and non-POS modifiers
+  const visibleModifiers = group.modifiers.filter(mod =>
+    mod.isActive !== false && mod.showOnPOS !== false
+  )
+
+  // Separate hot buttons from regular modifiers
+  const hotButtonMods = visibleModifiers.filter(mod => mod.showAsHotButton && !mod.is86d)
+  const regularMods = visibleModifiers
 
   // ── Regular modifier group — box card ──
   return (
@@ -188,9 +200,32 @@ export function ModifierGroupSection({
         </div>
       </div>
 
+      {/* Hot button quick-access row */}
+      {hotButtonMods.length > 0 && (
+        <div className="px-2 pt-1.5 pb-0.5 flex gap-1 flex-wrap border-b border-white/5">
+          {hotButtonMods.map(mod => {
+            const selected = isSelected(group.id, mod.id)
+            return (
+              <button
+                key={`hot-${mod.id}`}
+                className={`px-2 py-1 rounded text-[10px] font-semibold transition-all ${
+                  selected
+                    ? 'bg-yellow-500/30 text-yellow-200 ring-1 ring-yellow-500/50'
+                    : 'bg-yellow-500/10 text-yellow-300/70 hover:bg-yellow-500/20'
+                }`}
+                onClick={() => onToggle(group, mod, undefined)}
+              >
+                <span className="text-yellow-400 mr-0.5">&#9733;</span>
+                {mod.displayName || mod.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* Modifier buttons */}
       <div className="mm-group-box-body">
-        {group.modifiers.map(modifier => {
+        {regularMods.map(modifier => {
           const selected = isSelected(group.id, modifier.id)
           const selectionCount = getSelectionCount(group.id, modifier.id)
           const selectedPreMod = getSelectedPreModifier(group.id, modifier.id)
@@ -245,10 +280,15 @@ export function ModifierGroupSection({
                   {modifier.showAsHotButton && (
                     <span className="text-yellow-400 mr-0.5 text-[10px]" title="Quick Add">&#9733;</span>
                   )}
-                  {modifier.name}
+                  {modifier.displayName || modifier.name}
                 </span>
 
                 <span className="flex items-center gap-1 flex-shrink-0">
+                  {/* Swap badge */}
+                  {modifier.swapEnabled && modifier.swapTargets && modifier.swapTargets.length > 0 && (
+                    <span className="text-[9px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30" title="Swappable">↔</span>
+                  )}
+
                   {/* Price */}
                   {displayPrice === 0 && group.tieredPricingConfig?.enabled && modifier.price > 0 ? (
                     <span className="text-[10px] text-green-400 font-semibold">FREE</span>
@@ -306,6 +346,16 @@ export function ModifierGroupSection({
             </div>
           )
         })}
+
+        {group.allowOpenEntry && (
+          <button
+            onClick={() => onOpenCustomEntry?.(group.id)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-blue-400 hover:text-blue-600 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Custom Request
+          </button>
+        )}
       </div>
     </div>
   )

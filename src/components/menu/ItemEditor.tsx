@@ -13,6 +13,8 @@ import { useIngredientOperations } from './useIngredientOperations'
 import { useModifierGroupManager } from './useModifierGroupManager'
 import { useModifierEditor } from './useModifierEditor'
 import { useIngredientCreation } from './useIngredientCreation'
+import { ModifierGroupSettingsPanel } from './ModifierGroupSettingsPanel'
+import { ChevronUp, ChevronDown, Zap, Star, Link2 } from 'lucide-react'
 import type { IngredientLibraryItem, IngredientCategory, Modifier, ModifierGroup, MenuItem } from './item-editor-types'
 
 // Re-export types for external consumers
@@ -30,9 +32,13 @@ interface ItemEditorProps {
   onDelete?: (itemId: string) => void
   refreshKey?: number
   onSelectGroup?: (groupId: string | null) => void
+  selectedModifierId?: string | null
+  selectedGroupId?: string | null
+  onSelectModifier?: (modifierId: string, groupId: string) => void
+  onModifierGroupsChanged?: (groups: ModifierGroup[]) => void
 }
 
-export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onIngredientCreated, onCategoryCreated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
+export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onIngredientCreated, onCategoryCreated, onToggle86, onDelete, refreshKey, onSelectGroup, selectedModifierId, selectedGroupId, onSelectModifier, onModifierGroupsChanged }: ItemEditorProps) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -181,6 +187,11 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     loadData(true) // Show spinner only on initial/item-change load
   }, [item?.id, refreshKey])
 
+  // Push modifier groups data up to parent for right panel rendering
+  useEffect(() => {
+    onModifierGroupsChanged?.(modGroupManager.modifierGroups)
+  }, [modGroupManager.modifierGroups, onModifierGroupsChanged])
+
   // Auto-open settings for new items
   useEffect(() => {
     if (item && item.name === 'New Item' && item.price === 0) {
@@ -274,7 +285,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   } = ingredientCreation
 
   // Helper to render a choice row (navigation modifier with child group)
-  const renderChoiceRow = (groupId: string, mod: Modifier, depth: number = 0, siblingIndex: number = 0) => {
+  const renderChoiceRow = (groupId: string, mod: Modifier, depth: number = 0, siblingIndex: number = 0, totalModifiers: number = 0) => {
     const childGroup = mod.childModifierGroup
     const itemCount = childGroup?.modifiers?.length || 0
 
@@ -311,8 +322,30 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           setDragOverModifierId(null)
         }}
       >
-        <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-sm">
+        <div
+          className={`flex items-center gap-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-sm ${selectedModifierId === mod.id ? 'bg-blue-500/10 border-l-2 border-l-blue-500' : ''} ${mod.isActive === false ? 'opacity-50' : ''}`}
+          onClick={() => onSelectModifier?.(mod.id, groupId)}
+        >
           <span className="cursor-grab text-gray-500 hover:text-gray-900 text-xs" title="Drag to reorder">⠿</span>
+          {/* Sort arrows */}
+          <div className="flex flex-col shrink-0 -my-1" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => { const group = findGroupById(groupId); if (group && siblingIndex > 0) reorderModifiers(groupId, mod.id, group.modifiers[siblingIndex - 1].id) }}
+              disabled={siblingIndex === 0}
+              className={`p-0 leading-none ${siblingIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-gray-900'}`}
+              title="Move up"
+            >
+              <ChevronUp className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => { const group = findGroupById(groupId); if (group && siblingIndex < totalModifiers - 1) reorderModifiers(groupId, mod.id, group.modifiers[siblingIndex + 1].id) }}
+              disabled={siblingIndex >= totalModifiers - 1}
+              className={`p-0 leading-none ${siblingIndex >= totalModifiers - 1 ? 'text-gray-300' : 'text-gray-500 hover:text-gray-900'}`}
+              title="Move down"
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </div>
           <span className="text-amber-500 text-xs">📁</span>
           {editingModifierId === mod.id ? (
             <input
@@ -353,10 +386,10 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   }
 
   // Helper to render a modifier row with all controls
-  const renderModifierRow = (groupId: string, mod: Modifier, depth: number = 0, rowIndex: number = 0) => {
+  const renderModifierRow = (groupId: string, mod: Modifier, depth: number = 0, rowIndex: number = 0, totalModifiers: number = 0) => {
     // If this is a choice (label with child group), render it differently
     if (mod.isLabel && mod.childModifierGroupId) {
-      return renderChoiceRow(groupId, mod, depth, rowIndex)
+      return renderChoiceRow(groupId, mod, depth, rowIndex, totalModifiers)
     }
 
     const isLinking = linkingModifier?.groupId === groupId && linkingModifier?.modId === mod.id
@@ -411,8 +444,30 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           setDragOverDropZone(null)
         }}
       >
-        <div className={`flex items-center gap-1.5 px-2 py-1.5 border rounded text-sm ${isGroupDragOverThis ? 'bg-green-50 border-green-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+        <div
+          className={`flex items-center gap-1.5 px-2 py-1.5 border rounded text-sm ${isGroupDragOverThis ? 'bg-green-50 border-green-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50'} ${selectedModifierId === mod.id ? 'bg-blue-500/10 border-l-2 border-l-blue-500' : ''} ${mod.isActive === false ? 'opacity-50' : ''}`}
+          onClick={() => onSelectModifier?.(mod.id, groupId)}
+        >
           <span className="cursor-grab text-gray-500 hover:text-gray-900 text-xs shrink-0" title="Drag to reorder">⠿</span>
+          {/* Sort arrows */}
+          <div className="flex flex-col shrink-0 -my-1" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => { const group = findGroupById(groupId); if (group && rowIndex > 0) reorderModifiers(groupId, mod.id, group.modifiers[rowIndex - 1].id) }}
+              disabled={rowIndex === 0}
+              className={`p-0 leading-none ${rowIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-gray-900'}`}
+              title="Move up"
+            >
+              <ChevronUp className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => { const group = findGroupById(groupId); if (group && rowIndex < totalModifiers - 1) reorderModifiers(groupId, mod.id, group.modifiers[rowIndex + 1].id) }}
+              disabled={rowIndex >= totalModifiers - 1}
+              className={`p-0 leading-none ${rowIndex >= totalModifiers - 1 ? 'text-gray-300' : 'text-gray-500 hover:text-gray-900'}`}
+              title="Move down"
+            >
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          </div>
 
           {/* LEFT SIDE: Name + Upcharge price only */}
           {editingModifierId === mod.id ? (
@@ -485,6 +540,31 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               )}
               <span className="text-gray-500 group-hover/name:text-indigo-400 text-[10px] shrink-0 transition-colors">✏️</span>
             </span>
+          )}
+
+          {/* Compact info badges */}
+          {mod.isActive === false && (
+            <span className="text-[9px] px-1 py-0.5 bg-gray-200 text-gray-500 rounded shrink-0">Inactive</span>
+          )}
+          {mod.showAsHotButton && (
+            <Zap className="w-3 h-3 text-amber-500 shrink-0" />
+          )}
+          {mod.isDefault && (
+            <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
+          )}
+          {(mod.allowNo || mod.allowLite || mod.allowExtra || mod.allowOnSide) && (
+            <div className="flex gap-0.5 shrink-0">
+              {mod.allowNo && <span className="text-[9px] px-1 bg-red-100 text-red-600 rounded">No</span>}
+              {mod.allowLite && <span className="text-[9px] px-1 bg-yellow-100 text-yellow-600 rounded">Lite</span>}
+              {mod.allowExtra && <span className="text-[9px] px-1 bg-green-100 text-green-600 rounded">Extra</span>}
+              {mod.allowOnSide && <span className="text-[9px] px-1 bg-blue-100 text-blue-600 rounded">Side</span>}
+            </div>
+          )}
+          {mod.swapEnabled && (mod.swapTargets?.length ?? 0) > 0 && (
+            <span className="text-[9px] px-1 py-0.5 bg-purple-100 text-purple-600 rounded shrink-0">⇄ {mod.swapTargets!.length}</span>
+          )}
+          {mod.ingredientId && (
+            <Link2 className="w-3 h-3 text-purple-500 shrink-0" />
           )}
 
           {/* RIGHT SIDE: All controls */}
@@ -1005,6 +1085,15 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           {/* Child Group Expanded Content */}
           {isExpanded && (
             <div className="border-t" draggable={false} onDragStart={(e) => e.stopPropagation()}>
+              {/* Inline group settings */}
+              <div className="px-2 py-1 border-b bg-gray-50/50">
+                <ModifierGroupSettingsPanel
+                  group={childGroup}
+                  mode="compact"
+                  onUpdate={(field, value) => updateGroup(childGroup.id, { [field]: value })}
+                  onOpenAdvanced={() => onSelectGroup?.(childGroup.id)}
+                />
+              </div>
               {/* Child Modifiers */}
               <div className="p-2 space-y-1">
                 {isEmpty && (
@@ -1012,7 +1101,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                     Add modifiers to get started
                   </div>
                 )}
-                {childGroup.modifiers.map((mod, idx) => renderModifierRow(childGroup.id, mod, depth, idx))}
+                {childGroup.modifiers.map((mod, idx) => renderModifierRow(childGroup.id, mod, depth, idx, childGroup.modifiers.length))}
 
                 {/* Drop zone: nest a group inside this child group */}
                 {draggedGroupId && draggedGroupId !== childGroup.id && !isDescendantOf(draggedGroupId, childGroup.id) && (
@@ -1547,7 +1636,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                   return topLevelGroups.length === 0 ? (
                     <p className="text-gray-600 text-sm text-center py-2">No modifier groups</p>
                   ) : (
-                    topLevelGroups.map(group => {
+                    topLevelGroups.map((group, groupIndex) => {
                     const isExpanded = expandedGroups.has(group.id)
                     const isEmpty = group.modifiers.length === 0
                     const childModCount = group.modifiers.filter(m => m.childModifierGroupId).length
@@ -1588,6 +1677,25 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           }}
                         >
                           <span className="cursor-grab text-gray-500 hover:text-gray-600 mr-1" title="Drag to reorder">⠿</span>
+                          {/* Sort arrows */}
+                          <div className="flex flex-col shrink-0 -my-1" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => { if (groupIndex > 0) reorderGroups(group.id, topLevelGroups[groupIndex - 1].id) }}
+                              disabled={groupIndex === 0}
+                              className={`p-0 leading-none ${groupIndex === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-gray-900'}`}
+                              title="Move up"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => { if (groupIndex < topLevelGroups.length - 1) reorderGroups(group.id, topLevelGroups[groupIndex + 1].id) }}
+                              disabled={groupIndex >= topLevelGroups.length - 1}
+                              className={`p-0 leading-none ${groupIndex >= topLevelGroups.length - 1 ? 'text-gray-300' : 'text-gray-500 hover:text-gray-900'}`}
+                              title="Move down"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                           <span className={`text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
                           {renamingGroupId === group.id ? (
                             <input
@@ -1646,6 +1754,15 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                         {/* Expanded: Modifiers */}
                         {isExpanded && (
                           <div className="border-t" draggable={false} onDragStart={(e) => e.stopPropagation()}>
+                            {/* Inline group settings */}
+                            <div className="px-2 py-1 border-b bg-gray-50/50">
+                              <ModifierGroupSettingsPanel
+                                group={group}
+                                mode="compact"
+                                onUpdate={(field, value) => updateGroup(group.id, { [field]: value })}
+                                onOpenAdvanced={() => onSelectGroup?.(group.id)}
+                              />
+                            </div>
 
                             {/* Modifier rows */}
                             <div className="p-2 space-y-1">
@@ -1654,7 +1771,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                                   Add modifiers to get started
                                 </div>
                               )}
-                              {group.modifiers.map((mod, idx) => renderModifierRow(group.id, mod, 0, idx))}
+                              {group.modifiers.map((mod, idx) => renderModifierRow(group.id, mod, 0, idx, group.modifiers.length))}
 
                               {/* Drop zone: nest a group inside this group */}
                               {draggedGroupId && draggedGroupId !== group.id && !isDescendantOf(draggedGroupId, group.id) && (

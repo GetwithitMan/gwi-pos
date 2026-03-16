@@ -118,6 +118,16 @@ export interface Modifier {
   isLabel?: boolean
   // Bar hot button — shows as quick-access button in modifier modal
   showAsHotButton?: boolean
+  // Display/visibility
+  displayName?: string | null
+  isActive?: boolean
+  showOnPOS?: boolean
+  // Lite/Extra multipliers (null → use location defaults: 0.5 / 2.0)
+  liteMultiplier?: number | null
+  extraMultiplier?: number | null
+  // Swap — substitute this modifier with an alternate item
+  swapEnabled?: boolean
+  swapTargets?: { menuItemId: string; name: string; snapshotPrice: number; pricingMode: 'target_price' | 'fixed_price' | 'no_charge'; fixedPrice?: number | null; sortOrder: number }[] | null
 }
 
 /**
@@ -148,6 +158,8 @@ export interface ModifierGroup {
   modifiers: Modifier[]
   // Modifier types for filtering/coloring
   modifierTypes?: string[]  // e.g., ['liquor'], ['food', 'combo'], etc.
+  // Open entry (custom request) support
+  allowOpenEntry?: boolean
   // Spirit group fields (Liquor Builder)
   isSpiritGroup?: boolean
   spiritConfig?: {
@@ -173,6 +185,13 @@ export interface SelectedModifier {
   // Spirit selection fields (Liquor Builder)
   spiritTier?: 'well' | 'call' | 'premium' | 'top_shelf' | null
   linkedBottleProductId?: string | null
+  // Open-entry custom request modifier (freeform text from POS)
+  isCustomEntry?: boolean
+  // Swap fields — when a modifier is swapped for an alternate item
+  swapTargetName?: string
+  swapTargetItemId?: string
+  swapPricingMode?: 'target_price' | 'fixed_price' | 'no_charge'
+  swapEffectivePrice?: number
 }
 
 /**

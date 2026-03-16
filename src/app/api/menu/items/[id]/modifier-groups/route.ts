@@ -40,6 +40,10 @@ function formatModifierGroup(group: {
   sortOrder: number
   tieredPricingConfig: any
   exclusionGroupKey: string | null
+  modifierTypes: any
+  showOnline: boolean
+  allowOpenEntry: boolean
+  autoAdvance: boolean
   modifiers: ModifierWithChild[]
 }, allGroups: Map<string, typeof group>, orphanedModifierIds?: string[]): object {
   return {
@@ -53,6 +57,10 @@ function formatModifierGroup(group: {
     allowStacking: group.allowStacking,
     tieredPricingConfig: group.tieredPricingConfig,
     exclusionGroupKey: group.exclusionGroupKey,
+    modifierTypes: group.modifierTypes,
+    showOnline: group.showOnline,
+    allowOpenEntry: group.allowOpenEntry,
+    autoAdvance: group.autoAdvance,
     sortOrder: group.sortOrder,
     modifiers: group.modifiers.map(m => {
       const childGroup = m.childModifierGroupId ? allGroups.get(m.childModifierGroupId) : null
@@ -82,6 +90,21 @@ function formatModifierGroup(group: {
         childModifierGroup: childGroup ? formatModifierGroup(childGroup, allGroups, orphanedModifierIds) : null,
         printerRouting: m.printerRouting,
         printerIds: m.printerIds,
+        displayName: m.displayName,
+        isActive: m.isActive,
+        showOnPOS: m.showOnPOS,
+        showOnline: m.showOnline,
+        showAsHotButton: m.showAsHotButton,
+        cost: m.cost !== null ? Number(m.cost) : null,
+        commissionType: m.commissionType,
+        commissionValue: m.commissionValue !== null ? Number(m.commissionValue) : null,
+        upsellPrice: m.upsellPrice !== null ? Number(m.upsellPrice) : null,
+        priceType: m.priceType,
+        linkedMenuItemId: m.linkedMenuItemId,
+        inventoryDeductionAmount: m.inventoryDeductionAmount !== null ? Number(m.inventoryDeductionAmount) : null,
+        inventoryDeductionUnit: m.inventoryDeductionUnit,
+        swapEnabled: m.swapEnabled,
+        swapTargets: m.swapTargets,
         // Spirit fields
         spiritTier: m.spiritTier,
         linkedBottleProductId: m.linkedBottleProductId,
@@ -282,11 +305,16 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
             locationId: menuItem.locationId,
             menuItemId, // ALWAYS assign to the TARGET item
             name: name || `${sourceGroup.name} (Copy)`,
+            displayName: sourceGroup.displayName,
             minSelections: sourceGroup.minSelections,
             maxSelections: sourceGroup.maxSelections,
             isRequired: sourceGroup.isRequired,
             allowStacking: sourceGroup.allowStacking,
             tieredPricingConfig: sourceGroup.tieredPricingConfig ?? Prisma.JsonNull,
+            modifierTypes: sourceGroup.modifierTypes ?? Prisma.JsonNull,
+            showOnline: sourceGroup.showOnline,
+            allowOpenEntry: sourceGroup.allowOpenEntry,
+            autoAdvance: sourceGroup.autoAdvance,
             exclusionGroupKey: null, // Don't copy exclusion key — user sets fresh
             sortOrder: (maxSort._max.sortOrder || 0) + 1,
           },
@@ -330,6 +358,21 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
                   sortOrder: cm.sortOrder,
                   ingredientId: cm.ingredientId,
                   isLabel: cm.isLabel ?? false,
+                  displayName: cm.displayName,
+                  isActive: cm.isActive,
+                  showOnPOS: cm.showOnPOS,
+                  showOnline: cm.showOnline,
+                  showAsHotButton: cm.showAsHotButton,
+                  cost: cm.cost,
+                  commissionType: cm.commissionType,
+                  commissionValue: cm.commissionValue,
+                  upsellPrice: cm.upsellPrice,
+                  priceType: cm.priceType,
+                  linkedMenuItemId: cm.linkedMenuItemId,
+                  inventoryDeductionAmount: cm.inventoryDeductionAmount,
+                  inventoryDeductionUnit: cm.inventoryDeductionUnit,
+                  swapEnabled: cm.swapEnabled,
+                  swapTargets: cm.swapTargets ?? Prisma.JsonNull,
                 },
               })
             }
@@ -354,6 +397,21 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
               ingredientId: mod.ingredientId,
               isLabel: mod.isLabel ?? false,
               childModifierGroupId: childGroupMap.get(mod.id) || null,
+              displayName: mod.displayName,
+              isActive: mod.isActive,
+              showOnPOS: mod.showOnPOS,
+              showOnline: mod.showOnline,
+              showAsHotButton: mod.showAsHotButton,
+              cost: mod.cost,
+              commissionType: mod.commissionType,
+              commissionValue: mod.commissionValue,
+              upsellPrice: mod.upsellPrice,
+              priceType: mod.priceType,
+              linkedMenuItemId: mod.linkedMenuItemId,
+              inventoryDeductionAmount: mod.inventoryDeductionAmount,
+              inventoryDeductionUnit: mod.inventoryDeductionUnit,
+              swapEnabled: mod.swapEnabled,
+              swapTargets: mod.swapTargets ?? Prisma.JsonNull,
             },
           })
         }
@@ -397,6 +455,10 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         allowStacking: group.allowStacking,
         tieredPricingConfig: group.tieredPricingConfig,
         exclusionGroupKey: group.exclusionGroupKey,
+        modifierTypes: group.modifierTypes,
+        showOnline: group.showOnline,
+        allowOpenEntry: group.allowOpenEntry,
+        autoAdvance: group.autoAdvance,
         sortOrder: group.sortOrder,
         modifiers: group.modifiers.map((m: any) => ({
           id: m.id,
@@ -414,6 +476,21 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
           ingredientName: m.ingredient?.name || null,
           childModifierGroupId: m.childModifierGroupId,
           childModifierGroup: m.childModifierGroup ? formatGroup(m.childModifierGroup) : null,
+          displayName: m.displayName,
+          isActive: m.isActive,
+          showOnPOS: m.showOnPOS,
+          showOnline: m.showOnline,
+          showAsHotButton: m.showAsHotButton,
+          cost: m.cost !== null ? Number(m.cost) : null,
+          commissionType: m.commissionType,
+          commissionValue: m.commissionValue !== null ? Number(m.commissionValue) : null,
+          upsellPrice: m.upsellPrice !== null ? Number(m.upsellPrice) : null,
+          priceType: m.priceType,
+          linkedMenuItemId: m.linkedMenuItemId,
+          inventoryDeductionAmount: m.inventoryDeductionAmount !== null ? Number(m.inventoryDeductionAmount) : null,
+          inventoryDeductionUnit: m.inventoryDeductionUnit,
+          swapEnabled: m.swapEnabled,
+          swapTargets: m.swapTargets,
         })),
       })
 
@@ -536,6 +613,10 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         allowStacking: group.allowStacking,
         tieredPricingConfig: group.tieredPricingConfig,
         exclusionGroupKey: group.exclusionGroupKey,
+        modifierTypes: group.modifierTypes,
+        showOnline: group.showOnline,
+        allowOpenEntry: group.allowOpenEntry,
+        autoAdvance: group.autoAdvance,
         sortOrder: group.sortOrder,
         modifiers: group.modifiers.map(m => ({
           id: m.id,
@@ -549,6 +630,21 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
           isDefault: m.isDefault,
           sortOrder: m.sortOrder,
           isLabel: m.isLabel ?? false,
+          displayName: m.displayName,
+          isActive: m.isActive,
+          showOnPOS: m.showOnPOS,
+          showOnline: m.showOnline,
+          showAsHotButton: m.showAsHotButton,
+          cost: m.cost !== null ? Number(m.cost) : null,
+          commissionType: m.commissionType,
+          commissionValue: m.commissionValue !== null ? Number(m.commissionValue) : null,
+          upsellPrice: m.upsellPrice !== null ? Number(m.upsellPrice) : null,
+          priceType: m.priceType,
+          linkedMenuItemId: m.linkedMenuItemId,
+          inventoryDeductionAmount: m.inventoryDeductionAmount !== null ? Number(m.inventoryDeductionAmount) : null,
+          inventoryDeductionUnit: m.inventoryDeductionUnit,
+          swapEnabled: m.swapEnabled,
+          swapTargets: m.swapTargets,
         })),
       },
     })

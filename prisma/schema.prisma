@@ -1763,6 +1763,11 @@ model ModifierGroup {
   sortOrder  Int     @default(0)
   showOnline Boolean @default(true) // Whether this modifier group appears for online ordering
 
+  // Open Entry — allow freeform custom modifiers on POS
+  allowOpenEntry Boolean @default(false)
+  // Auto-advance — auto-dismiss single-select required group after selection
+  autoAdvance    Boolean @default(false)
+
   // Liquor Builder - Spirit Group Configuration
   isSpiritGroup Boolean @default(false)
 
@@ -1868,6 +1873,13 @@ model Modifier {
   printerRouting ModifierPrinterRouting @default(follow)
   // TODO: JSON array cannot enforce FK constraints on Printer. Consider migrating to a relation table for referential integrity.
   printerIds     Json? // Array of printer IDs when routing is "also" or "only"
+
+  // Swap — allow substituting this modifier with an alternate item at POS
+  swapEnabled            Boolean  @default(false)
+  swapTargets            Json?    // SwapTarget[] — targets with pricing modes
+  // Inventory deduction override
+  inventoryDeductionAmount Decimal? // Amount of ingredient to deduct per selection
+  inventoryDeductionUnit   String?  // Unit for deduction (oz, ml, unit, g)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2716,6 +2728,17 @@ model OrderItemModifier {
 
   // HA cellular sync — mutation origin tracking
   lastMutatedBy String? // 'cloud' | 'local' | null
+
+  // Open Entry — freeform custom modifier created at POS
+  isCustomEntry    Boolean  @default(false)
+  customEntryName  String?
+  customEntryPrice Decimal?
+
+  // Swap — substitution snapshot at time of order
+  swapTargetName     String?
+  swapTargetItemId   String?
+  swapPricingMode    String?  // 'target_price' | 'fixed_price' | 'no_charge'
+  swapEffectivePrice Decimal? // Resolved price at time of order
 
   @@index([locationId])
   @@index([orderItemId])

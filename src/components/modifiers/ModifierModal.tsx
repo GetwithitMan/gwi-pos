@@ -13,11 +13,15 @@ import {
   getPourSizeLabel,
   type IngredientModification,
   type PourSizeValue,
+  type CustomEntrySelection,
 } from './useModifierSelections'
 import { SwapPicker } from './SwapPicker'
+import { SwapPickerSheet } from './SwapPickerSheet'
 import { IngredientsSection } from './IngredientsSection'
 import { ModifierGroupSection } from './ModifierGroupSection'
+import { X } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import type { SwapTarget } from '@/components/menu/item-editor-types'
 
 type ViewMode = 'steps' | 'grid'
 
@@ -67,6 +71,10 @@ export function ModifierModal({
     swapModalIngredient,
     setSwapModalIngredient,
     handleSwapSelection,
+    applySwap,
+    customEntries,
+    addCustomEntry,
+    removeCustomEntry,
     selections,
     expandedGroups,
     setExpandedGroups,
@@ -97,6 +105,41 @@ export function ModifierModal({
 
   // Quick pre-modifier: when set, the next modifier tapped gets this prefix
   const [pendingQuickPreMod, setPendingQuickPreMod] = useState<string | null>(null)
+
+  // Custom entry form state
+  const [customEntryGroupId, setCustomEntryGroupId] = useState<string | null>(null)
+  const [customEntryName, setCustomEntryName] = useState('')
+  const [customEntryPrice, setCustomEntryPrice] = useState('0.00')
+
+  // Swap sheet state for modifier swaps
+  const [swapSheetOpen, setSwapSheetOpen] = useState(false)
+  const [swapSheetGroupId, setSwapSheetGroupId] = useState<string | null>(null)
+  const [swapSheetModifierId, setSwapSheetModifierId] = useState<string | null>(null)
+  const [swapSheetModifierName, setSwapSheetModifierName] = useState('')
+  const [swapSheetTargets, setSwapSheetTargets] = useState<SwapTarget[]>([])
+
+  const handleOpenCustomEntry = (groupId: string) => {
+    setCustomEntryGroupId(groupId)
+    setCustomEntryName('')
+    setCustomEntryPrice('0.00')
+  }
+
+  const handleAddCustomEntry = () => {
+    if (!customEntryGroupId) return
+    const trimmed = customEntryName.trim()
+    if (!trimmed) return
+    const price = parseFloat(customEntryPrice) || 0
+    if (price < 0) return
+    addCustomEntry(customEntryGroupId, trimmed, price)
+    setCustomEntryName('')
+    setCustomEntryPrice('0.00')
+  }
+
+  const handleCancelCustomEntry = () => {
+    setCustomEntryGroupId(null)
+    setCustomEntryName('')
+    setCustomEntryPrice('0.00')
+  }
 
   // ── Hot Buttons: collect all modifiers with showAsHotButton across all groups ──
   const hotButtons = modifierGroups.flatMap(group =>
@@ -152,10 +195,12 @@ export function ModifierModal({
     }
   }, [selections, activeGroupIndex, topLevelGroups, viewMode])
 
-  // Wrapped toggle that auto-applies the pending quick pre-mod
+  // Wrapped toggle that auto-applies the pending quick pre-mod and detects swaps
   const handleToggleModifier = (group: Parameters<typeof toggleModifier>[0], modifier: Parameters<typeof toggleModifier>[1], preModifier?: string) => {
+    // Check if this modifier was already selected (toggle off case — skip swap)
+    const wasSelected = (selections[group.id] || []).some(s => s.id === modifier.id)
+
     if (pendingQuickPreMod && !preModifier) {
-      // Map the quick pre-mod label to the internal token used by the pre-modifier system
       const tokenMap: Record<string, string> = {
         'No': 'no', 'Lite': 'lite', 'Extra': 'extra', 'On Side': 'side',
       }
@@ -164,6 +209,22 @@ export function ModifierModal({
       setPendingQuickPreMod(null)
     } else {
       toggleModifier(group, modifier, preModifier)
+    }
+
+    // After toggling ON a swap-enabled modifier, trigger swap flow
+    if (!wasSelected && modifier.swapEnabled && modifier.swapTargets && modifier.swapTargets.length > 0) {
+      const targets = modifier.swapTargets as SwapTarget[]
+      if (targets.length === 1) {
+        // One-tap swap: auto-apply the single target
+        applySwap(group.id, modifier.id, targets[0])
+      } else {
+        // Multiple targets: open the swap picker sheet
+        setSwapSheetGroupId(group.id)
+        setSwapSheetModifierId(modifier.id)
+        setSwapSheetModifierName(modifier.displayName || modifier.name)
+        setSwapSheetTargets(targets)
+        setSwapSheetOpen(true)
+      }
     }
   }
 
@@ -226,7 +287,7 @@ export function ModifierModal({
                     : 'bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/40 border border-indigo-500/30'
                 }`}
               >
-                <span>{modifier.name}</span>
+                <span>{modifier.displayName || modifier.name}</span>
                 {displayPrice > 0 && (
                   <span className={`ml-1 text-[10px] ${selected ? 'text-white/80' : 'text-emerald-400'}`}>
                     +{formatCurrency(displayPrice)}
@@ -380,7 +441,9 @@ export function ModifierModal({
           getTieredPrice={getTieredPrice}
           getExcludedModifierIds={getExcludedModifierIds}
           cardPriceMultiplier={cpm}
+          onOpenCustomEntry={handleOpenCustomEntry}
         />
+        {renderCustomEntrySection(group.id)}
 
         {/* Inline child groups — appear right below their parent */}
         {inlineChildren.map(({ group: childGroup, parentModifierName }) => (
@@ -406,7 +469,9 @@ export function ModifierModal({
               getTieredPrice={getTieredPrice}
               getExcludedModifierIds={getExcludedModifierIds}
               cardPriceMultiplier={cpm}
+              onOpenCustomEntry={handleOpenCustomEntry}
             />
+            {renderCustomEntrySection(childGroup.id)}
 
             {/* Recursively render grandchildren */}
             {getChildGroupsForGroup(childGroup.id).map(({ group: grandChild, parentModifierName: grandParentName }) => (
@@ -431,11 +496,89 @@ export function ModifierModal({
                   getTieredPrice={getTieredPrice}
                   getExcludedModifierIds={getExcludedModifierIds}
                   cardPriceMultiplier={cpm}
+                  onOpenCustomEntry={handleOpenCustomEntry}
                 />
+                {renderCustomEntrySection(grandChild.id)}
               </div>
             ))}
           </div>
         ))}
+      </div>
+    )
+  }
+
+  // Render custom entry form + chips for a group
+  const renderCustomEntrySection = (groupId: string) => {
+    const groupCustomEntries = customEntries.filter(e => e.groupId === groupId)
+    const isFormOpen = customEntryGroupId === groupId
+
+    if (!isFormOpen && groupCustomEntries.length === 0) return null
+
+    return (
+      <div className="mt-1.5">
+        {/* Inline form */}
+        {isFormOpen && (
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <input
+              type="text"
+              value={customEntryName}
+              onChange={e => setCustomEntryName(e.target.value.slice(0, 100))}
+              placeholder="e.g., Sub avocado"
+              maxLength={100}
+              className="flex-1 px-2 py-1.5 text-sm bg-white/10 border border-white/20 rounded text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') handleAddCustomEntry() }}
+            />
+            <div className="relative">
+              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                value={customEntryPrice}
+                onChange={e => {
+                  const val = e.target.value
+                  if (val === '' || parseFloat(val) >= 0) setCustomEntryPrice(val)
+                }}
+                min="0"
+                step="0.01"
+                className="w-20 pl-5 pr-2 py-1.5 text-sm bg-white/10 border border-white/20 rounded text-white focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <button
+              onClick={handleAddCustomEntry}
+              disabled={!customEntryName.trim()}
+              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Add
+            </button>
+            <button
+              onClick={handleCancelCustomEntry}
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Custom entry chips */}
+        {groupCustomEntries.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {groupCustomEntries.map(entry => (
+              <span
+                key={entry.id}
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-indigo-500/20 border border-indigo-500/30 rounded-full text-indigo-200"
+              >
+                {entry.name}
+                {entry.price > 0 && <span className="text-emerald-400">+${entry.price.toFixed(2)}</span>}
+                <button
+                  onClick={() => removeCustomEntry(entry.id)}
+                  className="ml-0.5 text-gray-400 hover:text-red-400 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -535,24 +678,27 @@ export function ModifierModal({
                   ) : (
                     <div className="mm-groups-grid">
                       {topLevelGroups.map(group => (
-                        <ModifierGroupSection
-                          key={group.id}
-                          group={group}
-                          selections={selections[group.id] || []}
-                          onToggle={handleToggleModifier}
-                          isSelected={isSelected}
-                          getSelectionCount={getSelectionCount}
-                          getSelectedPreModifier={getSelectedPreModifier}
-                          formatModPrice={formatModPrice}
-                          groupColor={getGroupColor(group)}
-                          allowStacking={group.allowStacking}
-                          isSpiritGroup={group.isSpiritGroup}
-                          handleSpiritSelection={handleSpiritSelection}
-                          getModifiersByTier={getModifiersByTier}
-                          getTieredPrice={getTieredPrice}
-                          getExcludedModifierIds={getExcludedModifierIds}
-                          cardPriceMultiplier={cpm}
-                        />
+                        <div key={group.id}>
+                          <ModifierGroupSection
+                            group={group}
+                            selections={selections[group.id] || []}
+                            onToggle={handleToggleModifier}
+                            isSelected={isSelected}
+                            getSelectionCount={getSelectionCount}
+                            getSelectedPreModifier={getSelectedPreModifier}
+                            formatModPrice={formatModPrice}
+                            groupColor={getGroupColor(group)}
+                            allowStacking={group.allowStacking}
+                            isSpiritGroup={group.isSpiritGroup}
+                            handleSpiritSelection={handleSpiritSelection}
+                            getModifiersByTier={getModifiersByTier}
+                            getTieredPrice={getTieredPrice}
+                            getExcludedModifierIds={getExcludedModifierIds}
+                            cardPriceMultiplier={cpm}
+                            onOpenCustomEntry={handleOpenCustomEntry}
+                          />
+                          {renderCustomEntrySection(group.id)}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -583,7 +729,9 @@ export function ModifierModal({
                             getTieredPrice={getTieredPrice}
                             getExcludedModifierIds={getExcludedModifierIds}
                             cardPriceMultiplier={cpm}
+                            onOpenCustomEntry={handleOpenCustomEntry}
                           />
+                          {renderCustomEntrySection(childGroup.id)}
                         </div>
                       ))}
                     </div>
@@ -641,7 +789,7 @@ export function ModifierModal({
         </div>
       </div>
 
-      {/* Swap Picker */}
+      {/* Ingredient Swap Picker */}
       {swapModalIngredient && swapModalIngredient.swapModifierGroup && (
         <SwapPicker
           ingredient={swapModalIngredient}
@@ -650,6 +798,19 @@ export function ModifierModal({
           onCancel={() => setSwapModalIngredient(null)}
         />
       )}
+
+      {/* Modifier Swap Picker Sheet */}
+      <SwapPickerSheet
+        isOpen={swapSheetOpen}
+        targets={swapSheetTargets}
+        modifierName={swapSheetModifierName}
+        onClose={() => setSwapSheetOpen(false)}
+        onSelectTarget={(target) => {
+          if (swapSheetGroupId && swapSheetModifierId) {
+            applySwap(swapSheetGroupId, swapSheetModifierId, target)
+          }
+        }}
+      />
     </Modal>
   )
 }

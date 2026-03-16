@@ -5,6 +5,14 @@ import { toast } from '@/stores/toast-store'
 import type { DualPricingSettings } from '@/lib/settings'
 import type { MenuItem, ModifierGroup, SelectedModifier, Modifier } from '@/types'
 
+// Custom entry selection for open-entry modifier groups
+export interface CustomEntrySelection {
+  id: string       // generated unique ID like `custom_${Date.now()}`
+  groupId: string
+  name: string
+  price: number    // in dollars
+}
+
 // Ingredient modification types
 export type IngredientModificationType = 'standard' | 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
 
@@ -265,6 +273,9 @@ export function useModifierSelections(
   const [loadingIngredients, setLoadingIngredients] = useState(false)
   const [swapModalIngredient, setSwapModalIngredient] = useState<MenuItemIngredient | null>(null)
 
+  // Custom open-entry selections
+  const [customEntries, setCustomEntries] = useState<CustomEntrySelection[]>([])
+
   // All selections keyed by groupId
   const [selections, setSelections] = useState<Record<string, SelectedModifier[]>>({})
   const [childGroups, setChildGroups] = useState<Record<string, ModifierGroup>>({})
@@ -372,6 +383,24 @@ export function useModifierSelections(
 
     setIngredientMods({ ...ingredientMods, [ingredient.ingredientId]: newMod })
     setSwapModalIngredient(null)
+  }
+
+  // Add a custom open-entry modifier to a group
+  const addCustomEntry = (groupId: string, name: string, price: number) => {
+    const trimmed = name.trim()
+    if (!trimmed || price < 0) return
+    const entry: CustomEntrySelection = {
+      id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      groupId,
+      name: trimmed,
+      price: Math.round(price * 100) / 100, // 2 decimal precision
+    }
+    setCustomEntries(prev => [...prev, entry])
+  }
+
+  // Remove a custom open-entry modifier
+  const removeCustomEntry = (entryId: string) => {
+    setCustomEntries(prev => prev.filter(e => e.id !== entryId))
   }
 
   // Calculate total price from ingredient modifications
@@ -529,7 +558,15 @@ export function useModifierSelections(
         p = getTieredPrice(group, modifier, current.length)
       }
       if (tokens.includes('no')) return 0
-      if (tokens.includes('extra') && modifier.extraPrice) return modifier.extraPrice
+      if (tokens.includes('lite')) {
+        const mult = modifier.liteMultiplier ?? 0.5
+        return Math.round(p * mult * 100) / 100
+      }
+      if (tokens.includes('extra')) {
+        if (modifier.extraPrice) return modifier.extraPrice
+        const mult = modifier.extraMultiplier ?? 2.0
+        return Math.round(p * mult * 100) / 100
+      }
       return p
     }
 
@@ -674,14 +711,16 @@ export function useModifierSelections(
     const topLevelOk = modifierGroups.every(group => {
       if (!group.isRequired) return true
       const selected = selections[group.id] || []
-      return selected.length >= group.minSelections
+      const customCount = customEntries.filter(e => e.groupId === group.id).length
+      return (selected.length + customCount) >= group.minSelections
     })
 
     const activeChildren = getActiveChildGroups()
     const childrenOk = activeChildren.every(({ group }) => {
       if (!group.isRequired) return true
       const selected = selections[group.id] || []
-      return selected.length >= group.minSelections
+      const customCount = customEntries.filter(e => e.groupId === group.id).length
+      return (selected.length + customCount) >= group.minSelections
     })
 
     return topLevelOk && childrenOk
@@ -700,6 +739,16 @@ export function useModifierSelections(
         } else {
           result.push(sel)
         }
+      })
+    }
+    // Include custom open-entry selections as modifiers
+    for (const entry of customEntries) {
+      result.push({
+        id: entry.id,
+        name: entry.name,
+        price: entry.price,
+        depth: 0,
+        isCustomEntry: true,
       })
     }
     return result
@@ -722,7 +771,8 @@ export function useModifierSelections(
     }
     return total
   })()
-  const totalPrice = basePrice + modifierTotal + ingredientModTotal
+  const customEntryTotal = customEntries.reduce((sum, e) => sum + e.price, 0)
+  const totalPrice = basePrice + modifierTotal + customEntryTotal + ingredientModTotal
 
   const activeChildGroups = getActiveChildGroups()
 
@@ -758,6 +808,62 @@ export function useModifierSelections(
     }))
   }
 
+  // Apply a swap target to a selected modifier
+  const applySwap = (groupId: string, modifierId: string, target: { menuItemId: string; name: string; pricingMode: 'target_price' | 'fixed_price' | 'no_charge'; fixedPrice?: number | null; snapshotPrice: number }) => {
+    const current = selections[groupId] || []
+    const index = current.findIndex(s => s.id === modifierId)
+    if (index < 0) return
+
+    // Resolve the effective price based on pricingMode
+    let swapEffectivePrice = 0
+    if (target.pricingMode === 'no_charge') {
+      swapEffectivePrice = 0
+    } else if (target.pricingMode === 'fixed_price') {
+      swapEffectivePrice = target.fixedPrice ?? 0
+    } else if (target.pricingMode === 'target_price') {
+      swapEffectivePrice = target.snapshotPrice
+    }
+
+    const updated: SelectedModifier = {
+      ...current[index],
+      price: swapEffectivePrice,
+      swapTargetName: target.name,
+      swapTargetItemId: target.menuItemId,
+      swapPricingMode: target.pricingMode,
+      swapEffectivePrice,
+    }
+
+    setSelections(prev => ({
+      ...prev,
+      [groupId]: prev[groupId].map((s, i) => i === index ? updated : s),
+    }))
+  }
+
+  // Clear swap from a selected modifier (revert to original price)
+  const clearSwap = (groupId: string, modifierId: string) => {
+    const current = selections[groupId] || []
+    const index = current.findIndex(s => s.id === modifierId)
+    if (index < 0) return
+
+    // Find original modifier to restore price
+    const origMod = modifierGroups.flatMap(g => g.modifiers).find(m => m.id === modifierId)
+      || Object.values(childGroups).flatMap(g => g.modifiers).find(m => m.id === modifierId)
+
+    const updated: SelectedModifier = {
+      ...current[index],
+      price: origMod?.price ?? current[index].price,
+      swapTargetName: undefined,
+      swapTargetItemId: undefined,
+      swapPricingMode: undefined,
+      swapEffectivePrice: undefined,
+    }
+
+    setSelections(prev => ({
+      ...prev,
+      [groupId]: prev[groupId].map((s, i) => i === index ? updated : s),
+    }))
+  }
+
   // Get the current selection's preModifier for a modifier
   const getSelectedPreModifier = (groupId: string, modifierId: string): string | undefined => {
     const selection = (selections[groupId] || []).find(s => s.id === modifierId)
@@ -777,10 +883,17 @@ export function useModifierSelections(
     toggleIngredientMod,
     ingredientModTotal,
     getAllIngredientMods,
-    // Swap
+    // Swap (ingredient)
     swapModalIngredient,
     setSwapModalIngredient,
     handleSwapSelection,
+    // Swap (modifier)
+    applySwap,
+    clearSwap,
+    // Custom entries
+    customEntries,
+    addCustomEntry,
+    removeCustomEntry,
     // Modifier selections
     selections,
     expandedGroups,

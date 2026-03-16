@@ -44,6 +44,15 @@ export interface IngredientCategory {
   needsVerification?: boolean
 }
 
+export interface SwapTarget {
+  menuItemId: string
+  name: string
+  snapshotPrice: number
+  pricingMode: 'target_price' | 'fixed_price' | 'no_charge'
+  fixedPrice?: number | null
+  sortOrder: number
+}
+
 export interface Modifier {
   id: string
   name: string
@@ -64,6 +73,23 @@ export interface Modifier {
   isLabel?: boolean
   printerRouting?: string  // "follow" | "also" | "only"
   printerIds?: string[]    // Printer IDs for "also" or "only" mode
+  displayName?: string | null
+  isActive?: boolean
+  showOnPOS?: boolean
+  showOnline?: boolean
+  showAsHotButton?: boolean
+  cost?: number | null
+  commissionType?: string | null  // 'fixed' | 'percent' | null
+  commissionValue?: number | null
+  upsellPrice?: number | null
+  priceType?: string  // 'upcharge' | 'flat' | 'replacement'
+  linkedMenuItemId?: string | null
+  inventoryDeductionAmount?: number | null
+  inventoryDeductionUnit?: string | null  // 'oz' | 'ml' | 'unit' | 'g'
+  swapEnabled?: boolean
+  swapTargets?: SwapTarget[] | null
+  spiritTier?: string | null
+  linkedBottleProductId?: string | null
 }
 
 export interface ModifierGroup {
@@ -78,6 +104,11 @@ export interface ModifierGroup {
   exclusionGroupKey?: string | null
   sortOrder: number
   modifiers: Modifier[]
+  modifierTypes?: string[]
+  showOnline?: boolean
+  allowOpenEntry?: boolean
+  autoAdvance?: boolean
+  isSpiritGroup?: boolean
 }
 
 export interface MenuItem {
