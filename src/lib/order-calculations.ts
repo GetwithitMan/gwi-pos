@@ -277,8 +277,11 @@ export function calculateOrderTotals(
   const postDiscountExclusive = roundToCents(Math.max(0, exclusiveSubtotal - discountOnExclusive))
 
   // Split tax on post-discount amounts — rounded to cents for compliance
+  // Guard: treat inclusiveTaxRate=0 as undefined so calculateSplitTax falls back to taxRate.
+  // This prevents $0 tax on inclusive items when inclusive pricing is turned off mid-service —
+  // items stamped isTaxInclusive=true still need tax backed out at SOME rate.
   const inclusiveTaxRateRaw = locationSettings?.tax?.inclusiveTaxRate
-  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
     ? inclusiveTaxRateRaw / 100 : undefined
   const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
     postDiscountInclusive, postDiscountExclusive, taxRate, inclusiveRate

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram, AgeVerificationSettings, BarOperationsSettings } from '@/lib/settings'
 import { getPricingProgram, DEFAULT_AGE_VERIFICATION, DEFAULT_BAR_OPERATIONS } from '@/lib/settings'
 import { useOrderStore } from '@/stores/order-store'
 import { setLocationTaxRate } from '@/lib/seat-utils'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 
 const DEFAULT_DUAL_PRICING: DualPricingSettings = {
   enabled: true,
@@ -270,8 +271,26 @@ export function useOrderSettings() {
     await loadSettings()
   }
 
+  // Track forceReload ref so the socket handler always calls the latest version
+  const forceReloadRef = useRef(forceReload)
+  forceReloadRef.current = forceReload
+
   useEffect(() => {
     loadSettings()
+
+    // Auto-refresh when tax rules or settings change on the server
+    const socket = getSharedSocket() as { on: (e: string, cb: (...args: unknown[]) => void) => void; off: (e: string, cb?: (...args: unknown[]) => void) => void } | null
+    const handler = () => {
+      // Bust cache so next render gets fresh settings (tax rates, inclusive flags, etc.)
+      cachedSettings = null
+      cacheTime = 0
+      forceReloadRef.current()
+    }
+    socket?.on('settings:updated', handler)
+    return () => {
+      socket?.off('settings:updated', handler)
+      releaseSharedSocket()
+    }
   }, [])
 
   return {

@@ -155,7 +155,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Use split-aware tax calculation
       const inclusiveTaxRateRaw = locSettings?.tax?.inclusiveTaxRate
-      const inclusiveTaxRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+      const inclusiveTaxRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
         ? inclusiveTaxRateRaw / 100 : undefined
       const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
         inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate

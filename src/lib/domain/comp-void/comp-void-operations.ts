@@ -205,7 +205,7 @@ export async function applyCompVoid(
   const taxRate = getLocationTaxRate(locationSettings)
   // Get inclusive tax rate from location settings (may differ from exclusive rate)
   const inclusiveTaxRateRaw = (locationSettings as any)?.tax?.inclusiveTaxRate
-  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
     ? inclusiveTaxRateRaw / 100 : undefined
 
   // Allocate discount proportionally between inclusive/exclusive, compute tax on post-discount amounts
@@ -316,7 +316,7 @@ export async function applyRestore(
   const taxRate = getLocationTaxRate(locationSettings)
   // Get inclusive tax rate from location settings (may differ from exclusive rate)
   const inclusiveTaxRateRaw = (locationSettings as any)?.tax?.inclusiveTaxRate
-  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw)
+  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
     ? inclusiveTaxRateRaw / 100 : undefined
 
   // Allocate discount proportionally between inclusive/exclusive, compute tax on post-discount amounts
