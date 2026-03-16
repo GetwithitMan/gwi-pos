@@ -276,7 +276,8 @@ export const POST = withVenue(async function POST(
       }))
       const totals = calculateOrderTotals(
         couponCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
+        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt,
+        Number(order.inclusiveTaxRate) || undefined
       )
 
       await tx.order.update({

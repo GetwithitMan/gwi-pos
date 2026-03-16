@@ -526,8 +526,12 @@ export const POST = withVenue(withTiming(async function POST(
       const now = new Date()
       const payLocSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
       const taxRate = getLocationTaxRate(payLocSettings)
-      const payInclusiveRate = payLocSettings?.tax?.inclusiveTaxRate != null
-        ? payLocSettings.tax.inclusiveTaxRate / 100 : undefined
+      // Prefer order-level snapshot; fall back to location setting with > 0 guard
+      const orderPayInclRate = Number(order.inclusiveTaxRate) || undefined
+      const payInclRateRaw = payLocSettings?.tax?.inclusiveTaxRate
+      const payInclusiveRate = orderPayInclRate
+        ?? (payInclRateRaw != null && Number.isFinite(payInclRateRaw) && payInclRateRaw > 0
+          ? payInclRateRaw / 100 : undefined)
 
       // Batch-fetch all menu items for per-minute settlement in ONE query (N+1 fix)
       const perMinuteMenuItemIds = [...new Set(perMinuteItems.map((item: any) => item.menuItemId))]

@@ -70,6 +70,7 @@ export const DELETE = withVenue(async function DELETE(
         locationId: true,
         tableId: true,
         orderNumber: true,
+        inclusiveTaxRate: true,
       },
     })
 
@@ -118,8 +119,12 @@ export const DELETE = withVenue(async function DELETE(
         tax?: { defaultRate?: number; inclusiveTaxRate?: number }
       } | null
       const taxRate = getLocationTaxRate(settings)
-      const autoMergeInclusiveRate = settings?.tax?.inclusiveTaxRate != null
-        ? settings.tax.inclusiveTaxRate / 100 : undefined
+      // Prefer order-level snapshot; fall back to location setting with > 0 guard
+      const autoMergeOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
+      const autoMergeInclRateRaw = settings?.tax?.inclusiveTaxRate
+      const autoMergeInclusiveRate = autoMergeOrderInclRate
+        ?? (autoMergeInclRateRaw != null && Number.isFinite(autoMergeInclRateRaw) && autoMergeInclRateRaw > 0
+          ? autoMergeInclRateRaw / 100 : undefined)
 
       await db.$transaction(async (tx) => {
         // Move all items back to parent

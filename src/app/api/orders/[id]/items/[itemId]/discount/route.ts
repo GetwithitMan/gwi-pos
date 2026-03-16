@@ -118,7 +118,8 @@ export const POST = withVenue(async function POST(
           }))
           const totals = calculateOrderTotals(
             calcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-            newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
+            newDiscountTotal, 0, undefined, 'card', order.isTaxExempt,
+            Number(order.inclusiveTaxRate) || undefined
           )
           const updatedOrder = await tx.order.update({
             where: { id: orderId },
@@ -182,7 +183,8 @@ export const POST = withVenue(async function POST(
       }))
       const totals = calculateOrderTotals(
         applyCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
+        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt,
+        Number(order.inclusiveTaxRate) || undefined
       )
 
       const updatedOrder = await tx.order.update({
@@ -331,7 +333,8 @@ export const DELETE = withVenue(async function DELETE(
       }))
       const totals = calculateOrderTotals(
         delCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt
+        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt,
+        Number(order.inclusiveTaxRate) || undefined
       )
 
       const updatedOrder = await tx.order.update({

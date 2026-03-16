@@ -173,7 +173,8 @@ export const POST = withVenue(async function POST(
       }))
       const totals = calculateOrderTotals(
         mergeCalcItems, locationSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        discountTotal, 0, undefined, 'card', targetOrder.isTaxExempt
+        discountTotal, 0, undefined, 'card', targetOrder.isTaxExempt,
+        Number(targetOrder.inclusiveTaxRate) || undefined
       )
 
       // Update target order totals and guest count

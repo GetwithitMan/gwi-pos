@@ -252,8 +252,12 @@ export const POST = withVenue(async function POST(
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
     const taxRate = getLocationTaxRate(settings)
-    const inclusiveRate = settings?.tax?.inclusiveTaxRate != null
-      ? settings.tax.inclusiveTaxRate / 100 : undefined
+    // Prefer order-level snapshot; fall back to location setting with > 0 guard
+    const orderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
+    const inclRateRaw = settings?.tax?.inclusiveTaxRate
+    const inclusiveRate = orderInclRate
+      ?? (inclRateRaw != null && Number.isFinite(inclRateRaw) && inclRateRaw > 0
+        ? inclRateRaw / 100 : undefined)
     const roundTo: RoundingIncrement = settings?.priceRounding?.enabled
       ? (settings.priceRounding.increment || '0.05')
       : 'none'
@@ -678,8 +682,12 @@ export const PATCH = withVenue(async function PATCH(
         priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
       } | null
       const taxRate = getLocationTaxRate(settings)
-      const inclusiveRate = settings?.tax?.inclusiveTaxRate != null
-        ? settings.tax.inclusiveTaxRate / 100 : undefined
+      // Prefer order-level snapshot; fall back to location setting with > 0 guard
+      const splitItemOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
+      const splitItemInclRateRaw = settings?.tax?.inclusiveTaxRate
+      const inclusiveRate = splitItemOrderInclRate
+        ?? (splitItemInclRateRaw != null && Number.isFinite(splitItemInclRateRaw) && splitItemInclRateRaw > 0
+          ? splitItemInclRateRaw / 100 : undefined)
 
       const fullPrice = Number(item.price) * item.quantity
       const fractionPrice = Math.floor((fullPrice / ways) * 100) / 100
@@ -822,8 +830,12 @@ export const PATCH = withVenue(async function PATCH(
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
     const taxRate = getLocationTaxRate(settings)
-    const inclusiveRate = settings?.tax?.inclusiveTaxRate != null
-      ? settings.tax.inclusiveTaxRate / 100 : undefined
+    // Prefer order-level snapshot; fall back to location setting with > 0 guard
+    const moveOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
+    const moveInclRateRaw = settings?.tax?.inclusiveTaxRate
+    const inclusiveRate = moveOrderInclRate
+      ?? (moveInclRateRaw != null && Number.isFinite(moveInclRateRaw) && moveInclRateRaw > 0
+        ? moveInclRateRaw / 100 : undefined)
 
     await db.$transaction(async (tx) => {
       // Move item to destination split
@@ -987,8 +999,12 @@ export const DELETE = withVenue(async function DELETE(
 
       const settings = parentOrder.location?.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
       const taxRate = getLocationTaxRate(settings)
-      const mergeInclusiveRate = settings?.tax?.inclusiveTaxRate != null
-        ? settings.tax.inclusiveTaxRate / 100 : undefined
+      // Prefer order-level snapshot; fall back to location setting with > 0 guard
+      const mergeOrderInclRate = Number(parentOrder.inclusiveTaxRate) || undefined
+      const mergeInclRateRaw = settings?.tax?.inclusiveTaxRate
+      const mergeInclusiveRate = mergeOrderInclRate
+        ?? (mergeInclRateRaw != null && Number.isFinite(mergeInclRateRaw) && mergeInclRateRaw > 0
+          ? mergeInclRateRaw / 100 : undefined)
 
       // Split items by tax-inclusive flag for proper split tax calculation
       let mergeInclSub = 0, mergeExclSub = 0

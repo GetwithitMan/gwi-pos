@@ -648,7 +648,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             inclusiveSubtotal = roundToCents(inclusiveSubtotal)
             exclusiveSubtotal = roundToCents(exclusiveSubtotal)
             const subtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
-            const splitTax = calculateSplitTax(inclusiveSubtotal, exclusiveSubtotal, taxRate)
+            const splitTax = calculateSplitTax(inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate)
             const discountTotal = freshOrder.discounts.reduce((sum, d) => sum + Number(d.amount ?? 0), 0)
             const total = roundToCents(subtotal + splitTax.taxFromExclusive - discountTotal)
             const itemCount = freshOrder.items.reduce((sum, i) => sum + i.quantity, 0)

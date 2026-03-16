@@ -234,7 +234,11 @@ export function calculateOrderTotals(
   existingTipTotal: number = 0,
   priceRounding?: PriceRoundingSettings,
   paymentMethod: 'cash' | 'card' = 'card',
-  isTaxExempt?: boolean
+  isTaxExempt?: boolean,
+  /** Order-level inclusive tax rate (decimal, e.g. 0.07). Overrides locationSettings
+   *  when present — ensures orders created with inclusive pricing keep the original
+   *  rate even if location settings change mid-service. */
+  orderInclusiveTaxRate?: number
 ): OrderTotals {
   // Memoization: return cached result if inputs unchanged
   const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod)
@@ -277,12 +281,17 @@ export function calculateOrderTotals(
   const postDiscountExclusive = roundToCents(Math.max(0, exclusiveSubtotal - discountOnExclusive))
 
   // Split tax on post-discount amounts — rounded to cents for compliance
-  // Guard: treat inclusiveTaxRate=0 as undefined so calculateSplitTax falls back to taxRate.
-  // This prevents $0 tax on inclusive items when inclusive pricing is turned off mid-service —
-  // items stamped isTaxInclusive=true still need tax backed out at SOME rate.
-  const inclusiveTaxRateRaw = locationSettings?.tax?.inclusiveTaxRate
-  const inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
-    ? inclusiveTaxRateRaw / 100 : undefined
+  // Priority: order-level rate (snapshot at creation) > location setting > fallback to taxRate.
+  // This ensures orders created with inclusive pricing keep the original rate even if
+  // the location setting changes mid-service.
+  let inclusiveRate: number | undefined
+  if (orderInclusiveTaxRate != null && Number.isFinite(orderInclusiveTaxRate) && orderInclusiveTaxRate > 0) {
+    inclusiveRate = orderInclusiveTaxRate // Already decimal (e.g. 0.07)
+  } else {
+    const inclusiveTaxRateRaw = locationSettings?.tax?.inclusiveTaxRate
+    inclusiveRate = inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
+      ? inclusiveTaxRateRaw / 100 : undefined
+  }
   const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
     postDiscountInclusive, postDiscountExclusive, taxRate, inclusiveRate
   )

@@ -266,7 +266,8 @@ export const POST = withVenue(async function POST(
       0,
       undefined,
       'card',
-      order.isTaxExempt
+      order.isTaxExempt,
+      Number(order.inclusiveTaxRate) || undefined
     )
 
     // Update order to open status

@@ -463,9 +463,14 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }
     }
 
+    // Snapshot the inclusive tax rate for this order — survives location setting changes
+    const orderInclusiveTaxRateRaw = (locationSettings as any)?.tax?.inclusiveTaxRate
+    const orderInclusiveTaxRate = orderInclusiveTaxRateRaw != null && Number.isFinite(orderInclusiveTaxRateRaw) && orderInclusiveTaxRateRaw > 0
+      ? orderInclusiveTaxRateRaw / 100 : 0
+
     // Use centralized calculation function (single source of truth)
     // Use totals.subtotal instead of the accumulated `subtotal` to avoid floating-point drift
-    const totals = calculateOrderTotals(items, locationSettings, 0, 0, parsedSettings?.priceRounding ?? undefined)
+    const totals = calculateOrderTotals(items, locationSettings, 0, 0, parsedSettings?.priceRounding ?? undefined, 'card', undefined, orderInclusiveTaxRate || undefined)
     const { subtotal: roundedSubtotal, taxTotal, taxFromInclusive, taxFromExclusive, total } = totals
 
     // Create the order atomically: table lock (Bug 13) + order number lock (Bug 5) + create
@@ -528,6 +533,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             taxTotal,
             taxFromInclusive,
             taxFromExclusive,
+            inclusiveTaxRate: orderInclusiveTaxRate,
             tipTotal: 0,
             total,
             commissionTotal,

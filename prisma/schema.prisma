@@ -2373,8 +2373,9 @@ model Order {
   discountTotal    Decimal @default(0)
   taxTotal         Decimal @default(0)
   taxFromInclusive Decimal @default(0) // Tax backed out of inclusive items
-  taxFromExclusive Decimal @default(0) // Tax added on top of exclusive items
-  tipTotal         Decimal @default(0)
+  taxFromExclusive  Decimal @default(0) // Tax added on top of exclusive items
+  inclusiveTaxRate  Decimal @default(0) // Inclusive tax rate snapshot at order creation (survives setting changes)
+  tipTotal          Decimal @default(0)
   total            Decimal @default(0)
 
   // Dual Pricing (Skill 31)

@@ -133,8 +133,12 @@ export const POST = withVenue(async function POST(
     // Get tax rate from location settings
     const locSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
     const taxRate = getLocationTaxRate(locSettings)
-    const inclusiveTaxRate = locSettings?.tax?.inclusiveTaxRate != null
-      ? locSettings.tax.inclusiveTaxRate / 100 : undefined
+    // Prefer order-level snapshot (survives setting changes); fall back to location setting with > 0 guard
+    const orderInclRate = Number(order.inclusiveTaxRate) || undefined
+    const inclusiveTaxRateRaw = locSettings?.tax?.inclusiveTaxRate
+    const inclusiveTaxRate = orderInclRate
+      ?? (inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
+        ? inclusiveTaxRateRaw / 100 : undefined)
 
     // Cast to domain type (Prisma result is structurally compatible)
     const splitOrder = order as unknown as SplitSourceOrder

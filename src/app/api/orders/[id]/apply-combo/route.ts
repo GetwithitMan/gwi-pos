@@ -264,7 +264,8 @@ export const POST = withVenue(async function POST(
         Number(order.tipTotal) || 0,
         locSettings?.priceRounding ?? undefined,
         'card',
-        order.isTaxExempt
+        order.isTaxExempt,
+        Number(order.inclusiveTaxRate) || undefined
       )
 
       const updatedOrder = await tx.order.update({

@@ -71,8 +71,12 @@ export const GET = withVenue(async function GET(
     // Get tax rate from location settings
     const locSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
     const taxRate = getLocationTaxRate(locSettings)
-    const inclusiveTaxRate = locSettings?.tax?.inclusiveTaxRate != null
-      ? locSettings.tax.inclusiveTaxRate / 100 : undefined
+    // Prefer order-level snapshot; fall back to location setting with > 0 guard
+    const orderInclRate = Number(order.inclusiveTaxRate) || undefined
+    const inclusiveTaxRateRaw = locSettings?.tax?.inclusiveTaxRate
+    const inclusiveTaxRate = orderInclRate
+      ?? (inclusiveTaxRateRaw != null && Number.isFinite(inclusiveTaxRateRaw) && inclusiveTaxRateRaw > 0
+        ? inclusiveTaxRateRaw / 100 : undefined)
 
     // Calculate per-seat balances
     const seatTimestamps = (order.seatTimestamps as SeatTimestamps) || {}

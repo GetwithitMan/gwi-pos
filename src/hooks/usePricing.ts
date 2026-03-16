@@ -76,7 +76,7 @@ interface UsePricingReturn {
  * 4. Returns the same shape consumers expect
  */
 export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePricingReturn {
-  const { dualPricing, taxRate, priceRounding, taxInclusiveLiquor, taxInclusiveFood, pricingProgram, isLoading } = useOrderSettings()
+  const { dualPricing, taxRate, inclusiveTaxRate, priceRounding, taxInclusiveLiquor, taxInclusiveFood, pricingProgram, isLoading } = useOrderSettings()
 
   const hasTaxInclusive = taxInclusiveLiquor || taxInclusiveFood
   const paymentMethod = options.paymentMethod || 'card'
@@ -107,7 +107,7 @@ export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePri
       return items
     }
 
-    const locationSettings = { tax: { defaultRate: taxRate * 100 } }
+    const locationSettings = { tax: { defaultRate: taxRate * 100, inclusiveTaxRate: inclusiveTaxRate > 0 ? inclusiveTaxRate * 100 : undefined } }
 
     // 4. Calculate cash totals
     const cashInclSub = options.inclusiveSubtotal || 0

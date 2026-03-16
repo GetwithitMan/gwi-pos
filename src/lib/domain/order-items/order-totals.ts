@@ -59,6 +59,13 @@ export async function recalculateOrderTotals(
   tipTotal: number,
   isTaxExempt?: boolean
 ): Promise<OrderTotalsUpdate> {
+  // Fetch the order's stored inclusive tax rate (survives setting changes)
+  const orderRow = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { inclusiveTaxRate: true },
+  })
+  const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
+
   // Fetch all active items with modifiers and ingredient modifications
   const allItems = await tx.orderItem.findMany({
     where: { orderId, deletedAt: null, status: 'active' },
@@ -84,7 +91,8 @@ export async function recalculateOrderTotals(
     tipTotal,
     parsedSettings?.priceRounding ?? undefined,
     'card',
-    isTaxExempt
+    isTaxExempt,
+    orderInclRate
   )
 
   return {
@@ -111,6 +119,13 @@ export async function recalculateOrderTotalsForAdd(
   tipTotal: number,
   isTaxExempt?: boolean
 ): Promise<OrderTotalsUpdate> {
+  // Fetch the order's stored inclusive tax rate (survives setting changes)
+  const orderRow = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { inclusiveTaxRate: true },
+  })
+  const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
+
   // For add-item, we query all non-deleted items (the original route used deletedAt: null without status filter)
   const allItems = await tx.orderItem.findMany({
     where: { orderId, deletedAt: null },
@@ -134,7 +149,8 @@ export async function recalculateOrderTotalsForAdd(
     tipTotal,
     parsedSettings?.priceRounding ?? undefined,
     'card',
-    isTaxExempt
+    isTaxExempt,
+    orderInclRate
   )
 
   return {

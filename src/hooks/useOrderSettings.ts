@@ -78,6 +78,7 @@ interface SettingsCache {
   paymentSettings: PaymentSettings
   priceRounding: PriceRoundingSettings
   taxRate: number
+  inclusiveTaxRate: number
   taxInclusiveLiquor: boolean
   taxInclusiveFood: boolean
   receiptSettings: Partial<ReceiptSettings>
@@ -106,6 +107,7 @@ export function useOrderSettings() {
     cachedSettings?.priceRounding ?? DEFAULT_PRICE_ROUNDING
   )
   const [taxRate, setTaxRate] = useState(cachedSettings?.taxRate ?? 0)
+  const [inclusiveTaxRate, setInclusiveTaxRate] = useState(cachedSettings?.inclusiveTaxRate ?? 0)
   const [taxInclusiveLiquor, setTaxInclusiveLiquor] = useState(cachedSettings?.taxInclusiveLiquor ?? false)
   const [taxInclusiveFood, setTaxInclusiveFood] = useState(cachedSettings?.taxInclusiveFood ?? false)
   const [receiptSettings, setReceiptSettings] = useState<Partial<ReceiptSettings>>(
@@ -131,7 +133,7 @@ export function useOrderSettings() {
     dualPricing?: DualPricingSettings
     payments?: PaymentSettings
     priceRounding?: PriceRoundingSettings
-    tax?: { defaultRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean }
+    tax?: { defaultRate?: number; inclusiveTaxRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean }
     receipts?: Partial<ReceiptSettings>
     barTabs?: { requireCardForTab?: boolean; allowNameOnlyTab?: boolean }
     pricingProgram?: PricingProgram
@@ -148,6 +150,7 @@ export function useOrderSettings() {
       paymentSettings: settings.payments || DEFAULT_PAYMENT_SETTINGS,
       priceRounding: settings.priceRounding || DEFAULT_PRICE_ROUNDING,
       taxRate: 0,
+      inclusiveTaxRate: 0,
       taxInclusiveLiquor: false,
       taxInclusiveFood: false,
       receiptSettings: settings.receipts || {},
@@ -161,6 +164,9 @@ export function useOrderSettings() {
 
     if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
       result.taxRate = settings.tax.defaultRate / 100
+    }
+    if (typeof settings.tax?.inclusiveTaxRate === 'number' && settings.tax.inclusiveTaxRate > 0) {
+      result.inclusiveTaxRate = settings.tax.inclusiveTaxRate / 100
     }
     if (settings.tax?.taxInclusiveLiquor !== undefined) {
       result.taxInclusiveLiquor = settings.tax.taxInclusiveLiquor
@@ -183,6 +189,7 @@ export function useOrderSettings() {
     setPaymentSettings(result.paymentSettings)
     setPriceRounding(result.priceRounding)
     setTaxRate(result.taxRate)
+    setInclusiveTaxRate(result.inclusiveTaxRate)
     setTaxInclusiveLiquor(result.taxInclusiveLiquor)
     setTaxInclusiveFood(result.taxInclusiveFood)
     setReceiptSettings(result.receiptSettings)
@@ -203,6 +210,7 @@ export function useOrderSettings() {
         priceRounding: cachedSettings.priceRounding,
         tax: {
           defaultRate: cachedSettings.taxRate * 100,
+          inclusiveTaxRate: cachedSettings.inclusiveTaxRate * 100,
           taxInclusiveLiquor: cachedSettings.taxInclusiveLiquor,
           taxInclusiveFood: cachedSettings.taxInclusiveFood,
         },
@@ -298,6 +306,7 @@ export function useOrderSettings() {
     paymentSettings,
     priceRounding,
     taxRate,
+    inclusiveTaxRate,
     taxInclusiveLiquor,
     taxInclusiveFood,
     receiptSettings,

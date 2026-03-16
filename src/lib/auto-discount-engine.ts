@@ -285,7 +285,8 @@ export async function evaluateAutoDiscounts(
         Number(order.tipTotal ?? 0),
         undefined, // priceRounding
         'card',
-        order.isTaxExempt
+        order.isTaxExempt,
+        Number(order.inclusiveTaxRate) || undefined
       )
 
       await tx.order.update({

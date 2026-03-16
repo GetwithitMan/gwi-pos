@@ -390,6 +390,7 @@ export const PUT = withVenue(async function PUT(
         tipTotal: true,
         total: true,
         isTaxExempt: true,
+        inclusiveTaxRate: true,
         version: true,
         employeeId: true,
         location: { select: { settings: true } },
@@ -474,7 +475,8 @@ export const PUT = withVenue(async function PUT(
         Number(existingOrder.tipTotal ?? 0),
         undefined,
         'card',
-        isTaxExempt
+        isTaxExempt,
+        Number(existingOrder.inclusiveTaxRate) || undefined
       )
       taxExemptTotals = {
         taxTotal: orderTotals.taxTotal,
@@ -729,6 +731,7 @@ export const PATCH = withVenue(async function PATCH(
         discountTotal: true,
         tipTotal: true,
         isTaxExempt: true,
+        inclusiveTaxRate: true,
         items: {
           where: { deletedAt: null, status: 'active' },
           select: {
@@ -803,7 +806,8 @@ export const PATCH = withVenue(async function PATCH(
         Number(existing.tipTotal ?? 0),
         undefined,
         'card',
-        isTaxExempt
+        isTaxExempt,
+        Number(existing.inclusiveTaxRate) || undefined
       )
       taxExemptTotals = {
         taxTotal: orderTotals.taxTotal,
