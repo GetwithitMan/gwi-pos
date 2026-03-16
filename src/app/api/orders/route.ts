@@ -106,6 +106,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }
     }
 
+    // Snapshot the inclusive tax rate for drafts AND full orders (derive once, use in both paths)
+    const draftInclusiveTaxRateRaw = (locSettings as any)?.tax?.inclusiveTaxRate
+    const draftInclusiveTaxRate = draftInclusiveTaxRateRaw != null && Number.isFinite(draftInclusiveTaxRateRaw) && draftInclusiveTaxRateRaw > 0
+      ? draftInclusiveTaxRateRaw / 100 : 0
+
     // === FAST PATH: Draft shell creation (no items) ===
     // When items is empty, create a lightweight order shell without tax/commission/totals computation.
     // This enables background pre-creation on table tap so "Send to Kitchen" is near-instant.
@@ -169,6 +174,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               taxTotal: 0,
               taxFromInclusive: 0,
               taxFromExclusive: 0,
+              inclusiveTaxRate: draftInclusiveTaxRate,
               tipTotal: 0,
               total: 0,
               commissionTotal: 0,

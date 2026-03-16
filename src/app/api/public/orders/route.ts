@@ -287,6 +287,7 @@ export async function POST(request: NextRequest) {
           taxTotal,
           taxFromInclusive,
           taxFromExclusive,
+          inclusiveTaxRate: inclusiveTaxRate || 0,
           tipTotal: 0,
           total,
           commissionTotal: 0,

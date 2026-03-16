@@ -440,6 +440,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         taxTotal: Number(order.taxTotal),
         tipTotal: Number(order.tipTotal),
         total: Number(order.total),
+        inclusiveTaxRate: Number(order.inclusiveTaxRate) || 0,
         notes: order.notes || null,
         createdAt: order.createdAt?.toISOString?.() || order.createdAt,
         version: order.version ?? null,

@@ -64,6 +64,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     tipTotal: Number(order.tipTotal ?? 0),
     discountTotal: Number(order.discountTotal ?? 0),
     total: Number(order.total ?? 0),
+    inclusiveTaxRate: Number(order.inclusiveTaxRate) || 0,
     paidAmount: order.payments.reduce((sum, p) => sum + Number(p.totalAmount ?? 0), 0),
     items: order.items.map(item => ({
       ...item,

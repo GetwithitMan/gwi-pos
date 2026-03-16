@@ -177,6 +177,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           taxTotal,
           taxFromInclusive,
           taxFromExclusive,
+          inclusiveTaxRate: inclusiveTaxRate || 0,
           total,
           offlineId: offlineId || null,
           offlineLocalId: localId || null,
