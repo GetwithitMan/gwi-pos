@@ -49,6 +49,15 @@ const orderItemModifierSchema = z.object({
   spiritTier: z.string().nullable().optional(),
   linkedBottleProductId: z.string().nullable().optional(),
   parentModifierId: z.string().nullable().optional(),
+  // Open Entry — freeform custom modifier created at POS
+  isCustomEntry: z.boolean().optional(),
+  customEntryName: z.string().nullable().optional(),
+  customEntryPrice: z.number().nullable().optional(),
+  // Swap — substitution fields
+  swapTargetName: z.string().nullable().optional(),
+  swapTargetItemId: z.string().nullable().optional(),
+  swapPricingMode: z.string().nullable().optional(),
+  swapEffectivePrice: z.number().nullable().optional(),
 })
 
 // Ingredient modification schema (No, Lite, On Side, Extra, Swap)

@@ -23,6 +23,9 @@ export interface ReceiptItem {
     name: string
     price: number
     preModifier?: string | null
+    isCustomEntry?: boolean
+    customEntryName?: string | null
+    swapTargetName?: string | null
   }[]
 }
 
@@ -239,9 +242,11 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                 {item.modifiers.map(mod => (
                   <div key={mod.id} className="flex justify-between">
                     <span>
+                      {mod.isCustomEntry && <span className="font-semibold text-emerald-600">CUSTOM: </span>}
+                      {mod.swapTargetName && <span className="font-semibold text-purple-600">SWAP: </span>}
                       {/* T-042: handle compound preModifier strings */}
                       {mod.preModifier && `${mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} `}
-                      {mod.name}
+                      {mod.swapTargetName ? <>{mod.name} → {mod.swapTargetName}</> : mod.name}
                     </span>
                     {showPrices && mod.price > 0 && (
                       <span>+{formatCurrency(mod.price)}</span>

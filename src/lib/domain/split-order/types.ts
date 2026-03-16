@@ -32,8 +32,20 @@ export interface SplitOrderItemModifier {
   price: any // Prisma Decimal
   quantity: number
   preModifier: string | null
+  depth: number
+  commissionAmount: any | null // Prisma Decimal
+  linkedMenuItemId: string | null
+  linkedMenuItemName: string | null
+  linkedMenuItemPrice: any | null // Prisma Decimal
   spiritTier: string | null
   linkedBottleProductId: string | null
+  isCustomEntry: boolean
+  customEntryName: string | null
+  customEntryPrice: any | null // Prisma Decimal
+  swapTargetName: string | null
+  swapTargetItemId: string | null
+  swapPricingMode: string | null
+  swapEffectivePrice: any | null // Prisma Decimal
 }
 
 /** Item-level discount (from Prisma include) */

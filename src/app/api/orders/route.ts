@@ -397,6 +397,15 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             // Spirit selection fields (Liquor Builder)
             spiritTier: mod.spiritTier || null,
             linkedBottleProductId: mod.linkedBottleProductId || null,
+            // Open Entry fields
+            isCustomEntry: mod.isCustomEntry || false,
+            customEntryName: mod.customEntryName || null,
+            customEntryPrice: mod.customEntryPrice ?? null,
+            // Swap fields
+            swapTargetName: mod.swapTargetName || null,
+            swapTargetItemId: mod.swapTargetItemId || null,
+            swapPricingMode: mod.swapPricingMode || null,
+            swapEffectivePrice: mod.swapEffectivePrice ?? null,
           })),
         },
         // Ingredient modifications (No, Lite, On Side, Extra, Swap)
@@ -674,9 +683,28 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           priceCents: Math.round(Number(item.price) * 100),
           quantity: item.quantity,
           employeeId, // WHO added this item
+          modifiersJson: item.modifiers?.length
+            ? JSON.stringify(item.modifiers.map((m: any) => ({
+                id: m.id, modifierId: m.modifierId, name: m.name,
+                price: Number(m.price), quantity: m.quantity,
+                preModifier: m.preModifier, depth: m.depth,
+                spiritTier: m.spiritTier || null,
+                linkedBottleProductId: m.linkedBottleProductId || null,
+                isCustomEntry: m.isCustomEntry || false,
+                swapTargetName: m.swapTargetName || null,
+                swapTargetItemId: m.swapTargetItemId || null,
+                swapPricingMode: m.swapPricingMode || null,
+                swapEffectivePrice: m.swapEffectivePrice != null ? Number(m.swapEffectivePrice) : null,
+              })))
+            : null,
+          specialNotes: item.specialNotes || null,
+          seatNumber: item.seatNumber ?? null,
+          courseNumber: item.courseNumber ?? null,
           isHeld: item.isHeld || false,
           soldByWeight: item.soldByWeight || false,
           isTaxInclusive: item.isTaxInclusive ?? false,
+          pourSize: item.pourSize || null,
+          pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
         },
       })),
     ])

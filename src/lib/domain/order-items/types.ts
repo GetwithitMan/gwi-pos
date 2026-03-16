@@ -21,6 +21,16 @@ export interface ModifierInput {
   depth?: number
   spiritTier?: string
   linkedBottleProductId?: string
+  parentModifierId?: string
+  // Open entry (custom modifier)
+  isCustomEntry?: boolean
+  customEntryName?: string
+  customEntryPrice?: number
+  // Swap/substitution
+  swapTargetName?: string
+  swapTargetItemId?: string
+  swapPricingMode?: 'target_price' | 'fixed_price' | 'no_charge'
+  swapEffectivePrice?: number
 }
 
 // ─── Ingredient Modification Input ──────────────────────────────────────────

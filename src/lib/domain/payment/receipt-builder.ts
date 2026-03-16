@@ -48,6 +48,10 @@ interface ReceiptOrder {
       name: string
       price: unknown
       preModifier: string | null
+      isCustomEntry?: boolean
+      customEntryName?: string | null
+      customEntryPrice?: unknown
+      swapTargetName?: string | null
     }>
   }>
   customer?: {
@@ -148,6 +152,10 @@ export function buildReceiptData(
         name: mod.name,
         price: Number(mod.price),
         preModifier: mod.preModifier,
+        isCustomEntry: mod.isCustomEntry ?? false,
+        customEntryName: mod.customEntryName ?? null,
+        customEntryPrice: mod.customEntryPrice != null ? Number(mod.customEntryPrice) : null,
+        swapTargetName: mod.swapTargetName ?? null,
       })),
     })),
     payments: receiptPayments,

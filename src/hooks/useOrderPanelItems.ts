@@ -45,6 +45,14 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string; 
           spiritTier: m.spiritTier ?? null,
           linkedBottleProductId: m.linkedBottleProductId ?? null,
           parentModifierId: m.parentModifierId ?? null,
+          // Open entry (custom modifier)
+          isCustomEntry: (m as any).isCustomEntry ?? false,
+          customEntryName: (m as any).customEntryName ?? null,
+          customEntryPrice: (m as any).customEntryPrice != null ? Number((m as any).customEntryPrice) : null,
+          // Swap/substitution
+          swapTargetName: (m as any).swapTargetName ?? null,
+          swapPricingMode: (m as any).swapPricingMode ?? null,
+          swapEffectivePrice: (m as any).swapEffectivePrice != null ? Number((m as any).swapEffectivePrice) : null,
         })) || [],
         ingredientModifications: item.ingredientModifications,
         specialNotes: item.specialNotes,

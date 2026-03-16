@@ -44,7 +44,7 @@ export interface ReceiptItem {
   name: string
   quantity: number
   price: number
-  modifiers: { name: string; price: number }[]
+  modifiers: { name: string; price: number; preModifier?: string | null; isCustomEntry?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
   specialNotes?: string | null
 }
 
@@ -151,10 +151,24 @@ export function buildCustomerReceipt(
     content.push(twoColumnLine(itemText, priceText, width))
 
     for (const mod of item.modifiers) {
+      // Build display name with pre-modifier labels, custom entry/swap prefixes
+      let modDisplayName = mod.name
+      // Pre-modifier labels: "No Onions", "Lite Ranch", "Extra Cheese", "Side Sauce"
+      if (mod.preModifier && !mod.isCustomEntry && !mod.swapTargetName) {
+        const tokens = mod.preModifier.split(',').map(t => t.trim()).filter(Boolean)
+        const label = tokens.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')
+        if (label) modDisplayName = `${label} ${mod.name}`
+      }
+      if (mod.isCustomEntry) {
+        modDisplayName = `CUSTOM: ${mod.customEntryName || mod.name}`
+      }
+      if (mod.swapTargetName) {
+        modDisplayName = `${mod.name} → ${mod.swapTargetName}`
+      }
       if (mod.price > 0) {
-        content.push(twoColumnLine(`  ${mod.name}`, `$${mod.price.toFixed(2)}`, width))
+        content.push(twoColumnLine(`  ${modDisplayName}`, `$${mod.price.toFixed(2)}`, width))
       } else {
-        content.push(line(`  ${mod.name}`))
+        content.push(line(`  ${modDisplayName}`))
       }
     }
 

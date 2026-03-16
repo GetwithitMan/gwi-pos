@@ -183,24 +183,68 @@ export function hasOpenPricedItems(
   return false
 }
 
+// ─── Modifier Pricing Data ──────────────────────────────────────────────────
+
+/** Extended pricing data for server-side pre-modifier price computation. */
+export interface ModifierPricingData {
+  price: number
+  extraPrice: number
+  liteMultiplier: number | null   // null → default 0.5
+  extraMultiplier: number | null  // null → default 2.0
+}
+
 // ─── Modifier Price Override ────────────────────────────────────────────────
+
+/**
+ * Parse a compound preModifier string into tokens (server-side mirror of client helper).
+ */
+function parsePreModTokens(preModifier: string | null | undefined): string[] {
+  if (!preModifier) return []
+  return preModifier.split(',').map(s => s.trim()).filter(Boolean)
+}
+
+/**
+ * Compute the server-authoritative price for a modifier given its pre-modifier.
+ * Mirrors the client-side computePrice logic in useModifierSelections.ts.
+ */
+function computeServerModifierPrice(data: ModifierPricingData, preModifier: string | null | undefined): number {
+  const tokens = parsePreModTokens(preModifier)
+  const p = data.price
+
+  if (tokens.includes('no')) return 0
+  if (tokens.includes('lite')) {
+    const mult = data.liteMultiplier ?? 0.5
+    return Math.round(p * mult * 100) / 100
+  }
+  if (tokens.includes('extra')) {
+    if (data.extraPrice > 0) return data.extraPrice
+    const mult = data.extraMultiplier ?? 2.0
+    return Math.round(p * mult * 100) / 100
+  }
+  return p
+}
 
 /**
  * Override client-supplied modifier prices with server-authoritative prices.
  * Pizza items are excluded — their modifiers have computed prices from the
  * pizza builder (coverage-based topping pricing, free topping quotas, etc.).
  *
+ * Pre-modifier adjustments (no → $0, lite → reduced, extra → extraPrice) are
+ * computed server-side from DB data to prevent price tampering while preserving
+ * correct pre-modifier pricing.
+ *
  * Mutates items in place for efficiency (matches prior behavior).
  */
 export function overrideModifierPrices(
   items: AddItemInput[],
-  modifierPriceMap: Map<string, number>
+  modifierPriceMap: Map<string, ModifierPricingData>
 ): void {
   const nonPizzaItems = items.filter(item => !item.pizzaConfig)
   for (const item of nonPizzaItems) {
     for (const mod of item.modifiers || []) {
       if (mod.modifierId && isValidModifierId(mod.modifierId) && modifierPriceMap.has(mod.modifierId)) {
-        mod.price = modifierPriceMap.get(mod.modifierId)!
+        const data = modifierPriceMap.get(mod.modifierId)!
+        mod.price = computeServerModifierPrice(data, mod.preModifier)
       }
     }
   }

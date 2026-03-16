@@ -174,6 +174,10 @@ export interface ReceiptData {
       name: string
       price: number
       preModifier: string | null
+      isCustomEntry?: boolean
+      customEntryName?: string | null
+      customEntryPrice?: number | null
+      swapTargetName?: string | null
     }>
   }>
   payments: ReceiptPayment[]

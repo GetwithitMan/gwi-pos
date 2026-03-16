@@ -1057,6 +1057,12 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
           spiritTier: mod.spiritTier ?? null,
           linkedBottleProductId: mod.linkedBottleProductId ?? null,
           parentModifierId: mod.parentModifierId ?? null,
+          // Open entry + swap fields
+          isCustomEntry: mod.isCustomEntry ?? false,
+          swapTargetName: mod.swapTargetName ?? null,
+          swapTargetItemId: mod.swapTargetItemId ?? null,
+          swapPricingMode: mod.swapPricingMode ?? null,
+          swapEffectivePrice: mod.swapEffectivePrice ?? null,
         }))
         inlineModifierCallbackRef.current(simplifiedModifiers, ingredientModifications)
         inlineModifierCallbackRef.current = null
@@ -1101,6 +1107,12 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         spiritTier: mod.spiritTier ?? null,
         linkedBottleProductId: mod.linkedBottleProductId ?? null,
         parentModifierId: mod.parentModifierId ?? null,
+        // Open entry + swap fields
+        isCustomEntry: mod.isCustomEntry ?? false,
+        swapTargetName: mod.swapTargetName ?? null,
+        swapTargetItemId: mod.swapTargetItemId ?? null,
+        swapPricingMode: mod.swapPricingMode ?? null,
+        swapEffectivePrice: mod.swapEffectivePrice ?? null,
       })),
       ingredientModifications: ingredientModifications?.map(mod => ({
         ingredientId: mod.ingredientId,
@@ -1152,6 +1164,12 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         spiritTier: mod.spiritTier ?? null,
         linkedBottleProductId: mod.linkedBottleProductId ?? null,
         parentModifierId: mod.parentModifierId ?? null,
+        // Open entry + swap fields
+        isCustomEntry: mod.isCustomEntry ?? false,
+        swapTargetName: mod.swapTargetName ?? null,
+        swapTargetItemId: mod.swapTargetItemId ?? null,
+        swapPricingMode: mod.swapPricingMode ?? null,
+        swapEffectivePrice: mod.swapEffectivePrice ?? null,
       })),
       ingredientModifications: ingredientModifications?.map(mod => ({
         ingredientId: mod.ingredientId,

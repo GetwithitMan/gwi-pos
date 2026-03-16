@@ -63,7 +63,7 @@ interface KDSItem {
   weight?: number | null
   weightUnit?: string | null
   tareWeight?: number | null
-  modifiers: { id: string; name: string; depth?: number }[]
+  modifiers: { id: string; name: string; depth?: number; isCustomEntry?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
   ingredientModifications: IngredientMod[]
   allergens?: string[]
 }
@@ -307,7 +307,7 @@ const KDSOrderCard = memo(function KDSOrderCard({
                               item.isCompleted ? 'text-gray-600' : depth === 0 ? 'text-yellow-400' : 'text-yellow-300'
                             }`}
                           >
-                            {prefix}{mod.name}{mod.count > 1 ? ` ×${mod.count}` : ''}
+                            {prefix}{mod.isCustomEntry ? 'CUSTOM: ' : ''}{mod.swapTargetName ? `${mod.name} → ${mod.swapTargetName}` : mod.name}{mod.count > 1 ? ` ×${mod.count}` : ''}
                           </div>
                         )
                       })}

@@ -6,7 +6,7 @@
  */
 
 import type { TxClient, AddItemInput, ItemPrepData } from './types'
-import { isValidModifierId, calculateItemCardPrice } from './item-calculations'
+import { isValidModifierId, calculateItemCardPrice, type ModifierPricingData } from './item-calculations'
 import { calculateItemTotal } from '@/lib/order-calculations'
 import { getBestPricingRuleForItem } from '@/lib/settings'
 import type { PricingRule, PricingAdjustment } from '@/lib/settings'
@@ -177,6 +177,15 @@ export async function createOrderItem(
           depth: mod.depth || 0,
           spiritTier: mod.spiritTier || null,
           linkedBottleProductId: mod.linkedBottleProductId || null,
+          // Open entry (custom modifier)
+          isCustomEntry: mod.isCustomEntry || false,
+          customEntryName: mod.isCustomEntry ? (mod.customEntryName || mod.name) : null,
+          customEntryPrice: mod.isCustomEntry ? (mod.customEntryPrice ?? mod.price) : null,
+          // Swap/substitution
+          swapTargetName: mod.swapTargetName || null,
+          swapTargetItemId: mod.swapTargetItemId || null,
+          swapPricingMode: mod.swapPricingMode || null,
+          swapEffectivePrice: mod.swapEffectivePrice ?? null,
         })),
       } : undefined,
       // Ingredient modifications
@@ -375,13 +384,13 @@ export async function validateComboComponents(
 // ─── Server-Side Modifier Price Fetch ───────────────────────────────────────
 
 /**
- * Fetch authoritative modifier prices from the database.
- * Returns a map of modifierId -> price for server-side price override.
+ * Fetch authoritative modifier pricing data from the database.
+ * Returns extended pricing info needed to correctly compute pre-modifier adjustments.
  */
 export async function fetchModifierPrices(
   tx: TxClient,
   items: AddItemInput[]
-): Promise<Map<string, number>> {
+): Promise<Map<string, ModifierPricingData>> {
   const nonPizzaItems = items.filter(item => !item.pizzaConfig)
   const allModifierIds = nonPizzaItems
     .flatMap(item => (item.modifiers || []).map(m => m.modifierId))
@@ -391,8 +400,13 @@ export async function fetchModifierPrices(
 
   const dbModifiers = await tx.modifier.findMany({
     where: { id: { in: allModifierIds } },
-    select: { id: true, price: true, name: true },
+    select: { id: true, price: true, name: true, extraPrice: true, liteMultiplier: true, extraMultiplier: true },
   })
 
-  return new Map(dbModifiers.map(m => [m.id, Number(m.price ?? 0)]))
+  return new Map(dbModifiers.map(m => [m.id, {
+    price: Number(m.price ?? 0),
+    extraPrice: Number(m.extraPrice ?? 0),
+    liteMultiplier: m.liteMultiplier != null ? Number(m.liteMultiplier) : null,
+    extraMultiplier: m.extraMultiplier != null ? Number(m.extraMultiplier) : null,
+  }]))
 }

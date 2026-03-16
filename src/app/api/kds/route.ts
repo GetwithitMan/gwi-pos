@@ -136,6 +136,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 name: true,
                 preModifier: true,
                 depth: true,
+                isCustomEntry: true,
+                customEntryName: true,
+                swapTargetName: true,
               },
             },
             ingredientModifications: {
@@ -249,6 +252,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               ? `${mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ${mod.name}`
               : mod.name,
             depth: mod.depth || 0,
+            isCustomEntry: (mod as any).isCustomEntry ?? false,
+            customEntryName: (mod as any).customEntryName ?? null,
+            swapTargetName: (mod as any).swapTargetName ?? null,
           })),
           ingredientModifications: item.ingredientModifications.map(ing => ({
             id: ing.id,

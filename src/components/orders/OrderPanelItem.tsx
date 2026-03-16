@@ -697,6 +697,12 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                   >
                     <span className="truncate" title={mod.name}>
                       {depth === 0 ? '• ' : '↳ '}
+                      {mod.isCustomEntry && (
+                        <span className="font-semibold uppercase text-[10px] mr-0.5 text-emerald-400">CUSTOM </span>
+                      )}
+                      {mod.swapTargetName && (
+                        <span className="font-semibold uppercase text-[10px] mr-0.5 text-purple-400">SWAP </span>
+                      )}
                       {mod.preModifier ? (() => {
                         // T-042: parse compound preModifier string (e.g. "side,extra" → ["side","extra"])
                         const tokens = parsePreModifiers(mod.preModifier)
@@ -717,7 +723,10 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                           </>
                         )
                       })() : null}
-                      {mod.name}
+                      {mod.swapTargetName
+                        ? <>{mod.name} <span className="text-purple-400">→ {mod.swapTargetName}</span></>
+                        : mod.name
+                      }
                     </span>
                     {mod.price > 0 && (
                       <span className="text-slate-500 text-[11px]">+${displayModPrices[idx].toFixed(2)}</span>

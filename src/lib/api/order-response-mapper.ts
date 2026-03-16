@@ -74,6 +74,15 @@ interface MappedModifier {
   depth: number
   spiritTier: string | null
   linkedBottleProductId: string | null
+  // Open entry (custom modifier)
+  isCustomEntry: boolean
+  customEntryName: string | null
+  customEntryPrice: number | null
+  // Swap/substitution
+  swapTargetName: string | null
+  swapTargetItemId: string | null
+  swapPricingMode: string | null
+  swapEffectivePrice: number | null
 }
 
 interface MappedIngredientMod {
@@ -152,8 +161,15 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
       depth: (mod.depth as number) ?? 0,  // ✅ Include
       spiritTier: mod.spiritTier,         // ✅ Include
       linkedBottleProductId: mod.linkedBottleProductId,  // ✅ Include
-      // NOTE: parentModifierId missing from schema - needs migration
-      // parentModifierId: mod.parentModifierId,
+      // Open entry (custom modifier)
+      isCustomEntry: mod.isCustomEntry ?? false,
+      customEntryName: mod.customEntryName ?? null,
+      customEntryPrice: mod.customEntryPrice != null ? Number(mod.customEntryPrice) : null,
+      // Swap/substitution
+      swapTargetName: mod.swapTargetName ?? null,
+      swapTargetItemId: mod.swapTargetItemId ?? null,
+      swapPricingMode: mod.swapPricingMode ?? null,
+      swapEffectivePrice: mod.swapEffectivePrice != null ? Number(mod.swapEffectivePrice) : null,
     })) || [],
     pizzaConfig: item.pizzaData ? {
       sizeId: item.pizzaData.sizeId,

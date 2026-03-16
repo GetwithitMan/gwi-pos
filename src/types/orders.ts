@@ -20,6 +20,15 @@ export interface UiModifier {
   spiritTier?: string | null     // "Well", "Call", "Premium", "Top Shelf"
   linkedBottleProductId?: string | null  // For spirit upgrades
   parentModifierId?: string | null       // For tracking modifier hierarchy
+  // Open entry (custom modifier)
+  isCustomEntry?: boolean
+  customEntryName?: string | null
+  customEntryPrice?: number | null
+  // Swap/substitution
+  swapTargetName?: string | null
+  swapTargetItemId?: string | null
+  swapPricingMode?: string | null
+  swapEffectivePrice?: number | null
 }
 
 /**

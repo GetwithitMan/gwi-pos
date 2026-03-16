@@ -188,9 +188,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         price: isDualCard
           ? calculateCardPrice(Number(item.price), cashDiscountPercent)
           : Number(item.price),
-        modifiers: item.modifiers.map((m) => ({
+        modifiers: item.modifiers.map((m: any) => ({
           name: m.name,
           price: Number(m.price),
+          preModifier: m.preModifier ?? null,
+          isCustomEntry: m.isCustomEntry ?? false,
+          customEntryName: m.customEntryName ?? null,
+          swapTargetName: m.swapTargetName ?? null,
         })),
         specialNotes: item.specialNotes,
       })),

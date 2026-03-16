@@ -56,6 +56,7 @@ export {
   overrideModifierPrices,
   calculateLiveModifierTotal,
   calculateUpdatedItemTotal,
+  type ModifierPricingData,
 } from './item-calculations'
 
 // ─── Order Totals (ORCHESTRATION — TxClient) ───────────────────────────────

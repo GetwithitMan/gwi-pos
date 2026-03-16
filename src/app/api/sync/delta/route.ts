@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid since timestamp' }, { status: 400 })
   }
 
-  const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups] = await Promise.all([
+  const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups, sharedModifierGroups] = await Promise.all([
     db.menuItem.findMany({
       where: { locationId, updatedAt: { gt: since } },
       include: {
@@ -46,6 +46,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.orderType.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true }, take: 100, orderBy: { updatedAt: 'desc' } }),
     db.pricingOptionGroup.findMany({ where: { locationId, updatedAt: { gt: since }, deletedAt: null }, include: { options: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } } }),
+    // Shared/global modifier groups (menuItemId: null) — not nested under menuItems
+    db.modifierGroup.findMany({
+      where: { locationId, menuItemId: null, deletedAt: null, updatedAt: { gt: since } },
+      include: {
+        modifiers: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: { sortOrder: 'asc' },
+          include: {
+            linkedBottleProduct: {
+              select: { id: true, name: true, tier: true, pourCost: true },
+            },
+          },
+        },
+      },
+      orderBy: { sortOrder: 'asc' },
+    }),
   ])
 
   // Convert Decimal fields to numbers for Android clients
@@ -104,6 +120,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }))
 
   return NextResponse.json({
-    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 },
+    data: { menuItems: mappedMenuItems, categories, employees, tables, orderTypes, orders: mappedOrders, pricingOptionGroups: mappedPricingOptionGroups, sharedModifierGroups, syncVersion: Date.now(), hasMore: orders.length >= 100 },
   })
 })
