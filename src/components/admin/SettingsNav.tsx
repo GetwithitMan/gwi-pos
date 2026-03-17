@@ -269,6 +269,7 @@ const deliverySection: SettingsSection = {
   icon: '🚗',
   permission: PERMISSIONS.DELIVERY_SETTINGS,
   items: [
+    { name: 'Dashboard', href: '/delivery/dashboard' },
     { name: 'Delivery Settings', href: '/settings/delivery' },
     { name: 'Zones', href: '/settings/delivery/zones' },
     { name: 'Drivers', href: '/settings/delivery/drivers' },
