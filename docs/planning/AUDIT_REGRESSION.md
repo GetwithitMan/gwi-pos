@@ -128,6 +128,29 @@ If a future PR touches the areas below, check the corresponding invariant before
 | TAX7 | Changing TaxRule.isInclusive does NOT retroactively update existing OrderItem.isTaxInclusive stamps — only new items get the new treatment | By design — `isTaxInclusive` locked at creation | Toggle inclusive flag, verify existing open order items unchanged, new items get new flag |
 | TAX8 | `calculateSplitTax()` with `inclusiveTaxRate = undefined` MUST fall back to `taxRate` (backward compat for locations without separate inclusive rate) | `order-calculations.ts:404` — `inclRate = inclusiveTaxRate ?? taxRate` | Location with single tax rule: verify `calculateSplitTax` uses same rate for both |
 | TAX9 | Android `TaxSplitHelper.compute()` MUST produce identical output to server `calculateSplitTax()` for the same inputs — verified by golden parity tests | `TaxSplitHelper.kt`; `order-calculations.ts` | Run same 10+ test vectors on both platforms → outputs match to the cent |
+| TAX10 | Reports MUST use stored `taxFromInclusive` and `taxFromExclusive` values — NEVER recompute tax from rate for historical orders | `daily/route.ts`, `employee-shift/route.ts`, `order-history/route.ts` | Change inclusive rate, verify old order reports unchanged |
+| TAX11 | Employee-shift report `grossSales` MUST subtract `taxFromInclusive` before adding `totalTax` — prevents double-counting embedded tax | `employee-shift/route.ts` — `preTaxGrossSales = adjustedGrossSales - totalTaxFromInclusive` | Place all-inclusive order, close shift, verify grossSales = subtotal - discount (not subtotal + tax) |
+| TAX12 | Daily report category breakdown MUST back out inclusive tax from `gross` for inclusive categories — prevents inflated category totals | `daily/route.ts` — `inclusive_gross` SQL column + JS tax back-out | Place inclusive item, run daily report, verify category gross = item price - backed-out tax |
+
+## Client-Generated ID Invariants (2026-03-16)
+
+> Added after duplicate-item bug caused by server cuid vs client UUID mismatch. This invariant prevents entity duplication across all Android clients.
+
+| # | Invariant | Where Enforced | Test Trigger |
+|---|-----------|----------------|--------------|
+| CLID1 | Every `OrderItem` created by an Android client MUST have its `id` set to the client-provided `lineItemId` (UUID v4). Server MUST NOT generate a different ID. Local event MUST use the same `lineItemId`. Violation = duplicate items. | `AddItemUseCase.kt` (generates UUID), `item-operations.ts` (uses `lineItemId` as `id`), `OrderMutationRepository.kt` (passes to event) | Add item on Android → verify server `OrderItem.id` matches local `CachedOrderItem.id` matches `ITEM_ADDED` event `lineItemId` — all three identical |
+
+See `docs/guides/STABLE-ID-CONTRACT.md` for the full contract.
+
+## Dev Infrastructure Invariants (2026-03-16)
+
+> Added after 4-root-cause dev server outage. These invariants prevent dev environment regressions.
+
+| # | Invariant | Where Enforced | Test Trigger |
+|---|-----------|----------------|--------------|
+| DEV1 | HSTS (`Strict-Transport-Security`) MUST only be sent in production — never on localhost dev | `next.config.ts` headers config (production guard) | Run `npm run dev`, inspect response headers on `localhost:3006` — no HSTS header present |
+| DEV2 | Sentry MUST use dynamic `import()` in `instrumentation.ts` — no static imports of `@sentry/nextjs` at module top level | `src/instrumentation.ts` (`register()` function) | Run `npm run dev` — server starts without deadlock; `grep` for `import.*@sentry/nextjs` in instrumentation.ts returns zero static imports |
+| DEV3 | `resolveTenantLocationId` recursion guard MUST be request-scoped (AsyncLocalStorage), never module-scoped | `src/lib/db.ts` + `src/lib/request-context.ts` | Concurrent requests to tenant-scoped routes — no infinite recursion, no cross-request interference |
 
 ---
 
@@ -137,4 +160,4 @@ If a future PR touches the areas below, check the corresponding invariant before
 2. **After a schema change** to `Payment`, `Order`, `Shift`, or `TipLedgerEntry` — re-run P1–P5 and T1–T5.
 3. **After any event sourcing change** — re-run O2 and O3.
 
-The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. The 9 tax-inclusive invariants (2026-03-15) cover the full-stack tax-inclusive pricing implementation. All 56 represent the highest re-regression risk.
+The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. The 9 tax-inclusive invariants (2026-03-15) cover the full-stack tax-inclusive pricing implementation. The 1 client-generated ID invariant (2026-03-16) prevents duplicate entities from ID mismatch. The 3 dev infrastructure invariants (2026-03-16) prevent dev environment regressions. All 63 represent the highest re-regression risk.

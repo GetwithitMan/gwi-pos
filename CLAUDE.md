@@ -113,6 +113,12 @@ Only after Steps 1–5:
 - NEVER read from `db.order`/`db.orderItem` — use snapshots
 - **Full rules:** `docs/guides/ORDER-LIFECYCLE.md`
 
+### Stable Client-Generated IDs (Mandatory)
+- EVERY client-created entity MUST use a client-generated UUID as its ID
+- The ID flows: client generates → sends to server → server uses it → local event uses it → socket echo deduplicates
+- NEVER let server and client generate different IDs for the same entity
+- **Full rules:** `docs/guides/STABLE-ID-CONTRACT.md`
+
 ### Payments (Datacap Only)
 - NEVER add Stripe/Square/Braintree — Datacap is the only processor
 - Money first, reports second — never sacrifice payment reliability
@@ -163,7 +169,8 @@ Only after Steps 1–5:
 ### Dev Commands
 ```bash
 npm install          # Install dependencies
-npm run dev          # Dev server (localhost:3000)
+npm run dev          # Dev server (localhost:3006)
+npm run dev:server   # Custom server.ts (Socket.io, production-like)
 npm run build        # Production build
 npm run lint         # Lint
 npx tsc --noEmit     # Type check
@@ -308,6 +315,7 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | Error handling | `docs/development/ERROR-HANDLING-STANDARDS.md` | — |
 | Pre-launch testing | `docs/planning/PRE-LAUNCH-CHECKLIST.md` | — |
 | Migration Architecture | `scripts/migrations/` + `scripts/nuc-pre-migrate.js` | 12 migration files, tracking table, shared helpers |
+| Client-generated IDs | `docs/guides/STABLE-ID-CONTRACT.md` | `src/lib/domain/order-items/item-operations.ts` |
 | Socket Events Catalog | `src/lib/socket-dispatch.ts` + `src/lib/socket-server.ts` | 32+ events, room-based isolation, 50ms KDS latency |
 
 ## Living Log & Documentation

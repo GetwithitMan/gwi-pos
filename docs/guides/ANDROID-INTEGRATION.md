@@ -224,6 +224,23 @@ Accessible from the hamburger menu. Two tabs: **Pending Tips** and **My Tips**.
 
 ---
 
+## Client-Generated Item IDs (CRITICAL)
+
+All item add requests from Android MUST include a `lineItemId` (UUID v4) in the request body. The server uses this as the OrderItem's primary key. This enables idempotent dedup between the server-created item and the client's local event.
+
+The flow:
+1. Android generates `lineItemId = UUID.randomUUID().toString()` in `AddItemUseCase`
+2. Sends it in `OrderItemRequest.lineItemId` via `POST /api/orders/{id}/items`
+3. NUC creates `OrderItem` with `id = lineItemId`
+4. Android creates local `ITEM_ADDED` event with the same `lineItemId`
+5. Socket echo arrives → `INSERT OR IGNORE` → no duplicate
+
+**Without `lineItemId`, the server generates a cuid and the client generates a UUID — causing duplicate items.**
+
+See `docs/guides/STABLE-ID-CONTRACT.md` for the full contract.
+
+---
+
 ## Checklist: Adding a New Feature with Android Impact
 
 - [ ] Touch targets ≥ 48×48dp

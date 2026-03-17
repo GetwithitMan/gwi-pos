@@ -117,6 +117,21 @@ Every OrderItem has an `isTaxInclusive` boolean stamped at creation time:
 
 ---
 
+## Stable IDs for Client-Created Entities
+
+When an Android client adds an item:
+1. Client generates `lineItemId = UUID.randomUUID()`
+2. Sends to NUC: `POST /api/orders/{id}/items` with `lineItemId` in body
+3. NUC creates `OrderItem` with `id = lineItemId`
+4. Client creates local `ITEM_ADDED` event with same `lineItemId`
+5. Socket echo → `INSERT OR IGNORE` → no duplicate
+
+This contract is MANDATORY. Without it, the server generates a cuid and the client generates a UUID, resulting in duplicate items on every add. The same principle applies to all client-created entities (payments, events).
+
+See `docs/guides/STABLE-ID-CONTRACT.md` for the full contract.
+
+---
+
 ## Comp/Void Flow
 
 - Comps and voids use `COMP_VOID_APPLIED` event type
