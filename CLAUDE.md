@@ -276,8 +276,10 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | MarginEdge COGS integration | `docs/features/marginedge-integration.md` | `docs/skills/SPEC-490-MARGINEDGE-INTEGRATION.md` | `src/lib/marginedge-client.ts`, `src/app/api/integrations/marginedge/`, `src/app/api/cron/marginedge-sync/` |
 | Cloud-Primary Sync | `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6 | Sync + Bridge | outage-replay-worker.ts, fulfillment-bridge-worker.ts, bridge-checkpoint.ts |
 | Cloud Relay | `docs/features/cloud-relay.md` | — | `src/lib/cloud-relay-client.ts` |
+| Reservations | `docs/features/reservations.md` | — | `src/lib/reservations/`, `src/app/api/reservations/` |
+| Delivery management | `docs/features/delivery.md` | — | `src/lib/delivery/`, `src/app/api/delivery/` |
 
-> **Planned/unbuilt features** (auto-discounts, reservations, QR ordering, delivery, multi-location, etc.) are tracked in `docs/features/_INDEX.md`. Add them to this table when code is written.
+> **Planned/unbuilt features** (auto-discounts, QR ordering, multi-location, etc.) are tracked in `docs/features/_INDEX.md`. Add them to this table when code is written.
 
 ### Flow Docs (read when your change crosses feature boundaries)
 
