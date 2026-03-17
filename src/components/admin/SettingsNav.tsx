@@ -109,6 +109,7 @@ const settingsSections: SettingsSection[] = [
       { name: 'Floor Plan Editor', href: '/settings/floor-plan' },
       { name: 'Section Assignments', href: '/settings/sections' },
       { name: 'Reservations', href: '/settings/reservations' },
+      { name: 'Waitlist', href: '/settings/waitlist' },
       { name: 'Events', href: '/settings/events' },
     ],
   },
@@ -244,6 +245,16 @@ const settingsSections: SettingsSection[] = [
       { name: 'Slack', href: '/settings/integrations/slack' },
       { name: 'Reservation Integrations', href: '/settings/integrations/reservations' },
       { name: 'Accounting', href: '/settings/accounting' },
+    ],
+  },
+  {
+    title: 'Cake Orders',
+    icon: '🎂',
+    permission: 'cake.view',
+    items: [
+      { name: 'Orders', href: '/settings/cake-orders' },
+      { name: 'Production', href: '/settings/cake-orders/production' },
+      { name: 'Settings', href: '/settings/cake-orders/config' },
     ],
   },
   {

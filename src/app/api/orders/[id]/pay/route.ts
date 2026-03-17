@@ -8,7 +8,7 @@ import { requireAnyPermission, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
-import { calculateCardPrice, applyPriceRounding, roundToCents } from '@/lib/pricing'
+import { calculateCardPrice, applyPriceRounding, roundToCents, toNumber } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -18,6 +18,7 @@ import { emitCloudEvent } from '@/lib/cloud-events'
 import { triggerCashDrawer } from '@/lib/cash-drawer'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+import { CAKE_SETTLEMENT_TYPES } from '@/lib/cake-orders/schemas'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { calculateCharge, type EntertainmentPricing, type OvertimeConfig } from '@/lib/entertainment-pricing'
 import { getLocationTaxRate, recalculatePercentDiscounts, calculateSplitTax } from '@/lib/order-calculations'
@@ -180,8 +181,8 @@ export const POST = withVenue(withTiming(async function POST(
         )
       }
 
-      const amountVal = Number(roomPayment.amount || 0)
-      const tipVal = Number(roomPayment.tipAmount || 0)
+      const amountVal = toNumber(roomPayment.amount || 0)
+      const tipVal = toNumber(roomPayment.tipAmount || 0)
       if (!isFinite(amountVal) || amountVal < 0 || !isFinite(tipVal) || tipVal < 0) {
         return NextResponse.json({ error: 'Invalid payment amount' }, { status: 400 })
       }
@@ -253,7 +254,7 @@ export const POST = withVenue(withTiming(async function POST(
         }
       } catch (err) {
         // Mark attempt FAILED for reconciliation
-        void db.pmsChargeAttempt.update({
+        await db.pmsChargeAttempt.update({
           where: { id: pmsAttempt.id },
           data: {
             status: 'FAILED' as PmsAttemptStatus,
@@ -347,7 +348,7 @@ export const POST = withVenue(withTiming(async function POST(
       ) }
     }
 
-    if (order.total === null || order.total === undefined || isNaN(Number(order.total ?? 0))) {
+    if (order.total === null || order.total === undefined || isNaN(toNumber(order.total ?? 0))) {
       return { earlyReturn: NextResponse.json(
         { error: 'Order has invalid total. Please recalculate the order before payment.' },
         { status: 400 }
@@ -366,10 +367,10 @@ export const POST = withVenue(withTiming(async function POST(
     // Check for $0 order BEFORE Zod validation (Zod requires amount > 0,
     // but voided orders legitimately have $0 total and need to be closed)
     if (order.status !== 'paid' && order.status !== 'closed') {
-      const zeroAlreadyPaid = order.payments
+      const zeroAlreadyPaid = roundToCents(order.payments
         .filter(p => p.status === 'completed')
-        .reduce((sum, p) => sum + Number(p.amount), 0)
-      const zeroRemaining = Number(order.total ?? 0) - zeroAlreadyPaid
+        .reduce((sum, p) => sum + toNumber(p.amount), 0))
+      const zeroRemaining = roundToCents(toNumber(order.total ?? 0) - zeroAlreadyPaid)
       if (zeroRemaining <= 0) {
         await ingestAndProject(tx as any, orderId, order.locationId, [
           { type: 'ORDER_CLOSED', payload: { closedStatus: 'paid' } }
@@ -447,9 +448,9 @@ export const POST = withVenue(withTiming(async function POST(
           alreadyPaid: true,
           orderId,
           paymentId: existingPayment?.id ?? 'already-paid',
-          amount: existingPayment ? Number(existingPayment.amount) : Number(order.total ?? 0),
-          tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
-          totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(order.total ?? 0),
+          amount: existingPayment ? toNumber(existingPayment.amount) : toNumber(order.total ?? 0),
+          tipAmount: existingPayment ? toNumber(existingPayment.tipAmount) : 0,
+          totalAmount: existingPayment ? toNumber(existingPayment.totalAmount) : toNumber(order.total ?? 0),
           paymentMethod: existingPayment?.paymentMethod ?? body.paymentMethod ?? 'cash',
           newOrderBalance: 0,
           orderStatus: order.status,
@@ -491,8 +492,8 @@ export const POST = withVenue(withTiming(async function POST(
         },
         _sum: { totalAmount: true },
       })
-      const existingPaidTotal = Number(allSplitPayments._sum.totalAmount ?? 0)
-      const parentTotal = Number(parentOrder.total)
+      const existingPaidTotal = toNumber(allSplitPayments._sum.totalAmount ?? 0)
+      const parentTotal = toNumber(parentOrder.total)
       const thisSplitPaymentTotal = payments.reduce((sum, p) => sum + p.amount + (p.tipAmount || 0), 0)
       if (existingPaidTotal + thisSplitPaymentTotal > parentTotal + 0.01) {
         return { earlyReturn: NextResponse.json(
@@ -528,7 +529,7 @@ export const POST = withVenue(withTiming(async function POST(
       const payLocSettings = order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } } | null
       const taxRate = getLocationTaxRate(payLocSettings)
       // Prefer order-level snapshot; fall back to location setting with > 0 guard
-      const orderPayInclRate = Number(order.inclusiveTaxRate) || undefined
+      const orderPayInclRate = toNumber(order.inclusiveTaxRate) || undefined
       const payInclRateRaw = payLocSettings?.tax?.inclusiveTaxRate
       const payInclusiveRate = orderPayInclRate
         ?? (payInclRateRaw != null && Number.isFinite(payInclRateRaw) && payInclRateRaw > 0
@@ -555,7 +556,7 @@ export const POST = withVenue(withTiming(async function POST(
           const mi = perMinuteMenuItemMap.get(item.menuItemId)
           if (!mi) continue
 
-          const ratePerMinute = mi.ratePerMinute ? Number(mi.ratePerMinute) : 0
+          const ratePerMinute = mi.ratePerMinute ? toNumber(mi.ratePerMinute) : 0
           if (ratePerMinute <= 0) continue
 
           // Build overtime config if enabled on the menu item
@@ -563,16 +564,16 @@ export const POST = withVenue(withTiming(async function POST(
             ? {
                 enabled: true,
                 mode: (mi.overtimeMode as OvertimeConfig['mode']) || 'multiplier',
-                multiplier: mi.overtimeMultiplier ? Number(mi.overtimeMultiplier) : undefined,
-                perMinuteRate: mi.overtimePerMinuteRate ? Number(mi.overtimePerMinuteRate) : undefined,
-                flatFee: mi.overtimeFlatFee ? Number(mi.overtimeFlatFee) : undefined,
+                multiplier: mi.overtimeMultiplier ? toNumber(mi.overtimeMultiplier) : undefined,
+                perMinuteRate: mi.overtimePerMinuteRate ? toNumber(mi.overtimePerMinuteRate) : undefined,
+                flatFee: mi.overtimeFlatFee ? toNumber(mi.overtimeFlatFee) : undefined,
                 graceMinutes: mi.overtimeGraceMinutes ?? undefined,
               }
             : undefined
 
           const pricing: EntertainmentPricing = {
             ratePerMinute,
-            minimumCharge: mi.minimumCharge ? Number(mi.minimumCharge) : 0,
+            minimumCharge: mi.minimumCharge ? toNumber(mi.minimumCharge) : 0,
             incrementMinutes: mi.incrementMinutes ?? 15,
             graceMinutes: mi.graceMinutes ?? 5,
             overtime: otConfig,
@@ -601,9 +602,10 @@ export const POST = withVenue(withTiming(async function POST(
         })
         let newSubtotal = 0
         for (const ai of activeItems) {
-          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-          newSubtotal += (Number(ai.price) + modTotal) * ai.quantity
+          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + toNumber(m.price), 0)
+          newSubtotal += roundToCents((toNumber(ai.price) + modTotal) * ai.quantity)
         }
+        newSubtotal = roundToCents(newSubtotal)
 
         // Recalculate percent-based discounts against new subtotal (entertainment price changes invalidate them)
         const newDiscountTotal = await recalculatePercentDiscounts(tx, orderId, newSubtotal)
@@ -612,10 +614,12 @@ export const POST = withVenue(withTiming(async function POST(
         // Split-aware tax recalculation after entertainment settlement
         let payInclSub = 0, payExclSub = 0
         for (const ai of activeItems) {
-          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
-          const t = (Number(ai.price) + modTotal) * ai.quantity
+          const modTotal = ai.modifiers.reduce((s: number, m: any) => s + toNumber(m.price), 0)
+          const t = roundToCents((toNumber(ai.price) + modTotal) * ai.quantity)
           if ((ai as any).isTaxInclusive) payInclSub += t; else payExclSub += t
         }
+        payInclSub = roundToCents(payInclSub)
+        payExclSub = roundToCents(payExclSub)
         // Allocate discount proportionally between inclusive and exclusive
         let payDiscIncl = 0, payDiscExcl = 0
         if (effectiveDiscount > 0 && newSubtotal > 0) {
@@ -650,12 +654,12 @@ export const POST = withVenue(withTiming(async function POST(
     // Uses p.amount (pre-tip base), NOT p.totalAmount which includes tips.
     // Tips don't count toward the order balance — using totalAmount would
     // overcount and let orders close with underpaid balances.
-    const alreadyPaid = order.payments
+    const alreadyPaid = roundToCents(order.payments
       .filter(p => p.status === 'completed')
-      .reduce((sum, p) => sum + Number(p.amount), 0)
+      .reduce((sum, p) => sum + toNumber(p.amount), 0))
 
-    const orderTotal = Number(order.total ?? 0)
-    const remaining = orderTotal - alreadyPaid
+    const orderTotal = toNumber(order.total ?? 0)
+    const remaining = roundToCents(orderTotal - alreadyPaid)
 
     // If order total is $0 (e.g., all items voided), close the order without payment
     if (remaining <= 0 && alreadyPaid === 0) {
@@ -726,8 +730,8 @@ export const POST = withVenue(withTiming(async function POST(
     // ── Party-size auto-gratuity ────────────────────────────────────────────
     const autoGratResult = calculateAutoGratuity(settings.autoGratuity, {
       guestCount: order.guestCount,
-      existingTipTotal: Number(order.tipTotal ?? 0),
-      orderSubtotal: Number(order.subtotal ?? order.total ?? 0) - Number(order.tipTotal ?? 0),
+      existingTipTotal: toNumber(order.tipTotal ?? 0),
+      orderSubtotal: roundToCents(toNumber(order.subtotal ?? order.total ?? 0) - toNumber(order.tipTotal ?? 0)),
       payments,
     })
     if (autoGratResult.applied) {
@@ -746,6 +750,7 @@ export const POST = withVenue(withTiming(async function POST(
       'cash', // Resolve for cash (non-cash returns null anyway)
       employeeId || null,
       terminalId,
+      order.locationId,
     )
 
     // Training mode: if order is a training order and suppressPayments is enabled,
@@ -820,7 +825,7 @@ export const POST = withVenue(withTiming(async function POST(
           paymentRecord.priceBeforeDiscount = payment.amount
 
           // Validate: card amount should match expected card price (warn, don't reject)
-          const expectedCardAmount = calculateCardPrice(Number(order.total ?? 0), dualPricing.cashDiscountPercent)
+          const expectedCardAmount = calculateCardPrice(toNumber(order.total ?? 0), dualPricing.cashDiscountPercent)
           if (Math.abs(payment.amount - expectedCardAmount) > 0.01) {
             console.warn(`[DualPricing] Card payment amount $${payment.amount} differs from expected $${expectedCardAmount} for order ${orderId}`)
             // Route through audit log so it shows up in monitoring dashboards
@@ -835,7 +840,7 @@ export const POST = withVenue(withTiming(async function POST(
                   orderNumber: order.orderNumber,
                   submittedAmount: payment.amount,
                   expectedCardAmount,
-                  orderTotal: Number(order.total ?? 0),
+                  orderTotal: toNumber(order.total ?? 0),
                   cashDiscountPercent: dualPricing.cashDiscountPercent,
                   delta: Math.round((payment.amount - expectedCardAmount) * 100) / 100,
                 }),
@@ -849,7 +854,7 @@ export const POST = withVenue(withTiming(async function POST(
         paymentRecord = processCashPayment(
           payment as PaymentInput, paymentRecord as PaymentRecord,
           remaining, alreadyPaidInLoop, settings, dualPricing?.enabled ? dualPricing : undefined,
-          orderId, Number(order.total ?? 0),
+          orderId, toNumber(order.total ?? 0),
         ) as typeof paymentRecord
       } else if (payment.method === 'credit' || payment.method === 'debit') {
         paymentRecord = processCardPayment(
@@ -924,7 +929,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     for (const haItem of haPaymentItems) {
       const haId = (haItem as any).specialNotes!.replace('ha_payment:', '')
-      const haAmount = Number((haItem as any).price) * ((haItem as any).quantity || 1)
+      const haAmount = roundToCents(toNumber((haItem as any).price) * ((haItem as any).quantity || 1))
 
       // Lock and read current balance
       await tx.$queryRawUnsafe(
@@ -933,7 +938,7 @@ export const POST = withVenue(withTiming(async function POST(
       )
       const haAccount = await tx.houseAccount.findUnique({ where: { id: haId } })
       if (haAccount && haAccount.status === 'active') {
-        const currentBal = Number(haAccount.currentBalance)
+        const currentBal = toNumber(haAccount.currentBalance)
         const effectiveAmount = Math.min(haAmount, currentBal)
         if (effectiveAmount > 0) {
           await tx.houseAccount.update({
@@ -959,7 +964,7 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Update order status and tip total
-    const newTipTotal = Number(order.tipTotal ?? 0) + totalTips
+    const newTipTotal = roundToCents(toNumber(order.tipTotal ?? 0) + totalTips)
     const newPaidTotal = alreadyPaid + paymentTotal
 
     // When price rounding is active for cash, the paid amount may be less than orderTotal
@@ -1026,8 +1031,8 @@ export const POST = withVenue(withTiming(async function POST(
     let loyaltyEarningBase = 0
     if (updateData.status === 'paid' && order.customer && settings.loyalty.enabled) {
       loyaltyEarningBase = settings.loyalty.earnOnSubtotal
-        ? Number(order.subtotal ?? 0)
-        : Number(order.total ?? 0)
+        ? toNumber(order.subtotal ?? 0)
+        : toNumber(order.total ?? 0)
       if (settings.loyalty.earnOnTips) {
         loyaltyEarningBase += newTipTotal
       }
@@ -1042,11 +1047,11 @@ export const POST = withVenue(withTiming(async function POST(
     let newAverageTicket: number | null = null
     const shouldUpdateCustomerStats = updateData.status === 'paid' && order.status !== 'paid' && !!order.customer
     if (shouldUpdateCustomerStats) {
-      const currentTotalSpent = Number((order.customer as any).totalSpent ?? 0)
+      const currentTotalSpent = toNumber((order.customer as any).totalSpent ?? 0)
       const currentTotalOrders = (order.customer as any).totalOrders ?? 0
-      const newTotal = currentTotalSpent + Number(order.total ?? 0)
+      const newTotal = roundToCents(currentTotalSpent + toNumber(order.total ?? 0))
       const newOrders = currentTotalOrders + 1
-      newAverageTicket = newTotal / newOrders
+      newAverageTicket = roundToCents(newTotal / newOrders)
     }
 
     // ── Build payment events ──────────────────────────────────────────
@@ -1069,9 +1074,9 @@ export const POST = withVenue(withTiming(async function POST(
         payload: {
           paymentId,
           method: rec.paymentMethod,
-          amountCents: Math.round(Number(rec.amount) * 100),
-          tipCents: Math.round(Number(rec.tipAmount ?? 0) * 100),
-          totalCents: Math.round(Number(rec.totalAmount) * 100),
+          amountCents: Math.round(toNumber(rec.amount) * 100),
+          tipCents: Math.round(toNumber(rec.tipAmount ?? 0) * 100),
+          totalCents: Math.round(toNumber(rec.totalAmount) * 100),
           cardBrand: rec.cardBrand ?? null,
           cardLast4: rec.cardLast4 ?? null,
           status: 'approved',
@@ -1127,9 +1132,9 @@ export const POST = withVenue(withTiming(async function POST(
         alreadyPaid: true,
         orderId,
         paymentId: existingPayment?.id ?? 'already-paid',
-        amount: existingPayment ? Number(existingPayment.amount) : Number(freshOrder?.total ?? 0),
-        tipAmount: existingPayment ? Number(existingPayment.tipAmount) : 0,
-        totalAmount: existingPayment ? Number(existingPayment.totalAmount) : Number(freshOrder?.total ?? 0),
+        amount: existingPayment ? toNumber(existingPayment.amount) : toNumber(freshOrder?.total ?? 0),
+        tipAmount: existingPayment ? toNumber(existingPayment.tipAmount) : 0,
+        totalAmount: existingPayment ? toNumber(existingPayment.totalAmount) : toNumber(freshOrder?.total ?? 0),
         paymentMethod: existingPayment?.paymentMethod ?? 'cash',
         newOrderBalance: 0,
         orderStatus: freshOrder?.status ?? 'paid',
@@ -1209,22 +1214,36 @@ export const POST = withVenue(withTiming(async function POST(
         void db.payment.updateMany({
           where: { id: { in: paymentIds } },
           data: { needsReconciliation: true },
-        }).catch(console.error)
+        }).catch(err => {
+          console.error('[CRITICAL-PAYMENT] Failed to flag payments for reconciliation:', err)
+        })
       }
 
       // Read back full Payment rows from local PG — BridgedPayment is missing
       // NOT NULL columns (locationId, createdAt, updatedAt, processedAt) that
       // would cause constraint violations on Neon replay.
+      // CRITICAL: Outage queue writes are the ONLY path to Neon during outage.
+      // If these fail, payment data is lost from cloud. Retry once.
       const fullPayments = await db.payment.findMany({
         where: { id: { in: paymentIds } }
       })
       for (const fp of fullPayments) {
-        void queueOutageWrite('Payment', fp.id, 'INSERT', fp as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+        void queueOutageWrite('Payment', fp.id, 'INSERT', fp as unknown as Record<string, unknown>, order.locationId).catch(async (err) => {
+          console.error(`[CRITICAL-PAYMENT] Outage queue write failed for Payment ${fp.id}, retrying:`, err)
+          try { await queueOutageWrite('Payment', fp.id, 'INSERT', fp as unknown as Record<string, unknown>, order.locationId) } catch (retryErr) {
+            console.error(`[CRITICAL-PAYMENT] Outage queue write retry FAILED for Payment ${fp.id}:`, retryErr)
+          }
+        })
       }
       // Read back full Order for complete payload (updateData is partial)
       const fullOrder = await db.order.findUnique({ where: { id: orderId } })
       if (fullOrder) {
-        void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+        void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(async (err) => {
+          console.error(`[CRITICAL-PAYMENT] Outage queue write failed for Order ${orderId}, retrying:`, err)
+          try { await queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId) } catch (retryErr) {
+            console.error(`[CRITICAL-PAYMENT] Outage queue write retry FAILED for Order ${orderId}:`, retryErr)
+          }
+        })
       }
     }
 
@@ -1297,7 +1316,7 @@ export const POST = withVenue(withTiming(async function POST(
         where: { id: order.customer.id },
         data: {
           ...(pointsEarned > 0 ? { loyaltyPoints: { increment: pointsEarned } } : {}),
-          totalSpent: { increment: Number(order.total ?? 0) },
+          totalSpent: { increment: toNumber(order.total ?? 0) },
           totalOrders: { increment: 1 },
           lastVisit: new Date(),
           averageTicket: newAverageTicket!,
@@ -1343,28 +1362,42 @@ export const POST = withVenue(withTiming(async function POST(
       }).catch(console.error)
     }
 
-    // Post-ingestion: update fields not in event state (fire-and-forget)
-    if (orderIsPaid) {
-      void db.order.update({
-        where: { id: orderId },
-        data: {
+    // Post-ingestion: update fields not in event state
+    // CRITICAL: These writes update businessDayDate, tipTotal, primaryPaymentMethod.
+    // If they fail, the order record is stale for reports and EOD. Retry once before giving up.
+    const postPaymentOrderUpdate = orderIsPaid
+      ? {
           businessDayDate: businessDayStart,
           primaryPaymentMethod: updateData.primaryPaymentMethod,
           tipTotal: newTipTotal,
-          version: { increment: 1 },
+          version: { increment: 1 } as const,
           lastMutatedBy: paymentMutationOrigin,
-        },
-      }).catch(console.error)
-    } else {
-      void db.order.update({
-        where: { id: orderId },
-        data: {
+        }
+      : {
           tipTotal: newTipTotal,
           ...(updateData.primaryPaymentMethod ? { primaryPaymentMethod: updateData.primaryPaymentMethod } : {}),
           lastMutatedBy: paymentMutationOrigin,
-        },
-      }).catch(console.error)
-    }
+        }
+
+    void db.order.update({ where: { id: orderId }, data: postPaymentOrderUpdate }).catch(async (err) => {
+      console.error('[CRITICAL-PAYMENT] Post-payment order update failed, retrying:', err)
+      try {
+        // Retry without version increment — if the first write committed but timed out,
+        // we don't want to double-increment. The critical fields (businessDayDate, tipTotal,
+        // primaryPaymentMethod) are idempotent, so a duplicate write is safe.
+        const { version: _v, ...retryData } = postPaymentOrderUpdate as any
+        await db.order.update({ where: { id: orderId }, data: { ...retryData, lastMutatedBy: paymentMutationOrigin } })
+      } catch (retryErr) {
+        console.error('[CRITICAL-PAYMENT] Post-payment order update retry FAILED:', retryErr)
+        // Log to error capture so it appears in monitoring dashboard
+        void errorCapture.critical('PAYMENT', 'Post-payment order update failed after retry', {
+          category: 'payment-post-update-error',
+          action: 'Updating order fields after payment',
+          orderId,
+          error: retryErr instanceof Error ? retryErr : undefined,
+        }).catch(() => {})
+      }
+    })
 
     // Dispatch socket events when parent order was auto-closed (after transaction commit)
     if (parentWasMarkedPaid) {
@@ -1406,7 +1439,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Reset entertainment items after payment
       try {
         const entertainmentItems = await db.menuItem.findMany({
-          where: { currentOrderId: orderId, itemType: 'timed_rental' },
+          where: { locationId: order.locationId, currentOrderId: orderId, itemType: 'timed_rental' },
           select: { id: true },
         })
 
@@ -1418,7 +1451,7 @@ export const POST = withVenue(withTiming(async function POST(
           })
 
           await db.menuItem.updateMany({
-            where: { currentOrderId: orderId, itemType: 'timed_rental' },
+            where: { locationId: order.locationId, currentOrderId: orderId, itemType: 'timed_rental' },
             data: {
               entertainmentStatus: 'available',
               currentOrderId: null,
@@ -1429,7 +1462,7 @@ export const POST = withVenue(withTiming(async function POST(
           // Reset FloorPlanElements
           for (const item of entertainmentItems) {
             await db.floorPlanElement.updateMany({
-              where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
+              where: { locationId: order.locationId, linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
               data: {
                 status: 'available',
                 currentOrderId: null,
@@ -1515,14 +1548,14 @@ export const POST = withVenue(withTiming(async function POST(
             const mi = item.menuItem
             if (!mi?.commissionType || !mi?.commissionValue) continue
 
-            const itemTotal = Number(item.itemTotal ?? 0)
+            const itemTotal = toNumber(item.itemTotal ?? 0)
             const qty = item.quantity
-            const val = Number(mi.commissionValue)
+            const val = toNumber(mi.commissionValue)
             const commission = mi.commissionType === 'percent'
-              ? Math.round(itemTotal * val / 100 * 100) / 100
-              : Math.round(val * qty * 100) / 100
+              ? roundToCents(itemTotal * val / 100)
+              : roundToCents(val * qty)
 
-            if (commission !== Number(item.commissionAmount ?? 0)) {
+            if (commission !== toNumber(item.commissionAmount ?? 0)) {
               commissionUpdates.push({ id: item.id, commission })
             }
             recalculatedCommission += commission
@@ -1544,7 +1577,7 @@ export const POST = withVenue(withTiming(async function POST(
             )
           }
 
-          const currentTotal = Number(order.commissionTotal ?? 0)
+          const currentTotal = toNumber(order.commissionTotal ?? 0)
           if (Math.abs(recalculatedCommission - currentTotal) > 0.001) {
             await db.order.update({
               where: { id: orderId },
@@ -1616,7 +1649,7 @@ export const POST = withVenue(withTiming(async function POST(
         })().catch(err => {
           console.error('Background delivery tip allocation failed:', err)
         })
-      } else if (totalTips > 0 && tipOwnerEmployeeId && !isTrainingPayment) {
+      } else if (totalTips > 0 && tipOwnerEmployeeId && !isTrainingPayment && (order as any).orderTypeRef?.allowTips !== false) {
         void allocateTipsForPayment({
           locationId: order.locationId,
           orderId,
@@ -1636,19 +1669,30 @@ export const POST = withVenue(withTiming(async function POST(
         })
       }
 
-      // Reset table status to available (fire-and-forget — don't block payment response)
+      // Release table only if no OTHER open orders remain on it (fire-and-forget)
       if (order.tableId) {
-        void db.table.update({
-          where: { id: order.tableId },
-          data: { status: 'available' },
-        }).then(() => {
-          // Invalidate snapshot cache after table update completes so floor plan gets fresh data
-          invalidateSnapshotCache(order.locationId)
-          // M5: Emit table:status-changed so all terminals update floor plan indicators
-          void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId!, status: 'available' }).catch(console.error)
-        }).catch(err => {
-          console.error('[Pay] Table status reset failed:', err)
-        })
+        void (async () => {
+          try {
+            const otherOpenOrders = await db.order.count({
+              where: {
+                tableId: order.tableId!,
+                id: { not: order.id },
+                status: { in: ['open', 'sent', 'in_progress', 'draft', 'split'] },
+                deletedAt: null,
+              },
+            })
+            if (otherOpenOrders === 0) {
+              await db.table.update({
+                where: { id: order.tableId! },
+                data: { status: 'available' },
+              })
+              invalidateSnapshotCache(order.locationId)
+              void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId!, status: 'available' }).catch(console.error)
+            }
+          } catch (err) {
+            console.error('[Pay] Table status reset failed:', err)
+          }
+        })()
       }
 
       // Clean up temporary seats then dispatch floor plan update
@@ -1665,11 +1709,11 @@ export const POST = withVenue(withTiming(async function POST(
     // Dispatch real-time order totals update (tip changed) — fire-and-forget
     if (totalTips > 0) {
       void dispatchOrderTotalsUpdate(order.locationId, orderId, {
-        subtotal: Number(order.subtotal ?? 0),
-        taxTotal: Number(order.taxTotal ?? 0),
+        subtotal: toNumber(order.subtotal ?? 0),
+        taxTotal: toNumber(order.taxTotal ?? 0),
         tipTotal: newTipTotal,
-        discountTotal: Number(order.discountTotal ?? 0),
-        total: Number(order.total ?? 0),
+        discountTotal: toNumber(order.discountTotal ?? 0),
+        total: toNumber(order.total ?? 0),
       }, { async: true }).catch(err => {
         console.error('Failed to dispatch order totals update:', err)
       })
@@ -1724,7 +1768,7 @@ export const POST = withVenue(withTiming(async function POST(
     if (orderIsPaid) {
       dispatchCFDReceiptSent(order.locationId, null, {
         orderId: order.id,
-        total: Number(order.total ?? 0),
+        total: toNumber(order.total ?? 0),
       })
     }
 
@@ -1738,11 +1782,11 @@ export const POST = withVenue(withTiming(async function POST(
         customerId: order.customerId,
         orderType: order.orderType,
         paidAt: new Date(),
-        subtotal: Number(order.subtotal ?? 0),
-        taxTotal: Number(order.taxTotal ?? 0),
+        subtotal: toNumber(order.subtotal ?? 0),
+        taxTotal: toNumber(order.taxTotal ?? 0),
         tipTotal: newTipTotal,
-        discountTotal: Number(order.discountTotal ?? 0),
-        total: Number(order.total ?? 0),
+        discountTotal: toNumber(order.discountTotal ?? 0),
+        total: toNumber(order.total ?? 0),
         payments: ingestResult.bridgedPayments.map((p: any) => ({
           id: p.id,
           method: p.paymentMethod,
@@ -1771,6 +1815,23 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // Cake settlement post-payment hook (fire-and-forget)
+    if (orderIsPaid && order.orderType && CAKE_SETTLEMENT_TYPES.includes(order.orderType as any)) {
+      void (async () => {
+        try {
+          const { handleCakeSettlementCompletion } = await import('@/lib/cake-orders/cake-payment-service')
+          await handleCakeSettlementCompletion(db, {
+            orderId: order.id,
+            paymentId: ingestResult.bridgedPayments[0]?.id || '',
+            locationId: order.locationId,
+            employeeId: order.employeeId || '',
+          })
+        } catch (err) {
+          console.error('[Pay] Cake settlement completion hook failed:', err)
+        }
+      })()
+    }
+
     // Build receipt data via domain module (eliminates separate /receipt fetch)
     const receiptData = buildReceiptData(order as any, ingestResult.bridgedPayments, pointsEarned, settings as any)
 
@@ -1797,9 +1858,9 @@ export const POST = withVenue(withTiming(async function POST(
         amount: p.amount,
         tipAmount: p.tipAmount,
         totalAmount: p.totalAmount,
-        amountTendered: p.amountTendered ? Number(p.amountTendered) : null,
-        changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
-        roundingAdjustment: p.roundingAdjustment ? Number(p.roundingAdjustment) : null,
+        amountTendered: p.amountTendered ? toNumber(p.amountTendered) : null,
+        changeGiven: p.changeGiven ? toNumber(p.changeGiven) : null,
+        roundingAdjustment: p.roundingAdjustment ? toNumber(p.roundingAdjustment) : null,
         cardBrand: p.cardBrand,
         cardLast4: p.cardLast4,
         authCode: p.authCode,

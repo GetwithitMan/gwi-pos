@@ -854,6 +854,58 @@ export const DEFAULT_CATERING: CateringSettings = {
   maxGuestCount: 500,
 }
 
+export interface CakeOrderingSettings {
+  enabled: boolean
+  allowPublicOrdering: boolean
+  cakeCategoryIds: string[]
+  requireDeposit: boolean
+  depositPercent: number
+  rushFeeAmount: number
+  rushFeeDays: number
+  hardMinimumLeadTimeHours: number
+  minimumLeadTimeHours: number
+  setupFeeAmount: number
+  deliveryEnabled: boolean
+  deliveryFixedFee: number
+  deliveryFeePerMile: number
+  deliveryMaxMiles: number
+  deliveryFeeTaxable: boolean
+  maxCapacityPerDay: number
+  forfeitDaysBefore: number
+  depositForfeitPercent: number
+  lateCancelPolicyText: string
+  quoteExpiryDays: number
+  externalPaymentManagerThreshold: number
+  messageChargeAmount: number
+  wallDisplayToken: string | null
+}
+
+export const DEFAULT_CAKE_ORDERING: CakeOrderingSettings = {
+  enabled: false,
+  allowPublicOrdering: false,
+  cakeCategoryIds: [],
+  requireDeposit: true,
+  depositPercent: 50,
+  rushFeeAmount: 50,
+  rushFeeDays: 3,
+  hardMinimumLeadTimeHours: 24,
+  minimumLeadTimeHours: 72,
+  setupFeeAmount: 0,
+  deliveryEnabled: false,
+  deliveryFixedFee: 0,
+  deliveryFeePerMile: 0,
+  deliveryMaxMiles: 25,
+  deliveryFeeTaxable: false,
+  maxCapacityPerDay: 10,
+  forfeitDaysBefore: 7,
+  depositForfeitPercent: 100,
+  lateCancelPolicyText: 'Deposits are non-refundable for cancellations within 7 days of event date.',
+  quoteExpiryDays: 14,
+  externalPaymentManagerThreshold: 500,
+  messageChargeAmount: 0,
+  wallDisplayToken: null,
+}
+
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
@@ -926,6 +978,7 @@ export interface LocationSettings {
   depositRules?: DepositRules                           // Reservation deposit rules (optional for backward compat)
   reservationTemplates?: ReservationMessageTemplates    // Reservation notification templates (optional for backward compat)
   reservationIntegrations?: ReservationIntegration[]    // Third-party reservation platform integrations (optional for backward compat)
+  cakeOrdering?: CakeOrderingSettings                   // Custom cake ordering module (optional for backward compat)
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -1045,6 +1098,12 @@ export interface DeliverySettings {
   deferredOrdersEnabled: boolean
   maxDeferredDaysAhead: number
 
+  // Driver pickup flow
+  driverScreenEnabled: boolean              // Enable /driver tablet screen at expo
+  driverSelfAssignEnabled: boolean          // Let drivers claim READY orders themselves
+  deliveryPrintOnAssign: boolean            // Auto-print delivery tickets on run creation
+  deliveryPrinterId: string | null          // Printer ID for delivery tickets (null = first receipt printer)
+
   // Driver tips
   driverTipMode: 'driver_keeps_100' | 'pool_with_kitchen' | 'custom_split'
   driverTipSplitPercent: number
@@ -1118,6 +1177,10 @@ export const DEFAULT_DELIVERY: DeliverySettings = {
   proofOfDeliveryMode: 'none',
   deferredOrdersEnabled: false,
   maxDeferredDaysAhead: 7,
+  driverScreenEnabled: false,
+  driverSelfAssignEnabled: false,
+  deliveryPrintOnAssign: false,
+  deliveryPrinterId: null,
   driverTipMode: 'driver_keeps_100',
   driverTipSplitPercent: 80,
   kitchenTipSplitPercent: 20,
@@ -2518,6 +2581,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     reservationIntegrations: Array.isArray(partial.reservationIntegrations)
       ? partial.reservationIntegrations.map(ri => ({ ...DEFAULT_RESERVATION_INTEGRATION, ...ri }))
+      : undefined,
+    cakeOrdering: partial.cakeOrdering
+      ? { ...DEFAULT_CAKE_ORDERING, ...partial.cakeOrdering }
       : undefined,
   }
 }

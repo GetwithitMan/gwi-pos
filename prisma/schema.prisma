@@ -1724,6 +1724,8 @@ model MenuItem {
   // Barcode scanning
   barcodes ItemBarcode[]
 
+  metadata  Json?  // Cake builder config (quickPick, capacityWeight, defaultTiers), future extensibility
+
   @@unique([locationId, sku])
   // @@index([locationId]) — removed: redundant with compound indexes below
   @@index([categoryId])
@@ -1755,7 +1757,8 @@ model ModifierGroup {
   minSelections Int     @default(0)
   maxSelections Int     @default(1)
   isRequired    Boolean @default(false)
-  allowStacking Boolean @default(false) // Allow selecting the same modifier multiple times
+  allowStacking    Boolean @default(false) // Allow selecting the same modifier multiple times
+  stackDisplayMode String  @default("individual") // "individual" = separate lines, "combined" = "Ranch ×3"
 
   // Tiered pricing: define pricing tiers based on selection count
   // mode: "flat_tiers" = all selections use tier price, "free_threshold" = first N free then use modifier's own price
@@ -1798,6 +1801,8 @@ model ModifierGroup {
 
   // Liquor Builder - Spirit configuration
   spiritConfig SpiritModifierGroup?
+
+  metadata  Json?  // cakeGroupType (flavor/filling/frosting/decoration/dietary), future extensibility
 
   @@index([locationId])
   @@index([menuItemId])
@@ -1909,6 +1914,8 @@ model Modifier {
 
   // C-SCHEMA-1: Reverse relations (batch 2)
   ingredientSwaps OrderItemIngredient[] @relation("IngredientSwapModifier")
+
+  metadata  Json?  // perTier flag, requiredIngredients for stock tracking, future extensibility
 
   @@unique([modifierGroupId, name])
   @@index([locationId])
@@ -2298,6 +2305,7 @@ model OrderType {
   sortOrder   Int     @default(0)
   isActive    Boolean @default(true)
   isSystem    Boolean @default(false) // True for built-in types (dine_in, bar_tab, takeout)
+  allowTips  Boolean  @default(true)  // false for cake_deposit_settlement, true for cake_balance_settlement
 
   // JSON Configuration Fields
   // Required fields: { "tableId": true, "tabName": true, "phone": true }
@@ -2486,6 +2494,8 @@ model Order {
   // HA cellular sync — mutation origin tracking
   lastMutatedBy    String? // 'cloud' | 'local' | null
   originTerminalId String?
+
+  metadata  Json?  // Settlement order linkage: { cakeOrderId, appliedTo }. Extensible.
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2722,8 +2732,9 @@ model OrderItemModifier {
   // Snapshot at time of sale
   name        String
   price       Decimal // Actual price charged (may differ from item price if discounted)
-  preModifier String? // "no", "lite", "extra", "side"
-  depth       Int     @default(0) // Modifier hierarchy depth: 0=top, 1=child, 2=grandchild
+  preModifier      String? // "no", "lite", "extra", "side"
+  depth            Int     @default(0) // Modifier hierarchy depth: 0=top, 1=child, 2=grandchild
+  stackDisplayMode String  @default("individual") // Snapshot from ModifierGroup: "individual" or "combined"
 
   quantity Int @default(1)
 

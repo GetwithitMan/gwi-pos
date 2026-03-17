@@ -187,6 +187,18 @@ export const PERMISSIONS = {
   DELIVERY_AUDIT: 'delivery.audit',
   DELIVERY_EXCEPTIONS: 'delivery.exceptions',
   DELIVERY_POLICY_OVERRIDE: 'delivery.policy_override',
+  DELIVERY_SELF_ASSIGN: 'delivery.self_assign',
+
+  // === CAKE ORDERING ===
+  CAKE_VIEW: 'cake.view',
+  CAKE_CREATE: 'cake.create',
+  CAKE_EDIT: 'cake.edit',
+  CAKE_QUOTE: 'cake.quote',
+  CAKE_QUOTE_APPROVE: 'cake.quote_approve',
+  CAKE_PAYMENT: 'cake.payment',
+  CAKE_PAYMENT_EXTERNAL: 'cake.payment_external',
+  CAKE_CANCEL: 'cake.cancel',
+  CAKE_SETTINGS: 'cake.settings',
 
   // === ADMIN LEVELS ===
   ADMIN: 'admin',

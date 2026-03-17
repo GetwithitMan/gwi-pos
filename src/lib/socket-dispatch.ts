@@ -1072,6 +1072,47 @@ export async function dispatchOrderItemAdded(
 }
 
 /**
+ * Dispatch order item removed event
+ *
+ * Called after an item is soft-deleted from an order.
+ * Notifies all terminals so they can remove the item from their local state.
+ */
+export async function dispatchOrderItemRemoved(
+  locationId: string,
+  orderId: string,
+  itemId: string
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'order:item-removed', { orderId, itemId })
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch order:item-removed:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch order item updated event
+ *
+ * Called after an item's properties change (quantity, notes, seat, course, etc.).
+ * Notifies all terminals with the changed fields so they can update local state.
+ */
+export async function dispatchOrderItemUpdated(
+  locationId: string,
+  orderId: string,
+  itemId: string,
+  changes: Record<string, unknown>
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'order:item-updated', { orderId, itemId, changes })
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch order:item-updated:', error)
+    return false
+  }
+}
+
+/**
  * Dispatch tip group update event (Skill 252)
  *
  * Called when tip group membership changes, group created/closed, etc.
@@ -1348,11 +1389,31 @@ export interface OrderSummaryPayload {
   locationId: string
 }
 
+/** Minimal order shape required by buildOrderSummary (Prisma result or equivalent) */
+interface BuildOrderSummaryInput {
+  id: string
+  orderNumber: number
+  status: string
+  tableId?: string | null
+  table?: { name: string } | null
+  tabName?: string | null
+  guestCount?: number
+  employeeId?: string | null
+  subtotal: number | string | { toNumber?: () => number }
+  taxTotal: number | string | { toNumber?: () => number }
+  discountTotal: number | string | { toNumber?: () => number }
+  tipTotal: number | string | { toNumber?: () => number }
+  total: number | string | { toNumber?: () => number }
+  itemCount?: number
+  updatedAt?: Date | string | null
+  locationId: string
+}
+
 /**
  * Build an OrderSummaryPayload from a Prisma order object.
  * Accepts any shape that has the required fields (Order, updatedOrder, etc.)
  */
-export function buildOrderSummary(order: any): OrderSummaryPayload {
+export function buildOrderSummary(order: BuildOrderSummaryInput): OrderSummaryPayload {
   return {
     orderId: order.id,
     orderNumber: order.orderNumber,
@@ -1842,4 +1903,97 @@ export async function dispatchReservationChanged(
   }
 
   return doEmit()
+}
+
+/**
+ * Dispatch payment:voided event
+ *
+ * Called after a payment is successfully voided. Notifies all terminals
+ * so they can update UI (remove payment badge, refresh order totals, etc.).
+ */
+export async function dispatchPaymentVoided(
+  locationId: string,
+  data: { orderId: string; paymentId: string }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'payment:voided', data)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch payment:voided:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch payment:refunded event
+ *
+ * Called after a payment is successfully refunded. Notifies all terminals
+ * so they can update UI (show refund indicator, refresh order totals, etc.).
+ */
+export async function dispatchPaymentRefunded(
+  locationId: string,
+  data: { orderId: string; paymentId: string; amount: number }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'payment:refunded', data)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch payment:refunded:', error)
+    return false
+  }
+}
+
+// ── Cake Order Dispatch ─────────────────────────────────────────────────────
+
+/**
+ * Dispatch cake-orders:new event
+ *
+ * Called when a new cake order is created (admin or public form).
+ * Triggers auto-refresh on the cake orders list page.
+ */
+export async function dispatchCakeOrderNew(
+  locationId: string,
+  payload: { cakeOrderId: string; customerName: string; eventDate: string; source: string }
+): Promise<void> {
+  try {
+    await emitToLocation(locationId, 'cake-orders:new', payload)
+    await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
+  } catch (err) {
+    console.error('[SocketDispatch] cake-orders:new failed:', err)
+  }
+}
+
+/**
+ * Dispatch cake-orders:updated event
+ *
+ * Called on any cake order mutation: field update, status transition,
+ * quote created/approved, payment recorded.
+ * Triggers auto-refresh on both the detail and list pages.
+ */
+export async function dispatchCakeOrderUpdated(
+  locationId: string,
+  payload: { cakeOrderId: string; status: string; changeType: string }
+): Promise<void> {
+  try {
+    await emitToLocation(locationId, 'cake-orders:updated', payload)
+    await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
+  } catch (err) {
+    console.error('[SocketDispatch] cake-orders:updated failed:', err)
+  }
+}
+
+/**
+ * Dispatch cake-orders:list-changed event (standalone)
+ *
+ * Lightweight signal for any cake order list mutation that doesn't
+ * warrant a specific new/updated event (e.g. bulk operations, deletes).
+ */
+export async function dispatchCakeOrdersListChanged(
+  locationId: string
+): Promise<void> {
+  try {
+    await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
+  } catch (err) {
+    console.error('[SocketDispatch] cake-orders:list-changed failed:', err)
+  }
 }

@@ -219,6 +219,12 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   // ── Bottle Service + Online Ordering (NUC → Neon) ───────────────────
   BottleServiceTier:      { direction: 'upstream', owner: 'nuc', priority: 122, batchSize: 50 },
 
+  // ── Cake Orders (bidirectional + upstream) ─────────────────────────
+  CakeOrder:              { direction: 'bidirectional', owner: 'both', priority: 123, batchSize: 100 },
+  CakeQuote:              { direction: 'bidirectional', owner: 'both', priority: 124, batchSize: 100 },
+  CakePayment:            { direction: 'upstream', owner: 'nuc', priority: 125, batchSize: 100 },
+  CakeOrderChange:        { direction: 'upstream', owner: 'nuc', priority: 126, batchSize: 200 },
+
   // ── Misc Config (downstream — cloud-owned) ─────────────────────────
   ReasonAccess:           { direction: 'downstream', owner: 'cloud', priority: 70, batchSize: 50 },
   QuickBarPreference:     { direction: 'downstream', owner: 'cloud', priority: 71, batchSize: 50 },
@@ -287,7 +293,7 @@ export const UPSTREAM_INTERVAL_MS = parseInt(
 )
 
 export const DOWNSTREAM_INTERVAL_MS = parseInt(
-  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '5000',
+  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '2000',
   10
 )
 

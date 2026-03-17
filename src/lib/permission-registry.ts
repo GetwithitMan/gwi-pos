@@ -1577,6 +1577,132 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
     risk: 'HIGH',
     recommendedFor: ['Manager', 'Owner'],
   },
+  'delivery.self_assign': {
+    label: 'Self-Assign Deliveries',
+    description: 'Lets this driver claim ready-for-pickup orders from the driver pickup screen.',
+    details: [
+      'Driver can view READY orders on the /driver tablet screen',
+      'Can select one or more orders and create a delivery run',
+      'Still respects all dispatch policy gates (max per run, zone validation, suspended check)',
+      'Requires driverSelfAssignEnabled to be ON in delivery settings',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH'],
+    risk: 'LOW',
+    recommendedFor: ['Driver'],
+  },
+
+  // =========================================================================
+  // CAKE ORDERING — SHIFT_SERVICE + BUSINESS_SETUP
+  // =========================================================================
+  'cake.view': {
+    label: 'View Cake Orders',
+    description: 'Lets this employee view custom cake orders, quotes, and their statuses.',
+    details: [
+      'Can see the cake orders list and individual order details',
+      'Can view quote amounts, deposit status, and production notes',
+      'Required for any cake module access — other cake permissions depend on this',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'BOH', 'ADMIN'],
+    risk: 'LOW',
+  },
+  'cake.create': {
+    label: 'Create Cake Orders',
+    description: 'Lets this employee create new custom cake orders from the POS or walk-in intake.',
+    details: [
+      'Can start a new cake order using the cake builder wizard',
+      'Can attach customer information and delivery/pickup preferences',
+      'Created orders start in QUOTE or DRAFT status depending on workflow',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'LOW',
+  },
+  'cake.edit': {
+    label: 'Edit Cake Order Details',
+    description: 'Lets this employee modify existing cake order details such as flavors, decorations, and dates.',
+    details: [
+      'Can change cake options, sizes, flavors, and custom instructions',
+      'Can update pickup/delivery dates and customer contact info',
+      'Cannot change pricing or approve quotes — those require separate permissions',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+  },
+  'cake.quote': {
+    label: 'Create & Manage Quotes',
+    description: 'Lets this employee generate price quotes for custom cake orders and send them to customers.',
+    details: [
+      'Can calculate and generate quotes based on cake configuration',
+      'Can send quotes to customers via SMS or email',
+      'Can re-quote if order details change before approval',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'MED',
+  },
+  'cake.quote_approve': {
+    label: 'Approve Quotes',
+    description: 'Lets this employee approve cake order quotes, locking in the price and moving the order forward.',
+    details: [
+      'Can approve or reject pending quotes',
+      'Approval locks the quoted price and triggers deposit request if required',
+      'Typically restricted to managers or owners to control pricing commitments',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+  },
+  'cake.payment': {
+    label: 'Process Cake Payments',
+    description: 'Lets this employee collect deposits and final payments on cake orders.',
+    details: [
+      'Can process deposit payments (card, cash, text-to-pay)',
+      'Can collect remaining balance at pickup or delivery',
+      'All payments flow through the standard Datacap pipeline',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'HIGH',
+  },
+  'cake.payment_external': {
+    label: 'Record External Payments',
+    description: 'Lets this employee record payments received outside the POS (checks, wire transfers, third-party apps).',
+    details: [
+      'Can mark deposits or balances as paid via external method',
+      'External payments are logged in the audit trail with method and reference',
+      'Gated by externalPaymentManagerThreshold setting for large amounts',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+  },
+  'cake.cancel': {
+    label: 'Cancel Cake Orders',
+    description: 'Lets this employee cancel cake orders and process deposit forfeitures according to policy.',
+    details: [
+      'Can cancel orders at any stage of the workflow',
+      'Deposit forfeiture is calculated based on forfeitDaysBefore and depositForfeitPercent settings',
+      'Cancellations are permanent and logged in the audit trail',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+  },
+  'cake.settings': {
+    label: 'Configure Cake Module',
+    description: 'Lets this employee configure the cake ordering module settings including pricing, lead times, and policies.',
+    details: [
+      'Can enable/disable the cake module and public ordering',
+      'Can configure deposit percentages, rush fees, delivery fees, and capacity limits',
+      'Can edit cancellation policies and quote expiration rules',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+  },
 
   // =========================================================================
   // ADMIN FLAGS — BUSINESS_SETUP
