@@ -103,11 +103,13 @@ export const GET = withVenue(async function GET(
       (cashData.totalCashCollectedCents ?? 0) - (cashData.totalCashDroppedCents ?? 0)
 
     // Proof compliance % — orders requiring proof vs orders with proof uploaded
+    // Proof data lives in DeliveryProofOfDelivery table, not on DeliveryOrder columns
     const proofStats: any[] = await db.$queryRawUnsafe(`
       SELECT
-        COUNT(*)::int as "totalRequiringProof",
-        COUNT(*) FILTER (WHERE dord."proofPhotoKey" IS NOT NULL OR dord."proofSignatureKey" IS NOT NULL)::int as "proofProvided"
+        COUNT(*) FILTER (WHERE dord."proofMode" IS NOT NULL AND dord."proofMode" != 'none')::int as "totalRequiringProof",
+        COUNT(DISTINCT pod."deliveryOrderId") FILTER (WHERE pod."id" IS NOT NULL)::int as "proofProvided"
       FROM "DeliveryOrder" dord
+      LEFT JOIN "DeliveryProofOfDelivery" pod ON pod."deliveryOrderId" = dord."id" AND pod."deletedAt" IS NULL
       WHERE dord."driverId" = $1
         AND dord."locationId" = $2
         AND dord."status" = 'delivered'
