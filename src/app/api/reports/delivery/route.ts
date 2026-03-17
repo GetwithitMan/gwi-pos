@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { getLocationId } from '@/lib/location-cache'
+import { getLocationId, getLocationSettings } from '@/lib/location-cache'
+import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
@@ -88,8 +89,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       : 0
 
     // ── Cash Variance Total ─────────────────────────────────────────────────────
+    // Variance = cashCollected - cashDropped - startingBank (net cash the driver still holds)
     const varianceRows: any[] = await db.$queryRawUnsafe(`
-      SELECT COALESCE(SUM("cashCollectedCents" - "cashExpectedCents"), 0)::int as "totalVarianceCents"
+      SELECT COALESCE(SUM("cashCollectedCents" - "cashDroppedCents" - "startingBankCents"), 0)::int as "totalVarianceCents"
       FROM "DeliveryDriverSession"
       WHERE "locationId" = $1
         AND "startedAt" >= $2
@@ -205,11 +207,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }))
 
     // ── Cost Per Delivery ───────────────────────────────────────────────────────
-    // Sum of mileage cost + per-delivery pay from driver sessions in the period
+    // Computed from shiftMileage * mileageReimbursementRate + deliveryCount * perDeliveryPayAmount
+    // These rates come from location settings (not stored on the session row).
     const costRows: any[] = await db.$queryRawUnsafe(`
       SELECT
-        COALESCE(SUM(ds."totalMileageCostCents"), 0)::int as "totalMileageCostCents",
-        COALESCE(SUM(ds."totalDeliveryPayCents"), 0)::int as "totalDeliveryPayCents"
+        COALESCE(SUM(ds."shiftMileage"), 0)::float as "totalMileage",
+        COALESCE(SUM(ds."deliveryCount"), 0)::int as "totalSessionDeliveries"
       FROM "DeliveryDriverSession" ds
       WHERE ds."locationId" = $1
         AND ds."startedAt" >= $2
@@ -217,7 +220,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         AND ds."endedAt" IS NOT NULL
     `, locationId, startDate, endDate)
 
-    const totalCostCents = (costRows[0]?.totalMileageCostCents || 0) + (costRows[0]?.totalDeliveryPayCents || 0)
+    const rawSettings = await getLocationSettings(locationId)
+    const settings = mergeWithDefaults(rawSettings as any)
+    const deliveryConfig = settings.delivery ?? DEFAULT_DELIVERY
+    const mileageRate = deliveryConfig.mileageReimbursementRate ?? 0.70   // dollars per mile
+    const perDeliveryPay = deliveryConfig.perDeliveryPayAmount ?? 3.00    // dollars per delivery
+
+    const totalMileage = costRows[0]?.totalMileage || 0
+    const totalSessionDeliveries = costRows[0]?.totalSessionDeliveries || 0
+    const totalMileageCostCents = Math.round(totalMileage * mileageRate * 100)
+    const totalDeliveryPayCents = Math.round(totalSessionDeliveries * perDeliveryPay * 100)
+    const totalCostCents = totalMileageCostCents + totalDeliveryPayCents
     const costPerDelivery = completedCount > 0
       ? Math.round(totalCostCents / completedCount) / 100
       : 0

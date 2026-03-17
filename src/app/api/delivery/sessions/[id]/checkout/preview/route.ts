@@ -54,21 +54,21 @@ export const GET = withVenue(async function GET(
       SELECT
         COUNT(*)::int as "deliveryCount",
         COALESCE(SUM(
-          CASE WHEN do."paymentMethod" = 'cash'
-          THEN ROUND(do."orderTotal" * 100)::int
+          CASE WHEN dord."paymentMethod" = 'cash'
+          THEN ROUND(dord."orderTotal" * 100)::int
           ELSE 0 END
         ), 0)::int as "expectedCashCents",
         COALESCE(SUM(
-          CASE WHEN do."tipAmount" IS NOT NULL
-          THEN ROUND(do."tipAmount" * 100)::int
+          CASE WHEN dord."tipAmount" IS NOT NULL
+          THEN ROUND(dord."tipAmount" * 100)::int
           ELSE 0 END
         ), 0)::int as "estimatedTipsCents"
-      FROM "DeliveryOrder" do
-      WHERE do."driverId" = $1
-        AND do."locationId" = $2
-        AND do."status" = 'delivered'
-        AND do."deliveredAt" >= $3
-        AND do."deliveredAt" <= CURRENT_TIMESTAMP
+      FROM "DeliveryOrder" dord
+      WHERE dord."driverId" = $1
+        AND dord."locationId" = $2
+        AND dord."status" = 'delivered'
+        AND dord."deliveredAt" >= $3
+        AND dord."deliveredAt" <= CURRENT_TIMESTAMP
     `, session.employeeId, locationId, session.startedAt)
 
     const stats = deliveryStats[0] || {}

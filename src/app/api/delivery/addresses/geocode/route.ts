@@ -53,7 +53,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         AND "deletedAt" IS NULL
         AND "isActive" = true
         AND "zoneType" = 'zipcode'
-        AND "zipCodes"::jsonb ? $2
+        AND $2 = ANY("zipCodes")
       LIMIT 1
     `, locationId, zipCode.trim())
 

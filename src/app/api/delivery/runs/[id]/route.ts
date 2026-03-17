@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(
     // Fetch run with driver info
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT r.*,
-             dd."vehicleInfo", dd."isSuspended", dd."employeeId" as "driverEmployeeId",
+             dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate", dd."isSuspended", dd."employeeId" as "driverEmployeeId",
              e."firstName" as "driverFirstName", e."lastName" as "driverLastName", e."phone" as "driverPhone"
       FROM "DeliveryRun" r
       LEFT JOIN "DeliveryDriver" dd ON dd.id = r."driverId"
@@ -78,7 +78,11 @@ export const GET = withVenue(async function GET(
               employeeId: run.driverEmployeeId,
               name: `${run.driverFirstName} ${run.driverLastName}`.trim(),
               phone: run.driverPhone,
-              vehicleInfo: run.vehicleInfo,
+              vehicleType: run.vehicleType,
+              vehicleMake: run.vehicleMake,
+              vehicleModel: run.vehicleModel,
+              vehicleColor: run.vehicleColor,
+              licensePlate: run.licensePlate,
               isSuspended: run.isSuspended,
             }
           : null,
@@ -230,7 +234,7 @@ export const PUT = withVenue(async function PUT(
     // Fetch the updated run
     const updatedRows: any[] = await db.$queryRawUnsafe(
       `SELECT r.*,
-              dd."vehicleInfo", dd."isSuspended",
+              dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate", dd."isSuspended",
               e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
        FROM "DeliveryRun" r
        LEFT JOIN "DeliveryDriver" dd ON dd.id = r."driverId"

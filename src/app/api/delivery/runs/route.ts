@@ -70,7 +70,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const rows: any[] = await db.$queryRawUnsafe(`
       SELECT r.*,
-             dd."vehicleInfo", dd."isSuspended",
+             dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate", dd."isSuspended",
              e."firstName" as "driverFirstName", e."lastName" as "driverLastName",
              (
                SELECT COUNT(*)::int

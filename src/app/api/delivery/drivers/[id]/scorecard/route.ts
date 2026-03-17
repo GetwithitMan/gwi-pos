@@ -59,23 +59,23 @@ export const GET = withVenue(async function GET(
     const deliveryStats: any[] = await db.$queryRawUnsafe(`
       SELECT
         COUNT(*)::int as "totalDeliveries",
-        COUNT(*) FILTER (WHERE do."status" = 'delivered')::int as "completedDeliveries",
+        COUNT(*) FILTER (WHERE dord."status" = 'delivered')::int as "completedDeliveries",
         COUNT(*) FILTER (
-          WHERE do."status" = 'delivered'
-            AND do."deliveredAt" IS NOT NULL
-            AND do."createdAt" IS NOT NULL
-            AND EXTRACT(EPOCH FROM (do."deliveredAt" - do."createdAt")) / 60 <= do."estimatedMinutes"
+          WHERE dord."status" = 'delivered'
+            AND dord."deliveredAt" IS NOT NULL
+            AND dord."createdAt" IS NOT NULL
+            AND EXTRACT(EPOCH FROM (dord."deliveredAt" - dord."createdAt")) / 60 <= dord."estimatedMinutes"
         )::int as "onTimeDeliveries",
         ROUND(AVG(
-          CASE WHEN do."status" = 'delivered' AND do."deliveredAt" IS NOT NULL AND do."dispatchedAt" IS NOT NULL
-          THEN EXTRACT(EPOCH FROM (do."deliveredAt" - do."dispatchedAt")) / 60
+          CASE WHEN dord."status" = 'delivered' AND dord."deliveredAt" IS NOT NULL AND dord."dispatchedAt" IS NOT NULL
+          THEN EXTRACT(EPOCH FROM (dord."deliveredAt" - dord."dispatchedAt")) / 60
           END
         )::numeric, 1) as "avgDoorToDoorMinutes"
-      FROM "DeliveryOrder" do
-      WHERE do."driverId" = $1
-        AND do."locationId" = $2
-        AND do."createdAt" >= $3
-        AND do."createdAt" <= $4
+      FROM "DeliveryOrder" dord
+      WHERE dord."driverId" = $1
+        AND dord."locationId" = $2
+        AND dord."createdAt" >= $3
+        AND dord."createdAt" <= $4
     `, driver.employeeId, locationId, dateFrom, dateTo)
 
     const stats = deliveryStats[0] || {}
@@ -106,13 +106,13 @@ export const GET = withVenue(async function GET(
     const proofStats: any[] = await db.$queryRawUnsafe(`
       SELECT
         COUNT(*)::int as "totalRequiringProof",
-        COUNT(*) FILTER (WHERE do."proofPhotoKey" IS NOT NULL OR do."proofSignatureKey" IS NOT NULL)::int as "proofProvided"
-      FROM "DeliveryOrder" do
-      WHERE do."driverId" = $1
-        AND do."locationId" = $2
-        AND do."status" = 'delivered'
-        AND do."createdAt" >= $3
-        AND do."createdAt" <= $4
+        COUNT(*) FILTER (WHERE dord."proofPhotoKey" IS NOT NULL OR dord."proofSignatureKey" IS NOT NULL)::int as "proofProvided"
+      FROM "DeliveryOrder" dord
+      WHERE dord."driverId" = $1
+        AND dord."locationId" = $2
+        AND dord."status" = 'delivered'
+        AND dord."createdAt" >= $3
+        AND dord."createdAt" <= $4
     `, driver.employeeId, locationId, dateFrom, dateTo)
 
     const proofData = proofStats[0] || {}

@@ -72,7 +72,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // 2. Active runs with driver info
       db.$queryRawUnsafe<any[]>(`
         SELECT r.*,
-               dd."vehicleInfo",
+               dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate",
                e."firstName" as "driverFirstName", e."lastName" as "driverLastName",
                (
                  SELECT COUNT(*)::int
@@ -90,7 +90,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // 3. Active driver sessions with last GPS
       db.$queryRawUnsafe<any[]>(`
         SELECT ds.*,
-               dd."vehicleInfo",
+               dd."vehicleType", dd."vehicleMake", dd."vehicleModel", dd."vehicleColor", dd."licensePlate",
                e."firstName" as "driverFirstName", e."lastName" as "driverLastName"
         FROM "DeliveryDriverSession" ds
         JOIN "DeliveryDriver" dd ON dd.id = ds."driverId"

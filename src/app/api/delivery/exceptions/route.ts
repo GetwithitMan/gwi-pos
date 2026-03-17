@@ -241,12 +241,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       INSERT INTO "DeliveryException" (
         "id", "locationId", "type", "severity", "status",
         "deliveryOrderId", "runId", "driverId",
-        "description", "createdBy", "createdAt", "updatedAt"
+        "description", "createdAt", "updatedAt"
       )
       VALUES (
         gen_random_uuid()::text, $1, $2, $3, 'open',
         $4, $5, $6,
-        $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
     `,
@@ -257,7 +257,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       runId || null,
       driverId || null,
       description.trim(),
-      auth.employee.id,
     )
 
     if (!inserted.length) {

@@ -230,8 +230,8 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (zipCodes !== undefined) {
-      updates.push(`"zipCodes" = $${paramIdx}::jsonb`)
-      updateParams.push(zipCodes != null ? JSON.stringify(zipCodes) : null)
+      updates.push(`"zipCodes" = $${paramIdx}::text[]`)
+      updateParams.push(zipCodes != null ? zipCodes : null)
       paramIdx++
     }
 

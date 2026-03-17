@@ -187,8 +187,8 @@ export const PUT = withVenue(async function PUT(
     }
 
     if (preferredZoneIds !== undefined) {
-      updates.push(`"preferredZoneIds" = $${paramIdx}::jsonb`)
-      updateParams.push(preferredZoneIds ? JSON.stringify(preferredZoneIds) : null)
+      updates.push(`"preferredZoneIds" = $${paramIdx}::text[]`)
+      updateParams.push(preferredZoneIds?.length ? `{${preferredZoneIds.join(',')}}` : null)
       paramIdx++
     }
 

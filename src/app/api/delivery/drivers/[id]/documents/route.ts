@@ -118,14 +118,15 @@ export const POST = withVenue(async function POST(
     // Insert document
     const inserted: any[] = await db.$queryRawUnsafe(`
       INSERT INTO "DeliveryDriverDocument" (
-        "id", "driverId", "documentType", "documentNumber",
+        "id", "locationId", "driverId", "documentType", "documentNumber",
         "expiresAt", "storageKey", "notes", "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6,
+        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7,
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
     `,
+      locationId,
       driverId,
       documentType,
       documentNumber?.trim() || null,

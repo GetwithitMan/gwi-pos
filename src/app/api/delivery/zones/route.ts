@@ -181,7 +181,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         gen_random_uuid()::text, $1, $2, $3, $4, $5,
         $6, $7, $8,
         $9, $10, $11,
-        $12::jsonb, $13::jsonb,
+        $12::jsonb, $13::text[],
         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
@@ -198,7 +198,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       zoneType === 'radius' ? Number(centerLng) : null,
       zoneType === 'radius' ? Number(radiusMiles) : null,
       zoneType === 'polygon' ? JSON.stringify(polygonJson) : null,
-      zoneType === 'zipcode' ? JSON.stringify(zipCodes) : null,
+      zoneType === 'zipcode' ? zipCodes : null,
     )
 
     const zone = inserted[0]

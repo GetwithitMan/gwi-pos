@@ -156,7 +156,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         "vehicleColor", "licensePlate", "mileageRateOverride", "preferredZoneIds",
         "isActive", "isSuspended", "createdAt", "updatedAt"
       ) VALUES (
-        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb,
+        gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7, $8, $9::text[],
         true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       )
       RETURNING *
@@ -169,7 +169,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       vehicleColor?.trim() || null,
       licensePlate?.trim() || null,
       mileageRateOverride != null ? Number(mileageRateOverride) : null,
-      preferredZoneIds ? JSON.stringify(preferredZoneIds) : null,
+      preferredZoneIds?.length ? `{${preferredZoneIds.join(',')}}` : null,
     )
 
     return NextResponse.json({ driver: inserted[0] }, { status: 201 })

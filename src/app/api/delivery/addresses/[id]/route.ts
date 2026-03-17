@@ -175,7 +175,7 @@ export const PUT = withVenue(async function PUT(
             AND "deletedAt" IS NULL
             AND "isActive" = true
             AND "zoneType" = 'zipcode'
-            AND "zipCodes"::jsonb ? $2
+            AND $2 = ANY("zipCodes")
           LIMIT 1
         `, locationId, effectiveZip)
 
