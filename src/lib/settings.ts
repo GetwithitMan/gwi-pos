@@ -906,6 +906,31 @@ export const DEFAULT_CAKE_ORDERING: CakeOrderingSettings = {
   wallDisplayToken: null,
 }
 
+// ─── Venue Portal Settings ──────────────────────────────────────────────────
+
+export interface VenuePortalSettings {
+  enabled: boolean
+  slug: string
+  customDomain?: string
+  brandColor: string
+  brandColorSecondary?: string
+  logoUrl?: string
+  bannerUrl?: string
+  tagline?: string
+  rewardsPageEnabled: boolean
+  orderHistoryEnabled: boolean
+  cakeOrderingOnPortal: boolean
+}
+
+export const DEFAULT_VENUE_PORTAL: VenuePortalSettings = {
+  enabled: false,
+  slug: '',
+  brandColor: '#3B82F6',
+  rewardsPageEnabled: false,
+  orderHistoryEnabled: false,
+  cakeOrderingOnPortal: false,
+}
+
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
@@ -979,6 +1004,7 @@ export interface LocationSettings {
   reservationTemplates?: ReservationMessageTemplates    // Reservation notification templates (optional for backward compat)
   reservationIntegrations?: ReservationIntegration[]    // Third-party reservation platform integrations (optional for backward compat)
   cakeOrdering?: CakeOrderingSettings                   // Custom cake ordering module (optional for backward compat)
+  venuePortal?: VenuePortalSettings                     // Customer-facing portal (branding, rewards, order history) (optional for backward compat)
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -2584,6 +2610,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     cakeOrdering: partial.cakeOrdering
       ? { ...DEFAULT_CAKE_ORDERING, ...partial.cakeOrdering }
+      : undefined,
+    venuePortal: partial.venuePortal
+      ? { ...DEFAULT_VENUE_PORTAL, ...partial.venuePortal }
       : undefined,
   }
 }
