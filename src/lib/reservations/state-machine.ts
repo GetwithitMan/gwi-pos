@@ -46,6 +46,7 @@ export type SourceType = typeof SOURCE_TYPES[number]
 interface TransitionRule {
   requireStaff?: boolean
   requireReason?: boolean
+  requireOverride?: boolean
   eventType: EventType
   /** For guest cancellations: check cancellationCutoffHours */
   checkCutoff?: boolean
@@ -129,7 +130,7 @@ export async function transition(params: {
     )
   }
 
-  if ((rule as any).requireOverride && !overrideType) {
+  if (rule.requireOverride && !overrideType) {
     throw new TransitionError(
       `Override type required for ${from} → ${to}`,
       'OVERRIDE_REQUIRED'

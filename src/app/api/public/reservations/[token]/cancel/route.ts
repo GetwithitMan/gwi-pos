@@ -7,6 +7,7 @@ import { transition } from '@/lib/reservations/state-machine'
 import { calculateRefund } from '@/lib/reservations/deposit-rules'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 
 export const dynamic = 'force-dynamic'
 
@@ -154,6 +155,11 @@ export const POST = withVenue(async function POST(
         },
       })
     })().catch(console.error)
+
+    // Post-commit: socket dispatch
+    void dispatchReservationChanged(locationId, {
+      reservationId: reservation.id, action: 'cancelled',
+    }).catch(console.error)
 
     return NextResponse.json({
       id: updated.id,

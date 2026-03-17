@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { transition } from '@/lib/reservations/state-machine'
+import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -49,6 +50,9 @@ export async function GET(request: NextRequest) {
           })
         })
         cancelledCount++
+        void dispatchReservationChanged(row.locationId, {
+          reservationId: row.id, action: 'cancelled',
+        }).catch(console.error)
       } catch (err) {
         console.error(`[reservation-hold-expiry] Failed to cancel ${row.id}:`, err)
       }

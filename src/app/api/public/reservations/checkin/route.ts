@@ -5,6 +5,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { transition } from '@/lib/reservations/state-machine'
 import { formatPhoneE164 } from '@/lib/twilio'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -106,6 +107,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
       })
     })
+
+    // Post-commit: socket dispatch
+    void dispatchReservationChanged(locationId, {
+      reservationId: reservation.id, action: 'checked_in',
+    }).catch(console.error)
 
     return NextResponse.json({
       id: updated.id,

@@ -5,6 +5,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { transition, TransitionError, type ReservationStatus, type OverrideType } from '@/lib/reservations/state-machine'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
+import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -61,6 +62,11 @@ export const POST = withVenue(async function POST(
         locationId: reservation.locationId,
       })
     })
+
+    // Post-commit: socket dispatch (fire-and-forget)
+    void dispatchReservationChanged(reservation.locationId, {
+      reservationId: id, action: to, reservation: updated,
+    }).catch(console.error)
 
     // Post-commit: if cancelled, offer slot to waitlist (fire-and-forget)
     if (to === 'cancelled') {

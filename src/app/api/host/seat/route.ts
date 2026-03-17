@@ -4,7 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_HOST_VIEW, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { getNextServer, buildServerInfoList } from '@/lib/host/server-rotation'
-import { dispatchFloorPlanUpdate, dispatchWaitlistChanged, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchWaitlistChanged, dispatchTableStatusChanged, dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { transition } from '@/lib/reservations/state-machine'
 
 export const dynamic = 'force-dynamic'
@@ -203,6 +203,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Fire-and-forget socket dispatches
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
     void dispatchTableStatusChanged(locationId, { tableId, status: 'occupied' }).catch(console.error)
+    if (reservationId) {
+      void dispatchReservationChanged(locationId, {
+        reservationId, action: 'seated',
+      }).catch(console.error)
+    }
 
     // Fetch assigned server name for response
     let serverName: string | null = null

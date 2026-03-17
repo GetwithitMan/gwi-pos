@@ -92,6 +92,12 @@ export const PUT = withVenue(async function PUT(
             locationId: current.locationId,
           })
         })
+
+        // Post-commit: socket dispatch
+        void dispatchReservationChanged(current.locationId, {
+          reservationId: id, action: body.status, reservation: updated,
+        }).catch(console.error)
+
         return NextResponse.json({ data: { reservation: updated } })
       } catch (err) {
         if (err instanceof TransitionError) {

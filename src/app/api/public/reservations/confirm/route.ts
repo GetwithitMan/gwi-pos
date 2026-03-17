@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { transition } from '@/lib/reservations/state-machine'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +71,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId,
       })
     })
+
+    // Post-commit: socket dispatch
+    void dispatchReservationChanged(locationId, {
+      reservationId: reservation.id, action: 'confirmed',
+    }).catch(console.error)
 
     return NextResponse.json({
       id: updated.id,

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { transition } from '@/lib/reservations/state-machine'
 import { parseSettings, DEFAULT_RESERVATION_SETTINGS } from '@/lib/settings'
+import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -116,6 +117,9 @@ export async function GET(request: NextRequest) {
             }
           })
           noShowCount++
+          void dispatchReservationChanged(location.id, {
+            reservationId: candidate.id, action: 'no_show',
+          }).catch(console.error)
         } catch (err) {
           console.error(`[reservation-no-shows] Failed for ${candidate.id}:`, err)
         }
