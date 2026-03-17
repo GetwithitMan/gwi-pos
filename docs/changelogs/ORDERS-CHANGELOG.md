@@ -1,5 +1,27 @@
 # Orders Domain - Change Log
 
+## 2026-03-17 — Stable Client-Generated lineItemId Contract (3 Repos)
+
+### Summary
+Foundational change: all 27 OrderItemRequest constructors across PAX + Register now include `lineItemId = UUID.randomUUID().toString()`. The NUC server uses the client-provided lineItemId as the OrderItem's primary key (falls back to cuid for backward compatibility with old clients). This eliminates the duplicate item bug where server and client generated different IDs for the same entity.
+
+### How It Works
+1. Android generates `lineItemId = UUID.randomUUID().toString()` in `AddItemUseCase`
+2. Sends it in `OrderItemRequest.lineItemId` via `POST /api/orders/{id}/items`
+3. NUC creates `OrderItem` with `id = lineItemId`
+4. Android creates local `ITEM_ADDED` event with the same `lineItemId`
+5. Socket echo arrives → `INSERT OR IGNORE` → no duplicate
+
+### Commits
+- **NUC:** `52ee8e67` (server uses client lineItemId), `248c3265` (backward compat fallback)
+- **Register:** `aa5b85d`, `d1edebc`, `2efafe0`
+- **PAX:** `4bb3627`, `2cd2e61`, `f68d33c`
+
+### Architecture Guide
+- `docs/guides/STABLE-ID-CONTRACT.md` — full contract specification
+
+---
+
 ## 2026-03-03 — Audit Remediation: Order & Payment Guards (Skill 478)
 
 ### Payment Flow Guards

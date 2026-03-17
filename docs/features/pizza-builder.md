@@ -11,8 +11,9 @@ Specialized pizza ordering UI with two builder modes (Quick and Visual), half-an
 ## Repos Involved
 | Repo | Role | Coverage |
 |------|------|----------|
-| `gwi-pos` | API (14 route files), admin builder, POS builder modal, print formatting | Full |
-| `gwi-android-register` | Pizza builder (planned) | Planned |
+| `gwi-pos` | API (14 route files), admin builder, POS builder modal, print formatting, bootstrap toppingCategory enrichment | Full |
+| `gwi-android-register` | Native pizza builder — multi-sauce/cheese, partition modes, topping category tabs (Room v51) | Full |
+| `gwi-pax-a6650` | Native pizza builder adapted for 5.5" screen — static canvas header, division pills (Room v50) | Full |
 | `gwi-cfd` | N/A | None |
 | `gwi-backoffice` | N/A | None |
 | `gwi-mission-control` | N/A | None |
@@ -187,7 +188,8 @@ Named coverage regions for print formatting:
 | Feature | How / Why |
 |---------|-----------|
 | Orders | Pizza items with complex section/topping data |
-| KDS | Pizza-specific kitchen ticket formatting |
+| KDS | Pizza-specific kitchen ticket formatting (multi-sauce rendering) |
+| Bootstrap / Sync | toppingCategory enrichment on modifiers for Android categorization |
 
 ### These features MODIFY this feature:
 | Feature | How / Why |
@@ -195,12 +197,15 @@ Named coverage regions for print formatting:
 | Menu | Pizza items are menu items with `categoryType: 'pizza'` |
 | Inventory | Topping/crust/sauce ingredient deductions (Skill 115) |
 | Orders | Pizza added to order as OrderItem + OrderItemPizza |
+| Stable ID Contract | lineItemId on all pizza items (dedup across server + client) |
 
 ### BEFORE CHANGING THIS FEATURE, VERIFY:
 - [ ] **Menu** — `categoryType: 'pizza'` routing in order flow
-- [ ] **KDS/Print** — kitchen ticket formatting with pizza print settings
+- [ ] **KDS/Print** — kitchen ticket formatting with pizza print settings (multi-sauce normalization)
 - [ ] **Inventory** — ingredient multipliers and deduction calculations
 - [ ] **Orders** — OrderItemPizza snapshot data integrity
+- [ ] **Bootstrap** — toppingCategory enrichment for Android modifier entities
+- [ ] **Stable ID** — lineItemId contract on all pizza item requests
 
 ---
 
@@ -221,9 +226,40 @@ Named coverage regions for print formatting:
 
 ---
 
-## Android-Specific Notes
-- Pizza builder planned but not yet native Android implementation
-- Will use Quick mode by default for touch optimization
+## Android-Specific Notes (2026-03-17)
+
+### Native Pizza Builder — Register + PAX
+Both Android register and PAX A6650 now have full native pizza builders.
+
+**Multi-Sauce/Cheese with Partition Modes:**
+- Partition modes: whole, halves, thirds (configurable per condiment)
+- Multiple sauces and cheeses supported simultaneously
+- New `pizzaConfig` format: `sauces[]` and `cheeses[]` arrays alongside legacy single `sauceId`/`cheeseId` for backward compatibility
+
+**Topping Category Tabs:**
+- Categories: meat, veggie, premium, seafood, cheese, specialty
+- `toppingCategory` field enriched on ModifierEntity via bootstrap (sourced from PizzaTopping records)
+- Tab-based UI filters toppings by category for faster selection
+
+**Shared Code:**
+- `CondimentHelpers.kt` — shared helper for condiment selection logic (used by both Register and PAX)
+- `buildPizzaConfig()` — builds both legacy single-sauce and new multi-sauce format for server compatibility
+
+**PAX-Specific Adaptations:**
+- Pizza canvas + division pills pinned as static header (doesn't scroll with topping list)
+- Optimized for 5.5" screen real estate
+
+**Room Migrations:**
+- Register: Room v51 — `toppingCategory` column on modifier entities
+- PAX: Room v50 — `toppingCategory` column on modifier entities
+
+**Bootstrap Integration:**
+- NUC bootstrap (`/api/sync/bootstrap`) enriches modifier data with `toppingCategory` from PizzaTopping records
+- Enables Android to categorize toppings without a separate PizzaTopping API call
+
+**Kitchen Ticket Support:**
+- Multi-sauce pizza items rendered correctly on kitchen tickets
+- `microSections` field normalized for consistent formatting across single-sauce and multi-sauce orders
 
 ---
 
@@ -235,4 +271,4 @@ Named coverage regions for print formatting:
 
 ---
 
-*Last updated: 2026-03-03*
+*Last updated: 2026-03-17 (Android native builder on Register + PAX, multi-sauce/cheese, toppingCategory bootstrap)*

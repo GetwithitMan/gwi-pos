@@ -64,9 +64,10 @@ const { field, other } = useStore()
 The POS uses a **custom Node.js server** (`server.ts`) that wraps Next.js. Required for Socket.io + multi-tenant DB routing.
 
 ```
-npm run dev   → dotenv -e .env.local -- tsx -r ./preload.js server.ts
-npm start     → NODE_ENV=production node -r ./preload.js server.js
-npm run build → prisma generate && next build && node scripts/build-server.mjs
+npm run dev        → next dev (port 3006, fast HMR, no Socket.io)
+npm run dev:server → dotenv -e .env.local -- tsx -r ./preload.js server.ts (Socket.io, production-like)
+npm start          → NODE_ENV=production node -r ./preload.js server.js
+npm run build      → prisma generate && next build && node scripts/build-server.mjs
 ```
 
 **`preload.js`** polyfills `globalThis.AsyncLocalStorage` for Node 20 compatibility (Next.js 16 expects it globally). Must load via `-r ./preload.js` BEFORE any imports.
@@ -333,3 +334,43 @@ Configurable per-location in InventorySettings. "No" logic: skips base recipe de
 256-bit token + httpOnly cookie + 5-min pairing code. Optional static IP binding. See `docs/skills/102-KDS-DEVICE-SECURITY.md`.
 
 **Key files:** `src/lib/escpos/`, `src/lib/printer-connection.ts`, `/api/print/kitchen/route.ts`
+
+---
+
+## Client-Generated IDs (Stable ID Contract)
+
+All client-created entities MUST use a client-generated UUID as their primary key. The server MUST use that ID. This prevents duplicate entities when both server response and local event projection create the same record.
+
+| Rule | Detail |
+|------|--------|
+| Generate client-side | `UUID.randomUUID().toString()` on Android, `crypto.randomUUID()` on web |
+| Send in request | Include as `lineItemId` (or equivalent) in the POST body |
+| Server uses it | Server creates the entity with the client-provided ID as its PK |
+| Local event matches | Local event system uses the same ID for dedup via `INSERT OR IGNORE` |
+| Backward compat | Server falls back to auto-generated cuid if no client ID provided (old clients) |
+
+**Full contract:** `docs/guides/STABLE-ID-CONTRACT.md`
+
+---
+
+## Sentry / Error Monitoring
+
+| Rule | Detail |
+|------|--------|
+| No static imports | **NEVER** use `import * from '@sentry/nextjs'` at module top level in app code |
+| Dynamic import only | Use `await import('@sentry/nextjs')` inside a `process.env.NODE_ENV === 'production'` guard |
+| Init location | Sentry initialization lives in `src/instrumentation.ts` `register()` only — nowhere else |
+| Why | Static Sentry imports deadlock Next.js dev server via OpenTelemetry instrumentation hooks |
+
+```typescript
+// CORRECT — in instrumentation.ts register()
+export async function register() {
+  if (process.env.NODE_ENV === 'production') {
+    const Sentry = await import('@sentry/nextjs')
+    Sentry.init({ /* ... */ })
+  }
+}
+
+// WRONG — static import at top level
+import * as Sentry from '@sentry/nextjs'
+```

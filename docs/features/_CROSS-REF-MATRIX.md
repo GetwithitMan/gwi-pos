@@ -262,11 +262,11 @@ This matrix answers: "If I change feature X, what else might break?"
 ### Pizza Builder
 | | |
 |---|---|
-| **Depends On** | Menu (pizza items are menu items), Modifiers (toppings are modifiers), Orders (pizza added to order) |
-| **Depended On By** | Orders (pizza items with complex modifier tree) |
-| **Shared Models** | `MenuItem` (with pizza-specific config), `ModifierGroup`, `Modifier` |
+| **Depends On** | Menu (pizza items are menu items), Modifiers (toppings are modifiers), Orders (pizza added to order), Bootstrap/Sync (toppingCategory enrichment on modifiers), Stable ID Contract (lineItemId on all pizza items) |
+| **Depended On By** | Orders (pizza items with complex modifier tree), KDS/Kitchen Printing (multi-sauce rendering, microSections normalization) |
+| **Shared Models** | `MenuItem` (with pizza-specific config), `ModifierGroup`, `Modifier`, `PizzaTopping` (source of toppingCategory), `OrderItemPizza` |
 | **Shared Socket Events** | `menu:updated` |
-| **Critical Rules** | Pizza builder is a specialized modifier UI — underlying data model is standard MenuItem + ModifierGroups. |
+| **Critical Rules** | Pizza builder is a specialized modifier UI — underlying data model is standard MenuItem + ModifierGroups. Android devices (Register + PAX) have native builders with multi-sauce/cheese support. Bootstrap enriches modifier entities with `toppingCategory` from PizzaTopping records. New pizzaConfig format supports `sauces[]`/`cheeses[]` arrays alongside legacy single-sauce fields. |
 
 ---
 

@@ -241,6 +241,29 @@ See `docs/guides/STABLE-ID-CONTRACT.md` for the full contract.
 
 ---
 
+## Pizza Builder (Android Native — 2026-03-17)
+
+Both Register and PAX have full native pizza builders.
+
+### Bootstrap: toppingCategory Enrichment
+The NUC bootstrap (`/api/sync/bootstrap`) enriches modifier data with `toppingCategory` sourced from `PizzaTopping` records. This field is stored on the local `ModifierEntity` (Room) and used to render topping category tabs in the pizza builder UI.
+
+### pizzaConfig Format
+Android sends a `pizzaConfig` JSON that supports both legacy and new formats:
+- **Legacy:** `sauceId`, `cheeseId` (single string, backward compat)
+- **New:** `sauces[]`, `cheeses[]` (array of `{id, name, partition}` for multi-condiment support)
+
+The server accepts both. `buildPizzaConfig()` in `CondimentHelpers.kt` produces both fields simultaneously.
+
+### Partition Modes
+Condiments (sauces + cheeses) support partition modes: `whole`, `left`/`right` (halves), `left`/`center`/`right` (thirds). These define which portion of the pizza the condiment covers.
+
+### Room Migrations
+- Register: v51 (`toppingCategory TEXT` on modifier entity)
+- PAX: v50 (`toppingCategory TEXT` on modifier entity)
+
+---
+
 ## Checklist: Adding a New Feature with Android Impact
 
 - [ ] Touch targets ≥ 48×48dp

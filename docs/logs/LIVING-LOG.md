@@ -5,6 +5,119 @@
 
 ---
 
+## 2026-03-17 — Pizza Builder Enhancement + Stable lineItemId Contract + Anti-Gaming Planning
+
+### Summary
+Major pizza builder upgrade across all 3 repos (multi-sauce/cheese, partition modes, topping categories). Foundational stable client-generated lineItemId contract across PAX + Register + NUC to eliminate duplicate items. Anti-gaming audit trail planned (AG-01 through AG-08).
+
+### Features
+- **Pizza Builder Enhancement (3 repos):** Multi-sauce/cheese with partition modes (whole/halves/thirds), topping category tabs (meat/veggie/premium/seafood/cheese/specialty), CondimentHelpers.kt shared helper, new pizzaConfig format with sauces[]/cheeses[] arrays + legacy single-sauce compatibility
+- **Stable Client-Generated lineItemId (3 repos):** All 27 OrderItemRequest constructors across PAX + Register now send `lineItemId = UUID.randomUUID().toString()`. NUC server uses client lineItemId as OrderItem.id (falls back to cuid for old clients). Prevents duplicate items via INSERT OR IGNORE dedup.
+- **Anti-Gaming Audit Trail (planning):** AG-01 through AG-08 added to MASTER-TODO.md — birth-to-death item tracking leveraging lineItemId as foundation. Includes DRAWER_OPENED event, item removal reasons, price override tracking, anomaly detection reports, threshold alerts, item timeline view.
+
+### Bug Fixes
+- **Duplicate item prevention:** lineItemId contract eliminates the root cause of duplicate items on Android devices
+- **Kitchen ticket multi-sauce:** Normalized microSections field handling for multi-sauce pizza items
+- **Dev DB schema sync:** `prisma db push` to align reservation columns missing from Table
+
+### Commits
+
+**gwi-pos (NUC):**
+- `92f278a6` — Bootstrap enriches modifiers with toppingCategory from PizzaTopping records
+- `f779ecf8` — Kitchen ticket multi-sauce support + microSections field normalization
+- `52ee8e67` — Server uses client lineItemId as OrderItem.id
+- `248c3265` — lineItemId fallback to cuid for backward compatibility
+- `381522b7` — Anti-gaming audit trail planning (AG-01 through AG-08 in MASTER-TODO.md)
+
+**gwi-android-register (Register):**
+- `5643517` — Multi-sauce/cheese pizza builder with partition modes, topping category tabs, CondimentHelpers.kt, Room v51
+- `aa5b85d` — lineItemId on all OrderItemRequest constructors
+- `d1edebc` — lineItemId wiring continued
+- `2efafe0` — lineItemId wiring complete
+
+**gwi-pax-a6650 (PAX):**
+- `b49b147` — Multi-sauce/cheese pizza builder adapted for 5.5" screen, Room v50
+- `6644f0d` — Pizza canvas + division pills pinned as static header
+- `4bb3627` — lineItemId on all OrderItemRequest constructors
+- `2cd2e61` — lineItemId wiring continued
+- `f68d33c` — lineItemId wiring complete
+
+### Key Files Changed
+- **NUC:** `src/app/api/sync/bootstrap/route.ts` (toppingCategory enrichment), kitchen ticket printer formatting, `src/app/api/orders/[id]/items/route.ts` (lineItemId acceptance)
+- **Register:** `PizzaBuilderSheet.kt`, `CondimentHelpers.kt` (NEW), `AddItemUseCase.kt` (lineItemId), Room migration v51
+- **PAX:** `PizzaBuilderSheet.kt`, `CondimentHelpers.kt` (NEW), `AddItemUseCase.kt` (lineItemId), Room migration v50
+- **Architecture:** `docs/guides/STABLE-ID-CONTRACT.md` (NEW)
+
+### Blockers
+None.
+
+---
+
+## 2026-03-16 — Dev Server Fix: 4 Root Causes + Port Change
+
+### Summary
+Dev server was non-functional due to 4 compounding issues. All resolved.
+
+### Root Causes
+1. **HSTS cache** — Browsers cached `Strict-Transport-Security` header from production-like runs, forcing HTTPS on localhost. Fix: HSTS header now production-only.
+2. **Sentry/OTel deadlock** — Static imports of `@sentry/nextjs` and OpenTelemetry caused `next dev` to deadlock during instrumentation. Fix: Sentry configs moved to dynamic `import()`, production-only init in `instrumentation.ts`.
+3. **Prisma tenant recursion** — `resolveTenantLocationId()` in `db.ts` could recurse infinitely when the tenant-scoping proxy re-entered itself. Fix: request-scoped recursion guard via `AsyncLocalStorage` in `request-context.ts`.
+4. **`tsx server.ts` hang** — Custom server startup blocked `next dev` HMR. Fix: `npm run dev` now runs `next dev` directly; custom server kept as `dev:server`.
+
+### Changes
+- Dev port changed from **3005 → 3006**
+- `npm run dev` → `next dev` (fast HMR, no Socket.io)
+- `npm run dev:server` → `tsx server.ts` (Socket.io, production-like)
+- Socket.io CORS updated to include port 3006
+
+### Files Changed
+- `next.config.ts` — HSTS production-only
+- `package.json` — dev script split (`dev` / `dev:server`), port 3006
+- `src/instrumentation.ts` — dynamic Sentry import, production-only guard
+- `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts` — dynamic import wrappers
+- `src/lib/db.ts` — recursion guard in `resolveTenantLocationId()`
+- `src/lib/request-context.ts` — `AsyncLocalStorage` recursion flag
+- `src/lib/socket-server.ts` — CORS origin includes port 3006
+- `prisma/schema.prisma` — no functional change (regenerated)
+
+---
+
+## 2026-03-16 — Tax-Inclusive Pricing: Report + Receipt Bug Fixes + Full Backwards Trace
+
+### Summary
+Fixed 3 tax-inclusive bugs found during adversarial testing. Conducted full backwards trace from reports → payment → mutations → item add to verify all 12+ mutation paths correctly implement tax-inclusive pricing. Updated all documentation.
+
+### Bugs Fixed
+1. **Employee-shift report double-counting inclusive tax** — `grossSales` was computed as `netSales + totalTax` where `netSales` already contained embedded inclusive tax and `totalTax` included it again. Fix: `preTaxGrossSales = adjustedGrossSales - totalTaxFromInclusive`.
+2. **Daily report category breakdown not backing out inclusive tax** — Category gross showed raw prices (including embedded tax for inclusive items). Fix: added `inclusive_gross` SQL column per category, JS backs out tax using `inclRate`.
+3. **Receipt.tsx missing "Tax (included):" label** — ESC/POS receipts showed it but HTML Receipt component did not. Fix: threaded `taxFromInclusive`/`taxFromExclusive` through receipt-builder.ts → types.ts → Receipt.tsx.
+
+### Backwards Trace Results
+Full audit of tax-inclusive flow from reports back to item button press:
+- All 12 order mutation paths (create, add items, modify, delete, discount, coupon, merge, transfer, split, comp/void, entertainment, pay) correctly call `calculateOrderTotals()` or `calculateSplitTax()` with inclusive support
+- `Order.inclusiveTaxRate` correctly snapshotted at creation, passed as 8th param to `calculateOrderTotals()`
+- `isTaxInclusive` correctly stamped on OrderItem at creation via `isItemTaxInclusive()` in `item-calculations.ts`
+- No bugs found in the backwards trace — all paths verified correct
+
+### Files Changed
+- `src/app/api/reports/employee-shift/route.ts` — inclusive tax tracking + revenue fix
+- `src/app/api/reports/daily/route.ts` — `inclusive_gross` SQL + category back-out
+- `src/components/receipt/Receipt.tsx` — tax label + interface fields
+- `src/lib/domain/payment/receipt-builder.ts` — thread `taxFromInclusive`/`taxFromExclusive`
+- `src/lib/domain/payment/types.ts` — add `taxFromInclusive`/`taxFromExclusive` to ReceiptData
+
+### Commits
+- `f9b1a83c` — fix: report + receipt tax-inclusive bugs — employee shift double-count, category breakdown, receipt label
+
+### Documentation Updates
+- Updated `docs/skills/240-TAX-INCLUSIVE-PRICING.md` — comprehensive implementation reference
+- Updated `docs/planning/AUDIT_REGRESSION.md` — added TAX10, TAX11, TAX12 invariants
+- Updated `docs/planning/KNOWN-BUGS.md` — marked employee-shift report bug as fixed
+- Updated `docs/features/tax-rules.md` — added `Order.inclusiveTaxRate` snapshot field
+- Updated memory files
+
+---
+
 ## 2026-03-14 — Architecture Hardening: Socket Reliability + Cloud Relay + Offline Redundancy
 - Phase 1: Persistent Socket Event Log (SocketEventLog table, PG L2 buffer, CFD pairing persistence)
 - Phase 2: Outage Replay Hardening (OUTAGE_DEAD_LETTER cloud event, /api/system/outage-queue)

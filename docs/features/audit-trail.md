@@ -274,4 +274,28 @@ The Android register does not currently write to `AuditLog` directly. Employee a
 
 ---
 
-*Last updated: 2026-03-03*
+## Anti-Gaming Audit Trail (Planned — 2026-03-17)
+
+An extended audit trail focused on loss prevention and anti-gaming is planned (AG-01 through AG-08, tracked in `MASTER-TODO.md`). This system leverages the stable `lineItemId` contract to enable birth-to-death tracking of every order item.
+
+### Planned Components
+| ID | Component | Description |
+|----|-----------|-------------|
+| AG-01 | DRAWER_OPENED event | Track every cash drawer open with employee, timestamp, context |
+| AG-02 | Item removal reasons | Require reason code when removing items from orders |
+| AG-03 | Price override tracking | Log every manual price change with before/after values |
+| AG-04 | Anomaly detection reports | Statistical analysis of void/comp patterns per employee |
+| AG-05 | Threshold alerts | Configurable alerts when void/comp rates exceed thresholds |
+| AG-06 | Item timeline view | Full history of an individual item from creation to payment/void |
+| AG-07 | Discount pattern analysis | Track discount frequency and amounts by employee |
+| AG-08 | Shift-level gaming summary | Per-shift aggregate of suspicious activity indicators |
+
+### Foundation: lineItemId
+The stable client-generated `lineItemId` (see `docs/guides/STABLE-ID-CONTRACT.md`) provides a unique, immutable identifier for every item across its lifecycle. This enables:
+- Tracking an item from button press to kitchen to payment to void
+- Correlating events across server logs, Android events, and audit entries
+- Detecting when the same item is manipulated multiple times
+
+---
+
+*Last updated: 2026-03-17 (added anti-gaming audit trail plan)*

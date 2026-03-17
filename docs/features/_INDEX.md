@@ -52,7 +52,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Daily Prep Count** | [daily-prep-count.md](daily-prep-count.md) | Active | pos | Inventory, Menu, KDS |
 | **Liquor Management** | [liquor.md](liquor.md) | Active | pos, android | Menu, Inventory, Orders, Reports |
 | **Combo Meals** | [combos.md](combos.md) | Active | pos, android | Menu, Orders, Payments |
-| **Pizza Builder** | [pizza-builder.md](pizza-builder.md) | Active | pos, android | Menu, Orders, Modifiers |
+| **Pizza Builder** | [pizza-builder.md](pizza-builder.md) | Active | pos, android, pax | Menu, Orders, Modifiers |
 | **Entertainment** | [entertainment.md](entertainment.md) | Active | pos, android | Orders, Floor Plan, KDS, Payments |
 | **Pricing Rules (Time-Based)** | [happy-hour.md](happy-hour.md) | Active | pos | Menu, Payments, Settings |
 | **Upsell Prompts** | [upsell-prompts.md](upsell-prompts.md) | Schema Built | pos, android | Menu, Orders, Reports |
@@ -218,7 +218,7 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 | Neon sync timezone risk | Medium | Integration audit | `downstream-sync-worker.ts` uses `::timestamp` cast — warning in code comments about `::timestamptz` drift on non-UTC NUC systems |
 | ~~Alert service Slack not wired~~ | ~~Medium~~ **RESOLVED 2026-03-14** | Integration audit | Slack webhook now configurable via admin UI at `/admin/settings/integrations/slack` |
 | Android native combo builder not built | Medium | Original audit | POS has combo builder; Android uses text-based flow only |
-| Android native pizza builder not built | Medium | Original audit | POS has visual builder; Android uses standard modifier flow |
+| ~~Android native pizza builder not built~~ | ~~Medium~~ **RESOLVED 2026-03-17** | Original audit | Native pizza builder now on both Register (commit `5643517`) and PAX (commit `b49b147`). Multi-sauce/cheese, partition modes, topping category tabs. |
 | VP3350 USB read loop | Medium | Original audit | TODO comment: replace per-transaction TCP reads with persistent loop |
 | Entertainment order sheet on Android | Medium | Original audit | TODO comment in `OrderMainContent.kt` — sheet not yet opened |
 | Coursing auto-mode timer is client-driven | Medium | Original audit | Server does not enforce course fire timing — client can miss auto-advance |
@@ -261,7 +261,7 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 - **Offline Sync** — must work with every mutation
 
 ### Leaf Features (lower cross-domain impact)
-- Pizza Builder (touches Menu, Orders, Modifiers only)
+- Pizza Builder (touches Menu, Orders, Modifiers, Bootstrap, Kitchen Printing)
 - Events & Tickets (touches Orders, Customers only)
 - Entertainment (touches Orders, Floor Plan, KDS only)
 - Coursing (touches Orders, KDS, Menu only)
@@ -275,6 +275,7 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 | Concern | Rule | Doc |
 |---------|------|-----|
 | Order mutations | MUST emit events via `emitOrderEvent()` | `docs/guides/ORDER-LIFECYCLE.md` |
+| Client-generated IDs | EVERY client entity MUST use client-generated UUID as ID | `docs/guides/STABLE-ID-CONTRACT.md` |
 | DB queries | NEVER query Neon from API routes — local PG only | `docs/guides/ARCHITECTURE-RULES.md` |
 | Payments | Datacap only — NEVER Stripe/Square | `docs/guides/PAYMENTS-RULES.md` |
 | Real-time | Socket-first — never polling | `docs/guides/SOCKET-REALTIME.md` |
@@ -310,4 +311,4 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 | Cron jobs | 13 |
 | Server workers | 6 |
 
-*Last updated: 2026-03-14 (post Sprint 2-6 + comprehensive feature audit)*
+*Last updated: 2026-03-17 (pizza builder Android, stable lineItemId contract)*

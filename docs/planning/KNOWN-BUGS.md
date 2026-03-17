@@ -4,7 +4,7 @@
 > Before working in any area, scan your section. Before closing a bug, update its status here.
 > When a bug is confirmed fixed, mark it ✅ FIXED with the commit hash.
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-03-17*
 
 ---
 
@@ -368,3 +368,8 @@ These were requested but are not bugs — they're missing features. Track them i
 | **"Employee ID is required" for MC/email login users (BUG-H8)** | 2026-03-12 | `2a3408ca` (3-layer auth unification: dual cookie, auto-provision, client employeeId) |
 | **Pizza builder TS2532 blocking Vercel builds** | 2026-03-12 | `aa5a844b` (pizzaConfig! extraction in truthiness-guarded IIFE) |
 | **NUC deploy EACCES after sudo build (BUG-H6)** | 2026-03-12 | Operational fix (chown), documented in NUC-OPERATIONS.md |
+| **Employee-shift report double-counting inclusive tax in grossSales** | 2026-03-16 | `f9b1a83c` (employee-shift report: `preTaxGrossSales = adjustedGrossSales - totalTaxFromInclusive`; daily report: `inclusive_gross` SQL column; Receipt.tsx: tax label threading) |
+| **HSTS on localhost cached by browsers — dev server appears unresponsive** | 2026-03-16 | HSTS header now production-only (`next.config.ts`) |
+| **Sentry/OpenTelemetry deadlocking Next.js dev server on startup** | 2026-03-16 | Dynamic `import()` in `instrumentation.ts`, production-only init |
+| **Prisma tenant-scoping infinite recursion in `resolveTenantLocationId`** | 2026-03-16 | Request-scoped recursion guard via `AsyncLocalStorage` (`db.ts`, `request-context.ts`) |
+| **Duplicate items on Android devices (server + client generate different IDs)** | 2026-03-17 | Stable lineItemId contract: all 27 OrderItemRequest constructors send client-generated UUID; server uses it as OrderItem.id. NUC `52ee8e67`+`248c3265`, Register `aa5b85d`+`d1edebc`+`2efafe0`, PAX `4bb3627`+`2cd2e61`+`f68d33c` |

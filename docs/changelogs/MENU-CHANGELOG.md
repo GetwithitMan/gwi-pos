@@ -1,5 +1,48 @@
 # Menu Domain Changelog
 
+## 2026-03-17 — Pizza Builder Enhancement: Multi-Sauce/Cheese + Android Native Builders
+
+### Summary
+Major pizza builder upgrade across all 3 repos. Android register and PAX A6650 now have full native pizza builders with multi-sauce/cheese support, partition modes (whole/halves/thirds), and topping category tabs. NUC bootstrap enriches modifier entities with `toppingCategory` from PizzaTopping records. Kitchen tickets now properly render multi-sauce pizza items.
+
+### Changes
+
+**NUC (gwi-pos):**
+- Bootstrap `/api/sync/bootstrap` enriches modifiers with `toppingCategory` sourced from PizzaTopping records
+- Kitchen ticket formatting normalized for `microSections` field to support multi-sauce items
+- Commits: `92f278a6`, `f779ecf8`
+
+**Register (gwi-android-register):**
+- Native `PizzaBuilderSheet.kt` with multi-sauce/cheese selection and partition modes
+- `CondimentHelpers.kt` — shared helper for condiment selection logic
+- Topping category tabs: meat, veggie, premium, seafood, cheese, specialty
+- `buildPizzaConfig()` produces both legacy single-sauce and new `sauces[]`/`cheeses[]` format
+- Room migration v51: `toppingCategory` column on modifier entities
+- Commit: `5643517`
+
+**PAX (gwi-pax-a6650):**
+- Same pizza builder features adapted for 5.5" screen
+- Pizza canvas + division pills pinned as static header
+- Room migration v50: `toppingCategory` column on modifier entities
+- Commits: `b49b147`, `6644f0d`
+
+### New Config Format
+```json
+{
+  "sauceId": "legacy-single",
+  "sauces": [
+    { "id": "sauce1", "name": "Marinara", "partition": "whole" },
+    { "id": "sauce2", "name": "Alfredo", "partition": "left" }
+  ],
+  "cheeseId": "legacy-single",
+  "cheeses": [
+    { "id": "cheese1", "name": "Mozzarella", "partition": "whole" }
+  ]
+}
+```
+
+---
+
 ## 2026-02-28 — Card Price Auto-Display in All Menu Builders
 
 ### Summary

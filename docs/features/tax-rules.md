@@ -45,6 +45,10 @@ Configurable tax rules per location with support for tax-inclusive pricing, mult
 | `src/app/api/settings/route.ts` | Derives `taxInclusiveLiquor`/`taxInclusiveFood` from active rules |
 | `src/app/api/orders/[id]/items/route.ts` | Stamps `isTaxInclusive` on OrderItem at creation |
 | `src/app/api/reports/sales/route.ts` | Tax breakdown in sales reports |
+| `src/app/api/reports/daily/route.ts` | Daily report — reads stored `taxFromInclusive`/`taxFromExclusive`; backs out inclusive tax from category breakdowns |
+| `src/app/api/reports/employee-shift/route.ts` | Employee shift report — tracks inclusive/exclusive tax separately; computes `preTaxGrossSales` |
+| `src/lib/domain/payment/receipt-builder.ts` | Receipt builder — threads `taxFromInclusive`/`taxFromExclusive` to receipt data |
+| `src/components/receipt/Receipt.tsx` | Receipt UI — shows "Tax (included):" for all-inclusive orders |
 
 ---
 
@@ -98,6 +102,7 @@ Order (tax totals) {
   taxTotal         Decimal
   taxFromInclusive Decimal?         // tax backed out of inclusive items
   taxFromExclusive Decimal?         // tax added on top of exclusive items
+  inclusiveTaxRate Decimal?         // snapshotted at order creation — survives setting changes
 }
 ```
 
@@ -113,6 +118,8 @@ Order (tax totals) {
    - **Exclusive**: `tax = price × rate` — tax added on top
 4. Both rounded to 2 decimals for compliance
 5. Price rounding applied as final step
+6. `Order.inclusiveTaxRate` snapshotted at order creation — passed as override to `calculateOrderTotals()` on subsequent recalculations
+7. Reports use stored `taxFromInclusive`/`taxFromExclusive` — never recompute from rate
 
 ### Tax-Inclusive Category Mapping
 | Setting | Category Types |
@@ -221,4 +228,4 @@ See `docs/skills/479-TAX-RULES-PAGE-BUG-FIXES.md` for full details on:
 
 ---
 
-*Last updated: 2026-03-15*
+*Last updated: 2026-03-16*
