@@ -152,6 +152,32 @@ See `docs/guides/STABLE-ID-CONTRACT.md` for the full contract.
 | DEV2 | Sentry MUST use dynamic `import()` in `instrumentation.ts` — no static imports of `@sentry/nextjs` at module top level | `src/instrumentation.ts` (`register()` function) | Run `npm run dev` — server starts without deadlock; `grep` for `import.*@sentry/nextjs` in instrumentation.ts returns zero static imports |
 | DEV3 | `resolveTenantLocationId` recursion guard MUST be request-scoped (AsyncLocalStorage), never module-scoped | `src/lib/db.ts` + `src/lib/request-context.ts` | Concurrent requests to tenant-scoped routes — no infinite recursion, no cross-request interference |
 
+## Reservation System Invariants (2026-03-17)
+
+> Added after full reservation engine build. These invariants protect the reservation state machine, multi-tenant isolation, deposit lifecycle, customer matching, and socket dispatch timing.
+
+| # | Invariant | Where Enforced | Test Trigger |
+|---|-----------|----------------|--------------|
+| RES1 | ALL reservation status changes MUST go through `transition()` in state-machine.ts — no direct `db.reservation.update({ status })` allowed | `src/lib/reservations/state-machine.ts` — all API routes call this function | Attempt to update `status` via raw SQL or direct Prisma update — must be rejected by code review |
+| RES2 | ALL `[id]` routes MUST verify `reservation.locationId === callerLocationId` before returning or modifying data | All reservation `[id]` API routes | Create reservation on location A, attempt to access from location B — must get 404 |
+| RES3 | Deposit status changes MUST write ReservationEvent audit entries | `src/app/api/reservations/[id]/deposit/route.ts`, `src/app/api/public/reservations/[id]/deposit/route.ts` | Process deposit payment → verify ReservationEvent with type `deposit_*` created |
+| RES4 | Socket dispatch (`dispatchReservationChanged`) MUST happen AFTER transaction commit, never inside | All `transition()` callers in API routes | Verify no `dispatchReservationChanged` calls inside `db.$transaction()` blocks |
+| RES5 | Customer matching (`findOrCreateCustomer`) MUST run on every reservation creation path including waitlist bridge | `src/app/api/reservations/route.ts`, `src/app/api/public/reservations/route.ts`, waitlist bridge | Create reservation with existing customer phone — must link to existing Customer record, not create duplicate |
+| RES6 | Pending reservations MUST have `holdExpiresAt` set (enforced by DB CHECK constraint) | Migration 067 CHECK constraint, `src/lib/reservations/state-machine.ts` | Attempt to create pending reservation without holdExpiresAt — DB rejects |
+
+## Delivery Management Invariants (2026-03-17)
+
+> Added after full delivery MVP build. These invariants protect the delivery state machine, feature gating, address immutability, tip holding ledger, and proof of delivery.
+
+| # | Invariant | Where Enforced | Test Trigger |
+|---|-----------|----------------|--------------|
+| DELIV1 | `advanceDeliveryStatus()` is the ONLY way to change delivery order status. Direct SQL UPDATE on status column is forbidden. | `src/lib/delivery/state-machine.ts` — all API routes call this function | Attempt to update `deliveryStatus` via raw SQL or direct Prisma update — must be rejected by code review |
+| DELIV2 | Delivery requires BOTH MC `deliveryModuleEnabled=true` AND venue `delivery.enabled=true`. Missing config = disabled (fail-closed). | `src/lib/delivery/feature-check.ts` — `isDeliveryFeatureActive()` | Disable MC flag, verify all delivery routes return 403. Disable venue flag with MC enabled, verify same. |
+| DELIV3 | `addressSnapshotJson` is frozen at `assigned` state. NEVER overwritten after. Dispatch reads from snapshot only. | `advanceDeliveryStatus()` — snapshot captured on transition to `assigned` | Assign order, then update customer address — dispatch must still show original snapshot address |
+| DELIV4 | Pre-assignment tips go to `system:delivery_holding:{locationId}`. Reallocated on driver assignment. Kitchen split deferred until `delivered`. | `src/lib/delivery/tip-reallocation.ts`, `src/lib/domain/tips/delivery-tip-split.ts` | Pay delivery order before driver assigned — tip must appear in holding ledger, not employee ledger. Assign driver — tip moves to driver. Mark delivered — kitchen split fires. |
+| DELIV5 | One active run per driver. DB unique partial index `DeliveryRun_driver_active_unique`. Application also validates before INSERT. | Migration 066 (DB index), run creation route | Attempt to create second active run for same driver — must get 409 |
+| DELIV6 | `proofMode` frozen at dispatch time. `evaluateEffectiveProofMode()` runs once. Result stored on `DeliveryOrder.proofMode`. Never re-evaluated. | `src/lib/delivery/proof-resolver.ts`, `advanceDeliveryStatus()` at `dispatched` transition | Change proof settings after dispatch — existing order must retain original proof mode |
+
 ---
 
 ## How to Use This List
@@ -160,4 +186,4 @@ See `docs/guides/STABLE-ID-CONTRACT.md` for the full contract.
 2. **After a schema change** to `Payment`, `Order`, `Shift`, or `TipLedgerEntry` — re-run P1–P5 and T1–T5.
 3. **After any event sourcing change** — re-run O2 and O3.
 
-The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. The 9 tax-inclusive invariants (2026-03-15) cover the full-stack tax-inclusive pricing implementation. The 1 client-generated ID invariant (2026-03-16) prevents duplicate entities from ID mismatch. The 3 dev infrastructure invariants (2026-03-16) prevent dev environment regressions. All 63 represent the highest re-regression risk.
+The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. The 9 tax-inclusive invariants (2026-03-15) cover the full-stack tax-inclusive pricing implementation. The 1 client-generated ID invariant (2026-03-16) prevents duplicate entities from ID mismatch. The 3 dev infrastructure invariants (2026-03-16) prevent dev environment regressions. The 6 reservation system invariants (2026-03-17) protect the reservation state machine, deposits, and customer matching. The 6 delivery management invariants (2026-03-17) protect the delivery state machine, feature gating, and tip flow. All 75 represent the highest re-regression risk.

@@ -479,14 +479,9 @@ This matrix answers: "If I change feature X, what else might break?"
 
 ---
 
-### Delivery Management (Planned)
-| | |
-|---|---|
-| **Depends On** | Orders, Customers, Settings |
-| **Depended On By** | Orders |
-| **Shared Models** | TBD |
-| **Shared Socket Events** | TBD |
-| **Critical Rules** | Planned only. |
+### Delivery Management (Active — see full entry below)
+
+> **Moved to active section.** See the full Delivery Management entry below (after Pay-at-Table) for complete dependency matrix.
 
 ---
 
@@ -710,6 +705,17 @@ This matrix answers: "If I change feature X, what else might break?"
 
 ---
 
+### Delivery Management
+| | |
+|---|---|
+| **Depends On** | Orders (delivery orders are Order records with delivery columns), Tips (holding ledger, `postToTipLedger()`, kitchen split via `delivery-tip-split.ts`), KDS (bump auto-advances `preparing` → `ready_for_pickup`), Settings (`DeliverySettings` in location settings, `mergeWithDefaults()`), Customers (address, phone), Notifications (Twilio SMS for status changes), Roles (11 `delivery.*` permission keys) |
+| **Depended On By** | KDS (`DeliveryExpoRail` 5-column kanban), Reports (delivery analytics, driver performance), Tips (`DELIVERY_REALLOCATION` sourceType in TipLedgerEntry), Payments (tip resolution for delivery orders) |
+| **Shared Models** | `Order` (24 delivery columns), `DeliveryZone`, `DeliveryDriver`, `DeliveryDriverDocument`, `DeliveryDriverSession`, `DeliveryRun`, `DeliveryAddress`, `DeliveryProofOfDelivery`, `DeliveryTracking`, `DeliveryAuditLog`, `DeliveryException`, `DeliveryNotification`, `DeliveryNotificationAttempt` |
+| **Shared Socket Events** | `delivery:status_changed`, `delivery:updated` (legacy), `delivery:run_created`, `delivery:run_completed`, `delivery:exception_created`, `delivery:exception_resolved`, `driver:location_update`, `driver:status_changed` |
+| **Critical Rules** | ALL status changes MUST go through `advanceDeliveryStatus()` — direct SQL UPDATE on status is forbidden. Two-layer feature gating: MC `deliveryModuleEnabled` + venue `delivery.enabled` (fail-closed). `addressSnapshotJson` frozen at `assigned` — never overwritten. `proofMode` frozen at dispatch — never re-evaluated. One active run per driver (DB unique index). One active session per employee (DB unique index). Kitchen tip-out deferred until `delivered` state. No Google API — Leaflet/OSM only. |
+
+---
+
 ## Frequently Co-Modified Clusters
 
 When one of these changes, the entire cluster often needs review:
@@ -730,6 +736,7 @@ When one of these changes, the entire cluster often needs review:
 | **Security & Compliance** | Security Settings + Roles + Audit Trail + Remote Void Approval | Permission model, access log, and void approval chain |
 | **System Operations** | Notifications + EOD Reset + Error Reporting + Audit Trail | Alert routing, day-close, error capture, and compliance log all share service layer |
 | **Debt & Recovery** | Walkout Retry + Chargebacks + House Accounts | All represent money owed with incomplete close paths — no scheduler, no write-off UI built |
+| **Delivery Operations** | Delivery + Orders + Tips + KDS + Notifications | Delivery status → tip reallocation → KDS expo rail → SMS notifications all interlock |
 
 ---
 
@@ -781,4 +788,4 @@ When one of these changes, the entire cluster often needs review:
 
 ---
 
-*Last updated: 2026-03-14 (Cloud Relay entry added)*
+*Last updated: 2026-03-17 (Delivery Management entry added)*

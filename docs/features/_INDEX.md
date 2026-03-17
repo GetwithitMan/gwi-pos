@@ -144,7 +144,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Online Ordering** | [online-ordering.md](online-ordering.md) | Active | pos, backoffice | Menu, Orders, Payments (Datacap PayAPI), Settings |
 | **Pay-at-Table (PAT)** | [pay-at-table.md](pay-at-table.md) | Active | pos | Payments, Tabs, Hardware, Floor Plan |
 | **QR Self-Ordering** | [qr-ordering.md](qr-ordering.md) | Planned | pos | Menu, Orders, Payments, Floor Plan |
-| **Delivery Management** | [delivery.md](delivery.md) | Planned | pos | Orders, Customers, Settings |
+| **Delivery Management** | [delivery.md](delivery.md) | Active | pos, mission-control | Orders, Tips, KDS, Settings, Customers, Notifications |
 
 ### Enterprise & Integrations
 
@@ -292,23 +292,23 @@ Discovered during the 2026-03-03 documentation audit. Fix before going live.
 
 | Metric | Count |
 |--------|-------|
-| Feature docs (active/built) | 49 |
+| Feature docs (active/built) | 50 |
 | Feature docs (schema built) | 1 |
-| Feature docs (planned/roadmap) | 14 |
+| Feature docs (planned/roadmap) | 13 |
 | Feature docs total | 64 |
 | Flow docs | 12 |
-| API routes (gwi-pos) | 649+ |
-| UI pages (gwi-pos) | 316 |
-| Prisma models | 154 |
-| SPEC files (original design specs) | 62 |
-| Skill docs (implementation records) | 297 |
-| Skill entries in index | 478 |
+| API routes (gwi-pos) | 680+ |
+| UI pages (gwi-pos) | 324 |
+| Prisma models | 166 |
+| SPEC files (original design specs) | 63 |
+| Skill docs (implementation records) | 298 |
+| Skill entries in index | 479 |
 | Domain docs | 27 |
 | Android screens | 30+ |
 | Android UI components | 206+ |
 | CFD states | 8 |
-| Socket event types | 63 (reverse-flow audit 2026-03-03) |
-| Cron jobs | 13 |
+| Socket event types | 71 (delivery adds 8) |
+| Cron jobs | 14 |
 | Server workers | 6 |
 
-*Last updated: 2026-03-17 (pizza builder Android, stable lineItemId contract)*
+*Last updated: 2026-03-17 (delivery management MVP)*

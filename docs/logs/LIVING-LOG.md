@@ -5,6 +5,96 @@
 
 ---
 
+## 2026-03-17 — Reservation Engine (Full System)
+
+### Commits
+- `88e0c10d` feat: reservation engine — full system across 3 MVPs (49 files, +9.7k lines)
+- `bf1f3ddd` fix: reservation engine security hardening — 8 audit fixes
+- `88ed0a34` fix: migration 067 — add missing constraints and indexes
+- `13d5029d` fix: add missing socket dispatch to all transition() callers
+- `61d49b40` fix: critical security + correctness hardening from senior dev review
+- `50e76f11` fix: CRITICAL multi-tenant isolation — 5 routes
+- `6e74ac30` fix: customer linkage gaps + deposit auto-confirm
+- `0ccabcfa` feat: POS reservations page + accessibility hardening
+- `893bda7f` feat: optional deposits + third-party reservation integrations
+- `04266585` feat: reservation reports, dashboard, floor plan, receipts, docs
+- `472174d1` fix: move POS reservations to /host/reservations
+
+### Features Built
+- **Reservation Engine**: 12 engine files, 7-status state machine (pending → confirmed → checked_in → seated → completed / cancelled / no_show), advisory lock concurrency, customer matching, deposit rules with 3 modes
+- **31 API Routes**: 9 internal, 10 public (rate-limited), 4 crons, 3 webhooks, 2 new (dashboard, enhanced reports), 1 health
+- **9 Pages**: Admin calendar + settings (6-tab) + integrations + dashboard widget, POS server view, Host enhancements, Public booking wizard + manage + deposit + check-in
+- **Notifications**: 13 template keys, SMS (Twilio) + Email (Resend), opt-in matrix, Professional + Casual packs
+- **Deposits**: 3 modes (disabled/optional/required), text-to-pay, auto-confirm on payment
+- **Third-party integrations**: OpenTable, Resy, Google, Yelp, Custom API webhook infrastructure
+- **Floor plan**: Blue reservation badges on tables
+- **Receipts**: Reservation section with guest name, party size, confirmation code
+- **Reports**: 6 new analytics (source breakdown, table utilization, repeat customers, cancellation reasons, peak heatmap, deposit revenue)
+- **Dashboard**: Upcoming reservations widget with today's stats
+- **Migration 067**: 22 Reservation columns, 6 Table columns, 3 Customer columns, 5 new tables, CHECK constraints, 14+ indexes
+- **Migration 068**: Optional deposit status
+
+### Security
+- Multi-tenant isolation on all routes (getLocationId server-derived)
+- SQL injection fixed (Prisma update instead of raw interpolation)
+- Cross-tenant access blocked on original deposit route (GET/POST/DELETE)
+- Input validation (partySize, date format, time format, source enum)
+- Rate limiting on all public routes
+- HMAC webhook verification
+- Honeypot + idempotency on public booking
+
+### Bugs Fixed
+- Socket dispatch missing on 7/9 transition callers
+- Waitlist bridge: no customer linkage (customerId null)
+- Staff deposit route: didn't update depositStatus or auto-confirm
+- Deposit ID: Math.random() → crypto.randomUUID()
+- Idempotency key race condition (advisory lock on key)
+- Expired holds still blocking availability slots
+- window.prompt() → proper cancel reason modal
+- 8 WCAG contrast violations fixed
+
+---
+
+## 2026-03-17 — Delivery Management System — Full MVP
+
+### Summary
+Full in-house delivery management system built from scratch. 12 DB tables, 30+ API routes, 3 state machines, dispatch live page, owner dashboard, KDS delivery expo rail, customer tracking page, driver checkout with cash reconciliation, tip integration with holding ledger + kitchen split, Twilio SMS live, and MC feature gating.
+
+### Features
+- **12 DB tables + 24 DeliveryOrder columns** (migration 066): DeliveryZone, DeliveryDriver, DeliveryDriverDocument, DeliveryDriverSession, DeliveryRun, DeliveryAddress, DeliveryProofOfDelivery, DeliveryTracking, DeliveryAuditLog, DeliveryException, DeliveryNotification, DeliveryNotificationAttempt
+- **30+ API routes** across zones, drivers, sessions, runs, dispatch, exceptions, audit, tracking, reports
+- **State machine:** 15 delivery order states, 7 run states, 5 driver session states — `advanceDeliveryStatus()` single entry point
+- **Dispatch Live page + Owner Dashboard** — 4 settings pages (general, zones, drivers, dispatch policy)
+- **Customer Tracking page** — public (no auth), Leaflet/OSM map, real-time driver location
+- **KDS delivery expo rail** — 5-column kanban (`DeliveryExpoRail.tsx`)
+- **Driver checkout modal** — cash reconciliation with expected vs actual
+- **Twilio SMS live** (not stub) — configurable per status change
+- **Tip integration:** holding ledger for pre-assignment tips, `DELIVERY_REALLOCATION` sourceType, kitchen tip-out split deferred until delivered
+- **Run auto-complete:** fires when all orders reach terminal state
+- **KDS bump wiring:** auto-advances `preparing` → `ready_for_pickup`
+- **Maintenance crons:** GPS pruning (7d), stale session cleanup, proof media nulling (90d)
+- **MC:** `LocationDeliveryFeatures` model + toggle UI + settings sync (12 subfeatures)
+- **Two-layer feature gating:** MC `deliveryModuleEnabled` + venue `delivery.enabled` (fail-closed)
+- **Proof resolver:** capability-based, escalation-only (photo + signature independent)
+- **Zone matching:** zipcode (primary), haversine radius, ray-casting polygon — no Google API
+- **323 tests across 4 rounds, 27 bugs found and fixed**
+
+### Commits
+- `0567a5d3` → `c15a92c9` (gwi-pos)
+
+### Key Files
+- `src/lib/delivery/` — state-machine.ts, feature-check.ts, proof-resolver.ts, dispatch-policy.ts, dispatch-events.ts, notifications.ts, tip-reallocation.ts, order-mapper.ts
+- `src/app/api/delivery/` — 30+ route files
+- `src/app/(admin)/delivery/` — dispatch live, dashboard, third-party
+- `src/app/(admin)/settings/delivery/` — 4 settings pages
+- `src/components/delivery/` — DeliveryExpoRail, DeliveryMap, TrackingMap, DriverCheckoutModal
+- `scripts/migrations/066-delivery-management.js`
+
+### Blockers
+None.
+
+---
+
 ## 2026-03-17 — Pizza Builder Enhancement + Stable lineItemId Contract + Anti-Gaming Planning
 
 ### Summary

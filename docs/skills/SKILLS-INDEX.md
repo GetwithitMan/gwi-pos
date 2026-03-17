@@ -346,6 +346,11 @@
 | 409 | MODIFIER-GROUP-DIRECT-OWNERSHIP | DONE | Online Ordering / Schema | 143 | Eliminated MenuItemModifierGroup junction table; migrated showOnline from junction to ModifierGroup directly; switched all read paths (menu API, item API, online menu API) to ownedModifierGroups; fixed online ordering showing no modifier groups |
 | 418 | Customer Notes Inline Edit + Order History (T-Customer) | DONE | Settings | 51 | Customer notes field inline edit (pencil icon, textarea, save/cancel). Order history list with pagination (20/page) + date range filter. Customer detail page improvements. |
 
+### Delivery Management
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 35 | In-House Delivery Tracking | DONE | Delivery | 04, 53 | Full spec: `SPEC-35-DELIVERY-TRACKING.md` (original planning). Superseded by SPEC-DELIVERY-MANAGEMENT.md (implementation spec). 12 DB tables + 24 Order columns, 30+ API routes, 3 state machines (15 order / 7 run / 5 session states), dispatch live page, owner dashboard, KDS expo rail, customer tracking, driver checkout, tip holding ledger, Twilio SMS, MC feature gating (12 subfeatures), zone matching (zipcode/radius/polygon), proof of delivery, dispatch policy engine. Commits: `0567a5d3` → `c15a92c9`. |
+
 ### Hardware Integration
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
