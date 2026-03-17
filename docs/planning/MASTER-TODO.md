@@ -408,6 +408,114 @@ These items were discovered by auditing system outputs backwards (socket events,
 
 ---
 
+### ANTI-GAMING AUDIT TRAIL (Owner-Requested — Birth-to-Death Item Tracking)
+
+> **Business need:** Owner wants to see exactly how staff game the system — every item added/removed, every no-sale drawer pop, every void, comp, discount, price override, modifier change, and tab transfer. Full birth-to-death traceability per lineItemId.
+
+#### What Already Exists (Free from Event Sourcing + lineItemId)
+
+Every order mutation is already an immutable event with `employeeId`, `deviceId`, `timestamp`, and stable `lineItemId` (UUID v4, per `docs/guides/STABLE-ID-CONTRACT.md`). The audit trail for order items is already 80% complete:
+
+| Event | Tracked | Data Available |
+|-------|---------|----------------|
+| Item added | YES | employeeId, deviceId, timestamp, lineItemId, menuItemId, price, modifiers, pizzaConfig |
+| Item removed | YES | employeeId, deviceId, timestamp, lineItemId |
+| Item comped | YES | employeeId, reason, lineItemId, wasMade flag |
+| Item voided | YES | employeeId, reason, lineItemId, wasMade flag |
+| Discount applied | YES | employeeId, type, value, amountCents |
+| Discount removed | YES | employeeId, discountId |
+| Payment applied | YES | employeeId, method, amount, tipAmount |
+| Payment voided | YES | employeeId, paymentId |
+| Order sent to kitchen | YES | employeeId, timestamp |
+| Tab opened/closed | YES | employeeId, tabName |
+| Guest count changed | YES | employeeId, old→new count |
+
+#### Gaps to Build (8 items)
+
+##### AG-01 — `DRAWER_OPENED` Event Type (P2 — Critical)
+**Gap:** No-sale drawer pops are completely invisible. Staff can pop the drawer with no audit trail.
+**Build:**
+- New domain event: `DRAWER_OPENED` with fields: `employeeId`, `deviceId`, `timestamp`, `reason` (enum: `no_sale`, `cash_payment`, `paid_in`, `paid_out`, `manual`), `pinVerified: boolean`, `notes: String?`
+- NUC: `POST /api/drawers/open` must log the event (currently fires ESC/POS command only)
+- Android: PAX + Register must emit event when drawer opened
+- **Anti-gaming value:** High — no-sale pops are the #1 indicator of cash theft
+
+##### AG-02 — Item Removal Reason (P2)
+**Gap:** `ITEM_REMOVED` event has lineItemId but no reason. Staff can remove items after ringing cash and pocketing the difference.
+**Build:**
+- Add `reason: String?` and `managerApprovalEmployeeId: String?` to `ITEM_REMOVED` event payload
+- Require reason when removing items after order has been sent to kitchen
+- Optional: require manager PIN for post-send removals (configurable per venue)
+- **Anti-gaming value:** High — forced accountability for removals
+
+##### AG-03 — Price Override Tracking (P2)
+**Gap:** Manual price changes on items are not tracked as distinct events. Staff can add item at $50, manually change to $5, pocket $45 cash.
+**Build:**
+- New event or field: `PRICE_OVERRIDDEN` with `originalPrice`, `newPrice`, `reason`, `employeeId`, `managerApprovalEmployeeId`
+- Track in `ITEM_UPDATED` payload when price field changes
+- **Anti-gaming value:** High — price manipulation is a common theft vector
+
+##### AG-04 — Modifier Change Attribution (P3)
+**Gap:** Current modifier change is remove + re-add, losing "who modified" context. Staff can upcharge a modifier, pocket the cash, then change the modifier to hide the upcharge.
+**Build:**
+- Add `modifiedByEmployeeId` to `ITEM_ADDED` payload when item is a re-add after modification
+- Or: new `ITEM_MODIFIERS_CHANGED` event that references the original lineItemId and captures before/after modifier lists
+- **Anti-gaming value:** Medium — modifier gaming is less common but high-value
+
+##### AG-05 — Button-Level Telemetry Table (P3)
+**Gap:** No tracking of non-order actions (opening screens, viewing tabs, browsing reports).
+**Build:**
+- New `AuditAction` table: `id`, `locationId`, `employeeId`, `deviceId`, `terminalId`, `action` (enum), `targetId`, `metadata` (JSONB), `createdAt`
+- NOT event-sourced (fire-and-forget, no reducer, no projection)
+- Actions: `view_tab`, `open_discount_sheet`, `open_void_sheet`, `view_report`, `change_settings`, `login`, `logout`, `clock_in`, `clock_out`
+- NUC: extend existing `src/lib/audit-log.ts`
+- Android: batch and send periodically (not per-action — too chatty)
+- **Anti-gaming value:** Medium — pattern detection (e.g., employee views tab 50 times without closing it)
+
+##### AG-06 — Anomaly Detection Reports in Mission Control (P3)
+**Gap:** Event data exists but no reporting layer analyzes patterns.
+**Build:**
+- MC dashboard page: "Staff Activity Audit"
+- Per-employee metrics: voids/shift, comps/shift, discounts/shift, no-sale pops/shift, items removed/shift, average ticket vs peers
+- Anomaly flags: employee significantly above peer average on any metric
+- Drill-down: click employee → see every event with timestamp, lineItemId, amount
+- Date range filter, export to CSV
+- **Anti-gaming value:** Very high — this is the owner's primary view
+
+##### AG-07 — Threshold Alerts (P3)
+**Gap:** No real-time alerting when suspicious activity occurs.
+**Build:**
+- Configurable thresholds per venue: max voids/hr, max comps/shift, max no-sales/shift, max removals/shift
+- Alert channels: email, Slack (via existing `alert-service.ts`), push notification
+- MC settings page to configure thresholds
+- NUC cron or real-time check after each event
+- **Anti-gaming value:** High — catches gaming in real-time, not after the fact
+
+##### AG-08 — Birth-to-Death Item Timeline View (P3)
+**Gap:** No single view that shows the complete lifecycle of an item.
+**Build:**
+- API: `GET /api/audit/item/:lineItemId/timeline` — returns every event touching this lineItemId, chronologically
+- Events: ITEM_ADDED → (ITEM_UPDATED)* → (COMP_VOID_APPLIED)? → (ITEM_REMOVED)? → (PAYMENT_APPLIED)*
+- Include: who added, who modified, who comped/voided, who removed, what price changes occurred, what modifiers changed
+- MC UI: timeline view with employee avatars, timestamps, before/after diffs
+- **Anti-gaming value:** Very high — complete forensic trail per item
+
+#### Architecture Notes
+- `lineItemId` (stable UUID) is the key that ties the entire lifecycle together — already implemented
+- Order events are immutable — staff cannot alter the audit trail after the fact
+- Events are stored in local Room DB → synced to NUC → replicated to Neon cloud
+- `AuditAction` table (AG-05) is separate from order events — lighter weight, no reducer
+- All reports query Neon (cloud), not the NUC — owner can view remotely from MC
+- Threshold alerts fire from the NUC (real-time) and also from Neon (catch-up)
+
+#### Dependencies
+- `docs/guides/STABLE-ID-CONTRACT.md` — foundational (DONE)
+- `src/lib/audit-log.ts` — existing, extend for AG-05
+- `src/lib/alert-service.ts` — existing, extend for AG-07
+- MC dashboard infrastructure — existing
+
+---
+
 ## 🟢 FUTURE ROADMAP
 
 | Feature | Notes |
@@ -447,6 +555,7 @@ These are DONE and working — reference before adding anything similar:
 | Tip-out end-to-end | Payment → TipAllocation → TipShare → payroll report |
 | Inventory deduction engine | Path A + B, multipliers, fire-and-forget, `src/lib/inventory-calculations.ts` |
 | Installer (production-ready) | `public/installer.run`, RSA-OAEP-SHA256, heartbeat, sync agent |
+| Stable client-generated lineItemId | `docs/guides/STABLE-ID-CONTRACT.md`, all 27 OrderItemRequest constructors, NUC `item-operations.ts` |
 
 ---
 
@@ -456,8 +565,8 @@ These are DONE and working — reference before adding anything similar:
 |----------|-------|-------------|
 | 🚨 Go-Live Blockers | 1 remaining (GL-06 only — run pre-launch tests) | 1 week |
 | 🔴 P1 Critical | 5 remaining (P1-05, P1-07 + RF-01, RF-02, RF-03) | 2–3 weeks |
-| 🟠 P2 Important | ~12 remaining (~6 original + RF-04 through RF-09) | 3–4 weeks |
-| 🟡 P3 Polish | ~24 (~20 original + RF-10 through RF-13) | 2–3 months |
+| 🟠 P2 Important | ~15 remaining (~6 original + RF-04 through RF-09 + AG-01 through AG-03) | 4–5 weeks |
+| 🟡 P3 Polish | ~29 (~20 original + RF-10 through RF-13 + AG-04 through AG-08) | 2–3 months |
 | 🟢 Future Roadmap | 7+ | Ongoing |
 
 **Reverse-flow audit additions (2026-03-03):** RF-01 through RF-13 — 3 critical, 6 important, 4 polish/docs.
@@ -466,7 +575,7 @@ These are DONE and working — reference before adding anything similar:
 
 ---
 
-*Last updated: 2026-03-10 — Device count limits enforced at terminal creation, pairing, cellular exchange, printer creation. Cellular device registry (venue-side) DONE. Transaction & behavior limits settings built.*
+*Last updated: 2026-03-17 — Anti-gaming audit trail (AG-01 through AG-08) added. Stable lineItemId contract implemented across all 3 repos (STABLE-ID-CONTRACT.md). Pizza builder multi-sauce/cheese + topping categories shipped.*
 
 ---
 
