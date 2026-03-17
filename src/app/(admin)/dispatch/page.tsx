@@ -6,6 +6,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { DriverCheckoutModal } from '@/components/delivery/DriverCheckoutModal'
 import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
@@ -122,7 +123,7 @@ const SEVERITY_COLORS: Record<ExceptionSeverity, { badge: string; border: string
 
 // ─── Tab type ───────────────────────────────────────────────────────────────
 
-type RightPanelTab = 'ready' | 'active' | 'exceptions'
+type RightPanelTab = 'ready' | 'active' | 'drivers' | 'exceptions'
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -151,6 +152,10 @@ export default function DispatchPage() {
 
   // Exception resolve
   const [resolvingExceptionId, setResolvingExceptionId] = useState<string | null>(null)
+
+  // Driver checkout modal
+  const [checkoutSessionId, setCheckoutSessionId] = useState<string | null>(null)
+  const [checkoutDriverName, setCheckoutDriverName] = useState('')
 
   // GPS throttle ref (1 update per 5s per driver)
   const lastGpsUpdate = useRef<Map<string, number>>(new Map())
@@ -549,6 +554,7 @@ export default function DispatchPage() {
             {([
               { key: 'ready' as const, label: 'Ready', count: readyOrders.length },
               { key: 'active' as const, label: 'Active', count: data.runs.filter(r => r.status !== 'completed').length },
+              { key: 'drivers' as const, label: 'Drivers', count: data.drivers.length },
               { key: 'exceptions' as const, label: 'Exceptions', count: openExceptions.length },
             ]).map(tab => (
               <button
@@ -589,6 +595,15 @@ export default function DispatchPage() {
             )}
             {activeTab === 'active' && (
               <ActiveTab runs={data.runs.filter(r => r.status !== 'completed')} />
+            )}
+            {activeTab === 'drivers' && (
+              <DriversTab
+                drivers={data.drivers}
+                onEndShift={(sessionId, name) => {
+                  setCheckoutSessionId(sessionId)
+                  setCheckoutDriverName(name)
+                }}
+              />
             )}
             {activeTab === 'exceptions' && (
               <ExceptionsTab
@@ -636,6 +651,86 @@ export default function DispatchPage() {
           </div>
         </div>
       </Modal>
+
+      {/* ─── Driver Checkout Modal ──────────────────────────────────── */}
+      <DriverCheckoutModal
+        isOpen={!!checkoutSessionId}
+        onClose={() => setCheckoutSessionId(null)}
+        sessionId={checkoutSessionId || ''}
+        driverName={checkoutDriverName}
+        onCheckoutComplete={loadDispatchData}
+      />
+    </div>
+  )
+}
+
+// ─── Drivers Tab ────────────────────────────────────────────────────────────
+
+function DriversTab({
+  drivers,
+  onEndShift,
+}: {
+  drivers: DispatchDriver[]
+  onEndShift: (sessionId: string, driverName: string) => void
+}) {
+  if (drivers.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-16 text-gray-500 text-sm">
+        No active driver sessions
+      </div>
+    )
+  }
+
+  return (
+    <div className="divide-y divide-gray-100">
+      {drivers.map(driver => {
+        const statusColors: Record<string, string> = {
+          available: 'bg-green-100 text-green-700',
+          on_delivery: 'bg-blue-100 text-blue-700',
+          returning: 'bg-purple-100 text-purple-700',
+          offline: 'bg-gray-100 text-gray-500',
+        }
+        const statusBadge = statusColors[driver.status] || 'bg-gray-100 text-gray-600'
+
+        return (
+          <div key={driver.id} className="p-3 hover:bg-gray-50 transition-colors">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <span className="text-xs font-bold text-indigo-700">
+                    {driver.initials}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-900">{driver.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusBadge}`}>
+                      {driver.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-400">
+                    {driver.activeOrders > 0 && (
+                      <span>{driver.activeOrders} active order{driver.activeOrders !== 1 ? 's' : ''}</span>
+                    )}
+                    {driver.vehicleInfo && (
+                      <span>{driver.vehicleInfo}</span>
+                    )}
+                    {driver.onTimePct != null && (
+                      <span>{driver.onTimePct}% on-time</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => onEndShift(driver.id, driver.name)}
+                className="text-xs px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-md hover:bg-red-100 hover:border-red-300 transition-colors font-medium flex-shrink-0"
+              >
+                End Shift
+              </button>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

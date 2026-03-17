@@ -20,6 +20,7 @@ const ACTION_PERMISSION_MAP: Record<string, string[]> = {
   override_tax_exempt:     ['manager.tax_exempt'],
   apply_large_comp:        ['manager.void_items'],
   reprint_receipt:         ['pos.access'],
+  cash_variance_override:  ['manager.cash_variance_override'],
 }
 
 // ── Rate limiter (in-memory, per-IP) ─────────────────────────────────────────
