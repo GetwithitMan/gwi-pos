@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import { getSharedSocket } from '@/lib/shared-socket'
 import { toast } from '@/stores/toast-store'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -67,6 +68,17 @@ interface Reservation {
   tableId: string | null
   table: { name: string } | null
   specialRequests: string | null
+  source: string | null
+  occasion: string | null
+  depositStatus: string | null
+  depositAmountCents: number | null
+  holdExpiresAt: string | null
+  customer: {
+    noShowCount?: number
+    isBlacklisted?: boolean
+    allergies?: string | null
+    tags?: string[] | null
+  } | null
 }
 
 interface TableSummary {
@@ -157,7 +169,7 @@ export default function HostPage() {
     if (!employee?.location?.id) return
     try {
       const today = new Date().toISOString().split('T')[0]
-      const res = await fetch(`/api/reservations?locationId=${employee.location.id}&date=${today}`)
+      const res = await fetch(`/api/reservations?locationId=${employee.location.id}&date=${today}&status=pending,confirmed,checked_in,seated`)
       if (!res.ok) return
       const json = await res.json()
       setReservations(Array.isArray(json) ? json : json.data ?? [])
@@ -177,12 +189,32 @@ export default function HostPage() {
     }
   }, [employee?.location?.id, loadAll])
 
-  // Auto-refresh via socket events
+  // Auto-refresh via socket events (including reservation events)
   useReportAutoRefresh({
     onRefresh: loadAll,
-    events: ['floor-plan:updated', 'waitlist:changed', 'table:status-changed', 'orders:list-changed'],
+    events: [
+      'floor-plan:updated',
+      'waitlist:changed',
+      'table:status-changed',
+      'orders:list-changed',
+      'reservation:changed',
+    ],
     debounceMs: 1000,
   })
+
+  // Direct socket listener for new online reservations (toast notification)
+  useEffect(() => {
+    const socket = getSharedSocket()
+    if (!socket) return
+
+    const handleNewOnline = (data: any) => {
+      toast.success(`New online reservation: ${data.guestName} (party of ${data.partySize})`)
+      void loadReservations()
+    }
+
+    socket.on('reservation:new_online', handleNewOnline)
+    return () => { socket.off('reservation:new_online', handleNewOnline) }
+  }, [loadReservations])
 
   // ─── Actions ────────────────────────────────────────────────────────────
 
@@ -268,22 +300,41 @@ export default function HostPage() {
     }
   }
 
-  async function handleMarkArrived(reservationId: string) {
-    if (!employee?.location?.id) return
+  async function handleCheckIn(reservationId: string) {
     try {
-      const res = await fetch(`/api/reservations/${reservationId}`, {
-        method: 'PUT',
+      const res = await fetch(`/api/reservations/${reservationId}/transition`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'confirmed' }),
+        body: JSON.stringify({ to: 'checked_in' }),
       })
       if (!res.ok) {
-        toast.error('Failed to mark arrived')
+        const json = await res.json()
+        toast.error(json.error || 'Failed to check in')
         return
       }
-      toast.success('Reservation marked as arrived')
+      toast.success('Guest checked in')
       void loadReservations()
     } catch (error) {
-      toast.error('Failed to mark arrived')
+      toast.error('Failed to check in')
+    }
+  }
+
+  async function handleConfirmReservation(reservationId: string) {
+    try {
+      const res = await fetch(`/api/reservations/${reservationId}/transition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: 'confirmed' }),
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        toast.error(json.error || 'Failed to confirm')
+        return
+      }
+      toast.success('Reservation confirmed')
+      void loadReservations()
+    } catch (error) {
+      toast.error('Failed to confirm')
     }
   }
 
@@ -296,6 +347,21 @@ export default function HostPage() {
   const availableTables = useMemo(() => {
     return allTables.filter(t => t.status === 'available')
   }, [allTables])
+
+  // ─── Sorted reservations (approaching first) ───────────────────────────
+
+  const sortedReservations = useMemo(() => {
+    return [...reservations].sort((a, b) => {
+      // Active statuses first: checked_in > confirmed > pending > seated
+      const statusOrder: Record<string, number> = {
+        checked_in: 0, confirmed: 1, pending: 2, seated: 3,
+      }
+      const sa = statusOrder[a.status] ?? 9
+      const sb = statusOrder[b.status] ?? 9
+      if (sa !== sb) return sa - sb
+      return (a.reservationTime || '').localeCompare(b.reservationTime || '')
+    })
+  }, [reservations])
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
@@ -413,6 +479,9 @@ export default function HostPage() {
                 {panel === 'waitlist' && waitlist.length > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-600 rounded-full">{waitlist.length}</span>
                 )}
+                {panel === 'reservations' && reservations.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-600 rounded-full">{reservations.length}</span>
+                )}
               </button>
             ))}
           </div>
@@ -474,64 +543,150 @@ export default function HostPage() {
             {/* Reservations Panel */}
             {activePanel === 'reservations' && (
               <div className="space-y-2">
-                {reservations.length === 0 && (
+                {sortedReservations.length === 0 && (
                   <div className="text-center text-gray-500 py-8">No reservations today</div>
                 )}
-                {reservations.map(res => (
-                  <div key={res.id} className="bg-gray-800 rounded-lg p-3 border border-gray-700">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">{res.guestName}</div>
-                        <div className="text-xs text-gray-400">
-                          Party of {res.partySize} | {res.reservationTime}
-                          {res.table && ` | ${res.table.name}`}
+                {sortedReservations.map(res => {
+                  const resTimeBorder = getTimeBorderColor(res.reservationTime, res.status)
+                  const isPending = res.status === 'pending'
+                  const depositBlocked = isPending && res.depositStatus !== 'paid' && (res.depositAmountCents ?? 0) > 0
+
+                  return (
+                    <div key={res.id} className={`bg-gray-800 rounded-lg p-3 border ${resTimeBorder}`}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm truncate">{res.guestName}</span>
+                            {/* Status badge */}
+                            {isPending && (
+                              <span className="text-xs px-1.5 py-0.5 bg-yellow-600/30 text-yellow-400 rounded">Pending</span>
+                            )}
+                            {res.status === 'checked_in' && (
+                              <span className="text-xs px-1.5 py-0.5 bg-blue-600/30 text-blue-400 rounded">Checked In</span>
+                            )}
+                            {res.status === 'confirmed' && (
+                              <span className="text-xs px-1.5 py-0.5 bg-green-600/30 text-green-400 rounded">Confirmed</span>
+                            )}
+                            {/* Source badge */}
+                            {res.source === 'online' && (
+                              <span className="text-xs px-1 py-0.5 bg-purple-600/20 text-purple-400 rounded">Online</span>
+                            )}
+                            {res.source === 'waitlist' && (
+                              <span className="text-xs px-1 py-0.5 bg-cyan-600/20 text-cyan-400 rounded">Waitlist</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            Party of {res.partySize} | {formatTimeShort(res.reservationTime)}
+                            {res.table && ` | ${res.table.name}`}
+                          </div>
+                          {/* Deposit status */}
+                          {(res.depositAmountCents ?? 0) > 0 && (
+                            <div className={`text-xs mt-0.5 ${
+                              res.depositStatus === 'paid' ? 'text-green-400'
+                                : res.depositStatus === 'pending' ? 'text-yellow-400'
+                                : 'text-gray-500'
+                            }`}>
+                              Deposit: ${((res.depositAmountCents ?? 0) / 100).toFixed(2)}
+                              {res.depositStatus === 'paid' ? ' (Paid)' : res.depositStatus === 'pending' ? ' (Unpaid)' : ` (${res.depositStatus})`}
+                            </div>
+                          )}
+                          {/* Hold countdown for pending */}
+                          {isPending && res.holdExpiresAt && (
+                            <HoldCountdown expiresAt={res.holdExpiresAt} />
+                          )}
+                          {/* Customer info badges */}
+                          {res.customer && (
+                            <div className="flex gap-1 mt-1 flex-wrap">
+                              {res.customer.isBlacklisted && (
+                                <span className="text-xs px-1 bg-red-800 text-red-200 rounded">Blacklisted</span>
+                              )}
+                              {(res.customer.noShowCount ?? 0) > 0 && (
+                                <span className="text-xs px-1 bg-orange-800 text-orange-200 rounded">
+                                  {res.customer.noShowCount} no-show{(res.customer.noShowCount ?? 0) > 1 ? 's' : ''}
+                                </span>
+                              )}
+                              {res.customer.allergies && (
+                                <span className="text-xs px-1 bg-yellow-800 text-yellow-200 rounded">Allergies</span>
+                              )}
+                            </div>
+                          )}
+                          {res.specialRequests && (
+                            <div className="text-xs text-gray-500 italic mt-1 truncate">{res.specialRequests}</div>
+                          )}
                         </div>
-                        {res.guestPhone && <div className="text-xs text-gray-500">{res.guestPhone}</div>}
-                        {res.specialRequests && (
-                          <div className="text-xs text-gray-500 italic mt-1">{res.specialRequests}</div>
-                        )}
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {res.status === 'confirmed' && (
-                          <>
+                        <div className="flex flex-col gap-1 ml-2">
+                          {/* Pending: confirm or override */}
+                          {isPending && !depositBlocked && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleMarkArrived(res.id)}
+                              onClick={() => handleConfirmReservation(res.id)}
                               className="text-xs"
                             >
-                              Arrived
+                              Confirm
                             </Button>
-                            {availableTables.length > 0 && (
+                          )}
+                          {depositBlocked && (
+                            <span className="text-xs text-yellow-400 text-right">Awaiting<br/>deposit</span>
+                          )}
+                          {/* Confirmed: check in or seat */}
+                          {res.status === 'confirmed' && (
+                            <>
                               <Button
                                 size="sm"
-                                onClick={() => openSeatModal(
-                                  res.tableId
-                                    ? allTables.find(t => t.id === res.tableId && t.status === 'available') ?? availableTables[0]
-                                    : availableTables[0],
-                                  {
-                                    reservationId: res.id,
-                                    guestName: res.guestName,
-                                    partySize: res.partySize,
-                                  }
-                                )}
-                                className="text-xs bg-green-600 hover:bg-green-700"
+                                variant="outline"
+                                onClick={() => handleCheckIn(res.id)}
+                                className="text-xs"
                               >
-                                Seat
+                                Check In
                               </Button>
-                            )}
-                          </>
-                        )}
-                        {res.status === 'seated' && (
-                          <span className="text-xs text-green-400 font-medium">Seated</span>
-                        )}
-                        {res.status === 'no_show' && (
-                          <span className="text-xs text-red-400 font-medium">No Show</span>
-                        )}
+                              {availableTables.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => openSeatModal(
+                                    res.tableId
+                                      ? allTables.find(t => t.id === res.tableId && t.status === 'available') ?? availableTables[0]
+                                      : availableTables[0],
+                                    {
+                                      reservationId: res.id,
+                                      guestName: res.guestName,
+                                      partySize: res.partySize,
+                                    }
+                                  )}
+                                  className="text-xs bg-green-600 hover:bg-green-700"
+                                >
+                                  Seat
+                                </Button>
+                              )}
+                            </>
+                          )}
+                          {/* Checked in: seat */}
+                          {res.status === 'checked_in' && availableTables.length > 0 && (
+                            <Button
+                              size="sm"
+                              onClick={() => openSeatModal(
+                                res.tableId
+                                  ? allTables.find(t => t.id === res.tableId && t.status === 'available') ?? availableTables[0]
+                                  : availableTables[0],
+                                {
+                                  reservationId: res.id,
+                                  guestName: res.guestName,
+                                  partySize: res.partySize,
+                                }
+                              )}
+                              className="text-xs bg-green-600 hover:bg-green-700"
+                            >
+                              Seat
+                            </Button>
+                          )}
+                          {res.status === 'seated' && (
+                            <span className="text-xs text-green-400 font-medium">Seated</span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
@@ -664,6 +819,66 @@ export default function HostPage() {
           </div>
         </div>
       </Modal>
+    </div>
+  )
+}
+
+// ─── Helper functions ────────────────────────────────────────────────────────
+
+function formatTimeShort(time: string): string {
+  if (!time || !time.includes(':')) return time
+  const [h, m] = time.split(':').map(Number)
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+function getTimeBorderColor(reservationTime: string, status: string): string {
+  if (status === 'seated' || status === 'completed') return 'border-gray-700'
+  if (status === 'checked_in') return 'border-blue-500'
+  if (status === 'pending') return 'border-yellow-500'
+
+  // For confirmed: color based on how close the reservation is
+  if (!reservationTime?.includes(':')) return 'border-gray-700'
+  const [h, m] = reservationTime.split(':').map(Number)
+  const now = new Date()
+  const rezMinutes = h * 60 + m
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const diff = rezMinutes - nowMinutes
+
+  if (diff < 0) return 'border-red-500'        // past due
+  if (diff <= 15) return 'border-orange-500'    // within 15 min
+  if (diff <= 30) return 'border-yellow-500'    // within 30 min
+  if (diff <= 60) return 'border-green-500'     // within 1 hour
+  return 'border-gray-700'                      // more than 1 hour
+}
+
+// ─── Hold Countdown Component ────────────────────────────────────────────────
+
+function HoldCountdown({ expiresAt }: { expiresAt: string }) {
+  const [remaining, setRemaining] = useState('')
+
+  useEffect(() => {
+    const update = () => {
+      const ms = new Date(expiresAt).getTime() - Date.now()
+      if (ms <= 0) {
+        setRemaining('Expired')
+        return
+      }
+      const min = Math.floor(ms / 60_000)
+      const sec = Math.floor((ms % 60_000) / 1000)
+      setRemaining(`${min}:${String(sec).padStart(2, '0')}`)
+    }
+    update()
+    const interval = setInterval(update, 1000)
+    return () => clearInterval(interval)
+  }, [expiresAt])
+
+  const isExpired = remaining === 'Expired'
+
+  return (
+    <div className={`text-xs mt-0.5 font-mono ${isExpired ? 'text-red-400' : 'text-yellow-400'}`}>
+      Hold: {remaining}
     </div>
   )
 }

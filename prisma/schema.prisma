@@ -192,7 +192,9 @@ enum HouseAccountStatus {
 }
 
 enum ReservationStatus {
+  pending
   confirmed
+  checked_in
   seated
   completed
   cancelled
@@ -858,6 +860,10 @@ model Location {
   bridgeCheckpoints  BridgeCheckpoint[]
   outageQueueEntries OutageQueueEntry[]
 
+  // Reservation Engine
+  reservationBlocks   ReservationBlock[]
+  reservationDeposits ReservationDeposit[]
+
   @@index([organizationId])
 }
 
@@ -894,6 +900,11 @@ model Customer {
   // Marketing
   marketingOptIn Boolean   @default(false)
   birthday       DateTime?
+
+  // Reservation Engine — no-show tracking
+  noShowCount            Int      @default(0)
+  isBlacklisted          Boolean  @default(false)
+  blacklistOverrideUntil DateTime? @db.Date
 
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
@@ -2117,6 +2128,14 @@ model Table {
   // Optimistic locking (B8) — prevents concurrent edit races
   version Int @default(0)
 
+  // Reservation Engine — table capacity & scheduling
+  minCapacity             Int     @default(1)
+  maxCapacity             Int?
+  isReservable            Boolean @default(true)
+  combinableWithTableIds  Json    @default("[]")
+  turnTimeOverrideMinutes Int?
+  priority                Int     @default(0)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -2131,6 +2150,7 @@ model Table {
   eventConfigurations   EventTableConfig[]
   sourceTableOrderItems OrderItem[]             @relation("SourceTableOrderItems") // Items ordered from this table (virtual combine T-S notation)
   entertainmentWaitlist EntertainmentWaitlist[]
+  reservationTables     ReservationTable[]
 
   // @@index([locationId]) — removed: redundant with compound indexes below
 
@@ -3081,6 +3101,35 @@ model Reservation {
   bottleServiceTierId String?
   bottleServiceTier   BottleServiceTier? @relation(fields: [bottleServiceTierId], references: [id])
 
+  // Reservation Engine — guest details
+  occasion            String?
+  dietaryRestrictions String?
+  source              String?   @default("staff")
+  externalId          String?
+  sectionPreference   String?
+
+  // Reservation Engine — notification timestamps
+  confirmationSentAt DateTime?
+  reminder24hSentAt  DateTime?
+  reminder2hSentAt   DateTime?
+  thankYouSentAt     DateTime?
+  confirmedAt        DateTime?
+  checkedInAt        DateTime?
+
+  // Reservation Engine — booking management
+  manageToken        String?   @unique
+  tags               Json      @default("[]")
+  serviceDate        DateTime? @db.Date
+  holdExpiresAt      DateTime?
+  depositStatus      String?   @default("not_required")
+  depositAmountCents Int?
+  depositRulesSnapshot Json?
+  statusUpdatedAt    DateTime?
+  sourceMetadata     Json?
+  smsOptInSnapshot   Boolean?
+  depositRequired    Boolean?
+  depositAmount      Decimal?  @db.Decimal(10, 2)
+
   // Tracking
   createdBy    String? // Employee who created
   seatedAt     DateTime?
@@ -3094,6 +3143,13 @@ model Reservation {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  // Reservation Engine — relations
+  reservationTables  ReservationTable[]
+  events             ReservationEvent[]
+  idempotencyKeys    ReservationIdempotencyKey[]
+  depositTokens      ReservationDepositToken[]
+  deposits           ReservationDeposit[]
+
   // @@index([locationId]) — removed: redundant with @@index([locationId, reservationDate, status])
   @@index([reservationDate])
   @@index([status])
@@ -3101,6 +3157,10 @@ model Reservation {
   @@index([customerId])
   @@index([bottleServiceTierId])
   @@index([locationId, reservationDate, status])
+  @@index([source])
+  @@index([locationId, serviceDate])
+  @@index([holdExpiresAt])
+  @@unique([locationId, source, externalId])
 }
 
 // ============================================
@@ -8762,4 +8822,105 @@ model OutageQueueEntry {
   location       Location  @relation(fields: [locationId], references: [id])
 
   @@index([locationId, status])
+}
+
+// ============================================
+// RESERVATION ENGINE (Migration 067)
+// ============================================
+
+model ReservationBlock {
+  id                     String    @id @default(uuid())
+  locationId             String
+  location               Location  @relation(fields: [locationId], references: [id])
+  name                   String
+  reason                 String?
+  blockDate              DateTime  @db.Date
+  startTime              String?
+  endTime                String?
+  isAllDay               Boolean   @default(false)
+  reducedCapacityPercent Int?
+  blockedTableIds        Json      @default("[]")
+  blockedSectionIds      Json      @default("[]")
+  createdBy              String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  deletedAt              DateTime?
+
+  @@index([locationId, blockDate])
+}
+
+model ReservationTable {
+  reservationId String
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  tableId       String
+  table         Table       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@id([reservationId, tableId])
+}
+
+model ReservationEvent {
+  id            String       @id @default(uuid())
+  locationId    String
+  reservationId String?
+  reservation   Reservation? @relation(fields: [reservationId], references: [id])
+  eventType     String
+  actor         String
+  actorId       String?
+  details       Json         @default("{}")
+  createdAt     DateTime     @default(now())
+
+  @@index([reservationId])
+  @@index([locationId, createdAt])
+}
+
+model ReservationIdempotencyKey {
+  key           String      @id
+  reservationId String
+  reservation   Reservation @relation(fields: [reservationId], references: [id])
+  source        String      @default("booking")
+  createdAt     DateTime    @default(now())
+
+  @@index([reservationId])
+}
+
+model ReservationDepositToken {
+  token         String      @id @default(uuid())
+  reservationId String
+  reservation   Reservation @relation(fields: [reservationId], references: [id])
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([reservationId])
+  @@index([expiresAt])
+}
+
+model ReservationDeposit {
+  id               String      @id @default(uuid())
+  locationId       String
+  location         Location    @relation(fields: [locationId], references: [id])
+  reservationId    String
+  reservation      Reservation @relation(fields: [reservationId], references: [id])
+  type             String      @default("deposit")
+  amount           Decimal     @db.Decimal(10, 2)
+  paymentMethod    String
+  cardLast4        String?
+  cardBrand        String?
+  datacapRecordNo  String?
+  datacapRefNumber String?
+  status           String      @default("completed")
+  refundedAmount   Decimal?    @db.Decimal(10, 2)
+  refundedAt       DateTime?
+  refundReason     String?
+  employeeId       String?
+  notes            String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  deletedAt        DateTime?
+  syncedAt         DateTime?
+
+  @@index([locationId])
+  @@index([reservationId])
+  @@index([locationId, createdAt])
 }

@@ -922,6 +922,9 @@ export interface LocationSettings {
   memberships?: MembershipSettings                     // Recurring membership billing (optional for backward compat)
   entertainment?: EntertainmentSettings                 // Entertainment / timed rental policies (optional for backward compat)
   barOperations?: BarOperationsSettings                 // Bar operations: quick pre-mods, last call, repeat order (optional for backward compat)
+  reservationSettings?: ReservationSettings             // Reservation engine configuration (optional for backward compat)
+  depositRules?: DepositRules                           // Reservation deposit rules (optional for backward compat)
+  reservationTemplates?: ReservationMessageTemplates    // Reservation notification templates (optional for backward compat)
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -1923,6 +1926,224 @@ export const DEFAULT_BAR_OPERATIONS: BarOperationsSettings = {
   lastCallAutoGratuityPercent: 20,
 }
 
+// ─── Reservation Engine Settings ─────────────────────────────────────────────
+
+export interface ReservationSettings {
+  defaultTurnTimeMinutes: number      // 90
+  slotIntervalMinutes: number         // 15
+  maxPartySize: number                // 20
+  maxFutureBookingDays: number        // 60
+  noShowGraceMinutes: number          // 15
+  noShowBlacklistAfterCount: number   // 3
+  modificationCutoffHours: number     // 2
+  cancellationCutoffHours: number     // 2
+  serviceEndHour: number              // 4  (4 AM — end of previous day's service)
+  allowOnlineBooking: boolean         // false
+  autoConfirmNoDeposit: boolean       // true
+}
+
+export const DEFAULT_RESERVATION_SETTINGS: ReservationSettings = {
+  defaultTurnTimeMinutes: 90,
+  slotIntervalMinutes: 15,
+  maxPartySize: 20,
+  maxFutureBookingDays: 60,
+  noShowGraceMinutes: 15,
+  noShowBlacklistAfterCount: 3,
+  modificationCutoffHours: 2,
+  cancellationCutoffHours: 2,
+  serviceEndHour: 4,
+  allowOnlineBooking: false,
+  autoConfirmNoDeposit: true,
+}
+
+export interface DepositRules {
+  enabled: boolean
+  defaultAmountCents: number          // Default deposit in cents (e.g. 2500 = $25)
+  partySizeThreshold: number          // Require deposit for party >= N (0 = all)
+  perGuestAmountCents: number         // Per-guest deposit (0 = use flat defaultAmountCents)
+  depositMode: 'flat' | 'per_guest' | 'percentage'
+  percentageOfEstimated: number       // If mode=percentage, % of estimated spend
+  refundableBefore: 'always' | 'cutoff' | 'never'
+  refundCutoffHours: number           // Hours before reservation to allow refund
+  nonRefundablePercent: number        // 0-100: portion that's always non-refundable
+  forceForOnline: boolean             // Always require deposit for online bookings
+  forceForLargeParty: boolean         // Always require for large parties
+  largePartyThreshold: number         // What counts as "large party"
+  paymentMethods: ('card' | 'text_to_pay')[]
+  expirationMinutes: number           // How long the deposit payment link is valid
+}
+
+export const DEFAULT_DEPOSIT_RULES: DepositRules = {
+  enabled: false,
+  defaultAmountCents: 2500,
+  partySizeThreshold: 0,
+  perGuestAmountCents: 0,
+  depositMode: 'flat',
+  percentageOfEstimated: 0,
+  refundableBefore: 'cutoff',
+  refundCutoffHours: 24,
+  nonRefundablePercent: 0,
+  forceForOnline: false,
+  forceForLargeParty: false,
+  largePartyThreshold: 8,
+  paymentMethods: ['card', 'text_to_pay'],
+  expirationMinutes: 60,
+}
+
+export interface MessageTemplate {
+  subject: string   // for email
+  smsBody: string   // for SMS
+  emailBody: string // for email HTML
+}
+
+export interface ReservationMessageTemplates {
+  confirmation: MessageTemplate
+  reminder24h: MessageTemplate
+  reminder2h: MessageTemplate
+  depositRequest: MessageTemplate
+  depositReceived: MessageTemplate
+  cancellation: MessageTemplate
+  modification: MessageTemplate
+  noShow: MessageTemplate
+  waitlistPromoted: MessageTemplate
+  thankYou: MessageTemplate
+}
+
+// Professional template pack — formal tone
+const PROFESSIONAL_TEMPLATES: ReservationMessageTemplates = {
+  confirmation: {
+    subject: 'Reservation Confirmed — {{venueName}}',
+    smsBody: 'Your reservation at {{venueName}} is confirmed for {{date}} at {{time}}, party of {{partySize}}. Manage: {{manageLink}}',
+    emailBody: '<p>Dear {{guestName}},</p><p>Your reservation has been confirmed.</p><p><strong>Date:</strong> {{date}}<br/><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}<br/><strong>Table:</strong> {{tableName}}</p><p>{{specialRequests}}</p><p>To modify or cancel your reservation, please visit: <a href="{{manageLink}}">Manage Reservation</a></p><p>We look forward to welcoming you.<br/>{{venueName}}</p>',
+  },
+  reminder24h: {
+    subject: 'Reminder: Your Reservation Tomorrow — {{venueName}}',
+    smsBody: 'Reminder: You have a reservation at {{venueName}} tomorrow at {{time}}, party of {{partySize}}. Manage: {{manageLink}}',
+    emailBody: '<p>Dear {{guestName}},</p><p>This is a friendly reminder of your reservation tomorrow.</p><p><strong>Date:</strong> {{date}}<br/><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}</p><p>To modify or cancel, please visit: <a href="{{manageLink}}">Manage Reservation</a></p><p>We look forward to seeing you.<br/>{{venueName}}</p>',
+  },
+  reminder2h: {
+    subject: 'Your Reservation is in 2 Hours — {{venueName}}',
+    smsBody: '{{guestName}}, your table at {{venueName}} is ready in 2 hours ({{time}}). See you soon!',
+    emailBody: '<p>Dear {{guestName}},</p><p>Your reservation at {{venueName}} is coming up in just 2 hours.</p><p><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}</p><p>We look forward to seeing you shortly.<br/>{{venueName}}</p>',
+  },
+  depositRequest: {
+    subject: 'Deposit Required — {{venueName}} Reservation',
+    smsBody: 'A deposit of {{depositAmount}} is required for your reservation at {{venueName}} on {{date}}. Pay here: {{depositLink}}',
+    emailBody: '<p>Dear {{guestName}},</p><p>A deposit of <strong>{{depositAmount}}</strong> is required to confirm your reservation.</p><p><strong>Date:</strong> {{date}}<br/><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}</p><p>Please complete your deposit by visiting: <a href="{{depositLink}}">Pay Deposit</a></p><p>This link expires in {{depositExpirationMinutes}} minutes.</p><p>Thank you,<br/>{{venueName}}</p>',
+  },
+  depositReceived: {
+    subject: 'Deposit Received — {{venueName}}',
+    smsBody: 'Your deposit of {{depositAmount}} for {{venueName}} on {{date}} has been received. Thank you!',
+    emailBody: '<p>Dear {{guestName}},</p><p>We have received your deposit of <strong>{{depositAmount}}</strong> for your reservation.</p><p><strong>Date:</strong> {{date}}<br/><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}</p><p>Your reservation is now fully confirmed.</p><p>Thank you,<br/>{{venueName}}</p>',
+  },
+  cancellation: {
+    subject: 'Reservation Cancelled — {{venueName}}',
+    smsBody: 'Your reservation at {{venueName}} on {{date}} at {{time}} has been cancelled. Questions? Call us at {{venuePhone}}.',
+    emailBody: '<p>Dear {{guestName}},</p><p>Your reservation has been cancelled as requested.</p><p><strong>Date:</strong> {{date}}<br/><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}</p><p>If you have any questions, please contact us at {{venuePhone}}.</p><p>We hope to see you again soon.<br/>{{venueName}}</p>',
+  },
+  modification: {
+    subject: 'Reservation Updated — {{venueName}}',
+    smsBody: 'Your reservation at {{venueName}} has been updated to {{date}} at {{time}}, party of {{partySize}}. Manage: {{manageLink}}',
+    emailBody: '<p>Dear {{guestName}},</p><p>Your reservation has been updated with the following details:</p><p><strong>Date:</strong> {{date}}<br/><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}<br/><strong>Table:</strong> {{tableName}}</p><p>To make further changes, visit: <a href="{{manageLink}}">Manage Reservation</a></p><p>Thank you,<br/>{{venueName}}</p>',
+  },
+  noShow: {
+    subject: 'Missed Reservation — {{venueName}}',
+    smsBody: 'We missed you at {{venueName}} today. We hope everything is okay. Book again: {{bookingLink}}',
+    emailBody: '<p>Dear {{guestName}},</p><p>We noticed you were unable to make your reservation at {{venueName}} on {{date}} at {{time}}.</p><p>We hope everything is alright. If you would like to rebook, please visit: <a href="{{bookingLink}}">Book Again</a></p><p>We look forward to welcoming you next time.<br/>{{venueName}}</p>',
+  },
+  waitlistPromoted: {
+    subject: 'A Table is Available — {{venueName}}',
+    smsBody: 'Great news! A table is now available at {{venueName}} on {{date}} at {{time}}. Confirm here: {{manageLink}}',
+    emailBody: '<p>Dear {{guestName}},</p><p>Great news — a table has become available for the date and time you requested.</p><p><strong>Date:</strong> {{date}}<br/><strong>Time:</strong> {{time}}<br/><strong>Party Size:</strong> {{partySize}}</p><p>Please confirm your reservation within {{holdMinutes}} minutes: <a href="{{manageLink}}">Confirm Reservation</a></p><p>Thank you,<br/>{{venueName}}</p>',
+  },
+  thankYou: {
+    subject: 'Thank You for Dining with Us — {{venueName}}',
+    smsBody: 'Thank you for dining at {{venueName}}! We hope you had a wonderful experience. See you again soon!',
+    emailBody: '<p>Dear {{guestName}},</p><p>Thank you for dining with us at {{venueName}}. We hope you had a wonderful experience.</p><p>We would love to see you again. Book your next visit: <a href="{{bookingLink}}">Reserve a Table</a></p><p>Warm regards,<br/>{{venueName}}</p>',
+  },
+}
+
+// Casual template pack — friendly tone
+const CASUAL_TEMPLATES: ReservationMessageTemplates = {
+  confirmation: {
+    subject: "You're booked at {{venueName}}! 🎉",
+    smsBody: "You're all set at {{venueName}}! {{date}} at {{time}}, party of {{partySize}}. Need to change anything? {{manageLink}}",
+    emailBody: '<p>Hey {{guestName}}! 👋</p><p>Your table is booked and we can\'t wait to see you!</p><p>📅 <strong>{{date}}</strong> at <strong>{{time}}</strong><br/>👥 Party of <strong>{{partySize}}</strong><br/>🪑 <strong>{{tableName}}</strong></p><p>{{specialRequests}}</p><p>Need to make changes? <a href="{{manageLink}}">Tap here</a></p><p>See you soon!<br/>The team at {{venueName}}</p>',
+  },
+  reminder24h: {
+    subject: "See you tomorrow at {{venueName}}! 🙌",
+    smsBody: "Hey {{guestName}}! Just a heads up — your table at {{venueName}} is ready for you tomorrow at {{time}}. Can't wait! {{manageLink}}",
+    emailBody: '<p>Hey {{guestName}}!</p><p>Just a quick reminder — you\'ve got a table with us tomorrow!</p><p>📅 <strong>{{date}}</strong> at <strong>{{time}}</strong><br/>👥 Party of <strong>{{partySize}}</strong></p><p>Need to change plans? No worries: <a href="{{manageLink}}">Manage your reservation</a></p><p>See you soon!<br/>{{venueName}}</p>',
+  },
+  reminder2h: {
+    subject: "Almost time! See you at {{venueName}} in 2 hours 🍽️",
+    smsBody: "{{guestName}}, your table at {{venueName}} is just 2 hours away ({{time}})! See you soon! 🎉",
+    emailBody: '<p>Hey {{guestName}}!</p><p>Your table is almost ready — just 2 more hours!</p><p>⏰ <strong>{{time}}</strong><br/>👥 Party of <strong>{{partySize}}</strong></p><p>We\'re excited to see you!<br/>{{venueName}}</p>',
+  },
+  depositRequest: {
+    subject: "Quick deposit to lock in your table at {{venueName}} 💳",
+    smsBody: "Hey! To lock in your table at {{venueName}} on {{date}}, we just need a {{depositAmount}} deposit. Easy-peasy: {{depositLink}}",
+    emailBody: '<p>Hey {{guestName}}!</p><p>We just need a quick deposit of <strong>{{depositAmount}}</strong> to lock in your table.</p><p>📅 <strong>{{date}}</strong> at <strong>{{time}}</strong><br/>👥 Party of <strong>{{partySize}}</strong></p><p><a href="{{depositLink}}">Pay Deposit</a> (link expires in {{depositExpirationMinutes}} min)</p><p>Thanks!<br/>{{venueName}}</p>',
+  },
+  depositReceived: {
+    subject: "Deposit received! You're locked in at {{venueName}} ✅",
+    smsBody: "Got it! Your {{depositAmount}} deposit for {{venueName}} on {{date}} is confirmed. You're all set! 🎉",
+    emailBody: '<p>Hey {{guestName}}!</p><p>We got your deposit of <strong>{{depositAmount}}</strong> — you\'re all locked in!</p><p>📅 <strong>{{date}}</strong> at <strong>{{time}}</strong><br/>👥 Party of <strong>{{partySize}}</strong></p><p>Can\'t wait to see you!<br/>{{venueName}}</p>',
+  },
+  cancellation: {
+    subject: "Reservation cancelled at {{venueName}} 😢",
+    smsBody: "Your reservation at {{venueName}} on {{date}} has been cancelled. We'll miss you! Book again anytime.",
+    emailBody: '<p>Hey {{guestName}},</p><p>Your reservation has been cancelled. We\'re sad to miss you!</p><p>📅 <strong>{{date}}</strong> at <strong>{{time}}</strong></p><p>Questions? Give us a ring at {{venuePhone}}.</p><p>Hope to see you again soon!<br/>{{venueName}}</p>',
+  },
+  modification: {
+    subject: "Reservation updated at {{venueName}} ✏️",
+    smsBody: "Your reservation at {{venueName}} is updated: {{date}} at {{time}}, party of {{partySize}}. {{manageLink}}",
+    emailBody: '<p>Hey {{guestName}}!</p><p>Your reservation has been updated:</p><p>📅 <strong>{{date}}</strong> at <strong>{{time}}</strong><br/>👥 Party of <strong>{{partySize}}</strong><br/>🪑 <strong>{{tableName}}</strong></p><p>Need more changes? <a href="{{manageLink}}">Tap here</a></p><p>See you soon!<br/>{{venueName}}</p>',
+  },
+  noShow: {
+    subject: "We missed you at {{venueName}}!",
+    smsBody: "Hey {{guestName}}, we missed you at {{venueName}} today! Hope everything's OK. Book again: {{bookingLink}}",
+    emailBody: '<p>Hey {{guestName}},</p><p>We missed you at your reservation today! We hope everything is OK.</p><p>Whenever you\'re ready, we\'d love to see you: <a href="{{bookingLink}}">Book Again</a></p><p>Take care!<br/>{{venueName}}</p>',
+  },
+  waitlistPromoted: {
+    subject: "A table just opened up at {{venueName}}! 🎉",
+    smsBody: "Hey {{guestName}}! A table just opened at {{venueName}} on {{date}} at {{time}}! Grab it: {{manageLink}}",
+    emailBody: '<p>Hey {{guestName}}! 🎉</p><p>A table just became available!</p><p>📅 <strong>{{date}}</strong> at <strong>{{time}}</strong><br/>👥 Party of <strong>{{partySize}}</strong></p><p>Grab it before it\'s gone (you have {{holdMinutes}} min): <a href="{{manageLink}}">Confirm Now</a></p><p>{{venueName}}</p>',
+  },
+  thankYou: {
+    subject: "Thanks for coming to {{venueName}}! 🙏",
+    smsBody: "Thanks for dining with us at {{venueName}}! Hope you had an amazing time. Come back soon! 🍽️",
+    emailBody: '<p>Hey {{guestName}}!</p><p>Thanks so much for joining us at {{venueName}}! We hope you loved it.</p><p>Ready for round two? <a href="{{bookingLink}}">Book your next visit</a></p><p>Cheers!<br/>The {{venueName}} crew</p>',
+  },
+}
+
+export const DEFAULT_RESERVATION_TEMPLATES: ReservationMessageTemplates = PROFESSIONAL_TEMPLATES
+
+export const TEMPLATE_PACKS: Record<string, ReservationMessageTemplates> = {
+  professional: PROFESSIONAL_TEMPLATES,
+  casual: CASUAL_TEMPLATES,
+}
+
+export const AVAILABLE_PLACEHOLDERS: { key: string; description: string }[] = [
+  { key: '{{guestName}}', description: 'Guest full name' },
+  { key: '{{date}}', description: 'Reservation date (formatted)' },
+  { key: '{{time}}', description: 'Reservation time (formatted)' },
+  { key: '{{partySize}}', description: 'Number of guests' },
+  { key: '{{tableName}}', description: 'Assigned table name' },
+  { key: '{{venueName}}', description: 'Restaurant / venue name' },
+  { key: '{{venuePhone}}', description: 'Venue phone number' },
+  { key: '{{venueAddress}}', description: 'Venue street address' },
+  { key: '{{manageLink}}', description: 'Link to manage/modify reservation' },
+  { key: '{{bookingLink}}', description: 'Link to public booking page' },
+  { key: '{{depositLink}}', description: 'Link to pay deposit' },
+  { key: '{{depositAmount}}', description: 'Deposit amount (formatted with $)' },
+  { key: '{{depositExpirationMinutes}}', description: 'Minutes until deposit link expires' },
+  { key: '{{holdMinutes}}', description: 'Minutes to confirm waitlist promotion' },
+  { key: '{{specialRequests}}', description: 'Guest special requests (if any)' },
+  { key: '{{occasion}}', description: 'Occasion (birthday, anniversary, etc.)' },
+  { key: '{{confirmationCode}}', description: 'Short confirmation code' },
+]
+
 // Merge partial settings with defaults
 export function mergeWithDefaults(partial: Partial<LocationSettings> | null | undefined): LocationSettings {
   if (!partial) return { ...DEFAULT_SETTINGS }
@@ -2201,6 +2422,28 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     barOperations: partial.barOperations
       ? { ...DEFAULT_BAR_OPERATIONS, ...partial.barOperations }
+      : undefined,
+    reservationSettings: partial.reservationSettings
+      ? { ...DEFAULT_RESERVATION_SETTINGS, ...partial.reservationSettings }
+      : undefined,
+    depositRules: partial.depositRules
+      ? { ...DEFAULT_DEPOSIT_RULES, ...partial.depositRules, paymentMethods: partial.depositRules.paymentMethods ?? DEFAULT_DEPOSIT_RULES.paymentMethods }
+      : undefined,
+    reservationTemplates: partial.reservationTemplates
+      ? {
+          ...DEFAULT_RESERVATION_TEMPLATES,
+          ...partial.reservationTemplates,
+          confirmation: { ...DEFAULT_RESERVATION_TEMPLATES.confirmation, ...partial.reservationTemplates.confirmation },
+          reminder24h: { ...DEFAULT_RESERVATION_TEMPLATES.reminder24h, ...partial.reservationTemplates.reminder24h },
+          reminder2h: { ...DEFAULT_RESERVATION_TEMPLATES.reminder2h, ...partial.reservationTemplates.reminder2h },
+          depositRequest: { ...DEFAULT_RESERVATION_TEMPLATES.depositRequest, ...partial.reservationTemplates.depositRequest },
+          depositReceived: { ...DEFAULT_RESERVATION_TEMPLATES.depositReceived, ...partial.reservationTemplates.depositReceived },
+          cancellation: { ...DEFAULT_RESERVATION_TEMPLATES.cancellation, ...partial.reservationTemplates.cancellation },
+          modification: { ...DEFAULT_RESERVATION_TEMPLATES.modification, ...partial.reservationTemplates.modification },
+          noShow: { ...DEFAULT_RESERVATION_TEMPLATES.noShow, ...partial.reservationTemplates.noShow },
+          waitlistPromoted: { ...DEFAULT_RESERVATION_TEMPLATES.waitlistPromoted, ...partial.reservationTemplates.waitlistPromoted },
+          thankYou: { ...DEFAULT_RESERVATION_TEMPLATES.thankYou, ...partial.reservationTemplates.thankYou },
+        }
       : undefined,
   }
 }

@@ -1797,3 +1797,49 @@ export async function dispatchVenueLogNew(
     return false
   }
 }
+
+// ==================== Reservation Events ====================
+
+/**
+ * Dispatch reservation changed event to all connected clients.
+ * Emitted on any reservation mutation (create, update, cancel, seat, check-in, etc.)
+ * Host view, floor plan, and admin reservation pages listen for this.
+ */
+export async function dispatchReservationChanged(
+  locationId: string,
+  data: {
+    reservationId: string
+    action: string
+    reservation?: any
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'reservation:changed', data)
+
+      // Also emit specific event for new online bookings (host notification)
+      if (data.action === 'created' && data.reservation?.source === 'online') {
+        await emitToLocation(locationId, 'reservation:new_online', {
+          reservationId: data.reservationId,
+          guestName: data.reservation?.guestName,
+          partySize: data.reservation?.partySize,
+          reservationTime: data.reservation?.reservationTime,
+          serviceDate: data.reservation?.serviceDate,
+        })
+      }
+
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch reservation:changed:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async reservation:changed failed:', err))
+    return true
+  }
+
+  return doEmit()
+}

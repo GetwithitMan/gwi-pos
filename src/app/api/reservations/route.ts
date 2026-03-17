@@ -2,29 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
-
-// Helper to parse HH:MM time to minutes from midnight
-function parseTimeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number)
-  return hours * 60 + minutes
-}
-
-// Helper to check if reservation overlaps with event time
-function reservationOverlapsEvent(
-  reservation: { reservationTime: string; duration: number },
-  event: { doorsOpen: string; endTime: string | null }
-): boolean {
-  const resStart = parseTimeToMinutes(reservation.reservationTime)
-  const resEnd = resStart + reservation.duration
-
-  const eventStart = parseTimeToMinutes(event.doorsOpen)
-  const eventEnd = event.endTime
-    ? parseTimeToMinutes(event.endTime)
-    : eventStart + 240 // Default 4 hours if no end time
-
-  // Overlap exists if: reservation starts before event ends AND reservation ends after event starts
-  return resStart < eventEnd && resEnd > eventStart
-}
+import { getActorFromRequest } from '@/lib/api-auth'
+import { createReservationWithRules, CreateReservationError } from '@/lib/reservations/create-reservation'
+import type { OperatingHours } from '@/lib/reservations/availability'
+import type { SourceType } from '@/lib/reservations/state-machine'
 
 // GET - List reservations
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -32,8 +13,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const date = searchParams.get('date')
+    const serviceDate = searchParams.get('serviceDate')
     const status = searchParams.get('status')
     const tableId = searchParams.get('tableId')
+    const source = searchParams.get('source')
 
     if (!locationId) {
       return NextResponse.json(
@@ -44,20 +27,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const whereClause: Record<string, unknown> = { locationId }
 
-    // Filter by date
-    if (date) {
-      const searchDate = new Date(date)
-      whereClause.reservationDate = searchDate
+    // Filter by date (calendar date or service date)
+    if (serviceDate) {
+      whereClause.serviceDate = new Date(serviceDate + 'T00:00:00Z')
+    } else if (date) {
+      whereClause.reservationDate = new Date(date)
     }
 
-    // Filter by status
     if (status) {
-      whereClause.status = status
+      if (status.includes(',')) {
+        whereClause.status = { in: status.split(',') }
+      } else {
+        whereClause.status = status
+      }
     }
 
-    // Filter by table
     if (tableId) {
       whereClause.tableId = tableId
+    }
+
+    if (source) {
+      whereClause.source = source
     }
 
     const reservations = await db.reservation.findMany({
@@ -78,6 +68,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             lastName: true,
             phone: true,
             email: true,
+            noShowCount: true,
+            isBlacklisted: true,
           },
         },
         bottleServiceTier: {
@@ -106,7 +98,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 })
 
-// POST - Create a new reservation
+// POST - Create a new reservation via the reservation engine
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -122,159 +114,106 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       tableId,
       specialRequests,
       internalNotes,
-      customerId,
-      createdBy,
+      occasion,
+      dietaryRestrictions,
+      sectionPreference,
+      source,
+      externalId,
+      smsOptIn,
+      tags,
       bottleServiceTierId,
+      idempotencyKey,
+      forceBook,
     } = body
 
     if (!locationId || !guestName || !partySize || !reservationDate || !reservationTime) {
       return NextResponse.json(
-        { error: 'Location ID, guest name, party size, date, and time are required' },
+        { error: 'locationId, guestName, partySize, reservationDate, and reservationTime are required' },
         { status: 400 }
       )
     }
 
-    // Check for conflicting events (events that are on sale or sold out)
-    const conflictingEvent = await db.event.findFirst({
-      where: {
-        locationId,
-        eventDate: new Date(reservationDate),
-        status: { in: ['on_sale', 'sold_out'] },
-        isActive: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        doorsOpen: true,
-        endTime: true,
-      },
-    })
-
-    if (conflictingEvent) {
-      const reservationDuration = duration || 90
-      const overlaps = reservationOverlapsEvent(
-        { reservationTime, duration: reservationDuration },
-        { doorsOpen: conflictingEvent.doorsOpen, endTime: conflictingEvent.endTime }
-      )
-
-      if (overlaps) {
-        return NextResponse.json(
-          {
-            error: `Cannot create reservation: "${conflictingEvent.name}" is scheduled during this time. Please purchase tickets instead.`,
-            eventId: conflictingEvent.id,
-            eventName: conflictingEvent.name,
-          },
-          { status: 409 }
-        )
-      }
-    }
-
-    // If tableId provided, check for conflicts
-    if (tableId) {
-      const conflictingReservation = await db.reservation.findFirst({
-        where: {
-          tableId,
-          reservationDate: new Date(reservationDate),
-          status: { in: ['confirmed', 'seated'] },
-          // Check for time overlap (simplified - within duration window)
-        },
-      })
-
-      // More detailed time overlap check using minutes from midnight
-      if (conflictingReservation) {
-        const existingStart = parseTimeToMinutes(conflictingReservation.reservationTime)
-        const existingEnd = existingStart + conflictingReservation.duration
-        const newStart = parseTimeToMinutes(reservationTime)
-        const newEnd = newStart + (duration || 90)
-
-        // Check overlap: reservations overlap if one starts before the other ends
-        if (newStart < existingEnd && newEnd > existingStart) {
-          return NextResponse.json(
-            { error: 'Table has a conflicting reservation at this time' },
-            { status: 400 }
-          )
-        }
-      }
-    }
-
-    // Check if deposit is required based on settings + party size
+    // Load location settings
     const location = await db.location.findUnique({
       where: { id: locationId },
-      select: { settings: true },
-    })
-    const settings = parseSettings(location?.settings)
-    const depositSettings = settings.reservationDeposits
-
-    let depositRequired = false
-    let depositAmount = 0
-
-    if (depositSettings?.enabled) {
-      const threshold = depositSettings.requireForPartySize ?? 6
-      if (partySize >= threshold) {
-        depositRequired = true
-        depositAmount = depositSettings.defaultAmount ?? 50
-      }
-    }
-
-    const reservation = await db.reservation.create({
-      data: {
-        locationId,
-        guestName,
-        guestPhone,
-        guestEmail,
-        partySize,
-        reservationDate: new Date(reservationDate),
-        reservationTime,
-        duration: duration || 90,
-        tableId,
-        specialRequests,
-        internalNotes,
-        customerId,
-        createdBy,
-        status: 'confirmed',
-        bottleServiceTierId: bottleServiceTierId || null,
-      },
-      include: {
-        table: {
-          select: {
-            id: true,
-            name: true,
-            capacity: true,
-          },
-        },
-        customer: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        bottleServiceTier: {
-          select: {
-            id: true,
-            name: true,
-            color: true,
-            depositAmount: true,
-            minimumSpend: true,
-          },
-        },
-      },
+      select: { name: true, settings: true, timezone: true, phone: true, address: true },
     })
 
-    // Write deposit fields via raw SQL (columns added by migration 029)
-    if (depositRequired) {
-      void db.$executeRawUnsafe(
-        `UPDATE "Reservation" SET "depositRequired" = true, "depositAmount" = $1 WHERE id = $2`,
-        depositAmount, reservation.id
-      ).catch(console.error)
+    if (!location) {
+      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
     }
+
+    const settings = parseSettings(location.settings)
+    const resSettings = settings.reservationSettings!
+    const depRules = settings.depositRules!
+    const templates = settings.reservationTemplates!
+    const tz = (location.timezone as string) || 'America/New_York'
+
+    // Resolve operating hours for this day
+    const dayOfWeek = new Date(reservationDate + 'T12:00:00').getDay()
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const hoursConfig = (settings as any)?.operatingHours || {}
+    const hours = hoursConfig[dayNames[dayOfWeek]] as OperatingHours | null | undefined
+
+    // Resolve actor
+    const actorInfo = await getActorFromRequest(request)
+
+    const result = await createReservationWithRules({
+      locationId,
+      guestName,
+      guestPhone,
+      guestEmail,
+      partySize,
+      reservationDate,
+      reservationTime,
+      duration,
+      specialRequests,
+      internalNotes,
+      occasion,
+      dietaryRestrictions,
+      sectionPreference,
+      source: (source as SourceType) || 'staff',
+      externalId,
+      smsOptIn,
+      tags,
+      tableId,
+      bottleServiceTierId,
+      idempotencyKey,
+      forceBook,
+      actor: {
+        type: actorInfo.fromSession ? 'staff' : 'guest',
+        id: actorInfo.employeeId || undefined,
+      },
+      db,
+      settings: resSettings,
+      depositRules: depRules,
+      templates,
+      operatingHours: hours || null,
+      timezone: tz,
+      venueInfo: {
+        name: location.name,
+        phone: location.phone || undefined,
+        address: location.address || undefined,
+        slug: '',
+        baseUrl: process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006',
+      },
+    })
 
     return NextResponse.json({
-      ...reservation,
-      depositRequired,
-      depositAmount,
+      data: result.reservation,
+      customer: result.customer,
+      customerCreated: result.created,
+      depositRequired: result.depositRequired,
+      depositToken: result.depositToken,
+      depositExpiresAt: result.depositExpiresAt,
     })
   } catch (error) {
+    if (error instanceof CreateReservationError) {
+      const statusCode = error.code === 'SLOT_UNAVAILABLE' ? 409
+        : error.code === 'BLACKLISTED' ? 403
+        : 422
+      return NextResponse.json({ error: error.message, code: error.code }, { status: statusCode })
+    }
     console.error('Failed to create reservation:', error)
     return NextResponse.json(
       { error: 'Failed to create reservation' },

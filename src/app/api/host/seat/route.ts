@@ -5,6 +5,7 @@ import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_HOST_VIEW, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { getNextServer, buildServerInfoList } from '@/lib/host/server-rotation'
 import { dispatchFloorPlanUpdate, dispatchWaitlistChanged, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { transition } from '@/lib/reservations/state-machine'
 
 export const dynamic = 'force-dynamic'
 
@@ -125,12 +126,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }).catch(console.error)
     }
 
-    // Update reservation if provided
+    // Update reservation via state machine if provided
     if (reservationId) {
-      await db.reservation.updateMany({
-        where: { id: reservationId, locationId },
-        data: { status: 'seated', tableId },
-      })
+      try {
+        await db.$transaction(async (tx: any) => {
+          // Update table assignment first
+          await tx.reservation.update({
+            where: { id: reservationId },
+            data: { tableId },
+          })
+          // Transition status via state machine (handles audit events + socket)
+          return transition({
+            reservationId,
+            to: 'seated',
+            actor: { type: 'staff', id: assignedServerId || undefined },
+            db: tx,
+            locationId,
+          })
+        })
+      } catch (err) {
+        // Non-fatal — log but don't block seating
+        console.warn('[Host/Seat] Reservation transition failed:', err)
+      }
     }
 
     // Check for an existing open order on this table
