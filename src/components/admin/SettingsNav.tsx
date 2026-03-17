@@ -7,6 +7,7 @@ import { hasPermission, isAdmin, PERMISSIONS } from '@/lib/auth-utils'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
 import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
+import { useCakeFeature, useCakeLicensed } from '@/hooks/useCakeFeature'
 
 const CLOUD_PARENT_DOMAINS = [
   '.ordercontrolcenter.com',
@@ -248,16 +249,6 @@ const settingsSections: SettingsSection[] = [
     ],
   },
   {
-    title: 'Cake Orders',
-    icon: '🎂',
-    permission: 'cake.view',
-    items: [
-      { name: 'Orders', href: '/settings/cake-orders' },
-      { name: 'Production', href: '/settings/cake-orders/production' },
-      { name: 'Settings', href: '/settings/cake-orders/config' },
-    ],
-  },
-  {
     title: 'Monitoring',
     icon: '🖥️',
     permission: PERMISSIONS.SETTINGS_MONITORING,
@@ -289,6 +280,29 @@ const deliverySection: SettingsSection = {
   ],
 }
 
+// Cake Orders section — dynamically injected when licensed + enabled
+const cakeSection: SettingsSection = {
+  title: 'Cake Orders',
+  icon: '🎂',
+  permission: 'cake.view',
+  items: [
+    { name: 'Orders', href: '/settings/cake-orders' },
+    { name: 'Production', href: '/settings/cake-orders/production' },
+    { name: 'Calendar', href: '/settings/cake-orders/calendar' },
+    { name: 'Cake Settings', href: '/settings/cake-orders/config' },
+  ],
+}
+
+// Cake config-only section — visible when licensed but not yet enabled (so owner can configure)
+const cakeConfigOnlySection: SettingsSection = {
+  title: 'Cake Orders',
+  icon: '🎂',
+  permission: 'cake.settings',
+  items: [
+    { name: 'Cake Settings', href: '/settings/cake-orders/config' },
+  ],
+}
+
 export function SettingsNav() {
   const pathname = usePathname()
   const employee = useAuthStore(s => s.employee)
@@ -297,6 +311,8 @@ export function SettingsNav() {
   const permissions = employee?.permissions || []
   const userIsAdmin = isAdmin(permissions)
   const isDeliveryActive = useDeliveryFeature()
+  const isCakeActive = useCakeFeature()
+  const isCakeLicensed = useCakeLicensed()
 
   const isCloud = useMemo(() => {
     if (typeof window === 'undefined') return false
@@ -314,18 +330,33 @@ export function SettingsNav() {
     window.location.href = MISSION_CONTROL_URL
   }, [logout, clearOrder])
 
-  // Build sections list — conditionally include Delivery when feature is active
+  // Build sections list — conditionally include Delivery + Cake when features active
   const allSections = useMemo(() => {
-    if (!isDeliveryActive) return settingsSections
-    // Insert delivery section after "Online Ordering"
-    const idx = settingsSections.findIndex(s => s.title === 'Online Ordering')
-    const insertAt = idx >= 0 ? idx + 1 : settingsSections.length
-    return [
-      ...settingsSections.slice(0, insertAt),
-      deliverySection,
-      ...settingsSections.slice(insertAt),
-    ]
-  }, [isDeliveryActive])
+    let sections = [...settingsSections]
+
+    // Insert delivery section after "Online Ordering" (if active)
+    if (isDeliveryActive) {
+      const idx = sections.findIndex(s => s.title === 'Online Ordering')
+      const insertAt = idx >= 0 ? idx + 1 : sections.length
+      sections = [...sections.slice(0, insertAt), deliverySection, ...sections.slice(insertAt)]
+    }
+
+    // Insert cake section before "Monitoring" (if licensed)
+    if (isCakeActive) {
+      // Full section: orders, production, calendar, settings
+      const idx = sections.findIndex(s => s.title === 'Monitoring')
+      const insertAt = idx >= 0 ? idx : sections.length
+      sections = [...sections.slice(0, insertAt), cakeSection, ...sections.slice(insertAt)]
+    } else if (isCakeLicensed) {
+      // Config-only: just the settings page so owner can configure before enabling
+      const idx = sections.findIndex(s => s.title === 'Monitoring')
+      const insertAt = idx >= 0 ? idx : sections.length
+      sections = [...sections.slice(0, insertAt), cakeConfigOnlySection, ...sections.slice(insertAt)]
+    }
+    // If not licensed at all: no cake section visible
+
+    return sections
+  }, [isDeliveryActive, isCakeActive, isCakeLicensed])
 
   const getActiveSection = () => {
     for (const section of allSections) {
