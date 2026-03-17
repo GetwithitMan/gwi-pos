@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 import { KDSClockModal } from '../components/KDSClockModal'
 import { ToastContainer } from '@/components/ui/ToastContainer'
+import DeliveryExpoRail from '@/components/delivery/DeliveryExpoRail'
 
 // LocalStorage keys for device authentication
 const DEVICE_TOKEN_KEY = 'kds_device_token'
@@ -1238,6 +1239,11 @@ function KDSContent() {
         onClose={() => setShowKdsClockModal(false)}
         locationId={getLocationId()}
       />
+
+      {/* Delivery Expo Rail — feature-gated, only renders when deliveryKdsProvisioned */}
+      <SilentErrorBoundary name="DeliveryExpoRail">
+        <DeliveryExpoRail locationId={getLocationId()} />
+      </SilentErrorBoundary>
 
       {/* Orders Grid */}
       <div className="p-4">
