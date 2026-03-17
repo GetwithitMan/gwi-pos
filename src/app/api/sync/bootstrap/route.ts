@@ -46,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: cachedData })
   }
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules, pizzaToppings] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -179,6 +179,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       orderBy: { priority: 'asc' },
     }),
+    // Pizza toppings: category enrichment for Android topping filter tabs
+    db.pizzaTopping.findMany({
+      where: { locationId, isActive: true, deletedAt: null },
+      select: { name: true, category: true }
+    }),
   ])
 
   if (isCellular) {
@@ -198,6 +203,28 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       console.warn(`[bootstrap] WARNING: 0 categories for locationId=${locationId} in venue=${venueSlug} — menu may not be configured`)
     }
   }
+
+  // ─── Pizza Topping Category Enrichment ──────────────────────────────────────
+  // Enrich modifier objects with toppingCategory from PizzaTopping records.
+  // Name-based matching (normalized: trim, lowercase, collapse whitespace).
+  const normalizeName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
+  const toppingCategoryMap = new Map(
+    pizzaToppings.map((t: any) => [normalizeName(t.name), t.category])
+  )
+  if (pizzaToppings.length > 0) {
+    const seenNames = new Map<string, string>()
+    for (const t of pizzaToppings) {
+      const norm = normalizeName(t.name)
+      if (seenNames.has(norm) && seenNames.get(norm) !== t.category) {
+        console.warn(`[bootstrap] duplicate topping name '${t.name}' (norm: '${norm}') categories: '${seenNames.get(norm)}' vs '${t.category}' locationId=${locationId}`)
+      }
+      seenNames.set(norm, t.category)
+    }
+  }
+  const enrichModifier = (m: any) => normalizeModifier({
+    ...m,
+    toppingCategory: toppingCategoryMap.get(normalizeName(m.name ?? '')) ?? null,
+  })
 
   // Fetch shared/global modifier groups (menuItemId IS NULL) — these include
   // spirit upgrade groups created via the liquor builder that aren't tied to a
@@ -247,7 +274,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const nextWave: string[] = []
     for (const g of groups) {
       // Normalize Decimal price fields on each modifier
-      const mappedMods = g.modifiers.map((m: any) => normalizeModifier(m))
+      const mappedMods = g.modifiers.map((m: any) => enrichModifier(m))
       childModifierGroups.push({ ...g, modifiers: mappedMods })
       g.modifiers.forEach((m: any) => {
         if (m.childModifierGroupId && !fetchedGroupIds.has(m.childModifierGroupId)) {
@@ -351,6 +378,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })) ?? [],
       spiritTiers: buildSpiritTiersFromItem(item),
       hasOtherModifiers: (item as any).ownedModifierGroups?.filter((mg: any) => !mg.isSpiritGroup).length > 0,
+      ownedModifierGroups: (item as any).ownedModifierGroups?.map((g: any) => ({
+        ...g,
+        modifiers: g.modifiers?.map((m: any) => enrichModifier(m)) ?? [],
+      })) ?? [],
     })),
   }))
 
@@ -362,7 +393,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           // Include shared/global modifier groups (menuItemId IS NULL) — spirit upgrades
           ...sharedModifierGroups.map(g => ({
             ...g,
-            modifiers: g.modifiers.map((m: any) => normalizeModifier(m)),
+            modifiers: g.modifiers.map((m: any) => enrichModifier(m)),
           })),
         ],
       },
