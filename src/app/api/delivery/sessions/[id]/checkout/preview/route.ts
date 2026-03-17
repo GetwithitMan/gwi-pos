@@ -50,6 +50,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Count deliveries in this session
+    // session.driverId is a DeliveryDriver.id which matches DeliveryOrder.driverId
     const deliveryStats: any[] = await db.$queryRawUnsafe(`
       SELECT
         COUNT(*)::int as "deliveryCount",
@@ -69,7 +70,7 @@ export const GET = withVenue(async function GET(
         AND dord."status" = 'delivered'
         AND dord."deliveredAt" >= $3
         AND dord."deliveredAt" <= CURRENT_TIMESTAMP
-    `, session.employeeId, locationId, session.startedAt)
+    `, session.driverId, locationId, session.startedAt)
 
     const stats = deliveryStats[0] || {}
 

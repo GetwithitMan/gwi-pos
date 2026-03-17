@@ -85,6 +85,7 @@ export const POST = withVenue(async function POST(
       }
 
       // Calculate expected cash from completed deliveries during this session
+      // session.driverId is a DeliveryDriver.id which matches DeliveryOrder.driverId
       const expectedCashRows: any[] = await tx.$queryRawUnsafe(`
         SELECT COALESCE(SUM(
           CASE WHEN dord."paymentMethod" = 'cash'
@@ -97,7 +98,7 @@ export const POST = withVenue(async function POST(
           AND dord."status" = 'delivered'
           AND dord."deliveredAt" >= $3
           AND dord."deliveredAt" <= CURRENT_TIMESTAMP
-      `, session.employeeId, locationId, session.startedAt)
+      `, session.driverId, locationId, session.startedAt)
 
       const expectedCashCents = expectedCashRows[0]?.expectedCashCents ?? 0
 
@@ -137,6 +138,7 @@ export const POST = withVenue(async function POST(
       `, locationId, session.employeeId, cashTipsDeclaredCents)
 
       // Count deliveries in this session
+      // session.driverId is a DeliveryDriver.id which matches DeliveryOrder.driverId
       const deliveryCountRows: any[] = await tx.$queryRawUnsafe(`
         SELECT COUNT(*)::int as count
         FROM "DeliveryOrder"
@@ -145,7 +147,7 @@ export const POST = withVenue(async function POST(
           AND "status" = 'delivered'
           AND "deliveredAt" >= $3
           AND "deliveredAt" <= CURRENT_TIMESTAMP
-      `, session.employeeId, locationId, session.startedAt)
+      `, session.driverId, locationId, session.startedAt)
 
       const deliveryCount = deliveryCountRows[0]?.count ?? 0
 

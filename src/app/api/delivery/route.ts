@@ -195,9 +195,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       INSERT INTO "DeliveryOrder" (
         "locationId", "orderId", "employeeId", "driverId",
         "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode",
-        "notes", "status", "deliveryFee", "estimatedMinutes", "scheduledFor"
+        "notes", "status", "deliveryFee", "estimatedMinutes", "scheduledFor",
+        "trackingToken"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15,
+        gen_random_uuid()::text)
       RETURNING *
     `,
       locationId,
