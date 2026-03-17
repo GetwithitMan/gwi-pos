@@ -19,6 +19,7 @@ import {
   DEFAULT_RESERVATION_TEMPLATES,
   TEMPLATE_PACKS,
   AVAILABLE_PLACEHOLDERS,
+  getEffectiveDepositMode,
 } from '@/lib/settings'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -309,10 +310,41 @@ export default function ReservationSettingsPage() {
       {activeTab === 'deposits' && (
         <div className="space-y-1">
           <SectionCard title="Deposit Engine">
-            <ToggleRow label="Require Deposits" description="Enable the deposit requirement engine for reservations" checked={deposit.enabled} onChange={v => updateDeposit('enabled', v)} />
+            <div className="mb-1">
+              <div className="text-sm font-medium text-gray-900 mb-1">Deposit Mode</div>
+              <div className="text-xs text-gray-500 mb-3">
+                Control whether deposits are required, offered optionally, or disabled entirely.
+              </div>
+              <div className="flex gap-2">
+                {(['disabled', 'optional', 'required'] as const).map(mode => {
+                  const effectiveMode = getEffectiveDepositMode(deposit)
+                  return (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        updateDeposit('requirementMode', mode)
+                        updateDeposit('enabled', mode !== 'disabled')
+                      }}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        effectiveMode === mode
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {mode === 'disabled' ? 'Disabled' : mode === 'optional' ? 'Optional' : 'Required'}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-2 text-xs text-gray-500">
+                {getEffectiveDepositMode(deposit) === 'disabled' && 'No deposits will be collected for any reservations.'}
+                {getEffectiveDepositMode(deposit) === 'optional' && 'Guests can choose to pay a deposit but reservations are confirmed without one.'}
+                {getEffectiveDepositMode(deposit) === 'required' && 'Reservations stay pending until the deposit is paid. A hold timer enforces the deadline.'}
+              </div>
+            </div>
           </SectionCard>
 
-          {deposit.enabled && (
+          {getEffectiveDepositMode(deposit) !== 'disabled' && (
             <>
               <SectionCard title="Trigger Rules">
                 <NumberRow label="Party Size Threshold" description="Require deposit for parties of this size or larger (0 = all reservations)" value={deposit.partySizeThreshold} onChange={v => updateDeposit('partySizeThreshold', v)} min={0} max={50} />

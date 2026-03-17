@@ -2,7 +2,7 @@
  * SMS Notification Helper
  *
  * Handles notification creation, template rendering, and retry scheduling.
- * Actual SMS sending via Twilio is stubbed for v1 (TODO: wire Twilio).
+ * SMS sending via existing Twilio client (src/lib/twilio.ts).
  *
  * Usage:
  * ```typescript
@@ -11,7 +11,7 @@
  * // Render a template
  * const msg = renderSmsTemplate('Your order #{orderNumber} is on the way!', { orderNumber: '1234' })
  *
- * // Send a notification (Twilio stubbed)
+ * // Send a notification
  * await createDeliveryNotification({
  *   locationId, deliveryOrderId, event: 'dispatched',
  *   channel: 'sms', recipient: '+15551234567', messageBody: msg,
@@ -20,6 +20,7 @@
  */
 
 import { db } from '@/lib/db'
+import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -93,7 +94,7 @@ export async function createDeliveryNotification(params: SendNotificationParams)
       VALUES (gen_random_uuid()::text, $1, 1, 'queued', CURRENT_TIMESTAMP)
     `, notification.id)
 
-    // 4. Attempt send (Twilio stub for v1)
+    // 4. Attempt send via Twilio (SMS) or Firebase (push)
     const sendResult = await attemptSend(channel, recipient, messageBody)
 
     // 5. Update attempt and notification status
@@ -166,7 +167,7 @@ export function renderSmsTemplate(
   return result
 }
 
-// ── Send Stub ───────────────────────────────────────────────────────────────
+// ── Send Implementation ─────────────────────────────────────────────────────
 
 interface SendResult {
   success: boolean
@@ -177,7 +178,9 @@ interface SendResult {
 /**
  * Attempt to send a notification via the appropriate channel.
  *
- * TODO: Wire Twilio for SMS, Firebase for push. Currently stubbed.
+ * SMS: Uses the shared Twilio client from src/lib/twilio.ts (same credentials
+ * as void approval SMS, error alerts, reservation texts, etc.).
+ * Push: Stubbed for future Firebase Cloud Messaging integration.
  */
 async function attemptSend(
   channel: 'sms' | 'push',
@@ -185,18 +188,24 @@ async function attemptSend(
   messageBody: string,
 ): Promise<SendResult> {
   if (channel === 'sms') {
-    // TODO: Wire Twilio
-    // import twilio from 'twilio'
-    // const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
-    // const message = await client.messages.create({
-    //   body: messageBody,
-    //   from: process.env.TWILIO_PHONE_NUMBER,
-    //   to: recipient,
-    // })
-    // return { success: true, providerMessageId: message.sid }
+    if (!isTwilioConfigured()) {
+      console.warn('[DeliveryNotification] Twilio not configured, skipping SMS')
+      return { success: false, error: 'Twilio not configured' }
+    }
 
-    console.log(`[DeliveryNotification] SMS STUB: Would send to ${recipient}: ${messageBody}`)
-    return { success: true, providerMessageId: `stub-${Date.now()}` }
+    try {
+      const result = await sendSMS({ to: recipient, body: messageBody })
+
+      if (result.success) {
+        return { success: true, providerMessageId: result.messageSid }
+      }
+
+      return { success: false, error: result.error || 'Twilio send failed' }
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Unknown Twilio error'
+      console.error('[DeliveryNotification] Twilio SMS error:', errMsg)
+      return { success: false, error: errMsg }
+    }
   }
 
   if (channel === 'push') {

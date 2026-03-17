@@ -12,6 +12,7 @@ import { calculateCardPrice, applyPriceRounding, roundToCents } from '@/lib/pric
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
+import { resolveDeliveryTipRecipient } from '@/lib/delivery/tip-reallocation'
 import { withVenue } from '@/lib/with-venue'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { triggerCashDrawer } from '@/lib/cash-drawer'
@@ -1568,8 +1569,54 @@ export const POST = withVenue(withTiming(async function POST(
       // (e.g. bottle service auto-gratuity) should pass 'auto_gratuity' or 'service_charge'.
       // Resolve tip owner: order's assigned employee, or the processing employee as fallback.
       // Without fallback, tips on unassigned orders (e.g. walk-up kiosk) would be silently dropped.
-      const tipOwnerEmployeeId = order.employeeId || employeeId
-      if (totalTips > 0 && tipOwnerEmployeeId && !isTrainingPayment) {
+      //
+      // Delivery orders: tip goes to the assigned driver (or holding ledger if no driver yet).
+      // resolveDeliveryTipRecipient checks DeliveryOrder and returns the correct recipientId.
+      let tipOwnerEmployeeId = order.employeeId || employeeId
+      if (totalTips > 0 && order.orderType === 'delivery' && !isTrainingPayment) {
+        void (async () => {
+          try {
+            // Look up the delivery order linked to this POS order
+            const deliveryOrders = await db.$queryRawUnsafe<{ id: string }[]>(
+              `SELECT "id" FROM "DeliveryOrder"
+               WHERE "orderId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+               LIMIT 1`,
+              orderId,
+              order.locationId,
+            )
+            if (deliveryOrders.length) {
+              const resolved = await resolveDeliveryTipRecipient(
+                order.locationId,
+                deliveryOrders[0].id,
+              )
+              tipOwnerEmployeeId = resolved.recipientId
+            }
+          } catch (err) {
+            // Delivery tip resolution failure falls back to standard tip owner
+            console.error('[Pay] Delivery tip recipient resolution failed, using default:', err)
+          }
+
+          if (tipOwnerEmployeeId) {
+            await allocateTipsForPayment({
+              locationId: order.locationId,
+              orderId,
+              primaryEmployeeId: tipOwnerEmployeeId,
+              createdPayments: ingestResult.bridgedPayments.map((bp: any) => ({
+                id: bp.id,
+                paymentMethod: bp.paymentMethod,
+                amount: bp.amount,
+                tipAmount: bp.tipAmount,
+                totalAmount: bp.totalAmount,
+              })),
+              totalTipsDollars: totalTips,
+              tipBankSettings: settings.tipBank,
+              kind: autoGratApplied ? 'auto_gratuity' : 'tip',
+            })
+          }
+        })().catch(err => {
+          console.error('Background delivery tip allocation failed:', err)
+        })
+      } else if (totalTips > 0 && tipOwnerEmployeeId && !isTrainingPayment) {
         void allocateTipsForPayment({
           locationId: order.locationId,
           orderId,

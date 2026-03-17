@@ -84,6 +84,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const DEPOSIT_BADGE: Record<string, { bg: string; label: string }> = {
   not_required: { bg: 'bg-gray-600 text-gray-300', label: 'No Deposit' },
+  optional_unpaid: { bg: 'bg-blue-600 text-blue-200', label: 'Deposit: Optional' },
   pending: { bg: 'bg-yellow-700 text-yellow-200', label: 'Deposit Pending' },
   hold_pending: { bg: 'bg-orange-700 text-orange-200', label: 'Hold Pending' },
   paid: { bg: 'bg-green-700 text-green-200', label: 'Deposit Paid' },

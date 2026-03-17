@@ -136,6 +136,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       status: result.reservation.status,
       manageToken: result.reservation.manageToken,
       depositRequired: result.depositRequired,
+      depositOptional: result.depositOptional,
       depositToken: result.depositToken,
       depositExpiresAt: result.depositExpiresAt,
       confirmationCode: result.reservation.id.slice(0, 8).toUpperCase(),

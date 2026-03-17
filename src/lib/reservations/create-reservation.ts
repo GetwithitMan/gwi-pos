@@ -67,6 +67,7 @@ export interface CreateReservationResult {
   customer: any
   created: boolean                // true if customer was newly created
   depositRequired: boolean
+  depositOptional: boolean        // true if deposit is offered but can be skipped
   depositToken?: string
   depositExpiresAt?: Date
 }
@@ -136,7 +137,7 @@ export async function createReservationWithRules(
     isOnlineBooking: source === 'online',
     rules: depositRules,
   })
-  const depositSnapshot = depositEval.required
+  const depositSnapshot = (depositEval.required || depositEval.optional)
     ? snapshotDepositRules(depositRules, depositEval)
     : null
 
@@ -214,6 +215,9 @@ export async function createReservationWithRules(
     if (depositEval.required) {
       initialStatus = 'pending'
       holdExpiresAt = new Date(Date.now() + depositRules.expirationMinutes * 60 * 1000)
+    } else if (depositEval.optional) {
+      // Optional deposits: confirm immediately, no hold timer
+      initialStatus = 'confirmed'
     } else if (settings.autoConfirmNoDeposit) {
       initialStatus = 'confirmed'
     } else {
@@ -255,8 +259,8 @@ export async function createReservationWithRules(
         tags: tags || [],
         serviceDate: new Date(serviceDate + 'T00:00:00Z'),
         holdExpiresAt,
-        depositStatus: depositEval.required ? 'pending' : 'not_required',
-        depositAmountCents: depositEval.required ? depositEval.amount : null,
+        depositStatus: depositEval.required ? 'pending' : depositEval.optional ? 'optional_unpaid' : 'not_required',
+        depositAmountCents: (depositEval.required || depositEval.optional) ? depositEval.amount : null,
         depositRulesSnapshot: depositSnapshot ? JSON.parse(JSON.stringify(depositSnapshot)) : null,
         depositRequired: depositEval.required,
         smsOptInSnapshot: smsOptIn ?? null,
@@ -284,7 +288,8 @@ export async function createReservationWithRules(
           source,
           tableId: assignedTableId,
           depositRequired: depositEval.required,
-          depositAmountCents: depositEval.required ? depositEval.amount : undefined,
+          depositOptional: depositEval.optional,
+          depositAmountCents: (depositEval.required || depositEval.optional) ? depositEval.amount : undefined,
           initialStatus,
           forceBook: forceBook || false,
         },
@@ -322,6 +327,7 @@ export async function createReservationWithRules(
       customer,
       created: customerCreated,
       depositRequired: false,
+      depositOptional: false,
     }
   }
 
@@ -338,7 +344,7 @@ export async function createReservationWithRules(
   let depositToken: string | undefined
   let depositExpiresAt: Date | undefined
 
-  if (depositEval.required) {
+  if (depositEval.required || depositEval.optional) {
     const tokenResult = await generateDepositToken(
       reservation.id,
       depositRules.expirationMinutes,
@@ -366,6 +372,7 @@ export async function createReservationWithRules(
     customer,
     created: customerCreated,
     depositRequired: depositEval.required,
+    depositOptional: depositEval.optional,
     depositToken,
     depositExpiresAt,
   }

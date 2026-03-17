@@ -43,6 +43,7 @@ interface BookingResult {
   status: string
   manageToken: string
   depositRequired: boolean
+  depositOptional?: boolean
   depositToken?: string
   depositExpiresAt?: string
   confirmationCode: string
@@ -143,8 +144,8 @@ export default function ReserveBookingPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Failed to create reservation')
       setResult(json)
-      // Skip to deposit step if required, else go to confirmation
-      setStep(json.depositRequired ? 3 : 4)
+      // Skip to deposit step if required or optional, else go to confirmation
+      setStep(json.depositRequired || json.depositOptional ? 3 : 4)
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -357,20 +358,37 @@ export default function ReserveBookingPage() {
         {/* Step 3: Deposit Payment */}
         {step === 3 && result && (
           <div>
-            <h1 style={styles.h1}>Deposit Required</h1>
+            <h1 style={styles.h1}>
+              {result.depositRequired ? 'Deposit Required' : 'Deposit Optional'}
+            </h1>
             <p style={styles.text}>
-              A deposit is required to confirm your reservation.
+              {result.depositRequired
+                ? 'A deposit is required to confirm your reservation.'
+                : 'You can secure your reservation with a deposit, or skip to confirm without one.'}
             </p>
             {result.depositToken && (
-              <a
-                href={`/reserve/pay-deposit/${result.depositToken}`}
-                style={styles.primaryButton}
-              >
-                Pay Deposit
-              </a>
+              <div style={styles.buttonRow}>
+                <a
+                  href={`/reserve/pay-deposit/${result.depositToken}`}
+                  style={styles.primaryButton}
+                >
+                  Pay Deposit
+                </a>
+                {result.depositOptional && (
+                  <button
+                    type="button"
+                    onClick={() => setStep(4)}
+                    style={styles.backButton}
+                  >
+                    Skip
+                  </button>
+                )}
+              </div>
             )}
             <p style={styles.subtext}>
-              Your reservation is held for a limited time. Please complete payment to confirm.
+              {result.depositRequired
+                ? 'Your reservation is held for a limited time. Please complete payment to confirm.'
+                : 'Your reservation is already confirmed. A deposit is optional.'}
             </p>
           </div>
         )}

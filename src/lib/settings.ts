@@ -925,6 +925,7 @@ export interface LocationSettings {
   reservationSettings?: ReservationSettings             // Reservation engine configuration (optional for backward compat)
   depositRules?: DepositRules                           // Reservation deposit rules (optional for backward compat)
   reservationTemplates?: ReservationMessageTemplates    // Reservation notification templates (optional for backward compat)
+  reservationIntegrations?: ReservationIntegration[]    // Third-party reservation platform integrations (optional for backward compat)
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -1958,6 +1959,7 @@ export const DEFAULT_RESERVATION_SETTINGS: ReservationSettings = {
 
 export interface DepositRules {
   enabled: boolean
+  requirementMode?: 'required' | 'optional' | 'disabled'  // Primary control: required=must pay, optional=can skip, disabled=off. Defaults to derivation from `enabled` for backward compat.
   defaultAmountCents: number          // Default deposit in cents (e.g. 2500 = $25)
   partySizeThreshold: number          // Require deposit for party >= N (0 = all)
   perGuestAmountCents: number         // Per-guest deposit (0 = use flat defaultAmountCents)
@@ -1975,6 +1977,7 @@ export interface DepositRules {
 
 export const DEFAULT_DEPOSIT_RULES: DepositRules = {
   enabled: false,
+  requirementMode: 'disabled',
   defaultAmountCents: 2500,
   partySizeThreshold: 0,
   perGuestAmountCents: 0,
@@ -1988,6 +1991,15 @@ export const DEFAULT_DEPOSIT_RULES: DepositRules = {
   largePartyThreshold: 8,
   paymentMethods: ['card', 'text_to_pay'],
   expirationMinutes: 60,
+}
+
+/**
+ * Resolve the effective deposit requirement mode.
+ * If `requirementMode` is set, use it. Otherwise derive from `enabled`.
+ */
+export function getEffectiveDepositMode(rules: DepositRules): 'required' | 'optional' | 'disabled' {
+  if (rules.requirementMode) return rules.requirementMode
+  return rules.enabled ? 'required' : 'disabled'
 }
 
 export interface MessageTemplate {
@@ -2142,6 +2154,58 @@ export const AVAILABLE_PLACEHOLDERS: { key: string; description: string }[] = [
   { key: '{{specialRequests}}', description: 'Guest special requests (if any)' },
   { key: '{{occasion}}', description: 'Occasion (birthday, anniversary, etc.)' },
   { key: '{{confirmationCode}}', description: 'Short confirmation code' },
+]
+
+// ─── Reservation Integration Settings ────────────────────────────────────────
+
+export type ReservationPlatform = 'opentable' | 'resy' | 'google' | 'yelp' | 'custom'
+
+export interface ReservationIntegrationStatusMapping {
+  externalStatus: string
+  internalStatus: 'pending' | 'confirmed' | 'cancelled' | 'no_show' | 'checked_in' | 'seated' | 'completed'
+}
+
+export interface ReservationIntegrationSyncError {
+  timestamp: string
+  message: string
+  externalId?: string
+}
+
+export interface ReservationIntegration {
+  platform: ReservationPlatform
+  enabled: boolean
+  apiKey?: string
+  restaurantId?: string
+  syncDirection: 'pull' | 'push' | 'bidirectional'
+  autoConfirmIncoming: boolean
+  webhookSecret?: string
+  statusMappings?: ReservationIntegrationStatusMapping[]
+  lastSyncAt?: string | null
+  lastError?: string | null
+  syncErrors?: ReservationIntegrationSyncError[]
+}
+
+export const DEFAULT_RESERVATION_INTEGRATION: ReservationIntegration = {
+  platform: 'custom',
+  enabled: false,
+  syncDirection: 'pull',
+  autoConfirmIncoming: false,
+  statusMappings: [],
+  syncErrors: [],
+}
+
+/** Available reservation platforms for UI display */
+export const RESERVATION_PLATFORMS: {
+  platform: ReservationPlatform
+  name: string
+  color: string
+  comingSoon?: boolean
+}[] = [
+  { platform: 'opentable', name: 'OpenTable', color: '#DA3743' },
+  { platform: 'resy', name: 'Resy', color: '#2D6DF6' },
+  { platform: 'google', name: 'Google Reserve', color: '#34A853' },
+  { platform: 'yelp', name: 'Yelp Reservations', color: '#D32323' },
+  { platform: 'custom', name: 'Custom API', color: '#6B7280' },
 ]
 
 // Merge partial settings with defaults
@@ -2427,7 +2491,14 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ? { ...DEFAULT_RESERVATION_SETTINGS, ...partial.reservationSettings }
       : undefined,
     depositRules: partial.depositRules
-      ? { ...DEFAULT_DEPOSIT_RULES, ...partial.depositRules, paymentMethods: partial.depositRules.paymentMethods ?? DEFAULT_DEPOSIT_RULES.paymentMethods }
+      ? {
+          ...DEFAULT_DEPOSIT_RULES,
+          ...partial.depositRules,
+          paymentMethods: partial.depositRules.paymentMethods ?? DEFAULT_DEPOSIT_RULES.paymentMethods,
+          // Backward compat: derive requirementMode from `enabled` if not explicitly set
+          requirementMode: partial.depositRules.requirementMode
+            ?? (partial.depositRules.enabled === true ? 'required' : partial.depositRules.enabled === false ? 'disabled' : DEFAULT_DEPOSIT_RULES.requirementMode),
+        }
       : undefined,
     reservationTemplates: partial.reservationTemplates
       ? {
@@ -2444,6 +2515,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
           waitlistPromoted: { ...DEFAULT_RESERVATION_TEMPLATES.waitlistPromoted, ...partial.reservationTemplates.waitlistPromoted },
           thankYou: { ...DEFAULT_RESERVATION_TEMPLATES.thankYou, ...partial.reservationTemplates.thankYou },
         }
+      : undefined,
+    reservationIntegrations: Array.isArray(partial.reservationIntegrations)
+      ? partial.reservationIntegrations.map(ri => ({ ...DEFAULT_RESERVATION_INTEGRATION, ...ri }))
       : undefined,
   }
 }

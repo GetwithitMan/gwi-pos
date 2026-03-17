@@ -6,13 +6,14 @@
  */
 
 import { PrismaClient } from '@prisma/client'
-import { DepositRules } from '../settings'
+import { DepositRules, getEffectiveDepositMode } from '../settings'
 import crypto from 'crypto'
 
 // ─── Evaluation ─────────────────────────────────────────────────────────────
 
-interface DepositEvaluation {
+export interface DepositEvaluation {
   required: boolean
+  optional: boolean  // true when deposit is offered but can be skipped
   amount: number // in cents
   reasons: string[] // why deposit triggered
 }
@@ -20,6 +21,11 @@ interface DepositEvaluation {
 /**
  * Evaluate whether a deposit is required for a reservation.
  * OR logic: any matching condition triggers the requirement.
+ *
+ * Returns { required, optional, amount, reasons }:
+ *   - disabled  → { required: false, optional: false, amount: 0 }
+ *   - optional  → evaluates amount, returns { required: false, optional: true, amount: X }
+ *   - required  → evaluates amount, returns { required: true, optional: false, amount: X }
  */
 export function evaluateDepositRequired(params: {
   partySize: number
@@ -30,8 +36,10 @@ export function evaluateDepositRequired(params: {
 }): DepositEvaluation {
   const { partySize, reservationDate, rules, isOnlineBooking } = params
 
-  if (!rules.enabled) {
-    return { required: false, amount: 0, reasons: [] }
+  const mode = getEffectiveDepositMode(rules)
+
+  if (mode === 'disabled') {
+    return { required: false, optional: false, amount: 0, reasons: [] }
   }
 
   const reasons: string[] = []
@@ -64,7 +72,7 @@ export function evaluateDepositRequired(params: {
   }
 
   if (reasons.length === 0) {
-    return { required: false, amount: 0, reasons: [] }
+    return { required: false, optional: false, amount: 0, reasons: [] }
   }
 
   // Calculate amount based on deposit mode
@@ -82,7 +90,11 @@ export function evaluateDepositRequired(params: {
       break
   }
 
-  return { required: true, amount, reasons }
+  if (mode === 'optional') {
+    return { required: false, optional: true, amount, reasons }
+  }
+
+  return { required: true, optional: false, amount, reasons }
 }
 
 // ─── Snapshot ───────────────────────────────────────────────────────────────
