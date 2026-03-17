@@ -39,7 +39,7 @@ const VALID_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const
 // ── Rate Limiting (in-memory, per-location) ─────────────────────────────────
 // TODO: Replace with Redis or middleware-based rate limiter in production
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT_MAX = 10
+const RATE_LIMIT_MAX = 30
 const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
 
 function checkRateLimit(locationId: string): boolean {
@@ -180,7 +180,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Rate limit: 10/min per location
     if (!checkRateLimit(locationId)) {
       return NextResponse.json(
-        { error: 'Rate limit exceeded. Maximum 10 exceptions per minute per location.' },
+        { error: 'Rate limit exceeded. Maximum 30 exceptions per minute per location.' },
         { status: 429 }
       )
     }

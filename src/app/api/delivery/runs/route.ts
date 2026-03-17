@@ -470,7 +470,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       message.includes('missing delivery zone') ||
       message.includes('already has an active run') ||
       message.includes('exceed max') ||
-      message.includes('cannot be assigned')
+      message.includes('cannot be assigned') ||
+      message.includes('suspended') ||
+      message.includes('inactive')
     ) {
       return NextResponse.json({ error: message }, { status: 400 })
     }
