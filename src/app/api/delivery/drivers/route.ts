@@ -128,6 +128,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
     }
 
+    // Validate vehicleType if provided
+    const VALID_VEHICLE_TYPES = ['car', 'bike', 'scooter', 'other'] as const
+    if (vehicleType != null && vehicleType !== '' && !(VALID_VEHICLE_TYPES as readonly string[]).includes(vehicleType)) {
+      return NextResponse.json({ error: 'vehicleType must be one of: car, bike, scooter, other' }, { status: 400 })
+    }
+
     // Validate employee exists and belongs to location
     const employee = await db.employee.findFirst({
       where: { id: employeeId, locationId, deletedAt: null },

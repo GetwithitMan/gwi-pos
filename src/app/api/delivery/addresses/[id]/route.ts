@@ -9,6 +9,10 @@ import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 
 export const dynamic = 'force-dynamic'
 
+function sanitizeHtml(str: string): string {
+  return str.replace(/<[^>]*>/g, '').trim()
+}
+
 /**
  * PUT /api/delivery/addresses/[id] — Update address (edit, flag, restrict)
  *
@@ -73,7 +77,7 @@ export const PUT = withVenue(async function PUT(
 
     if (label !== undefined) {
       updates.push(`"label" = $${paramIdx}`)
-      updateParams.push(label?.trim() || null)
+      updateParams.push(label ? sanitizeHtml(label) : null)
       paramIdx++
     }
 
@@ -115,7 +119,7 @@ export const PUT = withVenue(async function PUT(
 
     if (deliveryNotes !== undefined) {
       updates.push(`"deliveryNotes" = $${paramIdx}`)
-      updateParams.push(deliveryNotes?.trim() || null)
+      updateParams.push(deliveryNotes ? sanitizeHtml(deliveryNotes) : null)
       paramIdx++
     }
 
@@ -154,7 +158,7 @@ export const PUT = withVenue(async function PUT(
 
     if (flagReason !== undefined) {
       updates.push(`"flagReason" = $${paramIdx}`)
-      updateParams.push(flagReason?.trim() || null)
+      updateParams.push(flagReason ? sanitizeHtml(flagReason) : null)
       paramIdx++
     }
 

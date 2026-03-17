@@ -11,6 +11,10 @@ import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 
 export const dynamic = 'force-dynamic'
 
+function sanitizeHtml(str: string): string {
+  return str.replace(/<[^>]*>/g, '').trim()
+}
+
 // ── Exception Type Taxonomy ─────────────────────────────────────────────────
 
 const VALID_EXCEPTION_TYPES = [
@@ -256,7 +260,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       deliveryOrderId || null,
       runId || null,
       driverId || null,
-      description.trim(),
+      sanitizeHtml(description),
     )
 
     if (!inserted.length) {
@@ -273,7 +277,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       runId: runId || undefined,
       driverId: driverId || undefined,
       employeeId: auth.employee.id,
-      newValue: { type, severity, description: description.trim() },
+      newValue: { type, severity, description: sanitizeHtml(description) },
     }).catch(console.error)
 
     // Fire socket event

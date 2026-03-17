@@ -10,6 +10,10 @@ import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 
 export const dynamic = 'force-dynamic'
 
+function sanitizeHtml(str: string): string {
+  return str.replace(/<[^>]*>/g, '').trim()
+}
+
 // ── Valid Status Transitions ────────────────────────────────────────────────
 
 const VALID_EXCEPTION_TRANSITIONS: Record<string, string[]> = {
@@ -85,7 +89,7 @@ export const PUT = withVenue(async function PUT(
 
     if (resolution !== undefined) {
       updates.push(`"resolution" = $${paramIdx}`)
-      updateParams.push(resolution)
+      updateParams.push(resolution ? sanitizeHtml(resolution) : null)
       paramIdx++
     }
 

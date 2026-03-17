@@ -8,6 +8,10 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 
 export const dynamic = 'force-dynamic'
 
+function sanitizeHtml(str: string): string {
+  return str.replace(/<[^>]*>/g, '').trim()
+}
+
 /**
  * GET /api/delivery/addresses — List saved addresses for a customer
  *
@@ -183,14 +187,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     `,
       locationId,
       customerId || null,
-      label?.trim() || null,
+      label ? sanitizeHtml(label) : null,
       address.trim(),
       addressLine2?.trim() || null,
       city.trim(),
       state.trim(),
       zipCode.trim(),
       phone?.trim() || null,
-      deliveryNotes?.trim() || null,
+      deliveryNotes ? sanitizeHtml(deliveryNotes) : null,
       latNum,
       lngNum,
       zone?.id || null,

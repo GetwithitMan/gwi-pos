@@ -133,6 +133,12 @@ export const PUT = withVenue(async function PUT(
       suspendedReason,
     } = body
 
+    // Validate vehicleType if provided
+    const VALID_VEHICLE_TYPES = ['car', 'bike', 'scooter', 'other'] as const
+    if (vehicleType != null && vehicleType !== '' && !(VALID_VEHICLE_TYPES as readonly string[]).includes(vehicleType)) {
+      return NextResponse.json({ error: 'vehicleType must be one of: car, bike, scooter, other' }, { status: 400 })
+    }
+
     // Fetch existing driver
     const existing: any[] = await db.$queryRawUnsafe(`
       SELECT * FROM "DeliveryDriver"

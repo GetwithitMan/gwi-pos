@@ -90,6 +90,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
     }
 
+    // Validate startingBankCents is non-negative if provided
+    if (startingBankCents != null && startingBankCents < 0) {
+      return NextResponse.json({ error: 'startingBankCents must be >= 0' }, { status: 400 })
+    }
+
     // Get delivery settings for startingBank defaults
     const rawSettings = await getLocationSettings(locationId)
     const settings = mergeWithDefaults(rawSettings as any)

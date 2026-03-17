@@ -6,6 +6,7 @@ import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId)
+    if (featureGate) return featureGate
 
     const searchParams = request.nextUrl.searchParams
     const status = searchParams.get('status')
@@ -107,6 +112,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
+
+    // Auth check
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.DELIVERY_CREATE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    // Feature gate
+    const featureGate = await requireDeliveryFeature(locationId)
+    if (featureGate) return featureGate
 
     const rawSettings = await getLocationSettings(locationId)
     const settings = mergeWithDefaults(rawSettings as any)
