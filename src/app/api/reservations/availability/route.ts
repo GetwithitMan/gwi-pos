@@ -3,16 +3,17 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { getAvailableSlots, type OperatingHours } from '@/lib/reservations/availability'
+import { getLocationId } from '@/lib/location-cache'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams
-    const locationId = sp.get('locationId')
+    const locationId = await getLocationId()
     const date = sp.get('date')
     const partySize = parseInt(sp.get('partySize') || '2', 10)
 
     if (!locationId || !date) {
-      return NextResponse.json({ error: 'locationId and date are required' }, { status: 400 })
+      return NextResponse.json({ error: 'date is required' }, { status: 400 })
     }
 
     // Load location settings + operating hours

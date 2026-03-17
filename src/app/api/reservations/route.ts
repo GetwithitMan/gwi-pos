@@ -6,24 +6,21 @@ import { getActorFromRequest } from '@/lib/api-auth'
 import { createReservationWithRules, CreateReservationError } from '@/lib/reservations/create-reservation'
 import type { OperatingHours } from '@/lib/reservations/availability'
 import { SOURCE_TYPES, type SourceType } from '@/lib/reservations/state-machine'
+import { getLocationId } from '@/lib/location-cache'
 
 // GET - List reservations
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const locationId = searchParams.get('locationId')
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
     const date = searchParams.get('date')
     const serviceDate = searchParams.get('serviceDate')
     const status = searchParams.get('status')
     const tableId = searchParams.get('tableId')
     const source = searchParams.get('source')
-
-    if (!locationId) {
-      return NextResponse.json(
-        { error: 'Location ID is required' },
-        { status: 400 }
-      )
-    }
 
     const whereClause: Record<string, unknown> = { locationId, deletedAt: null }
 
@@ -101,9 +98,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 // POST - Create a new reservation via the reservation engine
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const body = await request.json()
     const {
-      locationId,
       guestName,
       guestPhone,
       guestEmail,
@@ -126,9 +127,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       forceBook,
     } = body
 
-    if (!locationId || !guestName || !partySize || !reservationDate || !reservationTime) {
+    if (!guestName || !partySize || !reservationDate || !reservationTime) {
       return NextResponse.json(
-        { error: 'locationId, guestName, partySize, reservationDate, and reservationTime are required' },
+        { error: 'guestName, partySize, reservationDate, and reservationTime are required' },
         { status: 400 }
       )
     }

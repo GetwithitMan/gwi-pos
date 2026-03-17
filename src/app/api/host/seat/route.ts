@@ -128,6 +128,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Update reservation via state machine if provided
     if (reservationId) {
+      // Verify reservation belongs to this location
+      const resCheck = await db.reservation.findFirst({
+        where: { id: reservationId, locationId },
+        select: { id: true },
+      })
+      if (!resCheck) {
+        return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+      }
       try {
         await db.$transaction(async (tx: any) => {
           // Update table assignment first

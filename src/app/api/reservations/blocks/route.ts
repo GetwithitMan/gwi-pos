@@ -2,16 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { getLocationId } from '@/lib/location-cache'
 
 // GET - List reservation blocks
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
-    const sp = request.nextUrl.searchParams
-    const locationId = sp.get('locationId')
-
+    const locationId = await getLocationId()
     if (!locationId) {
-      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
+    const sp = request.nextUrl.searchParams
 
     const date = sp.get('date')
     const where: Record<string, unknown> = { locationId, deletedAt: null }

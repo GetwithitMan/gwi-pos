@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
+import { getLocationId } from '@/lib/location-cache'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 
 // GET - Get deposit status for a reservation
 export const GET = withVenue(async function GET(
@@ -10,6 +12,10 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const callerLocationId = await getLocationId()
+    if (!callerLocationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
 
     const reservation = await db.$queryRawUnsafe<Array<{
       id: string
@@ -24,8 +30,8 @@ export const GET = withVenue(async function GET(
     }>>(
       `SELECT id, "locationId", "guestName", "partySize", "reservationDate",
               "reservationTime", "depositRequired", "depositAmount", status
-       FROM "Reservation" WHERE id = $1 AND "deletedAt" IS NULL LIMIT 1`,
-      id
+       FROM "Reservation" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
+      id, callerLocationId
     )
 
     if (!reservation.length) {
@@ -123,8 +129,19 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id } = await params
+    const callerLocationId = await getLocationId()
+    if (!callerLocationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, callerLocationId, 'tables.reservations')
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+    }
+
     const body = await request.json()
-    const { amount, paymentMethod, cardLast4, cardBrand, datacapRecordNo, datacapRefNumber, employeeId, notes } = body
+    const { amount, paymentMethod, cardLast4, cardBrand, datacapRecordNo, datacapRefNumber, notes } = body
+    const employeeId = actor.employeeId
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
@@ -142,8 +159,8 @@ export const POST = withVenue(async function POST(
       status: string
     }>>(
       `SELECT id, "locationId", "depositAmount", status
-       FROM "Reservation" WHERE id = $1 AND "deletedAt" IS NULL LIMIT 1`,
-      id
+       FROM "Reservation" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
+      id, callerLocationId
     )
 
     if (!reservation.length) {
@@ -208,11 +225,21 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+    const callerLocationId = await getLocationId()
+    if (!callerLocationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, callerLocationId, 'tables.reservations')
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+    }
+
     const { searchParams } = new URL(request.url)
     const depositId = searchParams.get('depositId')
     const reason = searchParams.get('reason') || 'Customer requested refund'
 
-    // Load reservation
+    // Load reservation (scoped to caller's location)
     const reservation = await db.$queryRawUnsafe<Array<{
       id: string
       locationId: string
@@ -220,8 +247,8 @@ export const DELETE = withVenue(async function DELETE(
       reservationTime: string
     }>>(
       `SELECT id, "locationId", "reservationDate", "reservationTime"
-       FROM "Reservation" WHERE id = $1 AND "deletedAt" IS NULL LIMIT 1`,
-      id
+       FROM "Reservation" WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL LIMIT 1`,
+      id, callerLocationId
     )
 
     if (!reservation.length) {
