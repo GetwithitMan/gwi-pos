@@ -260,7 +260,7 @@ module.exports.up = async function up(prisma) {
   try {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_depositStatus_check"
-      CHECK ("depositStatus" IS NULL OR "depositStatus" IN ('not_required', 'required', 'paid', 'refunded', 'partial_refund', 'forfeited'))
+      CHECK ("depositStatus" IS NULL OR "depositStatus" IN ('not_required', 'required', 'required_unpaid', 'hold_pending', 'paid', 'refund_pending', 'refunded', 'partial_refund', 'forfeited'))
     `)
     console.log(`${PREFIX} Added Reservation_depositStatus_check`)
   } catch {
@@ -271,7 +271,7 @@ module.exports.up = async function up(prisma) {
   try {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_source_check"
-      CHECK ("source" IS NULL OR "source" IN ('staff', 'online', 'phone', 'walkin', 'import', 'api'))
+      CHECK ("source" IS NULL OR "source" IN ('staff', 'online', 'phone', 'walkin', 'waitlist', 'opentable', 'resy', 'google', 'yelp', 'import', 'api', 'other'))
     `)
     console.log(`${PREFIX} Added Reservation_source_check`)
   } catch {
@@ -307,6 +307,56 @@ module.exports.up = async function up(prisma) {
     console.log(`${PREFIX} Added Table_priority_check`)
   } catch {
     console.log(`${PREFIX} Table_priority_check already exists`)
+  }
+
+  // Customer noShowCount >= 0
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Customer" ADD CONSTRAINT "Customer_noShowCount_check"
+      CHECK ("noShowCount" >= 0)
+    `)
+    console.log(`${PREFIX} Added Customer_noShowCount_check`)
+  } catch {
+    console.log(`${PREFIX} Customer_noShowCount_check already exists`)
+  }
+
+  // Pending reservations must have holdExpiresAt
+  try {
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Reservation" ADD CONSTRAINT "Reservation_pending_holdExpiresAt_check"
+      CHECK ("status" != 'pending' OR "holdExpiresAt" IS NOT NULL)
+    `)
+    console.log(`${PREFIX} Added Reservation_pending_holdExpiresAt_check`)
+  } catch {
+    console.log(`${PREFIX} Reservation_pending_holdExpiresAt_check already exists`)
+  }
+
+  // ─── 12. Additional indexes from plan ──────────────────────────────────────
+  if (!(await indexExists(prisma, 'idx_reservation_service_date_time'))) {
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX "idx_reservation_service_date_time"
+      ON "Reservation"("locationId", "serviceDate", "reservationTime")
+      WHERE "deletedAt" IS NULL
+    `)
+    console.log(`${PREFIX} Created idx_reservation_service_date_time`)
+  }
+
+  if (!(await indexExists(prisma, 'idx_reservation_event_system'))) {
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX "idx_reservation_event_system"
+      ON "ReservationEvent"("locationId", "createdAt")
+      WHERE "reservationId" IS NULL
+    `)
+    console.log(`${PREFIX} Created idx_reservation_event_system`)
+  }
+
+  if (!(await indexExists(prisma, 'idx_customer_noshowcount'))) {
+    await prisma.$executeRawUnsafe(`
+      CREATE INDEX "idx_customer_noshowcount"
+      ON "Customer"("noShowCount")
+      WHERE "noShowCount" > 0
+    `)
+    console.log(`${PREFIX} Created idx_customer_noshowcount`)
   }
 
   console.log(`${PREFIX} ✓ Migration 067 complete`)
