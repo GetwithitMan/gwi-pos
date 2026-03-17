@@ -214,14 +214,18 @@ export default function DispatchPage() {
     }
 
     socket.on('delivery:status_changed', handleStatusChanged)
-    socket.on('delivery:run_updated', handleStatusChanged)
+    socket.on('delivery:run_created', handleStatusChanged)
+    socket.on('delivery:run_completed', handleStatusChanged)
+    socket.on('driver:status_changed', handleStatusChanged)
     socket.on('driver:location_update', handleDriverLocation)
     socket.on('delivery:exception_created', handleException)
     socket.on('delivery:exception_resolved', handleStatusChanged)
 
     return () => {
       socket.off('delivery:status_changed', handleStatusChanged)
-      socket.off('delivery:run_updated', handleStatusChanged)
+      socket.off('delivery:run_created', handleStatusChanged)
+      socket.off('delivery:run_completed', handleStatusChanged)
+      socket.off('driver:status_changed', handleStatusChanged)
       socket.off('driver:location_update', handleDriverLocation)
       socket.off('delivery:exception_created', handleException)
       socket.off('delivery:exception_resolved', handleStatusChanged)

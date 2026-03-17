@@ -334,11 +334,11 @@ export async function advanceRunStatus(
       reason,
     })
 
-    // Fire socket events
-    if (newStatus === 'dispatched' || newStatus === 'in_progress') {
-      void dispatchRunEvent(locationId, 'delivery:run_created', updated[0]).catch(console.error)
-    } else if (TERMINAL_RUN_STATES.includes(newStatus)) {
+    // Fire socket events for ALL status transitions so dispatch board stays current
+    if (TERMINAL_RUN_STATES.includes(newStatus)) {
       void dispatchRunEvent(locationId, 'delivery:run_completed', updated[0]).catch(console.error)
+    } else {
+      void dispatchRunEvent(locationId, 'delivery:run_created', updated[0]).catch(console.error)
     }
 
     return { success: true, run: updated[0] }

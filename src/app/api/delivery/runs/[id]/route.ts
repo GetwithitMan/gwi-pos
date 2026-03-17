@@ -5,8 +5,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
-import { advanceRunStatus, writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
-import { dispatchDeliveryStatusChanged } from '@/lib/delivery/dispatch-events'
+import { advanceRunStatus, advanceDeliveryStatus } from '@/lib/delivery/state-machine'
+import type { DeliveryOrderStatus } from '@/lib/delivery/state-machine'
 
 export const dynamic = 'force-dynamic'
 
@@ -149,39 +149,47 @@ export const PUT = withVenue(async function PUT(
         return NextResponse.json({ error: result.error }, { status: 400 })
       }
 
-      // If run status changes, cascade to orders where appropriate
-      const orderStatusMap: Record<string, string | null> = {
-        dispatched: 'dispatched',
-        in_progress: 'en_route',
-        completed: null, // orders complete individually
-        cancelled: 'cancelled_before_dispatch',
+      // If run status changes, cascade to orders via state machine
+      // (handles timestamps, audit log, transition validation, socket events)
+      const PRE_DISPATCH_STATES = ['pending', 'confirmed', 'preparing', 'ready_for_pickup', 'assigned']
+
+      const getTargetOrderStatus = (
+        runStatus: string,
+        currentOrderStatus: string,
+      ): DeliveryOrderStatus | null => {
+        switch (runStatus) {
+          case 'dispatched':
+            return 'dispatched'
+          case 'in_progress':
+            return 'en_route'
+          case 'cancelled':
+            return PRE_DISPATCH_STATES.includes(currentOrderStatus)
+              ? 'cancelled_before_dispatch'
+              : 'cancelled_after_dispatch'
+          default:
+            return null // completed — orders complete individually
+        }
       }
 
-      const newOrderStatus = orderStatusMap[status]
-      if (newOrderStatus) {
-        // Fetch orders in this run that are not in terminal state
-        const runOrders: any[] = await db.$queryRawUnsafe(
-          `SELECT id, status FROM "DeliveryOrder"
-           WHERE "runId" = $1 AND "locationId" = $2
-             AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')`,
-          id,
-          locationId,
-        )
+      // Fetch orders in this run that are not in terminal state
+      const runOrders: any[] = await db.$queryRawUnsafe(
+        `SELECT id, status FROM "DeliveryOrder"
+         WHERE "runId" = $1 AND "locationId" = $2
+           AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')`,
+        id,
+        locationId,
+      )
 
-        for (const order of runOrders) {
-          // Only advance if the transition is valid for this order's current state
-          const updated: any[] = await db.$queryRawUnsafe(
-            `UPDATE "DeliveryOrder"
-             SET "status" = $1, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $2 AND "locationId" = $3
-             RETURNING *`,
-            newOrderStatus,
-            order.id,
+      for (const order of runOrders) {
+        const targetStatus = getTargetOrderStatus(status, order.status)
+        if (targetStatus) {
+          await advanceDeliveryStatus({
+            deliveryOrderId: order.id,
             locationId,
-          )
-          if (updated.length > 0) {
-            void dispatchDeliveryStatusChanged(locationId, updated[0]).catch(console.error)
-          }
+            newStatus: targetStatus,
+            employeeId: actor.employeeId ?? 'unknown',
+            reason: `Cascaded from run ${id} status change to ${status}`,
+          })
         }
       }
     }
