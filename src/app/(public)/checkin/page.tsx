@@ -25,8 +25,8 @@ export default function GuestCheckInPage() {
   const [result, setResult] = useState<CheckInResult | null>(null)
 
   const handleDigit = useCallback((digit: string) => {
-    if (phone.length < 10) setPhone(prev => prev + digit)
-  }, [phone])
+    setPhone(prev => prev.length < 10 ? prev + digit : prev)
+  }, [])
 
   const handleBackspace = useCallback(() => {
     setPhone(prev => prev.slice(0, -1))
@@ -82,6 +82,14 @@ export default function GuestCheckInPage() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-6">
+      {/* Live region for screen reader announcements */}
+      <div aria-live="polite" className="sr-only">
+        {state === 'success' && result && `Welcome, ${result.guestName}! You are checked in.`}
+        {state === 'ambiguous' && 'Multiple reservations found. Please see the host.'}
+        {state === 'not_found' && 'Reservation not found. Please see the host.'}
+        {state === 'error' && 'Something went wrong. Please see the host.'}
+      </div>
+
       {/* Success */}
       {state === 'success' && result && (
         <div className="text-center space-y-6 animate-fade-in">
@@ -161,7 +169,7 @@ export default function GuestCheckInPage() {
             {digits.map((d, i) => {
               if (d === '' && i === 9) {
                 return (
-                  <button key="backspace" onClick={handleBackspace} className="h-16 rounded-xl bg-gray-800 text-gray-300 text-xl flex items-center justify-center hover:bg-gray-700 transition-colors">
+                  <button key="backspace" onClick={handleBackspace} aria-label="Delete" className="h-16 rounded-xl bg-gray-800 text-gray-300 text-xl flex items-center justify-center hover:bg-gray-700 transition-colors">
                     &#9003;
                   </button>
                 )

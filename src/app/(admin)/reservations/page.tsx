@@ -77,7 +77,7 @@ const STATUS_COLORS: Record<string, string> = {
   confirmed: 'bg-blue-900 text-blue-300',
   checked_in: 'bg-cyan-900 text-cyan-300',
   seated: 'bg-green-900 text-green-300',
-  completed: 'bg-gray-700 text-gray-900',
+  completed: 'bg-gray-700 text-gray-300',
   cancelled: 'bg-red-900 text-red-300',
   no_show: 'bg-orange-900 text-orange-300',
 }
@@ -137,6 +137,7 @@ export default function ReservationsPage() {
   const [sendMsgModal, setSendMsgModal] = useState<string | null>(null)
   const [sendMsgTemplate, setSendMsgTemplate] = useState('confirmation')
   const [sendMsgCustom, setSendMsgCustom] = useState('')
+  const [cancelReasonModal, setCancelReasonModal] = useState<{ open: boolean; reservationId: string | null; reason: string }>({ open: false, reservationId: null, reason: '' })
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Custom fetch with date param (hook's loadItems doesn't support extra query params)
@@ -348,6 +349,7 @@ export default function ReservationsPage() {
       <div className="flex gap-4 mb-6">
         <div className="flex items-center gap-2">
           <button
+            aria-label="Previous day"
             onClick={() => {
               const d = new Date(selectedDate)
               d.setDate(d.getDate() - 1)
@@ -364,6 +366,7 @@ export default function ReservationsPage() {
             className="px-4 py-2 bg-gray-700 rounded"
           />
           <button
+            aria-label="Next day"
             onClick={() => {
               const d = new Date(selectedDate)
               d.setDate(d.getDate() + 1)
@@ -386,6 +389,7 @@ export default function ReservationsPage() {
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
+              aria-pressed={statusFilter === status}
               className={`px-3 py-2 rounded capitalize text-sm ${
                 statusFilter === status ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
               }`}
@@ -399,19 +403,19 @@ export default function ReservationsPage() {
       {/* Stats */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-900 text-sm">Total Reservations</div>
+          <div className="text-gray-400 text-sm">Total Reservations</div>
           <div className="text-2xl font-bold">{stats.total}</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-900 text-sm">Confirmed</div>
+          <div className="text-gray-400 text-sm">Confirmed</div>
           <div className="text-2xl font-bold text-blue-400">{stats.confirmed}</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-900 text-sm">Currently Seated</div>
+          <div className="text-gray-400 text-sm">Currently Seated</div>
           <div className="text-2xl font-bold text-green-400">{stats.seated}</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-900 text-sm">Total Covers</div>
+          <div className="text-gray-400 text-sm">Total Covers</div>
           <div className="text-2xl font-bold">{stats.totalCovers}</div>
         </div>
       </div>
@@ -419,14 +423,14 @@ export default function ReservationsPage() {
       {/* Timeline View */}
       <div className="bg-gray-800 rounded-lg p-4">
         {sortedSlots.length === 0 ? (
-          <div className="text-center text-gray-900 py-8">
+          <div className="text-center text-gray-400 py-8">
             No reservations for this date
           </div>
         ) : (
           <div className="space-y-4">
             {sortedSlots.map(slot => (
               <div key={slot} className="border-l-2 border-gray-600 pl-4">
-                <div className="text-lg font-medium text-gray-900 mb-2">
+                <div className="text-lg font-medium text-gray-300 mb-2">
                   {formatTime(slot)}
                 </div>
                 <div className="grid gap-3">
@@ -439,7 +443,7 @@ export default function ReservationsPage() {
                       onSeat={() => transitionStatus(reservation.id, 'seated')}
                       onCheckIn={() => transitionStatus(reservation.id, 'checked_in')}
                       onComplete={() => transitionStatus(reservation.id, 'completed')}
-                      onCancel={(reason) => transitionStatus(reservation.id, 'cancelled', reason)}
+                      onCancel={(reservationId) => setCancelReasonModal({ open: true, reservationId, reason: '' })}
                       onNoShow={() => transitionStatus(reservation.id, 'no_show')}
                       onConfirm={() => transitionStatus(reservation.id, 'confirmed')}
                       onAssignTable={(tableId) => fetch(`/api/reservations/${reservation.id}`, {
@@ -560,6 +564,43 @@ export default function ReservationsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Cancel Reason Modal */}
+      <Modal isOpen={cancelReasonModal.open} onClose={() => setCancelReasonModal({ open: false, reservationId: null, reason: '' })} title="Cancel Reservation" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="cancel-reason" className="block text-sm font-medium text-gray-700 mb-1">Reason for cancellation</label>
+            <textarea
+              id="cancel-reason"
+              value={cancelReasonModal.reason}
+              onChange={e => setCancelReasonModal(prev => ({ ...prev, reason: e.target.value }))}
+              rows={3}
+              placeholder="Enter cancellation reason..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setCancelReasonModal({ open: false, reservationId: null, reason: '' })}
+              className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
+            >
+              Keep Reservation
+            </button>
+            <button
+              onClick={() => {
+                if (cancelReasonModal.reservationId && cancelReasonModal.reason.trim()) {
+                  transitionStatus(cancelReasonModal.reservationId, 'cancelled', cancelReasonModal.reason.trim())
+                  setCancelReasonModal({ open: false, reservationId: null, reason: '' })
+                }
+              }}
+              disabled={!cancelReasonModal.reason.trim()}
+              className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50"
+            >
+              Confirm Cancellation
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -611,7 +652,7 @@ function ReservationCard({
   onSeat: () => void
   onCheckIn: () => void
   onComplete: () => void
-  onCancel: (reason: string) => void
+  onCancel: (reservationId: string) => void
   onNoShow: () => void
   onConfirm: () => void
   onAssignTable: (tableId: string) => void
@@ -656,20 +697,20 @@ function ReservationCard({
               <span className="px-2 py-0.5 text-xs rounded bg-red-800 text-red-200">Blacklisted</span>
             )}
           </div>
-          <div className="text-sm text-gray-900 mt-1">
+          <div className="text-sm text-gray-400 mt-1">
             Party of {reservation.partySize} &bull; {reservation.duration} min
             {reservation.status === 'pending' && reservation.holdExpiresAt && (
               <> &bull; Hold: <HoldCountdown expiresAt={reservation.holdExpiresAt} /></>
             )}
           </div>
           {reservation.table && (
-            <div className="text-sm text-gray-900 mt-1">
+            <div className="text-sm text-gray-400 mt-1">
               Table: {reservation.table.name}
               {reservation.table.section && ` (${reservation.table.section.name})`}
             </div>
           )}
           {reservation.guestPhone && (
-            <div className="text-sm text-gray-900">{reservation.guestPhone}</div>
+            <div className="text-sm text-gray-400">{reservation.guestPhone}</div>
           )}
           {reservation.occasion && (
             <div className="text-sm text-purple-400 mt-1">{reservation.occasion}</div>
@@ -695,6 +736,7 @@ function ReservationCard({
           {/* Quick table assign if not assigned */}
           {!reservation.tableId && (reservation.status === 'confirmed' || reservation.status === 'checked_in') && (
             <select
+              aria-label="Assign table"
               className="px-2 py-1 bg-gray-600 rounded text-sm"
               onChange={e => {
                 if (e.target.value) onAssignTable(e.target.value)
@@ -748,6 +790,9 @@ function ReservationCard({
 
           <button
             onClick={() => setShowActions(!showActions)}
+            aria-haspopup="true"
+            aria-expanded={showActions}
+            aria-label="More actions"
             className="px-2 py-1 bg-gray-600 rounded hover:bg-gray-500"
           >
             ...
@@ -774,8 +819,8 @@ function ReservationCard({
               </button>
               <button
                 onClick={() => {
-                  const reason = prompt('Cancel reason:')
-                  if (reason) { onCancel(reason); setShowActions(false) }
+                  onCancel(reservation.id)
+                  setShowActions(false)
                 }}
                 className="w-full px-4 py-2 text-left hover:bg-gray-700 text-red-400 text-sm"
               >
@@ -897,7 +942,7 @@ function ReservationModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm text-gray-900 mb-1">Guest Name *</label>
+            <label className="block text-sm text-gray-600 mb-1">Guest Name *</label>
             <input
               type="text"
               value={form.guestName}
@@ -909,7 +954,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Phone</label>
+              <label className="block text-sm text-gray-600 mb-1">Phone</label>
               <input
                 type="tel"
                 value={form.guestPhone}
@@ -918,7 +963,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Email</label>
+              <label className="block text-sm text-gray-600 mb-1">Email</label>
               <input
                 type="email"
                 value={form.guestEmail}
@@ -930,7 +975,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Party Size *</label>
+              <label className="block text-sm text-gray-600 mb-1">Party Size *</label>
               <input
                 type="number"
                 value={form.partySize}
@@ -941,7 +986,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Date *</label>
+              <label className="block text-sm text-gray-600 mb-1">Date *</label>
               <input
                 type="date"
                 value={form.reservationDate}
@@ -951,7 +996,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Time *</label>
+              <label className="block text-sm text-gray-600 mb-1">Time *</label>
               <input
                 type="time"
                 value={form.reservationTime}
@@ -964,7 +1009,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Duration (min)</label>
+              <label className="block text-sm text-gray-600 mb-1">Duration (min)</label>
               <select
                 value={form.duration}
                 onChange={e => setForm({ ...form, duration: Number(e.target.value) })}
@@ -978,7 +1023,7 @@ function ReservationModal({
               </select>
             </div>
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Table</label>
+              <label className="block text-sm text-gray-600 mb-1">Table</label>
               <select
                 value={form.tableId}
                 onChange={e => setForm({ ...form, tableId: e.target.value })}
@@ -1002,7 +1047,7 @@ function ReservationModal({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-900 mb-1">Bottle Service Tier</label>
+            <label className="block text-sm text-gray-600 mb-1">Bottle Service Tier</label>
             <div className="flex items-center gap-2">
               <select
                 value={form.bottleServiceTierId}
@@ -1032,7 +1077,7 @@ function ReservationModal({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-900 mb-1">Special Requests</label>
+            <label className="block text-sm text-gray-600 mb-1">Special Requests</label>
             <textarea
               value={form.specialRequests}
               onChange={e => setForm({ ...form, specialRequests: e.target.value })}
@@ -1043,7 +1088,7 @@ function ReservationModal({
           </div>
 
           <div>
-            <label className="block text-sm text-gray-900 mb-1">Internal Notes</label>
+            <label className="block text-sm text-gray-600 mb-1">Internal Notes</label>
             <textarea
               value={form.internalNotes}
               onChange={e => setForm({ ...form, internalNotes: e.target.value })}
@@ -1055,7 +1100,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Occasion</label>
+              <label className="block text-sm text-gray-600 mb-1">Occasion</label>
               <input
                 type="text"
                 value={form.occasion}
@@ -1065,7 +1110,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Dietary Restrictions</label>
+              <label className="block text-sm text-gray-600 mb-1">Dietary Restrictions</label>
               <input
                 type="text"
                 value={form.dietaryRestrictions}
@@ -1078,7 +1123,7 @@ function ReservationModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Section Preference</label>
+              <label className="block text-sm text-gray-600 mb-1">Section Preference</label>
               <input
                 type="text"
                 value={form.sectionPreference}
@@ -1088,7 +1133,7 @@ function ReservationModal({
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-900 mb-1">Tags (comma-separated)</label>
+              <label className="block text-sm text-gray-600 mb-1">Tags (comma-separated)</label>
               <input
                 type="text"
                 value={form.tags}

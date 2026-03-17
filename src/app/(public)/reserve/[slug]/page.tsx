@@ -162,9 +162,6 @@ export default function ReserveBookingPage() {
           <p style={styles.text}>
             Online booking is not currently available. Please call us to make a reservation.
           </p>
-          <a href="tel:" style={styles.callButton}>
-            Call to Reserve
-          </a>
         </div>
       </div>
     )
@@ -195,8 +192,9 @@ export default function ReserveBookingPage() {
           <div>
             <h1 style={styles.h1}>Book a Table</h1>
 
-            <label style={styles.label}>Party Size</label>
+            <label htmlFor="party-size" style={styles.label}>Party Size</label>
             <select
+              id="party-size"
               value={data.partySize}
               onChange={e => update('partySize', parseInt(e.target.value))}
               style={styles.select}
@@ -206,8 +204,9 @@ export default function ReserveBookingPage() {
               ))}
             </select>
 
-            <label style={styles.label}>Date</label>
+            <label htmlFor="reservation-date" style={styles.label}>Date</label>
             <input
+              id="reservation-date"
               type="date"
               value={data.date}
               onChange={e => update('date', e.target.value)}
@@ -228,6 +227,7 @@ export default function ReserveBookingPage() {
                         update('time', slot.time)
                         setStep(2)
                       }}
+                      className="slot-button-focus"
                       style={{
                         ...styles.slotButton,
                         ...(data.time === slot.time ? styles.slotButtonActive : {}),
@@ -253,8 +253,9 @@ export default function ReserveBookingPage() {
               {formatTime(data.time)} · {new Date(data.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })} · {data.partySize} {data.partySize === 1 ? 'guest' : 'guests'}
             </p>
 
-            <label style={styles.label}>Name *</label>
+            <label htmlFor="guest-name" style={styles.label}>Name *</label>
             <input
+              id="guest-name"
               type="text"
               value={data.guestName}
               onChange={e => update('guestName', e.target.value)}
@@ -263,8 +264,9 @@ export default function ReserveBookingPage() {
               style={styles.input}
             />
 
-            <label style={styles.label}>Phone</label>
+            <label htmlFor="guest-phone" style={styles.label}>Phone</label>
             <input
+              id="guest-phone"
               type="tel"
               value={data.guestPhone}
               onChange={e => update('guestPhone', e.target.value)}
@@ -272,8 +274,9 @@ export default function ReserveBookingPage() {
               style={styles.input}
             />
 
-            <label style={styles.label}>Email</label>
+            <label htmlFor="guest-email" style={styles.label}>Email</label>
             <input
+              id="guest-email"
               type="email"
               value={data.guestEmail}
               onChange={e => update('guestEmail', e.target.value)}
@@ -281,8 +284,9 @@ export default function ReserveBookingPage() {
               style={styles.input}
             />
 
-            <label style={styles.label}>Occasion</label>
+            <label htmlFor="occasion" style={styles.label}>Occasion</label>
             <select
+              id="occasion"
               value={data.occasion}
               onChange={e => update('occasion', e.target.value)}
               style={styles.select}
@@ -296,8 +300,9 @@ export default function ReserveBookingPage() {
               <option value="other">Other</option>
             </select>
 
-            <label style={styles.label}>Dietary Restrictions</label>
+            <label htmlFor="dietary-restrictions" style={styles.label}>Dietary Restrictions</label>
             <input
+              id="dietary-restrictions"
               type="text"
               value={data.dietaryRestrictions}
               onChange={e => update('dietaryRestrictions', e.target.value)}
@@ -305,8 +310,9 @@ export default function ReserveBookingPage() {
               style={styles.input}
             />
 
-            <label style={styles.label}>Special Requests</label>
+            <label htmlFor="special-requests" style={styles.label}>Special Requests</label>
             <textarea
+              id="special-requests"
               value={data.specialRequests}
               onChange={e => update('specialRequests', e.target.value)}
               placeholder="Any special requests?"
@@ -400,6 +406,8 @@ export default function ReserveBookingPage() {
           </div>
         )}
       </div>
+
+      <style>{`.slot-button-focus:focus { outline: 2px solid #2563eb; outline-offset: 2px; }`}</style>
 
       {/* JSON-LD for SEO — only when booking is enabled */}
       {enabled && (

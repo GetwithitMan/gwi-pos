@@ -425,6 +425,7 @@ export default function HostPage() {
                         handleTableStatusChange(table.id, 'available')
                       }
                     }}
+                    aria-label={`${table.name} - ${table.status.replace('_', ' ')}`}
                     className={`
                       relative p-2 rounded-lg border-2 text-center transition-all
                       ${STATUS_COLORS[table.status] ?? 'bg-gray-800 border-gray-600 text-gray-300'}
@@ -758,7 +759,9 @@ export default function HostPage() {
                 <button
                   key={size}
                   onClick={() => setSeatPartySize(size)}
-                  className={`w-10 h-10 rounded-lg font-bold text-sm transition-colors ${
+                  aria-label={`Party size ${size}`}
+                  aria-pressed={seatPartySize === size}
+                  className={`w-12 h-12 rounded-lg font-bold text-sm transition-colors ${
                     seatPartySize === size
                       ? 'bg-blue-600 text-white'
                       : 'bg-gray-800 text-gray-400 hover:bg-gray-700'

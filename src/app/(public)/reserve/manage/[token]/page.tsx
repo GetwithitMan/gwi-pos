@@ -269,16 +269,18 @@ export default function ManageReservationPage() {
 
             {showModify && (
               <div style={styles.modifySection}>
-                <label style={styles.label}>New Date</label>
+                <label htmlFor="modify-date" style={styles.label}>New Date</label>
                 <input
+                  id="modify-date"
                   type="date"
                   value={newDate}
                   onChange={e => setNewDate(e.target.value)}
                   min={new Date().toISOString().slice(0, 10)}
                   style={styles.input}
                 />
-                <label style={styles.label}>New Time</label>
+                <label htmlFor="modify-time" style={styles.label}>New Time</label>
                 <input
+                  id="modify-time"
                   type="time"
                   value={newTime}
                   onChange={e => setNewTime(e.target.value)}
