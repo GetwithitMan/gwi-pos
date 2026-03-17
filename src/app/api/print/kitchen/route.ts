@@ -857,13 +857,25 @@ function buildPizzaSection(
   }
 
   // Parse toppings data
-  const data = pizzaData.toppingsData as {
-    toppings?: Array<{ name: string; sections: number[]; amount: string }>
-    sauces?: Array<{ name: string; sections: number[]; amount: string }>
-    cheeses?: Array<{ name: string; sections: number[]; amount: string }>
+  // Note: Android writes "microSections" but TypeScript types use "sections".
+  // Normalize to "sections" for consistent rendering.
+  const rawData = pizzaData.toppingsData as {
+    toppings?: Array<{ name: string; sections?: number[]; microSections?: number[]; amount: string }>
+    sauces?: Array<{ name: string; sections?: number[]; microSections?: number[]; amount: string }>
+    cheeses?: Array<{ name: string; sections?: number[]; microSections?: number[]; amount: string }>
     sauceSections?: number[] | null
     cheeseSections?: number[] | null
   } | null
+
+  // Normalize: prefer "sections", fall back to "microSections"
+  const normalizeItems = (items?: Array<{ name: string; sections?: number[]; microSections?: number[]; amount: string }>) =>
+    items?.map(item => ({ ...item, sections: item.sections || item.microSections || [] })) || []
+  const data = rawData ? {
+    ...rawData,
+    toppings: normalizeItems(rawData.toppings),
+    sauces: normalizeItems(rawData.sauces),
+    cheeses: normalizeItems(rawData.cheeses),
+  } : null
 
   const MAX_SECTIONS = 24
 
@@ -912,15 +924,21 @@ function buildPizzaSection(
   const baseSauceIsWhole = !data?.sauceSections
   const baseCheeseIsWhole = !data?.cheeseSections
 
+  // When new sauces[]/cheeses[] arrays exist, skip legacy header rendering
+  // to avoid double-printing (the arrays are already in allToppings below).
+  const hasNewSauceArray = (data?.sauces?.length ?? 0) > 0
+  const hasNewCheeseArray = (data?.cheeses?.length ?? 0) > 0
+
   // For whole-pizza base sauce/cheese, print in header area (before sections)
-  if (baseSauceIsWhole && pizzaData.sauce) {
+  // Only when using legacy single-sauce format (no sauces[] array)
+  if (!hasNewSauceArray && baseSauceIsWhole && pizzaData.sauce) {
     const saucePrefix = pizzaData.sauceAmount !== 'regular' ? `${pizzaData.sauceAmount.toUpperCase()} ` : ''
     parts.push(toppingSizeCmd)
     parts.push(line(`  ${saucePrefix}${pizzaData.sauce.name.toUpperCase()} SAUCE`))
     parts.push(NORMAL)
   }
 
-  if (baseCheeseIsWhole && pizzaData.cheese) {
+  if (!hasNewCheeseArray && baseCheeseIsWhole && pizzaData.cheese) {
     const cheesePrefix = pizzaData.cheeseAmount !== 'regular' ? `${pizzaData.cheeseAmount.toUpperCase()} ` : ''
     parts.push(toppingSizeCmd)
     parts.push(line(`  ${cheesePrefix}${pizzaData.cheese.name.toUpperCase()} CHEESE`))
@@ -983,16 +1001,16 @@ function buildPizzaSection(
       // Collect items for this section
       const sectionItems: string[] = []
 
-      // Add section-specific base sauce if applicable
-      if (!baseSauceIsWhole && pizzaData.sauce && data.sauceSections) {
+      // Add section-specific base sauce if applicable (legacy format only)
+      if (!hasNewSauceArray && !baseSauceIsWhole && pizzaData.sauce && data.sauceSections) {
         if (overlaps(data.sauceSections, sectionIndices)) {
           const saucePrefix = pizzaData.sauceAmount !== 'regular' ? `${pizzaData.sauceAmount.toUpperCase()} ` : ''
           sectionItems.push(`${saucePrefix}${pizzaData.sauce.name.toUpperCase()} SAUCE`)
         }
       }
 
-      // Add section-specific base cheese if applicable
-      if (!baseCheeseIsWhole && pizzaData.cheese && data.cheeseSections) {
+      // Add section-specific base cheese if applicable (legacy format only)
+      if (!hasNewCheeseArray && !baseCheeseIsWhole && pizzaData.cheese && data.cheeseSections) {
         if (overlaps(data.cheeseSections, sectionIndices)) {
           const cheesePrefix = pizzaData.cheeseAmount !== 'regular' ? `${pizzaData.cheeseAmount.toUpperCase()} ` : ''
           sectionItems.push(`${cheesePrefix}${pizzaData.cheese.name.toUpperCase()} CHEESE`)
