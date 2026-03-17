@@ -132,6 +132,9 @@ export async function createOrderItem(
 
   const createdItem = await tx.orderItem.create({
     data: {
+      // Use client-generated lineItemId if provided (enables client-server dedup).
+      // Falls back to Prisma auto-generated cuid for old clients that don't send it.
+      ...(item.lineItemId ? { id: item.lineItemId } : {}),
       orderId,
       locationId,
       menuItemId: item.menuItemId,

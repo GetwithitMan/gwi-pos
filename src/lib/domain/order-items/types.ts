@@ -76,6 +76,7 @@ export interface PizzaConfig {
 // ─── Add Item Input ─────────────────────────────────────────────────────────
 
 export interface AddItemInput {
+  lineItemId?: string    // Client-generated stable ID — server uses this if provided
   menuItemId: string
   name: string
   price: number
