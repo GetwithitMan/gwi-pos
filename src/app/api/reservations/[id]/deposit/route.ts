@@ -186,8 +186,9 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Deposit already fully paid' }, { status: 400 })
     }
 
-    // Create deposit record
-    const depositId = `dep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    // Create deposit record (use crypto UUID instead of predictable ID)
+    const crypto = require('crypto')
+    const depositId = crypto.randomUUID()
     await db.$executeRawUnsafe(
       `INSERT INTO "ReservationDeposit" (id, "locationId", "reservationId", type, amount, "paymentMethod",
         "cardLast4", "cardBrand", "datacapRecordNo", "datacapRefNumber", status, "employeeId", notes)
@@ -200,6 +201,34 @@ export const POST = withVenue(async function POST(
     )
 
     const newTotal = currentPaid + amount
+    const fullyPaid = depositTarget > 0 ? newTotal >= depositTarget : false
+
+    // Update depositStatus on reservation + auto-confirm if fully paid
+    if (fullyPaid) {
+      await db.reservation.update({
+        where: { id },
+        data: { depositStatus: 'paid', updatedAt: new Date() },
+      })
+
+      // Auto-confirm pending reservations when deposit is fully paid
+      if (res.status === 'pending') {
+        try {
+          await db.$transaction(async (tx: any) => {
+            const { transition } = await import('@/lib/reservations/state-machine')
+            return transition({
+              reservationId: id,
+              to: 'confirmed',
+              actor: { type: 'staff', id: employeeId || undefined },
+              db: tx,
+              locationId: callerLocationId,
+            })
+          })
+        } catch (err) {
+          // Non-fatal — deposit recorded, transition can be done manually
+          console.warn('[Deposit] Auto-confirm after deposit failed:', err)
+        }
+      }
+    }
 
     return NextResponse.json({
       data: {
@@ -209,7 +238,8 @@ export const POST = withVenue(async function POST(
         paymentMethod,
         previousTotal: Math.round(currentPaid * 100) / 100,
         newTotal: Math.round(newTotal * 100) / 100,
-        fullyPaid: depositTarget > 0 ? newTotal >= depositTarget : false,
+        fullyPaid,
+        autoConfirmed: fullyPaid && res.status === 'pending',
       },
     })
   } catch (error) {

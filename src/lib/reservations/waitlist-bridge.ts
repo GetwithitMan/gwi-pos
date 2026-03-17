@@ -13,6 +13,7 @@ import crypto from 'crypto'
 import type { PrismaClient } from '@prisma/client'
 import { parseTimeToMinutes } from './service-date'
 import { transition } from './state-machine'
+import { findOrCreateCustomer } from './customer-matcher'
 import { sendReservationNotification, type TemplateKey } from './notifications'
 import { dispatchReservationChanged, dispatchWaitlistChanged } from '@/lib/socket-dispatch'
 
@@ -100,6 +101,15 @@ export async function offerSlotToWaitlist(
   const holdExpiresAt = new Date(now.getTime() + claimWindowMinutes * 60_000)
   const manageToken = crypto.randomBytes(16).toString('hex')
 
+  // Match or create customer so no-show tracking and history work
+  const { customer } = await findOrCreateCustomer({
+    phone: entry.phone,
+    email: null,
+    name: entry.customerName,
+    locationId: rez.locationId,
+    db,
+  })
+
   // Wrap all writes in a single transaction for atomicity
   const newReservation = await db.$transaction(async (tx: any) => {
     const reservation = await tx.reservation.create({
@@ -113,6 +123,7 @@ export async function offerSlotToWaitlist(
         duration: rez.duration,
         tableId: rez.tableId,
         sectionPreference: rez.sectionPreference,
+        customerId: customer.id,
         status: 'pending',
         source: 'waitlist',
         holdExpiresAt,
