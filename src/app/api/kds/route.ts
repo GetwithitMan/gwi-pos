@@ -6,6 +6,7 @@ import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
 import { dispatchAlert } from '@/lib/alert-service'
+import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 
 // Throttle entertainment expiry scan — once per 30s, not every KDS poll
 let _lastExpiryCheck = 0
@@ -564,6 +565,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             payload: { lineItemId: item.id, resendCount: item.resendCount || 0, kitchenStatus: 'pending' },
           })))
         })().catch(err => console.error('[order-events] KDS resend emit failed:', err))
+      }
+
+      // Delivery auto-advance: preparing → ready_for_pickup when all items bumped
+      if (action === 'complete' || action === 'bump_order') {
+        void checkKdsBumpDeliveryAdvance(orderId, locationId).catch(console.error)
       }
     }
 

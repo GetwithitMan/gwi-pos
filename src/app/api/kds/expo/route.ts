@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 
 /**
  * Expo KDS API - Returns all items from all stations for expeditor view
@@ -382,6 +383,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             payload: { lineItemId: item.id, kitchenStatus: 'delivered', isCompleted: true },
           })))
         })().catch(err => console.error('[order-events] Expo bump emit failed:', err))
+      }
+
+      // Delivery auto-advance: preparing → ready_for_pickup when all items bumped
+      if (action === 'serve' || status === 'served' || action === 'bump_order') {
+        const targetOrderId = action === 'bump_order' ? (body.orderId || orderId) : orderId
+        void checkKdsBumpDeliveryAdvance(targetOrderId, locationId).catch(console.error)
       }
     }
 

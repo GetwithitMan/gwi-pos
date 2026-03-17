@@ -23,6 +23,10 @@ import {
   dispatchRunEvent,
   dispatchDriverStatusChanged,
 } from './dispatch-events'
+import { getLocationSettings } from '@/lib/location-cache'
+import { parseSettings } from '@/lib/settings'
+import { reallocateTipToDriver } from './tip-reallocation'
+import { processDeliveryTipSplit } from '@/lib/domain/tips/delivery-tip-split'
 
 // ── Delivery Order States ───────────────────────────────────────────────────
 
@@ -260,7 +264,60 @@ export async function advanceDeliveryStatus(
     // 5. Fire socket event (fire-and-forget)
     void dispatchDeliveryStatusChanged(locationId, updated[0]).catch(console.error)
 
-    return { success: true, deliveryOrder: updated[0] }
+    // 5b. Tip hooks — fire-and-forget, failures must never block state machine
+    const updatedOrder = updated[0]
+
+    if (newStatus === 'assigned' && updatedOrder.driverId && updatedOrder.orderId) {
+      // Driver just assigned — move any held tips from holding ledger to driver
+      void reallocateTipToDriver(
+        locationId,
+        deliveryOrderId,
+        updatedOrder.orderId,
+        updatedOrder.driverId,
+        employeeId,
+      ).catch(err => console.error('[advanceDeliveryStatus] Tip reallocation to driver failed:', err))
+    }
+
+    if (newStatus === 'delivered' && updatedOrder.driverId && updatedOrder.orderId) {
+      // Delivery completed — process kitchen tip-out split (if mode is not driver_keeps_100)
+      void (async () => {
+        try {
+          const locationSettings = await getLocationSettings(locationId)
+          const settings = locationSettings ? parseSettings(locationSettings) : null
+          const deliverySettings = settings?.delivery
+          const driverTipMode = deliverySettings?.driverTipMode ?? 'driver_keeps_100'
+
+          if (driverTipMode !== 'driver_keeps_100') {
+            await processDeliveryTipSplit({
+              locationId,
+              orderId: updatedOrder.orderId,
+              deliveryOrderId,
+              driverEmployeeId: updatedOrder.driverId,
+              driverTipMode,
+              driverTipSplitPercent: deliverySettings?.driverTipSplitPercent ?? 80,
+              kitchenTipSplitPercent: deliverySettings?.kitchenTipSplitPercent ?? 20,
+              actorEmployeeId: employeeId,
+            })
+          }
+        } catch (err) {
+          console.error('[advanceDeliveryStatus] Delivery tip split failed:', err)
+        }
+      })()
+    }
+
+    // 6. Auto-complete run if this order reached a terminal state and has a runId
+    if (
+      TERMINAL_DELIVERY_STATES.includes(newStatus) &&
+      updatedOrder.runId
+    ) {
+      void autoCompleteRunIfAllTerminal(
+        updatedOrder.runId,
+        locationId,
+        employeeId,
+      ).catch(console.error)
+    }
+
+    return { success: true, deliveryOrder: updatedOrder }
   } catch (error) {
     console.error('[advanceDeliveryStatus] Error:', error)
     return { success: false, error: 'Internal error advancing delivery status' }
@@ -403,6 +460,144 @@ export async function advanceDriverSessionStatus(
   } catch (error) {
     console.error('[advanceDriverSessionStatus] Error:', error)
     return { success: false, error: 'Internal error' }
+  }
+}
+
+// ── Run Auto-Complete ──────────────────────────────────────────────────
+
+/**
+ * Auto-complete a delivery run when ALL its orders reach terminal states.
+ *
+ * - If all delivered → `completed`
+ * - If all cancelled → `cancelled`
+ * - If mixed (some delivered, some cancelled) → `completed`
+ *
+ * Fire-and-forget — failures are logged but never block the caller.
+ * This is the single canonical auto-complete path — all entry points
+ * (driver order-status, dispatch board, state machine) flow through here.
+ */
+export async function autoCompleteRunIfAllTerminal(
+  runId: string,
+  locationId: string,
+  employeeId: string,
+): Promise<void> {
+  try {
+    // Check if the run is already in a terminal state
+    const runs = await db.$queryRawUnsafe<any[]>(
+      `SELECT "status" FROM "DeliveryRun" WHERE "id" = $1 AND "locationId" = $2 LIMIT 1`,
+      runId,
+      locationId,
+    )
+    if (!runs.length) return
+    if (TERMINAL_RUN_STATES.includes(runs[0].status as DeliveryRunStatus)) return
+
+    // Query all orders in the run
+    const orderStatuses = await db.$queryRawUnsafe<{ status: string }[]>(
+      `SELECT "status" FROM "DeliveryOrder" WHERE "runId" = $1 AND "deletedAt" IS NULL`,
+      runId,
+    )
+
+    if (!orderStatuses.length) return
+
+    // Check if ALL orders are terminal
+    const allTerminal = orderStatuses.every(o =>
+      TERMINAL_DELIVERY_STATES.includes(o.status as DeliveryOrderStatus),
+    )
+    if (!allTerminal) return
+
+    // Determine target status
+    const allCancelled = orderStatuses.every(
+      o =>
+        o.status === 'cancelled_before_dispatch' ||
+        o.status === 'cancelled_after_dispatch',
+    )
+
+    const targetStatus: DeliveryRunStatus = allCancelled ? 'cancelled' : 'completed'
+    const reason = allCancelled
+      ? 'Auto-cancelled: all orders cancelled'
+      : 'Auto-completed: all orders reached terminal state'
+
+    const result = await advanceRunStatus({
+      runId,
+      locationId,
+      newStatus: targetStatus,
+      employeeId,
+      reason,
+    })
+
+    if (result.success) {
+      console.log(`[autoCompleteRun] Run ${runId} auto-advanced to ${targetStatus}`)
+    } else {
+      console.warn(`[autoCompleteRun] Failed to auto-advance run ${runId}: ${result.error}`)
+    }
+  } catch (error) {
+    console.error('[autoCompleteRunIfAllTerminal] Error:', error)
+  }
+}
+
+// ── KDS Bump → Delivery Auto-Advance ─────────────────────────────────
+
+/**
+ * Called after KDS bump (complete/bump_order) to auto-advance a delivery
+ * order from `preparing` → `ready_for_pickup` when:
+ *  1. The bumped order has a DeliveryOrder record
+ *  2. The delivery order is in `preparing` status
+ *  3. ALL order items are now completed (bumped)
+ *  4. settings.delivery.dispatchPolicy.holdReadyUntilAllItemsComplete is ON
+ *
+ * Fire-and-forget — never blocks KDS bump response.
+ */
+export async function checkKdsBumpDeliveryAdvance(
+  orderId: string,
+  locationId: string,
+): Promise<void> {
+  try {
+    // 1. Check if this POS order has a linked delivery order in `preparing` status
+    const deliveryOrders = await db.$queryRawUnsafe<any[]>(
+      `SELECT "id", "status" FROM "DeliveryOrder"
+       WHERE "orderId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+       LIMIT 1`,
+      orderId,
+      locationId,
+    )
+
+    if (!deliveryOrders.length) return // Not a delivery order
+    const deliveryOrder = deliveryOrders[0]
+
+    if (deliveryOrder.status !== 'preparing') return // Only advance from preparing
+
+    // 2. Check if the holdReadyUntilAllItemsComplete policy is ON
+    const settings = await getLocationSettings(locationId)
+    const dispatchPolicy = (settings as any)?.delivery?.dispatchPolicy
+    if (!dispatchPolicy?.holdReadyUntilAllItemsComplete) return
+
+    // 3. Check if ALL items in the POS order are now completed
+    const incomplete = await db.$queryRawUnsafe<{ count: number }[]>(
+      `SELECT COUNT(*)::int as count FROM "OrderItem"
+       WHERE "orderId" = $1 AND "deletedAt" IS NULL
+       AND "status" != 'voided'
+       AND ("isCompleted" = false OR "isCompleted" IS NULL)`,
+      orderId,
+    )
+
+    if ((incomplete[0]?.count ?? 1) > 0) return // Still have incomplete items
+
+    // 4. Advance to ready_for_pickup
+    const result = await advanceDeliveryStatus({
+      deliveryOrderId: deliveryOrder.id,
+      locationId,
+      newStatus: 'ready_for_pickup',
+      employeeId: 'system-kds-bump',
+      reason: 'Auto-advanced: all KDS items bumped',
+    })
+
+    if (result.success) {
+      console.log(`[KDS→Delivery] Order ${orderId} delivery auto-advanced to ready_for_pickup`)
+    } else {
+      console.warn(`[KDS→Delivery] Failed to auto-advance order ${orderId}: ${result.error}`)
+    }
+  } catch (error) {
+    console.error('[checkKdsBumpDeliveryAdvance] Error:', error)
   }
 }
 

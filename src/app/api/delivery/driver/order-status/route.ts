@@ -5,7 +5,7 @@ import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
-import { advanceDeliveryStatus, advanceRunStatus } from '@/lib/delivery/state-machine'
+import { advanceDeliveryStatus } from '@/lib/delivery/state-machine'
 import { canMarkDelivered } from '@/lib/delivery/dispatch-policy'
 
 export const dynamic = 'force-dynamic'
@@ -124,10 +124,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
 
-    // If the order just became delivered, check if all orders in the run are done
-    if (status === 'delivered' && deliveryOrder.runId) {
-      void autoCompleteRunIfDone(deliveryOrder.runId, locationId, actor.employeeId ?? 'unknown').catch(console.error)
-    }
+    // Auto-complete of the run is now handled inside advanceDeliveryStatus()
+    // when an order reaches a terminal state (delivered, cancelled_before_dispatch,
+    // cancelled_after_dispatch). No need for a separate call here.
 
     return NextResponse.json({
       deliveryOrder: {
@@ -141,30 +140,3 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
   }
 })
 
-/**
- * Auto-complete the run if all delivery orders have reached terminal states.
- * Fire-and-forget — failures are logged but do not block the response.
- */
-async function autoCompleteRunIfDone(
-  runId: string,
-  locationId: string,
-  employeeId: string,
-): Promise<void> {
-  const pending: any[] = await db.$queryRawUnsafe(`
-    SELECT COUNT(*)::int as count
-    FROM "DeliveryOrder"
-    WHERE "runId" = $1
-      AND "locationId" = $2
-      AND "status" NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'returned_to_store')
-  `, runId, locationId)
-
-  if ((pending[0]?.count ?? 1) === 0) {
-    await advanceRunStatus({
-      runId,
-      locationId,
-      newStatus: 'completed',
-      employeeId,
-      reason: 'Auto-completed: all orders delivered',
-    })
-  }
-}
