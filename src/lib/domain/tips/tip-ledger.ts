@@ -30,6 +30,7 @@ export type LedgerSourceType =
   | 'PAYOUT_PAYROLL'
   | 'CHARGEBACK'
   | 'ADJUSTMENT'
+  | 'DELIVERY_REALLOCATION'
 
 export interface PostToLedgerParams {
   locationId: string

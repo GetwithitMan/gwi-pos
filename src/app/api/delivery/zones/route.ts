@@ -207,7 +207,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void writeDeliveryAuditLog({
       locationId,
       action: 'zone_created',
-      employeeId: actor.employeeId,
+      employeeId: actor.employeeId ?? 'unknown',
       newValue: { id: zone.id, name: sanitizedName, zoneType },
     }).catch(console.error)
 

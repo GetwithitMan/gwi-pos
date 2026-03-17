@@ -257,7 +257,7 @@ export const PUT = withVenue(async function PUT(
     void writeDeliveryAuditLog({
       locationId,
       action: 'zone_updated',
-      employeeId: actor.employeeId,
+      employeeId: actor.employeeId ?? 'unknown',
       previousValue: { name: current.name, zoneType: current.zoneType },
       newValue: { id: zone.id, name: zone.name, zoneType: zone.zoneType },
     }).catch(console.error)
@@ -318,7 +318,7 @@ export const DELETE = withVenue(async function DELETE(
     void writeDeliveryAuditLog({
       locationId,
       action: 'zone_deleted',
-      employeeId: actor.employeeId,
+      employeeId: actor.employeeId ?? 'unknown',
       previousValue: { id: zone.id, name: zone.name, zoneType: zone.zoneType },
     }).catch(console.error)
 

@@ -46,10 +46,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const deliveryConfig = settings.delivery ?? DEFAULT_DELIVERY
     const policy = deliveryConfig.dispatchPolicy
 
+    // Timezone lives on Location, not LocationSettings
+    const loc = await db.$queryRawUnsafe<{ timezone: string }[]>(
+      'SELECT "timezone" FROM "Location" WHERE "id" = $1',
+      locationId,
+    )
+    const timezone = loc[0]?.timezone ?? 'America/New_York'
+
     const maxPerDriver = getMaxOrdersPerDriver(
       policy,
       deliveryConfig.peakHours ?? [],
-      settings.timezone ?? 'America/New_York'
+      timezone
     )
 
     // Resolve effective zoneId from orders if not provided

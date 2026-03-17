@@ -138,7 +138,7 @@ export const PUT = withVenue(async function PUT(
         runId: id,
         locationId,
         newStatus: status,
-        employeeId: actor.employeeId,
+        employeeId: actor.employeeId ?? 'unknown',
       })
 
       if (!result.success) {

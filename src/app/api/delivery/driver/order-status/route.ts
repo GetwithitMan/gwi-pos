@@ -116,7 +116,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       deliveryOrderId,
       locationId,
       newStatus: status,
-      employeeId: actor.employeeId,
+      employeeId: actor.employeeId ?? 'unknown',
       reason,
     })
 
@@ -126,7 +126,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // If the order just became delivered, check if all orders in the run are done
     if (status === 'delivered' && deliveryOrder.runId) {
-      void autoCompleteRunIfDone(deliveryOrder.runId, locationId, actor.employeeId).catch(console.error)
+      void autoCompleteRunIfDone(deliveryOrder.runId, locationId, actor.employeeId ?? 'unknown').catch(console.error)
     }
 
     return NextResponse.json({

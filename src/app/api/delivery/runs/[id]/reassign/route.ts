@@ -195,7 +195,7 @@ export const POST = withVenue(async function POST(
       action: 'reassignment',
       runId: id,
       driverId: newDriverId,
-      employeeId: actor.employeeId,
+      employeeId: actor.employeeId ?? 'unknown',
       previousValue: { driverId: result.oldDriverId, driverName: result.oldDriverName },
       newValue: { driverId: newDriverId, driverName: result.newDriverName },
       reason: reason.trim(),

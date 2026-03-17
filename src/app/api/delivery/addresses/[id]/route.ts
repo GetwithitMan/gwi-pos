@@ -206,7 +206,7 @@ export const PUT = withVenue(async function PUT(
       void writeDeliveryAuditLog({
         locationId,
         action: isFlagged !== undefined ? 'address_flagged' : 'address_restricted',
-        employeeId: actor.employeeId,
+        employeeId: actor.employeeId ?? 'unknown',
         previousValue: {
           isFlagged: current.isFlagged,
           isRestricted: current.isRestricted,

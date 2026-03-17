@@ -177,11 +177,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    // Timezone lives on Location, not LocationSettings
+    const loc = await db.$queryRawUnsafe<{ timezone: string }[]>(
+      'SELECT "timezone" FROM "Location" WHERE "id" = $1',
+      locationId,
+    )
+    const timezone = loc[0]?.timezone ?? 'America/New_York'
+
     // Validate orders per driver limit
     const maxPerDriver = getMaxOrdersPerDriver(
       policy,
       deliveryConfig.peakHours ?? [],
-      settings.timezone ?? 'America/New_York'
+      timezone
     )
 
     // Run creation inside a transaction for atomicity
@@ -418,7 +425,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         action: 'run_created',
         runId: run.id,
         driverId,
-        employeeId: actor.employeeId,
+        employeeId: actor.employeeId ?? 'unknown',
         newValue: {
           orderIds,
           orderSequence,
@@ -434,7 +441,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           deliveryOrderId: order.id,
           runId: run.id,
           driverId,
-          employeeId: actor.employeeId,
+          employeeId: actor.employeeId ?? 'unknown',
           previousValue: { status: lockedOrders.find(o => o.id === order.id)?.status },
           newValue: { status: 'assigned', runId: run.id, runSequence: order.runSequence },
         })

@@ -63,7 +63,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         session.id,
         locationId,
         status,
-        actor.employeeId,
+        actor.employeeId ?? 'unknown',
       )
       if (!result.success) {
         return NextResponse.json({ error: result.error }, { status: 400 })

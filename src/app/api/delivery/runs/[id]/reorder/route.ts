@@ -195,7 +195,7 @@ export const POST = withVenue(async function POST(
       locationId,
       action: 'run_reorder',
       runId: id,
-      employeeId: actor.employeeId,
+      employeeId: actor.employeeId ?? 'unknown',
       previousValue: { orderSequence: result.previousSequence },
       newValue: { orderSequence: result.newSequence },
     }).catch(console.error)

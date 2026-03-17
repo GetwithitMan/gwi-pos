@@ -141,7 +141,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action: 'proof_uploaded',
       deliveryOrderId,
       driverId,
-      employeeId: actor.employeeId,
+      employeeId: actor.employeeId ?? 'unknown',
       newValue: { type, storageKey: storageKey.trim(), proofId: proof.id },
     }).catch(console.error)
 
