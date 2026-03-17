@@ -5,6 +5,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { transition } from '@/lib/reservations/state-machine'
 import { formatPhoneE164 } from '@/lib/twilio'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import crypto from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,7 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Ambiguous — multiple matches. Privacy: NEVER expose other guests' details
     if (matches.length > 1) {
       // Log with phone hash only (no PII)
-      const phoneHash = require('crypto').createHash('sha256').update(normalizedPhone).digest('hex').slice(0, 16)
+      const phoneHash = crypto.createHash('sha256').update(normalizedPhone).digest('hex').slice(0, 32)
       void db.reservationEvent.create({
         data: {
           locationId,

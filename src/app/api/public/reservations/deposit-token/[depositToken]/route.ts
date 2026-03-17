@@ -98,10 +98,10 @@ export const POST = withVenue(async function POST(
       await markDepositTokenUsed(depositToken, tx)
 
       // Update reservation deposit status
-      await tx.$executeRawUnsafe(
-        `UPDATE "Reservation" SET "depositStatus" = 'paid', "updatedAt" = NOW() WHERE id = $1`,
-        reservation.id
-      )
+      await tx.reservation.update({
+        where: { id: reservation.id },
+        data: { depositStatus: 'paid', updatedAt: new Date() },
+      })
 
       // Log event
       await tx.reservationEvent.create({

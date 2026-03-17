@@ -25,22 +25,33 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    const idempotencyKey = request.headers.get('x-idempotency-key')
-    if (!idempotencyKey) {
+    const idempotencyKey = request.headers.get('x-idempotency-key')?.trim()
+    if (!idempotencyKey || idempotencyKey.length < 16 || idempotencyKey.length > 256) {
       return NextResponse.json(
-        { error: 'X-Idempotency-Key header is required' },
+        { error: 'Valid X-Idempotency-Key header is required (16-256 chars)' },
         { status: 400 }
       )
     }
 
     const body = await request.json()
 
-    // Honeypot check — "website" field should be empty
-    if (body.website) {
+    // Honeypot check — hidden field should not exist at all
+    if ('website' in body) {
       return NextResponse.json({ error: 'Invalid submission' }, { status: 422 })
     }
 
     const { guestName, guestPhone, guestEmail, partySize, date, time, duration, specialRequests, occasion, dietaryRestrictions, sectionPreference, smsOptIn } = body
+
+    // Input length validation
+    if (specialRequests && typeof specialRequests === 'string' && specialRequests.length > 500) {
+      return NextResponse.json({ error: 'Special requests too long (max 500 chars)' }, { status: 400 })
+    }
+    if (occasion && typeof occasion === 'string' && occasion.length > 100) {
+      return NextResponse.json({ error: 'Occasion too long (max 100 chars)' }, { status: 400 })
+    }
+    if (dietaryRestrictions && typeof dietaryRestrictions === 'string' && dietaryRestrictions.length > 500) {
+      return NextResponse.json({ error: 'Dietary restrictions too long (max 500 chars)' }, { status: 400 })
+    }
 
     if (!guestName || !partySize || !date || !time) {
       return NextResponse.json(

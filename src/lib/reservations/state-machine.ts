@@ -6,7 +6,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client'
-import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+// Socket dispatch is caller's responsibility — import removed to enforce post-commit pattern
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -66,8 +66,8 @@ const TRANSITIONS: Record<string, TransitionRule> = {
   'confirmed:no_show':    { eventType: 'no_show_marked' },
   'seated:completed':     { eventType: 'completed' },
   'seated:cancelled':     { eventType: 'cancelled', requireStaff: true, requireReason: true },
-  'no_show:confirmed':    { eventType: 'no_show_overridden', requireStaff: true, requireReason: true },
-  'no_show:seated':       { eventType: 'seated', requireStaff: true, requireReason: true },
+  'no_show:confirmed':    { eventType: 'no_show_overridden', requireStaff: true, requireReason: true, requireOverride: true },
+  'no_show:seated':       { eventType: 'seated', requireStaff: true, requireReason: true, requireOverride: true },
 }
 
 // ─── Transition Function ────────────────────────────────────────────────────
@@ -129,6 +129,13 @@ export async function transition(params: {
     )
   }
 
+  if ((rule as any).requireOverride && !overrideType) {
+    throw new TransitionError(
+      `Override type required for ${from} → ${to}`,
+      'OVERRIDE_REQUIRED'
+    )
+  }
+
   // Cutoff check for guest cancellations
   if (rule.checkCutoff && actor.type === 'guest') {
     const settings = await loadReservationSettings(txDb, locationId)
@@ -157,20 +164,20 @@ export async function transition(params: {
   if (to === 'completed') timestampUpdates.completedAt = now
   if (to === 'cancelled') timestampUpdates.cancelledAt = now
 
-  // Build SET clause dynamically
-  const setClauses = [`"status" = '${to}'`]
-  for (const [col, val] of Object.entries(timestampUpdates)) {
-    setClauses.push(`"${col}" = '${val.toISOString()}'`)
+  // Update reservation using Prisma (safe from SQL injection)
+  const updateData: Record<string, any> = {
+    status: to,
+    updatedAt: now,
+    ...timestampUpdates,
   }
   if (to === 'cancelled' && reason) {
-    setClauses.push(`"cancelReason" = '${reason.replace(/'/g, "''")}'`)
+    updateData.cancelReason = reason
   }
 
-  // Update reservation
-  await txDb.$executeRawUnsafe(
-    `UPDATE "Reservation" SET ${setClauses.join(', ')}, "updatedAt" = NOW() WHERE id = $1 AND "locationId" = $2`,
-    reservationId, locationId
-  )
+  await txDb.reservation.update({
+    where: { id: reservationId },
+    data: updateData,
+  })
 
   // 5. Write ReservationEvent
   await txDb.reservationEvent.create({
@@ -209,10 +216,10 @@ export async function transition(params: {
 
   // Handle deposit auto-refund on cancel
   if (rule.autoRefundDeposit && reservation.depositStatus === 'paid') {
-    await txDb.$executeRawUnsafe(
-      `UPDATE "Reservation" SET "depositStatus" = 'refund_pending' WHERE id = $1`,
-      reservationId
-    )
+    await txDb.reservation.update({
+      where: { id: reservationId },
+      data: { depositStatus: 'refund_pending' },
+    })
     await txDb.reservationEvent.create({
       data: {
         locationId,
@@ -227,10 +234,20 @@ export async function transition(params: {
 
   // Restore deposit status on no_show → confirmed reversal
   if (from === 'no_show' && to === 'confirmed' && reservation.depositStatus === 'forfeited') {
-    await txDb.$executeRawUnsafe(
-      `UPDATE "Reservation" SET "depositStatus" = 'paid' WHERE id = $1`,
-      reservationId
-    )
+    await txDb.reservation.update({
+      where: { id: reservationId },
+      data: { depositStatus: 'paid' },
+    })
+    await txDb.reservationEvent.create({
+      data: {
+        locationId,
+        reservationId,
+        eventType: 'deposit_paid',
+        actor: actor.type,
+        actorId: actor.id || null,
+        details: { reason: 'Deposit restored after no-show reversal', previousStatus: 'forfeited' },
+      },
+    })
   }
 
   // 6. Load updated reservation for return + socket dispatch
@@ -238,16 +255,8 @@ export async function transition(params: {
     where: { id: reservationId },
   })
 
-  // 7. AFTER transaction logic: fire socket dispatch (fire-and-forget)
-  // Note: The caller wraps this in $transaction. Socket dispatch happens
-  // when the returned promise resolves. For true post-commit behavior,
-  // callers should dispatch after their transaction commits. We fire here
-  // as best-effort since most callers use interactive transactions.
-  void dispatchReservationChanged(locationId, {
-    reservationId,
-    action: rule.eventType,
-    reservation: updated,
-  }).catch(console.error)
+  // Socket dispatch is the caller's responsibility AFTER transaction commits.
+  // Do NOT dispatch here — we may still be inside an interactive transaction.
 
   return updated
 }

@@ -551,6 +551,11 @@ function getAvailableTablesForSlot(
     // Check if any existing reservation overlaps this slot on this table
     const turnTime = table.turnTimeOverrideMinutes ?? settings.defaultTurnTimeMinutes
     const isOccupied = reservations.some(res => {
+      // Skip pending reservations with expired holds — they no longer block slots
+      if (res.status === 'pending' && res.holdExpiresAt && res.holdExpiresAt < new Date()) {
+        return false
+      }
+
       // Check if reservation is assigned to this table (via direct tableId or ReservationTable join)
       const assignedToTable = res.tableId === table.id ||
         res.reservationTables.some(rt => rt.tableId === table.id)
