@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { sendReservationNotification, type TemplateKey } from '@/lib/reservations/notifications'
@@ -22,13 +23,18 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'templateKey is required' }, { status: 400 })
     }
 
+    const callerLocationId = await getLocationId()
+    if (!callerLocationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     // Load reservation with customer
     const reservation = await db.reservation.findUnique({
       where: { id },
       include: { customer: true, table: true, location: { select: { id: true, name: true, settings: true, phone: true, address: true } } },
     })
 
-    if (!reservation) {
+    if (!reservation || reservation.locationId !== callerLocationId) {
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
     }
 

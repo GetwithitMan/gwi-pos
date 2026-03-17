@@ -39,9 +39,10 @@ export function getOverlappingBuckets(
   durationMinutes: number,
   intervalMinutes: number = 15
 ): string[] {
+  const safeDuration = Math.min(durationMinutes, 1440) // Cap at 24 hours
   const buckets: string[] = []
   const startBucket = Math.floor(slotMinutes / intervalMinutes) * intervalMinutes
-  const endMinutes = slotMinutes + durationMinutes
+  const endMinutes = slotMinutes + safeDuration
   for (let b = startBucket; b < endMinutes; b += intervalMinutes) {
     const h = Math.floor(b / 60).toString().padStart(2, '0')
     const m = (b % 60).toString().padStart(2, '0')

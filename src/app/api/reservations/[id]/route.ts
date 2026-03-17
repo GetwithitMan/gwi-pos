@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { repriceAndRevalidate } from '@/lib/reservations/revalidate'
@@ -16,6 +17,10 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
 
     const reservation = await db.reservation.findUnique({
       where: { id },
@@ -37,7 +42,7 @@ export const GET = withVenue(async function GET(
       },
     })
 
-    if (!reservation) {
+    if (!reservation || reservation.locationId !== locationId) {
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
     }
 
@@ -57,13 +62,18 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const body = await request.json()
 
+    const callerLocationId = await getLocationId()
+    if (!callerLocationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     // Load current reservation with location settings
     const current = await db.reservation.findUnique({
       where: { id },
       include: { location: { select: { settings: true, timezone: true } } },
     })
 
-    if (!current) {
+    if (!current || current.locationId !== callerLocationId) {
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
     }
 
@@ -235,8 +245,13 @@ export const DELETE = withVenue(async function DELETE(
     const { searchParams } = new URL(request.url)
     const cancel = searchParams.get('cancel') === 'true'
 
+    const callerLocationId = await getLocationId()
+    if (!callerLocationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const reservation = await db.reservation.findUnique({ where: { id } })
-    if (!reservation) {
+    if (!reservation || reservation.locationId !== callerLocationId) {
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
     }
 

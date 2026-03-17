@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -8,6 +10,26 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, 'tables.reservations')
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+    }
+
+    // Verify the reservation belongs to this location
+    const reservation = await db.reservation.findUnique({
+      where: { id },
+      select: { locationId: true },
+    })
+    if (!reservation || reservation.locationId !== locationId) {
+      return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
+    }
+
     const sp = request.nextUrl.searchParams
     const limit = Math.min(parseInt(sp.get('limit') || '50', 10), 200)
     const offset = parseInt(sp.get('offset') || '0', 10)

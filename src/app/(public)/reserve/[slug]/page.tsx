@@ -419,7 +419,7 @@ export default function ReserveBookingPage() {
                 },
                 result: { '@type': 'FoodEstablishmentReservation' },
               },
-            }),
+            }).replace(/</g, '\\u003c'),
           }}
         />
       )}

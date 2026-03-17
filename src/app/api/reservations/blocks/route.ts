@@ -105,6 +105,15 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
     }
 
+    // Verify block belongs to the provided locationId
+    const existingBlock = await db.reservationBlock.findFirst({
+      where: { id, locationId },
+      select: { id: true },
+    })
+    if (!existingBlock) {
+      return NextResponse.json({ error: 'Block not found' }, { status: 404 })
+    }
+
     const block = await db.reservationBlock.update({
       where: { id },
       data: {
@@ -142,6 +151,15 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     const auth = await requirePermission(actor.employeeId, locationId, 'floorplan.edit')
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error || 'Permission denied' }, { status: 403 })
+    }
+
+    // Verify block belongs to the provided locationId
+    const existingBlock = await db.reservationBlock.findFirst({
+      where: { id, locationId },
+      select: { id: true },
+    })
+    if (!existingBlock) {
+      return NextResponse.json({ error: 'Block not found' }, { status: 404 })
     }
 
     await db.reservationBlock.update({

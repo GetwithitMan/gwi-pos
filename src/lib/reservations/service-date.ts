@@ -43,7 +43,13 @@ export function getServiceDate(dateTime: Date, timezone: string, serviceEndHour:
  * "14:30" → 870
  */
 export function parseTimeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(':').map(Number)
+  if (!time || typeof time !== 'string') throw new Error(`Invalid time: ${time}`)
+  const parts = time.split(':')
+  if (parts.length !== 2) throw new Error(`Invalid time format: ${time}`)
+  const [hours, minutes] = parts.map(Number)
+  if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    throw new Error(`Invalid time value: ${time}`)
+  }
   return hours * 60 + minutes
 }
 

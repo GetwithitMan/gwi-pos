@@ -5,7 +5,7 @@ import { parseSettings } from '@/lib/settings'
 import { getActorFromRequest } from '@/lib/api-auth'
 import { createReservationWithRules, CreateReservationError } from '@/lib/reservations/create-reservation'
 import type { OperatingHours } from '@/lib/reservations/availability'
-import type { SourceType } from '@/lib/reservations/state-machine'
+import { SOURCE_TYPES, type SourceType } from '@/lib/reservations/state-machine'
 
 // GET - List reservations
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -25,7 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    const whereClause: Record<string, unknown> = { locationId }
+    const whereClause: Record<string, unknown> = { locationId, deletedAt: null }
 
     // Filter by date (calendar date or service date)
     if (serviceDate) {
@@ -129,6 +129,48 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!locationId || !guestName || !partySize || !reservationDate || !reservationTime) {
       return NextResponse.json(
         { error: 'locationId, guestName, partySize, reservationDate, and reservationTime are required' },
+        { status: 400 }
+      )
+    }
+
+    // Validate partySize: must be a positive integer, capped at a reasonable max
+    const MAX_PARTY_SIZE = 200
+    if (!Number.isInteger(partySize) || partySize < 1 || partySize > MAX_PARTY_SIZE) {
+      return NextResponse.json(
+        { error: `partySize must be a positive integer (max ${MAX_PARTY_SIZE})` },
+        { status: 400 }
+      )
+    }
+
+    // Validate reservationDate: must match YYYY-MM-DD format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reservationDate)) {
+      return NextResponse.json(
+        { error: 'reservationDate must be in YYYY-MM-DD format' },
+        { status: 400 }
+      )
+    }
+
+    // Validate reservationTime: must match HH:MM format with valid hours/minutes
+    const timeMatch = reservationTime.match(/^(\d{2}):(\d{2})$/)
+    if (!timeMatch) {
+      return NextResponse.json(
+        { error: 'reservationTime must be in HH:MM format' },
+        { status: 400 }
+      )
+    }
+    const parsedHours = parseInt(timeMatch[1], 10)
+    const parsedMinutes = parseInt(timeMatch[2], 10)
+    if (parsedHours < 0 || parsedHours > 23 || parsedMinutes < 0 || parsedMinutes > 59) {
+      return NextResponse.json(
+        { error: 'reservationTime has invalid hours (0-23) or minutes (0-59)' },
+        { status: 400 }
+      )
+    }
+
+    // Validate source against allowed types
+    if (source && !SOURCE_TYPES.includes(source as SourceType)) {
+      return NextResponse.json(
+        { error: `Invalid source. Must be one of: ${SOURCE_TYPES.join(', ')}` },
         { status: 400 }
       )
     }

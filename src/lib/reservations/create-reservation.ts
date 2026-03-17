@@ -15,7 +15,7 @@ import { findOrCreateCustomer, isBlacklisted } from './customer-matcher'
 import { evaluateDepositRequired, snapshotDepositRules, generateDepositToken } from './deposit-rules'
 import { checkSlotAvailability, type OperatingHours } from './availability'
 import { suggestTables } from './table-suggestion'
-import { acquireReservationLocks } from './advisory-lock'
+import { acquireReservationLocks, hashToLockKey } from './advisory-lock'
 import { getServiceDate } from './service-date'
 import { parseTimeToMinutes } from './service-date'
 import { sendReservationNotification } from './notifications'
@@ -142,8 +142,14 @@ export async function createReservationWithRules(
 
   // ── Step 2: Interactive transaction with advisory lock ──
   const result = await db.$transaction(async (tx: any) => {
-    // 2a. Idempotency check
+    // 2a. Idempotency check — acquire advisory lock on idempotency key FIRST to prevent race
     if (idempotencyKey) {
+      const idempKeyLock = hashToLockKey('idem:' + idempotencyKey)
+      await tx.$executeRawUnsafe(
+        `SELECT pg_advisory_xact_lock($1::bigint)`,
+        idempKeyLock.toString()
+      )
+
       const existing = await tx.reservationIdempotencyKey.findUnique({
         where: { key: idempotencyKey },
         include: { reservation: true },

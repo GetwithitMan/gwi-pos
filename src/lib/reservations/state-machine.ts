@@ -175,6 +175,14 @@ export async function transition(params: {
     updateData.cancelReason = reason
   }
 
+  // Merge deposit status changes into the initial update to avoid double-write
+  if (rule.autoRefundDeposit && reservation.depositStatus === 'paid') {
+    updateData.depositStatus = 'refund_pending'
+  }
+  if (from === 'no_show' && to === 'confirmed' && reservation.depositStatus === 'forfeited') {
+    updateData.depositStatus = 'paid'
+  }
+
   await txDb.reservation.update({
     where: { id: reservationId },
     data: updateData,
@@ -215,12 +223,8 @@ export async function transition(params: {
     })
   }
 
-  // Handle deposit auto-refund on cancel
+  // Write deposit audit events (update already applied above)
   if (rule.autoRefundDeposit && reservation.depositStatus === 'paid') {
-    await txDb.reservation.update({
-      where: { id: reservationId },
-      data: { depositStatus: 'refund_pending' },
-    })
     await txDb.reservationEvent.create({
       data: {
         locationId,
@@ -233,12 +237,7 @@ export async function transition(params: {
     })
   }
 
-  // Restore deposit status on no_show → confirmed reversal
   if (from === 'no_show' && to === 'confirmed' && reservation.depositStatus === 'forfeited') {
-    await txDb.reservation.update({
-      where: { id: reservationId },
-      data: { depositStatus: 'paid' },
-    })
     await txDb.reservationEvent.create({
       data: {
         locationId,

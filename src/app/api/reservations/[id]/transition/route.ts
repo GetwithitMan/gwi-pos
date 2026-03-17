@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { transition, TransitionError, type ReservationStatus, type OverrideType } from '@/lib/reservations/state-machine'
@@ -24,6 +25,11 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Target status (to) is required' }, { status: 400 })
     }
 
+    const callerLocationId = await getLocationId()
+    if (!callerLocationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     // Load reservation with full details for potential waitlist bridge
     const reservation = await db.reservation.findUnique({
       where: { id },
@@ -40,7 +46,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    if (!reservation) {
+    if (!reservation || reservation.locationId !== callerLocationId) {
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
     }
 

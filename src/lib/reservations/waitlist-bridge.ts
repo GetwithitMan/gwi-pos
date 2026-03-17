@@ -12,6 +12,7 @@
 import crypto from 'crypto'
 import type { PrismaClient } from '@prisma/client'
 import { parseTimeToMinutes } from './service-date'
+import { transition } from './state-machine'
 import { sendReservationNotification, type TemplateKey } from './notifications'
 import { dispatchReservationChanged, dispatchWaitlistChanged } from '@/lib/socket-dispatch'
 
@@ -99,50 +100,55 @@ export async function offerSlotToWaitlist(
   const holdExpiresAt = new Date(now.getTime() + claimWindowMinutes * 60_000)
   const manageToken = crypto.randomBytes(16).toString('hex')
 
-  const newReservation = await db.reservation.create({
-    data: {
-      locationId: rez.locationId,
-      guestName: entry.customerName,
-      guestPhone: entry.phone,
-      partySize: entry.partySize,
-      reservationDate: rez.reservationDate,
-      reservationTime: rez.reservationTime,
-      duration: rez.duration,
-      tableId: rez.tableId,
-      sectionPreference: rez.sectionPreference,
-      status: 'pending',
-      source: 'waitlist',
-      holdExpiresAt,
-      manageToken,
-      specialRequests: entry.notes || null,
-    },
-    include: {
-      table: { select: { id: true, name: true } },
-    },
-  })
-
-  // Write audit events
-  await db.reservationEvent.create({
-    data: {
-      locationId: rez.locationId,
-      reservationId: newReservation.id,
-      eventType: 'slot_offered',
-      actor: 'system',
-      details: {
-        sourceReservationId: rez.id,
-        waitlistEntryId: entry.id,
-        claimWindowMinutes,
-        holdExpiresAt: holdExpiresAt.toISOString(),
+  // Wrap all writes in a single transaction for atomicity
+  const newReservation = await db.$transaction(async (tx: any) => {
+    const reservation = await tx.reservation.create({
+      data: {
+        locationId: rez.locationId,
+        guestName: entry.customerName,
+        guestPhone: entry.phone,
+        partySize: entry.partySize,
+        reservationDate: rez.reservationDate,
+        reservationTime: rez.reservationTime,
+        duration: rez.duration,
+        tableId: rez.tableId,
+        sectionPreference: rez.sectionPreference,
+        status: 'pending',
+        source: 'waitlist',
+        holdExpiresAt,
+        manageToken,
+        specialRequests: entry.notes || null,
       },
-    },
-  })
+      include: {
+        table: { select: { id: true, name: true } },
+      },
+    })
 
-  // Update waitlist entry status to 'notified'
-  await db.$queryRawUnsafe(`
-    UPDATE "WaitlistEntry"
-    SET status = 'notified', "notifiedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-    WHERE id = $1 AND "locationId" = $2
-  `, entry.id, rez.locationId)
+    // Write audit event
+    await tx.reservationEvent.create({
+      data: {
+        locationId: rez.locationId,
+        reservationId: reservation.id,
+        eventType: 'slot_offered',
+        actor: 'system',
+        details: {
+          sourceReservationId: rez.id,
+          waitlistEntryId: entry.id,
+          claimWindowMinutes,
+          holdExpiresAt: holdExpiresAt.toISOString(),
+        },
+      },
+    })
+
+    // Update waitlist entry status to 'notified'
+    await tx.$queryRawUnsafe(`
+      UPDATE "WaitlistEntry"
+      SET status = 'notified', "notifiedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = $1 AND "locationId" = $2
+    `, entry.id, rez.locationId)
+
+    return reservation
+  })
 
   // Fire-and-forget: send notification via waitlistPromoted template
   void sendReservationNotification({
@@ -217,54 +223,66 @@ export async function claimOfferedSlot(params: {
     return { success: false, error: 'Claim window has expired' }
   }
 
-  // Transition to confirmed
-  const updated = await db.reservation.update({
-    where: { id: reservation.id },
-    data: {
-      status: 'confirmed',
-      holdExpiresAt: null, // clear hold
-    },
-    include: {
-      table: { select: { id: true, name: true } },
-    },
-  })
-
-  // Audit event
-  await db.reservationEvent.create({
-    data: {
-      locationId,
+  // Wrap claim flow in a single transaction for atomicity
+  const updated = await db.$transaction(async (tx: any) => {
+    // Use state machine for proper transition (sets confirmedAt, statusUpdatedAt, audit event)
+    const transitioned = await transition({
       reservationId: reservation.id,
-      eventType: 'slot_claimed',
-      actor: 'guest',
-      details: {
-        claimedAt: new Date().toISOString(),
+      to: 'confirmed',
+      actor: { type: 'guest' },
+      db: tx,
+      locationId,
+    })
+
+    // Clear hold window
+    await tx.reservation.update({
+      where: { id: reservation.id },
+      data: { holdExpiresAt: null },
+    })
+
+    // Write slot_claimed audit event (distinct from the 'confirmed' event from transition)
+    await tx.reservationEvent.create({
+      data: {
+        locationId,
+        reservationId: reservation.id,
+        eventType: 'slot_claimed',
+        actor: 'guest',
+        details: {
+          claimedAt: new Date().toISOString(),
+        },
       },
-    },
+    })
+
+    // Remove from waitlist (find by phone match)
+    if (reservation.guestPhone) {
+      await tx.$queryRawUnsafe(`
+        UPDATE "WaitlistEntry"
+        SET status = 'seated', "seatedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "locationId" = $1 AND phone = $2 AND status IN ('waiting', 'notified')
+      `, locationId, reservation.guestPhone)
+
+      // Recalculate positions
+      await tx.$queryRawUnsafe(`
+        WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY position ASC, "createdAt" ASC) as new_pos
+          FROM "WaitlistEntry"
+          WHERE "locationId" = $1 AND status IN ('waiting', 'notified')
+        )
+        UPDATE "WaitlistEntry" w
+        SET position = r.new_pos
+        FROM ranked r
+        WHERE w.id = r.id
+      `, locationId)
+    }
+
+    // Re-fetch with table include for return value
+    return await tx.reservation.findUnique({
+      where: { id: reservation.id },
+      include: { table: { select: { id: true, name: true } } },
+    })
   })
 
-  // Remove from waitlist (find by phone match)
-  if (reservation.guestPhone) {
-    await db.$queryRawUnsafe(`
-      UPDATE "WaitlistEntry"
-      SET status = 'seated', "seatedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "locationId" = $1 AND phone = $2 AND status IN ('waiting', 'notified')
-    `, locationId, reservation.guestPhone)
-
-    // Recalculate positions
-    await db.$queryRawUnsafe(`
-      WITH ranked AS (
-        SELECT id, ROW_NUMBER() OVER (ORDER BY position ASC, "createdAt" ASC) as new_pos
-        FROM "WaitlistEntry"
-        WHERE "locationId" = $1 AND status IN ('waiting', 'notified')
-      )
-      UPDATE "WaitlistEntry" w
-      SET position = r.new_pos
-      FROM ranked r
-      WHERE w.id = r.id
-    `, locationId)
-  }
-
-  // Socket dispatch
+  // Socket dispatch (post-commit)
   void dispatchReservationChanged(locationId, {
     reservationId: reservation.id,
     action: 'confirmed',
