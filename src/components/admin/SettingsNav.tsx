@@ -242,6 +242,7 @@ const settingsSections: SettingsSection[] = [
       { name: 'SMS (Twilio)', href: '/settings/integrations/sms' },
       { name: 'Email (Resend)', href: '/settings/integrations/email' },
       { name: 'Slack', href: '/settings/integrations/slack' },
+      { name: 'Reservation Integrations', href: '/settings/integrations/reservations' },
       { name: 'Accounting', href: '/settings/accounting' },
     ],
   },

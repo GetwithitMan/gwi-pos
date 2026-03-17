@@ -89,7 +89,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | **Events & Tickets** | [events-tickets.md](events-tickets.md) | Active | pos | Orders, Customers, Payments |
 | **Customers** | [customers.md](customers.md) | Active | pos | Orders, Payments, Events |
 | **Bottle Service** | [bottle-service.md](bottle-service.md) | Active | pos, android | Tabs, Payments, Floor Plan, Menu |
-| **Reservations** | [reservations.md](reservations.md) | Planned | pos | Customers, Floor Plan, Events, Settings |
+| **Reservations** | [reservations.md](reservations.md) | Active | pos | Customers, Floor Plan, Orders, Waitlist, Twilio, Resend, Datacap, Settings |
 | **Host Management** | [host-management.md](host-management.md) | Planned | pos | Floor Plan, Employees, Reservations |
 
 ### Hardware & Devices

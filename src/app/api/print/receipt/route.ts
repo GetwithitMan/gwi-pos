@@ -74,6 +74,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const locationId = order.locationId
 
+    // ── Look up linked reservation (Reservation.orderId → this order) ──
+    const linkedReservation = await db.reservation.findFirst({
+      where: { orderId: orderId, deletedAt: null },
+      select: { id: true, guestName: true, partySize: true },
+    })
+
     // ── Resolve receipt printer ──
     let printer
     if (printerId) {
@@ -181,6 +187,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationPhone: order.location.phone,
         createdAt: order.createdAt.toISOString(),
         paidAt: order.paidAt?.toISOString() || null,
+        reservation: linkedReservation ? {
+          guestName: linkedReservation.guestName,
+          partySize: linkedReservation.partySize,
+          confirmationId: linkedReservation.id.slice(-8).toUpperCase(),
+        } : null,
       },
       items: activeItems.map((item) => ({
         name: item.name,

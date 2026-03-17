@@ -59,6 +59,14 @@ export interface FloorPlanTable {
     }>
   } | null
   seats: FloorPlanSeat[]
+  // Upcoming reservation for this table (within next 2 hours)
+  upcomingReservation?: {
+    id: string
+    guestName: string
+    partySize: number
+    reservationTime: string // "HH:MM"
+    status: string
+  } | null
 }
 
 export interface FloorPlanSeat {

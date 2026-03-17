@@ -38,6 +38,12 @@ export interface ReceiptOrderData {
   locationPhone?: string | null
   createdAt: string
   paidAt?: string | null
+  // Reservation info (populated when order is linked to a reservation)
+  reservation?: {
+    guestName: string
+    partySize: number
+    confirmationId: string // Short ID for receipt display
+  } | null
 }
 
 export interface ReceiptItem {
@@ -141,6 +147,17 @@ export function buildCustomerReceipt(
   if (order.guestCount && order.guestCount > 0) {
     content.push(line(`Guests: ${order.guestCount}`))
   }
+
+  // ── Reservation info ──
+  if (order.reservation) {
+    content.push(divider(width, '-'))
+    content.push(ESCPOS.ALIGN_CENTER)
+    content.push(line('Reservation'))
+    content.push(ESCPOS.ALIGN_LEFT)
+    content.push(line(`Guest: ${order.reservation.guestName}`))
+    content.push(line(`Party: ${order.reservation.partySize} | Conf: ${order.reservation.confirmationId}`))
+  }
+
   content.push(divider(width))
 
   // ── Items ──

@@ -93,6 +93,53 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const avgTurnMinutes = Math.round(avgTurnResult[0]?.avg_minutes ?? 45)
 
+    // Fetch upcoming reservations for today (next 2 hours, assigned to a table)
+    const now = new Date()
+    const nowHH = String(now.getHours()).padStart(2, '0')
+    const nowMM = String(now.getMinutes()).padStart(2, '0')
+    const nowTimeStr = `${nowHH}:${nowMM}`
+    const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+    const laterHH = String(twoHoursLater.getHours()).padStart(2, '0')
+    const laterMM = String(twoHoursLater.getMinutes()).padStart(2, '0')
+    const laterTimeStr = `${laterHH}:${laterMM}`
+
+    const upcomingReservations = await db.reservation.findMany({
+      where: {
+        locationId,
+        reservationDate: {
+          gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+          lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
+        },
+        status: { in: ['confirmed', 'checked_in', 'pending'] },
+        tableId: { not: null },
+        deletedAt: null,
+        reservationTime: { gte: nowTimeStr, lte: laterTimeStr },
+      },
+      select: {
+        id: true,
+        guestName: true,
+        partySize: true,
+        reservationTime: true,
+        status: true,
+        tableId: true,
+      },
+      orderBy: { reservationTime: 'asc' },
+    })
+
+    // Build reservation-by-table map (first upcoming per table)
+    const reservationByTable = new Map<string, { id: string; guestName: string; partySize: number; reservationTime: string; status: string }>()
+    for (const r of upcomingReservations) {
+      if (r.tableId && !reservationByTable.has(r.tableId)) {
+        reservationByTable.set(r.tableId, {
+          id: r.id,
+          guestName: r.guestName,
+          partySize: r.partySize,
+          reservationTime: r.reservationTime,
+          status: r.status,
+        })
+      }
+    }
+
     // Build response grouped by section
     const sectionMap = new Map<string, {
       section: { id: string; name: string; color: string | null },
@@ -140,6 +187,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         seatedAt: seatedAt?.toISOString() ?? null,
         currentOrderTotal: orderInfo?.subtotal ?? null,
         estimatedTurnMinutes,
+        upcomingReservation: reservationByTable.get(table.id) ?? null,
       })
     }
 

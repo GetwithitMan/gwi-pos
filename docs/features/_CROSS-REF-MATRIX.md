@@ -490,14 +490,14 @@ This matrix answers: "If I change feature X, what else might break?"
 
 ---
 
-### Reservations (Planned)
+### Reservations
 | | |
 |---|---|
-| **Depends On** | Customers, Floor Plan, Events & Tickets, Settings |
-| **Depended On By** | Floor Plan, Customers |
-| **Shared Models** | TBD |
-| **Shared Socket Events** | TBD |
-| **Critical Rules** | Planned only. |
+| **Depends On** | Customers (customer matching, no-show tracking, blacklist), Tables/Floor Plan (table assignment, capacity, combinations), Orders (linked on seating via orderId), Twilio SMS (confirmations, reminders, text-to-pay), Resend Email (confirmations, reminders, ICS invites), Datacap (deposit payments), Waitlist (bridge: cancelled slot → waitlist offer), Settings (ReservationSettings, DepositRules, ReservationMessageTemplates) |
+| **Depended On By** | Floor Plan (reservation count badges on tables), Customers (no-show count, blacklist driven by reservations), Reports (reservation + deposit reports), Waitlist (waitlist bridge consumes cancelled slots) |
+| **Shared Models** | `Reservation`, `ReservationBlock`, `ReservationTable`, `ReservationEvent`, `ReservationIdempotencyKey`, `ReservationDepositToken`, `ReservationDeposit` |
+| **Shared Socket Events** | `reservation:changed` (all transitions + creation), `reservation:new_online` (online bookings for host alert) |
+| **Critical Rules** | ALL status changes MUST go through `state-machine.ts transition()`. Advisory locks prevent double-booking (15-min buckets, sorted ascending). Deposit rules snapshot captured at booking time. Socket dispatch is post-commit only. Customer matching is phone-first (E.164), email fallback. Waitlist bridge only fires for cancellations > 30 min away. |
 
 ---
 

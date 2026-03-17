@@ -265,6 +265,18 @@ function formatSeatingDuration(elapsedMs: number): string {
 }
 
 /**
+ * Format a "HH:MM" reservation time into a compact display string.
+ * e.g., "19:00" → "7:00", "14:30" → "2:30"
+ */
+function formatReservationTime(time: string): string {
+  const [hStr, mStr] = time.split(':')
+  const h = parseInt(hStr, 10)
+  const m = mStr || '00'
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h
+  return `${hour12}:${m}`
+}
+
+/**
  * Hook that returns a formatted seating duration string, refreshed every 60 seconds.
  * Returns empty string when no openedAt is provided (table not occupied).
  */
@@ -427,7 +439,10 @@ export const TableNode = memo(function TableNode({
     }
   }, [isEditable, onDragStart, table.id])
 
-  const glowColor = statusGlowColors[table.status]
+  const hasUpcomingReservation = !!table.upcomingReservation
+  const glowColor = hasUpcomingReservation && table.status !== 'reserved'
+    ? 'rgba(59, 130, 246, 0.5)' // Blue glow for upcoming reservation
+    : statusGlowColors[table.status]
   const isReserved = table.status === 'reserved'
 
   // Calculate table dimensions based on shape
@@ -748,6 +763,33 @@ export const TableNode = memo(function TableNode({
           whiteSpace: 'nowrap',
         }}>
           {splitCount} {splitCount === 1 ? 'split' : 'splits'}
+        </div>
+      )}
+
+      {/* Reservation badge — upcoming reservation within 2 hours */}
+      {table.upcomingReservation && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: -8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'rgba(59, 130, 246, 0.9)',
+            color: 'white',
+            borderRadius: '8px',
+            padding: '1px 6px',
+            fontSize: '8px',
+            fontWeight: 700,
+            border: '2px solid #1e293b',
+            zIndex: 15,
+            lineHeight: '1.4',
+            whiteSpace: 'nowrap',
+            letterSpacing: '0.02em',
+          }}
+          title={`Reserved: ${table.upcomingReservation.guestName}, party of ${table.upcomingReservation.partySize} at ${formatReservationTime(table.upcomingReservation.reservationTime)}`}
+        >
+          {formatReservationTime(table.upcomingReservation.reservationTime)}{' '}
+          {table.upcomingReservation.guestName.charAt(0).toUpperCase()}
         </div>
       )}
 

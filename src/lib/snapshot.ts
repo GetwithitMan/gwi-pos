@@ -61,6 +61,14 @@ export interface SnapshotTable {
       card: { last4: string; brand: string } | null
     }[]
   } | null
+  // Upcoming reservation for this table (within next 2 hours)
+  upcomingReservation: {
+    id: string
+    guestName: string
+    partySize: number
+    reservationTime: string // "HH:MM"
+    status: string
+  } | null
 }
 
 export interface SnapshotSection {
@@ -137,7 +145,17 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
   const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
   const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
-  const [rawTables, sections, elements, openOrdersCount] = await Promise.all([
+  // Build time window for "upcoming reservations" — now through +2 hours
+  const now = new Date()
+  const nowHH = String(now.getHours()).padStart(2, '0')
+  const nowMM = String(now.getMinutes()).padStart(2, '0')
+  const nowTimeStr = `${nowHH}:${nowMM}`
+  const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000)
+  const laterHH = String(twoHoursLater.getHours()).padStart(2, '0')
+  const laterMM = String(twoHoursLater.getMinutes()).padStart(2, '0')
+  const laterTimeStr = `${laterHH}:${laterMM}`
+
+  const [rawTables, sections, elements, openOrdersCount, upcomingReservations] = await Promise.all([
     // Tables with seats + current order summary (no items/modifiers)
     db.table.findMany({
       where: { locationId, isActive: true, deletedAt: null },
@@ -220,7 +238,46 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
     db.order.count({
       where: { locationId, status: { in: ['open', 'sent', 'in_progress', 'split'] }, deletedAt: null, parentOrderId: null, OR: [{ businessDayDate: { gte: businessDayStart } }, { businessDayDate: null, createdAt: { gte: businessDayStart } }] },
     }),
+
+    // Upcoming reservations for today (confirmed/checked_in/pending, assigned to a table, within next 2 hours)
+    db.reservation.findMany({
+      where: {
+        locationId,
+        reservationDate: {
+          gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+          lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1),
+        },
+        status: { in: ['confirmed', 'checked_in', 'pending'] },
+        tableId: { not: null },
+        deletedAt: null,
+        // Filter by time window: reservationTime is "HH:MM" string
+        reservationTime: { gte: nowTimeStr, lte: laterTimeStr },
+      },
+      select: {
+        id: true,
+        guestName: true,
+        partySize: true,
+        reservationTime: true,
+        status: true,
+        tableId: true,
+      },
+      orderBy: { reservationTime: 'asc' },
+    }),
   ])
+
+  // Build reservation-by-table map (first upcoming reservation per table)
+  const reservationByTable = new Map<string, { id: string; guestName: string; partySize: number; reservationTime: string; status: string }>()
+  for (const r of upcomingReservations) {
+    if (r.tableId && !reservationByTable.has(r.tableId)) {
+      reservationByTable.set(r.tableId, {
+        id: r.id,
+        guestName: r.guestName,
+        partySize: r.partySize,
+        reservationTime: r.reservationTime,
+        status: r.status,
+      })
+    }
+  }
 
   // Collect unique bottle service tier IDs from open orders so we can look up name/color in one query
   const tierIds = new Set<string>()
@@ -295,6 +352,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
           } : null,
         })),
       } : null,
+      upcomingReservation: reservationByTable.get(t.id) ?? null,
     })),
     sections: sections.map(s => ({
       id: s.id,

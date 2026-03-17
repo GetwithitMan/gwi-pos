@@ -144,6 +144,136 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, { size: string; count: number }>)
 
+    // Build SQL date params
+    const sqlStartDate = startDate ? new Date(startDate) : new Date('2000-01-01')
+    const sqlEndDate = endDate ? (() => { const e = new Date(endDate); e.setHours(23, 59, 59, 999); return e })() : new Date('2099-12-31')
+
+    // ---- Enhanced report queries (all run in parallel) ----
+    const [
+      bySourceRows,
+      tableUtilizationRows,
+      repeatCustomerRows,
+      cancellationReasonRows,
+      peakHeatmapRows,
+      depositRevenueRows,
+    ] = await Promise.all([
+      // (a) No-show rate by source
+      prisma.$queryRawUnsafe<Array<{ source: string | null; total: bigint; no_shows: bigint; no_show_rate: number | null }>>(
+        `SELECT source, COUNT(*) as total,
+          SUM(CASE WHEN status = 'no_show' THEN 1 ELSE 0 END) as no_shows,
+          ROUND(SUM(CASE WHEN status = 'no_show' THEN 1 ELSE 0 END)::decimal / NULLIF(COUNT(*), 0) * 100, 1) as no_show_rate
+        FROM "Reservation"
+        WHERE "locationId" = $1 AND "reservationDate" BETWEEN $2 AND $3 AND "deletedAt" IS NULL
+        GROUP BY source ORDER BY total DESC`,
+        locationId, sqlStartDate, sqlEndDate
+      ),
+
+      // (b) Table utilization
+      prisma.$queryRawUnsafe<Array<{ id: string; name: string; capacity: number; reservation_count: bigint; total_minutes_booked: bigint | null }>>(
+        `SELECT t.id, t.name, t.capacity, COUNT(r.id) as reservation_count,
+          SUM(r.duration) as total_minutes_booked
+        FROM "Table" t
+        LEFT JOIN "Reservation" r ON r."tableId" = t.id
+          AND r."reservationDate" BETWEEN $2 AND $3
+          AND r.status NOT IN ('cancelled') AND r."deletedAt" IS NULL
+        WHERE t."locationId" = $1 AND t."isReservable" = true AND t."deletedAt" IS NULL
+        GROUP BY t.id, t.name, t.capacity
+        ORDER BY reservation_count DESC`,
+        locationId, sqlStartDate, sqlEndDate
+      ),
+
+      // (c) Repeat customers (top 10)
+      prisma.$queryRawUnsafe<Array<{ id: string; firstName: string; lastName: string; phone: string | null; reservation_count: bigint; last_reservation: Date; noShowCount: number }>>(
+        `SELECT c.id, c."firstName", c."lastName", c.phone, COUNT(r.id) as reservation_count,
+          MAX(r."reservationDate") as last_reservation, c."noShowCount"
+        FROM "Customer" c
+        JOIN "Reservation" r ON r."customerId" = c.id
+        WHERE r."locationId" = $1 AND r."reservationDate" BETWEEN $2 AND $3 AND r."deletedAt" IS NULL
+        GROUP BY c.id, c."firstName", c."lastName", c.phone, c."noShowCount"
+        HAVING COUNT(r.id) >= 2
+        ORDER BY reservation_count DESC
+        LIMIT 10`,
+        locationId, sqlStartDate, sqlEndDate
+      ),
+
+      // (d) Cancellation reasons
+      prisma.$queryRawUnsafe<Array<{ cancelReason: string; count: bigint }>>(
+        `SELECT "cancelReason", COUNT(*) as count
+        FROM "Reservation"
+        WHERE "locationId" = $1 AND status = 'cancelled'
+          AND "reservationDate" BETWEEN $2 AND $3 AND "deletedAt" IS NULL AND "cancelReason" IS NOT NULL
+        GROUP BY "cancelReason" ORDER BY count DESC LIMIT 20`,
+        locationId, sqlStartDate, sqlEndDate
+      ),
+
+      // (e) Peak time heatmap data (day-of-week x hour)
+      prisma.$queryRawUnsafe<Array<{ day_of_week: number; hour: number; count: bigint }>>(
+        `SELECT EXTRACT(DOW FROM "reservationDate")::int as day_of_week,
+          SUBSTRING("reservationTime" FROM 1 FOR 2)::int as hour,
+          COUNT(*) as count
+        FROM "Reservation"
+        WHERE "locationId" = $1 AND "reservationDate" BETWEEN $2 AND $3
+          AND "deletedAt" IS NULL AND status NOT IN ('cancelled')
+        GROUP BY day_of_week, hour ORDER BY day_of_week, hour`,
+        locationId, sqlStartDate, sqlEndDate
+      ),
+
+      // (f) Deposit revenue summary
+      prisma.$queryRawUnsafe<Array<{ total_collected: number | null; total_refunded: number | null; reservations_with_deposits: bigint }>>(
+        `SELECT
+          SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END) as total_collected,
+          SUM(CASE WHEN "refundedAmount" > 0 THEN "refundedAmount" ELSE 0 END) as total_refunded,
+          COUNT(DISTINCT "reservationId") as reservations_with_deposits
+        FROM "ReservationDeposit"
+        WHERE "locationId" = $1 AND "createdAt" BETWEEN $2 AND $3 AND "deletedAt" IS NULL`,
+        locationId, sqlStartDate, sqlEndDate
+      ),
+    ])
+
+    // Format enhanced data
+    const bySource = bySourceRows.map(r => ({
+      source: r.source || 'unknown',
+      total: Number(r.total),
+      noShows: Number(r.no_shows),
+      noShowRate: r.no_show_rate !== null ? Number(r.no_show_rate) : 0,
+    }))
+
+    const tableUtilization = tableUtilizationRows.map(r => ({
+      id: r.id,
+      name: r.name,
+      capacity: r.capacity,
+      reservationCount: Number(r.reservation_count),
+      totalMinutesBooked: Number(r.total_minutes_booked ?? 0),
+    }))
+
+    const repeatCustomers = repeatCustomerRows.map(r => ({
+      id: r.id,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      phone: r.phone,
+      reservationCount: Number(r.reservation_count),
+      lastReservation: r.last_reservation,
+      noShowCount: r.noShowCount,
+    }))
+
+    const cancellationReasons = cancellationReasonRows.map(r => ({
+      reason: r.cancelReason,
+      count: Number(r.count),
+    }))
+
+    const peakHeatmap = peakHeatmapRows.map(r => ({
+      dayOfWeek: Number(r.day_of_week),
+      hour: Number(r.hour),
+      count: Number(r.count),
+    }))
+
+    const depositRow = depositRevenueRows[0]
+    const depositRevenue = {
+      totalCollected: depositRow ? Number(depositRow.total_collected ?? 0) : 0,
+      totalRefunded: depositRow ? Number(depositRow.total_refunded ?? 0) : 0,
+      reservationsWithDeposits: depositRow ? Number(depositRow.reservations_with_deposits) : 0,
+    }
+
     return NextResponse.json({ data: {
       summary: {
         totalReservations,
@@ -183,6 +313,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           orderTotal: order ? Number(order.total) : null,
         }
       }),
+      // Enhanced report sections
+      bySource,
+      tableUtilization,
+      repeatCustomers,
+      cancellationReasons,
+      peakHeatmap,
+      depositRevenue,
     } })
   } catch (error) {
     console.error('Reservation report error:', error)

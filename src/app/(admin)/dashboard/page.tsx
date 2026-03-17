@@ -94,6 +94,32 @@ interface DashboardAlert {
   dismissed: boolean
 }
 
+// Upcoming reservations for dashboard widget
+interface ReservationUpcoming {
+  id: string
+  guestName: string
+  partySize: number
+  time: string
+  status: string
+  depositStatus: string
+  tableName: string | null
+  checkedIn: boolean
+}
+
+interface ReservationDashboardData {
+  upcoming: ReservationUpcoming[]
+  todayStats: {
+    total: number
+    confirmed: number
+    checkedIn: number
+    seated: number
+    completed: number
+    noShows: number
+    cancelled: number
+    pendingDeposits: number
+  }
+}
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -147,6 +173,18 @@ function getAlertIcon(type: string): string {
   }
 }
 
+function getReservationStatusColor(status: string): string {
+  switch (status) {
+    case 'confirmed': return 'bg-blue-500'
+    case 'checked_in': return 'bg-green-500'
+    case 'seated': return 'bg-emerald-500'
+    case 'completed': return 'bg-gray-400'
+    case 'no_show': return 'bg-red-500'
+    case 'cancelled': return 'bg-gray-300'
+    default: return 'bg-yellow-500'
+  }
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -179,6 +217,9 @@ export default function ManagerDashboardPage() {
 
   // Cover charge / door count state
   const [doorCount, setDoorCount] = useState<{ count: number; maxCapacity: number; totalCollected: number; cashTotal: number; cardTotal: number } | null>(null)
+
+  // Upcoming reservations state
+  const [reservationData, setReservationData] = useState<ReservationDashboardData | null>(null)
 
   // EOD Reset state
   const [eodConfirmOpen, setEodConfirmOpen] = useState(false)
@@ -387,6 +428,22 @@ export default function ManagerDashboardPage() {
     }
   }, [locationId, currentEmployee?.id])
 
+  // ------------------------------------------
+  // Upcoming reservations fetch
+  // ------------------------------------------
+  const refreshReservations = useCallback(async () => {
+    if (!locationId) return
+    try {
+      const res = await fetch(`/api/dashboard/reservations?locationId=${locationId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data) setReservationData(data.data)
+      }
+    } catch (err) {
+      console.error('Reservations refresh failed:', err)
+    }
+  }, [locationId])
+
   // Initial load
   useEffect(() => {
     if (locationId) {
@@ -395,8 +452,9 @@ export default function ManagerDashboardPage() {
       refreshLiveMetrics()
       refreshLaborPercent()
       refreshDoorCount()
+      refreshReservations()
     }
-  }, [locationId, refreshData, refreshEmployeeStats, refreshLiveMetrics, refreshLaborPercent, refreshDoorCount])
+  }, [locationId, refreshData, refreshEmployeeStats, refreshLiveMetrics, refreshLaborPercent, refreshDoorCount, refreshReservations])
 
   // ------------------------------------------
   // Socket: real-time updates
@@ -411,6 +469,8 @@ export default function ManagerDashboardPage() {
   laborPercentRef.current = refreshLaborPercent
   const doorCountRef = useRef(refreshDoorCount)
   doorCountRef.current = refreshDoorCount
+  const reservationsRef = useRef(refreshReservations)
+  reservationsRef.current = refreshReservations
 
   useEffect(() => {
     if (!locationId) return
@@ -449,6 +509,7 @@ export default function ManagerDashboardPage() {
       liveMetricsRef.current()
       employeeStatsRef.current()
       laborPercentRef.current()
+      reservationsRef.current()
     }
 
     const onCoverEntry = () => {
@@ -619,7 +680,7 @@ export default function ManagerDashboardPage() {
                 {eodRunning ? 'Checking...' : 'Close Day'}
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics(); refreshLaborPercent() }}>
+            <Button variant="outline" size="sm" onClick={() => { refreshData(); refreshEmployeeStats(); refreshLiveMetrics(); refreshLaborPercent(); refreshReservations() }}>
               Refresh
             </Button>
           </div>
@@ -880,6 +941,79 @@ export default function ManagerDashboardPage() {
                 />
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* UPCOMING RESERVATIONS WIDGET                                    */}
+      {/* ================================================================ */}
+      {reservationData && reservationData.todayStats.total > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">Upcoming Reservations</h3>
+              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
+                {reservationData.upcoming.length} in next 2 hours
+              </span>
+            </div>
+            <a
+              href="/reservations"
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+            >
+              View All &rarr;
+            </a>
+          </div>
+
+          {/* Today summary chips */}
+          <div className="flex flex-wrap gap-2 mb-3">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
+              {reservationData.todayStats.total} total today
+            </span>
+            {reservationData.todayStats.confirmed > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700">
+                {reservationData.todayStats.confirmed} confirmed
+              </span>
+            )}
+            {reservationData.todayStats.seated > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">
+                {reservationData.todayStats.seated} seated
+              </span>
+            )}
+            {reservationData.todayStats.noShows > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-50 text-red-700">
+                {reservationData.todayStats.noShows} no-show
+              </span>
+            )}
+            {reservationData.todayStats.pendingDeposits > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700">
+                {reservationData.todayStats.pendingDeposits} pending deposit
+              </span>
+            )}
+          </div>
+
+          {/* Top 5 upcoming */}
+          {reservationData.upcoming.length > 0 ? (
+            <div className="divide-y divide-gray-50">
+              {reservationData.upcoming.slice(0, 5).map(r => (
+                <div key={r.id} className="flex items-center gap-3 py-2">
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getReservationStatusColor(r.status)}`} />
+                  <span className="text-xs font-medium text-gray-900 w-12 flex-shrink-0">{r.time}</span>
+                  <span className="text-xs text-gray-900 truncate flex-1">{r.guestName}</span>
+                  <span className="text-xs text-gray-500 flex-shrink-0">{r.partySize} guest{r.partySize !== 1 ? 's' : ''}</span>
+                  {r.tableName && (
+                    <span className="text-[10px] text-gray-400 flex-shrink-0">{r.tableName}</span>
+                  )}
+                  {r.checkedIn && (
+                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700 flex-shrink-0">
+                      IN
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 py-2">No upcoming reservations in the next 2 hours</p>
           )}
         </div>
       )}
