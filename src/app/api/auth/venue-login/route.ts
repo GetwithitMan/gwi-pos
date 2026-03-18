@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomInt } from 'crypto'
 import { hash } from 'bcryptjs'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { withVenue } from '@/lib/with-venue'
 import { verifyPassword } from '@/lib/auth'
 import { signVenueToken, signOwnerToken } from '@/lib/cloud-auth'
@@ -158,20 +159,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               if (adminRole) {
                 const rawPin = String(randomInt(100000, 1000000))
                 const hashedPin = await hash(rawPin, 10)
-                ownerEmployee = await db.employee.create({
-                  data: {
-                    locationId: location.id,
-                    firstName: nameParts[0] || ownerName,
-                    lastName: nameParts.slice(1).join(' ') || '',
-                    displayName: ownerName,
-                    email: normalizedEmail,
-                    roleId: adminRole.id,
-                    isActive: true,
-                    pin: hashedPin,
-                  },
-                  include: { role: true },
+                const createdOwner = await EmployeeRepository.createEmployee(location.id, {
+                  firstName: nameParts[0] || ownerName,
+                  lastName: nameParts.slice(1).join(' ') || '',
+                  displayName: ownerName,
+                  email: normalizedEmail,
+                  roleId: adminRole.id,
+                  isActive: true,
+                  pin: hashedPin,
                 })
-                console.log(`[venue-login] Auto-provisioned employee ${ownerEmployee.id} for MC owner ${normalizedEmail} at location ${location.id}`)
+                // Re-fetch with role include for session data
+                ownerEmployee = await EmployeeRepository.getEmployeeByIdWithInclude(
+                  createdOwner.id,
+                  location.id,
+                  { role: true },
+                )
+                if (ownerEmployee) {
+                  console.log(`[venue-login] Auto-provisioned employee ${ownerEmployee.id} for MC owner ${normalizedEmail} at location ${location.id}`)
+                }
               }
             }
 

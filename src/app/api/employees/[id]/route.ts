@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -14,30 +15,31 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
-    const employee = await db.employee.findUnique({
-      where: { id },
-      include: {
-        role: {
-          select: {
-            id: true,
-            name: true,
-            permissions: true,
-          },
+    const employee = await EmployeeRepository.getEmployeeByIdWithInclude(id, locationId, {
+      role: {
+        select: {
+          id: true,
+          name: true,
+          permissions: true,
         },
-        location: {
-          select: {
-            id: true,
-            name: true,
-          },
+      },
+      location: {
+        select: {
+          id: true,
+          name: true,
         },
-        employeeRoles: {
-          where: { deletedAt: null },
-          include: {
-            role: { select: { id: true, name: true } },
-          },
-          orderBy: { isPrimary: 'desc' },
+      },
+      employeeRoles: {
+        where: { deletedAt: null },
+        include: {
+          role: { select: { id: true, name: true } },
         },
+        orderBy: { isPrimary: 'desc' },
       },
     })
 
@@ -185,10 +187,8 @@ export const PUT = withVenue(async function PUT(
       additionalRoleIds?: string[]
     }
 
-    // Check employee exists
-    const existing = await db.employee.findUnique({
-      where: { id },
-    })
+    // Check employee exists (tenant-scoped)
+    const existing = await EmployeeRepository.getEmployeeById(id, locationId)
 
     if (!existing) {
       return NextResponse.json(
@@ -242,19 +242,21 @@ export const PUT = withVenue(async function PUT(
       updateData.roleId = roleId
     }
 
-    const employee = await db.employee.update({
-      where: { id },
-      data: updateData,
-      include: {
-        role: {
-          select: {
-            id: true,
-            name: true,
-            permissions: true,
-          },
+    await EmployeeRepository.updateEmployee(id, locationId, updateData as any)
+
+    const employee = await EmployeeRepository.getEmployeeByIdWithInclude(id, locationId, {
+      role: {
+        select: {
+          id: true,
+          name: true,
+          permissions: true,
         },
       },
     })
+
+    if (!employee) {
+      return NextResponse.json({ error: 'Employee not found after update' }, { status: 404 })
+    }
 
     // Sync EmployeeRole junction table (multi-role support)
     if (additionalRoleIds !== undefined) {
@@ -344,9 +346,7 @@ export const DELETE = withVenue(async function DELETE(
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    const employee = await db.employee.findUnique({
-      where: { id },
-    })
+    const employee = await EmployeeRepository.getEmployeeById(id, locationId)
 
     if (!employee) {
       return NextResponse.json(
@@ -370,11 +370,8 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    // Soft delete - just deactivate
-    await db.employee.update({
-      where: { id },
-      data: { isActive: false },
-    })
+    // Soft delete - just deactivate (tenant-scoped)
+    await EmployeeRepository.deactivateEmployee(id, locationId)
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: employee.locationId, domain: 'employees', action: 'deleted', entityId: id })

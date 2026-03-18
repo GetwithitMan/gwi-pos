@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
+import { getLocationId } from '@/lib/location-cache'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { emitToLocation } from '@/lib/socket-server'
@@ -12,46 +14,47 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
-    const employee = await db.employee.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        locationId: true,
-        firstName: true,
-        lastName: true,
-        displayName: true,
-        hourlyRate: true,
+    const employee = await EmployeeRepository.getEmployeeByIdWithSelect(id, locationId, {
+      id: true,
+      locationId: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
+      hourlyRate: true,
 
-        // Address
-        address: true,
-        city: true,
-        state: true,
-        zipCode: true,
+      // Address
+      address: true,
+      city: true,
+      state: true,
+      zipCode: true,
 
-        // Tax Info
-        federalFilingStatus: true,
-        federalAllowances: true,
-        additionalFederalWithholding: true,
-        stateFilingStatus: true,
-        stateAllowances: true,
-        additionalStateWithholding: true,
-        isExemptFromFederalTax: true,
-        isExemptFromStateTax: true,
+      // Tax Info
+      federalFilingStatus: true,
+      federalAllowances: true,
+      additionalFederalWithholding: true,
+      stateFilingStatus: true,
+      stateAllowances: true,
+      additionalStateWithholding: true,
+      isExemptFromFederalTax: true,
+      isExemptFromStateTax: true,
 
-        // Payment Method
-        paymentMethod: true,
-        bankName: true,
-        bankRoutingNumber: true,
-        bankAccountNumber: true,
-        bankAccountType: true,
-        bankAccountLast4: true,
+      // Payment Method
+      paymentMethod: true,
+      bankName: true,
+      bankRoutingNumber: true,
+      bankAccountNumber: true,
+      bankAccountType: true,
+      bankAccountLast4: true,
 
-        // YTD
-        ytdGrossEarnings: true,
-        ytdTaxesWithheld: true,
-        ytdNetPay: true,
-      },
+      // YTD
+      ytdGrossEarnings: true,
+      ytdTaxesWithheld: true,
+      ytdNetPay: true,
     })
 
     if (!employee) {
@@ -106,7 +109,12 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const body = await request.json()
 
-    const employee = await db.employee.findUnique({ where: { id } })
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
+
+    const employee = await EmployeeRepository.getEmployeeById(id, locationId)
     if (!employee) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
     }
@@ -172,10 +180,12 @@ export const PUT = withVenue(async function PUT(
       updateData.bankAccountLast4 = body.bankAccountNumber.slice(-4)
     }
 
-    const updated = await db.employee.update({
-      where: { id },
-      data: updateData,
-    })
+    // Update employee (tenant-scoped) then re-fetch for response
+    await EmployeeRepository.updateEmployee(id, locationId, updateData as any)
+    const updated = await EmployeeRepository.getEmployeeById(id, locationId)
+    if (!updated) {
+      return NextResponse.json({ error: 'Employee not found after update' }, { status: 500 })
+    }
 
     // Real-time cross-terminal update
     void emitToLocation(employee.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})

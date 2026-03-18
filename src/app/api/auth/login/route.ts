@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
@@ -39,9 +40,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Get active employees scoped by location (if provided)
     // Note: PINs are hashed so we must compare each one (can't query directly)
+    // Tenant-scoped: always filter deletedAt
     const employees = await db.employee.findMany({
       where: {
         isActive: true,
+        deletedAt: null,
         ...(locationId ? { locationId } : {}),
       },
       include: {

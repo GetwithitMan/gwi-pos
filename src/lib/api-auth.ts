@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { randomInt } from 'crypto'
 import { hash } from 'bcryptjs'
 import { db } from './db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hasPermission } from './auth-utils'
 import { getSessionFromCookie } from './auth-session'
 import { verifyCloudToken, type CloudTokenPayload } from './cloud-auth'
@@ -141,17 +142,14 @@ async function resolveOrProvisionEmployee(
     const rawPin = String(randomInt(100000, 1000000))
     const hashedPin = await hash(rawPin, 10)
 
-    const employee = await db.employee.create({
-      data: {
-        locationId,
-        firstName,
-        lastName,
-        displayName: payload.name || 'Owner Admin',
-        email: payload.email,
-        roleId: adminRole.id,
-        isActive: true,
-        pin: hashedPin,
-      },
+    const employee = await EmployeeRepository.createEmployee(locationId, {
+      firstName,
+      lastName,
+      displayName: payload.name || 'Owner Admin',
+      email: payload.email,
+      roleId: adminRole.id,
+      isActive: true,
+      pin: hashedPin,
     })
 
     cloudSubToEmployeeId.set(cacheKey, employee.id)
@@ -252,10 +250,11 @@ export async function requirePermission(
   // Check permission cache first (60s TTL — avoids DB hit on every API call)
   let employee = getCachedEmployee(employeeId, locationId)
   if (!employee) {
-    employee = await db.employee.findUnique({
-      where: { id: employeeId, deletedAt: null },
-      include: { role: true },
-    })
+    employee = await EmployeeRepository.getEmployeeByIdWithInclude(
+      employeeId,
+      locationId,
+      { role: true },
+    )
     if (employee) {
       setCachedEmployee(employeeId, locationId, employee)
     }
@@ -372,10 +371,11 @@ export async function requireAnyPermission(
   // Check permission cache first (60s TTL)
   let employee = getCachedEmployee(employeeId, locationId)
   if (!employee) {
-    employee = await db.employee.findUnique({
-      where: { id: employeeId, deletedAt: null },
-      include: { role: true },
-    })
+    employee = await EmployeeRepository.getEmployeeByIdWithInclude(
+      employeeId,
+      locationId,
+      { role: true },
+    )
     if (employee) {
       setCachedEmployee(employeeId, locationId, employee)
     }

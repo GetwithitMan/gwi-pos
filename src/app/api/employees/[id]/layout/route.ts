@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
+import { getLocationId } from '@/lib/location-cache'
 import { DEFAULT_LAYOUT_SETTINGS, type POSLayoutSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 
@@ -11,16 +13,15 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
-    const employee = await db.employee.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        posLayoutSettings: true,
-        location: {
-          select: {
-            settings: true,
-          },
+    const employee = await EmployeeRepository.getEmployeeByIdWithInclude(id, locationId, {
+      location: {
+        select: {
+          settings: true,
         },
       },
     })
@@ -66,16 +67,16 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { layout } = body as { layout: Partial<POSLayoutSettings> }
 
-    // Verify employee exists
-    const employee = await db.employee.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        posLayoutSettings: true,
-        role: {
-          select: {
-            permissions: true,
-          },
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
+
+    // Verify employee exists (tenant-scoped, with includes for existing settings)
+    const employee = await EmployeeRepository.getEmployeeByIdWithInclude(id, locationId, {
+      role: {
+        select: {
+          permissions: true,
         },
       },
     })
@@ -95,12 +96,9 @@ export const PUT = withVenue(async function PUT(
       ...layout,
     }
 
-    // Update employee - cast to Prisma.InputJsonValue for JSON field compatibility
-    await db.employee.update({
-      where: { id },
-      data: {
-        posLayoutSettings: updatedLayout as Prisma.InputJsonValue,
-      },
+    // Update employee (tenant-scoped) - cast to Prisma.InputJsonValue for JSON field compatibility
+    await EmployeeRepository.updateEmployee(id, locationId, {
+      posLayoutSettings: updatedLayout as Prisma.InputJsonValue,
     })
 
     return NextResponse.json({ data: {
@@ -123,12 +121,13 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
-    await db.employee.update({
-      where: { id },
-      data: {
-        posLayoutSettings: Prisma.JsonNull,
-      },
+    await EmployeeRepository.updateEmployee(id, locationId, {
+      posLayoutSettings: Prisma.JsonNull,
     })
 
     return NextResponse.json({ data: {

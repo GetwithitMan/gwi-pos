@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { createEmployeeSchema, validateRequest } from '@/lib/validations'
@@ -29,16 +30,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_VIEW)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    const where = {
-      locationId,
-      ...(includeInactive ? {} : { isActive: true }),
-    }
+    const filterWhere = includeInactive ? {} : { isActive: true }
 
-    // Get total count for pagination
-    const total = await db.employee.count({ where })
+    // Get total count for pagination (tenant-scoped)
+    const total = await EmployeeRepository.countEmployees(locationId, filterWhere)
 
     const employees = await db.employee.findMany({
-      where,
+      where: {
+        locationId,
+        deletedAt: null,
+        ...filterWhere,
+      },
       include: {
         role: {
           select: {
@@ -129,13 +131,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Check for duplicate PIN at this location
-    const existingEmployees = await db.employee.findMany({
-      where: {
-        locationId,
-        isActive: true,
-      },
-    })
+    // Check for duplicate PIN at this location (tenant-scoped)
+    const existingEmployees = await EmployeeRepository.getActiveEmployees(locationId)
 
     // Hash the new PIN and check against existing
     const hashedPin = await hashPin(pin)
@@ -144,33 +141,35 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const DEFAULT_PINS = ['1234', '0000', '1111']
     const requiresPinChange = DEFAULT_PINS.includes(pin)
 
-    // Create the employee
-    const employee = await db.employee.create({
-      data: {
-        locationId,
-        firstName,
-        lastName,
-        displayName: displayName || null,
-        email: email || null,
-        phone: phone || null,
-        pin: hashedPin,
-        roleId,
-        hourlyRate: hourlyRate || null,
-        hireDate: hireDate ? new Date(hireDate) : undefined,
-        color: color || null,
-        isActive: true,
-        requiresPinChange,
-      },
-      include: {
-        role: {
-          select: {
-            id: true,
-            name: true,
-            permissions: true,
-          },
+    // Create the employee (tenant-scoped)
+    const employee = await EmployeeRepository.createEmployee(locationId, {
+      firstName,
+      lastName,
+      displayName: displayName || null,
+      email: email || null,
+      phone: phone || null,
+      pin: hashedPin,
+      roleId,
+      hourlyRate: hourlyRate || null,
+      hireDate: hireDate ? new Date(hireDate) : undefined,
+      color: color || null,
+      isActive: true,
+      requiresPinChange,
+    })
+
+    // Re-fetch with role include for response
+    const employeeWithRole = await EmployeeRepository.getEmployeeByIdWithInclude(employee.id, locationId, {
+      role: {
+        select: {
+          id: true,
+          name: true,
+          permissions: true,
         },
       },
     })
+    if (!employeeWithRole) {
+      return NextResponse.json({ error: 'Employee created but could not be retrieved' }, { status: 500 })
+    }
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'employees', action: 'created', entityId: employee.id })
@@ -181,22 +180,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void emitToLocation(locationId, 'employee:updated', { action: 'created', employeeId: employee.id }).catch(() => {})
 
     return NextResponse.json({ data: {
-      id: employee.id,
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      displayName: employee.displayName || `${employee.firstName} ${employee.lastName.charAt(0)}.`,
-      email: employee.email,
-      phone: employee.phone,
+      id: employeeWithRole.id,
+      firstName: employeeWithRole.firstName,
+      lastName: employeeWithRole.lastName,
+      displayName: employeeWithRole.displayName || `${employeeWithRole.firstName} ${employeeWithRole.lastName.charAt(0)}.`,
+      email: employeeWithRole.email,
+      phone: employeeWithRole.phone,
       role: {
-        id: employee.role.id,
-        name: employee.role.name,
-        permissions: employee.role.permissions as string[],
+        id: employeeWithRole.role.id,
+        name: employeeWithRole.role.name,
+        permissions: employeeWithRole.role.permissions as string[],
       },
-      hourlyRate: employee.hourlyRate ? Number(employee.hourlyRate) : null,
-      hireDate: employee.hireDate?.toISOString() || null,
-      isActive: employee.isActive,
-      color: employee.color,
-      createdAt: employee.createdAt.toISOString(),
+      hourlyRate: employeeWithRole.hourlyRate ? Number(employeeWithRole.hourlyRate) : null,
+      hireDate: employeeWithRole.hireDate?.toISOString() || null,
+      isActive: employeeWithRole.isActive,
+      color: employeeWithRole.color,
+      createdAt: employeeWithRole.createdAt.toISOString(),
     } })
   } catch (error) {
     console.error('Failed to create employee:', error)

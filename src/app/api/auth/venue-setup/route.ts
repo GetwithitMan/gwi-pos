@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { withVenue } from '@/lib/with-venue'
 import { hashPassword, hashPin } from '@/lib/auth'
 
@@ -49,17 +50,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const normalizedEmail = email.trim().toLowerCase()
   const passwordHash = await hashPassword(newPassword)
 
-  // Check for existing employee with this email
+  // Check for existing employee with this email (includes locationId for tenant-scoped update)
   const existing = await db.employee.findFirst({
     where: { email: { equals: normalizedEmail, mode: 'insensitive' }, deletedAt: null },
-    select: { id: true, firstName: true, lastName: true },
+    select: { id: true, firstName: true, lastName: true, locationId: true },
   })
 
   if (existing) {
-    await db.employee.update({
-      where: { id: existing.id },
-      data: { password: passwordHash },
-    })
+    await EmployeeRepository.updateEmployee(existing.id, existing.locationId, { password: passwordHash })
     return NextResponse.json({
       data: { success: true, action: 'updated', employeeId: existing.id },
     })
@@ -93,17 +91,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const namePart = normalizedEmail.split('@')[0]
   const pinHash = await hashPin('000000') // Placeholder PIN — admin uses password, not PIN
 
-  const newEmployee = await db.employee.create({
-    data: {
-      locationId: location.id,
-      roleId: role.id,
-      firstName: namePart,
-      lastName: '',
-      email: normalizedEmail,
-      password: passwordHash,
-      pin: pinHash,
-    },
-    select: { id: true },
+  const newEmployee = await EmployeeRepository.createEmployee(location.id, {
+    roleId: role.id,
+    firstName: namePart,
+    lastName: '',
+    email: normalizedEmail,
+    password: passwordHash,
+    pin: pinHash,
   })
 
   return NextResponse.json({

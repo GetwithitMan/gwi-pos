@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 
@@ -166,22 +167,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Fast path: O(1) — single employee lookup + one compare
+    // Fast path: O(1) — single employee lookup + one compare (tenant-scoped)
     if (employeeId) {
-      const employee = await db.employee.findUnique({
-        where: { id: employeeId },
-        select: {
-          id: true,
-          pin: true,
-          firstName: true,
-          lastName: true,
-          isActive: true,
-          locationId: true,
-          requiresPinChange: true,
-          role: { select: { id: true, name: true } },
-        },
+      const employee = await EmployeeRepository.getEmployeeByIdWithSelect(employeeId, locationId, {
+        id: true,
+        pin: true,
+        firstName: true,
+        lastName: true,
+        isActive: true,
+        locationId: true,
+        requiresPinChange: true,
+        role: { select: { id: true, name: true } },
       })
-      if (!employee || !employee.isActive || employee.locationId !== locationId) {
+      if (!employee || !employee.isActive) {
         recordPinFailure(ip)
         if (terminalRateKey) recordTerminalPinFailure(terminalRateKey, terminalRateLabel)
         return NextResponse.json(
@@ -211,11 +209,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fall through to existing O(N) scan for backwards compatibility
-    // Get active employees for this location
+    // Get active employees for this location (tenant-scoped via deletedAt guard)
     const employees = await db.employee.findMany({
       where: {
         locationId,
         isActive: true,
+        deletedAt: null,
       },
       select: {
         id: true,

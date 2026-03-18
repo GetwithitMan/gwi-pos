@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as EmployeeRepository from '@/lib/repositories/employee-repository'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get employee's preferences including room order
@@ -9,13 +11,14 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
-    const employee = await db.employee.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        preferredRoomOrder: true,
-      },
+    const employee = await EmployeeRepository.getEmployeeByIdWithSelect(id, locationId, {
+      id: true,
+      preferredRoomOrder: true,
     })
 
     if (!employee) {
@@ -59,11 +62,13 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { preferredRoomOrder } = body as { preferredRoomOrder: string[] }
 
-    // Verify employee exists
-    const employee = await db.employee.findUnique({
-      where: { id },
-      select: { id: true },
-    })
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
+
+    // Verify employee exists (tenant-scoped)
+    const employee = await EmployeeRepository.checkEmployeeExists(id, locationId)
 
     if (!employee) {
       return NextResponse.json(
@@ -80,12 +85,9 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
-    // Update employee
-    await db.employee.update({
-      where: { id },
-      data: {
-        preferredRoomOrder: JSON.stringify(preferredRoomOrder),
-      },
+    // Update employee (tenant-scoped)
+    await EmployeeRepository.updateEmployee(id, locationId, {
+      preferredRoomOrder: JSON.stringify(preferredRoomOrder),
     })
 
     return NextResponse.json({ data: {
@@ -110,12 +112,13 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
 
-    await db.employee.update({
-      where: { id },
-      data: {
-        preferredRoomOrder: null,
-      },
+    await EmployeeRepository.updateEmployee(id, locationId, {
+      preferredRoomOrder: null,
     })
 
     return NextResponse.json({ data: {
