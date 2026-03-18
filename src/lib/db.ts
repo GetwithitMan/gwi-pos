@@ -21,7 +21,7 @@ async function resolveTenantLocationId(): Promise<string | undefined> {
   // Uses per-request AsyncLocalStorage flag (concurrency-safe) instead of
   // module-level `let` which was shared across concurrent requests.
   const store = requestStore.getStore()
-  if (store && (store as any)._resolvingLocationId) return undefined
+  if (store && store._resolvingLocationId) return undefined
 
   // Fast path: already cached in this request's AsyncLocalStorage
   const cached = getRequestLocationId()
@@ -29,7 +29,7 @@ async function resolveTenantLocationId(): Promise<string | undefined> {
 
   // Slow path: async lookup (DB-backed, but cached per venue slug)
   // Lazy import to avoid circular dependency (location-cache.ts imports db.ts)
-  if (store) (store as any)._resolvingLocationId = true
+  if (store) store._resolvingLocationId = true
   try {
     const { getLocationId } = await import('./location-cache')
     const id = await getLocationId()
@@ -39,7 +39,7 @@ async function resolveTenantLocationId(): Promise<string | undefined> {
     }
     return undefined
   } finally {
-    if (store) (store as any)._resolvingLocationId = false
+    if (store) store._resolvingLocationId = false
   }
 }
 
@@ -316,30 +316,19 @@ if (typeof setInterval !== 'undefined') {
 /**
  * Resolve the active PrismaClient for the current request.
  *
- * Resolution order:
- *   1. AsyncLocalStorage (set by server.ts on the NUC)
- *   2. Next.js headers() — reads x-venue-slug (set by proxy.ts on Vercel)
- *   3. Master client (local dev, or NUC with DATABASE_URL already correct)
+ * Resolution:
+ *   1. AsyncLocalStorage — set by server.ts (NUC) or withVenue() (Vercel).
+ *      Both paths use requestStore.run() before route handlers execute.
+ *   2. Fallback: master client (local dev without custom server).
  *
- * On the NUC:
- *   server.ts wraps every request in requestStore.run({ slug, prisma })
- *   so Priority 1 fires.  Also DATABASE_URL already points to the venue DB.
- *
- * On Vercel (cloud / subdomains):
- *   No custom server → Priority 1 is undefined → falls through to Priority 2.
- *   proxy.ts sets x-venue-slug → headers().get('x-venue-slug') returns slug.
+ * On Vercel, withVenue() reads x-venue-slug from headers, resolves the
+ * venue PrismaClient, and wraps the handler in requestStore.run().
+ * By the time any route code calls `db.someModel.findMany()`, the
+ * correct client is always in AsyncLocalStorage — no header reads here.
  */
 function resolveClient(): PrismaClient {
-  // Priority 1: AsyncLocalStorage (NUC custom server)
   const contextPrisma = getRequestPrisma()
   if (contextPrisma) return contextPrisma
-
-  // Priority 2: Next.js headers() (Vercel serverless)
-  // In Next.js 16, headers() is fully async. In local dev without custom server,
-  // skip this path to avoid "headers() returns a Promise" warnings.
-  // On Vercel, withVenue() middleware sets the slug before route handlers run.
-
-  // Priority 3: Master client
   return masterClient
 }
 

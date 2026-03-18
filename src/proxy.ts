@@ -233,7 +233,11 @@ async function signAndAttachTenantJwt(
   venueSlug: string,
   locationId: string,
 ): Promise<void> {
-  if (!TENANT_JWT_ENABLED || !TENANT_SIGNING_KEY) return
+  if (!TENANT_JWT_ENABLED) return
+  if (!TENANT_SIGNING_KEY) {
+    console.warn('[proxy] TENANT_JWT_ENABLED=true but no signing key — skipping JWT')
+    return
+  }
 
   const method = request.method
   const path = request.nextUrl.pathname

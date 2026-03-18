@@ -26,22 +26,7 @@ export interface TenantContextPayload {
   bodySha256?: string // required for POST/PUT/PATCH/DELETE
 }
 
-// ── Base64url helpers ────────────────────────────────────────────────────────
-
-function base64urlEncodeBytes(bytes: Uint8Array): string {
-  const binary = Array.from(bytes).map(b => String.fromCharCode(b)).join('')
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
-}
-
-function base64urlDecode(str: string): Uint8Array {
-  const padded = str + '='.repeat((4 - (str.length % 4)) % 4)
-  const binary = atob(padded.replace(/-/g, '+').replace(/_/g, '/'))
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return bytes
-}
+import { base64urlEncodeBytes, base64urlDecode } from './base64url'
 
 // ── Signing ──────────────────────────────────────────────────────────────────
 

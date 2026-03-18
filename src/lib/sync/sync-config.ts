@@ -403,7 +403,8 @@ export async function validateSyncCoverage(
 
   if (collisions.length > 0) {
     const ignoreDateStr = process.env.IGNORE_PRIORITY_COLLISIONS_UNTIL
-    const ignoreDate = ignoreDateStr ? new Date(ignoreDateStr) : null
+    const parsedDate = ignoreDateStr ? new Date(ignoreDateStr) : null
+    const ignoreDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null
     const now = new Date()
 
     const collisionDetails = collisions

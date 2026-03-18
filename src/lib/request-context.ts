@@ -13,12 +13,14 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 
 export interface RequestContext {
   slug: string
   prisma: PrismaClient
   locationId?: string
+  /** Guard against infinite recursion in tenant location resolution (db.ts). */
+  _resolvingLocationId?: boolean
 }
 
 export const requestStore = new AsyncLocalStorage<RequestContext>()

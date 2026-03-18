@@ -25,6 +25,7 @@ import { requestStore, getRequestPrisma } from './request-context'
 import { getDbForVenue, masterClient } from './db'
 import { verifyTenantContext, type VerifyOptions } from './tenant-context-signer'
 import { config } from './system-config'
+import { logger } from './logger'
 
 type RouteHandler = (request: any, context?: any) => Promise<Response> | Response
 
@@ -45,7 +46,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       if (config.tenantJwtEnabled && config.tenantSigningKey && slug) {
         const tenantJwt = headersList.get('x-tenant-context')
         if (!tenantJwt) {
-          console.error('[withVenue] Missing x-tenant-context JWT for slug:', slug)
+          logger.error('[withVenue] Missing x-tenant-context JWT for slug:', slug)
           return new Response(
             JSON.stringify({ error: 'Missing tenant context' }),
             { status: 403, headers: { 'Content-Type': 'application/json' } }
@@ -68,7 +69,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
 
         const payload = await verifyTenantContext(tenantJwt, config.tenantSigningKey, verifyOpts)
         if (!payload) {
-          console.error('[withVenue] Invalid tenant context JWT for slug:', slug)
+          logger.error('[withVenue] Invalid tenant context JWT for slug:', slug)
           return new Response(
             JSON.stringify({ error: 'Invalid tenant context' }),
             { status: 403, headers: { 'Content-Type': 'application/json' } }
@@ -77,7 +78,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
 
         // Verify slug matches
         if (payload.venueSlug !== slug) {
-          console.error('[withVenue] Tenant JWT slug mismatch:', { jwt: payload.venueSlug, header: slug })
+          logger.error('[withVenue] Tenant JWT slug mismatch:', { jwt: payload.venueSlug, header: slug })
           return new Response(
             JSON.stringify({ error: 'Tenant context mismatch' }),
             { status: 403, headers: { 'Content-Type': 'application/json' } }
@@ -107,7 +108,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
         () => handler(request, context)
       )
     } catch (error) {
-      console.error('[withVenue] Unhandled error:', error)
+      logger.error('[withVenue] Unhandled error:', error)
       return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
   }
