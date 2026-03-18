@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
@@ -43,7 +43,7 @@ async function calculateCostAtSale(
   pricingOptionId: string | null
 ): Promise<number | null> {
   // TODO: MenuItemRepository.getMenuItemByIdWithInclude() needs locationId; cost calc is location-agnostic
-  const menuItem = await db.menuItem.findUnique({
+  const menuItem = await adminDb.menuItem.findUnique({
     where: { id: menuItemId },
     include: {
       recipe: {
@@ -175,7 +175,7 @@ export const POST = withVenue(async function POST(
           // Parallelize independent DB lookups
           // TODO: MenuItemRepository.getMenuItems() doesn't support batch-by-IDs; PricingOption has no repo
           const [menuItemsForPrice, pricingOptions] = await Promise.all([
-            db.menuItem.findMany({
+            adminDb.menuItem.findMany({
               where: { id: { in: pricableItems.map((i: AddItemInput) => i.menuItemId) } },
               select: { id: true, price: true },
             }),

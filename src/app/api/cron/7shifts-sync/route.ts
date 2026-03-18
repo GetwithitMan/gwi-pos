@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { createReceipt, createTimePunch, listShifts } from '@/lib/7shifts-client'
 import { verifyCronSecret } from '@/lib/cron-auth'
+
+// TODO: Migrate db.location, db.sevenShiftsDailySalesPush, adminDb.order.findMany, adminDb.payment.aggregate,
+// db.timeClockEntry, db.schedule, and db.scheduledShift calls to repositories once those repos exist.
+// adminDb.employee.findFirst queries below already use locationId and could use EmployeeRepository
+// but use non-standard filters (sevenShiftsUserId) not yet in EmployeeRepository.
 
 function getBusinessDate(timezone: string, daysOffset = -1): string {
   const target = new Date(Date.now() + daysOffset * 24 * 60 * 60 * 1000)
@@ -68,7 +73,7 @@ export async function GET(request: NextRequest) {
         if (existing?.status === 'pushed') {
           locationResult.sales = { skipped: true }
         } else {
-          const orders = await db.order.findMany({
+          const orders = await adminDb.order.findMany({
             where: { locationId: location.id, status: 'closed', closedAt: { gte: start, lt: end }, deletedAt: null },
             select: { id: true, total: true },
           })
@@ -77,7 +82,7 @@ export async function GET(request: NextRequest) {
 
           let tipsAmountCents = 0
           if (orderIds.length > 0) {
-            const tipAgg = await db.payment.aggregate({
+            const tipAgg = await adminDb.payment.aggregate({
               where: { orderId: { in: orderIds }, deletedAt: null },
               _sum: { tipAmount: true },
             })
@@ -172,7 +177,7 @@ export async function GET(request: NextRequest) {
           locationResult.schedule = { error: 'No schedule exists', skipped: shifts.length }
         } else {
           for (const shift of shifts) {
-            const employee = await db.employee.findFirst({
+            const employee = await adminDb.employee.findFirst({
               where: { locationId: location.id, sevenShiftsUserId: String(shift.user_id), deletedAt: null },
               select: { id: true },
             })

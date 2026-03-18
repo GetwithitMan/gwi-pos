@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -32,7 +32,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // TODO: Migrate to MenuItemRepository once it supports findMany with custom select.
     // Find all active entertainment sessions at this location.
-    const activeMenuItems = await db.menuItem.findMany({
+    const activeMenuItems = await adminDb.menuItem.findMany({
       where: {
         locationId,
         entertainmentStatus: 'in_use',
@@ -79,7 +79,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const orderItemIds = activeMenuItems.map(mi => mi.currentOrderItemId!).filter(Boolean)
 
     // TODO: Migrate to OrderItemRepository.getItemsByIdsWithInclude once it supports order join.
-    const orderItems = await db.orderItem.findMany({
+    const orderItems = await adminDb.orderItem.findMany({
       where: { id: { in: orderItemIds }, locationId },
       include: {
         order: {

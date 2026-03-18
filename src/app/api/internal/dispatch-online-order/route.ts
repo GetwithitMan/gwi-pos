@@ -20,7 +20,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -41,7 +41,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Find received online orders ───────────────────────────────────────────
   // 'received' = payment approved on Vercel, items have kitchenStatus 'pending',
   // but NUC hasn't dispatched to KDS/printers yet.
-  const orders = await db.order.findMany({
+  const orders = await adminDb.order.findMany({
     where: {
       status: 'received',
       ...(body.orderId ? { id: body.orderId } : {}),
@@ -61,7 +61,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // This prevents double-dispatch if two worker cycles overlap.
       // If another cycle already claimed it, updateMany returns count: 0 and
       // we skip it cleanly.
-      const claimed = await db.order.updateMany({
+      const claimed = await adminDb.order.updateMany({
         where: { id: order.id, status: 'received' },
         data: { status: 'open' },
       })
@@ -101,7 +101,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         errors.push(`Order #${order.orderNumber}: ${msg}`)
 
         // Revert so the next worker cycle retries
-        await db.order
+        await adminDb.order
           .update({ where: { id: order.id }, data: { status: 'received' } })
           .catch(() => {})
 
@@ -114,7 +114,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       errors.push(`Order #${order.orderNumber}: ${msg}`)
 
       // Revert on exception so it gets retried
-      await db.order
+      await adminDb.order
         .update({ where: { id: order.id }, data: { status: 'received' } })
         .catch(() => {})
 

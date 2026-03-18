@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
@@ -100,7 +100,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       paginationArgs.skip = 1
     }
 
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where,
       include: {
         employee: {

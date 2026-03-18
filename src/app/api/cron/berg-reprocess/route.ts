@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { verifyCronSecret } from '@/lib/cron-auth'
 
-// TODO: Migrate db.bergDispenseEvent, db.terminal, and db.orderItem.create calls
+// TODO: Migrate adminDb.bergDispenseEvent, db.terminal, and adminDb.orderItem.create calls
 // to repositories once BergDevice/Terminal repositories exist.
 
 export const maxDuration = 60
@@ -28,7 +28,7 @@ async function findOpenOrderForTerminal(
   })
   if (!terminal) return { order: null, multipleOpen: false }
 
-  const openOrders = await db.order.findMany({
+  const openOrders = await adminDb.order.findMany({
     where: {
       locationId,
       offlineTerminalId: terminal.id,
@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
               taxInclusiveLiquor: taxCfg?.taxInclusiveLiquor ?? false,
               taxInclusiveFood: taxCfg?.taxInclusiveFood ?? false,
             }
-            const oi = await db.orderItem.create({
+            const oi = await adminDb.orderItem.create({
               data: {
                 locationId: device.locationId,
                 orderId: result.order.id,

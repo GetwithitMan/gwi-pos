@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -30,7 +30,7 @@ export const POST = withVenue(async function POST(
 
     // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
     // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         payments: {
@@ -130,7 +130,7 @@ export const POST = withVenue(async function POST(
     // alreadyPaid calculation starts fresh (old payments were for the previous close).
     if (order.payments.length > 0) {
       // TODO: Batch payment void by orderId+status -- no single repository method; raw db with locationId guard
-      await db.payment.updateMany({
+      await adminDb.payment.updateMany({
         where: {
           orderId,
           locationId: order.locationId,
@@ -239,7 +239,7 @@ export const POST = withVenue(async function POST(
     // W2-R2: Recalculate order totals from active items (payments were voided, totals are stale)
     // TODO: OrderItemRepository.getItemsForOrderWithModifiers filters deletedAt:null but not status.
     // Add a method or use getItemsForOrderWhere + include for status filter.
-    const activeItems = await db.orderItem.findMany({
+    const activeItems = await adminDb.orderItem.findMany({
       where: {
         orderId,
         locationId: order.locationId,

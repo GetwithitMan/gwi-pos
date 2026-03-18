@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // TODO: Migrate to MenuItemRepository once complex include+conditional shapes are supported
-    const items = await db.menuItem.findMany({
+    const items = await adminDb.menuItem.findMany({
       where,
       orderBy: { sortOrder: 'asc' },
       include: {
@@ -278,7 +278,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get the location from the category
-    const category = await db.category.findUnique({
+    const category = await adminDb.category.findUnique({
       where: { id: categoryId },
       select: { locationId: true }
     })
@@ -291,12 +291,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get max sort order in category (scoped to location)
-    const maxSortOrder = await db.menuItem.aggregate({
+    const maxSortOrder = await adminDb.menuItem.aggregate({
       where: { categoryId, locationId: category.locationId },
       _max: { sortOrder: true }
     })
 
-    const item = await db.menuItem.create({
+    const item = await adminDb.menuItem.create({
       data: {
         locationId: category.locationId,
         categoryId,

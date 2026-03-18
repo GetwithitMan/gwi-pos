@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import {
   dispatchFloorPlanUpdate,
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   try {
     // TODO: Migrate to OrderItemRepository once it supports cross-tenant cron queries with menuItem+order joins.
     // ── Step 1: Find expired entertainment sessions ──────────────
-    const expiredItems = await db.orderItem.findMany({
+    const expiredItems = await adminDb.orderItem.findMany({
       where: {
         blockTimeExpiresAt: { lt: now },
         blockTimeStartedAt: { not: null },

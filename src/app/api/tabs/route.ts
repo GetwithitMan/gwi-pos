@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
@@ -24,7 +24,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Auth check: resolve actor from query param or session, then validate
     const actorId = employeeId || (await getActorFromRequest(request)).employeeId
     if (actorId) {
-      const actor = await db.employee.findUnique({ where: { id: actorId, deletedAt: null }, select: { locationId: true } })
+      const actor = await adminDb.employee.findUnique({ where: { id: actorId, deletedAt: null }, select: { locationId: true } })
       if (actor) {
         const auth = await requirePermission(actorId, actor.locationId, PERMISSIONS.POS_ACCESS)
         if (!auth.authorized) {
@@ -41,7 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...(employeeId ? { employeeId } : {}),
     }
 
-    const tabs = await db.order.findMany({
+    const tabs = await adminDb.order.findMany({
       where,
       include: {
         employee: {
@@ -202,7 +202,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const employee = await db.employee.findUnique({
+    const employee = await adminDb.employee.findUnique({
       where: { id: employeeId },
       include: { location: true },
     })

@@ -3,9 +3,14 @@
  *
  * Helpers for batching database updates to avoid N+1 query problems.
  * FIX-010: Replaces individual updates in loops with efficient batch operations.
+ *
+ * TODO: Migrate batchUpdateOrderItemStatus to OrderItemRepository once locationId
+ * is threaded to callers (currently items are identified by ID only, no tenant guard).
+ * TODO: Migrate batchUpdateEntertainmentStatus to MenuItemRepository once
+ * it supports non-tenant-scoped batch updates (entertainment uses menuItemId only).
  */
 
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // ============================================================================
@@ -33,7 +38,7 @@ export async function batchUpdateOrderItemStatus(
     data.kitchenSentAt = firedAt || new Date()
   }
 
-  await db.orderItem.updateMany({
+  await adminDb.orderItem.updateMany({
     where: { id: { in: itemIds } },
     data,
   })
@@ -41,7 +46,7 @@ export async function batchUpdateOrderItemStatus(
   // Fire-and-forget: emit ITEM_UPDATED for each affected item
   void (async () => {
     try {
-      const items = await db.orderItem.findMany({
+      const items = await adminDb.orderItem.findMany({
         where: { id: { in: itemIds } },
         select: { id: true, orderId: true, order: { select: { locationId: true } } },
       })
@@ -74,9 +79,9 @@ export async function batchUpdateEntertainmentStatus(
     currentOrderItemId?: string | null
   }>
 ): Promise<void> {
-  await db.$transaction(
+  await adminDb.$transaction(
     updates.map(({ menuItemId, status, currentOrderId, currentOrderItemId }) =>
-      db.menuItem.update({
+      adminDb.menuItem.update({
         where: { id: menuItemId },
         data: {
           entertainmentStatus: status,
@@ -102,9 +107,9 @@ export async function batchUpdateFloorPlanElements(
     sessionExpiresAt?: Date | null
   }>
 ): Promise<void> {
-  await db.$transaction(
+  await adminDb.$transaction(
     updates.map(({ linkedMenuItemId, ...data }) =>
-      db.floorPlanElement.updateMany({
+      adminDb.floorPlanElement.updateMany({
         where: {
           linkedMenuItemId,
           deletedAt: null,
@@ -136,8 +141,8 @@ export async function startEntertainmentSession(
   sessionStart: Date,
   sessionEnd: Date
 ): Promise<void> {
-  await db.$transaction([
-    db.menuItem.update({
+  await adminDb.$transaction([
+    adminDb.menuItem.update({
       where: { id: menuItemId },
       data: {
         entertainmentStatus: 'in_use',
@@ -145,7 +150,7 @@ export async function startEntertainmentSession(
         currentOrderItemId: orderItemId,
       },
     }),
-    db.floorPlanElement.updateMany({
+    adminDb.floorPlanElement.updateMany({
       where: {
         linkedMenuItemId: menuItemId,
         deletedAt: null,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -520,7 +520,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 // Fire-and-forget fulfillment routing
                 void (async () => {
                   try {
-                    const sentItems = await db.orderItem.findMany({
+                    const sentItems = await adminDb.orderItem.findMany({
                       where: { orderId: targetOrderId, kitchenStatus: 'sent', deletedAt: null },
                       include: { menuItem: { select: { id: true, name: true, fulfillmentType: true, fulfillmentStationId: true } } },
                     })

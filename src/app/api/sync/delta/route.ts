@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { buildSpiritTiersFromItem } from '@/lib/spirit-tiers'
 import { authenticateTerminal } from '@/lib/terminal-auth'
@@ -20,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 
   const [menuItems, categories, employees, tables, orderTypes, orders, pricingOptionGroups, sharedModifierGroups] = await Promise.all([
-    db.menuItem.findMany({
+    adminDb.menuItem.findMany({
       where: { locationId, updatedAt: { gt: since } },
       include: {
         ownedModifierGroups: {
@@ -41,10 +41,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     }),
     db.category.findMany({ where: { locationId, updatedAt: { gt: since } } }),
-    db.employee.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { role: { select: { id: true, name: true, permissions: true } } } }),
+    adminDb.employee.findMany({ where: { locationId, updatedAt: { gt: since } }, include: { role: { select: { id: true, name: true, permissions: true } } } }),
     db.table.findMany({ where: { locationId, updatedAt: { gt: since } } }),
     db.orderType.findMany({ where: { locationId, updatedAt: { gt: since } } }),
-    db.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true }, take: 100, orderBy: { updatedAt: 'desc' } }),
+    adminDb.order.findMany({ where: { locationId, updatedAt: { gt: since }, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split'] }, deletedAt: null }, include: { items: { include: { modifiers: true, itemDiscounts: true } }, payments: true }, take: 100, orderBy: { updatedAt: 'desc' } }),
     db.pricingOptionGroup.findMany({ where: { locationId, updatedAt: { gt: since }, deletedAt: null }, include: { options: { where: { deletedAt: null }, orderBy: { sortOrder: 'asc' } } } }),
     // Shared/global modifier groups (menuItemId: null) — not nested under menuItems
     db.modifierGroup.findMany({

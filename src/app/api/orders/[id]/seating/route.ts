@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
@@ -62,7 +62,7 @@ export const GET = withVenue(async function GET(
     const { employeeId } = await getActorFromRequest(request)
 
     // Lightweight check to get locationId for tenant-scoped queries
-    const orderCheck = await db.order.findUnique({
+    const orderCheck = await adminDb.order.findUnique({
       where: { id: orderId },
       select: { id: true, locationId: true },
     })
@@ -233,7 +233,7 @@ export const POST = withVenue(async function POST(
     const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
 
     // Auth check: lightweight order lookup to get locationId for permission validation (before any mutations)
-    const orderForAuth = await db.order.findUnique({ where: { id: orderId }, select: { id: true, locationId: true } })
+    const orderForAuth = await adminDb.order.findUnique({ where: { id: orderId }, select: { id: true, locationId: true } })
     if (!orderForAuth) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
@@ -262,7 +262,7 @@ export const POST = withVenue(async function POST(
       })
       // Reset extraSeatCount on any open orders for this table
       // NOTE: This is a cross-order bulk update scoped by tableId, not a single-order repo call
-      await db.order.updateMany({
+      await adminDb.order.updateMany({
         where: { tableId: resetTableId, locationId: table.locationId, status: { in: ['open', 'draft'] }, extraSeatCount: { gt: 0 } },
         data: { extraSeatCount: 0 },
       })

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { OrderStatus, TabStatus } from '@/generated/prisma/client'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import {
   dispatchOpenOrdersChanged,
@@ -52,7 +52,7 @@ export const POST = withVenue(async function POST(
 
     // Fetch the order -- use getLocationId() to bootstrap locationId, then use repository
     // TODO: pat-complete needs a way to resolve locationId before the order fetch; using db fallback
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       select: {
         id: true,
@@ -100,11 +100,11 @@ export const POST = withVenue(async function POST(
 
     // Create Payment records
     // TODO: PaymentRepository.createPayment uses Prisma's connect syntax which differs from
-    // the flat locationId/orderId pattern here. Using db.payment.create directly for now.
+    // the flat locationId/orderId pattern here. Using adminDb.payment.create directly for now.
     if (splits && splits.length > 0) {
       // One Payment per split
       for (const split of splits) {
-        await db.payment.create({
+        await adminDb.payment.create({
           data: {
             locationId,
             orderId,
@@ -123,7 +123,7 @@ export const POST = withVenue(async function POST(
     } else {
       // Single Payment for the full amount
       const baseAmount = totalPaid - (tipAmount ?? 0)
-      await db.payment.create({
+      await adminDb.payment.create({
         data: {
           locationId,
           orderId,

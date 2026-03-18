@@ -1,4 +1,4 @@
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { NextResponse } from 'next/server'
 import { dispatchOrderUpdated, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -10,7 +10,7 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
   const { id: orderId } = await params
 
   // Resolve locationId before the transaction for tenant-scoped operations
-  const orderCheck = await db.order.findUnique({
+  const orderCheck = await adminDb.order.findUnique({
     where: { id: orderId },
     select: { id: true, locationId: true },
   })
