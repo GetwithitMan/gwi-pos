@@ -19,6 +19,8 @@ export interface RequestContext {
   slug: string
   prisma: PrismaClient
   locationId?: string
+  /** Unique ID for this HTTP request (for structured logging / trace correlation). */
+  requestId?: string
   /** Guard against infinite recursion in tenant location resolution (db.ts). */
   _resolvingLocationId?: boolean
 }
@@ -45,5 +47,18 @@ export function setRequestLocationId(id: string): void {
   const store = requestStore.getStore()
   if (store) {
     store.locationId = id
+  }
+}
+
+/** Get the request ID for the current request (for structured logging). */
+export function getRequestId(): string | undefined {
+  return requestStore.getStore()?.requestId
+}
+
+/** Store a request ID in the current request context. */
+export function setRequestId(id: string): void {
+  const store = requestStore.getStore()
+  if (store) {
+    store.requestId = id
   }
 }

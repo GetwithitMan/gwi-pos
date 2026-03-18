@@ -1,51 +1,48 @@
 /**
- * Development-only logger utility
- * All logs are stripped in production builds for performance
+ * Structured logger (pino-based)
+ *
+ * - JSON output in production (for log aggregators)
+ * - Pretty-printed, colorized output in development
+ * - Child loggers for workers and per-request trace IDs
  *
  * Usage:
  *   import { logger } from '@/lib/logger'
- *   logger.warn('Invalid coordinate:', value)  // Silent in production
- *   logger.error('Critical error:', error)     // Always logged
+ *   logger.info('Order created', { orderId })
+ *   logger.warn('Invalid coordinate', { value })
+ *   logger.error('Critical error', { err })
+ *
+ * Child loggers:
+ *   import { createChildLogger, withRequestId } from '@/lib/logger'
+ *   const log = createChildLogger('upstreamSync')
+ *   const reqLog = withRequestId(requestId)
  */
 
-const isDev = process.env.NODE_ENV !== 'production'
+import pino from 'pino'
 
-export const logger = {
-  /**
-   * Development-only warning logs
-   * Silent in production
-   */
-  warn: (...args: unknown[]) => {
-    if (isDev) {
-      console.warn(...args)
-    }
-  },
+const isProduction = process.env.NODE_ENV === 'production'
 
-  /**
-   * Development-only info logs
-   * Silent in production
-   */
-  log: (...args: unknown[]) => {
-    if (isDev) {
-      console.log(...args)
-    }
-  },
+const logger = pino({
+  level: isProduction ? 'info' : 'debug',
+  transport: isProduction ? undefined : { target: 'pino-pretty', options: { colorize: true } },
+})
 
-  /**
-   * Error logs (always logged, even in production)
-   * Use for errors that need observability
-   */
-  error: (...args: unknown[]) => {
-    console.error(...args)
-  },
+// Alias .log to .info for backwards compatibility with existing code
+// (the old logger used .log() extensively; pino uses .info() instead)
+;(logger as any).log = logger.info.bind(logger)
 
-  /**
-   * Development-only debug logs
-   * Silent in production
-   */
-  debug: (...args: unknown[]) => {
-    if (isDev) {
-      console.debug(...args)
-    }
-  }
+export { logger }
+
+/** Create a child logger with a fixed name field (for workers, sync cycles, etc.) */
+export function createChildLogger(name: string) {
+  const child = logger.child({ worker: name })
+  // Propagate .log alias to child loggers
+  ;(child as any).log = child.info.bind(child)
+  return child
+}
+
+/** Create a child logger with a request ID (for HTTP request context) */
+export function withRequestId(requestId: string) {
+  const child = logger.child({ requestId })
+  ;(child as any).log = child.info.bind(child)
+  return child
 }

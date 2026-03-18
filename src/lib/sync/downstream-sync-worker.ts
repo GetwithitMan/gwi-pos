@@ -21,6 +21,7 @@ import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, g
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig } from '../fulfillment-router'
 import { syncDenyList } from '../cellular-auth'
 import { checkQuarantine, QUARANTINE_PROTECTED_MODELS, loadWatermarks, updateDownstreamWatermark } from './sync-conflict-quarantine'
+import { registerDownstreamHandler, dispatchDownstreamNotifications } from './downstream-notification-pipeline'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -52,6 +53,8 @@ let timer: ReturnType<typeof setInterval> | null = null
 let immediateRunning = false
 /** Guard against overlapping sync cycles */
 let cycleRunning = false
+/** Per-table-batch deduplication for open-orders socket dispatch (cleared in syncTableDown) */
+const notificationDispatchedLocations = new Set<string>()
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -183,6 +186,9 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   if (!columns || columns.length === 0) return 0
   if (!columns.includes('updatedAt')) return 0
 
+  // Reset per-batch deduplication for notification pipeline socket dispatch
+  notificationDispatchedLocations.clear()
+
   const hwm = highWaterMarks.get(tableName) ?? new Date('1970-01-01T00:00:00Z')
 
   // Bidirectional models: only pull cloud-originated rows downstream
@@ -224,8 +230,6 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   let synced = 0
   let maxSyncedAt = hwm   // Only tracks successfully synced rows — failed rows must NOT advance HWM
   const strategy = getConflictStrategy(tableName)
-  /** Track which locationIds have already received a socket dispatch this batch */
-  const dispatchedLocations = new Set<string>()
   /** Collect IDs of successfully synced rows for batch syncedAt stamping */
   const syncedIds: string[] = []
   /** Per-location max synced timestamp for downstream watermark updates */
@@ -259,6 +263,15 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
                 : new Date(row.updatedAt as string)
               const rowLocationId = (row.locationId as string) || ''
 
+              // Read syncVersion from both local and incoming rows (if column exists)
+              const hasSyncVersion = columns.includes('syncVersion')
+              const localSyncVersion = hasSyncVersion && localRow?.syncVersion != null
+                ? Number(localRow.syncVersion)
+                : null
+              const incomingSyncVersion = hasSyncVersion && row.syncVersion != null
+                ? Number(row.syncVersion)
+                : null
+
               const decision = await checkQuarantine(
                 tableName,
                 row.id as string,
@@ -267,6 +280,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
                 rowLocationId,
                 (localRow ?? {}) as Record<string, unknown>,
                 row as Record<string, unknown>,
+                incomingSyncVersion,
+                localSyncVersion,
               )
 
               if (decision === 'quarantine') {
@@ -343,54 +358,11 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         syncedIds.push(row.id as string)
       }
 
-      // Fulfillment routing hook — when a cloud-originated Order arrives
-      // with status 'sent', trigger fulfillment router on the NUC (fire-and-forget)
-      if (tableName === 'Order' && row.lastMutatedBy === 'cloud' && row.status === 'sent') {
-        void handleCloudFulfillment(row).catch((err) => {
-          console.error('[DownstreamSync] Cloud fulfillment routing failed:', err)
-        })
-      }
-
-      // Inventory deduction hook — when a cloud-originated Order arrives
-      // with status 'paid' or 'closed', create a PendingDeduction so inventory
-      // gets decremented. Without this, cellular orders paid on the cloud never
-      // trigger inventory deduction on the NUC.
-      if (tableName === 'Order' && row.lastMutatedBy === 'cloud' && (row.status === 'paid' || row.status === 'closed')) {
-        void handleCloudDeduction(row).catch((err) => {
-          console.error('[DownstreamSync] Cloud deduction creation failed:', err)
-        })
-      }
-
-      // Table status hook — when a cloud-originated Order arrives with a tableId,
-      // update the Table status to 'occupied' and emit floor plan updates so
-      // LAN terminals see correct table state.
-      if (tableName === 'Order' && row.lastMutatedBy === 'cloud' && row.tableId && row.status !== 'paid' && row.status !== 'closed' && row.status !== 'cancelled') {
-        void handleCloudTableStatus(row).catch((err) => {
-          console.error('[DownstreamSync] Cloud table status update failed:', err)
-        })
-      }
-
-      // TRANSITIONAL: Best-effort socket dispatch for downstream-synced orders.
-      // Will be replaced by formal downstream notification via worker manager (Step 8).
-      // Emit socket events when Order or OrderItem rows sync to local PG
-      // so terminals know new data arrived without waiting for the next poll.
-      // Deduplicate per locationId — at most one dispatch per location per batch.
-      if (tableName === 'Order' || tableName === 'OrderItem') {
-        const rowLocationId = row.locationId as string
-        if (rowLocationId && !dispatchedLocations.has(rowLocationId)) {
-          dispatchedLocations.add(rowLocationId)
-          void (async () => {
-            try {
-              const { dispatchOpenOrdersChanged } = await import('../socket-dispatch')
-              await dispatchOpenOrdersChanged(rowLocationId, {
-                trigger: tableName === 'Order' ? 'created' : 'item_updated',
-              })
-            } catch {
-              // Socket dispatch is best-effort — don't fail sync
-            }
-          })().catch(console.error)
-        }
-      }
+      // Downstream notification pipeline — fires registered handlers for this row
+      const rowLocationId = (row.locationId as string) || ''
+      void dispatchDownstreamNotifications(tableName, row, rowLocationId).catch((err) => {
+        console.error(`[DownstreamSync] Notification pipeline error for ${tableName}:${row.id}:`, err)
+      })
 
       synced++
       // Only advance HWM for successfully synced rows
@@ -579,9 +551,7 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
     }
   }
 
-  // TRANSITIONAL: Best-effort socket dispatch for downstream-synced orders.
-  // Will be replaced by formal downstream notification via worker manager (Step 8).
-  // ── Emit socket events immediately for instant KDS display ──────────────
+  // Emit socket events immediately for instant KDS display.
   // The bridge worker will also process the persisted FulfillmentEvents for
   // durable retry, but emitting here eliminates the 2s bridge poll latency
   // for cellular orders — cutting KDS appearance from ~17.5s to near-instant.
@@ -659,9 +629,9 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
         stations: actions.map(a => a.stationName).filter(Boolean),
       })
 
-      // NOTE: dispatchOpenOrdersChanged is NOT called here — the outer sync loop
-      // (syncTableDown) already dispatches it per-location with deduplication.
-      // Calling it here would cause a double-dispatch for the same order.
+      // NOTE: dispatchOpenOrdersChanged is NOT called here — the notification
+      // pipeline's open-orders-dispatch handler already dispatches it per-location
+      // with deduplication. Calling it here would cause a double-dispatch.
     } catch (err) {
       console.error('[DownstreamSync] Socket dispatch for cloud order failed:', err)
     }
@@ -915,6 +885,71 @@ async function runDownstreamCycle(): Promise<void> {
   }
 }
 
+// ── Downstream Notification Pipeline Registration ─────────────────────────────
+
+/**
+ * Register the 4 downstream notification handlers with the pipeline.
+ * Called once at worker startup. Each handler wraps an existing function
+ * with model/condition filters so the pipeline dispatches correctly.
+ */
+function initDownstreamNotifications(): void {
+  // 1. Cloud fulfillment routing — Order with status='sent' && lastMutatedBy='cloud'
+  registerDownstreamHandler({
+    name: 'cloud-fulfillment',
+    models: ['Order'],
+    condition: (_t, row) => row.lastMutatedBy === 'cloud' && row.status === 'sent',
+    handler: async (_t, row) => {
+      await handleCloudFulfillment(row)
+    },
+    errorPolicy: 'log',
+  })
+
+  // 2. Cloud inventory deduction — Order with status='paid'|'closed' && lastMutatedBy='cloud'
+  registerDownstreamHandler({
+    name: 'cloud-deduction',
+    models: ['Order'],
+    condition: (_t, row) => row.lastMutatedBy === 'cloud' && (row.status === 'paid' || row.status === 'closed'),
+    handler: async (_t, row) => {
+      await handleCloudDeduction(row)
+    },
+    errorPolicy: 'log',
+  })
+
+  // 3. Cloud table status — Order with tableId, non-final status, lastMutatedBy='cloud'
+  registerDownstreamHandler({
+    name: 'cloud-table-status',
+    models: ['Order'],
+    condition: (_t, row) =>
+      row.lastMutatedBy === 'cloud' &&
+      !!row.tableId &&
+      row.status !== 'paid' &&
+      row.status !== 'closed' &&
+      row.status !== 'cancelled',
+    handler: async (_t, row) => {
+      await handleCloudTableStatus(row)
+    },
+    errorPolicy: 'log',
+  })
+
+  // 4. Open orders socket dispatch — Order or OrderItem, deduplicated per locationId per batch
+  //    notificationDispatchedLocations is cleared at the start of each syncTableDown() call
+  registerDownstreamHandler({
+    name: 'open-orders-dispatch',
+    models: ['Order', 'OrderItem'],
+    handler: async (tableName, row, locationId) => {
+      if (!locationId || notificationDispatchedLocations.has(locationId)) return
+      notificationDispatchedLocations.add(locationId)
+      const { dispatchOpenOrdersChanged } = await import('../socket-dispatch')
+      await dispatchOpenOrdersChanged(locationId, {
+        trigger: tableName === 'Order' ? 'created' : 'item_updated',
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  console.log('[DownstreamSync] Notification pipeline initialized (4 handlers)')
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function startDownstreamSyncWorker(): void {
@@ -926,6 +961,7 @@ export function startDownstreamSyncWorker(): void {
 
   console.log(`[DownstreamSync] Starting (interval: ${DOWNSTREAM_INTERVAL_MS}ms)`)
   metrics.running = true
+  initDownstreamNotifications()
 
   void Promise.all([initHighWaterMarks(), loadColumnMetadata(), loadWatermarks()]).then(() => {
     void runDownstreamCycle()

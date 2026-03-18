@@ -11,6 +11,7 @@
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
 import { getUpstreamModels, getBidirectionalModelNames, UPSTREAM_INTERVAL_MS } from './sync-config'
+import { QUARANTINE_PROTECTED_MODELS } from './sync-conflict-quarantine'
 import { dispatchOutageStatus } from '../socket-dispatch'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -191,11 +192,39 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
 
   const sql = `INSERT INTO "${tableName}" (${quotedCols}) VALUES (${placeholders}) ON CONFLICT (id) DO UPDATE SET ${updateSet}`
 
+  // Check if this is a protected model with syncVersion column
+  const isProtected = QUARANTINE_PROTECTED_MODELS.has(tableName)
+  const hasSyncVersion = columns.includes('syncVersion')
+
   const CHUNK_SIZE = 100
   let synced = 0
 
   for (let offset = 0; offset < rows.length; offset += CHUNK_SIZE) {
     const chunk = rows.slice(offset, offset + CHUNK_SIZE)
+
+    // Increment syncVersion on local rows before uploading to Neon.
+    // This ensures the local version is always higher than what Neon has
+    // when local mutations happen, enabling deterministic conflict detection.
+    if (isProtected && hasSyncVersion) {
+      const chunkIds = chunk.map(r => r.id as string)
+      try {
+        await masterClient.$executeRawUnsafe(
+          `UPDATE "${tableName}" SET "syncVersion" = "syncVersion" + 1 WHERE id = ANY($1::text[])`,
+          chunkIds
+        )
+        // Update in-memory row data so the incremented version is sent to Neon
+        for (const row of chunk) {
+          row.syncVersion = ((row.syncVersion as number) || 0) + 1
+        }
+      } catch (versionErr) {
+        // Non-fatal — column may not exist yet (migration not run).
+        // Fall through to upload with current version.
+        console.warn(
+          `[UpstreamSync] ${tableName} syncVersion increment failed (will sync without version):`,
+          versionErr instanceof Error ? versionErr.message : versionErr
+        )
+      }
+    }
 
     try {
       await neonClient!.$transaction(async (neonTx) => {

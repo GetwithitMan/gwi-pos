@@ -9,6 +9,10 @@
  * Workers start in registration order and stop in reverse order.
  */
 
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('WorkerRegistry')
+
 export type WorkerClass = 'required' | 'degraded' | 'optional'
 
 export interface WorkerEntry {
@@ -52,23 +56,21 @@ export async function startAllWorkers(): Promise<void> {
     try {
       await worker.start()
       worker.running = true
-      console.log(`[WorkerRegistry] ✓ ${worker.name} started`)
+      log.info({ name: worker.name, class: worker.class }, 'Worker started')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-
       if (worker.class === 'required') {
-        console.error(`[WorkerRegistry] FATAL: required worker "${worker.name}" failed to start: ${msg}`)
+        log.fatal({ name: worker.name, err }, 'Required worker failed to start')
         throw err
       } else if (worker.class === 'degraded') {
-        console.error(`[WorkerRegistry] ERROR: degraded worker "${worker.name}" failed to start: ${msg}`)
+        log.error({ name: worker.name, err }, 'Degraded worker failed to start')
       } else {
-        console.warn(`[WorkerRegistry] WARN: optional worker "${worker.name}" failed to start: ${msg}`)
+        log.warn({ name: worker.name, err }, 'Optional worker failed to start')
       }
     }
   }
 
   const running = workers.filter(w => w.running).length
-  console.log(`[WorkerRegistry] ${running}/${workers.length} workers started`)
+  log.info({ running, total: workers.length }, 'Worker startup complete')
 }
 
 /**
@@ -83,10 +85,9 @@ export async function stopAllWorkers(): Promise<void> {
     try {
       await worker.stop()
       worker.running = false
-      console.log(`[WorkerRegistry] ✓ ${worker.name} stopped`)
+      log.info({ name: worker.name }, 'Worker stopped')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[WorkerRegistry] Failed to stop "${worker.name}": ${msg}`)
+      log.error({ name: worker.name, err }, 'Failed to stop worker')
       worker.running = false // Mark stopped even on error — we're shutting down
     }
   }

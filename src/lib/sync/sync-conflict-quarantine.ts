@@ -101,11 +101,16 @@ export async function updateDownstreamWatermark(locationId: string, acknowledged
 /**
  * Decide whether a downstream row should be quarantined.
  *
- * Quarantine when ALL are true:
- * 1. Model is in the protected set
- * 2. Incoming change is downstream/cloud-originated
- * 3. Local row's updatedAt > venue's lastAcknowledgedDownstreamAt
- * 4. Incoming updatedAt <= local updatedAt
+ * Version-based detection (preferred, when syncVersion columns exist):
+ *   Quarantine when: localSyncVersion > incomingSyncVersion AND local row was locally mutated
+ *   Otherwise: apply
+ *
+ * Timestamp-based detection (fallback when versions not available):
+ *   Quarantine when ALL are true:
+ *   1. Model is in the protected set
+ *   2. Incoming change is downstream/cloud-originated
+ *   3. Local row's updatedAt > venue's lastAcknowledgedDownstreamAt
+ *   4. Incoming updatedAt <= local updatedAt
  *
  * v1: Always returns 'apply' but logs and records the quarantine.
  */
@@ -117,6 +122,8 @@ export async function checkQuarantine(
   locationId: string,
   localData: Record<string, unknown>,
   cloudData: Record<string, unknown>,
+  incomingSyncVersion?: number | null,
+  localSyncVersion?: number | null,
 ): Promise<QuarantineDecision> {
   // Not a protected model — always apply
   if (!QUARANTINE_PROTECTED_MODELS.has(model)) return 'apply'
@@ -124,18 +131,37 @@ export async function checkQuarantine(
   // No local row — no conflict
   if (!localUpdatedAt) return 'apply'
 
-  const watermark = watermarkCache.get(locationId) ?? new Date('1970-01-01T00:00:00Z')
+  // ── Version-based detection (deterministic, no NTP drift) ────────────
+  // If both versions are available (non-null), use version comparison
+  // instead of timestamp comparison. This is the preferred path once
+  // migration 077 has run.
+  if (incomingSyncVersion != null && localSyncVersion != null) {
+    // Local version is higher than incoming → local was mutated after last sync
+    // AND the local row must have been locally mutated (lastMutatedBy != 'cloud')
+    const locallyMutated = localData.lastMutatedBy != null && localData.lastMutatedBy !== 'cloud'
+    if (localSyncVersion > incomingSyncVersion && locallyMutated) {
+      // Fall through to conflict handling below
+    } else {
+      // No version conflict — apply the incoming row
+      return 'apply'
+    }
+  } else {
+    // ── Timestamp-based detection (fallback for pre-migration rows) ─────
+    const watermark = watermarkCache.get(locationId) ?? new Date('1970-01-01T00:00:00Z')
 
-  // Local row hasn't changed since last sync ack — no conflict
-  if (localUpdatedAt <= watermark) return 'apply'
+    // Local row hasn't changed since last sync ack — no conflict
+    if (localUpdatedAt <= watermark) return 'apply'
 
-  // Cloud version is strictly newer — no conflict
-  if (incomingUpdatedAt > localUpdatedAt) return 'apply'
+    // Cloud version is strictly newer — no conflict
+    if (incomingUpdatedAt > localUpdatedAt) return 'apply'
+  }
 
   // ── CONFLICT DETECTED ──────────────────────────────────────────────────
   // Local row changed since last sync, and cloud version is not newer.
 
   const mode = getQuarantineMode()
+
+  const watermark = watermarkCache.get(locationId) ?? new Date('1970-01-01T00:00:00Z')
 
   console.warn(JSON.stringify({
     event: 'sync_conflict_quarantine',
@@ -145,6 +171,9 @@ export async function checkQuarantine(
     localUpdatedAt: localUpdatedAt.toISOString(),
     cloudUpdatedAt: incomingUpdatedAt.toISOString(),
     watermark: watermark.toISOString(),
+    ...(localSyncVersion != null ? { localSyncVersion } : {}),
+    ...(incomingSyncVersion != null ? { incomingSyncVersion } : {}),
+    detectionMethod: (incomingSyncVersion != null && localSyncVersion != null) ? 'version' : 'timestamp',
     mode,
     timestamp: new Date().toISOString(),
   }))

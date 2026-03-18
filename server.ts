@@ -10,12 +10,14 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http'
+import { randomUUID } from 'crypto'
 import next from 'next'
 import compression from 'compression'  // eslint-disable-line @typescript-eslint/no-var-requires
 import { initializeSocketServer, getSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
 import { config } from './src/lib/system-config'
+import { logger } from './src/lib/logger'
 import { registerWorker, startAllWorkers, stopAllWorkers } from './src/lib/worker-registry'
 import { startCloudEventWorker, stopCloudEventWorker } from './src/lib/cloud-event-queue'
 import { startOnlineOrderDispatchWorker, stopOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
@@ -175,7 +177,7 @@ function startWalkoutRetryScheduler() {
 async function main() {
   // Guard: detect bad PORT values (e.g. PORT="3005" with quotes → NaN)
   if (isNaN(port) || port < 1 || port > 65535) {
-    console.error(`[Server] Invalid port: ${process.env.PORT} (parsed as ${port}). Check .env for quoted values like PORT="3005" — remove the quotes.`)
+    logger.fatal({ rawPort: process.env.PORT, parsed: port }, 'Invalid port — check .env for quoted values like PORT="3005"')
     process.exit(1)
   }
 
@@ -205,13 +207,14 @@ async function main() {
       // PrismaClient so that `import { db } from '@/lib/db'` automatically
       // routes to the venue's Neon database.
       const slug = req.headers['x-venue-slug'] as string | undefined
+      const requestId = (req.headers['x-request-id'] as string) || randomUUID()
       if (slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
         const prisma = getDbForVenue(slug)
-        requestStore.run({ slug, prisma }, () => handle(req, res))
+        requestStore.run({ slug, prisma, requestId }, () => handle(req, res))
       } else {
         // Local/NUC mode (no slug header): still wrap in requestStore so
         // withVenue() fast-path fires and skips await headers() entirely.
-        requestStore.run({ slug: '', prisma: masterClient }, () => handle(req, res))
+        requestStore.run({ slug: '', prisma: masterClient, requestId }, () => handle(req, res))
       }
     })
   })
@@ -255,9 +258,8 @@ async function main() {
   }
 
   httpServer.listen(port, async () => {
-    console.log(`[Server] GWI POS ready on http://${hostname}:${port}`)
-    console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
-    console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
+    logger.info({ hostname, port, mode: dev ? 'development' : 'production' }, 'GWI POS ready')
+    logger.info({ socketUrl: `ws://${hostname}:${port}/api/socket` }, 'Socket.io endpoint')
 
     // Schema verification (non-blocking, logs warnings)
     void import('./src/lib/schema-verify').then(({ verifySchema }) =>
@@ -347,7 +349,7 @@ async function main() {
     try {
       await startAllWorkers()
     } catch (err) {
-      console.error('[Server] FATAL: required worker failed — aborting boot:', err instanceof Error ? err.message : err)
+      logger.fatal({ err }, 'Required worker failed — aborting boot')
       process.exit(1)
     }
     if (syncReady) {
@@ -360,7 +362,7 @@ async function main() {
   async function shutdown(signal: string) {
     if (shuttingDown) return
     shuttingDown = true
-    console.log(`[Server] ${signal} received — shutting down gracefully...`)
+    logger.info({ signal }, 'Shutting down gracefully...')
 
     const io = getSocketServer()
     if (io) {
@@ -398,28 +400,29 @@ async function main() {
       httpServer.close(() => resolve())
     })
     clearTimeout(drainTimeout)
-    console.log('[Server] Clean shutdown complete')
+    logger.info('Clean shutdown complete')
     process.exit(0)
   }
 
   process.on('SIGTERM', () => shutdown('SIGTERM'))
   process.on('SIGINT', () => shutdown('SIGINT'))
   process.on('unhandledRejection', (err) => {
-    console.error('[Server] Unhandled rejection:', err)
+    logger.error({ err }, 'Unhandled rejection')
   })
   process.on('uncaughtException', (err: NodeJS.ErrnoException) => {
     // ECONNRESET / EPIPE / aborted are normal — client disconnected mid-request.
     // Do NOT crash the server for these.
     if (err.code === 'ECONNRESET' || err.code === 'EPIPE' || err.message === 'aborted') {
-      console.warn('[Server] Connection reset (harmless):', err.code || err.message)
+      logger.warn({ code: err.code }, 'Connection reset (harmless)')
       return
     }
-    console.error('[Server] Uncaught exception:', err)
+    logger.fatal({ err }, 'Uncaught exception')
     process.exit(1)
   })
 }
 
+// TODO: migrate remaining console calls to structured logger
 main().catch((err) => {
-  console.error('[Server] Fatal error:', err)
+  logger.fatal({ err }, 'Fatal server error')
   process.exit(1)
 })
