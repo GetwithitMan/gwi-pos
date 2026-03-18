@@ -41,18 +41,22 @@ function buildConfig(): SystemConfig {
   const isStaging = parseBool(process.env.STAGING, false)
   const requireProdKeys = isProduction || isStaging
 
-  // Tenant signing key — required in prod/staging
+  // Tenant signing key — required in prod/staging cloud deployments.
+  // NUC stations auto-generate (same-process proxy, key doesn't need to be shared).
+  const isNucStation = !!process.env.STATION_ROLE
   let tenantSigningKey = process.env.TENANT_SIGNING_KEY || ''
   if (!tenantSigningKey) {
-    if (requireProdKeys) {
+    if (requireProdKeys && !isNucStation) {
       throw new Error(
-        '[config] TENANT_SIGNING_KEY is required in production/staging. ' +
-        'Generate one: node -e "log.info(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+        '[config] TENANT_SIGNING_KEY is required in production/staging cloud deployments. ' +
+        'Generate one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
       )
     }
-    // Dev fallback: ephemeral key
+    // Dev / NUC fallback: ephemeral key (safe — same-process proxy)
     tenantSigningKey = randomBytes(32).toString('hex')
-    log.warn('[config] Using ephemeral tenant signing key — set TENANT_SIGNING_KEY in .env for persistence')
+    if (!isNucStation) {
+      log.warn('[config] Using ephemeral tenant signing key — set TENANT_SIGNING_KEY in .env for persistence')
+    }
   }
 
   // Provision API key — required in prod (non-NUC)
