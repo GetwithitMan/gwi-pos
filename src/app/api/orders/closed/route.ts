@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+// TODO: Migrate to OrderRepository once it supports complex findMany with cursor pagination,
+// search filters, multi-field includes, orderBy mapping, and tip-status post-filtering
 
 // GET - List closed orders (paid, closed) with search, pagination, date range, tip filtering
 export const GET = withVenue(async function GET(request: NextRequest) {

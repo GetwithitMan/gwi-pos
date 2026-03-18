@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 
 /**
  * Transaction payload from offline queue
@@ -120,6 +121,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (tx.isVoid) {
           // Mark this idempotency key as voided - never process it
           // Check if there's an existing payment to void
+          // TODO: PaymentRepository lacks OR-based lookups (idempotencyKey OR offlineIntentId)
           const existingPayment = await db.payment.findFirst({
             where: {
               OR: [
@@ -131,12 +133,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
           if (existingPayment) {
             // Void the existing payment
-            await db.payment.update({
-              where: { id: existingPayment.id },
-              data: {
-                status: 'voided',
-                refundReason: tx.voidReason || 'Voided before sync',
-              },
+            await PaymentRepository.updatePayment(existingPayment.id, locationId, {
+              status: 'voided',
+              refundReason: tx.voidReason || 'Voided before sync',
             })
           }
 
@@ -176,6 +175,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // ========================================
         // 1. DEDUPLICATION CHECK (Idempotency)
         // ========================================
+        // TODO: PaymentRepository lacks OR-based lookups (idempotencyKey OR offlineIntentId)
         const existingPayment = await db.payment.findFirst({
           where: {
             OR: [
@@ -219,6 +219,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         let resolvedOrderId = tx.orderId
 
         // If we have a local order ID, find the synced order first
+        // TODO: Add OrderRepository.getOrderByOfflineLocalId() for tenant-safe offline sync lookup
         if (tx.localOrderId && !tx.orderId.startsWith('c')) {
           const syncedOrder = await db.order.findFirst({
             where: { offlineLocalId: tx.localOrderId },
@@ -239,9 +240,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
 
         // Verify the order exists
-        const order = await db.order.findUnique({
-          where: { id: resolvedOrderId },
-        })
+        const order = await OrderRepository.getOrderById(resolvedOrderId, locationId)
 
         if (!order) {
           failedSyncs++
@@ -446,6 +445,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get all payments for the period
+    // TODO: Add PaymentRepository.getPaymentsForPeriod() with date range + custom select support
     const allPayments = await db.payment.findMany({
       where: {
         locationId,
@@ -473,6 +473,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .reduce((sum, p) => sum + Number(p.amount), 0)
 
     // Get recent offline payments for the audit log
+    // TODO: Add PaymentRepository.getOfflinePayments() with date range + include support
     const recentOfflinePayments = await db.payment.findMany({
       where: {
         locationId,

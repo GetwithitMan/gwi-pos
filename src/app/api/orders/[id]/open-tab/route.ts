@@ -11,6 +11,7 @@ import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { OrderRepository } from '@/lib/repositories'
 
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
@@ -37,7 +38,8 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required fields: readerId, employeeId' }, { status: 400 })
     }
 
-    // Get the order
+    // Get the order -- use repository for tenant-safe access, then fetch location settings
+    // TODO: Add OrderRepository.getOrderByIdWithInclude variant that supports nested location include
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: { location: { select: { id: true, settings: true } } },
@@ -66,6 +68,7 @@ export const POST = withVenue(async function POST(
     try {
       await validateReader(readerId, locationId)
     } catch {
+      // TODO: Add PaymentReaderRepository.getActiveReader() once that repository exists
       const fallbackReader = await db.paymentReader.findFirst({
         where: { locationId, deletedAt: null, isActive: true },
         select: { id: true },
@@ -81,10 +84,7 @@ export const POST = withVenue(async function POST(
     if (order.tabStatus === 'pending_auth') {
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
       if (order.updatedAt < fiveMinAgo) {
-        await db.order.update({
-          where: { id: orderId },
-          data: { tabStatus: 'open', version: { increment: 1 } },
-        })
+        await OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open', version: { increment: 1 } })
         console.warn('[EDGE-7] Auto-recovered stale pending_auth', { orderId, staleAt: order.updatedAt.toISOString() })
         // Event sourcing: record the auto-recovery as metadata update
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -101,10 +101,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Step 1: Set tab status to pending_auth immediately
-    await db.order.update({
-      where: { id: orderId },
-      data: { tabStatus: 'pending_auth', version: { increment: 1 } },
-    })
+    await OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'pending_auth', version: { increment: 1 } })
 
     // Step 2: CollectCardData to read chip (cardholder name)
     let cardholderName: string | undefined
@@ -120,6 +117,7 @@ export const POST = withVenue(async function POST(
         cardLast4 = collectResponse.cardLast4 || undefined
 
         // Stage 1: Check if this card is already vaulted and has an open tab
+        // TODO: Add OrderCardRepository.findByRecordNo() once that repository exists
         const collectRecordNo = collectResponse.recordNo || null
         if (collectRecordNo) {
           const existing = await db.orderCard.findFirst({
@@ -135,7 +133,7 @@ export const POST = withVenue(async function POST(
           })
           if (existing) {
             // Reset order status (don't leave it as pending_auth)
-            void db.order.update({ where: { id: orderId }, data: { tabStatus: 'open' } }).catch(() => {})
+            void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(() => {})
             return NextResponse.json({
               data: {
                 tabStatus: 'existing_tab_found',
@@ -170,14 +168,11 @@ export const POST = withVenue(async function POST(
       // Decline — update tab status + queue socket events atomically
       const declineFirstName = normalizeCardholderName(cardholderName)
       await db.$transaction(async (tx) => {
-        await tx.order.update({
-          where: { id: orderId },
-          data: {
-            tabStatus: 'auth_failed',
-            tabName: declineFirstName || order.tabName,
-            version: { increment: 1 },
-          },
-        })
+        await OrderRepository.updateOrder(orderId, locationId, {
+          tabStatus: 'auth_failed',
+          tabName: declineFirstName || order.tabName,
+          version: { increment: 1 },
+        }, tx)
 
         // Queue socket events inside transaction for crash safety
         const tabPayload: TabUpdatedPayload = { orderId, status: 'auth_failed' }
@@ -271,7 +266,7 @@ export const POST = withVenue(async function POST(
         void client.voidSale(resolvedReaderId, { recordNo }).catch(voidErr =>
           console.error('[Tab Open] Failed to void duplicate hold:', voidErr)
         )
-        void db.order.update({ where: { id: orderId }, data: { tabStatus: 'open' } }).catch(() => {})
+        void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(() => {})
         return NextResponse.json({
           data: {
             tabStatus: 'existing_tab_found',
@@ -291,6 +286,7 @@ export const POST = withVenue(async function POST(
     try {
       const p = await params
       failedOrderId = p.id
+      // Best-effort reset — locationId may not be available, use raw db as fallback
       await db.order.update({
         where: { id: failedOrderId },
         data: { tabStatus: 'open' },

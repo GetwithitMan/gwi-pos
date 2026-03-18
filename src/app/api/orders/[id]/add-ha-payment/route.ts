@@ -5,6 +5,7 @@ import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/sock
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository } from '@/lib/repositories'
 
 // POST - Add a house account balance payment as an order line item
 export const POST = withVenue(async function POST(
@@ -25,6 +26,7 @@ export const POST = withVenue(async function POST(
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     // Validate the order exists first to get locationId for permission check
+    // TODO: OrderRepository needs locationId — use getLocationId() or pass from route context
     const orderForAuth = await db.order.findUnique({
       where: { id: orderId },
       select: { locationId: true },
@@ -43,10 +45,10 @@ export const POST = withVenue(async function POST(
     }
 
     // Validate the order exists and fetch current totals
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      select: { id: true, locationId: true, status: true, taxTotal: true, discountTotal: true, tipTotal: true },
-    })
+    const locationId = orderForAuth?.locationId
+    const order = locationId
+      ? await OrderRepository.getOrderByIdWithSelect(orderId, locationId, { id: true, locationId: true, status: true, taxTotal: true, discountTotal: true, tipTotal: true })
+      : null
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -60,6 +62,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Validate the house account exists, is active, and has sufficient balance
+    // TODO: Add HouseAccountRepository once that repository exists
     const houseAccount = await db.houseAccount.findUnique({
       where: { id: houseAccountId },
     })
@@ -87,6 +90,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Find or create a "System" category for the location
+    // TODO: Add CategoryRepository once that repository exists
     let systemCategory = await db.category.findFirst({
       where: {
         locationId: order.locationId,
@@ -110,6 +114,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Find or create the "House Account Payment" system menu item
+    // TODO: Add MenuItemRepository.findByNameAndCategory() once available
     let systemMenuItem = await db.menuItem.findFirst({
       where: {
         locationId: order.locationId,
@@ -133,6 +138,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Create the order item
+    // TODO: Add OrderItemRepository.createItem() once that write method exists
     const orderItem = await db.orderItem.create({
       data: {
         locationId: order.locationId,
@@ -151,8 +157,9 @@ export const POST = withVenue(async function POST(
     })
 
     // Recalculate order totals
+    // TODO: OrderItemRepository.getItemsForOrderWithModifiers doesn't filter by status — need a variant
     const activeItems = await db.orderItem.findMany({
-      where: { orderId, status: 'active', deletedAt: null },
+      where: { orderId, locationId: order.locationId, status: 'active', deletedAt: null },
       include: { modifiers: { where: { deletedAt: null } } },
     })
 
@@ -166,12 +173,9 @@ export const POST = withVenue(async function POST(
     const discountTotal = Number(order.discountTotal ?? 0)
     const newTotal = newSubtotal + taxTotal - discountTotal
 
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        subtotal: newSubtotal,
-        total: newTotal,
-      },
+    await OrderRepository.updateOrder(orderId, order.locationId, {
+      subtotal: newSubtotal,
+      total: newTotal,
     })
 
     // Emit order events for event sourcing

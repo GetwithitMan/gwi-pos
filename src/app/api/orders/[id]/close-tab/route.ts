@@ -26,6 +26,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -194,10 +195,7 @@ export const POST = withVenue(async function POST(
     const cardResolution = resolveCardsToCharge(order.cards, orderCardId)
     if (!cardResolution.valid) {
       // Revert tabStatus from 'closing' so the tab can be retried
-      await db.order.update({
-        where: { id: orderId },
-        data: { tabStatus: 'open', version: { increment: 1 } },
-      })
+      await OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open', version: { increment: 1 } })
       const errorPayload: Record<string, unknown> = { error: cardResolution.error }
       if (cardResolution.code) errorPayload.code = cardResolution.code
       if (cardResolution.cards) errorPayload.cards = cardResolution.cards
@@ -447,14 +445,11 @@ export const POST = withVenue(async function POST(
     // Queue outage writes if in outage mode (fire-and-forget)
     if (isInOutageMode()) {
       // Flag payment processed during outage for reconciliation
-      void db.payment.update({
-        where: { id: createdPaymentId },
-        data: { needsReconciliation: true },
-      }).catch(console.error)
+      void PaymentRepository.updatePayment(createdPaymentId, locationId, { needsReconciliation: true }).catch(console.error)
 
-      const fullPayment = await db.payment.findUnique({ where: { id: createdPaymentId } })
+      const fullPayment = await PaymentRepository.getPaymentById(createdPaymentId, locationId)
       if (fullPayment) void queueOutageWrite('Payment', createdPaymentId, 'INSERT', fullPayment as unknown as Record<string, unknown>, locationId).catch(console.error)
-      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      const fullOrder = await OrderRepository.getOrderById(orderId, locationId)
       if (fullOrder) void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, locationId).catch(console.error)
     }
 
@@ -490,6 +485,7 @@ export const POST = withVenue(async function POST(
 
     // Clean up entertainment items after tab close
     try {
+      // TODO: Add MenuItemRepository.findByCurrentOrder() and FloorPlanElementRepository once those repositories exist
       const entertainmentItems = await db.menuItem.findMany({
         where: { currentOrderId: orderId, itemType: 'timed_rental' },
         select: { id: true },

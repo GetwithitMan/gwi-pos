@@ -42,6 +42,7 @@ async function calculateCostAtSale(
   menuItemId: string,
   pricingOptionId: string | null
 ): Promise<number | null> {
+  // TODO: MenuItemRepository.getMenuItemByIdWithInclude() needs locationId; cost calc is location-agnostic
   const menuItem = await db.menuItem.findUnique({
     where: { id: menuItemId },
     include: {
@@ -94,6 +95,7 @@ async function calculateCostAtSale(
   if (baseCost === 0 && !pricingOptionId) return null
 
   // Pricing option inventory link costs (additive on top of base)
+  // TODO: Add PricingOptionRepository once that repository exists
   if (pricingOptionId) {
     const option = await db.pricingOption.findUnique({
       where: { id: pricingOptionId },
@@ -171,6 +173,7 @@ export const POST = withVenue(async function POST(
         if (pricableItems.length > 0) {
           const pricingOptionIds = pricableItems.filter((i: AddItemInput) => i.pricingOptionId).map((i: AddItemInput) => i.pricingOptionId!)
           // Parallelize independent DB lookups
+          // TODO: MenuItemRepository.getMenuItems() doesn't support batch-by-IDs; PricingOption has no repo
           const [menuItemsForPrice, pricingOptions] = await Promise.all([
             db.menuItem.findMany({
               where: { id: { in: pricableItems.map((i: AddItemInput) => i.menuItemId) } },

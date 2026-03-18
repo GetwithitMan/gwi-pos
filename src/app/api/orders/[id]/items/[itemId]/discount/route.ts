@@ -7,6 +7,7 @@ import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository } from '@/lib/repositories'
 
 interface ApplyItemDiscountRequest {
   type: 'percent' | 'fixed'
@@ -52,6 +53,7 @@ export const POST = withVenue(async function POST(
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
       // Fetch order with items for split-aware tax
+      // TODO: OrderRepository.getOrderByIdWithInclude inside tx needs location + items with modifiers + status filter
       const order = await tx.order.findFirst({
         where: { id: orderId, deletedAt: null },
         include: {
@@ -79,6 +81,7 @@ export const POST = withVenue(async function POST(
       }
 
       // Fetch item
+      // TODO: OrderItemRepository.getItemByIdWithInclude needs menuItem nested select support inside tx
       const item = await tx.orderItem.findFirst({
         where: { id: itemId, orderId, deletedAt: null },
         include: { menuItem: { select: { itemType: true } } },
@@ -121,11 +124,9 @@ export const POST = withVenue(async function POST(
             newDiscountTotal, 0, undefined, 'card', order.isTaxExempt,
             Number(order.inclusiveTaxRate) || undefined
           )
-          const updatedOrder = await tx.order.update({
-            where: { id: orderId },
-            data: { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, taxFromInclusive: totals.taxFromInclusive, taxFromExclusive: totals.taxFromExclusive, total: totals.total },
-            select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
-          })
+          await OrderRepository.updateOrder(orderId, order.locationId, { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, taxFromInclusive: totals.taxFromInclusive, taxFromExclusive: totals.taxFromExclusive, total: totals.total }, tx)
+          const updatedOrder = await OrderRepository.getOrderByIdWithSelect(orderId, order.locationId, { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true }, tx)
+          if (!updatedOrder) throw new Error(`Order ${orderId} not found after update`)
           void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
 
           // Emit order event for item discount removed via toggle (fire-and-forget)
@@ -187,17 +188,15 @@ export const POST = withVenue(async function POST(
         Number(order.inclusiveTaxRate) || undefined
       )
 
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
-          discountTotal: totals.discountTotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-        },
-        select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
-      })
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+      }, tx)
+      const updatedOrder = await OrderRepository.getOrderByIdWithSelect(orderId, order.locationId, { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true }, tx)
+      if (!updatedOrder) throw new Error(`Order ${orderId} not found after update`)
 
       // Emit order event for item discount applied (fire-and-forget)
       void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
@@ -294,6 +293,7 @@ export const DELETE = withVenue(async function DELETE(
       }
 
       // Fetch order with items for split-aware tax recalculation
+      // TODO: OrderRepository.getOrderByIdWithInclude inside tx needs location + filtered items
       const order = await tx.order.findFirst({
         where: { id: orderId, deletedAt: null },
         include: {
@@ -337,17 +337,15 @@ export const DELETE = withVenue(async function DELETE(
         Number(order.inclusiveTaxRate) || undefined
       )
 
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
-          discountTotal: totals.discountTotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-        },
-        select: { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true },
-      })
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+      }, tx)
+      const updatedOrder = await OrderRepository.getOrderByIdWithSelect(orderId, order.locationId, { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true }, tx)
+      if (!updatedOrder) throw new Error(`Order ${orderId} not found after update`)
 
       // Emit order event for item discount removed (fire-and-forget)
       void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {

@@ -4,6 +4,7 @@ import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive } from '@/lib
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 
 // POST sync an offline order
 // This handles orders that were created while the terminal was offline
@@ -28,13 +29,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Check for duplicate sync (idempotency) — read from Order (where sync creates records)
     if (offlineId) {
-      const existing = await db.order.findFirst({
-        where: {
-          locationId,
-          offlineId,
-        },
-        select: { id: true },
-      })
+      const existing = await OrderRepository.getOrderByOfflineId(offlineId, locationId)
 
       if (existing) {
         // Already synced - return the existing order ID
@@ -57,14 +52,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Validate employee exists
-    const employee = await db.employee.findUnique({
-      where: { id: employeeId },
-    })
+    const employee = await EmployeeRepository.getEmployeeById(employeeId, locationId)
     if (!employee) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 400 })
     }
 
     // Validate table if provided
+    // TODO: Add TableRepository once that repository exists
     if (tableId) {
       const table = await db.table.findUnique({
         where: { id: tableId },
@@ -211,19 +205,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Fetch the complete order with items
-    const completeOrder = await db.order.findUnique({
-      where: { id: order.id },
-      include: {
-        items: {
-          include: {
-            menuItem: true,
-            modifiers: true,
-          },
+    const completeOrder = await OrderRepository.getOrderByIdWithInclude(order.id, locationId, {
+      items: {
+        include: {
+          menuItem: true,
+          modifiers: true,
         },
-        table: true,
-        employee: {
-          select: { id: true, firstName: true, lastName: true, displayName: true },
-        },
+      },
+      table: true,
+      employee: {
+        select: { id: true, firstName: true, lastName: true, displayName: true },
       },
     })
 

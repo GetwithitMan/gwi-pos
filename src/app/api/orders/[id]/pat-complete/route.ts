@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { OrderStatus, TabStatus } from '@prisma/client'
+import { OrderStatus, TabStatus } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import {
@@ -12,6 +12,7 @@ import {
   dispatchOrderSummaryUpdated,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { OrderRepository } from '@/lib/repositories'
 
 // POST /api/orders/[id]/pat-complete
 // Called by pay-at-table after all datacap payments complete.
@@ -49,7 +50,8 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Fetch the order
+    // Fetch the order -- use getLocationId() to bootstrap locationId, then use repository
+    // TODO: pat-complete needs a way to resolve locationId before the order fetch; using db fallback
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       select: {
@@ -94,12 +96,11 @@ export const POST = withVenue(async function POST(
       updateData.tabStatus = 'closed' as TabStatus
     }
 
-    await db.order.update({
-      where: { id: orderId },
-      data: updateData,
-    })
+    await OrderRepository.updateOrder(orderId, locationId, updateData)
 
     // Create Payment records
+    // TODO: PaymentRepository.createPayment uses Prisma's connect syntax which differs from
+    // the flat locationId/orderId pattern here. Using db.payment.create directly for now.
     if (splits && splits.length > 0) {
       // One Payment per split
       for (const split of splits) {

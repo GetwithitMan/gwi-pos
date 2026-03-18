@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
+// TODO: Migrate to OrderRepository once it supports getOpenOrdersSummary(), getOpenOrdersFull(),
+// business day batching, empty-shell exclusion, rich includes, multi-filter, and pagination
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -50,6 +52,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     }
 
     // Compute business day boundary for filtering
+    // TODO: Add LocationRepository once that repository exists
     const location = await db.location.findFirst({
       where: { id: locationId },
       select: { settings: true },
@@ -423,6 +426,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     }[]> = {}
 
     try {
+      // TODO: Add MenuItemRepository.findByCurrentOrderIds() once that repository exists
       const entertainmentItems = await db.menuItem.findMany({
         where: {
           currentOrderId: { in: orderIds },
