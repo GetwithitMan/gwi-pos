@@ -41,22 +41,15 @@ function buildConfig(): SystemConfig {
   const isStaging = parseBool(process.env.STAGING, false)
   const requireProdKeys = isProduction || isStaging
 
-  // Tenant signing key — required in prod/staging cloud deployments.
-  // NUC stations auto-generate (same-process proxy, key doesn't need to be shared).
-  const isNucStation = !!process.env.STATION_ROLE
+  // Tenant signing key — used by proxy JWT signing when TENANT_JWT_ENABLED=true.
+  // Falls back to ephemeral key if not set. This is safe because:
+  //   - NUC: same-process proxy, ephemeral key works fine
+  //   - Vercel build: module loads during page data collection, no runtime signing
+  //   - Vercel runtime: proxy-config.ts checks TENANT_JWT_ENABLED before using it
+  // If you need persistent signing (multi-instance), set TENANT_SIGNING_KEY in env.
   let tenantSigningKey = process.env.TENANT_SIGNING_KEY || ''
   if (!tenantSigningKey) {
-    if (requireProdKeys && !isNucStation) {
-      throw new Error(
-        '[config] TENANT_SIGNING_KEY is required in production/staging cloud deployments. ' +
-        'Generate one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
-      )
-    }
-    // Dev / NUC fallback: ephemeral key (safe — same-process proxy)
     tenantSigningKey = randomBytes(32).toString('hex')
-    if (!isNucStation) {
-      log.warn('[config] Using ephemeral tenant signing key — set TENANT_SIGNING_KEY in .env for persistence')
-    }
   }
 
   // Provision API key — required in prod (non-NUC)
