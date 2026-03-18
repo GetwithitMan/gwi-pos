@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
@@ -46,10 +47,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             select: { id: true, orderId: true },
           })
           if (expiredItems.length > 0) {
-            await db.orderItem.updateMany({
-              where: { id: { in: expiredItems.map(i => i.id) } },
-              data: { kitchenStatus: 'delivered', isCompleted: true, completedAt: new Date() },
-            })
+            await OrderItemRepository.updateItemsByIds(
+              expiredItems.map(i => i.id),
+              locationId!,
+              { kitchenStatus: 'delivered', isCompleted: true, completedAt: new Date() },
+            )
             // Group expired items by orderId for batched event emission
             const expiredByOrder = new Map<string, string[]>()
             for (const item of expiredItems) {
@@ -333,71 +335,54 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     const now = new Date()
 
+    // Resolve locationId from the first item for tenant-scoped operations
+    const firstItemForDispatch = await db.orderItem.findUnique({
+      where: { id: itemIds[0] },
+      select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
+    })
+    const locationId = firstItemForDispatch?.order?.locationId
+
     if (action === 'complete') {
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIds } },
-        data: {
-          isCompleted: true,
-          completedAt: now,
-        },
+      await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
+        isCompleted: true,
+        completedAt: now,
       })
     } else if (action === 'uncomplete') {
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIds } },
-        data: {
-          isCompleted: false,
-          completedAt: null,
-        },
+      await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
+        isCompleted: false,
+        completedAt: null,
       })
     } else if (action === 'bump_order') {
       // Complete all items in the order
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIds } },
-        data: {
-          isCompleted: true,
-          completedAt: now,
-        },
+      await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
+        isCompleted: true,
+        completedAt: now,
       })
     } else if (action === 'resend') {
       // Resend items to kitchen - batch update all at once
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIds } },
-        data: {
-          resendCount: { increment: 1 },
-          lastResentAt: now,
-          resendNote: resendNote || null,
-          isCompleted: false,
-          completedAt: null,
-          kitchenStatus: 'pending', // Reset kitchen status so it can be reprinted
-        },
+      await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
+        resendCount: { increment: 1 },
+        lastResentAt: now,
+        resendNote: resendNote || null,
+        isCompleted: false,
+        completedAt: null,
+        kitchenStatus: 'pending', // Reset kitchen status so it can be reprinted
       })
 
-      // Get order ID to trigger reprint
-      const firstItem = await db.orderItem.findUnique({
-        where: { id: itemIds[0] },
-        select: { orderId: true, order: { select: { locationId: true } } },
-      })
-
-      if (firstItem?.orderId) {
+      if (firstItemForDispatch?.orderId) {
         // M1: Print resend with try/catch — DB is source of truth, print is best-effort.
         // If print fails, KDS shows RESEND badge but no physical ticket prints.
         try {
           void dispatchPrintWithRetry(
             `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`,
-            { orderId: firstItem.orderId, itemIds },
-            { locationId: firstItem.order!.locationId, employeeId: body.employeeId || null, orderId: firstItem.orderId }
+            { orderId: firstItemForDispatch.orderId, itemIds },
+            { locationId: locationId!, employeeId: body.employeeId || null, orderId: firstItemForDispatch.orderId }
           )
         } catch (printErr) {
-          console.warn(`[KDS] Resend print failed for order ${firstItem.orderId} — KDS shows RESEND badge but no physical ticket:`, printErr)
+          console.warn(`[KDS] Resend print failed for order ${firstItemForDispatch.orderId} — KDS shows RESEND badge but no physical ticket:`, printErr)
         }
       }
     }
-
-    // Get order info for socket dispatch (locationId, orderId, employeeId)
-    const firstItemForDispatch = await db.orderItem.findUnique({
-      where: { id: itemIds[0] },
-      select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
-    })
 
     if (firstItemForDispatch?.order) {
       const locationId = firstItemForDispatch.order.locationId
@@ -460,10 +445,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       if (action === 'complete' || action === 'bump_order') {
         void (async () => {
           try {
-            const bumpedItems = await db.orderItem.findMany({
-              where: { id: { in: itemIds } },
-              select: { id: true, kitchenSentAt: true, completedAt: true },
-            })
+            const bumpedItems = await OrderItemRepository.getItemsByIdsWithSelect(
+              itemIds, locationId!, { id: true, kitchenSentAt: true, completedAt: true },
+            )
             const speedOfServiceItems: { itemId: string; seconds: number }[] = []
             for (const item of bumpedItems) {
               if (item.kitchenSentAt && item.completedAt) {
@@ -568,10 +552,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       } else if (action === 'resend') {
         // Need updated resendCount — query then emit
         void (async () => {
-          const updated = await db.orderItem.findMany({
-            where: { id: { in: itemIds } },
-            select: { id: true, resendCount: true },
-          })
+          const updated = await OrderItemRepository.getItemsByIdsWithSelect(
+            itemIds, locationId!, { id: true, resendCount: true },
+          )
           void emitOrderEvents(locationId, orderId, updated.map(item => ({
             type: 'ITEM_UPDATED' as const,
             payload: { lineItemId: item.id, resendCount: item.resendCount || 0, kitchenStatus: 'pending' },

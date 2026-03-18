@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import {
   calculateItemTotal,
@@ -108,17 +109,11 @@ export const POST = withVenue(async function POST(
       }
 
       // Load the items to be replaced
-      const itemsToReplace = await tx.orderItem.findMany({
-        where: {
-          id: { in: itemIds },
-          orderId,
-          deletedAt: null,
-          status: 'active',
-        },
-        include: {
-          modifiers: { where: { deletedAt: null } },
-        },
-      })
+      const itemsToReplace = await OrderItemRepository.getItemsByIdsWithInclude(
+        itemIds, order.locationId,
+        { modifiers: { where: { deletedAt: null } } },
+        tx,
+      ).then(items => items.filter(i => i.orderId === orderId && !i.deletedAt && i.status === 'active'))
 
       if (itemsToReplace.length !== itemIds.length) {
         throw new Error('ITEMS_NOT_FOUND')
@@ -137,10 +132,11 @@ export const POST = withVenue(async function POST(
           where: { orderItemId: item.id },
           data: { deletedAt: now },
         })
-        await tx.orderItem.update({
-          where: { id: item.id },
-          data: { deletedAt: now, status: 'removed' },
-        })
+        await OrderItemRepository.updateItem(
+          item.id, order.locationId,
+          { deletedAt: now, status: 'removed' },
+          tx,
+        )
       }
 
       // Collect modifiers from the removed items to carry onto the combo
@@ -268,20 +264,19 @@ export const POST = withVenue(async function POST(
         Number(order.inclusiveTaxRate) || undefined
       )
 
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
-          subtotal: totals.subtotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-          commissionTotal: totals.commissionTotal,
-          itemCount: allActiveItems.reduce((sum, i) => sum + i.quantity, 0),
-          version: { increment: 1 },
-          lastMutatedBy: 'local',
-        },
-      })
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        subtotal: totals.subtotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        commissionTotal: totals.commissionTotal,
+        itemCount: allActiveItems.reduce((sum, i) => sum + i.quantity, 0),
+        version: { increment: 1 },
+        lastMutatedBy: 'local',
+      }, tx)
+      // Re-read the order for the return value (updateOrder uses updateMany, returns count)
+      const updatedOrder = await OrderRepository.getOrderByIdOrThrow(orderId, order.locationId, tx)
 
       // Audit log
       await tx.auditLog.create({

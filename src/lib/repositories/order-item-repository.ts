@@ -264,3 +264,89 @@ export async function softDeleteItem(
   }
   return result
 }
+
+// ── Batch Operations (by ID list) ─────────────────────────────────────
+
+/**
+ * Get multiple order items by their IDs, scoped to locationId.
+ * Used by KDS bump/complete/resend operations.
+ */
+export async function getItemsByIds(
+  ids: string[],
+  locationId: string,
+  tx?: TxClient,
+) {
+  const client = getClient(tx)
+  return client.orderItem.findMany({
+    where: { id: { in: ids }, locationId },
+  })
+}
+
+/**
+ * Get multiple order items by IDs with a custom select shape.
+ * Lightweight variant -- only returns selected fields.
+ */
+export async function getItemsByIdsWithSelect<T extends Prisma.OrderItemSelect>(
+  ids: string[],
+  locationId: string,
+  select: T,
+  tx?: TxClient,
+) {
+  const client = getClient(tx)
+  return client.orderItem.findMany({
+    where: { id: { in: ids }, locationId },
+    select,
+  })
+}
+
+/**
+ * Get multiple order items by IDs with a custom include shape.
+ */
+export async function getItemsByIdsWithInclude<T extends Prisma.OrderItemInclude>(
+  ids: string[],
+  locationId: string,
+  include: T,
+  tx?: TxClient,
+) {
+  const client = getClient(tx)
+  return client.orderItem.findMany({
+    where: { id: { in: ids }, locationId },
+    include,
+  })
+}
+
+/**
+ * Batch update multiple order items by their IDs, scoped to locationId.
+ * Used by KDS bump/complete/resend operations.
+ *
+ * Returns { count } -- the number of rows affected.
+ */
+export async function updateItemsByIds(
+  ids: string[],
+  locationId: string,
+  data: Prisma.OrderItemUpdateManyMutationInput,
+  tx?: TxClient,
+) {
+  const client = getClient(tx)
+  return client.orderItem.updateMany({
+    where: { id: { in: ids }, locationId },
+    data,
+  })
+}
+
+/**
+ * Get a single order item by ID with a custom select shape, scoped to locationId.
+ * Lightweight -- only returns selected fields.
+ */
+export async function getItemByIdWithSelect<T extends Prisma.OrderItemSelect>(
+  id: string,
+  locationId: string,
+  select: T,
+  tx?: TxClient,
+) {
+  const client = getClient(tx)
+  return client.orderItem.findFirst({
+    where: { id, locationId },
+    select,
+  })
+}

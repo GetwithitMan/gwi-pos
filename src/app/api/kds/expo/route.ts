@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -198,15 +199,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       )
     }
 
+    // Resolve locationId from the first item for tenant-scoped operations
+    const firstItem = await db.orderItem.findUnique({
+      where: { id: itemIds[0] },
+      select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
+    })
+    const locationId = firstItem?.order?.locationId
+
     if (action === 'serve' || status === 'served') {
       // Mark items as delivered/served
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIds } },
-        data: {
-          kitchenStatus: 'delivered',
-          isCompleted: true,
-          completedAt: new Date(),
-        },
+      await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
+        kitchenStatus: 'delivered',
+        isCompleted: true,
+        completedAt: new Date(),
       })
     } else if (action === 'update_status' && status) {
       // Update to specific status
@@ -220,39 +225,26 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
               : undefined
 
       if (kitchenStatus) {
-        await db.orderItem.updateMany({
-          where: { id: { in: itemIds } },
-          data: {
-            kitchenStatus,
-            isCompleted: kitchenStatus === 'ready',
-            completedAt:
-              kitchenStatus === 'ready' ? new Date() : null,
-          },
+        await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
+          kitchenStatus,
+          isCompleted: kitchenStatus === 'ready',
+          completedAt:
+            kitchenStatus === 'ready' ? new Date() : null,
         })
       }
     } else if (action === 'bump_order') {
       // Mark all items in the specified orders as complete
-      const orderId = body.orderId
-      if (orderId) {
-        await db.orderItem.updateMany({
-          where: {
-            orderId,
-            kitchenStatus: { not: 'delivered' },
-          },
-          data: {
-            kitchenStatus: 'delivered',
-            isCompleted: true,
-            completedAt: new Date(),
-          },
+      const bumpOrderId = body.orderId
+      if (bumpOrderId && locationId) {
+        await OrderItemRepository.updateItemsWhere(bumpOrderId, locationId, {
+          kitchenStatus: { not: 'delivered' },
+        }, {
+          kitchenStatus: 'delivered',
+          isCompleted: true,
+          completedAt: new Date(),
         })
       }
     }
-
-    // W1-K3: Dispatch socket events so all KDS screens sync
-    const firstItem = await db.orderItem.findUnique({
-      where: { id: itemIds[0] },
-      select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
-    })
 
     if (firstItem?.order) {
       const locationId = firstItem.order.locationId
@@ -288,14 +280,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         void (async () => {
           try {
             const targetIds = action === 'bump_order' && body.orderId
-              ? (await db.orderItem.findMany({
-                  where: { orderId: body.orderId || orderId, isCompleted: true, deletedAt: null },
-                  select: { id: true, kitchenSentAt: true, completedAt: true },
-                }))
-              : (await db.orderItem.findMany({
-                  where: { id: { in: itemIds } },
-                  select: { id: true, kitchenSentAt: true, completedAt: true },
-                }))
+              ? (await OrderItemRepository.getItemsForOrderWhere(
+                  body.orderId || orderId, locationId,
+                  { isCompleted: true, deletedAt: null },
+                ).then(items => items.map(i => ({ id: i.id, kitchenSentAt: i.kitchenSentAt, completedAt: i.completedAt }))))
+              : (await OrderItemRepository.getItemsByIdsWithSelect(
+                  itemIds, locationId,
+                  { id: true, kitchenSentAt: true, completedAt: true },
+                ))
             const speedOfServiceItems: { itemId: string; seconds: number }[] = []
             for (const item of targetIds) {
               if (item.kitchenSentAt && item.completedAt) {
@@ -374,10 +366,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         // Query bumped items then emit
         void (async () => {
           const bumpedOrderId = body.orderId || orderId
-          const bumpedItems = await db.orderItem.findMany({
-            where: { orderId: bumpedOrderId, kitchenStatus: 'delivered', isCompleted: true, deletedAt: null },
-            select: { id: true },
-          })
+          const bumpedItems = await OrderItemRepository.getItemIdsForOrderWhere(
+            bumpedOrderId, locationId,
+            { kitchenStatus: 'delivered', isCompleted: true, deletedAt: null },
+          )
           void emitOrderEvents(locationId, bumpedOrderId, bumpedItems.map(item => ({
             type: 'ITEM_UPDATED' as const,
             payload: { lineItemId: item.id, kitchenStatus: 'delivered', isCompleted: true },

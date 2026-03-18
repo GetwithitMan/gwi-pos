@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -187,7 +188,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     for (const [oid, grp] of groups) {
       const hasStart = grp.some(e => e.eventType === 'ORDER_STARTED')
       if (!hasStart) {
-        const existingOrder = await db.order.findFirst({ where: { id: oid } })
+        const existingOrder = await OrderRepository.getOrderById(oid, locationId)
         if (!existingOrder) {
           return NextResponse.json(
             { error: `ORDER_STARTED event missing for order ${oid}. Cannot process items without order creation.` },
@@ -252,15 +253,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             switch (evt.eventType) {
               case 'ORDER_STARTED': {
                 // Check if order already exists (idempotency for ORDER_STARTED)
-                const existing = await tx.order.findFirst({
-                  where: {
-                    locationId,
-                    // Match by clientOrderId stored in customFields or by looking up
-                    // the order with same employee + tabName created in this business day
-                    id: clientOrderId,
-                  },
-                  select: { id: true },
-                })
+                const existing = await OrderRepository.getOrderByIdWithSelect(
+                  clientOrderId, locationId, { id: true }, tx,
+                )
 
                 if (existing) {
                   serverOrderId = existing.id
@@ -408,31 +403,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 if (itemTaxInclusive) {
                   // Tax-inclusive: tax is backed out of itemTotal, total doesn't change by tax amount
                   const itemTax = roundToCents(itemTotal - (itemTotal / (1 + inclusiveTaxRate)))
-                  await tx.order.update({
-                    where: { id: targetOrderId },
-                    data: {
-                      subtotal: { increment: itemTotal },
-                      taxTotal: { increment: itemTax },
-                      taxFromInclusive: { increment: itemTax },
-                      total: { increment: itemTotal }, // Tax already included in price
-                      itemCount: { increment: quantity },
-                      version: { increment: 1 },
-                    },
-                  })
+                  await OrderRepository.updateOrder(targetOrderId, locationId, {
+                    subtotal: { increment: itemTotal },
+                    taxTotal: { increment: itemTax },
+                    taxFromInclusive: { increment: itemTax },
+                    total: { increment: itemTotal }, // Tax already included in price
+                    itemCount: { increment: quantity },
+                    version: { increment: 1 },
+                  }, tx)
                 } else {
                   // Tax-exclusive: tax added on top
                   const itemTax = roundToCents(itemTotal * taxRate)
-                  await tx.order.update({
-                    where: { id: targetOrderId },
-                    data: {
-                      subtotal: { increment: itemTotal },
-                      taxTotal: { increment: itemTax },
-                      taxFromExclusive: { increment: itemTax },
-                      total: { increment: itemTotal + itemTax },
-                      itemCount: { increment: quantity },
-                      version: { increment: 1 },
-                    },
-                  })
+                  await OrderRepository.updateOrder(targetOrderId, locationId, {
+                    subtotal: { increment: itemTotal },
+                    taxTotal: { increment: itemTax },
+                    taxFromExclusive: { increment: itemTax },
+                    total: { increment: itemTotal + itemTax },
+                    itemCount: { increment: quantity },
+                    version: { increment: 1 },
+                  }, tx)
                 }
 
                 // Socket: notify terminals that order items/totals changed
@@ -452,10 +441,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   continue
                 }
 
-                const item = await tx.orderItem.findUnique({
-                  where: { id: payload.orderItemId },
-                  select: { id: true, orderId: true, itemTotal: true, quantity: true, deletedAt: true, isTaxInclusive: true },
-                })
+                const item = await OrderItemRepository.getItemByIdWithSelect(
+                  payload.orderItemId, locationId,
+                  { id: true, orderId: true, itemTotal: true, quantity: true, deletedAt: true, isTaxInclusive: true },
+                  tx,
+                )
 
                 if (!item || item.orderId !== targetOrderId) {
                   errors.push({ eventId: evt.eventId, error: `OrderItem ${payload.orderItemId} not found on this order` })
@@ -471,41 +461,34 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 }
 
                 // Soft delete
-                await tx.orderItem.update({
-                  where: { id: payload.orderItemId },
-                  data: { deletedAt: new Date() },
-                })
+                await OrderItemRepository.updateItem(
+                  payload.orderItemId, locationId, { deletedAt: new Date() }, tx,
+                )
 
                 // Decrement order totals (including tax)
                 const removedItemTotal = Number(item.itemTotal)
                 if (item.isTaxInclusive) {
                   // Tax-inclusive: tax was backed out of itemTotal
                   const removedItemTax = roundToCents(removedItemTotal - (removedItemTotal / (1 + inclusiveTaxRate)))
-                  await tx.order.update({
-                    where: { id: targetOrderId },
-                    data: {
-                      subtotal: { decrement: removedItemTotal },
-                      taxTotal: { decrement: removedItemTax },
-                      taxFromInclusive: { decrement: removedItemTax },
-                      total: { decrement: removedItemTotal }, // Tax was included in price
-                      itemCount: { decrement: item.quantity },
-                      version: { increment: 1 },
-                    },
-                  })
+                  await OrderRepository.updateOrder(targetOrderId, locationId, {
+                    subtotal: { decrement: removedItemTotal },
+                    taxTotal: { decrement: removedItemTax },
+                    taxFromInclusive: { decrement: removedItemTax },
+                    total: { decrement: removedItemTotal }, // Tax was included in price
+                    itemCount: { decrement: item.quantity },
+                    version: { increment: 1 },
+                  }, tx)
                 } else {
                   // Tax-exclusive: tax was added on top
                   const removedItemTax = roundToCents(removedItemTotal * taxRate)
-                  await tx.order.update({
-                    where: { id: targetOrderId },
-                    data: {
-                      subtotal: { decrement: removedItemTotal },
-                      taxTotal: { decrement: removedItemTax },
-                      taxFromExclusive: { decrement: removedItemTax },
-                      total: { decrement: removedItemTotal + removedItemTax },
-                      itemCount: { decrement: item.quantity },
-                      version: { increment: 1 },
-                    },
-                  })
+                  await OrderRepository.updateOrder(targetOrderId, locationId, {
+                    subtotal: { decrement: removedItemTotal },
+                    taxTotal: { decrement: removedItemTax },
+                    taxFromExclusive: { decrement: removedItemTax },
+                    total: { decrement: removedItemTotal + removedItemTax },
+                    itemCount: { decrement: item.quantity },
+                    version: { increment: 1 },
+                  }, tx)
                 }
 
                 // Socket: notify terminals that order items/totals changed
@@ -521,27 +504,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 const targetOrderId = serverOrderId || clientOrderId
 
                 // Transition to open + mark items as sent
-                await tx.order.update({
-                  where: { id: targetOrderId },
-                  data: {
-                    status: 'open',
-                    version: { increment: 1 },
-                  },
-                })
+                await OrderRepository.updateOrder(targetOrderId, locationId, {
+                  status: 'open',
+                  version: { increment: 1 },
+                }, tx)
 
                 const now = new Date()
-                await tx.orderItem.updateMany({
-                  where: {
-                    orderId: targetOrderId,
-                    kitchenStatus: 'pending',
-                    isHeld: false,
-                    deletedAt: null,
-                  },
-                  data: {
-                    kitchenStatus: 'sent',
-                    firedAt: now,
-                  },
-                })
+                await OrderItemRepository.updateItemsWhere(
+                  targetOrderId, locationId,
+                  { kitchenStatus: 'pending', isHeld: false, deletedAt: null },
+                  { kitchenStatus: 'sent', firedAt: now },
+                  tx,
+                )
 
                 // Fire-and-forget fulfillment routing
                 void (async () => {
@@ -627,13 +601,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           // Recalculate order totals from actual DB state (accounts for discounts
           // applied by other terminals between replayed events)
           const targetOrderId = serverOrderId || clientOrderId
-          const freshOrder = await tx.order.findUnique({
-            where: { id: targetOrderId },
-            include: {
+          const freshOrder = await OrderRepository.getOrderByIdWithInclude(
+            targetOrderId, locationId,
+            {
               items: { where: { deletedAt: null, status: 'active' } },
               discounts: true,
             },
-          })
+            tx,
+          )
           if (freshOrder) {
             let inclusiveSubtotal = 0
             let exclusiveSubtotal = 0
@@ -652,18 +627,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             const discountTotal = freshOrder.discounts.reduce((sum, d) => sum + Number(d.amount ?? 0), 0)
             const total = roundToCents(subtotal + splitTax.taxFromExclusive - discountTotal)
             const itemCount = freshOrder.items.reduce((sum, i) => sum + i.quantity, 0)
-            await tx.order.update({
-              where: { id: targetOrderId },
-              data: {
-                subtotal,
-                taxTotal: splitTax.totalTax,
-                taxFromInclusive: splitTax.taxFromInclusive,
-                taxFromExclusive: splitTax.taxFromExclusive,
-                discountTotal: roundToCents(discountTotal),
-                total: Math.max(0, total),
-                itemCount,
-              },
-            })
+            await OrderRepository.updateOrder(targetOrderId, locationId, {
+              subtotal,
+              taxTotal: splitTax.totalTax,
+              taxFromInclusive: splitTax.taxFromInclusive,
+              taxFromExclusive: splitTax.taxFromExclusive,
+              discountTotal: roundToCents(discountTotal),
+              total: Math.max(0, total),
+              itemCount,
+            }, tx)
           }
         })
       } catch (txErr) {

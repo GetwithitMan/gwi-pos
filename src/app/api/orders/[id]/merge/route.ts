@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -33,16 +34,26 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Get target order
-    const targetOrder = await db.order.findUnique({
+    // Get target order -- first do a lightweight check to get locationId for tenant-scoped queries
+    const targetOrderCheck = await db.order.findUnique({
       where: { id: targetOrderId },
-      include: {
-        items: {
-          include: { modifiers: true }
-        },
+      select: { id: true, locationId: true },
+    })
+    if (!targetOrderCheck) {
+      return NextResponse.json(
+        { error: 'Target order not found' },
+        { status: 404 }
+      )
+    }
+    const locationId = targetOrderCheck.locationId
+
+    const targetOrder = await OrderRepository.getOrderByIdWithInclude(
+      targetOrderId, locationId,
+      {
+        items: { include: { modifiers: true } },
         discounts: true,
       },
-    })
+    )
 
     if (!targetOrder) {
       return NextResponse.json(
@@ -65,15 +76,13 @@ export const POST = withVenue(async function POST(
     }
 
     // Get source order
-    const sourceOrder = await db.order.findUnique({
-      where: { id: sourceOrderId },
-      include: {
-        items: {
-          include: { modifiers: true }
-        },
+    const sourceOrder = await OrderRepository.getOrderByIdWithInclude(
+      sourceOrderId, locationId,
+      {
+        items: { include: { modifiers: true } },
         discounts: true,
       },
-    })
+    )
 
     if (!sourceOrder) {
       return NextResponse.json(
@@ -114,8 +123,8 @@ export const POST = withVenue(async function POST(
 
       // Re-check both orders are still in valid states after acquiring locks
       const [lockedTarget, lockedSource] = await Promise.all([
-        tx.order.findUnique({ where: { id: targetOrderId }, select: { status: true } }),
-        tx.order.findUnique({ where: { id: sourceOrderId }, select: { status: true } }),
+        OrderRepository.getOrderByIdWithSelect(targetOrderId, locationId, { status: true }, tx),
+        OrderRepository.getOrderByIdWithSelect(sourceOrderId, locationId, { status: true }, tx),
       ])
       if (!lockedTarget || ['paid', 'closed', 'voided', 'cancelled', 'split'].includes(lockedTarget.status)) {
         throw new Error('TARGET_ORDER_INVALID')
@@ -125,8 +134,10 @@ export const POST = withVenue(async function POST(
       }
 
       // Move all active (non-soft-deleted) items from source to target
+      // NOTE: Uses raw tx.orderItem.updateMany because orderId is a relation field
+      // that cannot be set through OrderItemUpdateManyMutationInput
       const moved = await tx.orderItem.updateMany({
-        where: { orderId: sourceOrderId, deletedAt: null },
+        where: { orderId: sourceOrderId, locationId, deletedAt: null },
         data: { orderId: targetOrderId },
       })
 
@@ -150,10 +161,9 @@ export const POST = withVenue(async function POST(
       })
 
       // Recalculate target order totals
-      const allItems = await tx.orderItem.findMany({
-        where: { orderId: targetOrderId, status: 'active' },
-        include: { modifiers: true },
-      })
+      const allItems = await OrderItemRepository.getItemsForOrderWithModifiers(
+        targetOrderId, locationId, tx,
+      ).then(items => items.filter(i => i.status === 'active'))
 
       const subtotal = allItems.reduce((sum, item) => sum + Number(item.itemTotal), 0)
       const commissionTotal = allItems.reduce((sum, item) => sum + (item.commissionAmount ? Number(item.commissionAmount) : 0), 0)
@@ -180,37 +190,31 @@ export const POST = withVenue(async function POST(
       // Update target order totals and guest count
       const newGuestCount = (targetOrder.guestCount || 1) + (sourceOrder.guestCount || 1)
 
-      await tx.order.update({
-        where: { id: targetOrderId },
-        data: {
-          subtotal: totals.subtotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          discountTotal: totals.discountTotal,
-          total: totals.total,
-          commissionTotal,
-          itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
-          guestCount: newGuestCount,
-          notes: targetOrder.notes
-            ? `${targetOrder.notes}\nMerged from order #${sourceOrder.orderNumber}`
-            : `Merged from order #${sourceOrder.orderNumber}`,
-          version: { increment: 1 },
-        },
-      })
+      await OrderRepository.updateOrder(targetOrderId, locationId, {
+        subtotal: totals.subtotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        discountTotal: totals.discountTotal,
+        total: totals.total,
+        commissionTotal,
+        itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
+        guestCount: newGuestCount,
+        notes: targetOrder.notes
+          ? `${targetOrder.notes}\nMerged from order #${sourceOrder.orderNumber}`
+          : `Merged from order #${sourceOrder.orderNumber}`,
+        version: { increment: 1 },
+      }, tx)
 
       // Void the source order (soft delete)
-      await tx.order.update({
-        where: { id: sourceOrderId },
-        data: {
-          status: 'voided',
-          itemCount: 0,
-          notes: sourceOrder.notes
-            ? `${sourceOrder.notes}\nMerged into order #${targetOrder.orderNumber}`
-            : `Merged into order #${targetOrder.orderNumber}`,
-          version: { increment: 1 },
-        },
-      })
+      await OrderRepository.updateOrder(sourceOrderId, locationId, {
+        status: 'voided',
+        itemCount: 0,
+        notes: sourceOrder.notes
+          ? `${sourceOrder.notes}\nMerged into order #${targetOrder.orderNumber}`
+          : `Merged into order #${targetOrder.orderNumber}`,
+        version: { increment: 1 },
+      }, tx)
 
       // Create audit log entry
       await tx.auditLog.create({
@@ -234,7 +238,6 @@ export const POST = withVenue(async function POST(
     })
 
     // C12: Release the source order's table after merge (prevent zombie tables)
-    const locationId = targetOrder.locationId
     if (sourceOrder.tableId && sourceOrder.tableId !== targetOrder.tableId) {
       await db.table.update({ where: { id: sourceOrder.tableId }, data: { status: 'available' } })
       void dispatchTableStatusChanged(locationId, { tableId: sourceOrder.tableId, status: 'available' }).catch(console.error)
@@ -265,21 +268,15 @@ export const POST = withVenue(async function POST(
     }).catch(console.error)
 
     // Fetch updated target order for response and totals dispatch
-    const updatedOrder = await db.order.findUnique({
-      where: { id: targetOrderId },
-      include: {
-        items: {
-          include: { modifiers: true },
-        },
+    const updatedOrder = await OrderRepository.getOrderByIdWithInclude(
+      targetOrderId, locationId,
+      {
+        items: { include: { modifiers: true } },
         discounts: true,
-        employee: {
-          select: { id: true, firstName: true, lastName: true, displayName: true },
-        },
-        table: {
-          select: { id: true, name: true },
-        },
+        employee: { select: { id: true, firstName: true, lastName: true, displayName: true } },
+        table: { select: { id: true, name: true } },
       },
-    })
+    )
 
     // BUG 4: Dispatch totals update for the target order so terminals showing it get fresh totals
     void dispatchOrderTotalsUpdate(targetOrder.locationId, targetOrderId, {

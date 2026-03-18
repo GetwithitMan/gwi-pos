@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -60,18 +61,25 @@ export const GET = withVenue(async function GET(
     // Resolve employeeId from session
     const { employeeId } = await getActorFromRequest(request)
 
-    const order = await db.order.findUnique({
+    // Lightweight check to get locationId for tenant-scoped queries
+    const orderCheck = await db.order.findUnique({
       where: { id: orderId },
-      include: {
+      select: { id: true, locationId: true },
+    })
+    if (!orderCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(
+      orderId, orderCheck.locationId,
+      {
         location: true,
         items: {
           where: { deletedAt: null },
-          include: {
-            modifiers: true,
-          },
+          include: { modifiers: true },
         },
       },
-    })
+    )
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -224,12 +232,13 @@ export const POST = withVenue(async function POST(
     // Resolve employeeId from body or session
     const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
 
-    // Auth check: fetch order locationId for permission validation (before any mutations)
-    const orderForAuth = await db.order.findUnique({ where: { id: orderId }, select: { locationId: true } })
+    // Auth check: lightweight order lookup to get locationId for permission validation (before any mutations)
+    const orderForAuth = await db.order.findUnique({ where: { id: orderId }, select: { id: true, locationId: true } })
     if (!orderForAuth) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
-    const auth = await requirePermission(employeeId, orderForAuth.locationId, PERMISSIONS.POS_ACCESS)
+    const orderLocationId = orderForAuth.locationId
+    const auth = await requirePermission(employeeId, orderLocationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
@@ -252,8 +261,9 @@ export const POST = withVenue(async function POST(
         data: { deletedAt: new Date() },
       })
       // Reset extraSeatCount on any open orders for this table
+      // NOTE: This is a cross-order bulk update scoped by tableId, not a single-order repo call
       await db.order.updateMany({
-        where: { tableId: resetTableId, status: { in: ['open', 'draft'] }, extraSeatCount: { gt: 0 } },
+        where: { tableId: resetTableId, locationId: table.locationId, status: { in: ['open', 'draft'] }, extraSeatCount: { gt: 0 } },
         data: { extraSeatCount: 0 },
       })
       void dispatchFloorPlanUpdate(table.locationId, { async: true }).catch(console.error)
@@ -272,11 +282,11 @@ export const POST = withVenue(async function POST(
       const { cleanupTemporarySeats } = await import('@/lib/cleanup-temp-seats')
       await cleanupTemporarySeats(orderId)
       // Also reset extraSeatCount on the order, and get locationId for socket dispatch
-      const cleaned = await db.order.update({
-        where: { id: orderId },
-        data: { extraSeatCount: 0 },
-        select: { locationId: true, tableId: true },
-      }).catch(() => null) // order may already be deleted
+      const cleaned = await OrderRepository.updateOrderAndSelect(
+        orderId, orderLocationId,
+        { extraSeatCount: 0 },
+        { locationId: true, tableId: true },
+      ).catch(() => null) // order may already be deleted
       // Dispatch floor plan update so all terminals see temp seats removed
       if (cleaned?.tableId) {
         void dispatchFloorPlanUpdate(cleaned.locationId, { async: true }).catch(console.error)
@@ -302,15 +312,14 @@ export const POST = withVenue(async function POST(
 
     const result = await db.$transaction(async (tx) => {
       // Get current order state with table info for seat positioning
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: {
+      const order = await OrderRepository.getOrderByIdWithInclude(
+        orderId, orderLocationId,
+        {
           table: { select: { id: true, width: true, height: true, locationId: true } },
-          items: {
-            where: { deletedAt: null },
-          },
+          items: { where: { deletedAt: null } },
         },
-      })
+        tx,
+      )
 
       if (!order) {
         throw new Error('Order not found')
@@ -348,10 +357,11 @@ export const POST = withVenue(async function POST(
         )
 
         for (const item of sortedItems) {
-          await tx.orderItem.update({
-            where: { id: item.id },
-            data: { seatNumber: (item.seatNumber || 0) + 1 },
-          })
+          await OrderItemRepository.updateItem(
+            item.id, orderLocationId,
+            { seatNumber: (item.seatNumber || 0) + 1 },
+            tx,
+          )
         }
 
         // Shift timestamps
@@ -370,15 +380,13 @@ export const POST = withVenue(async function POST(
         const newTotalSeats = currentTotalSeats + seatsToAdd
 
         // Update order
-        const updatedOrder = await tx.order.update({
-          where: { id: orderId },
-          data: {
-            extraSeatCount: order.extraSeatCount + seatsToAdd,
-            guestCount: newTotalSeats,
-            seatVersion: order.seatVersion + 1,
-            seatTimestamps: newTimestamps,
-          },
-        })
+        await OrderRepository.updateOrder(orderId, orderLocationId, {
+          extraSeatCount: order.extraSeatCount + seatsToAdd,
+          guestCount: newTotalSeats,
+          seatVersion: order.seatVersion + 1,
+          seatTimestamps: newTimestamps,
+        }, tx)
+        const updatedOrder = { seatVersion: order.seatVersion + 1 }
 
         // Create a real temporary Seat row so it renders on the floor plan
         let warning: string | undefined
@@ -463,10 +471,11 @@ export const POST = withVenue(async function POST(
         )
 
         for (const item of itemsOnRemovedSeat) {
-          await tx.orderItem.update({
-            where: { id: item.id },
-            data: { seatNumber: null },
-          })
+          await OrderItemRepository.updateItem(
+            item.id, orderLocationId,
+            { seatNumber: null },
+            tx,
+          )
         }
 
         // Shift all items with seatNumber > position down by 1
@@ -480,10 +489,11 @@ export const POST = withVenue(async function POST(
         )
 
         for (const item of sortedItems) {
-          await tx.orderItem.update({
-            where: { id: item.id },
-            data: { seatNumber: (item.seatNumber || 0) - 1 },
-          })
+          await OrderItemRepository.updateItem(
+            item.id, orderLocationId,
+            { seatNumber: (item.seatNumber || 0) - 1 },
+            tx,
+          )
         }
 
         // Shift timestamps
@@ -501,15 +511,13 @@ export const POST = withVenue(async function POST(
         }
 
         // Update order
-        const updatedOrder = await tx.order.update({
-          where: { id: orderId },
-          data: {
-            extraSeatCount: order.extraSeatCount - 1,
-            guestCount: currentTotalSeats - 1,
-            seatVersion: order.seatVersion + 1,
-            seatTimestamps: newTimestamps,
-          },
-        })
+        await OrderRepository.updateOrder(orderId, orderLocationId, {
+          extraSeatCount: order.extraSeatCount - 1,
+          guestCount: currentTotalSeats - 1,
+          seatVersion: order.seatVersion + 1,
+          seatTimestamps: newTimestamps,
+        }, tx)
+        const updatedOrder = { seatVersion: order.seatVersion + 1 }
 
         // Delete the most recently added temp seat for this order (LIFO)
         if (order.table) {
