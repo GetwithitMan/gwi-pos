@@ -5,7 +5,7 @@ import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/sock
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { OrderRepository } from '@/lib/repositories'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 
 // POST - Add a house account balance payment as an order line item
 export const POST = withVenue(async function POST(
@@ -25,9 +25,8 @@ export const POST = withVenue(async function POST(
     // Auth check
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
-    // Validate the order exists first to get locationId for permission check
-    // TODO: OrderRepository needs locationId — use getLocationId() or pass from route context
-    const orderForAuth = await db.order.findUnique({
+    // Bootstrap: lightweight fetch for locationId, then use repository for tenant-safe access
+    const orderForAuth = await db.order.findFirst({
       where: { id: orderId },
       select: { locationId: true },
     })
@@ -157,15 +156,21 @@ export const POST = withVenue(async function POST(
     })
 
     // Recalculate order totals
-    // TODO: OrderItemRepository.getItemsForOrderWithModifiers doesn't filter by status — need a variant
-    const activeItems = await db.orderItem.findMany({
-      where: { orderId, locationId: order.locationId, status: 'active', deletedAt: null },
-      include: { modifiers: { where: { deletedAt: null } } },
-    })
+    const activeItems = await OrderItemRepository.getItemsForOrderWhere(
+      orderId, order.locationId,
+      { status: 'active', deletedAt: null },
+    )
+    // Re-fetch with modifiers for total calculation
+    const activeItemsWithMods = activeItems.length > 0
+      ? await OrderItemRepository.getItemsByIdsWithInclude(
+          activeItems.map(i => i.id), order.locationId,
+          { modifiers: { where: { deletedAt: null } } },
+        )
+      : []
 
     let newSubtotal = 0
-    for (const item of activeItems) {
-      const modTotal = item.modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
+    for (const item of activeItemsWithMods) {
+      const modTotal = (item as any).modifiers.reduce((s: number, m: any) => s + Number(m.price), 0)
       newSubtotal += (Number(item.price) + modTotal) * item.quantity
     }
 

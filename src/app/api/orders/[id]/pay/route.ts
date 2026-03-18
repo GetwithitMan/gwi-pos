@@ -89,7 +89,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Running them before the lock reduces contention time.
     // NOTE: First fetch uses db directly because we don't have locationId yet.
     // Once we have locationId from the order, all subsequent queries use repositories.
-    const preCheckOrder = await db.order.findUnique({
+    const preCheckOrder = await db.order.findFirst({
       where: { id: orderId },
       select: { locationId: true, employeeId: true },
     })
@@ -147,7 +147,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Lightweight query for settings — no FOR UPDATE, no lock
       // NOTE: Uses db directly because this runs before the main transaction and locationId
       // may not be available yet (preCheckOrder could be null if room_charge is the only payment type).
-      const locationForPms = await db.order.findUnique({
+      const locationForPms = await db.order.findFirst({
         where: { id: orderId },
         select: {
           locationId: true,
@@ -1216,13 +1216,11 @@ export const POST = withVenue(withTiming(async function POST(
       // Flag payments processed during outage for reconciliation visibility
       const paymentIds = ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id)
       if (paymentIds.length > 0) {
-        // TODO: Add batch updatePayments to PaymentRepository
-        void db.payment.updateMany({
-          where: { id: { in: paymentIds }, locationId: order.locationId },
-          data: { needsReconciliation: true },
-        }).catch(err => {
-          console.error('[CRITICAL-PAYMENT] Failed to flag payments for reconciliation:', err)
-        })
+        // Batch flag payments for reconciliation (tenant-safe via PaymentRepository)
+        for (const pid of paymentIds) {
+          void PaymentRepository.updatePayment(pid, order.locationId, { needsReconciliation: true })
+            .catch(err => console.error('[CRITICAL-PAYMENT] Failed to flag payment for reconciliation:', err))
+        }
       }
 
       // Read back full Payment rows from local PG — BridgedPayment is missing
@@ -1230,10 +1228,9 @@ export const POST = withVenue(withTiming(async function POST(
       // would cause constraint violations on Neon replay.
       // CRITICAL: Outage queue writes are the ONLY path to Neon during outage.
       // If these fail, payment data is lost from cloud. Retry once.
-      // TODO: Add batch getPaymentsByIds to PaymentRepository
-      const fullPayments = await db.payment.findMany({
-        where: { id: { in: paymentIds }, locationId: order.locationId }
-      })
+      const fullPayments = await Promise.all(
+        (paymentIds as string[]).map(pid => PaymentRepository.getPaymentById(pid, order.locationId))
+      ).then(results => results.filter((p): p is NonNullable<typeof p> => p !== null))
       for (const fp of fullPayments) {
         void queueOutageWrite('Payment', fp.id, 'INSERT', fp as unknown as Record<string, unknown>, order.locationId).catch(async (err) => {
           console.error(`[CRITICAL-PAYMENT] Outage queue write failed for Payment ${fp.id}, retrying:`, err)
@@ -1427,6 +1424,7 @@ export const POST = withVenue(withTiming(async function POST(
       }).catch(() => {})
 
       // Free the parent order's table (child split orders have no tableId)
+      // TODO: Add TableRepository once that repository exists
       if (parentTableId) {
         void db.table.update({
           where: { id: parentTableId },
@@ -1444,6 +1442,8 @@ export const POST = withVenue(withTiming(async function POST(
     // If order is fully paid, reset entertainment items and table status
     if (orderIsPaid) {
       // Reset entertainment items after payment
+      // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
+      // (queries use currentOrderId filter + relation-filter menuItem.itemType, not supported by current repos)
       try {
         const entertainmentItems = await db.menuItem.findMany({
           where: { locationId: order.locationId, currentOrderId: orderId, itemType: 'timed_rental' },
@@ -1692,6 +1692,7 @@ export const POST = withVenue(withTiming(async function POST(
               },
             })
             if (otherOpenOrders === 0) {
+              // TODO: Add TableRepository once that repository exists
               await db.table.update({
                 where: { id: order.tableId! },
                 data: { status: 'available' },

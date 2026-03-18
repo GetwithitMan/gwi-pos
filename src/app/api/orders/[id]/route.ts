@@ -28,7 +28,7 @@ export const GET = withVenue(async function GET(
     const requestingEmployeeId = request.headers.get('x-employee-id') || request.nextUrl.searchParams.get('requestingEmployeeId')
 
     // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
-    // TODO: add repository method for split view shape (getOrderForSplitView)
+    // TODO: migrate to OrderRepository once a getOrderForSplitView() method exists
     if (view === 'split') {
       const order = await db.order.findFirst({
         where: { id, deletedAt: null },
@@ -204,10 +204,16 @@ export const GET = withVenue(async function GET(
       } })
     }
 
-    // TODO: add repository method for default GET view (close to getFullOrder but modifiers use custom select)
-    const order = await db.order.findFirst({
+    // Bootstrap: lightweight locationId fetch, then tenant-safe include
+    const getLocationCheck = await db.order.findFirst({
       where: { id, deletedAt: null },
-      include: {
+      select: { locationId: true },
+    })
+    if (!getLocationCheck) {
+      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(id, getLocationCheck.locationId, {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
@@ -252,7 +258,6 @@ export const GET = withVenue(async function GET(
             roundingAdjustment: true,
           },
         },
-      },
     })
 
     if (!order) {
@@ -381,11 +386,16 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // TODO: add repository method for this query shape (order + location settings + active items for tax recalc)
-    // Get existing order — selective fetch (only fields used for validation + tax recalc)
-    const existingOrder = await db.order.findUnique({
+    // Two-step: lightweight locationId bootstrap, then tenant-safe fetch with select
+    const orderLocationCheck = await db.order.findFirst({
       where: { id },
-      select: {
+      select: { locationId: true },
+    })
+    if (!orderLocationCheck) {
+      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    }
+
+    const existingOrder = await OrderRepository.getOrderByIdWithSelect(id, orderLocationCheck.locationId, {
         id: true,
         status: true,
         locationId: true,
@@ -413,7 +423,6 @@ export const PUT = withVenue(async function PUT(
             },
           },
         },
-      },
     })
 
     if (!existingOrder) {
@@ -610,6 +619,8 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Auto-stop entertainment sessions when order is voided/cancelled/closed
+    // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
+    // (queries use currentOrderId filter + relation-filter menuItem.itemType, not supported by current repos)
     if (status !== undefined && ['voided', 'cancelled', 'closed'].includes(status)) {
       void (async () => {
         try {
@@ -729,11 +740,16 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // TODO: add repository method for this query shape (order + items + location settings for tax recalc)
-    // Quick existence + status check (includes items for tax-inclusive recalc)
-    const existing = await db.order.findUnique({
+    // Two-step: lightweight locationId bootstrap, then tenant-safe fetch with select
+    const patchLocationCheck = await db.order.findFirst({
       where: { id },
-      select: {
+      select: { locationId: true },
+    })
+    if (!patchLocationCheck) {
+      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    }
+
+    const existing = await OrderRepository.getOrderByIdWithSelect(id, patchLocationCheck.locationId, {
         id: true,
         status: true,
         locationId: true,
@@ -758,7 +774,6 @@ export const PATCH = withVenue(async function PATCH(
           },
         },
         location: { select: { settings: true } },
-      },
     })
 
     if (!existing) {
@@ -911,6 +926,8 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Auto-stop entertainment sessions when order is voided/cancelled/closed via PATCH
+    // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
+    // (queries use currentOrderId filter + relation-filter menuItem.itemType, not supported by current repos)
     if (status !== undefined && ['voided', 'cancelled', 'closed'].includes(status)) {
       void (async () => {
         try {

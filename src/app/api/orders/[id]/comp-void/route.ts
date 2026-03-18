@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
+import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventoryForRestoredItem, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -80,22 +82,26 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: approvalError.error }, { status: approvalError.status })
     }
 
-    // TODO: add repository method for this query shape (order + location + payments + filtered items with modifiers)
-    // Get the order and item
-    const order = await db.order.findUnique({
+    // Bootstrap: lightweight locationId fetch, then tenant-safe include
+    const compVoidLocationCheck = await db.order.findFirst({
       where: { id: orderId },
-      include: {
-        location: true,
-        payments: {
-          where: { deletedAt: null },
-          select: { id: true, status: true },
-        },
-        items: {
-          where: { id: itemId },
-          include: {
-            modifiers: true,
-            menuItem: { select: { id: true, itemType: true, name: true } },
-          },
+      select: { locationId: true },
+    })
+    if (!compVoidLocationCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, compVoidLocationCheck.locationId, {
+      location: true,
+      payments: {
+        where: { deletedAt: null },
+        select: { id: true, status: true },
+      },
+      items: {
+        where: { id: itemId },
+        include: {
+          modifiers: true,
+          menuItem: { select: { id: true, itemType: true, name: true } },
         },
       },
     })
@@ -259,9 +265,8 @@ export const POST = withVenue(async function POST(
                       invoiceNo: orderId,
                     })
                     if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
-                      await db.payment.update({
-                        where: { id: payment.id },
-                        data: { status: 'voided', refundedAmount: payment.totalAmount, refundedAt: new Date() },
+                      await PaymentRepository.updatePayment(payment.id, order.locationId, {
+                        status: 'voided', refundedAmount: payment.totalAmount, refundedAt: new Date(),
                       })
                       console.log(`[CompVoid] Datacap remaining refund of $${remainingToRefund.toFixed(2)} succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
                     } else {
@@ -270,14 +275,14 @@ export const POST = withVenue(async function POST(
                     }
                   } else {
                     // Already fully refunded via previous partial refunds — just mark voided
-                    await db.payment.update({ where: { id: payment.id }, data: { status: 'voided' } })
+                    await PaymentRepository.updatePayment(payment.id, order.locationId, { status: 'voided' })
                     console.log(`[CompVoid] Payment ${payment.id} already fully refunded, marked voided`)
                   }
                 } else {
                   // No previous refunds — safe to void the entire sale
                   const result = await datacapClient.voidSale(payment.paymentReaderId!, { recordNo: payment.datacapRecordNo! })
                   if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
-                    await db.payment.update({ where: { id: payment.id }, data: { status: 'voided' } })
+                    await PaymentRepository.updatePayment(payment.id, order.locationId, { status: 'voided' })
                     console.log(`[CompVoid] Datacap void succeeded for payment ${payment.id} (card ***${payment.cardLast4})`)
                   } else {
                     cardReversalWarning = `Card reversal declined for ***${payment.cardLast4}: ${result.textResponse}. Manual refund may be required.`
@@ -299,9 +304,8 @@ export const POST = withVenue(async function POST(
                   invoiceNo: orderId,
                 })
                 if (result.cmdStatus === 'Approved' || result.cmdStatus === 'Success') {
-                  await db.payment.update({
-                    where: { id: payment.id },
-                    data: { refundedAmount: { increment: refundAmount }, refundedAt: new Date() },
+                  await PaymentRepository.updatePayment(payment.id, order.locationId, {
+                    refundedAmount: { increment: refundAmount }, refundedAt: new Date(),
                   })
                   remainingRefund -= refundAmount
                   console.log(`[CompVoid] Datacap partial refund of $${refundAmount.toFixed(2)} succeeded for payment ${payment.id}`)
@@ -369,6 +373,7 @@ export const POST = withVenue(async function POST(
 
     // BUG #378: Reset entertainment status when voiding a timed_rental item
     // Only void — comp means customer plays for free but is still using the item
+    // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
     if (action === 'void' && item!.menuItem?.itemType === 'timed_rental') {
       void db.menuItem.update({
         where: { id: item!.menuItem.id },
@@ -423,6 +428,7 @@ export const POST = withVenue(async function POST(
     // Clean up temporary seats if order auto-closed, then refresh floor plan
     if (shouldAutoClose) {
       // C12: Release the table when all items are voided/comped (prevent zombie tables)
+      // TODO: Add TableRepository once that repository exists
       if (order.tableId) {
         await db.table.update({ where: { id: order.tableId }, data: { status: 'available' } })
         void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId, status: 'available' }).catch(console.error)
@@ -476,10 +482,10 @@ export const POST = withVenue(async function POST(
     // CFD: update customer display after void/comp (fire-and-forget)
     void (async () => {
       try {
-        const updatedItems = await db.orderItem.findMany({
-          where: { orderId, status: 'active', deletedAt: null },
-          include: { modifiers: true },
-        })
+        const activeItemIds = await OrderItemRepository.getItemIdsForOrderWhere(orderId, order.locationId, { status: 'active', deletedAt: null })
+        const updatedItems = activeItemIds.length > 0
+          ? await OrderItemRepository.getItemsByIdsWithInclude(activeItemIds.map(i => i.id), order.locationId, { modifiers: true })
+          : []
         dispatchCFDOrderUpdated(order.locationId, {
           orderId,
           orderNumber: order.orderNumber,
@@ -543,8 +549,9 @@ export const POST = withVenue(async function POST(
     if (shouldAutoClose && order.parentOrderId) {
       void (async () => {
         try {
+          // TODO: Add getOrdersByParentId to OrderRepository for split sibling queries
           const siblings = await db.order.findMany({
-            where: { parentOrderId: order.parentOrderId!, deletedAt: null },
+            where: { parentOrderId: order.parentOrderId!, locationId: order.locationId, deletedAt: null },
             select: { id: true, status: true },
           })
           const allTerminal = siblings.length > 0 && siblings.every(s => isClosed(s.status))
@@ -668,18 +675,22 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
-    // TODO: add repository method for this query shape (order + location + filtered items with modifiers)
-    // Get the order and item
-    const order = await db.order.findUnique({
+    // Bootstrap: lightweight locationId fetch, then tenant-safe include
+    const restoreLocationCheck = await db.order.findFirst({
       where: { id: orderId },
-      include: {
-        location: true,
-        items: {
-          where: { id: itemId },
-          include: {
-            modifiers: true,
-            menuItem: { select: { id: true, itemType: true } },
-          },
+      select: { locationId: true },
+    })
+    if (!restoreLocationCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, restoreLocationCheck.locationId, {
+      location: true,
+      items: {
+        where: { id: itemId },
+        include: {
+          modifiers: true,
+          menuItem: { select: { id: true, itemType: true } },
         },
       },
     })
@@ -784,9 +795,8 @@ export const GET = withVenue(async function GET(
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employeeId')
 
-    // TODO: migrate to OrderRepository.checkOrderExists once locationId is available from request context
-    // Get order to determine locationId for auth check
-    const order = await db.order.findUnique({
+    // Bootstrap: lightweight locationId fetch (no locationId available from request context yet)
+    const order = await db.order.findFirst({
       where: { id: orderId },
       select: { locationId: true },
     })

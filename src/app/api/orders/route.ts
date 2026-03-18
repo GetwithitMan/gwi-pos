@@ -45,15 +45,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     if (idempotencyKey) {
       const existing = await OrderRepository.getOrderByIdempotencyKey(idempotencyKey, locationId)
       if (existing) {
-        // Return existing order — this is a duplicate request
-        // TODO: add repository method for this query shape (order + employee + items with modifiers/pizza + table with sectionId)
-        const fullOrder = await db.order.findUnique({
-          where: { id: existing.id },
-          include: {
-            employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
-            items: { where: { deletedAt: null }, include: { modifiers: true, ingredientModifications: true, pizzaData: true } },
-            table: { select: { id: true, name: true, sectionId: true } },
-          },
+        // Return existing order — this is a duplicate request (locationId already available from validation)
+        const fullOrder = await OrderRepository.getOrderByIdWithInclude(existing.id, locationId, {
+          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+          items: { where: { deletedAt: null }, include: { modifiers: true, ingredientModifications: true, pizzaData: true } },
+          table: { select: { id: true, name: true, sectionId: true } },
         })
         return NextResponse.json({ data: fullOrder, duplicate: true })
       }
@@ -286,9 +282,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     // Order number + table check handled atomically inside order creation transaction below
 
     // Fetch menu items to get commission settings
+    // TODO: Add MenuItemRepository.getMenuItemsByIds() for batch ID lookups with custom select
     const menuItemIds = items.map(item => item.menuItemId)
     const menuItems = await db.menuItem.findMany({
-      where: { id: { in: menuItemIds } },
+      where: { id: { in: menuItemIds }, locationId },
       select: { id: true, commissionType: true, commissionValue: true, category: { select: { categoryType: true } }, tipExempt: true },
     })
     const menuItemMap = new Map(menuItems.map(mi => [mi.id, mi]))
