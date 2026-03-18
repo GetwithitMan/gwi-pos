@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import {
@@ -173,10 +173,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Look up the order to check ownership
-      const order = await db.order.findUnique({
-        where: { id: orderId },
-        select: { employeeId: true },
-      })
+      const order = await OrderRepository.getOrderByIdWithSelect(
+        orderId,
+        locationId,
+        { employeeId: true },
+      )
 
       if (!order) {
         return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -200,15 +201,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // M6: Block edits if the payment's shift closed more than 24 hours ago
-      const payment = await db.payment.findUnique({
-        where: { id: paymentId },
-        select: {
+      const payment = await PaymentRepository.getPaymentByIdWithSelect(
+        paymentId,
+        locationId,
+        {
           amount: true,
           shift: {
             select: { status: true, endedAt: true },
           },
         },
-      })
+      )
 
       if (payment?.shift?.status === 'closed' && payment.shift.endedAt) {
         const hoursSinceClose = (Date.now() - payment.shift.endedAt.getTime()) / (1000 * 60 * 60)

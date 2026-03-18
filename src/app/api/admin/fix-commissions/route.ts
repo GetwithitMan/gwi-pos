@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository } from '@/lib/repositories'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -39,6 +40,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
+    // TODO: Migrate to MenuItemRepository once it supports optional cross-tenant queries (admin API-key mode).
     // Get all menu items with commission settings
     const menuItemsWithCommission = await db.menuItem.findMany({
       where: {
@@ -140,6 +142,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let ordersUpdated = 0
 
     // Update order items
+    // TODO: Migrate to OrderItemRepository.updateItem once per-item locationId is tracked in itemUpdates.
+    // These items span multiple locations when locationId is not provided (admin API-key mode).
     for (const item of itemUpdates) {
       await db.orderItem.update({
         where: { id: item.id },
@@ -151,18 +155,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Update order totals
     for (const [orderId, data] of Object.entries(orderUpdates)) {
       // Get current order commission and add to it
-      const order = await db.order.findUnique({
-        where: { id: orderId },
-        select: { commissionTotal: true },
-      })
+      const itemLocationId = data.items[0]?.locationId
+      if (!itemLocationId) { ordersUpdated++; continue }
+
+      const order = await OrderRepository.getOrderByIdWithSelect(
+        orderId,
+        itemLocationId,
+        { commissionTotal: true },
+      )
 
       const currentCommission = Number(order?.commissionTotal || 0)
       const newCommission = currentCommission + data.totalCommission
 
-      await db.order.update({
-        where: { id: orderId },
-        data: { commissionTotal: newCommission },
-      })
+      await OrderRepository.updateOrder(orderId, itemLocationId, { commissionTotal: newCommission })
       ordersUpdated++
     }
 

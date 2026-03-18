@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository } from '@/lib/repositories'
 import {
   dispatchFloorPlanUpdate,
   dispatchEntertainmentStatusChanged,
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
   let staleNotifiedCount = 0
 
   try {
+    // TODO: Migrate to OrderItemRepository once it supports cross-tenant cron queries with menuItem+order joins.
     // ── Step 1: Find expired entertainment sessions ──────────────
     const expiredItems = await db.orderItem.findMany({
       where: {
@@ -111,26 +113,24 @@ export async function GET(request: NextRequest) {
         if (!result.closedOrder) {
           void (async () => {
             try {
-              const order = await db.order.findUnique({
-                where: { id: item.order.id },
-                select: { tipTotal: true, isTaxExempt: true, location: { select: { settings: true } } },
-              })
+              const order = await OrderRepository.getOrderByIdWithInclude(
+                item.order.id,
+                item.order.locationId,
+                { location: { select: { settings: true } } },
+              )
               if (!order) return
               const totals = await recalculateOrderTotals(
-                db, item.order.id, order.location.settings,
+                db, item.order.id, (order as any).location.settings,
                 Number(order.tipTotal) || 0, order.isTaxExempt
               )
-              await db.order.update({
-                where: { id: item.order.id },
-                data: {
-                  subtotal: totals.subtotal,
-                  taxTotal: totals.taxTotal,
-                  taxFromInclusive: totals.taxFromInclusive,
-                  taxFromExclusive: totals.taxFromExclusive,
-                  total: totals.total,
-                  commissionTotal: totals.commissionTotal,
-                  itemCount: totals.itemCount,
-                },
+              await OrderRepository.updateOrder(item.order.id, item.order.locationId, {
+                subtotal: totals.subtotal,
+                taxTotal: totals.taxTotal,
+                taxFromInclusive: totals.taxFromInclusive,
+                taxFromExclusive: totals.taxFromExclusive,
+                total: totals.total,
+                commissionTotal: totals.commissionTotal,
+                itemCount: totals.itemCount,
               })
               void dispatchOrderTotalsUpdate(item.order.locationId, item.order.id, {
                 subtotal: totals.subtotal,

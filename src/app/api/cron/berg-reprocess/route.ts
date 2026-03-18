@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { MenuItemRepository } from '@/lib/repositories'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { verifyCronSecret } from '@/lib/cron-auth'
+
+// TODO: Migrate db.bergDispenseEvent, db.terminal, and db.orderItem.create calls
+// to repositories once BergDevice/Terminal repositories exist.
 
 export const maxDuration = 60
 
@@ -113,17 +117,19 @@ export async function GET(request: NextRequest) {
           unmatchedType = 'NO_ORDER_ACKED'
           errorReason = 'MULTIPLE_OPEN_ORDERS'
           if (resolvedPlu.menuItemId) {
-            const menuItem = await db.menuItem.findUnique({
-              where: { id: resolvedPlu.menuItemId },
-              select: { price: true },
-            })
+            const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(
+              resolvedPlu.menuItemId,
+              device.locationId,
+              { price: true },
+            )
             if (menuItem) pourCost = menuItem.price
           }
         } else if (result.order && device.autoRingMode === 'AUTO_RING' && resolvedPlu.menuItemId) {
-          const menuItem = await db.menuItem.findUnique({
-            where: { id: resolvedPlu.menuItemId },
-            include: { category: { select: { categoryType: true } } },
-          })
+          const menuItem = await MenuItemRepository.getMenuItemByIdWithInclude(
+            resolvedPlu.menuItemId,
+            device.locationId,
+            { category: { select: { categoryType: true } } },
+          )
           if (menuItem) {
             // Load tax-inclusive settings for this location
             const loc = await db.location.findUnique({
@@ -154,10 +160,11 @@ export async function GET(request: NextRequest) {
           }
         } else if (!result.order) {
           if (resolvedPlu.menuItemId) {
-            const menuItem = await db.menuItem.findUnique({
-              where: { id: resolvedPlu.menuItemId },
-              select: { price: true },
-            })
+            const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(
+              resolvedPlu.menuItemId,
+              device.locationId,
+              { price: true },
+            )
             if (menuItem) pourCost = menuItem.price
           }
           unmatchedType = 'NO_ORDER_ACKED'

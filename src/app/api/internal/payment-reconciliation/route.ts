@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository } from '@/lib/repositories'
 
 /**
  * GET /api/internal/payment-reconciliation?locationId=xxx
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // TODO: Migrate to OrderRepository once a filtered-findMany with custom select + nested payments is supported.
     // Find orders that are still open/sent but have been idle for >30 minutes.
     // These may have had offline payments that never synced from Android devices.
     const suspectOrders = await db.order.findMany({
@@ -98,10 +100,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify order exists and belongs to the location
-    const order = await db.order.findFirst({
-      where: { id: orderId, locationId, deletedAt: null },
-      include: { payments: { where: { status: 'completed', deletedAt: null } } },
-    })
+    const order = await OrderRepository.getOrderByIdWithInclude(
+      orderId,
+      locationId,
+      { payments: { where: { status: 'completed', deletedAt: null } } },
+    )
 
     if (!order) {
       return NextResponse.json(
@@ -132,10 +135,7 @@ export async function POST(request: NextRequest) {
     // Check if order should be marked paid
     const totalPaid = order.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0) + Number(amount)
     if (totalPaid >= Number(order.total)) {
-      await db.order.update({
-        where: { id: orderId },
-        data: { status: 'paid' },
-      })
+      await OrderRepository.updateOrder(orderId, locationId, { status: 'paid' })
     }
 
     // Audit log

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -29,6 +30,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const now = new Date()
 
+    // TODO: Migrate to MenuItemRepository once it supports findMany with custom select.
     // Find all active entertainment sessions at this location.
     const activeMenuItems = await db.menuItem.findMany({
       where: {
@@ -76,8 +78,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Collect order item IDs to fetch them all at once
     const orderItemIds = activeMenuItems.map(mi => mi.currentOrderItemId!).filter(Boolean)
 
+    // TODO: Migrate to OrderItemRepository.getItemsByIdsWithInclude once it supports order join.
     const orderItems = await db.orderItem.findMany({
-      where: { id: { in: orderItemIds } },
+      where: { id: { in: orderItemIds }, locationId },
       include: {
         order: {
           select: {
@@ -108,28 +111,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     for (const orderId of affectedOrderIds) {
       void (async () => {
         try {
-          const order = await db.order.findUnique({
-            where: { id: orderId },
-            select: { tipTotal: true, isTaxExempt: true, locationId: true, location: { select: { settings: true } } },
-          })
+          const order = await OrderRepository.getOrderByIdWithInclude(
+            orderId,
+            locationId,
+            { location: { select: { settings: true } } },
+          )
           if (!order) return
           const totals = await recalculateOrderTotals(
-            db, orderId, order.location.settings,
+            db, orderId, (order as any).location.settings,
             Number(order.tipTotal) || 0, order.isTaxExempt
           )
-          await db.order.update({
-            where: { id: orderId },
-            data: {
-              subtotal: totals.subtotal,
-              taxTotal: totals.taxTotal,
-              taxFromInclusive: totals.taxFromInclusive,
-              taxFromExclusive: totals.taxFromExclusive,
-              total: totals.total,
-              commissionTotal: totals.commissionTotal,
-              itemCount: totals.itemCount,
-            },
+          await OrderRepository.updateOrder(orderId, locationId, {
+            subtotal: totals.subtotal,
+            taxTotal: totals.taxTotal,
+            taxFromInclusive: totals.taxFromInclusive,
+            taxFromExclusive: totals.taxFromExclusive,
+            total: totals.total,
+            commissionTotal: totals.commissionTotal,
+            itemCount: totals.itemCount,
           })
-          void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+          void dispatchOrderTotalsUpdate(locationId, orderId, {
             subtotal: totals.subtotal,
             taxTotal: totals.taxTotal,
             tipTotal: Number(order.tipTotal) || 0,
