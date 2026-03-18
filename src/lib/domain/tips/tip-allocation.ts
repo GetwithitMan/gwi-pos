@@ -14,6 +14,7 @@
  */
 
 import { db } from '@/lib/db'
+import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips/tip-ledger'
 import type { TxClient } from '@/lib/domain/tips/tip-ledger'
 import {
@@ -35,6 +36,9 @@ import { parseSettings } from '@/lib/settings'
 /**
  * Fetch non-voided order items with positive totals for proportional allocation.
  * Used by allocateToGroupProportional() to determine per-segment revenue weights.
+ *
+ * TODO: Migrate to OrderItemRepository once getItemsForOrderWhere supports select.
+ * Needs locationId threaded from allocateToGroupProportional.
  */
 async function fetchOrderItemsForAllocation(
   orderId: string,
@@ -200,10 +204,11 @@ export async function allocateTipsForOrder(params: {
   // Primary employee existence guard: if the employee doesn't exist in the DB,
   // downstream ledger inserts will fail on FK constraint and the tip is silently lost.
   // Validate early and log a warning so ops can investigate.
-  const primaryEmployee = await db.employee.findFirst({
-    where: { id: primaryEmployeeId, deletedAt: null },
-    select: { id: true },
-  })
+  const primaryEmployee = await EmployeeRepository.getEmployeeByIdWithSelect(
+    primaryEmployeeId,
+    locationId,
+    { id: true },
+  )
   if (!primaryEmployee) {
     console.warn(
       `[tip-allocation] primaryEmployeeId ${primaryEmployeeId} not found in DB. ` +
@@ -295,10 +300,11 @@ export async function allocateTipsForOrder(params: {
 
     if (tableTipMode === 'PRIMARY_SERVER_OWNS_ALL') {
       // Check if the order is table-based (dine-in)
-      const order = await db.order.findFirst({
-        where: { id: orderId, deletedAt: null },
-        select: { tableId: true },
-      })
+      const order = await OrderRepository.getOrderByIdWithSelect(
+        orderId,
+        locationId,
+        { tableId: true },
+      )
       if (order?.tableId) {
         skipOwnership = true
       }
