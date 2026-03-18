@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { withVenue } from '@/lib/with-venue'
@@ -45,7 +45,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // NOTE: First fetch uses db directly because we don't have locationId yet.
     // Once we have locationId from this order, all subsequent queries use repositories.
-    const firstOrder = await db.order.findUnique({
+    const firstOrder = await adminDb.order.findUnique({
       where: { id: adjustments[0].orderId },
       select: { locationId: true },
     })
@@ -75,7 +75,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Pre-fetch all orders + payments in batch to avoid N+1
     // TODO: Add batch getOrdersByIds to OrderRepository for tenant-safe batch fetch
     const allOrderIds = [...new Set(adjustments.map(a => a.orderId))]
-    const allOrders = await db.order.findMany({
+    // TODO: Add batch getOrdersByIds to OrderRepository for tenant-safe batch fetch
+    const allOrders = await adminDb.order.findMany({
       where: { id: { in: allOrderIds }, locationId: firstOrder.locationId },
       include: { payments: { where: { deletedAt: null } } },
     })
@@ -265,9 +266,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const eligibleOrderIds = [...new Set(eligibleEntries.map(([, { adj }]) => adj.orderId))]
 
       // TODO: Add batch getPaymentsByIds / getOrdersByIds to repositories for tenant-safe batch fetch
+      // TODO: Add batch getPaymentsByIds / getOrdersByIds to repositories for tenant-safe batch fetch
       const [fullPayments, fullOrders] = await Promise.all([
-        db.payment.findMany({ where: { id: { in: eligiblePaymentIds }, locationId: firstOrder.locationId } }),
-        db.order.findMany({ where: { id: { in: eligibleOrderIds }, locationId: firstOrder.locationId } }),
+        adminDb.payment.findMany({ where: { id: { in: eligiblePaymentIds }, locationId: firstOrder.locationId } }),
+        adminDb.order.findMany({ where: { id: { in: eligibleOrderIds }, locationId: firstOrder.locationId } }),
       ])
 
       for (const fp of fullPayments) {

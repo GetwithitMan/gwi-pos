@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma, OrderStatus } from '@/generated/prisma/client'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
@@ -241,7 +241,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             }
             if (reservation?.bottleServiceTierId) {
               // TODO: migrate to OrderRepository — bottleServiceTierId is a relational FK not in OrderUpdateManyMutationInput
-              await db.order.update({
+              await adminDb.order.update({
                 where: { id: order.id },
                 data: {
                   isBottleService: true,
@@ -284,7 +284,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     // Fetch menu items to get commission settings
     // TODO: Add MenuItemRepository.getMenuItemsByIds() for batch ID lookups with custom select
     const menuItemIds = items.map(item => item.menuItemId)
-    const menuItems = await db.menuItem.findMany({
+    // TODO: Add MenuItemRepository.getMenuItemsByIds() for batch ID lookups with custom select
+    const menuItems = await adminDb.menuItem.findMany({
       where: { id: { in: menuItemIds }, locationId },
       select: { id: true, commissionType: true, commissionValue: true, category: { select: { categoryType: true } }, tipExempt: true },
     })
@@ -649,7 +650,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           }
           if (reservation?.bottleServiceTierId) {
             // TODO: migrate to OrderRepository — bottleServiceTierId is a relational FK not in OrderUpdateManyMutationInput
-            await db.order.update({
+            await adminDb.order.update({
               where: { id: order.id },
               data: {
                 isBottleService: true,
@@ -830,7 +831,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // TODO: add repository method for filtered order listing (status + employee + date range + balance + includes)
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where: {
         locationId,
         ...(status ? { status: status as OrderStatus } : {}),

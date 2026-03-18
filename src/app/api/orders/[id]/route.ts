@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
