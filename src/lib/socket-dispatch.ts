@@ -22,6 +22,9 @@ import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToL
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { db, adminDb } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('socket-dispatch')
 
 interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */
@@ -105,13 +108,13 @@ export async function dispatchNewOrder(
 
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -143,13 +146,13 @@ export async function dispatchItemStatus(
       ])
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -180,13 +183,13 @@ export async function dispatchOrderBumped(
       ])
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -221,13 +224,13 @@ export async function dispatchOrderForwarded(
       await emitToLocation(locationId, 'kds:order-forwarded', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch order forwarded:', error)
+      log.error({ err: error }, 'Failed to dispatch order forwarded')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async order-forwarded dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async order-forwarded dispatch failed'))
     return true
   }
 
@@ -259,13 +262,13 @@ export async function dispatchMultiClear(
       await emitToLocation(locationId, 'kds:multi-clear', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch multi-clear:', error)
+      log.error({ err: error }, 'Failed to dispatch multi-clear')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async multi-clear dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async multi-clear dispatch failed'))
     return true
   }
 
@@ -309,13 +312,13 @@ export async function dispatchEntertainmentUpdate(
       ])
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -345,13 +348,13 @@ export async function dispatchLocationAlert(
       await emitToLocation(locationId, 'location:alert', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -380,13 +383,13 @@ export async function dispatchVoidApprovalUpdate(
       await emitToLocation(locationId, 'void:approval-update', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -411,13 +414,13 @@ export async function dispatchFloorPlanUpdate(
       await emitToLocation(locationId, 'floor-plan:updated', { locationId })
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -452,13 +455,13 @@ export async function dispatchInventoryAdjustment(
       await emitToLocation(locationId, 'inventory:adjustment', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -497,13 +500,13 @@ export async function dispatchStockLevelChange(
       await emitToLocation(locationId, 'inventory:stock-change', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -531,13 +534,13 @@ export async function dispatchMenuUpdate(
       await emitToLocation(locationId, 'menu:updated', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -568,13 +571,13 @@ export async function dispatchIngredientLibraryUpdate(
       await emitToLocation(locationId, 'ingredient:library-update', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -602,13 +605,13 @@ export async function dispatchMenuItemChanged(
       await emitToLocation(locationId, 'menu:item-changed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -637,13 +640,13 @@ export async function dispatchMenuStockChanged(
       await emitToLocation(locationId, 'menu:stock-changed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -671,13 +674,13 @@ export async function dispatchMenuStructureChanged(
       await emitToLocation(locationId, 'menu:structure-changed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -813,7 +816,7 @@ export async function dispatchEntertainmentStatusChanged(
     }
   } catch (enrichError) {
     // If enrichment fails, still dispatch the original payload
-    console.error('[SocketDispatch] Entertainment enrichment failed, dispatching base payload:', enrichError)
+    log.error({ err: enrichError }, 'Entertainment enrichment failed, dispatching base payload')
   }
 
   const doEmit = async () => {
@@ -821,13 +824,13 @@ export async function dispatchEntertainmentStatusChanged(
       await emitToLocation(locationId, 'entertainment:status-changed', enrichedPayload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -856,13 +859,13 @@ export async function dispatchEntertainmentWaitlistNotify(
       await emitToLocation(locationId, 'entertainment:waitlist-notify', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch waitlist notify:', error)
+      log.error({ err: error }, 'Failed to dispatch waitlist notify')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -887,13 +890,13 @@ export async function dispatchEntertainmentWaitlistChanged(
       await emitToLocation(locationId, 'entertainment:waitlist-changed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch waitlist changed:', error)
+      log.error({ err: error }, 'Failed to dispatch waitlist changed')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -928,13 +931,13 @@ export async function dispatchOrderTotalsUpdate(
       })
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
 
@@ -962,13 +965,13 @@ export async function dispatchOpenOrdersChanged(
       await emitToLocation(locationId, 'orders:list-changed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async open orders dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async open orders dispatch failed'))
     return true
   }
 
@@ -1018,7 +1021,7 @@ export async function dispatchPaymentProcessed(
     await emitCriticalToLocation(locationId, 'payment:processed', { ...data, _dedupKey: crypto.randomUUID() })
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch payment:processed:', error)
+    log.error({ err: error }, 'Failed to dispatch payment:processed')
     return false
   }
 }
@@ -1054,7 +1057,7 @@ export async function dispatchSplitCreated(
     })
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch order:split-created:', error)
+    log.error({ err: error }, 'Failed to dispatch order:split-created')
     return false
   }
 }
@@ -1073,7 +1076,7 @@ export async function dispatchOrderUpdated(
     await emitToLocation(locationId, 'order:updated', data)
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch order:updated:', error)
+    log.error({ err: error }, 'Failed to dispatch order:updated')
     return false
   }
 }
@@ -1092,24 +1095,24 @@ export async function dispatchTabUpdated(
     await emitToLocation(locationId, 'tab:updated', data)
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch tab:updated:', error)
+    log.error({ err: error }, 'Failed to dispatch tab:updated')
     return false
   }
 }
 
 // Mobile: notify phone that tab was successfully closed
 export function dispatchTabClosed(locationId: string, data: { orderId: string; total: number; tipAmount: number }): void {
-  void emitToLocation(locationId, MOBILE_EVENTS.TAB_CLOSED, data).catch(console.error)
+  void emitToLocation(locationId, MOBILE_EVENTS.TAB_CLOSED, data).catch((err) => log.error({ err }, 'Failed to dispatch tab closed'))
 }
 
 // Mobile: update phone with current tab status
 export function dispatchTabStatusUpdate(locationId: string, data: { orderId: string; status: string }): void {
-  void emitToLocation(locationId, MOBILE_EVENTS.TAB_STATUS_UPDATE, data).catch(console.error)
+  void emitToLocation(locationId, MOBILE_EVENTS.TAB_STATUS_UPDATE, data).catch((err) => log.error({ err }, 'Failed to dispatch tab status update'))
 }
 
 // Mobile: notify phone that tab items were updated
 export function dispatchTabItemsUpdated(locationId: string, data: { orderId: string; itemCount: number }): void {
-  void emitToLocation(locationId, MOBILE_EVENTS.TAB_ITEMS_UPDATED, data).catch(console.error)
+  void emitToLocation(locationId, MOBILE_EVENTS.TAB_ITEMS_UPDATED, data).catch((err) => log.error({ err }, 'Failed to dispatch tab items updated'))
 }
 
 /**
@@ -1126,7 +1129,7 @@ export async function dispatchTableStatusChanged(
     await emitToLocation(locationId, 'table:status-changed', data)
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch table:status-changed:', error)
+    log.error({ err: error }, 'Failed to dispatch table:status-changed')
     return false
   }
 }
@@ -1145,7 +1148,7 @@ export async function dispatchOrderItemAdded(
     await emitToLocation(locationId, 'order:item-added', data)
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch order:item-added:', error)
+    log.error({ err: error }, 'Failed to dispatch order:item-added')
     return false
   }
 }
@@ -1165,7 +1168,7 @@ export async function dispatchOrderItemRemoved(
     await emitToLocation(locationId, 'order:item-removed', { orderId, itemId })
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch order:item-removed:', error)
+    log.error({ err: error }, 'Failed to dispatch order:item-removed')
     return false
   }
 }
@@ -1186,7 +1189,7 @@ export async function dispatchOrderItemUpdated(
     await emitToLocation(locationId, 'order:item-updated', { orderId, itemId, changes })
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch order:item-updated:', error)
+    log.error({ err: error }, 'Failed to dispatch order:item-updated')
     return false
   }
 }
@@ -1214,13 +1217,13 @@ export async function dispatchTipGroupUpdate(
       await emitToLocation(locationId, 'tip-group:updated', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch:', error)
+      log.error({ err: error }, 'Failed to dispatch')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async tip group dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async tip group dispatch failed'))
     return true
   }
 
@@ -1247,9 +1250,9 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
   taxFromExclusive?: number
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, data).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, data).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
   }
 }
 
@@ -1272,9 +1275,9 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
   taxFromExclusive?: number
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
   }
 }
 
@@ -1291,9 +1294,9 @@ export function dispatchCFDPaymentStarted(locationId: string, cfdTerminalId: str
   paymentMethod: string
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PAYMENT_STARTED, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PAYMENT_STARTED, data).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, data).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
   }
 }
 
@@ -1310,9 +1313,9 @@ export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string |
   suggestedTips: Array<{ label: string; percent: number; amount: number }>
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.TIP_PROMPT, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.TIP_PROMPT, data).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, data).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
   }
 }
 
@@ -1328,9 +1331,9 @@ export function dispatchCFDSignatureRequest(locationId: string, cfdTerminalId: s
   transactionId?: string
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
   }
 }
 
@@ -1346,9 +1349,9 @@ export function dispatchCFDReceiptSent(locationId: string, cfdTerminalId: string
   total: number
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.RECEIPT_SENT, data).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
   }
 }
 
@@ -1363,9 +1366,9 @@ export function dispatchCFDProcessing(locationId: string, cfdTerminalId: string 
   orderId: string
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PROCESSING, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PROCESSING, data).catch((err) => log.error({ err }, 'CFD processing dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.PROCESSING, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.PROCESSING, data).catch((err) => log.error({ err }, 'CFD processing dispatch failed'))
   }
 }
 
@@ -1384,9 +1387,9 @@ export function dispatchCFDApproved(locationId: string, cfdTerminalId: string | 
   total?: number
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.APPROVED, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.APPROVED, data).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.APPROVED, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.APPROVED, data).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
   }
 }
 
@@ -1402,9 +1405,9 @@ export function dispatchCFDDeclined(locationId: string, cfdTerminalId: string | 
   reason: string
 }): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.DECLINED, data).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.DECLINED, data).catch((err) => log.error({ err }, 'CFD declined dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.DECLINED, data).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.DECLINED, data).catch((err) => log.error({ err }, 'CFD declined dispatch failed'))
   }
 }
 
@@ -1415,9 +1418,9 @@ export function dispatchCFDDeclined(locationId: string, cfdTerminalId: string | 
  */
 export function dispatchCFDIdle(locationId: string, cfdTerminalId: string | null): void {
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.IDLE, {}).catch(console.error)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.IDLE, {}).catch((err) => log.error({ err }, 'CFD idle dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.IDLE, {}).catch(console.error)
+    void emitToLocation(locationId, CFD_EVENTS.IDLE, {}).catch((err) => log.error({ err }, 'CFD idle dispatch failed'))
   }
 }
 
@@ -1439,7 +1442,7 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
   taxFromInclusive?: number
   taxFromExclusive?: number
 }): void {
-  void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, data).catch(console.error)
+  void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, data).catch((err) => log.error({ err }, 'CFD order-updated dispatch failed'))
 }
 
 // ==================== Order Summary Events (Android cross-terminal sync) ====================
@@ -1531,13 +1534,13 @@ export async function dispatchOrderSummaryUpdated(
       await emitToLocation(locationId, 'order:summary-updated', summary)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch order:summary-updated:', error)
+      log.error({ err: error }, 'Failed to dispatch order:summary-updated')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async order:summary-updated failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async order:summary-updated failed'))
     return true
   }
 
@@ -1567,13 +1570,13 @@ export async function dispatchOrderClosed(
       await emitCriticalToLocation(locationId, 'order:closed', { ...payload, _dedupKey: crypto.randomUUID() })
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch order:closed:', error)
+      log.error({ err: error }, 'Failed to dispatch order:closed')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async order:closed failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async order:closed failed'))
     return true
   }
 
@@ -1598,7 +1601,7 @@ export async function dispatchOutageStatus(
   try {
     await emitToLocation(locationId, 'sync:outage-status', { isInOutage })
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch sync:outage-status:', error)
+    log.error({ err: error }, 'Failed to dispatch sync:outage-status')
   }
 }
 
@@ -1624,13 +1627,13 @@ export async function dispatchFailoverActive(
       await emitToLocation(locationId, 'server:failover-active', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch server:failover-active:', error)
+      log.error({ err: error }, 'Failed to dispatch server:failover-active')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async failover-active failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async failover-active failed'))
     return true
   }
 
@@ -1654,13 +1657,13 @@ export async function dispatchFailoverResolved(
       })
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch server:failover-resolved:', error)
+      log.error({ err: error }, 'Failed to dispatch server:failover-resolved')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async failover-resolved failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async failover-resolved failed'))
     return true
   }
 
@@ -1688,7 +1691,7 @@ export function dispatchScaleWeight(
     grossNet: reading.grossNet,
     overCapacity: reading.overCapacity,
     timestamp: reading.timestamp.toISOString(),
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'Scale weight dispatch failed'))
 }
 
 /**
@@ -1707,7 +1710,7 @@ export function dispatchScaleStatus(
     connected: status.connected,
     error: status.error ?? null,
     timestamp: new Date().toISOString(),
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'Scale status dispatch failed'))
 }
 
 // ==================== Order Claim Events ====================
@@ -1734,13 +1737,13 @@ export async function dispatchOrderClaimed(
       await emitToLocation(locationId, 'order:claimed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch order:claimed:', error)
+      log.error({ err: error }, 'Failed to dispatch order:claimed')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async order:claimed failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async order:claimed failed'))
     return true
   }
 
@@ -1764,13 +1767,13 @@ export async function dispatchOrderReleased(
       await emitToLocation(locationId, 'order:released', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch order:released:', error)
+      log.error({ err: error }, 'Failed to dispatch order:released')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async order:released failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async order:released failed'))
     return true
   }
 
@@ -1796,13 +1799,13 @@ export async function dispatchWaitlistChanged(
       await emitToLocation(locationId, 'waitlist:changed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch waitlist:changed:', error)
+      log.error({ err: error }, 'Failed to dispatch waitlist:changed')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async waitlist:changed failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async waitlist:changed failed'))
     return true
   }
 
@@ -1831,13 +1834,13 @@ export async function dispatchPrintJobFailed(
       await emitToLocation(locationId, 'print:job-failed', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch print:job-failed:', error)
+      log.error({ err: error }, 'Failed to dispatch print:job-failed')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async print:job-failed failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async print:job-failed failed'))
     return true
   }
 
@@ -1858,7 +1861,7 @@ export async function dispatchQuickBarChanged(
   try {
     await emitToLocation(locationId, 'quickbar:changed', {})
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch quickbar:changed:', error)
+    log.error({ err: error }, 'Failed to dispatch quickbar:changed')
   }
 }
 
@@ -1879,12 +1882,12 @@ export async function dispatchMembershipUpdate(
       await emitToLocation(locationId, 'membership:updated', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch membership:updated:', error)
+      log.error({ err: error }, 'Failed to dispatch membership:updated')
       return false
     }
   }
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
   return doEmit()
@@ -1909,12 +1912,12 @@ export async function dispatchShiftRequestUpdate(
       await emitToLocation(locationId, 'shift-request:updated', payload)
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch shift-request:updated:', error)
+      log.error({ err: error }, 'Failed to dispatch shift-request:updated')
       return false
     }
   }
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async dispatch failed'))
     return true
   }
   return doEmit()
@@ -1933,7 +1936,7 @@ export async function dispatchVenueLogNew(
     await emitToLocation(locationId, 'venue-log:new', summary)
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch venue-log:new:', error)
+    log.error({ err: error }, 'Failed to dispatch venue-log:new')
     return false
   }
 }
@@ -1971,13 +1974,13 @@ export async function dispatchReservationChanged(
 
       return true
     } catch (error) {
-      console.error('[SocketDispatch] Failed to dispatch reservation:changed:', error)
+      log.error({ err: error }, 'Failed to dispatch reservation:changed')
       return false
     }
   }
 
   if (options.async) {
-    doEmit().catch((err) => console.error('[SocketDispatch] Async reservation:changed failed:', err))
+    doEmit().catch((err) => log.error({ err }, 'Async reservation:changed failed'))
     return true
   }
 
@@ -1998,7 +2001,7 @@ export async function dispatchPaymentVoided(
     await emitToLocation(locationId, 'payment:voided', data)
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch payment:voided:', error)
+    log.error({ err: error }, 'Failed to dispatch payment:voided')
     return false
   }
 }
@@ -2017,7 +2020,7 @@ export async function dispatchPaymentRefunded(
     await emitToLocation(locationId, 'payment:refunded', data)
     return true
   } catch (error) {
-    console.error('[SocketDispatch] Failed to dispatch payment:refunded:', error)
+    log.error({ err: error }, 'Failed to dispatch payment:refunded')
     return false
   }
 }
@@ -2038,7 +2041,7 @@ export async function dispatchCakeOrderNew(
     await emitToLocation(locationId, 'cake-orders:new', payload)
     await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
   } catch (err) {
-    console.error('[SocketDispatch] cake-orders:new failed:', err)
+    log.error({ err }, 'Failed to dispatch cake-orders:new')
   }
 }
 
@@ -2057,7 +2060,7 @@ export async function dispatchCakeOrderUpdated(
     await emitToLocation(locationId, 'cake-orders:updated', payload)
     await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
   } catch (err) {
-    console.error('[SocketDispatch] cake-orders:updated failed:', err)
+    log.error({ err }, 'Failed to dispatch cake-orders:updated')
   }
 }
 
@@ -2073,6 +2076,6 @@ export async function dispatchCakeOrdersListChanged(
   try {
     await emitToLocation(locationId, 'cake-orders:list-changed', { locationId })
   } catch (err) {
-    console.error('[SocketDispatch] cake-orders:list-changed failed:', err)
+    log.error({ err }, 'Failed to dispatch cake-orders:list-changed')
   }
 }
