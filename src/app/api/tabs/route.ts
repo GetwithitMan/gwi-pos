@@ -4,7 +4,13 @@ import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import type { OrderStatus } from '@prisma/client'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { TabUpdatedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import type { OrderStatus } from '@/generated/prisma/client'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 
 // GET - List open tabs with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -15,6 +21,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
     const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'))
 
+    // Auth check: resolve actor from query param or session, then validate
+    const actorId = employeeId || (await getActorFromRequest(request)).employeeId
+    if (actorId) {
+      const actor = await db.employee.findUnique({ where: { id: actorId, deletedAt: null }, select: { locationId: true } })
+      if (actor) {
+        const auth = await requirePermission(actorId, actor.locationId, PERMISSIONS.POS_ACCESS)
+        if (!auth.authorized) {
+          return NextResponse.json({ error: auth.error }, { status: auth.status })
+        }
+      }
+    }
+
+    // TODO: Phase 2 — extract into OrderRepository once a findTabs method with pagination,
+    // cards, and custom includes is available. Current query requires locationId filtering.
     const where = {
       orderType: 'bar_tab' as const,
       ...(status !== 'all' ? { status } : {}),
@@ -197,6 +217,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const resolvedLocationId = locationId || employee.locationId
     const settings = parseSettings(employee.location.settings)
 
+    // Auth check
+    const auth = await requirePermission(employeeId, resolvedLocationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     // Create pre-auth data if provided
     let preAuthData = {}
     if (preAuth && preAuth.cardLast4) {
@@ -226,7 +252,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Create the tab atomically with order number lock + create in one transaction
+    // Create the tab atomically with order number lock + socket outbox in one transaction
+    // TODO: Phase 2 — extract order creation into OrderRepository.createOrder() with number lock
     const tab = await db.$transaction(async (tx) => {
       // Lock latest order row to prevent duplicate order numbers
       const lastOrderRows = await tx.$queryRawUnsafe<{ orderNumber: number }[]>(
@@ -235,7 +262,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
       const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
-      return tx.order.create({
+      const created = await tx.order.create({
         data: {
           locationId: resolvedLocationId,
           employeeId,
@@ -252,9 +279,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         },
       })
+
+      // Queue critical socket events inside the transaction (outbox pattern)
+      const tabPayload: TabUpdatedPayload = { orderId: created.id, status: 'open' }
+      await queueSocketEvent(tx, resolvedLocationId, SOCKET_EVENTS.TAB_UPDATED, tabPayload)
+
+      const listPayload: OrdersListChangedPayload = {
+        trigger: 'created',
+        orderId: created.id,
+        orderNumber: created.orderNumber,
+        status: 'open',
+      }
+      await queueSocketEvent(tx, resolvedLocationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+
+      return created
     })
 
-    // Emit order event for tab creation (fire-and-forget)
+    // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
+    void flushSocketOutbox(resolvedLocationId).catch((err) => {
+      console.warn('[tabs/create] Outbox flush failed, catch-up will deliver:', err)
+    })
+
+    // Emit order events for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(resolvedLocationId, tab.id, 'ORDER_CREATED', {
       locationId: resolvedLocationId,
       employeeId,

@@ -4,7 +4,13 @@ import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { TabUpdatedPayload, OrdersListChangedPayload, FloorPlanUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import * as OrderRepository from '@/lib/repositories/order-repository'
+import { getLocationId } from '@/lib/location-cache'
 
 // GET - Get tab details
 export const GET = withVenue(async function GET(
@@ -14,26 +20,31 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const tab = await db.order.findUnique({
-      where: { id },
-      include: {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-        items: {
-          include: {
-            menuItem: {
-              select: { id: true, name: true },
-            },
-            modifiers: true,
-          },
-          orderBy: { createdAt: 'asc' },
-        },
-        payments: {
-          orderBy: { processedAt: 'asc' },
-        },
-        location: true,
+    // Resolve employeeId from session
+    const { employeeId } = await getActorFromRequest(request)
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const tab = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
+      employee: {
+        select: { id: true, displayName: true, firstName: true, lastName: true },
       },
+      items: {
+        include: {
+          menuItem: {
+            select: { id: true, name: true },
+          },
+          modifiers: true,
+        },
+        orderBy: { createdAt: 'asc' },
+      },
+      payments: {
+        orderBy: { processedAt: 'asc' },
+      },
+      location: true,
     })
 
     if (!tab) {
@@ -41,6 +52,12 @@ export const GET = withVenue(async function GET(
         { error: 'Tab not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check
+    const auth = await requirePermission(employeeId, tab.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     if (tab.orderType !== 'bar_tab') {
@@ -138,9 +155,16 @@ export const PUT = withVenue(async function PUT(
       releasePreAuth?: boolean
     }
 
-    const tab = await db.order.findUnique({
-      where: { id },
-      include: { location: true },
+    // Resolve employeeId from body or session
+    const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const tab = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
+      location: true,
     })
 
     if (!tab) {
@@ -148,6 +172,12 @@ export const PUT = withVenue(async function PUT(
         { error: 'Tab not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check
+    const auth = await requirePermission(employeeId, tab.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     if (tab.orderType !== 'bar_tab') {
@@ -201,17 +231,38 @@ export const PUT = withVenue(async function PUT(
       updateData.preAuthExpiresAt = calculatePreAuthExpiration(settings.payments.preAuthExpirationDays)
     }
 
-    const updated = await db.order.update({
-      where: { id },
-      data: updateData,
-      include: {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
+    // Wrap update + socket outbox in a single atomic transaction
+    const updated = await db.$transaction(async (tx) => {
+      // TODO: Phase 2 — extract into OrderRepository.updateOrderAndReturn() once tx-passthrough is finalized
+      const result = await tx.order.update({
+        where: { id },
+        data: updateData,
+        include: {
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
         },
-      },
+      })
+
+      // Queue critical socket events inside the transaction (outbox pattern)
+      const tabPayload: TabUpdatedPayload = { orderId: id, status: result.status }
+      await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.TAB_UPDATED, tabPayload)
+
+      const listPayload: OrdersListChangedPayload = {
+        trigger: 'updated',
+        orderId: id,
+      }
+      await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+
+      return result
     })
 
-    // Fire-and-forget event emission
+    // Transaction committed — flush outbox
+    void flushSocketOutbox(tab.locationId).catch((err) => {
+      console.warn('[tabs/update] Outbox flush failed, catch-up will deliver:', err)
+    })
+
+    // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, id, 'ORDER_METADATA_UPDATED', {
       ...(tabName !== undefined ? { tabName: tabName || null } : {}),
       ...(tabNickname !== undefined ? { tabNickname: tabNickname || null } : {}),
@@ -228,10 +279,6 @@ export const PUT = withVenue(async function PUT(
         preAuthCardBrand: updated.preAuthCardBrand,
       } : {}),
     }).catch(console.error)
-
-    // Socket dispatch so other terminals see tab metadata changes in real-time
-    void dispatchTabUpdated(tab.locationId, { orderId: id }).catch(console.error)
-    void dispatchOpenOrdersChanged(tab.locationId, { trigger: 'item_updated', orderId: id }).catch(console.error)
 
     return NextResponse.json({ data: {
       id: updated.id,
@@ -268,12 +315,17 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id } = await params
 
-    const tab = await db.order.findUnique({
-      where: { id },
-      include: {
-        items: true,
-        payments: true,
-      },
+    // Resolve employeeId from session
+    const { employeeId } = await getActorFromRequest(request)
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const tab = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
+      items: true,
+      payments: true,
     })
 
     if (!tab) {
@@ -281,6 +333,12 @@ export const DELETE = withVenue(async function DELETE(
         { error: 'Tab not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check
+    const auth = await requirePermission(employeeId, tab.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     if (tab.orderType !== 'bar_tab') {
@@ -305,20 +363,37 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    await db.order.update({ where: { id }, data: { deletedAt: new Date() } })
+    // Wrap soft-delete + socket outbox in a single atomic transaction
+    await db.$transaction(async (tx) => {
+      // TODO: Phase 2 — use OrderRepository.softDeleteOrder(id, locationId, tx) once outbox is co-located
+      await tx.order.update({ where: { id }, data: { deletedAt: new Date() } })
 
-    // Fire-and-forget event emission
+      // Queue critical socket events inside the transaction (outbox pattern)
+      const listPayload: OrdersListChangedPayload = {
+        trigger: 'voided',
+        orderId: id,
+      }
+      await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+
+      const tabPayload: TabUpdatedPayload = { orderId: id, status: 'cancelled' }
+      await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.TAB_UPDATED, tabPayload)
+
+      if (tab.tableId) {
+        const floorPayload: FloorPlanUpdatedPayload = { locationId: tab.locationId }
+        await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.FLOOR_PLAN_UPDATED, floorPayload)
+      }
+    })
+
+    // Transaction committed — flush outbox
+    void flushSocketOutbox(tab.locationId).catch((err) => {
+      console.warn('[tabs/delete] Outbox flush failed, catch-up will deliver:', err)
+    })
+
+    // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, id, 'ORDER_CLOSED', {
       closedStatus: 'cancelled',
       reason: 'Empty tab deleted',
     }).catch(console.error)
-
-    // Socket dispatch so other terminals remove the deleted tab from their list
-    void dispatchOpenOrdersChanged(tab.locationId, { trigger: 'voided', orderId: id }).catch(console.error)
-    if (tab.tableId) {
-      const { dispatchFloorPlanUpdate } = await import('@/lib/socket-dispatch')
-      void dispatchFloorPlanUpdate(tab.locationId).catch(console.error)
-    }
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

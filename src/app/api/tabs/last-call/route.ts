@@ -13,6 +13,7 @@ import {
   dispatchTabStatusUpdate,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 
 /**
  * GET /api/tabs/last-call
@@ -40,6 +41,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const barOps = locSettings.barOperations ?? { lastCallEnabled: true, lastCallAutoGratuityPercent: 20 }
     const autoGratuityPercent = barOps.lastCallAutoGratuityPercent || 20
 
+    // TODO: Phase 2 — extract into OrderRepository once a findOpenBarTabs method with
+    // cards/payments/employee includes is available
     const openTabs = await db.order.findMany({
       where: {
         locationId,
@@ -136,6 +139,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const autoGratuityPercent = barOps.lastCallAutoGratuityPercent || 20
 
     // ── Fetch all open tabs ──
+    // TODO: Phase 2 — extract into OrderRepository once a findOpenBarTabs method with
+    // items/cards/payments/employee includes is available
     const openTabs = await db.order.findMany({
       where: {
         locationId,
@@ -199,14 +204,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         if (subtotal <= 0) {
           // Zero-balance tab — just close it
-          await db.order.update({
-            where: { id: tab.id },
-            data: {
-              status: 'paid',
-              tabStatus: 'closed',
-              paidAt: new Date(),
-              version: { increment: 1 },
-            },
+          await OrderRepository.updateOrder(tab.id, locationId, {
+            status: 'paid',
+            tabStatus: 'closed',
+            paidAt: new Date(),
+            version: { increment: 1 },
           })
 
           void emitOrderEvent(locationId, tab.id, 'TAB_CLOSED', {
@@ -271,17 +273,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
           await db.$transaction(async (tx) => {
             // Apply auto-gratuity to the order total
-            await tx.order.update({
-              where: { id: tab.id },
-              data: {
-                status: 'paid',
-                tabStatus: 'closed',
-                tipTotal: hasTip ? undefined : gratuityAmount,
-                total: hasTip ? undefined : subtotal + gratuityAmount,
-                paidAt: now,
-                version: { increment: 1 },
-              },
-            })
+            await OrderRepository.updateOrder(tab.id, locationId, {
+              status: 'paid',
+              tabStatus: 'closed',
+              tipTotal: hasTip ? undefined : gratuityAmount,
+              total: hasTip ? undefined : subtotal + gratuityAmount,
+              paidAt: now,
+              version: { increment: 1 },
+            }, tx)
 
             // Create a cash payment record for tabs closed without a card
             await tx.payment.create({

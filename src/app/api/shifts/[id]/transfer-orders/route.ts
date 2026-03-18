@@ -14,7 +14,8 @@ import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-disp
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { OPEN_ORDER_STATUSES } from '@/lib/domain/order-status'
-import type { OrderStatus } from '@prisma/client'
+import type { OrderStatus } from '@/generated/prisma/client'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 
 interface BulkTransferPayload {
   toEmployeeId: string
@@ -133,7 +134,7 @@ export const POST = withVenue(async function POST(
 
     // ── Bulk transfer in a transaction ──────────────────────────────────
     const result = await db.$transaction(async (tx) => {
-      // Find all open orders for the shift employee
+      // Find all open orders for the shift employee (already tenant-scoped by locationId)
       const openOrders = await tx.order.findMany({
         where: {
           locationId: shift.locationId,
@@ -155,9 +156,10 @@ export const POST = withVenue(async function POST(
 
       const orderIds = openOrders.map((o) => o.id)
 
-      // Bulk update all orders
+      // Bulk update all orders (locationId added for tenant safety)
+      // TODO: Phase 2 — extract into OrderRepository.bulkUpdateOrders() for tenant-safe batch ops
       await tx.order.updateMany({
-        where: { id: { in: orderIds } },
+        where: { id: { in: orderIds }, locationId: shift.locationId },
         data: { employeeId: toEmployeeId },
       })
 

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { TabUpdatedPayload, TabTransferCompletePayload, OrdersListChangedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import * as OrderRepository from '@/lib/repositories/order-repository'
+import { getLocationId } from '@/lib/location-cache'
 
 interface TransferRequest {
   toEmployeeId: string
@@ -31,14 +35,16 @@ export const POST = withVenue(async function POST(
     }
 
     // Get the tab (order with bar_tab type)
-    const tab = await db.order.findUnique({
-      where: { id: tabId },
-      include: {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-        location: true,
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const tab = await OrderRepository.getOrderByIdWithInclude(tabId, locationId, {
+      employee: {
+        select: { id: true, displayName: true, firstName: true, lastName: true },
       },
+      location: true,
     })
 
     if (!tab) {
@@ -110,50 +116,67 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Update the tab with new employee
-    const updatedTab = await db.order.update({
-      where: { id: tabId },
-      data: {
-        employeeId: toEmployeeId,
-        notes: tab.notes
-          ? `${tab.notes}\n[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`
-          : `[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`,
-      },
-      include: {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
+    // Wrap tab update + audit log + socket outbox in a single atomic transaction
+    const updatedTab = await db.$transaction(async (tx) => {
+      // TODO: Phase 2 — extract into OrderRepository.updateOrderAndReturn() once tx-passthrough is finalized
+      const result = await tx.order.update({
+        where: { id: tabId },
+        data: {
+          employeeId: toEmployeeId,
+          notes: tab.notes
+            ? `${tab.notes}\n[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`
+            : `[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`,
         },
-      },
+        include: {
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+        },
+      })
+
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          locationId: tab.locationId,
+          employeeId: fromEmployeeId,
+          action: 'tab_transferred',
+          entityType: 'order',
+          entityId: tabId,
+          details: {
+            fromEmployeeId,
+            toEmployeeId,
+            tabName: tab.tabName,
+            orderNumber: tab.orderNumber,
+            reason: reason || null,
+          },
+        },
+      })
+
+      // Queue critical socket events inside the transaction (outbox pattern)
+      const tabPayload: TabUpdatedPayload = { orderId: tabId, status: result.status }
+      await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.TAB_UPDATED, tabPayload)
+
+      const transferPayload: TabTransferCompletePayload = { orderId: tabId }
+      await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.TAB_TRANSFER_COMPLETE, transferPayload)
+
+      const listPayload: OrdersListChangedPayload = {
+        trigger: 'transferred',
+        orderId: tabId,
+      }
+      await queueSocketEvent(tx, tab.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+
+      return result
     })
 
-    // Log the transfer in audit log
-    await db.auditLog.create({
-      data: {
-        locationId: tab.locationId,
-        employeeId: fromEmployeeId,
-        action: 'tab_transferred',
-        entityType: 'order',
-        entityId: tabId,
-        details: {
-          fromEmployeeId,
-          toEmployeeId,
-          tabName: tab.tabName,
-          orderNumber: tab.orderNumber,
-          reason: reason || null,
-        },
-      },
+    // Transaction committed — flush outbox
+    void flushSocketOutbox(tab.locationId).catch((err) => {
+      console.warn('[tabs/transfer] Outbox flush failed, catch-up will deliver:', err)
     })
 
-    // Emit order event for tab transfer (fire-and-forget)
+    // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, tabId, 'ORDER_METADATA_UPDATED', {
       employeeId: toEmployeeId,
     })
-
-    // Dispatch socket event (fire-and-forget)
-    void dispatchOpenOrdersChanged(tab.locationId, {
-      trigger: 'transferred',
-      orderId: tabId,
-    }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,
