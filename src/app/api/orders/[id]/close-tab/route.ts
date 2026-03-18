@@ -142,7 +142,7 @@ export const POST = withVenue(async function POST(
 
       // Short transaction to record the zero-tab result (orchestration)
       await db.$transaction(async (tx) => {
-        await recordZeroTabResult(tx, orderId, releaseResults)
+        await recordZeroTabResult(tx, orderId, releaseResults, locationId)
       })
 
       // C6 FIX: Log warning for partial failures so ops can investigate
@@ -340,7 +340,7 @@ export const POST = withVenue(async function POST(
         return recordCaptureFailure(tx, orderId, 'All cards failed to capture', {
           maxCaptureRetries: locSettings.barTabs?.maxCaptureRetries,
           autoFlagWalkoutAfterDeclines: locSettings.barTabs?.autoFlagWalkoutAfterDeclines,
-        })
+        }, locationId, employeeId)
       })
 
       // Notify all terminals
@@ -368,7 +368,7 @@ export const POST = withVenue(async function POST(
         return recordCaptureFailure(tx, orderId, error?.text || 'Capture declined', {
           maxCaptureRetries: locSettings.barTabs?.maxCaptureRetries,
           autoFlagWalkoutAfterDeclines: locSettings.barTabs?.autoFlagWalkoutAfterDeclines,
-        })
+        }, locationId, employeeId)
       })
 
       // Notify all terminals
