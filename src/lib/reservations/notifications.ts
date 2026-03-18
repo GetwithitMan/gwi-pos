@@ -8,7 +8,10 @@
 import crypto from 'crypto'
 import { sendSMS } from '@/lib/twilio'
 import { sendEmail } from '@/lib/email-service'
+import { createChildLogger } from '@/lib/logger'
 import type { PrismaClient } from '@/generated/prisma/client'
+
+const log = createChildLogger('reservations')
 
 // ============================================
 // Types
@@ -323,7 +326,7 @@ export async function sendReservationNotification(
         },
       })
       .catch((err: unknown) => {
-        console.error('[Notifications] Failed to log ReservationEvent:', err)
+        log.error({ err: err }, '[Notifications] Failed to log ReservationEvent:')
       })
   }
 

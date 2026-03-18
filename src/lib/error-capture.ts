@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('error-capture')
+
 /**
  * Error Capture Utility
  *
@@ -244,14 +247,14 @@ class ErrorCaptureService {
 
       if (!response.ok) {
         // Failed to log error - log to console as fallback
-        console.error('[Error Capture] Failed to log error to monitoring API:', {
+        log.error('[Error Capture] Failed to log error to monitoring API:', {
           status: response.status,
           originalError: data,
         })
       }
     } catch (loggingError) {
       // Don't let error logging crash the app
-      console.error('[Error Capture] Failed to log error:', loggingError)
+      log.error('[Error Capture] Failed to log error:', loggingError)
     }
   }
 

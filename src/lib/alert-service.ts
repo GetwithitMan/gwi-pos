@@ -22,6 +22,9 @@ import { getLocationSettings } from './location-cache'
 import { parseSettings } from './settings'
 import { logVenueEvent } from './venue-logger'
 import type { VenueLogLevel, VenueLogCategory } from './venue-logger'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('alert-service')
 
 // ============================================
 // Type Definitions
@@ -181,7 +184,7 @@ export async function dispatchAlert(payload: AlertPayload): Promise<{
       },
       employeeId: payload.employeeId,
       locationId: payload.locationId,
-    }).catch(console.error)
+    }).catch((err) => log.error({ err }, 'operation failed'))
 
     // Send alerts to all configured channels
     const results = await Promise.allSettled(
@@ -219,7 +222,7 @@ export async function dispatchAlert(payload: AlertPayload): Promise<{
     }
 
   } catch (error) {
-    console.error('Failed to dispatch alert:', error)
+    log.error({ err: error }, 'Failed to dispatch alert:')
     return { sent: false, channels: [], throttled: false }
   }
 }
@@ -234,7 +237,7 @@ export async function dispatchAlert(payload: AlertPayload): Promise<{
 async function sendEmailAlert(payload: AlertPayload): Promise<void> {
   // Check if email service is configured
   if (!process.env.EMAIL_FROM || !process.env.EMAIL_TO) {
-    console.warn('Email alerts not configured (missing EMAIL_FROM or EMAIL_TO)')
+    log.warn('Email alerts not configured (missing EMAIL_FROM or EMAIL_TO)')
     return
   }
 
@@ -283,7 +286,7 @@ async function sendEmailAlert(payload: AlertPayload): Promise<void> {
     })
 
   } catch (error) {
-    console.error('Failed to send email alert:', error)
+    log.error({ err: error }, 'Failed to send email alert:')
     throw error
   }
 }
@@ -319,7 +322,7 @@ async function sendSlackAlert(payload: AlertPayload): Promise<void> {
   const webhookUrl = await resolveSlackWebhookUrl(payload.locationId)
 
   if (!webhookUrl) {
-    console.warn('Slack alerts not configured (set webhook URL in Settings > Integrations > Slack, or SLACK_WEBHOOK_URL env var)')
+    log.warn('Slack alerts not configured (set webhook URL in Settings > Integrations > Slack, or SLACK_WEBHOOK_URL env var)')
     return
   }
 
@@ -360,7 +363,7 @@ async function sendSlackAlert(payload: AlertPayload): Promise<void> {
     }
 
   } catch (error) {
-    console.error('Failed to send Slack alert:', error)
+    log.error({ err: error }, 'Failed to send Slack alert:')
     throw error
   }
 }
@@ -384,7 +387,7 @@ async function sendSMSAlert(payload: AlertPayload): Promise<void> {
   const toNumber = process.env.TWILIO_TO_NUMBER
 
   if (!accountSid || !authToken || !fromNumber || !toNumber) {
-    console.warn('SMS alerts not configured (missing Twilio credentials)')
+    log.warn('SMS alerts not configured (missing Twilio credentials)')
     return
   }
 
@@ -403,7 +406,7 @@ ${payload.paymentId ? `Payment: ${payload.paymentId}` : ''}`
     })
 
   } catch (error) {
-    console.error('Failed to send SMS alert:', error)
+    log.error({ err: error }, 'Failed to send SMS alert:')
     throw error
   }
 }

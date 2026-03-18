@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('floorplan')
 
 export function apiError(action: string, error: unknown, status = 500) {
   const message = error instanceof Error ? error.message : 'Unknown error';
   const stack = error instanceof Error ? error.stack : undefined;
 
-  console.error(`[FloorPlan API] Failed to ${action}:`, message);
+  log.error(`[FloorPlan API] Failed to ${action}:`, message);
 
   return NextResponse.json(
     {

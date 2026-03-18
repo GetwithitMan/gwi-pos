@@ -1,6 +1,9 @@
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { ESCPOS } from '@/lib/escpos/commands'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('cash-drawer')
 
 /**
  * Trigger a cash drawer kick on the receipt printer for the given location.
@@ -25,17 +28,17 @@ export async function triggerCashDrawer(locationId: string): Promise<void> {
     })
 
     if (!printer) {
-      console.warn('[CashDrawer] No active receipt printer found for location', locationId)
+      log.warn('[CashDrawer] No active receipt printer found for location', locationId)
       return
     }
 
     const result = await sendToPrinter(printer.ipAddress, printer.port, ESCPOS.DRAWER_KICK)
 
     if (!result.success) {
-      console.warn('[CashDrawer] Drawer kick failed:', result.error)
+      log.warn('[CashDrawer] Drawer kick failed:', result.error)
     }
   } catch (err) {
     // Non-critical — log and swallow so callers are never disrupted
-    console.error('[CashDrawer] Unexpected error triggering cash drawer:', err)
+    log.error({ err: err }, '[CashDrawer] Unexpected error triggering cash drawer:')
   }
 }

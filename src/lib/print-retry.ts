@@ -18,6 +18,9 @@ import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { dispatchPrintJobFailed } from '@/lib/socket-dispatch'
 import { dispatchAlert } from '@/lib/alert-service'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('print-retry')
 
 const MAX_RETRY_COUNT = 3
 
@@ -50,7 +53,7 @@ export async function dispatchPrintWithRetry(
       if (retryRes.ok) return
       throw new Error(`Print retry failed: ${retryRes.status}`)
     } catch (retryError) {
-      console.error('[PRINT-SAFETY] Print failed after retry:', retryError)
+      log.error({ err: retryError }, '[PRINT-SAFETY] Print failed after retry:')
       // Log to audit trail so managers can see missed tickets
       void db.auditLog.create({
         data: {
@@ -167,7 +170,7 @@ export async function retryFailedPrintJobs(
             })
 
             // Emit socket event + alert for permanent failure
-            void emitPermanentFailure(locationId, job).catch(console.error)
+            void emitPermanentFailure(locationId, job).catch((err) => log.error({ err }, 'emitPermanentFailure failed'))
 
             failed++
           }
@@ -200,7 +203,7 @@ export async function retryFailedPrintJobs(
               errorMessage: errorMsg + ' — no backup available',
             },
           })
-          void emitPermanentFailure(locationId, job).catch(console.error)
+          void emitPermanentFailure(locationId, job).catch((err) => log.error({ err }, 'emitPermanentFailure failed'))
           failed++
         }
       } else {
@@ -261,7 +264,7 @@ async function attemptBackupForJob(
 
     if (route?.backupPrinter?.isActive) {
       const backup = route.backupPrinter
-      console.log(`[PrintRetry] Trying backup printer "${backup.name}" for job ${job.id}`)
+      log.info(`[PrintRetry] Trying backup printer "${backup.name}" for job ${job.id}`)
       const result = await sendToPrinter(backup.ipAddress, backup.port, buffer)
       if (result.success) {
         await db.printJob.update({
@@ -274,7 +277,7 @@ async function attemptBackupForJob(
         })
         return true
       }
-      console.warn(`[PrintRetry] Backup "${backup.name}" also failed: ${result.error}`)
+      log.warn(`[PrintRetry] Backup "${backup.name}" also failed: ${result.error}`)
     }
 
     // Strategy 2: Any other active printer with same role
@@ -290,7 +293,7 @@ async function attemptBackupForJob(
     })
 
     if (altPrinter) {
-      console.log(`[PrintRetry] Trying alternate printer "${altPrinter.name}" for job ${job.id}`)
+      log.info(`[PrintRetry] Trying alternate printer "${altPrinter.name}" for job ${job.id}`)
       const result = await sendToPrinter(altPrinter.ipAddress, altPrinter.port, buffer)
       if (result.success) {
         await db.printJob.update({
@@ -303,12 +306,12 @@ async function attemptBackupForJob(
         })
         return true
       }
-      console.warn(`[PrintRetry] Alternate "${altPrinter.name}" also failed: ${result.error}`)
+      log.warn(`[PrintRetry] Alternate "${altPrinter.name}" also failed: ${result.error}`)
     }
 
     return false
   } catch (err) {
-    console.error('[PrintRetry] Backup routing failed:', err)
+    log.error({ err: err }, '[PrintRetry] Backup routing failed:')
     return false
   }
 }
@@ -325,7 +328,7 @@ async function emitPermanentFailure(
     printerName: job.printer.name,
     printerId: job.printer.id,
     error: 'Permanently failed after max retries, no backup available',
-  }, { async: true }).catch(console.error)
+  }, { async: true }).catch((err) => log.error({ err }, 'operation failed'))
 
   void dispatchAlert({
     severity: 'HIGH',
@@ -335,5 +338,5 @@ async function emitPermanentFailure(
     locationId,
     orderId: job.orderId || undefined,
     groupId: `printer-fail-${job.printer.id}`,
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'operation failed'))
 }

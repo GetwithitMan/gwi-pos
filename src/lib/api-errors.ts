@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('api-errors')
 
 // ============================================
 // Custom error classes
@@ -61,7 +64,7 @@ interface ErrorResponse {
 }
 
 export function handleApiError(error: unknown, defaultMessage: string = 'Internal server error'): NextResponse<ErrorResponse> {
-  console.error('API Error:', error)
+  log.error({ err: error }, 'API Error:')
 
   // Handle known ApiError instances
   if (error instanceof ApiError) {

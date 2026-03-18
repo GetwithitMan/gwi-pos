@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('permission-registry')
+
 // src/lib/permission-registry.ts
 // Single source of truth for permission metadata.
 // Powers the roles UI: (i) panels, filtering, risk warnings, tab grouping.
@@ -1852,7 +1855,7 @@ export function logRegistryCoverage(allPermissionKeys: string[]): void {
   const unmapped = allPermissionKeys.filter(k => !(k in PERMISSION_REGISTRY))
   if (unmapped.length > 0) {
     console.group(`[PermissionRegistry] ${unmapped.length} unmapped keys (using inferred metadata):`)
-    unmapped.forEach(k => console.log(' -', k))
+    unmapped.forEach(k => log.info(' -', k))
     console.groupEnd()
   }
 }

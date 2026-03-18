@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('email-service')
+
 /**
  * Email Service
  *
@@ -64,7 +67,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
 
   // Production mode - require API key
   if (!apiKey) {
-    console.error('RESEND_API_KEY not configured - cannot send email')
+    log.error('RESEND_API_KEY not configured - cannot send email')
     return {
       success: false,
       error: 'Email service not configured',
@@ -92,7 +95,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
     const data = await response.json()
 
     if (!response.ok) {
-      console.error('Failed to send email:', data)
+      log.error('Failed to send email:', data)
       return {
         success: false,
         error: data.message || `HTTP ${response.status}`,
@@ -105,7 +108,7 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
     }
 
   } catch (error) {
-    console.error('Email send error:', error)
+    log.error({ err: error }, 'Email send error:')
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

@@ -7,6 +7,9 @@ type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 import type { MultiplierSettings, InventoryItemData, PrepItemWithIngredients } from './types'
 import { convertUnits, normalizeUnit } from './unit-conversion'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('inventory')
 
 /**
  * Get the effective cost per unit, preferring yield cost if available
@@ -173,7 +176,7 @@ export function explodePrepItem(
 ): ExplodedIngredient[] {
   // Guard against infinite recursion
   if (depth >= MAX_RECURSION_DEPTH) {
-    console.warn(`Max recursion depth reached for prep item: ${prepItem.name}`)
+    log.warn(`Max recursion depth reached for prep item: ${prepItem.name}`)
     return []
   }
 

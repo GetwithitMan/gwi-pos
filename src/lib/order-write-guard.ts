@@ -1,4 +1,7 @@
 import { Prisma } from '@/generated/prisma/client'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('order-write-guard')
 
 /**
  * Event-Source Migration Guard
@@ -25,11 +28,9 @@ function logDirectWrite(model: string, action: string) {
   const isFromBatchRoute = stack.includes('order-events/batch')
 
   if (!isFromProjector && !isFromBatchRoute) {
-    console.warn(
-      `[ORDER_WRITE_GUARD] ${model}.${action} — ` +
+    log.warn(`[ORDER_WRITE_GUARD] ${model}.${action} — ` +
       `Direct write detected. Migrate to event emission. ` +
-      `See CLAUDE.md "Event-Sourced Orders" section.`
-    )
+      `See CLAUDE.md "Event-Sourced Orders" section.`)
   }
 }
 

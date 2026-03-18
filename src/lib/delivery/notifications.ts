@@ -21,6 +21,9 @@
 
 import { db } from '@/lib/db'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('delivery')
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -62,7 +65,7 @@ export async function createDeliveryNotification(params: SendNotificationParams)
     `, locationId, deliveryOrderId, event, channel)
 
     if (existing.length > 0) {
-      console.log(`[DeliveryNotification] Dedup: ${event}/${channel} already sent for order ${deliveryOrderId}`)
+      log.info(`[DeliveryNotification] Dedup: ${event}/${channel} already sent for order ${deliveryOrderId}`)
       return
     }
 
@@ -80,7 +83,7 @@ export async function createDeliveryNotification(params: SendNotificationParams)
     `, locationId, deliveryOrderId, event, channel, recipient, messageBody)
 
     if (!inserted.length) {
-      console.error('[DeliveryNotification] Failed to insert notification record')
+      log.error('[DeliveryNotification] Failed to insert notification record')
       return
     }
 
@@ -134,7 +137,7 @@ export async function createDeliveryNotification(params: SendNotificationParams)
       }
     }
   } catch (error) {
-    console.error('[DeliveryNotification] Error creating notification:', error)
+    log.error({ err: error }, '[DeliveryNotification] Error creating notification:')
     // Don't throw — notification failure should not block the delivery operation
   }
 }
@@ -189,7 +192,7 @@ async function attemptSend(
 ): Promise<SendResult> {
   if (channel === 'sms') {
     if (!isTwilioConfigured()) {
-      console.warn('[DeliveryNotification] Twilio not configured, skipping SMS')
+      log.warn('[DeliveryNotification] Twilio not configured, skipping SMS')
       return { success: false, error: 'Twilio not configured' }
     }
 
@@ -203,14 +206,14 @@ async function attemptSend(
       return { success: false, error: result.error || 'Twilio send failed' }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Unknown Twilio error'
-      console.error('[DeliveryNotification] Twilio SMS error:', errMsg)
+      log.error('[DeliveryNotification] Twilio SMS error:', errMsg)
       return { success: false, error: errMsg }
     }
   }
 
   if (channel === 'push') {
     // TODO: Wire Firebase Cloud Messaging
-    console.log(`[DeliveryNotification] Push STUB: Would send to ${recipient}: ${messageBody}`)
+    log.info(`[DeliveryNotification] Push STUB: Would send to ${recipient}: ${messageBody}`)
     return { success: true, providerMessageId: `stub-push-${Date.now()}` }
   }
 

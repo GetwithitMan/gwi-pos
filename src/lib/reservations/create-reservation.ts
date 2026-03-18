@@ -10,6 +10,7 @@ import crypto from 'crypto'
 import type { PrismaClient } from '@/generated/prisma/client'
 import type { ReservationSettings, DepositRules, ReservationMessageTemplates } from '@/lib/settings'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
 
 import { findOrCreateCustomer, isBlacklisted } from './customer-matcher'
 import { evaluateDepositRequired, snapshotDepositRules, generateDepositToken } from './deposit-rules'
@@ -20,6 +21,8 @@ import { getServiceDate } from './service-date'
 import { parseTimeToMinutes } from './service-date'
 import { sendReservationNotification } from './notifications'
 import type { Actor, SourceType } from './state-machine'
+
+const log = createChildLogger('reservations')
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -338,7 +341,7 @@ export async function createReservationWithRules(
     reservationId: reservation.id,
     action: 'created',
     reservation,
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'dispatchReservationChanged failed'))
 
   // ── Step 4: Post-commit — generate deposit token if needed ──
   let depositToken: string | undefined
@@ -365,7 +368,7 @@ export async function createReservationWithRules(
     db,
     templates,
     venueInfo,
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'sendReservationNotification failed'))
 
   return {
     reservation,

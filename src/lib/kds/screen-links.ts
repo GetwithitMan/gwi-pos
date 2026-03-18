@@ -14,6 +14,7 @@
 
 import crypto from 'crypto'
 import { adminDb, db } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
 import {
   dispatchOrderForwarded,
   dispatchMultiClear,
@@ -21,6 +22,8 @@ import {
   dispatchItemStatus,
 } from '@/lib/socket-dispatch'
 import type { KDSBumpAction, KDSLinkType } from './types'
+
+const log = createChildLogger('kds')
 
 interface ProcessScreenLinksParams {
   orderId: string
@@ -72,7 +75,7 @@ export async function processScreenLinks(
 
     // Skip invalid/stale targets silently
     if (!target.isActive || target.deletedAt || target.locationId !== locationId) {
-      console.warn(`[KDS] Skipping stale send_to_next link ${link.id} → screen ${target.id} (${target.name}): inactive/deleted/wrong location`)
+      log.warn(`[KDS] Skipping stale send_to_next link ${link.id} → screen ${target.id} (${target.name}): inactive/deleted/wrong location`)
       continue
     }
 
@@ -86,7 +89,7 @@ export async function processScreenLinks(
         },
       })
     } catch (err) {
-      console.error(`[KDS] Failed to persist forwarding state for items → screen ${target.id}:`, err)
+      log.error({ err: err }, `[KDS] Failed to persist forwarding state for items → screen ${target.id}:`)
     }
 
     // Dispatch socket event
@@ -102,7 +105,7 @@ export async function processScreenLinks(
       bumpedBy,
       locationId,
       timestamp: new Date().toISOString(),
-    }).catch(err => console.error('[KDS] dispatchOrderForwarded failed:', err))
+    }).catch(err => log.error({ err: err }, '[KDS] dispatchOrderForwarded failed:'))
 
     // Audit log
     void db.auditLog.create({
@@ -123,7 +126,7 @@ export async function processScreenLinks(
           bumpAction: link.bumpAction,
         },
       },
-    }).catch(err => console.error('[KDS] Forward audit log failed:', err))
+    }).catch(err => log.error({ err: err }, '[KDS] Forward audit log failed:'))
   }
 
   // Process multi_clear links: notify target screens about item completion
@@ -132,7 +135,7 @@ export async function processScreenLinks(
 
     // Skip invalid targets
     if (!target.isActive || target.deletedAt || target.locationId !== locationId) {
-      console.warn(`[KDS] Skipping stale multi_clear link ${link.id} → screen ${target.id}: inactive/deleted/wrong location`)
+      log.warn(`[KDS] Skipping stale multi_clear link ${link.id} → screen ${target.id}: inactive/deleted/wrong location`)
       continue
     }
 
@@ -145,7 +148,7 @@ export async function processScreenLinks(
       bumpAction: link.bumpAction as KDSBumpAction,
       locationId,
       timestamp: new Date().toISOString(),
-    }).catch(err => console.error('[KDS] dispatchMultiClear failed:', err))
+    }).catch(err => log.error({ err: err }, '[KDS] dispatchMultiClear failed:'))
 
     // Audit log
     void db.auditLog.create({
@@ -165,7 +168,7 @@ export async function processScreenLinks(
           bumpAction: link.bumpAction,
         },
       },
-    }).catch(err => console.error('[KDS] Multi-clear audit log failed:', err))
+    }).catch(err => log.error({ err: err }, '[KDS] Multi-clear audit log failed:'))
   }
 
   return isFinalBump
@@ -212,7 +215,7 @@ export async function processExpoFinalBump(
       stationId: screenId,
       bumpedBy,
       allItemsServed: true,
-    }, { async: true }).catch(err => console.error('[KDS] Final bump dispatch failed:', err))
+    }, { async: true }).catch(err => log.error({ err: err }, '[KDS] Final bump dispatch failed:'))
 
     // Also dispatch per-item status for Android terminals
     for (const iid of itemIds) {
@@ -222,7 +225,7 @@ export async function processExpoFinalBump(
         status: 'completed',
         stationId: screenId,
         updatedBy: bumpedBy,
-      }, { async: true }).catch(err => console.error('[KDS] Final bump item status dispatch failed:', err))
+      }, { async: true }).catch(err => log.error({ err: err }, '[KDS] Final bump item status dispatch failed:'))
     }
 
     // Audit log
@@ -240,7 +243,7 @@ export async function processExpoFinalBump(
           remainingOnScreen: 0,
         },
       },
-    }).catch(err => console.error('[KDS] Final bump audit log failed:', err))
+    }).catch(err => log.error({ err: err }, '[KDS] Final bump audit log failed:'))
   }
 }
 

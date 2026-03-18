@@ -14,6 +14,9 @@
 
 import { cookies } from 'next/headers'
 import crypto from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('auth-session')
 
 export const POS_SESSION_COOKIE = 'pos-session'
 const SESSION_EXPIRY_SECONDS = 8 * 60 * 60 // 8 hours
@@ -43,9 +46,9 @@ function getSecret(): string {
   if (!_fallbackSecret) {
     _fallbackSecret = crypto.randomBytes(32).toString('hex')
     if (process.env.NODE_ENV === 'production') {
-      console.error('[auth-session] SESSION_SECRET not set in production — using auto-generated secret (sessions will not survive restarts)')
+      log.error('[auth-session] SESSION_SECRET not set in production — using auto-generated secret (sessions will not survive restarts)')
     } else {
-      console.warn('[auth-session] SESSION_SECRET not set — using auto-generated secret (sessions will not survive restarts)')
+      log.warn('[auth-session] SESSION_SECRET not set — using auto-generated secret (sessions will not survive restarts)')
     }
   }
   return _fallbackSecret

@@ -24,7 +24,10 @@
 import { db } from '@/lib/db'
 import { postToTipLedger } from '@/lib/domain/tips/tip-ledger'
 import type { TxClient } from '@/lib/domain/tips/tip-ledger'
+import { createChildLogger } from '@/lib/logger'
 import { writeDeliveryAuditLog } from './state-machine'
+
+const log = createChildLogger('delivery')
 
 const HOLDING_LEDGER_PREFIX = 'system:delivery_holding:'
 
@@ -156,7 +159,7 @@ export async function reallocateTipToDriver(
       idempotencyKey,
     })
   } catch (error) {
-    console.error('[reallocateTipToDriver] Error:', error)
+    log.error({ err: error }, '[reallocateTipToDriver] Error:')
     // Don't throw — tip reallocation failure should not block dispatch
   }
 }
@@ -248,7 +251,7 @@ export async function reassignDriverTip(
       idempotencyKey,
     })
   } catch (error) {
-    console.error('[reassignDriverTip] Error:', error)
+    log.error({ err: error }, '[reassignDriverTip] Error:')
     // Don't throw — tip reassignment failure should not block dispatch
   }
 }

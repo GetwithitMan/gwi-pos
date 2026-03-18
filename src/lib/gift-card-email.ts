@@ -8,6 +8,9 @@
  */
 
 import { sendEmail } from '@/lib/email-service'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('gift-card-email')
 
 interface GiftCardEmailParams {
   recipientEmail: string
@@ -134,7 +137,7 @@ export async function sendGiftCardEmail(params: GiftCardEmailParams): Promise<vo
   })
 
   if (!result.success) {
-    console.error(`[GiftCard Email] Failed to send to ${recipientEmail}:`, result.error)
+    log.error(`[GiftCard Email] Failed to send to ${recipientEmail}:`, result.error)
   }
 }
 

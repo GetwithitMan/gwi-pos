@@ -1,5 +1,8 @@
 import { db } from '@/lib/db'
 import { invalidateLocationCache } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('api-utils')
 
 const LIQUOR_TYPES = ['liquor', 'drinks']
 const FOOD_TYPES = ['food', 'pizza', 'combos']
@@ -37,7 +40,7 @@ export async function syncTaxRateToSettings(locationId: string): Promise<void> {
 
     // Validate computed rates are finite
     if (!Number.isFinite(exclusiveRate) || !Number.isFinite(inclusiveRate)) {
-      console.error(`[tax-sync] Invalid computed rates for location ${locationId}: excl=${exclusiveRate}, incl=${inclusiveRate}`)
+      log.error(`[tax-sync] Invalid computed rates for location ${locationId}: excl=${exclusiveRate}, incl=${inclusiveRate}`)
       return
     }
 
@@ -75,7 +78,7 @@ export async function syncTaxRateToSettings(locationId: string): Promise<void> {
       select: { settings: true },
     })
     if (!location) {
-      console.error(`[tax-sync] Location ${locationId} not found`)
+      log.error(`[tax-sync] Location ${locationId} not found`)
       return
     }
 
@@ -98,6 +101,6 @@ export async function syncTaxRateToSettings(locationId: string): Promise<void> {
 
     invalidateLocationCache(locationId)
   } catch (err) {
-    console.error(`[tax-sync] Failed to sync tax settings for location ${locationId}:`, err)
+    log.error({ err: err }, `[tax-sync] Failed to sync tax settings for location ${locationId}:`)
   }
 }

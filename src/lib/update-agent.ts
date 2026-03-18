@@ -11,6 +11,9 @@
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import path from 'path'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('update-agent')
 
 const APP_DIR = process.env.APP_DIR || '/opt/gwi-pos/app'
 const UPDATE_LOCK_FILE = path.join(APP_DIR, '..', '.update-lock')
@@ -153,7 +156,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
   // Run preflight
   const preflight = await runPreflightChecks()
   if (!preflight.passed) {
-    console.warn('[UpdateAgent] Preflight failed:', preflight.checks.filter(c => !c.passed))
+    log.warn('[UpdateAgent] Preflight failed:', preflight.checks.filter(c => !c.passed))
     return {
       success: false,
       previousVersion,
@@ -165,7 +168,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
   }
 
   isUpdating = true
-  console.log(`[UpdateAgent] Starting update: ${previousVersion} → ${targetVersion}`)
+  log.info(`[UpdateAgent] Starting update: ${previousVersion} → ${targetVersion}`)
 
   try {
     // Write lock file
@@ -190,7 +193,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     } catch {
       // No tag — use origin/main (standard flow for now)
       ref = 'origin/main'
-      console.log(`[UpdateAgent] Tag v${targetVersion} not found, using origin/main`)
+      log.info(`[UpdateAgent] Tag v${targetVersion} not found, using origin/main`)
     }
 
     // Reset to target
@@ -209,18 +212,18 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
         pkg.version = targetVersion
         const { writeFileSync } = await import('fs')
         writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-        console.log(`[UpdateAgent] Stamped version ${targetVersion} into package.json`)
+        log.info(`[UpdateAgent] Stamped version ${targetVersion} into package.json`)
       }
     } catch (err) {
-      console.warn('[UpdateAgent] Version stamp failed:', err instanceof Error ? err.message : err)
+      log.warn('[UpdateAgent] Version stamp failed:', err instanceof Error ? err.message : err)
     }
 
     // Install dependencies
-    console.log('[UpdateAgent] Running npm install...')
+    log.info('[UpdateAgent] Running npm install...')
     execSync('npm install --production=false', { cwd: APP_DIR, timeout: 180_000 })
 
     // Prisma generate
-    console.log('[UpdateAgent] Running prisma generate...')
+    log.info('[UpdateAgent] Running prisma generate...')
     execSync('npx prisma generate', { cwd: APP_DIR, timeout: 120_000 })
 
     // Pre-migrate script (if exists)
@@ -234,7 +237,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     } catch (migrateErr) {
       const stderr = migrateErr instanceof Error ? (migrateErr as { stderr?: string }).stderr || migrateErr.message : String(migrateErr)
       if (stderr.includes('P3005')) {
-        console.log('[UpdateAgent] Database needs baselining (P3005)...')
+        log.info('[UpdateAgent] Database needs baselining (P3005)...')
         const migrationsDir = path.join(APP_DIR, 'prisma', 'migrations')
         const { readdirSync, statSync } = await import('fs')
         const migDirs = readdirSync(migrationsDir)
@@ -250,24 +253,24 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     }
 
     // Build
-    console.log('[UpdateAgent] Running npm run build...')
+    log.info('[UpdateAgent] Running npm run build...')
     execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
 
     // Clean lock
     try { unlinkSync(UPDATE_LOCK_FILE) } catch {}
 
-    console.log(`[UpdateAgent] Update complete: ${previousVersion} → ${targetVersion}`)
+    log.info(`[UpdateAgent] Update complete: ${previousVersion} → ${targetVersion}`)
 
     // Request service restart (graceful, delayed to allow response delivery)
     setTimeout(() => {
-      console.log('[UpdateAgent] Requesting service restart...')
+      log.info('[UpdateAgent] Requesting service restart...')
       try {
         execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
       } catch {
         try {
           execSync('sudo systemctl restart pulse-pos', { timeout: 30_000 })
         } catch (err) {
-          console.error('[UpdateAgent] Restart failed:', err)
+          log.error({ err: err }, '[UpdateAgent] Restart failed:')
         }
       }
     }, 2000)
@@ -284,7 +287,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     try { unlinkSync(UPDATE_LOCK_FILE) } catch {}
 
     const error = err instanceof Error ? err.message : String(err)
-    console.error(`[UpdateAgent] Update failed:`, error)
+    log.error({ err: error }, `[UpdateAgent] Update failed:`)
 
     return {
       success: false,
@@ -313,14 +316,14 @@ export function checkForUpdate(heartbeatResponse: {
   const current = getCurrentVersion()
   if (current === targetVersion || current === 'unknown') return
 
-  console.log(`[UpdateAgent] Version mismatch: running ${current}, target ${targetVersion}`)
+  log.info(`[UpdateAgent] Version mismatch: running ${current}, target ${targetVersion}`)
 
   // Fire-and-forget update
   void executeUpdate(targetVersion).then(result => {
     if (result.success) {
-      console.log(`[UpdateAgent] Update succeeded: ${result.previousVersion} → ${result.targetVersion} (${result.durationMs}ms)`)
+      log.info(`[UpdateAgent] Update succeeded: ${result.previousVersion} → ${result.targetVersion} (${result.durationMs}ms)`)
     } else {
-      console.error(`[UpdateAgent] Update failed: ${result.error}`)
+      log.error(`[UpdateAgent] Update failed: ${result.error}`)
     }
 
     // Report result back to MC via cloud event
@@ -332,8 +335,8 @@ export function checkForUpdate(heartbeatResponse: {
           ...result,
         })
       } catch {}
-    })().catch(console.error)
-  }).catch(console.error)
+    })().catch((err) => log.error({ err }, 'emitCloudEvent failed'))
+  }).catch((err) => log.error({ err }, 'operation failed'))
 }
 
 /**

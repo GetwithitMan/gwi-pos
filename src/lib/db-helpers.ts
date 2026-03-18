@@ -1,4 +1,7 @@
 import { PrismaClient } from '@/generated/prisma/client'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('db-helpers')
 
 /**
  * Transaction client type — the Prisma client available inside $transaction().
@@ -42,6 +45,6 @@ export async function enableSyncReplication(tx: TransactionClient): Promise<void
     // Non-fatal: sync replication is a durability enhancement, not a correctness requirement.
     // If the SET LOCAL fails (e.g., Neon managed PG that doesn't support the setting),
     // we still want the payment to go through with async replication.
-    console.warn('[sync-replication] Failed to enable synchronous_commit for transaction:', err)
+    log.warn('[sync-replication] Failed to enable synchronous_commit for transaction:', err)
   }
 }

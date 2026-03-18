@@ -2,7 +2,7 @@
  * Delivery socket dispatch helpers.
  *
  * All events are fire-and-forget. Callers should wrap with:
- *   void dispatchXxx(locationId, payload).catch(console.error)
+ *   void dispatchXxx(locationId, payload).catch((err) => log.error({ err }, 'dispatchXxx failed'))
  *
  * Events emitted:
  *   delivery:status_changed  — structured status change (new)
@@ -15,6 +15,9 @@
  */
 
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('delivery')
 
 // ── Delivery Order Events ───────────────────────────────────────────────────
 

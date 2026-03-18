@@ -9,6 +9,9 @@
  */
 
 import type { PrismaClient } from '@/generated/prisma/client'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('reservations')
 
 /**
  * Hash a string to a BigInt suitable for pg_advisory_xact_lock.
@@ -88,7 +91,7 @@ export async function acquireReservationLocks(
 
   const elapsed = Date.now() - startTime
   if (elapsed > 300) {
-    console.warn(JSON.stringify({
+    log.warn(JSON.stringify({
       event: 'advisory_lock_wait',
       duration_ms: elapsed,
       location_id: locationId,

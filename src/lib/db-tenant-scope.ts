@@ -8,6 +8,9 @@
 
 import { TENANT_SCOPED_MODELS } from './tenant-validation'
 import { requestStore, getRequestLocationId, setRequestLocationId } from './request-context'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('db-tenant-scope')
 
 /**
  * Resolve the locationId for tenant scoping.
@@ -100,7 +103,7 @@ export function createTenantScopedExtension() {
             const lid = await resolveTenantLocationId()
             const resultLocationId = (result as Record<string, unknown>).locationId as string | undefined
             if (lid && resultLocationId && resultLocationId !== lid) {
-              console.error(JSON.stringify({
+              log.error(JSON.stringify({
                 event: 'tenant_breach_detected', model, operation: 'findUnique',
                 expected: lid, actual: resultLocationId,
               }))
@@ -115,7 +118,7 @@ export function createTenantScopedExtension() {
             const lid = await resolveTenantLocationId()
             const resultLocationId = (result as Record<string, unknown>).locationId as string | undefined
             if (lid && resultLocationId && resultLocationId !== lid) {
-              console.error(JSON.stringify({
+              log.error(JSON.stringify({
                 event: 'tenant_breach_detected', model, operation: 'findUniqueOrThrow',
                 expected: lid, actual: resultLocationId,
               }))

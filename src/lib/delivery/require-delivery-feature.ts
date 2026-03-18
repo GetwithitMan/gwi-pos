@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getLocationSettings } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
 import { isDeliveryFeatureActive, type DeliveryFeatureFlags } from './feature-check'
+
+const log = createChildLogger('delivery')
 
 type SubfeatureKey = keyof Omit<DeliveryFeatureFlags, 'deliveryModuleEnabled' | 'disableMode' | 'lastSyncedAt' | 'lastSyncedVersion'>
 
@@ -45,7 +48,7 @@ export async function requireDeliveryFeature(
 
     return null // Feature is active, proceed
   } catch (error) {
-    console.error('[requireDeliveryFeature] Error checking feature gate:', error)
+    log.error({ err: error }, '[requireDeliveryFeature] Error checking feature gate:')
     // Fail closed -- if we can't check, deny access
     return isPublic
       ? NextResponse.json({ error: 'Not found' }, { status: 404 })

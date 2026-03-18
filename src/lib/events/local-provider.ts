@@ -26,6 +26,9 @@ import type {
 import { buildChannelName } from './types'
 import type { EventProvider, ProviderConfig } from './provider'
 import { DEFAULT_PROVIDER_CONFIG } from './provider'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('events')
 
 type Listener = {
   event: EventName
@@ -155,7 +158,7 @@ export class LocalEventProvider implements EventProvider {
       try {
         listener.callback(data)
       } catch (error) {
-        console.error(`[LocalEvents] Error in listener for ${event}:`, error)
+        log.error({ err: error }, `[LocalEvents] Error in listener for ${event}:`)
       }
     })
   }

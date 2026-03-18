@@ -27,6 +27,9 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { reallocateTipToDriver } from './tip-reallocation'
 import { processDeliveryTipSplit } from '@/lib/domain/tips/delivery-tip-split'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('delivery')
 
 // ── Delivery Order States ───────────────────────────────────────────────────
 
@@ -262,7 +265,7 @@ export async function advanceDeliveryStatus(
     })
 
     // 5. Fire socket event (fire-and-forget)
-    void dispatchDeliveryStatusChanged(locationId, updated[0]).catch(console.error)
+    void dispatchDeliveryStatusChanged(locationId, updated[0]).catch((err) => log.error({ err }, 'dispatchDeliveryStatusChanged failed'))
 
     // 5b. Tip hooks — fire-and-forget, failures must never block state machine
     const updatedOrder = updated[0]
@@ -275,7 +278,7 @@ export async function advanceDeliveryStatus(
         updatedOrder.orderId,
         updatedOrder.driverId,
         employeeId,
-      ).catch(err => console.error('[advanceDeliveryStatus] Tip reallocation to driver failed:', err))
+      ).catch(err => log.error({ err: err }, '[advanceDeliveryStatus] Tip reallocation to driver failed:'))
     }
 
     if (newStatus === 'delivered' && updatedOrder.driverId && updatedOrder.orderId) {
@@ -300,7 +303,7 @@ export async function advanceDeliveryStatus(
             })
           }
         } catch (err) {
-          console.error('[advanceDeliveryStatus] Delivery tip split failed:', err)
+          log.error({ err: err }, '[advanceDeliveryStatus] Delivery tip split failed:')
         }
       })()
     }
@@ -314,12 +317,12 @@ export async function advanceDeliveryStatus(
         updatedOrder.runId,
         locationId,
         employeeId,
-      ).catch(console.error)
+      ).catch((err) => log.error({ err }, 'autoCompleteRunIfAllTerminal failed'))
     }
 
     return { success: true, deliveryOrder: updatedOrder }
   } catch (error) {
-    console.error('[advanceDeliveryStatus] Error:', error)
+    log.error({ err: error }, '[advanceDeliveryStatus] Error:')
     return { success: false, error: 'Internal error advancing delivery status' }
   }
 }
@@ -393,14 +396,14 @@ export async function advanceRunStatus(
 
     // Fire socket events for ALL status transitions so dispatch board stays current
     if (TERMINAL_RUN_STATES.includes(newStatus)) {
-      void dispatchRunEvent(locationId, 'delivery:run_completed', updated[0]).catch(console.error)
+      void dispatchRunEvent(locationId, 'delivery:run_completed', updated[0]).catch((err) => log.error({ err }, 'dispatchRunEvent failed'))
     } else {
-      void dispatchRunEvent(locationId, 'delivery:run_created', updated[0]).catch(console.error)
+      void dispatchRunEvent(locationId, 'delivery:run_created', updated[0]).catch((err) => log.error({ err }, 'dispatchRunEvent failed'))
     }
 
     return { success: true, run: updated[0] }
   } catch (error) {
-    console.error('[advanceRunStatus] Error:', error)
+    log.error({ err: error }, '[advanceRunStatus] Error:')
     return { success: false, error: 'Internal error advancing run status' }
   }
 }
@@ -454,11 +457,11 @@ export async function advanceDriverSessionStatus(
       return { success: false, error: 'Failed to update session' }
     }
 
-    void dispatchDriverStatusChanged(locationId, updated[0]).catch(console.error)
+    void dispatchDriverStatusChanged(locationId, updated[0]).catch((err) => log.error({ err }, 'dispatchDriverStatusChanged failed'))
 
     return { success: true, session: updated[0] }
   } catch (error) {
-    console.error('[advanceDriverSessionStatus] Error:', error)
+    log.error({ err: error }, '[advanceDriverSessionStatus] Error:')
     return { success: false, error: 'Internal error' }
   }
 }
@@ -526,12 +529,12 @@ export async function autoCompleteRunIfAllTerminal(
     })
 
     if (result.success) {
-      console.log(`[autoCompleteRun] Run ${runId} auto-advanced to ${targetStatus}`)
+      log.info(`[autoCompleteRun] Run ${runId} auto-advanced to ${targetStatus}`)
     } else {
-      console.warn(`[autoCompleteRun] Failed to auto-advance run ${runId}: ${result.error}`)
+      log.warn(`[autoCompleteRun] Failed to auto-advance run ${runId}: ${result.error}`)
     }
   } catch (error) {
-    console.error('[autoCompleteRunIfAllTerminal] Error:', error)
+    log.error({ err: error }, '[autoCompleteRunIfAllTerminal] Error:')
   }
 }
 
@@ -592,12 +595,12 @@ export async function checkKdsBumpDeliveryAdvance(
     })
 
     if (result.success) {
-      console.log(`[KDS→Delivery] Order ${orderId} delivery auto-advanced to ready_for_pickup`)
+      log.info(`[KDS→Delivery] Order ${orderId} delivery auto-advanced to ready_for_pickup`)
     } else {
-      console.warn(`[KDS→Delivery] Failed to auto-advance order ${orderId}: ${result.error}`)
+      log.warn(`[KDS→Delivery] Failed to auto-advance order ${orderId}: ${result.error}`)
     }
   } catch (error) {
-    console.error('[checkKdsBumpDeliveryAdvance] Error:', error)
+    log.error({ err: error }, '[checkKdsBumpDeliveryAdvance] Error:')
   }
 }
 
@@ -659,7 +662,7 @@ export async function writeDeliveryAuditLog(entry: AuditLogEntry): Promise<void>
       entry.idempotencyKey || null,
     )
   } catch (error) {
-    console.error('[writeDeliveryAuditLog] Failed to write audit log:', error)
+    log.error({ err: error }, '[writeDeliveryAuditLog] Failed to write audit log:')
     // Don't throw — audit log failure should not block the operation
   }
 }

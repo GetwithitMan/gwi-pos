@@ -16,6 +16,9 @@ import { transition } from './state-machine'
 import { findOrCreateCustomer } from './customer-matcher'
 import { sendReservationNotification, type TemplateKey } from './notifications'
 import { dispatchReservationChanged, dispatchWaitlistChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('reservations')
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -173,21 +176,21 @@ export async function offerSlotToWaitlist(
     templates,
     venueInfo,
     channels: ['sms'],
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'operation failed'))
 
   // Socket dispatches
   void dispatchReservationChanged(rez.locationId, {
     reservationId: newReservation.id,
     action: 'slot_offered',
     reservation: newReservation,
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'dispatchReservationChanged failed'))
 
   void dispatchWaitlistChanged(rez.locationId, {
     action: 'notified',
     entryId: entry.id,
     customerName: entry.customerName,
     partySize: entry.partySize,
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'dispatchWaitlistChanged failed'))
 
   return {
     offered: true,
@@ -298,7 +301,7 @@ export async function claimOfferedSlot(params: {
     reservationId: reservation.id,
     action: 'confirmed',
     reservation: updated,
-  }).catch(console.error)
+  }).catch((err) => log.error({ err }, 'dispatchReservationChanged failed'))
 
   return { success: true, reservation: updated }
 }

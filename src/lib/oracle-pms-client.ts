@@ -15,6 +15,9 @@
  */
 
 import type { HotelPmsSettings } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('oracle-pms')
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -160,7 +163,7 @@ async function getToken(config: HotelPmsSettings, locationId: string): Promise<s
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    console.error('[oracle-pms/auth]', sanitizeForLog(res.status, body))
+    log.error('[oracle-pms/auth]', sanitizeForLog(res.status, body))
     throw new Error(`OPERA authentication failed (HTTP ${res.status})`)
   }
 
@@ -216,7 +219,7 @@ async function pmsGet(
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    console.error('[oracle-pms/get]', sanitizeForLog(res.status, body))
+    log.error('[oracle-pms/get]', sanitizeForLog(res.status, body))
     throw new Error(`OPERA guest lookup failed (HTTP ${res.status})`)
   }
 
@@ -268,7 +271,7 @@ async function pmsPost(
 
   if (!res.ok) {
     const errBody = await res.text().catch(() => '')
-    console.error('[oracle-pms/post]', sanitizeForLog(res.status, errBody))
+    log.error('[oracle-pms/post]', sanitizeForLog(res.status, errBody))
     throw new Error(`OPERA charge post failed (HTTP ${res.status})`)
   }
 
@@ -277,7 +280,7 @@ async function pmsPost(
   // Detect 200-with-error payloads — some OPERA environments return HTTP 200 for errors
   const operaErr = detectOperaError(data)
   if (operaErr) {
-    console.error('[oracle-pms/post] 200-with-error:', operaErr)
+    log.error('[oracle-pms/post] 200-with-error:', operaErr)
     throw new Error('OPERA returned an error response — charge may not have posted')
   }
 

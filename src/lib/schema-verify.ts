@@ -10,6 +10,9 @@
  */
 
 import { masterClient } from './db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('schema-verify')
 
 interface SchemaCheckResult {
   passed: boolean
@@ -76,17 +79,17 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
       }
     }
   } catch (err) {
-    console.error('[SchemaVerify] Failed to verify schema:', err instanceof Error ? err.message : err)
+    log.error({ err: err instanceof Error ? err.message : err }, '[SchemaVerify] Failed to verify schema:')
     return { passed: true, missing: [], checked: 0 } // Fail-open: don't block startup if check fails
   }
 
   const passed = missing.length === 0
 
   if (!passed) {
-    console.error('[SchemaVerify] CRITICAL: Missing schema elements:', missing)
-    console.error('[SchemaVerify] This usually means migrations did not run. Check pre-start.sh logs.')
+    log.error('[SchemaVerify] CRITICAL: Missing schema elements:', missing)
+    log.error('[SchemaVerify] This usually means migrations did not run. Check pre-start.sh logs.')
   } else {
-    console.log(`[SchemaVerify] Schema OK — ${checked} elements verified`)
+    log.info(`[SchemaVerify] Schema OK — ${checked} elements verified`)
   }
 
   return { passed, missing, checked }

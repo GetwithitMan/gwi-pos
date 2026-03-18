@@ -10,11 +10,14 @@ import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 import { db, adminDb } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
 import type { PrismaClient } from '@/generated/prisma/client'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
 import { autoClear86ForRestockedItems } from './order-deduction'
+
+const log = createChildLogger('inventory')
 
 /**
  * Reverse inventory deductions when a voided/comped item is restored to active.
@@ -82,7 +85,7 @@ export async function restoreInventoryForRestoredItem(
 
     return { success: true, itemsRestored: wasteTransactions.length }
   } catch (error) {
-    console.error('[Inventory] Failed to restore inventory for restored item:', error)
+    log.error({ err: error }, '[Inventory] Failed to restore inventory for restored item:')
     return { success: false, itemsRestored: 0 }
   }
 }
@@ -120,7 +123,7 @@ export async function restoreInventoryForOrder(
         where: { orderId },
         data: { status: 'cancelled', lastError: 'Order voided/refunded before deduction ran' },
       })
-      console.log(`[Inventory] Cancelled pending deduction for order ${orderId} — order voided before deduction ran`)
+      log.info(`[Inventory] Cancelled pending deduction for order ${orderId} — order voided before deduction ran`)
       return { success: true, itemsRestored: 0, totalCostRestored: 0 }
     }
 
@@ -134,7 +137,7 @@ export async function restoreInventoryForOrder(
     })
 
     if (existingReversal) {
-      console.log(`[Inventory] Skipping restoration for order ${orderId} — already reversed`)
+      log.info(`[Inventory] Skipping restoration for order ${orderId} — already reversed`)
       return { success: true, itemsRestored: 0, totalCostRestored: 0 }
     }
 
@@ -197,8 +200,7 @@ export async function restoreInventoryForOrder(
       }
     })
 
-    console.log(
-      `[Inventory] Restored ${saleTransactions.length} deductions for order ${orderId}, ` +
+    log.info(`[Inventory] Restored ${saleTransactions.length} deductions for order ${orderId}, ` +
       `total cost restored: $${totalCostRestored.toFixed(2)}`
     )
 
@@ -206,13 +208,13 @@ export async function restoreInventoryForOrder(
     const restockedIds = saleTransactions.map((tx: any) => tx.inventoryItemId as string)
     if (restockedIds.length > 0) {
       void autoClear86ForRestockedItems(restockedIds).catch(err =>
-        console.error('[inventory] auto-un-86 after order restore failed:', err)
+        log.error({ err: err }, '[inventory] auto-un-86 after order restore failed:')
       )
     }
 
     return { success: true, itemsRestored: saleTransactions.length, totalCostRestored }
   } catch (error) {
-    console.error('[Inventory] Failed to restore inventory for order:', error)
+    log.error({ err: error }, '[Inventory] Failed to restore inventory for order:')
     return { success: false, itemsRestored: 0, totalCostRestored: 0 }
   }
 }
@@ -1033,7 +1035,7 @@ export async function deductInventoryForVoidedItem(
           }
         }
       } catch (err) {
-        console.warn('[VOID-WASTE] Failed to process pizza toppings for voided item:', err)
+        log.warn('[VOID-WASTE] Failed to process pizza toppings for voided item:', err)
       }
     }
 
@@ -1104,7 +1106,7 @@ export async function deductInventoryForVoidedItem(
       totalCost,
     }
   } catch (error) {
-    console.error('Failed to deduct inventory for voided item:', error)
+    log.error({ err: error }, 'Failed to deduct inventory for voided item:')
     return {
       success: false,
       itemsDeducted: 0,

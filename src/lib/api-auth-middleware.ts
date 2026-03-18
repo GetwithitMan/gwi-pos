@@ -34,6 +34,9 @@ import { getSessionFromCookie, refreshSessionCookie } from './auth-session'
 import { verifyCellularToken, recordActivity } from './cellular-auth'
 import { hasPermission } from './auth-utils'
 import { PERMISSIONS } from './auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('api-auth-middleware')
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -156,9 +159,7 @@ export function withAuth(
       if (session) {
         // Session is valid — check permission if required
         if (resolvedPermission && !hasPermission(session.permissions, resolvedPermission)) {
-          console.warn(
-            `[withAuth] Permission denied: employee ${session.employeeId} lacks ${resolvedPermission}`
-          )
+          log.warn(`[withAuth] Permission denied: employee ${session.employeeId} lacks ${resolvedPermission}`)
           return NextResponse.json(
             { error: 'You do not have permission to perform this action' },
             { status: 403 }
@@ -202,8 +203,7 @@ export function withAuth(
             // If we get here, it means the route is on the allowlist but
             // also requires a permission — this is a config error.
             // Log a warning but allow it (defense in depth is at proxy level).
-            console.warn(
-              `[withAuth] Cellular terminal ${payload.terminalId} accessing permission-gated route (${resolvedPermission}). Proxy allowlist should be reviewed.`
+            log.warn(`[withAuth] Cellular terminal ${payload.terminalId} accessing permission-gated route (${resolvedPermission}). Proxy allowlist should be reviewed.`
             )
           }
 

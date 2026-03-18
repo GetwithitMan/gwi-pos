@@ -9,6 +9,9 @@
  */
 
 import { neon } from '@neondatabase/serverless'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('access-log')
 
 function getSql() {
   const url = process.env.ACCESS_DATABASE_URL || process.env.DATABASE_URL
@@ -54,7 +57,7 @@ export async function logAccess(
     `
   } catch (err) {
     // Non-fatal — log to Vercel logs
-    console.error('[gwi-access-log] write failed:', err)
+    log.error({ err: err }, '[gwi-access-log] write failed:')
   }
 }
 
@@ -79,7 +82,7 @@ export async function getAccessLogs(limit = 100): Promise<AccessLogEntry[]> {
     `
     return rows as AccessLogEntry[]
   } catch (err) {
-    console.error('[gwi-access-log] read failed:', err)
+    log.error({ err: err }, '[gwi-access-log] read failed:')
     return []
   }
 }

@@ -10,6 +10,9 @@
  */
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('entertainment-waitlist')
 
 export async function notifyNextWaitlistEntry(
   locationId: string,
@@ -58,6 +61,6 @@ export async function notifyNextWaitlistEntry(
       message: `${nextWaiting.customerName || 'Next customer'} — your ${resolvedName} is now available!`,
     }).catch(() => {})
   } catch (err) {
-    console.error('[waitlist-notify] Failed to auto-notify:', err)
+    log.error({ err: err }, '[waitlist-notify] Failed to auto-notify:')
   }
 }

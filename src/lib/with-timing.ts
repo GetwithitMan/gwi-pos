@@ -15,6 +15,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('with-timing')
 
 // Store timing context per-request using a WeakMap keyed on the request object
 const requestTimings = new WeakMap<NextRequest, ReturnType<typeof createTiming>>()
@@ -106,7 +109,7 @@ export function withTiming(handler: RouteHandler, routeName?: string): RouteHand
       // Log slow requests
       const threshold = (routeName && SLOW_THRESHOLDS[routeName]) || DEFAULT_SLOW_THRESHOLD
       if (totalDur > threshold) {
-        console.warn(`[Perf] SLOW ${req.method} ${routeName || req.nextUrl?.pathname || '?'}: ${totalDur}ms (threshold: ${threshold}ms)`)
+        log.warn(`[Perf] SLOW ${req.method} ${routeName || req.nextUrl?.pathname || '?'}: ${totalDur}ms (threshold: ${threshold}ms)`)
       }
 
       return response

@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('datacap')
+
 // Datacap PayAPI V2 Client — Card-Not-Present REST API
 // REST over HTTPS with Basic Auth to Datacap's PayAPI endpoint
 // Used for token-based charges when no physical card reader is present
@@ -234,7 +237,7 @@ export class PayApiClient {
 
     // Warn if RecurringData was sent but not returned (chain corruption risk)
     if (body?.RecurringData && !mapped.recurringData) {
-      console.warn('[PayAPI] WARNING: RecurringData missing from response — chain corruption risk. Preserving old chain.')
+      log.warn('[PayAPI] WARNING: RecurringData missing from response — chain corruption risk. Preserving old chain.')
     }
 
     // HTTP 200 = approved/success

@@ -52,6 +52,9 @@ import { withAuth, type AuthenticatedContext } from './api-auth-middleware'
 import type { WithAuthOptions } from './api-auth-middleware'
 import { verifyCronSecret } from './cron-auth'
 import { timingSafeEqual } from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('api-route')
 
 // ─── Re-export types for consumers ──────────────────────────────────────
 
@@ -128,7 +131,7 @@ export function internalRoute(handler: Handler): Handler {
     ].filter(Boolean) as string[]
 
     if (acceptedKeys.length === 0) {
-      console.error('[internalRoute] No internal API keys configured (INTERNAL_API_KEY / MC_API_KEY / PROVISION_API_KEY)')
+      log.error('[internalRoute] No internal API keys configured (INTERNAL_API_KEY / MC_API_KEY / PROVISION_API_KEY)')
       return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 })
     }
 

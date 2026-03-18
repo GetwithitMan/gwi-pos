@@ -4,11 +4,14 @@
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { getPaymentSettingsCached } from '@/lib/payment-settings-cache'
+import { createChildLogger } from '@/lib/logger'
 import { DatacapClient } from './client'
 import type { DatacapConfig } from './types'
 import { POS_PACKAGE_ID, CLOUD_URLS } from './constants'
 import { getReaderHealth, clearReaderHealth } from './reader-health'
 import type { ReaderHealth } from './reader-health'
+
+const log = createChildLogger('datacap')
 
 /**
  * Create a DatacapClient configured for a specific location.
@@ -37,10 +40,8 @@ export async function getDatacapClient(locationId: string): Promise<DatacapClien
   }
   // Warn: cert credentials active on a production server (might be intentional, but always log it).
   if (process.env.NODE_ENV === 'production' && isTestMode) {
-    console.warn(
-      `[Datacap] WARNING: Cert/test credentials are active in production for location ${locationId}. ` +
-      'Transactions will route to the Datacap cert environment — no real money will be charged.'
-    )
+    log.warn(`[Datacap] WARNING: Cert/test credentials are active in production for location ${locationId}. ` +
+      'Transactions will route to the Datacap cert environment — no real money will be charged.')
   }
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -116,7 +117,7 @@ export function datacapErrorResponse(error: unknown, status = 500) {
   } else {
     message = 'Internal server error'
   }
-  console.error('[Datacap API]', message)
+  log.error('[Datacap API]', message)
   return Response.json({ error: message }, { status })
 }
 

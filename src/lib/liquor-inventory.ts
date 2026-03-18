@@ -2,6 +2,9 @@ import { db, adminDb } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor-inventory')
 
 /**
  * Derive bottle stock (in bottles) from the linked InventoryItem stock (in oz).
@@ -238,7 +241,7 @@ export async function processLiquorInventory(
           if (stockSnapshot - agg.totalPourCount < 0) {
             // Soft warning — negative stock is normal at bar close (bottles emptied mid-shift).
             // Do NOT block the deduction. Reconcile via count sheet.
-            console.warn(`[liquor-inventory] inventoryItem ${invItemId} going negative: ${stockSnapshot} - ${agg.totalPourCount} oz (order ${orderId})`)
+            log.warn(`[liquor-inventory] inventoryItem ${invItemId} going negative: ${stockSnapshot} - ${agg.totalPourCount} oz (order ${orderId})`)
           }
 
           txnPromises.push(
@@ -269,13 +272,13 @@ export async function processLiquorInventory(
         }
 
         await Promise.all(txnPromises)
-        console.log(`[liquor-inventory] ${allDeductions.length} deductions for order ${orderId}, business date ${businessDate}`)
+        log.info(`[liquor-inventory] ${allDeductions.length} deductions for order ${orderId}, business date ${businessDate}`)
       }
     }
 
     return { processed: results, totalCost }
   } catch (error) {
-    console.error('Failed to process liquor inventory:', error)
+    log.error({ err: error }, 'Failed to process liquor inventory:')
     // Don't fail the payment if inventory tracking fails
     // Just log the error and return empty results
     return { processed: [], totalCost: 0 }
@@ -325,7 +328,7 @@ export async function recordSpiritUpsells(
       })),
     })
   } catch (error) {
-    console.error('Failed to record spirit upsells:', error)
+    log.error({ err: error }, 'Failed to record spirit upsells:')
     // Don't fail the payment if upsell tracking fails
   }
 }

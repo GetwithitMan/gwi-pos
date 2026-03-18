@@ -2,6 +2,10 @@
 // Skill 09: Features & Config
 
 import { type GlobalReceiptSettings, DEFAULT_GLOBAL_RECEIPT_SETTINGS, mergeGlobalReceiptSettings } from '@/types/print'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('settings')
+
 export type { GlobalReceiptSettings }
 
 // ─── Pricing Program (T-080 Phase 1A) ────────────────────────────────────────
@@ -1005,6 +1009,15 @@ export interface LocationSettings {
   reservationIntegrations?: ReservationIntegration[]    // Third-party reservation platform integrations (optional for backward compat)
   cakeOrdering?: CakeOrderingSettings                   // Custom cake ordering module (optional for backward compat)
   venuePortal?: VenuePortalSettings                     // Customer-facing portal (branding, rewards, order history) (optional for backward compat)
+  twilio?: TwilioSettings                               // Twilio SMS integration credentials (optional for backward compat)
+}
+
+// ─── Twilio Settings ─────────────────────────────────────────────────────────
+
+export interface TwilioSettings {
+  accountSid: string
+  authToken: string
+  fromNumber: string
 }
 
 // ─── Text-to-Pay Settings ───────────────────────────────────────────────────
@@ -2365,7 +2378,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       }
       // If pricingRules exists but is not an array, treat as empty and warn
       if (partial.pricingRules !== undefined) {
-        console.warn('[PricingRules] pricingRules exists but is not an array, defaulting to []')
+        log.warn('[PricingRules] pricingRules exists but is not an array, defaulting to []')
         return []
       }
       // pricingRules is undefined (never set) — migrate from legacy happyHour if enabled
@@ -2392,7 +2405,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
             createdAt: new Date().toISOString(),
           }] as PricingRule[]
         } catch {
-          console.warn('[PricingRules] Invalid legacy happyHour data, falling back to empty rules')
+          log.warn('[PricingRules] Invalid legacy happyHour data, falling back to empty rules')
           return []
         }
       }
@@ -2919,7 +2932,7 @@ function isLeapYear(year: number): boolean {
  */
 export function getActivePricingRules(rules: PricingRule[], now?: Date): PricingRule[] {
   if (!Array.isArray(rules)) {
-    console.warn('[PricingRules] getActivePricingRules called with non-array, returning []')
+    log.warn('[PricingRules] getActivePricingRules called with non-array, returning []')
     return []
   }
   const _now = now ?? new Date()

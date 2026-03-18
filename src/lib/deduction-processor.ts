@@ -17,6 +17,10 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { deductInventoryForOrder } from '@/lib/inventory'
 import { emitCriticalToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('deduction-processor')
+
 // NOTE: processLiquorInventory was removed from this processor (2026-03-09).
 // deductInventoryForOrder() already handles liquor items via recipeIngredients
 // (BottleProduct → InventoryItem) with spirit substitution support. Running both
@@ -106,7 +110,7 @@ export async function processNextDeduction(): Promise<{
       })
 
       if (isDead) {
-        console.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
+        log.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
         // Create audit trail for dead-lettered deduction
         void db.inventoryItemTransaction.create({
           data: {
@@ -122,7 +126,7 @@ export async function processNextDeduction(): Promise<{
             referenceType: 'order',
             referenceId: job.orderId,
           },
-        }).catch(err => console.error('[deduction-processor] Failed to create dead-letter transaction:', err))
+        }).catch(err => log.error({ err: err }, '[deduction-processor] Failed to create dead-letter transaction:'))
         // Alert all terminals
         void emitCriticalToLocation(job.locationId, 'inventory:deduction-failed', {
           orderId: job.orderId,
@@ -130,7 +134,7 @@ export async function processNextDeduction(): Promise<{
         }).catch(() => {})
       }
 
-      console.error(`[deduction-processor] Order ${job.orderId} deduction failed (attempt ${job.attempts}):`, errorMessage)
+      log.error(`[deduction-processor] Order ${job.orderId} deduction failed (attempt ${job.attempts}):`, errorMessage)
       return { processed: true, orderId: job.orderId, success: false }
     }
 
@@ -187,7 +191,7 @@ export async function processNextDeduction(): Promise<{
     })
 
     if (isDead) {
-      console.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
+      log.error(`[DEDUCTION] CRITICAL: Deduction dead-lettered for order ${job.orderId}. Inventory NOT deducted. Manual adjustment required. Last error: ${errorMessage}`)
       void db.inventoryItemTransaction.create({
         data: {
           locationId: job.locationId,
@@ -202,14 +206,14 @@ export async function processNextDeduction(): Promise<{
           referenceType: 'order',
           referenceId: job.orderId,
         },
-      }).catch(e => console.error('[deduction-processor] Failed to create dead-letter transaction:', e))
+      }).catch(e => log.error({ err: e }, '[deduction-processor] Failed to create dead-letter transaction:'))
       void emitCriticalToLocation(job.locationId, 'inventory:deduction-failed', {
         orderId: job.orderId,
         reason: errorMessage,
       }).catch(() => {})
     }
 
-    console.error(`[deduction-processor] Order ${job.orderId} failed (attempt ${job.attempts}):`, errorMessage)
+    log.error(`[deduction-processor] Order ${job.orderId} failed (attempt ${job.attempts}):`, errorMessage)
     return { processed: true, orderId: job.orderId, success: false }
   }
 }

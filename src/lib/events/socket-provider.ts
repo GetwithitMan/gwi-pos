@@ -18,6 +18,9 @@ import type {
 import { buildChannelName } from './types'
 import type { EventProvider, ProviderConfig } from './provider'
 import { DEFAULT_PROVIDER_CONFIG } from './provider'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('events')
 
 // Socket.io types (optional dependency)
  
@@ -129,7 +132,7 @@ export class SocketEventProvider implements EventProvider {
       this.setConnectionStatus('error', error.message)
 
       if (this.config.debug) {
-        console.error(`[SocketEvents] Connection error:`, error)
+        log.error({ err: error }, `[SocketEvents] Connection error:`)
       }
     }
 
@@ -180,7 +183,7 @@ export class SocketEventProvider implements EventProvider {
         try {
           callback(data)
         } catch (error) {
-          console.error(`[SocketEvents] Error in listener for ${eventName}:`, error)
+          log.error({ err: error }, `[SocketEvents] Error in listener for ${eventName}:`)
         }
       })
     }

@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('datacap')
+
 // Datacap Direct API — TypeScript Interfaces
 // XML over HTTP to local devices or HTTPS with Basic Auth to Datacap cloud
 
@@ -306,9 +309,9 @@ export interface DiscoveredDevice {
  * ```typescript
  * const result = await datacapClient.sale(params)
  * if (result.success) {
- *   console.log('Approved:', result.response.authCode)
+ *   log.info('Approved:', result.response.authCode)
  * } else {
- *   console.error('Error:', result.error.text)
+ *   log.error('Error:', result.error.text)
  *   if (result.error.isRetryable) {
  *     // retry logic
  *   }

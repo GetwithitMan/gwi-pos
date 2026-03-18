@@ -12,6 +12,9 @@
 
 import { adminDb } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('batch-updates')
 
 // ============================================================================
 // ORDER ITEM BATCH UPDATES
@@ -54,10 +57,10 @@ export async function batchUpdateOrderItemStatus(
         void emitOrderEvent(item.order.locationId, item.orderId, 'ITEM_UPDATED', {
           lineItemId: item.id,
           kitchenStatus: status,
-        }).catch(err => console.error('[batch-updates] Failed to emit ITEM_UPDATED:', err))
+        }).catch(err => log.error({ err: err }, '[batch-updates] Failed to emit ITEM_UPDATED:'))
       }
     } catch (err) {
-      console.error('[batch-updates] Failed to look up items for event emission:', err)
+      log.error({ err: err }, '[batch-updates] Failed to look up items for event emission:')
     }
   })()
 }

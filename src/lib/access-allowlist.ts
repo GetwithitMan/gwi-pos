@@ -13,6 +13,9 @@
 
 import { neon } from '@neondatabase/serverless'
 import { randomBytes } from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('access-allowlist')
 
 export interface AllowlistEntry {
   id: string
@@ -101,7 +104,7 @@ export async function getEntryByEmail(email: string): Promise<AllowlistEntry | n
     `
     return rows.length > 0 ? (rows[0] as AllowlistEntry) : null
   } catch (err) {
-    console.error('[gwi-access-allowlist] email check failed:', err)
+    log.error({ err: err }, '[gwi-access-allowlist] email check failed:')
     return null
   }
 }
@@ -117,7 +120,7 @@ export async function getEntryByPhone(phone: string): Promise<AllowlistEntry | n
     `
     return rows.length > 0 ? (rows[0] as AllowlistEntry) : null
   } catch (err) {
-    console.error('[gwi-access-allowlist] check failed:', err)
+    log.error({ err: err }, '[gwi-access-allowlist] check failed:')
     return null
   }
 }
@@ -144,7 +147,7 @@ export async function getAllowlist(): Promise<AllowlistEntry[]> {
     `
     return rows as AllowlistEntry[]
   } catch (err) {
-    console.error('[gwi-access-allowlist] read failed:', err)
+    log.error({ err: err }, '[gwi-access-allowlist] read failed:')
     return []
   }
 }

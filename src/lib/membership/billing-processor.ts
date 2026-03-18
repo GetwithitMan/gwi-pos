@@ -14,6 +14,7 @@ import { getPayApiClient, PayApiError } from '@/lib/datacap/payapi-client'
 import type { PayApiResponse } from '@/lib/datacap/payapi-client'
 import { parseSettings, DEFAULT_MEMBERSHIP_SETTINGS } from '@/lib/settings'
 import type { MembershipSettings } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
 import { classifyDecline } from './decline-rules'
 import { buildIdempotencyKey } from './idempotency'
 import {
@@ -24,6 +25,8 @@ import {
   MembershipEventType,
   type DeclineClassification,
 } from './types'
+
+const log = createChildLogger('membership')
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -115,7 +118,7 @@ export async function processMembershipBilling(
         result.timedOut++
       } else {
         result.failed++
-        console.error(`[membership-billing] Error processing ${mbr.id}:`, err)
+        log.error({ err: err }, `[membership-billing] Error processing ${mbr.id}:`)
       }
     }
     result.processed++

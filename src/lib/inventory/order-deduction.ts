@@ -14,9 +14,12 @@ import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 import { db, adminDb } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
+
+const log = createChildLogger('inventory')
 
 /**
  * The include tree for fetching order data (shared between report and deduction)
@@ -283,7 +286,7 @@ export async function deductInventoryForOrder(
       select: { id: true },
     })
     if (existingDeduction) {
-      console.warn(`[INVENTORY] Deduction already exists for order ${orderId}, skipping`)
+      log.warn(`[INVENTORY] Deduction already exists for order ${orderId}, skipping`)
       return { success: true, itemsDeducted: 0, totalCost: 0 }
     }
 
@@ -518,7 +521,7 @@ export async function deductInventoryForOrder(
         const menuUpdated = new Date(orderItem.menuItem.updatedAt)
         const itemCreated = new Date(orderItem.createdAt)
         if (menuUpdated > itemCreated) {
-          console.warn(`[DEDUCTION] Recipe may have changed for ${orderItem.menuItem.name} since order was placed (menu updated ${menuUpdated.toISOString()}, item ordered ${itemCreated.toISOString()}). Using current recipe.`)
+          log.warn(`[DEDUCTION] Recipe may have changed for ${orderItem.menuItem.name} since order was placed (menu updated ${menuUpdated.toISOString()}, item ordered ${itemCreated.toISOString()}). Using current recipe.`)
         }
       }
 
@@ -582,7 +585,7 @@ export async function deductInventoryForOrder(
             ? spiritSubstitutions.get(ing.bottleProduct.spiritCategoryId)
             : undefined
           if (substitution) {
-            console.log('[inventory-audit]', JSON.stringify({
+            log.info('[inventory-audit]', JSON.stringify({
               event: 'spirit_substitution',
               orderId,
               orderItemId: orderItem.id,
@@ -674,7 +677,7 @@ export async function deductInventoryForOrder(
             if (converted !== null) {
               linkQty = converted
             } else {
-              console.warn('[inventory] Unit mismatch on modifier link:', {
+              log.warn('[inventory] Unit mismatch on modifier link:', {
                 modifierName: modRecord?.name,
                 itemName: linkItem.name,
                 fromUnit: link.usageUnit,
@@ -701,7 +704,7 @@ export async function deductInventoryForOrder(
             if (converted !== null) {
               ingQty = converted
             } else {
-              console.warn('[inventory] Unit mismatch on modifier link:', {
+              log.warn('[inventory] Unit mismatch on modifier link:', {
                 modifierName: modRecord?.name,
                 itemName: ingredient.inventoryItem.name,
                 fromUnit: ingredient.standardUnit,
@@ -911,7 +914,7 @@ export async function deductInventoryForOrder(
             }
           }
         } catch (err) {
-          console.warn('[DEDUCTION] Failed to process pizza toppings for order item:', err)
+          log.warn('[DEDUCTION] Failed to process pizza toppings for order item:', err)
         }
       }
     }
@@ -974,7 +977,7 @@ export async function deductInventoryForOrder(
             select: { currentStock: true },
           })
           updated = [{ currentStock: fallback.currentStock as unknown as Decimal }]
-          console.warn(`[inventory] Version conflict on ${item.inventoryItemId}, used fallback decrement`)
+          log.warn(`[inventory] Version conflict on ${item.inventoryItemId}, used fallback decrement`)
         }
 
         // Post-decrement stock is the authoritative "after" value
@@ -988,7 +991,7 @@ export async function deductInventoryForOrder(
 
         // Observability: log when stock goes negative
         if (quantityAfter < 0) {
-          console.log('[inventory-audit]', JSON.stringify({
+          log.info('[inventory-audit]', JSON.stringify({
             event: 'stock_negative',
             orderId,
             inventoryItemId: item.inventoryItemId,
@@ -1020,7 +1023,7 @@ export async function deductInventoryForOrder(
     // Auto-86 ingredients linked to depleted inventory items (fire-and-forget)
     if (depletedInventoryItemIds.length > 0) {
       void autoSet86ForDepletedItems(depletedInventoryItemIds).catch(err =>
-        console.error('[inventory] auto-86 failed:', err)
+        log.error({ err: err }, '[inventory] auto-86 failed:')
       )
     }
 
@@ -1032,7 +1035,7 @@ export async function deductInventoryForOrder(
       totalCost,
     }
   } catch (error) {
-    console.error('Failed to deduct inventory for order:', error)
+    log.error({ err: error }, 'Failed to deduct inventory for order:')
     return {
       success: false,
       itemsDeducted: 0,
@@ -1071,7 +1074,7 @@ async function autoSet86ForDepletedItems(inventoryItemIds: string[]): Promise<vo
     },
   })
 
-  console.log(`[inventory] auto-86'd ${ingredients.length} ingredient(s) due to zero stock`)
+  log.info(`[inventory] auto-86'd ${ingredients.length} ingredient(s) due to zero stock`)
 }
 
 /**
@@ -1103,5 +1106,5 @@ export async function autoClear86ForRestockedItems(inventoryItemIds: string[]): 
     },
   })
 
-  console.log(`[inventory] auto-un-86'd ${ingredients.length} ingredient(s) after restock`)
+  log.info(`[inventory] auto-un-86'd ${ingredients.length} ingredient(s) after restock`)
 }

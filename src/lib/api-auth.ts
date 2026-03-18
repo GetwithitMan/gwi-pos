@@ -6,10 +6,13 @@ import { randomInt } from 'crypto'
 import { hash } from 'bcryptjs'
 import { db } from './db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
+import { createChildLogger } from '@/lib/logger'
 import { hasPermission } from './auth-utils'
 import { getSessionFromCookie } from './auth-session'
 import { verifyCloudToken, type CloudTokenPayload } from './cloud-auth'
 import type { NextRequest } from 'next/server'
+
+const log = createChildLogger('api-auth')
 
 // ─── Cloud session employee resolution ──────────────────────────────────
 
@@ -153,10 +156,10 @@ async function resolveOrProvisionEmployee(
     })
 
     cloudSubToEmployeeId.set(cacheKey, employee.id)
-    console.log(`[api-auth] Auto-provisioned employee ${employee.id} for cloud user ${sub} (${payload.email}) at location ${locationId}`)
+    log.info(`[api-auth] Auto-provisioned employee ${employee.id} for cloud user ${sub} (${payload.email}) at location ${locationId}`)
     return employee.id
   } catch (err) {
-    console.error(`[api-auth] Failed to provision employee for ${sub}:`, err)
+    log.error({ err: err }, `[api-auth] Failed to provision employee for ${sub}:`)
     return null
   }
 }
@@ -231,7 +234,7 @@ export async function requirePermission(
       if (adminEmployee) {
         const adminPerms = (adminEmployee.role.permissions as string[]) || []
         if (hasPermission(adminPerms, permission)) {
-          console.warn(`[api-auth] Location-admin fallback: resolved employeeId=${adminEmployee.id} for locationId=${locationId}, permission=${permission}`)
+          log.warn(`[api-auth] Location-admin fallback: resolved employeeId=${adminEmployee.id} for locationId=${locationId}, permission=${permission}`)
           employeeId = adminEmployee.id
           setCachedEmployee(adminEmployee.id, locationId, adminEmployee)
         }
@@ -287,7 +290,7 @@ export async function requirePermission(
   const permissions = (employee.role.permissions as string[]) || []
 
   if (!hasPermission(permissions, permission)) {
-    console.warn(`Permission denied: employee ${employeeId} lacks ${permission}`)
+    log.warn(`Permission denied: employee ${employeeId} lacks ${permission}`)
     return {
       authorized: false,
       error: 'You do not have permission to perform this action',
@@ -410,7 +413,7 @@ export async function requireAnyPermission(
   const hasAny = permissions.some(p => hasPermission(employeePermissions, p))
 
   if (!hasAny) {
-    console.warn(`Permission denied: employee ${employeeId} lacks all of [${permissions.join(', ')}]`)
+    log.warn(`Permission denied: employee ${employeeId} lacks all of [${permissions.join(', ')}]`)
     return {
       authorized: false,
       error: 'You do not have permission to perform this action',

@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('table-geometry')
+
 /**
  * Table Geometry Utilities
  *
@@ -52,7 +55,7 @@ export function normalizeCoord(
         'This indicates a bug in table position handling — fix the upstream data source.'
       )
     }
-    console.warn(`[normalizeCoord] Invalid coordinate received${ctx}, using safe fallback:`, coord)
+    log.warn(`[normalizeCoord] Invalid coordinate received${ctx}, using safe fallback:`, coord)
     return 100 // Safe margin from edge
   }
   return Math.round(coord / gridSize) * gridSize

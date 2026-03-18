@@ -13,7 +13,10 @@
 
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
 import type { OrderEventType } from './types'
+
+const log = createChildLogger('order-events')
 
 interface EmitOptions {
   /** Originating device ID. Defaults to 'nuc-web'. */
@@ -86,10 +89,7 @@ export async function emitOrderEvent(
 
     return { eventId, serverSequence }
   } catch (err) {
-    console.error(
-      `[order-events/emitter] Failed to emit ${type} for order ${orderId}:`,
-      err
-    )
+    log.error({ err: err }, `[order-events/emitter] Failed to emit ${type} for order ${orderId}:`)
     return null
   }
 }

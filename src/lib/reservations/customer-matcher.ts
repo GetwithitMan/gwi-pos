@@ -7,6 +7,9 @@
 
 import { PrismaClient } from '@/generated/prisma/client'
 import { formatPhoneE164 } from '../twilio'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('reservations')
 
 interface CustomerMatchParams {
   phone?: string | null
@@ -140,7 +143,5 @@ export async function clearBlacklist(params: {
     },
   })
 
-  console.log(
-    `[Reservations] Blacklist cleared for customer ${customerId} by ${actorId}: ${reason}`
-  )
+  log.info(`[Reservations] Blacklist cleared for customer ${customerId} by ${actorId}: ${reason}`)
 }

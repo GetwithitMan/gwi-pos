@@ -13,6 +13,7 @@ import { db, adminDb } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { dispatchPrintJobFailed } from '@/lib/socket-dispatch'
 import { dispatchAlert } from '@/lib/alert-service'
+import { createChildLogger } from '@/lib/logger'
 import {
   buildDocument,
   buildDocumentNoCut,
@@ -21,6 +22,8 @@ import {
   ESCPOS,
   PAPER_WIDTH,
 } from '@/lib/escpos/commands'
+
+const log = createChildLogger('print-template')
 import type {
   RoutingManifest,
   RoutingResult,
@@ -121,7 +124,7 @@ export async function printKitchenTicketsForManifests(
               orderNumber: order.orderNumber,
               printerName: manifest.stationName,
               error: sendResult.error || 'Send failed',
-            }, { async: true }).catch(console.error)
+            }, { async: true }).catch((err) => log.error({ err }, 'operation failed'))
 
             void dispatchAlert({
               severity: 'HIGH',
@@ -130,7 +133,7 @@ export async function printKitchenTicketsForManifests(
               message: `Kitchen printer "${manifest.stationName}" failed for order #${order.orderNumber}: ${sendResult.error || 'Send failed'}`,
               locationId: resolvedLocationId,
               orderId: order.orderId,
-            }).catch(console.error)
+            }).catch((err) => log.error({ err }, 'operation failed'))
           }
 
           results.push({
@@ -144,7 +147,7 @@ export async function printKitchenTicketsForManifests(
       }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
-      console.error(`[PrintTemplateFactory] Error printing to ${manifest.stationName}:`, errorMsg)
+      log.error(`[PrintTemplateFactory] Error printing to ${manifest.stationName}:`, errorMsg)
 
       // Emit socket event for UI awareness
       if (resolvedLocationId) {
@@ -153,7 +156,7 @@ export async function printKitchenTicketsForManifests(
           orderNumber: order.orderNumber,
           printerName: manifest.stationName,
           error: errorMsg,
-        }, { async: true }).catch(console.error)
+        }, { async: true }).catch((err) => log.error({ err }, 'operation failed'))
       }
 
       results.push({
@@ -205,7 +208,7 @@ async function attemptBackupPrinter(
         route.printer.ipAddress === manifest.ipAddress &&
         route.printer.port === (manifest.port ?? 9100)) {
       const backup = route.backupPrinter
-      console.log(`[PrintTemplateFactory] Trying backup printer "${backup.name}" for station "${manifest.stationName}"`)
+      log.info(`[PrintTemplateFactory] Trying backup printer "${backup.name}" for station "${manifest.stationName}"`)
 
       const backupSendResult = await sendToPrinter(backup.ipAddress, backup.port, buffer)
       if (backupSendResult.success) {
@@ -219,7 +222,7 @@ async function attemptBackupPrinter(
           itemCount: manifest.primaryItems.length,
         }
       }
-      console.warn(`[PrintTemplateFactory] Backup printer "${backup.name}" also failed: ${backupSendResult.error}`)
+      log.warn(`[PrintTemplateFactory] Backup printer "${backup.name}" also failed: ${backupSendResult.error}`)
     }
 
     // Strategy 2: Find any other active kitchen printer at this location
@@ -247,7 +250,7 @@ async function attemptBackupPrinter(
       })
 
       if (altPrinter) {
-        console.log(`[PrintTemplateFactory] Trying alternate ${primaryPrinter.printerRole} printer "${altPrinter.name}"`)
+        log.info(`[PrintTemplateFactory] Trying alternate ${primaryPrinter.printerRole} printer "${altPrinter.name}"`)
         const altResult = await sendToPrinter(altPrinter.ipAddress, altPrinter.port, buffer)
         if (altResult.success) {
           await logPrintJobForPrinter(order.orderId, altPrinter.id, locationId, true)
@@ -258,13 +261,13 @@ async function attemptBackupPrinter(
             itemCount: manifest.primaryItems.length,
           }
         }
-        console.warn(`[PrintTemplateFactory] Alternate printer "${altPrinter.name}" also failed: ${altResult.error}`)
+        log.warn(`[PrintTemplateFactory] Alternate printer "${altPrinter.name}" also failed: ${altResult.error}`)
       }
     }
 
     return null
   } catch (err) {
-    console.error('[PrintTemplateFactory] Backup printer lookup failed:', err)
+    log.error({ err: err }, '[PrintTemplateFactory] Backup printer lookup failed:')
     return null
   }
 }
@@ -292,7 +295,7 @@ async function logPrintJobForPrinter(
       },
     })
   } catch (err) {
-    console.error('[PrintTemplateFactory] Failed to log backup PrintJob:', err)
+    log.error({ err: err }, '[PrintTemplateFactory] Failed to log backup PrintJob:')
   }
 }
 
@@ -451,8 +454,7 @@ async function logPrintJob(
 
     if (!printer) {
       // No matching Printer record — station-only config. Skip job logging.
-      console.warn(
-        `[PrintTemplateFactory] No Printer record for station "${manifest.stationName}" ` +
+      log.warn(`[PrintTemplateFactory] No Printer record for station "${manifest.stationName}" ` +
         `(${manifest.ipAddress}:${manifest.port}). PrintJob not logged.`
       )
       return
@@ -471,6 +473,6 @@ async function logPrintJob(
     })
   } catch (err) {
     // Fire-and-forget: don't let logging failures break printing
-    console.error('[PrintTemplateFactory] Failed to log PrintJob:', err)
+    log.error({ err: err }, '[PrintTemplateFactory] Failed to log PrintJob:')
   }
 }

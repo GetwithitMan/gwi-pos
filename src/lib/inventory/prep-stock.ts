@@ -8,9 +8,12 @@ import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 import { db, adminDb } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
 import type { PrepStockDeductionResult } from './types'
 import { toNumber, getModifierMultiplier, isRemovalInstruction } from './helpers'
 import { convertUnits } from './unit-conversion'
+
+const log = createChildLogger('inventory')
 
 /**
  * Deduct prep stock when order items are sent to kitchen.
@@ -261,7 +264,7 @@ export async function deductPrepStockForOrder(
       errors: [],
     }
   } catch (error) {
-    console.error('Failed to deduct prep stock:', error)
+    log.error({ err: error }, 'Failed to deduct prep stock:')
     return {
       success: false,
       deductedItems: [],
@@ -487,7 +490,7 @@ export async function restorePrepStockForVoid(
       errors: [],
     }
   } catch (error) {
-    console.error('Failed to restore prep stock:', error)
+    log.error({ err: error }, 'Failed to restore prep stock:')
     return {
       success: false,
       deductedItems: [],

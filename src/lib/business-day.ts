@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('business-day')
+
 /**
  * Business Day Boundary Helpers (Skill 268)
  *
@@ -9,7 +12,7 @@
  */
 
 if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'UTC') {
-  console.warn('[BUSINESS-DAY] WARNING: System timezone is UTC. Business day calculations may be incorrect. Set TZ environment variable to the location timezone.')
+  log.warn('[BUSINESS-DAY] WARNING: System timezone is UTC. Business day calculations may be incorrect. Set TZ environment variable to the location timezone.')
 }
 
 /**

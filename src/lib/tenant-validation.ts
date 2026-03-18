@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('tenant-validation')
+
 /**
  * Tenant Validation — Model Set Definitions
  *
@@ -76,10 +79,9 @@ export async function validateTenantModelSets(
         throw new Error(msg)
       }
 
-      console.warn(msg)
+      log.warn(msg)
     } else {
-      console.log(
-        `[tenant-validation] ✓ All model sets valid (${TENANT_SCOPED_MODELS.size} tenant-scoped, ${NO_SOFT_DELETE_MODELS.size} no-soft-delete)`
+      log.info(`[tenant-validation] ✓ All model sets valid (${TENANT_SCOPED_MODELS.size} tenant-scoped, ${NO_SOFT_DELETE_MODELS.size} no-soft-delete)`
       )
     }
   } catch (err) {
@@ -87,6 +89,6 @@ export async function validateTenantModelSets(
     if (options.failOnStale) {
       throw err
     }
-    console.warn('[tenant-validation] Validation failed:', err instanceof Error ? err.message : err)
+    log.warn('[tenant-validation] Validation failed:', err instanceof Error ? err.message : err)
   }
 }

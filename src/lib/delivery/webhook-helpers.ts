@@ -9,8 +9,11 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
 import type { DeliveryPlatform, PlatformItem } from './order-mapper'
 import { mapThirdPartyOrder } from './order-mapper'
+
+const log = createChildLogger('delivery')
 
 // ─── HMAC Signature Validation ──────────────────────────────────────────────
 
@@ -244,7 +247,7 @@ export async function createPosOrderFromDelivery(
 
     return orderId
   } catch (error) {
-    console.error(`[delivery] Failed to create POS order from ${platform} delivery:`, error)
+    log.error({ err: error }, `[delivery] Failed to create POS order from ${platform} delivery:`)
     return null
   }
 }
@@ -289,5 +292,5 @@ export function dispatchDeliveryEvent(
   event: 'delivery:new-order' | 'delivery:status-update',
   payload: Record<string, unknown>,
 ): void {
-  void emitToLocation(locationId, event, payload).catch(console.error)
+  void emitToLocation(locationId, event, payload).catch((err) => log.error({ err }, 'emitToLocation failed'))
 }

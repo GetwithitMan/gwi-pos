@@ -26,7 +26,7 @@
  *
  *   useEffect(() => {
  *     const unsub = subscribe('order:created', (data) => {
- *       console.log('New order:', data.orderId)
+ *       log.info('New order:', data.orderId)
  *     })
  *     return unsub
  *   }, [subscribe])
@@ -37,6 +37,9 @@
 import type { EventProvider, ProviderConfig } from './provider'
 import { createLocalProvider } from './local-provider'
 import { createSocketProvider } from './socket-provider'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('events')
 
 // ==================== Provider Selection ====================
 
@@ -65,7 +68,7 @@ export function getEventProvider(config?: Partial<ProviderConfig>): EventProvide
     const envProvider = process.env.NEXT_PUBLIC_EVENT_PROVIDER as ProviderType | undefined
     providerType = envProvider || 'socket'
     if (!envProvider) {
-      console.warn('[Events] NEXT_PUBLIC_EVENT_PROVIDER not set — defaulting to "socket". Set explicitly to silence this warning.')
+      log.warn('[Events] NEXT_PUBLIC_EVENT_PROVIDER not set — defaulting to "socket". Set explicitly to silence this warning.')
     }
   }
 
@@ -86,12 +89,12 @@ export function createProvider(
 
     case 'pusher':
       // Pusher provider not yet implemented
-      if (process.env.NODE_ENV !== 'production') console.warn('[Events] Pusher provider not implemented, falling back to local')
+      if (process.env.NODE_ENV !== 'production') log.warn('[Events] Pusher provider not implemented, falling back to local')
       return createLocalProvider(config)
 
     case 'ably':
       // Ably provider not yet implemented
-      if (process.env.NODE_ENV !== 'production') console.warn('[Events] Ably provider not implemented, falling back to local')
+      if (process.env.NODE_ENV !== 'production') log.warn('[Events] Ably provider not implemented, falling back to local')
       return createLocalProvider(config)
 
     case 'local':

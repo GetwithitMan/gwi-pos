@@ -13,11 +13,14 @@
  *     category: 'payment',
  *     message: 'Card declined during tab close',
  *     details: { orderId, amount },
- *   }).catch(console.error)
+ *   }).catch((err) => log.error({ err }, 'logVenueEvent failed'))
  */
 
 import { db } from './db'
 import { getLocationId } from './location-cache'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('venue-logger')
 
 export type VenueLogLevel = 'info' | 'warn' | 'error' | 'critical'
 export type VenueLogSource = 'server' | 'pos' | 'kds' | 'android' | 'sync' | 'pax'
@@ -41,13 +44,13 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 /**
  * Write a single log entry to the VenueLog table.
  * Fire-and-forget safe — callers should use:
- *   void logVenueEvent({ ... }).catch(console.error)
+ *   void logVenueEvent({ ... }).catch((err) => log.error({ err }, 'logVenueEvent failed'))
  */
 export async function logVenueEvent(entry: VenueLogEntry): Promise<void> {
   try {
     const locationId = entry.locationId || await getLocationId()
     if (!locationId) {
-      console.warn('[venue-logger] No locationId available, skipping log entry')
+      log.warn('[venue-logger] No locationId available, skipping log entry')
       return
     }
 
@@ -78,7 +81,7 @@ export async function logVenueEvent(entry: VenueLogEntry): Promise<void> {
     ).catch(() => {}) // Swallow — socket failure must never block logging
   } catch (err) {
     // Never throw from the logger — log to console as last resort
-    console.error('[venue-logger] Failed to write log entry:', err)
+    log.error({ err: err }, '[venue-logger] Failed to write log entry:')
   }
 }
 
@@ -95,7 +98,7 @@ export async function logVenueEventsBatch(
 
   const locationId = defaultLocationId || await getLocationId()
   if (!locationId) {
-    console.warn('[venue-logger] No locationId for batch, skipping')
+    log.warn('[venue-logger] No locationId for batch, skipping')
     return { written: 0, errors: entries.length }
   }
 
@@ -134,7 +137,7 @@ export async function logVenueEventsBatch(
       )
       written += batch.length
     } catch (err) {
-      console.error('[venue-logger] Batch insert failed:', err)
+      log.error({ err: err }, '[venue-logger] Batch insert failed:')
       errors += batch.length
     }
   }
@@ -153,7 +156,7 @@ export async function cleanupExpiredLogs(): Promise<number> {
     )
     return typeof result === 'number' ? result : 0
   } catch (err) {
-    console.error('[venue-logger] Cleanup failed:', err)
+    log.error({ err: err }, '[venue-logger] Cleanup failed:')
     return 0
   }
 }

@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cellular-auth')
+
 /**
  * Cellular Terminal Authentication
  *
@@ -234,7 +237,7 @@ function getCellularSecret(): string {
       const fs = require('node:fs')
       secret = (fs.readFileSync(CELLULAR_SECRET_FILE, 'utf8') as string).trim()
       if (secret) {
-        console.info('[cellular-auth] Loaded secret from persisted file')
+        log.info('[cellular-auth] Loaded secret from persisted file')
       }
     } catch { /* file doesn't exist yet */ }
   }
@@ -245,15 +248,14 @@ function getCellularSecret(): string {
       const crypto = require('node:crypto')
       const fs = require('node:fs')
       secret = (crypto.randomBytes(48) as Buffer).toString('hex')
-      console.warn(
-        '[cellular-auth] CELLULAR_TOKEN_SECRET not set — generated new secret and persisting to',
+      log.warn('[cellular-auth] CELLULAR_TOKEN_SECRET not set — generated new secret and persisting to',
         CELLULAR_SECRET_FILE,
         '(set the env var to avoid this warning)'
       )
       try {
         fs.writeFileSync(CELLULAR_SECRET_FILE, secret, { mode: 0o600 })
       } catch (writeErr) {
-        console.warn('[cellular-auth] Could not persist secret to file:', writeErr instanceof Error ? writeErr.message : writeErr)
+        log.warn('[cellular-auth] Could not persist secret to file:', writeErr instanceof Error ? writeErr.message : writeErr)
       }
     } catch {
       // crypto/fs not available (edge runtime) — cannot generate
@@ -513,7 +515,7 @@ export async function refreshCellularToken(oldToken: string): Promise<string | n
   const { payload, expired } = result
 
   if (expired) {
-    console.warn(JSON.stringify({
+    log.warn(JSON.stringify({
       event: 'cellular_token_grace_refresh',
       terminalId: payload.terminalId,
       locationId: payload.locationId,
@@ -637,7 +639,7 @@ async function isRevokedFromDb(terminalId: string, locationId: string): Promise<
       return false
     }
     // Fail-closed: if we can't verify a device's revocation status for other reasons, reject
-    console.error('[cellular-auth] DB revocation check failed, denying request:', error)
+    log.error({ err: error }, '[cellular-auth] DB revocation check failed, denying request:')
     return true
   }
 }
@@ -811,9 +813,9 @@ export async function verifyPlayIntegrity(
     // but still allow the request (blocking all cellular terminals is worse than skipping attestation)
     const isProduction = process.env.NODE_ENV === 'production'
     if (isProduction) {
-      console.error('[PlayIntegrity] CRITICAL: GOOGLE_CLOUD_PROJECT_NUMBER not set in production — attestation bypassed. Configure immediately.')
+      log.error('[PlayIntegrity] CRITICAL: GOOGLE_CLOUD_PROJECT_NUMBER not set in production — attestation bypassed. Configure immediately.')
     } else {
-      console.warn('[PlayIntegrity] GOOGLE_CLOUD_PROJECT_NUMBER not set — attestation skipped (non-production)')
+      log.warn('[PlayIntegrity] GOOGLE_CLOUD_PROJECT_NUMBER not set — attestation skipped (non-production)')
     }
     return {
       valid: true,
@@ -828,9 +830,9 @@ export async function verifyPlayIntegrity(
     if (!accessToken) {
       const isProduction = process.env.NODE_ENV === 'production'
       if (isProduction) {
-        console.error('[PlayIntegrity] CRITICAL: Could not obtain Google access token in production — attestation bypassed. Configure GOOGLE_SERVICE_ACCOUNT_KEY immediately.')
+        log.error('[PlayIntegrity] CRITICAL: Could not obtain Google access token in production — attestation bypassed. Configure GOOGLE_SERVICE_ACCOUNT_KEY immediately.')
       } else {
-        console.warn('[PlayIntegrity] Could not obtain Google access token — attestation skipped (non-production)')
+        log.warn('[PlayIntegrity] Could not obtain Google access token — attestation skipped (non-production)')
       }
       return {
         valid: true,
@@ -853,7 +855,7 @@ export async function verifyPlayIntegrity(
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown')
-      console.error(`[PlayIntegrity] Google API returned ${response.status}: ${errorBody}`)
+      log.error(`[PlayIntegrity] Google API returned ${response.status}: ${errorBody}`)
       return {
         valid: false,
         verdict: `api_error_${response.status}`,
@@ -878,7 +880,7 @@ export async function verifyPlayIntegrity(
     const meetsDeviceIntegrity = deviceVerdict.includes('MEETS_DEVICE_INTEGRITY')
 
     // Log the full verdict for debugging
-    console.info(JSON.stringify({
+    log.info(JSON.stringify({
       event: 'play_integrity_check',
       packageName: verdict.requestDetails?.requestPackageName,
       appVerdict: verdict.appIntegrity?.appRecognitionVerdict,
@@ -894,7 +896,7 @@ export async function verifyPlayIntegrity(
       error: meetsDeviceIntegrity ? undefined : 'Device does not meet integrity requirements',
     }
   } catch (error) {
-    console.error('[PlayIntegrity] Verification failed:', error)
+    log.error({ err: error }, '[PlayIntegrity] Verification failed:')
     return {
       valid: false,
       verdict: 'verification_error',
@@ -979,14 +981,14 @@ async function getGoogleAccessToken(): Promise<string | null> {
     })
 
     if (!tokenResponse.ok) {
-      console.error('[PlayIntegrity] Token exchange failed:', tokenResponse.status)
+      log.error('[PlayIntegrity] Token exchange failed:', tokenResponse.status)
       return null
     }
 
     const tokenData = await tokenResponse.json() as { access_token?: string }
     return tokenData.access_token ?? null
   } catch (error) {
-    console.error('[PlayIntegrity] Failed to get Google access token:', error)
+    log.error({ err: error }, '[PlayIntegrity] Failed to get Google access token:')
     return null
   }
 }

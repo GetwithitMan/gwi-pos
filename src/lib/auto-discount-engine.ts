@@ -22,6 +22,9 @@ import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('auto-discount')
 
 // ============================================================================
 // TYPES
@@ -363,7 +366,7 @@ export async function evaluateAutoDiscounts(
 
     return result
   } catch (error) {
-    console.error('[AutoDiscountEngine] Evaluation failed:', error)
+    log.error({ err: error }, '[AutoDiscountEngine] Evaluation failed:')
     return result
   }
 }

@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('payment-timing')
+
 // Payment flow timing instrumentation
 // Captures 4 timestamps per flow: click → request → gateway → ui_unblocked
 
@@ -44,7 +47,7 @@ export function completePaymentTiming(
     ? Math.round(entry.t_ui_unblocked - entry.t_gateway_response)
     : undefined
 
-  console.info('[PAYMENT-TIMING]', JSON.stringify({
+  log.info('[PAYMENT-TIMING]', JSON.stringify({
     flow: entry.flow,
     result: entry.result,
     orderId: entry.orderId,

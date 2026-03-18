@@ -3,6 +3,9 @@
 
 import { DISCOVERY_PORT, DISCOVERY_RETRIES, DISCOVERY_RETRY_DELAY_MS, DEFAULT_PORTS } from './constants'
 import type { DiscoveredDevice } from './types'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('datacap')
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -21,7 +24,7 @@ export async function discoverDevice(serialNumber: string): Promise<DiscoveredDe
   try {
     dgram = await import('dgram')
   } catch {
-    console.error('[Datacap Discovery] dgram not available — must run server-side')
+    log.error('[Datacap Discovery] dgram not available — must run server-side')
     return null
   }
 
@@ -70,7 +73,7 @@ export async function discoverDevice(serialNumber: string): Promise<DiscoveredDe
         return result
       }
     } catch (error) {
-      console.warn(`[Datacap Discovery] Attempt ${attempt + 1} failed:`, error)
+      log.warn(`[Datacap Discovery] Attempt ${attempt + 1} failed:`, error)
     }
 
     if (attempt < DISCOVERY_RETRIES - 1) {
@@ -78,7 +81,7 @@ export async function discoverDevice(serialNumber: string): Promise<DiscoveredDe
     }
   }
 
-  console.warn(`[Datacap Discovery] Device ${serialNumber} not found after ${DISCOVERY_RETRIES} attempts`)
+  log.warn(`[Datacap Discovery] Device ${serialNumber} not found after ${DISCOVERY_RETRIES} attempts`)
   return null
 }
 
@@ -99,7 +102,7 @@ export async function discoverAllDevices(timeoutMs = 5000): Promise<DiscoveredDe
   try {
     dgram = await import('dgram')
   } catch {
-    console.error('[Datacap Discovery] dgram not available — must run server-side')
+    log.error('[Datacap Discovery] dgram not available — must run server-side')
     return []
   }
 
@@ -135,7 +138,7 @@ export async function discoverAllDevices(timeoutMs = 5000): Promise<DiscoveredDe
     })
 
     socket.on('error', (err) => {
-      console.warn('[Datacap Discovery] Socket error during broadcast:', err)
+      log.warn('[Datacap Discovery] Socket error during broadcast:', err)
       clearTimeout(timeout)
       done()
     })
@@ -146,7 +149,7 @@ export async function discoverAllDevices(timeoutMs = 5000): Promise<DiscoveredDe
       const message = Buffer.from('Who has')
       socket.send(message, 0, message.length, DISCOVERY_PORT, '255.255.255.255', (err) => {
         if (err) {
-          console.warn('[Datacap Discovery] Broadcast send error:', err)
+          log.warn('[Datacap Discovery] Broadcast send error:', err)
           clearTimeout(timeout)
           done()
         }

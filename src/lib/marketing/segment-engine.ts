@@ -6,6 +6,9 @@
  */
 
 import type { PrismaClient } from '@/generated/prisma/client'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('marketing')
 
 export interface SegmentCustomer {
   id: string
@@ -146,7 +149,7 @@ export async function resolveSegment(
 
     default:
       // Unknown segment — return empty
-      console.warn(`[Marketing] Unknown segment: ${segment}`)
+      log.warn(`[Marketing] Unknown segment: ${segment}`)
       return []
   }
 }

@@ -13,6 +13,9 @@ import { type CakeSettlementType } from './schemas'
 import { emitToLocation } from '@/lib/socket-server'
 import { sendSMS } from '@/lib/twilio'
 import { parseSettings, type TextToPaySettings, DEFAULT_TEXT_TO_PAY } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('cake-orders')
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -123,7 +126,7 @@ export async function createSettlementOrder(
         cakeOrderNumber,
       },
     },
-  }).catch(err => console.error('[cake-payment] Audit log failed:', err))
+  }).catch(err => log.error({ err: err }, '[cake-payment] Audit log failed:'))
 
   return { orderId }
 }
@@ -255,7 +258,7 @@ export async function recordCakePayment(
     type,
     appliedTo,
     amount,
-  }).catch(err => console.error('[cake-payment] Socket emit failed:', err))
+  }).catch(err => log.error({ err: err }, '[cake-payment] Socket emit failed:'))
 
   return { cakePaymentId }
 }
@@ -351,10 +354,9 @@ export async function handleCakeSettlementCompletion(
     paymentId,
     appliedTo,
     amount,
-  }).catch(err => console.error('[cake-payment] Settlement socket emit failed:', err))
+  }).catch(err => log.error({ err: err }, '[cake-payment] Settlement socket emit failed:'))
 
-  console.log(
-    `[cake-payment] Settlement completed: cake=${cakeOrderId} order=${orderId} ` +
+  log.info(`[cake-payment] Settlement completed: cake=${cakeOrderId} order=${orderId} ` +
     `payment=${paymentId} appliedTo=${appliedTo} amount=$${amount.toFixed(2)}`
   )
 }
@@ -492,7 +494,7 @@ export async function requestCakePaymentViaText(
   void sendSMS({
     to: customerPhone,
     body: smsBody,
-  }).catch(err => console.error('[cake-payment] Text-to-pay SMS failed:', err))
+  }).catch(err => log.error({ err: err }, '[cake-payment] Text-to-pay SMS failed:'))
 
   // Audit log
   void db.auditLog.create({
@@ -510,7 +512,7 @@ export async function requestCakePaymentViaText(
         customerPhone: customerPhone.slice(-4), // last 4 only for PII safety
       },
     },
-  }).catch(err => console.error('[cake-payment] Audit log failed:', err))
+  }).catch(err => log.error({ err: err }, '[cake-payment] Audit log failed:'))
 
   // Record change in CakeOrderChange
   const changeId = crypto.randomUUID()

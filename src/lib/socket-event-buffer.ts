@@ -84,7 +84,7 @@ export function recordEvent(locationId: string, event: string, data: unknown, ro
       // PG down or table doesn't exist — in-memory buffer still works
       log.warn('[SocketEventLog] PG write failed (in-memory only):', err instanceof Error ? err.message : err)
     }
-  })().catch(console.error)
+  })().catch((err) => log.error({ err }, 'socket event buffer init failed'))
 
   return eventId
 }
@@ -232,5 +232,5 @@ async function cleanupAll(): Promise<void> {
 }
 
 if (typeof setInterval !== 'undefined') {
-  setInterval(() => void cleanupAll().catch(console.error), SOCKET_EVENT_CLEANUP_INTERVAL_MS)
+  setInterval(() => void cleanupAll().catch((err) => log.error({ err }, 'socket event cleanup failed')), SOCKET_EVENT_CLEANUP_INTERVAL_MS)
 }

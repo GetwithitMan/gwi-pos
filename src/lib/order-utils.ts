@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('order-utils')
+
 /**
  * order-utils.ts — Single source of truth for order-related utilities
  *
@@ -220,7 +223,7 @@ function mergeSplitTickets(
     }
     return { items, subtotal, taxTotal, tipTotal, total }
   }).catch(err => {
-    console.error('[fetchAndMergeOrder] Failed to parse split tickets:', err)
+    log.error({ err: err }, '[fetchAndMergeOrder] Failed to parse split tickets:')
     return null
   })
 }
@@ -293,7 +296,7 @@ export async function fetchAndMergeOrder(
         }
       }
     } catch (err) {
-      console.error('[fetchAndMergeOrder] Failed to fetch split tickets:', err)
+      log.error({ err: err }, '[fetchAndMergeOrder] Failed to fetch split tickets:')
     }
   }
 

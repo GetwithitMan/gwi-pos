@@ -2,6 +2,9 @@
 // Builds TStream XML requests for Datacap devices and cloud
 
 import type { DatacapRequestFields, DatacapAmountFields, DatacapGratuityFields } from './types'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('datacap')
 
 // ─── Type Guards ─────────────────────────────────────────────────────────────
 
@@ -207,7 +210,7 @@ export function buildRequest(fields: DatacapRequestFields): string {
   if (fields.customerCode) {
     const truncated = fields.customerCode.slice(0, 17)
     if (process.env.NODE_ENV !== 'production' && fields.customerCode.length > 17) {
-      console.warn(`[Datacap] customerCode truncated from ${fields.customerCode.length} to 17 chars`)
+      log.warn(`[Datacap] customerCode truncated from ${fields.customerCode.length} to 17 chars`)
     }
     parts.push(tag('CustomerCode', truncated))
   }

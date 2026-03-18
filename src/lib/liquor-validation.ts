@@ -1,4 +1,7 @@
 import { db, adminDb } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor-validation')
 
 /**
  * Validate and correct the spirit tier / bottle product link for a modifier selection.
@@ -39,7 +42,7 @@ export async function validateSpiritTier(
 
   // Client sent wrong or missing bottle ID — correct it
   if (correctBottleId && correctBottleId !== linkedBottleProductId) {
-    console.log('[liquor-validation]', JSON.stringify({
+    log.info('[liquor-validation]', JSON.stringify({
       event: 'spirit_tier_corrected',
       menuItemId, modifierId,
       clientSent: linkedBottleProductId,

@@ -10,6 +10,7 @@
 
 import { PrismaClient } from '@/generated/prisma/client'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
 import {
   type OrderEventPayload,
   type OrderState,
@@ -21,6 +22,8 @@ import {
   getItemCount,
   getItemTotalCents,
 } from './types'
+
+const log = createChildLogger('order-events')
 import { reduce } from './reducer'
 import { applyProjection, bridgeLegacyFieldsToSnapshot } from './projector'
 
@@ -345,10 +348,7 @@ export async function ingestAndProject(
       })
     }
   } catch (err) {
-    console.error(
-      `[ingester] Bridge sync to Order failed for ${orderId}:`,
-      err
-    )
+    log.error({ err: err }, `[ingester] Bridge sync to Order failed for ${orderId}:`)
   }
 
   // ── 4. Bridge sync: OrderItem table ────────────────────────────────
@@ -438,10 +438,7 @@ export async function ingestAndProject(
       })
     }
   } catch (err) {
-    console.error(
-      `[ingester] OrderItem bridge sync failed for ${orderId}:`,
-      err
-    )
+    log.error({ err: err }, `[ingester] OrderItem bridge sync failed for ${orderId}:`)
   }
 
   // ── 5. Bridge sync: Payment table ──────────────────────────────────
@@ -495,10 +492,7 @@ export async function ingestAndProject(
         ...(overrides as Partial<BridgedPayment>),
       })
     } catch (err) {
-      console.error(
-        `[ingester] Payment bridge sync failed for order ${orderId}:`,
-        err
-      )
+      log.error({ err: err }, `[ingester] Payment bridge sync failed for order ${orderId}:`)
     }
   }
 
@@ -507,10 +501,7 @@ export async function ingestAndProject(
   try {
     await bridgeLegacyFieldsToSnapshot(db as any, orderId)
   } catch (err) {
-    console.error(
-      `[ingester] Legacy→Snapshot bridge failed for ${orderId}:`,
-      err
-    )
+    log.error({ err: err }, `[ingester] Legacy→Snapshot bridge failed for ${orderId}:`)
   }
 
   // ── 7. Socket broadcast ────────────────────────────────────────────
@@ -519,7 +510,7 @@ export async function ingestAndProject(
     void emitToLocation(locationId, 'orders:list-changed', {
       orderId,
       source: 'event-ingest',
-    }).catch(console.error)
+    }).catch((err) => log.error({ err }, 'emitToLocation failed'))
   }
 
   // ── 8. Return result ───────────────────────────────────────────────

@@ -11,6 +11,9 @@
 import { randomBytes } from 'node:crypto'
 import { parseNodeEnv, parseBool, parseStationRole, parsePort } from './env-parse'
 import type { NodeEnv, StationRole } from './env-parse'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('system-config')
 
 // Re-export types so existing imports keep working
 export type { NodeEnv, StationRole }
@@ -44,12 +47,12 @@ function buildConfig(): SystemConfig {
     if (requireProdKeys) {
       throw new Error(
         '[config] TENANT_SIGNING_KEY is required in production/staging. ' +
-        'Generate one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+        'Generate one: node -e "log.info(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
       )
     }
     // Dev fallback: ephemeral key
     tenantSigningKey = randomBytes(32).toString('hex')
-    console.warn('[config] Using ephemeral tenant signing key — set TENANT_SIGNING_KEY in .env for persistence')
+    log.warn('[config] Using ephemeral tenant signing key — set TENANT_SIGNING_KEY in .env for persistence')
   }
 
   // Provision API key — required in prod (non-NUC)

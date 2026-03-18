@@ -1,4 +1,7 @@
 import { useOrderStore } from '@/stores/order-store'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('split-order-loader')
 
 /**
  * Fetch a split order from the API and load it into the Zustand store.
@@ -30,7 +33,7 @@ export async function fetchAndLoadSplitOrder(
     })
     return true
   } catch (err) {
-    console.error('Failed to load split order:', err)
+    log.error({ err: err }, 'Failed to load split order:')
     return false
   }
 }

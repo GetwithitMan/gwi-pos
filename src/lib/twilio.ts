@@ -7,31 +7,97 @@
 
 import twilio from 'twilio'
 import crypto from 'crypto'
+import { db } from '@/lib/db'
+import { parseSettings } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
 
-// Environment variables (should be set in .env.local)
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN
-const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER
+const log = createChildLogger('twilio')
+
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'
 
-// Initialize Twilio client (lazy)
-let twilioClient: twilio.Twilio | null = null
+// Cached credentials (loaded from DB or env)
+let _cachedSid: string | null = null
+let _cachedToken: string | null = null
+let _cachedFromNumber: string | null = null
+let _cachedAt = 0
+const CACHE_TTL = 60_000 // 1 minute
 
-function getClient(): twilio.Twilio {
-  if (!twilioClient) {
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-      throw new Error('Twilio credentials not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.')
+// Initialize Twilio client (lazy, re-created if creds change)
+let twilioClient: twilio.Twilio | null = null
+let _clientSid: string | null = null
+
+/**
+ * Load Twilio credentials from DB settings, falling back to env vars.
+ * Caches for 1 minute to avoid repeated DB reads.
+ */
+async function loadCredentials(): Promise<{ sid: string | null; token: string | null; fromNumber: string | null }> {
+  if (_cachedSid && Date.now() - _cachedAt < CACHE_TTL) {
+    return { sid: _cachedSid, token: _cachedToken, fromNumber: _cachedFromNumber }
+  }
+
+  // Try DB settings first
+  try {
+    const location = await db.location.findFirst({ select: { settings: true } })
+    if (location?.settings) {
+      const settings = parseSettings(location.settings)
+      if (settings.twilio?.accountSid && settings.twilio?.authToken && settings.twilio?.fromNumber) {
+        _cachedSid = settings.twilio.accountSid
+        _cachedToken = settings.twilio.authToken
+        _cachedFromNumber = settings.twilio.fromNumber
+        _cachedAt = Date.now()
+        return { sid: _cachedSid, token: _cachedToken, fromNumber: _cachedFromNumber }
+      }
     }
-    twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+  } catch {
+    // Fall through to env vars
+  }
+
+  // Fallback to env vars
+  _cachedSid = process.env.TWILIO_ACCOUNT_SID || null
+  _cachedToken = process.env.TWILIO_AUTH_TOKEN || null
+  _cachedFromNumber = process.env.TWILIO_FROM_NUMBER || null
+  _cachedAt = Date.now()
+  return { sid: _cachedSid, token: _cachedToken, fromNumber: _cachedFromNumber }
+}
+
+/** Clear the credential cache (call after saving new creds) */
+export function clearTwilioCache() {
+  _cachedSid = null
+  _cachedToken = null
+  _cachedFromNumber = null
+  _cachedAt = 0
+  twilioClient = null
+  _clientSid = null
+}
+
+async function getClient(): Promise<twilio.Twilio> {
+  const { sid, token } = await loadCredentials()
+  if (!sid || !token) {
+    throw new Error('Twilio credentials not configured.')
+  }
+  // Re-create client if SID changed
+  if (!twilioClient || _clientSid !== sid) {
+    twilioClient = twilio(sid, token)
+    _clientSid = sid
   }
   return twilioClient
 }
 
 /**
- * Check if Twilio is configured
+ * Check if Twilio is configured (async — checks DB then env)
+ */
+export async function isTwilioConfiguredAsync(): Promise<boolean> {
+  const { sid, token, fromNumber } = await loadCredentials()
+  return !!(sid && token && fromNumber)
+}
+
+/**
+ * Check if Twilio is configured (sync — env vars only, for backward compat)
  */
 export function isTwilioConfigured(): boolean {
-  return !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_FROM_NUMBER)
+  // Check cached DB creds first, then env
+  if (_cachedSid && _cachedToken && _cachedFromNumber) return true
+  return !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER)
 }
 
 /**
@@ -88,8 +154,8 @@ interface SMSResult {
 export async function sendVoidApprovalSMS(params: SendVoidApprovalSMSParams): Promise<SMSResult> {
   const { to, serverName, itemName, amount, reason, orderNumber, approvalToken } = params
 
-  if (!isTwilioConfigured()) {
-    console.warn('[Twilio] Not configured, skipping SMS')
+  if (!(await isTwilioConfiguredAsync())) {
+    log.warn('[Twilio] Not configured, skipping SMS')
     return { success: false, error: 'Twilio not configured' }
   }
 
@@ -109,16 +175,16 @@ Or tap: ${approvalUrl}
 Expires in 30 min.`
 
   try {
-    const client = getClient()
+    const client = await getClient()
     const result = await client.messages.create({
       body: message,
-      from: TWILIO_FROM_NUMBER,
+      from: (await loadCredentials()).fromNumber!,
       to: formatPhoneE164(to),
     })
 
     return { success: true, messageSid: result.sid }
   } catch (error) {
-    console.error('[Twilio] Failed to send void approval SMS:', error)
+    log.error({ err: error }, '[Twilio] Failed to send void approval SMS:')
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -138,8 +204,8 @@ interface SendApprovalCodeSMSParams {
 export async function sendApprovalCodeSMS(params: SendApprovalCodeSMSParams): Promise<SMSResult> {
   const { to, code, serverName } = params
 
-  if (!isTwilioConfigured()) {
-    console.warn('[Twilio] Not configured, skipping SMS')
+  if (!(await isTwilioConfiguredAsync())) {
+    log.warn('[Twilio] Not configured, skipping SMS')
     return { success: false, error: 'Twilio not configured' }
   }
 
@@ -150,16 +216,16 @@ Code: ${code}
 Give to ${serverName}. Valid 5 min.`
 
   try {
-    const client = getClient()
+    const client = await getClient()
     const result = await client.messages.create({
       body: message,
-      from: TWILIO_FROM_NUMBER,
+      from: (await loadCredentials()).fromNumber!,
       to: formatPhoneE164(to),
     })
 
     return { success: true, messageSid: result.sid }
   } catch (error) {
-    console.error('[Twilio] Failed to send approval code SMS:', error)
+    log.error({ err: error }, '[Twilio] Failed to send approval code SMS:')
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -180,7 +246,7 @@ interface SendRejectionSMSParams {
 export async function sendRejectionSMS(params: SendRejectionSMSParams): Promise<SMSResult> {
   const { to, serverName, itemName, amount } = params
 
-  if (!isTwilioConfigured()) {
+  if (!(await isTwilioConfiguredAsync())) {
     return { success: false, error: 'Twilio not configured' }
   }
 
@@ -189,16 +255,16 @@ export async function sendRejectionSMS(params: SendRejectionSMSParams): Promise<
 You rejected the void request from ${serverName} for ${itemName} ($${amount.toFixed(2)}).`
 
   try {
-    const client = getClient()
+    const client = await getClient()
     const result = await client.messages.create({
       body: message,
-      from: TWILIO_FROM_NUMBER,
+      from: (await loadCredentials()).fromNumber!,
       to: formatPhoneE164(to),
     })
 
     return { success: true, messageSid: result.sid }
   } catch (error) {
-    console.error('[Twilio] Failed to send rejection SMS:', error)
+    log.error({ err: error }, '[Twilio] Failed to send rejection SMS:')
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -213,13 +279,14 @@ You rejected the void request from ${serverName} for ${itemName} ($${amount.toFi
  * @param params - Request body parameters from Twilio
  * @param signature - X-Twilio-Signature header value
  */
-export function validateTwilioSignature(
+export async function validateTwilioSignature(
   url: string,
   params: Record<string, string>,
   signature: string
-): boolean {
-  if (!TWILIO_AUTH_TOKEN) {
-    console.error('[Twilio] Cannot validate signature: Auth token not configured')
+): Promise<boolean> {
+  const { token } = await loadCredentials()
+  if (!token) {
+    log.error('[Twilio] Cannot validate signature: Auth token not configured')
     return false
   }
 
@@ -232,7 +299,7 @@ export function validateTwilioSignature(
 
   // Create HMAC-SHA1 signature
   const expectedSignature = crypto
-    .createHmac('sha1', TWILIO_AUTH_TOKEN)
+    .createHmac('sha1', token)
     .update(Buffer.from(data, 'utf-8'))
     .digest('base64')
 
@@ -297,22 +364,22 @@ interface SendSMSParams {
 export async function sendSMS(params: SendSMSParams): Promise<SMSResult> {
   const { to, body } = params
 
-  if (!isTwilioConfigured()) {
-    console.warn('[Twilio] Not configured, skipping SMS')
+  if (!(await isTwilioConfiguredAsync())) {
+    log.warn('[Twilio] Not configured, skipping SMS')
     return { success: false, error: 'Twilio not configured' }
   }
 
   try {
-    const client = getClient()
+    const client = await getClient()
     const result = await client.messages.create({
       body,
-      from: TWILIO_FROM_NUMBER,
+      from: (await loadCredentials()).fromNumber!,
       to: formatPhoneE164(to),
     })
 
     return { success: true, messageSid: result.sid }
   } catch (error) {
-    console.error('[Twilio] Failed to send SMS:', error)
+    log.error({ err: error }, '[Twilio] Failed to send SMS:')
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',

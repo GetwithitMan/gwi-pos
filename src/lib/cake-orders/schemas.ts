@@ -1,4 +1,7 @@
 import { z } from 'zod'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('cake-orders')
 
 // ============================================================================
 // Cake Builder JSONB Schemas — SINGLE SOURCE OF TRUTH
@@ -256,7 +259,7 @@ export type CakeQuoteLineItem = z.infer<typeof cakeQuoteLineItemSchema>
 export function parseCakeConfig(json: unknown): CakeConfigV1 {
   const result = cakeConfigV1Schema.safeParse(json)
   if (result.success) return result.data
-  console.error('[CakeConfig] Failed to parse cakeConfig JSONB:', result.error)
+  log.error('[CakeConfig] Failed to parse cakeConfig JSONB:', result.error)
   return {
     schemaVersion: 1,
     buildMode: 'custom',
@@ -272,7 +275,7 @@ export function parseCakeConfig(json: unknown): CakeConfigV1 {
 export function parseDesignConfig(json: unknown): DesignConfigV1 {
   const result = designConfigV1Schema.safeParse(json)
   if (result.success) return result.data
-  console.error('[CakeConfig] Failed to parse designConfig JSONB:', result.error)
+  log.error('[CakeConfig] Failed to parse designConfig JSONB:', result.error)
   return {
     schemaVersion: 1,
     colors: [],
@@ -292,7 +295,7 @@ export function parseDesignConfig(json: unknown): DesignConfigV1 {
 export function parseDietaryConfig(json: unknown): DietaryConfigV1 {
   const result = dietaryConfigV1Schema.safeParse(json)
   if (result.success) return result.data
-  console.error('[CakeConfig] Failed to parse dietaryConfig JSONB:', result.error)
+  log.error('[CakeConfig] Failed to parse dietaryConfig JSONB:', result.error)
   return {
     schemaVersion: 1,
     requirements: [],
@@ -306,7 +309,7 @@ export function parseDietaryConfig(json: unknown): DietaryConfigV1 {
 export function parsePricingInputs(json: unknown): PricingInputsV1 {
   const result = pricingInputsV1Schema.safeParse(json)
   if (result.success) return result.data
-  console.error('[CakeConfig] Failed to parse pricingInputs JSONB:', result.error)
+  log.error('[CakeConfig] Failed to parse pricingInputs JSONB:', result.error)
   return {
     schemaVersion: 1,
     tiers: [],
