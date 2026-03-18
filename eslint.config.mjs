@@ -46,6 +46,59 @@ const eslintConfig = defineConfig([
       "react-hooks/purity": "warn",
     },
   },
+  // ── Tenant-safe DB access enforcement ────────────────────────────────────
+  // Ban direct db.order/orderItem/payment/employee/menuItem access in route
+  // handlers and most lib files. All access must go through repositories.
+  // Approved infrastructure files are excluded.
+  {
+    files: [
+      "src/app/api/**/*.ts",
+      "src/lib/**/*.ts",
+    ],
+    ignores: [
+      // Approved infrastructure — direct db access is expected here
+      "src/lib/repositories/**",
+      "src/lib/order-events/**",
+      "src/lib/db.ts",
+      "src/lib/db-*.ts",
+      "src/lib/order-write-guard.ts",
+      "src/lib/sync/**",
+      "src/lib/auto-discount-engine.ts",
+      "src/lib/domain/order-items/order-totals.ts",
+      "src/lib/domain/split-order/discount-distribution.ts",
+      "src/lib/domain/order-items/item-operations.ts",
+      "src/lib/domain/tab-close/**",
+      "src/lib/domain/shift-close/**",
+      "src/lib/domain/entertainment/**",
+      "src/lib/domain/cleanup/**",
+      "src/lib/domain/datacap/**",
+    ],
+    rules: {
+      // WARN during burn-down. Promote to ERROR when violations reach 0.
+      "no-restricted-syntax": ["warn",
+        {
+          selector: "MemberExpression[object.name='db'][property.name='order']",
+          message: "Direct db.order access is banned. Use OrderRepository from '@/lib/repositories'.",
+        },
+        {
+          selector: "MemberExpression[object.name='db'][property.name='orderItem']",
+          message: "Direct db.orderItem access is banned. Use OrderItemRepository from '@/lib/repositories'.",
+        },
+        {
+          selector: "MemberExpression[object.name='db'][property.name='payment']",
+          message: "Direct db.payment access is banned. Use PaymentRepository from '@/lib/repositories'.",
+        },
+        {
+          selector: "MemberExpression[object.name='db'][property.name='employee']",
+          message: "Direct db.employee access is banned. Use EmployeeRepository from '@/lib/repositories'.",
+        },
+        {
+          selector: "MemberExpression[object.name='db'][property.name='menuItem']",
+          message: "Direct db.menuItem access is banned. Use MenuItemRepository from '@/lib/repositories'.",
+        },
+      ],
+    },
+  },
   // ── Config / script files — CommonJS require() is fine ───────────────────
   {
     files: [
