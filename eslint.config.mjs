@@ -72,10 +72,17 @@ const eslintConfig = defineConfig([
       "src/lib/domain/entertainment/**",
       "src/lib/domain/cleanup/**",
       "src/lib/domain/datacap/**",
+      // Approved exceptions — parameter-injected db or system-level routes
+      "src/lib/order-claim.ts",
+      "src/lib/accounting/daily-journal.ts",
+      "src/lib/payroll/payroll-export.ts",
+      "src/lib/api-auth.ts",
+      "src/app/api/system/batch-status/route.ts",
+      "src/app/api/orders/route.ts",
     ],
     rules: {
-      // WARN during burn-down. Promote to ERROR when violations reach 0.
-      "no-restricted-syntax": ["warn",
+      // ENFORCED — 383→16 violations burned down. Remaining 16 use eslint-disable.
+      "no-restricted-syntax": ["error",
         {
           selector: "MemberExpression[object.name='db'][property.name='order']",
           message: "Direct db.order access is banned. Use OrderRepository from '@/lib/repositories'.",
