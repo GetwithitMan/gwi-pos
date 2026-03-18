@@ -1,7 +1,8 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { OrderStatus, PaymentMethod, PaymentStatus, PmsAttemptStatus } from '@prisma/client'
+import * as OrderRepository from '@/lib/repositories/order-repository'
+import { OrderStatus, PaymentMethod, PaymentStatus, PmsAttemptStatus } from '@/generated/prisma/client'
 import { roundAmount } from '@/lib/payment'
 import { parseSettings } from '@/lib/settings'
 import { requireAnyPermission, requirePermission } from '@/lib/api-auth'
@@ -84,6 +85,7 @@ export const POST = withVenue(withTiming(async function POST(
     // ── Permission checks OUTSIDE the transaction (no FOR UPDATE needed) ──
     // These calls hit the auth service / employee table, not the Order row.
     // Running them before the lock reduces contention time.
+    // TODO: migrate to OrderRepository.getOrderByIdWithSelect once locationId is available from request context
     const preCheckOrder = await db.order.findUnique({
       where: { id: orderId },
       select: { locationId: true, employeeId: true },
@@ -140,6 +142,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     if (hasRoomCharge) {
       // Lightweight query for settings — no FOR UPDATE, no lock
+      // TODO: migrate to OrderRepository.getOrderByIdWithSelect once locationId is available from request context
       const locationForPms = await db.order.findUnique({
         where: { id: orderId },
         select: {
@@ -1236,7 +1239,7 @@ export const POST = withVenue(withTiming(async function POST(
         })
       }
       // Read back full Order for complete payload (updateData is partial)
-      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
       if (fullOrder) {
         void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(async (err) => {
           console.error(`[CRITICAL-PAYMENT] Outage queue write failed for Order ${orderId}, retrying:`, err)
@@ -1365,6 +1368,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Post-ingestion: update fields not in event state
     // CRITICAL: These writes update businessDayDate, tipTotal, primaryPaymentMethod.
     // If they fail, the order record is stale for reports and EOD. Retry once before giving up.
+    // TODO: migrate to OrderRepository.updateOrder — needs careful handling of retry logic (repo throws on count=0)
     const postPaymentOrderUpdate = orderIsPaid
       ? {
           businessDayDate: businessDayStart,
@@ -1579,9 +1583,8 @@ export const POST = withVenue(withTiming(async function POST(
 
           const currentTotal = toNumber(order.commissionTotal ?? 0)
           if (Math.abs(recalculatedCommission - currentTotal) > 0.001) {
-            await db.order.update({
-              where: { id: orderId },
-              data: { commissionTotal: recalculatedCommission, lastMutatedBy: 'local' },
+            await OrderRepository.updateOrder(orderId, order.locationId, {
+              commissionTotal: recalculatedCommission, lastMutatedBy: 'local',
             })
           }
         } catch (err) {

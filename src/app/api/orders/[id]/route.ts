@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
@@ -27,6 +28,7 @@ export const GET = withVenue(async function GET(
     const requestingEmployeeId = request.headers.get('x-employee-id') || request.nextUrl.searchParams.get('requestingEmployeeId')
 
     // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
+    // TODO: add repository method for split view shape (getOrderForSplitView)
     if (view === 'split') {
       const order = await db.order.findFirst({
         where: { id, deletedAt: null },
@@ -64,6 +66,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Lightweight panel view — items + modifiers only (no payments, pizzaData, ingredientModifications)
+    // TODO: add repository method for panel view shape (getOrderForPanelView)
     if (view === 'panel') {
       const order = await db.order.findFirst({
         where: { id, deletedAt: null },
@@ -201,6 +204,7 @@ export const GET = withVenue(async function GET(
       } })
     }
 
+    // TODO: add repository method for default GET view (close to getFullOrder but modifiers use custom select)
     const order = await db.order.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -377,6 +381,7 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
+    // TODO: add repository method for this query shape (order + location settings + active items for tax recalc)
     // Get existing order — selective fetch (only fields used for validation + tax recalc)
     const existingOrder = await db.order.findUnique({
       where: { id },
@@ -519,10 +524,11 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    const updatedOrder = await db.order.update({
-      where: { id },
-      data: { ...updateData, version: { increment: 1 } },
-      select: {
+    const updatedOrder = await OrderRepository.updateOrderAndSelect(
+      id,
+      existingOrder.locationId,
+      { ...updateData, version: { increment: 1 } },
+      {
         id: true,
         locationId: true,
         orderNumber: true,
@@ -547,7 +553,11 @@ export const PUT = withVenue(async function PUT(
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
       },
-    })
+    )
+
+    if (!updatedOrder) {
+      return apiError.notFound('Order not found after update', ERROR_CODES.ORDER_NOT_FOUND)
+    }
 
     // Build lightweight response (metadata-only update — no items needed)
     const response = {
@@ -719,6 +729,7 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
+    // TODO: add repository method for this query shape (order + items + location settings for tax recalc)
     // Quick existence + status check (includes items for tax-inclusive recalc)
     const existing = await db.order.findUnique({
       where: { id },
@@ -850,10 +861,11 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Lightweight update — no items, no modifiers, no employee includes
-    const updatedOrder = await db.order.update({
-      where: { id },
-      data: { ...updateData, version: { increment: 1 } },
-      select: {
+    const updatedOrder = await OrderRepository.updateOrderAndSelect(
+      id,
+      existing.locationId,
+      { ...updateData, version: { increment: 1 } },
+      {
         id: true,
         locationId: true,
         tableId: true,
@@ -874,7 +886,11 @@ export const PATCH = withVenue(async function PATCH(
         customerId: true,
         isTaxExempt: true,
       },
-    })
+    )
+
+    if (!updatedOrder) {
+      return apiError.notFound('Order not found after update', ERROR_CODES.ORDER_NOT_FOUND)
+    }
 
     // Dispatch socket updates for cross-terminal sync
     if (tipTotal !== undefined || isTaxExempt !== undefined) {

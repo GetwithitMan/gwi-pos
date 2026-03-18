@@ -28,6 +28,9 @@ async function hasScheduledForColumn(): Promise<boolean> {
 }
 
 // GET - List all open orders (any type)
+// TODO: OrderRepository.getOpenOrders() exists but is too simple for this route —
+// needs business day batching, empty-shell exclusion, rich includes, and multi-filter support.
+// Add repository methods: getOpenOrdersSummary(), getOpenOrdersFull(), countOpenOrders()
 export const GET = withVenue(withTiming(async function GET(request: NextRequest) {
   try {
     const timing = getTimingFromRequest(request)

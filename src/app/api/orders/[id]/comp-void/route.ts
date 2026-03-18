@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { deductInventoryForVoidedItem, restorePrepStockForVoid, restoreInventoryForRestoredItem, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -79,6 +80,7 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: approvalError.error }, { status: approvalError.status })
     }
 
+    // TODO: add repository method for this query shape (order + location + payments + filtered items with modifiers)
     // Get the order and item
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -547,9 +549,8 @@ export const POST = withVenue(async function POST(
           })
           const allTerminal = siblings.length > 0 && siblings.every(s => isClosed(s.status))
           if (allTerminal) {
-            await db.order.update({
-              where: { id: order.parentOrderId! },
-              data: { status: 'cancelled', paidAt: new Date() },
+            await OrderRepository.updateOrder(order.parentOrderId!, order.locationId, {
+              status: 'cancelled', paidAt: new Date(),
             })
             void dispatchOrderClosed(order.locationId, {
               orderId: order.parentOrderId!,
@@ -582,7 +583,7 @@ export const POST = withVenue(async function POST(
       // Queue outage write for parent order totals if Neon is unreachable —
       // read back full row to avoid NOT NULL constraint violations on replay
       if (isInOutageMode()) {
-        const fullParentOrder = await db.order.findUnique({ where: { id: order.parentOrderId! } })
+        const fullParentOrder = await OrderRepository.getOrderById(order.parentOrderId!, order.locationId)
         if (fullParentOrder) {
           void queueOutageWrite('Order', fullParentOrder.id, 'UPDATE', fullParentOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
         }
@@ -592,9 +593,8 @@ export const POST = withVenue(async function POST(
     // Overpayment detection: check if completed payments now exceed the new order total
     let overpayment: { amount: number; message: string } | null = null
     if (!shouldAutoClose) {
-      const updatedOrder = await db.order.findUnique({
-        where: { id: orderId },
-        include: { payments: { where: { status: 'completed' } } },
+      const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, order.locationId, {
+        payments: { where: { status: 'completed' } },
       })
       if (updatedOrder) {
         const totalPaid = updatedOrder.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0)
@@ -668,6 +668,7 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
+    // TODO: add repository method for this query shape (order + location + filtered items with modifiers)
     // Get the order and item
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -783,6 +784,7 @@ export const GET = withVenue(async function GET(
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employeeId')
 
+    // TODO: migrate to OrderRepository.checkOrderExists once locationId is available from request context
     // Get order to determine locationId for auth check
     const order = await db.order.findUnique({
       where: { id: orderId },

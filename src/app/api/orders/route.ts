@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma, OrderStatus } from '@prisma/client'
+import { Prisma, OrderStatus } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
@@ -9,7 +10,7 @@ import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, buildOrderSummary } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -19,6 +20,9 @@ import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { isTrainingEmployee } from '@/lib/training-mode'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -39,16 +43,10 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // Order creation idempotency — prevent double-tap / retry duplicates
     if (idempotencyKey) {
-      const existing = await db.order.findFirst({
-        where: {
-          idempotencyKey,
-          locationId, // location-scoped to prevent cross-venue collisions
-          deletedAt: null,
-        },
-        select: { id: true, orderNumber: true, status: true },
-      })
+      const existing = await OrderRepository.getOrderByIdempotencyKey(idempotencyKey, locationId)
       if (existing) {
         // Return existing order — this is a duplicate request
+        // TODO: add repository method for this query shape (order + employee + items with modifiers/pizza + table with sectionId)
         const fullOrder = await db.order.findUnique({
           where: { id: existing.id },
           include: {
@@ -246,6 +244,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               await db.reservation.update({ where: { id: reservationId }, data: { orderId: order.id } })
             }
             if (reservation?.bottleServiceTierId) {
+              // TODO: migrate to OrderRepository — bottleServiceTierId is a relational FK not in OrderUpdateManyMutationInput
               await db.order.update({
                 where: { id: order.id },
                 data: {
@@ -528,7 +527,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         )
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
-        return tx.order.create({
+        const created = await tx.order.create({
           data: {
             locationId,
             employeeId,
@@ -586,6 +585,33 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             },
           },
         })
+
+        // Queue critical socket events in the outbox (atomic with order creation)
+        const totalsPayload: OrderTotalsUpdatedPayload = {
+          orderId: created.id,
+          totals: {
+            subtotal: roundedSubtotal,
+            taxTotal,
+            tipTotal: 0,
+            discountTotal: 0,
+            total,
+            commissionTotal,
+          },
+          timestamp: new Date().toISOString(),
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_TOTALS_UPDATED, totalsPayload)
+
+        const listChangedPayload: OrdersListChangedPayload = {
+          trigger: 'created',
+          orderId: created.id,
+          tableId: tableId || undefined,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listChangedPayload)
+
+        const summaryPayload: OrderSummaryUpdatedPayload = buildOrderSummary(created)
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_SUMMARY_UPDATED, summaryPayload)
+
+        return created
       })
     } catch (err: any) {
       if (err?.code === 'TABLE_OCCUPIED') {
@@ -597,6 +623,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }
       throw err
     }
+
+    // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
+    void flushSocketOutbox(locationId).catch((err) => {
+      console.warn('[orders/create] Outbox flush failed, catch-up will deliver:', err)
+    })
 
     timing.end('db', 'Order create with items')
 
@@ -620,6 +651,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             await db.reservation.update({ where: { id: reservationId }, data: { orderId: order.id } })
           }
           if (reservation?.bottleServiceTierId) {
+            // TODO: migrate to OrderRepository — bottleServiceTierId is a relational FK not in OrderUpdateManyMutationInput
             await db.order.update({
               where: { id: order.id },
               data: {
@@ -717,24 +749,13 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       ),
     }
 
-    // FIX-011: Dispatch real-time totals update (fire-and-forget)
-    dispatchOrderTotalsUpdate(locationId, order.id, {
-      subtotal: roundedSubtotal,
-      taxTotal,
-      tipTotal: 0,
-      discountTotal: 0,
-      total,
-      commissionTotal,
-    }, { async: true }).catch(console.error)
+    // ORDER_TOTALS_UPDATED, ORDERS_LIST_CHANGED, and ORDER_SUMMARY_UPDATED are
+    // now queued in the transactional outbox above — crash-safe, flushed after commit.
 
-    // Dispatch open orders list changed + floor plan update (fire-and-forget)
-    dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id, tableId: tableId || undefined }, { async: true }).catch(() => {})
+    // Floor plan update remains fire-and-forget (non-critical UI event)
     if (tableId) {
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
     }
-
-    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
-    void dispatchOrderSummaryUpdated(locationId, buildOrderSummary(order), { async: true }).catch(() => {})
 
     return NextResponse.json({ data: response })
   } catch (error) {
@@ -811,6 +832,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       totalFilter = { gt: 0 }
     }
 
+    // TODO: add repository method for filtered order listing (status + employee + date range + balance + includes)
     const orders = await db.order.findMany({
       where: {
         locationId,
