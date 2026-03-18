@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
@@ -89,7 +89,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Running them before the lock reduces contention time.
     // NOTE: First fetch uses db directly because we don't have locationId yet.
     // Once we have locationId from the order, all subsequent queries use repositories.
-    const preCheckOrder = await db.order.findFirst({
+    const preCheckOrder = await adminDb.order.findFirst({
       where: { id: orderId },
       select: { locationId: true, employeeId: true },
     })
@@ -147,7 +147,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Lightweight query for settings — no FOR UPDATE, no lock
       // NOTE: Uses db directly because this runs before the main transaction and locationId
       // may not be available yet (preCheckOrder could be null if room_charge is the only payment type).
-      const locationForPms = await db.order.findFirst({
+      const locationForPms = await adminDb.order.findFirst({
         where: { id: orderId },
         select: {
           locationId: true,
@@ -1445,7 +1445,7 @@ export const POST = withVenue(withTiming(async function POST(
       // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
       // (queries use currentOrderId filter + relation-filter menuItem.itemType, not supported by current repos)
       try {
-        const entertainmentItems = await db.menuItem.findMany({
+        const entertainmentItems = await adminDb.menuItem.findMany({
           where: { locationId: order.locationId, currentOrderId: orderId, itemType: 'timed_rental' },
           select: { id: true },
         })
@@ -1453,12 +1453,12 @@ export const POST = withVenue(withTiming(async function POST(
         if (entertainmentItems.length > 0) {
           // Clear blockTimeStartedAt on order items so Android stops showing timers
           // TODO: relation-filter (menuItem.itemType) not supported by OrderItemRepository.updateItemsWhere
-          await db.orderItem.updateMany({
+          await adminDb.orderItem.updateMany({
             where: { orderId, locationId: order.locationId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
             data: { blockTimeStartedAt: null },
           })
 
-          await db.menuItem.updateMany({
+          await adminDb.menuItem.updateMany({
             where: { locationId: order.locationId, currentOrderId: orderId, itemType: 'timed_rental' },
             data: {
               entertainmentStatus: 'available',
@@ -1543,7 +1543,7 @@ export const POST = withVenue(withTiming(async function POST(
       void (async () => {
         try {
           // TODO: Add getActiveItemsForOrderWithMenuItemCommission to OrderItemRepository
-          const activeItems = await db.orderItem.findMany({
+          const activeItems = await adminDb.orderItem.findMany({
             where: { orderId, locationId: order.locationId, status: 'active', deletedAt: null },
             include: {
               menuItem: { select: { commissionType: true, commissionValue: true } },
@@ -1682,7 +1682,7 @@ export const POST = withVenue(withTiming(async function POST(
         void (async () => {
           try {
             // TODO: Add countOpenOrdersForTableExcluding to OrderRepository
-            const otherOpenOrders = await db.order.count({
+            const otherOpenOrders = await adminDb.order.count({
               where: {
                 tableId: order.tableId!,
                 locationId: order.locationId,

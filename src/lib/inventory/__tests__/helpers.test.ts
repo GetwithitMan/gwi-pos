@@ -16,7 +16,7 @@ import {
   explodePrepItem,
 } from '../helpers'
 import type { MultiplierSettings, PrepItemWithIngredients } from '../types'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 const Decimal = Prisma.Decimal
 
 // =============================================================================

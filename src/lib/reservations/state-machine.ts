@@ -5,7 +5,7 @@
  * Validates transitions, enforces guards, writes events, and fires socket dispatch.
  */
 
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 // Socket dispatch is caller's responsibility — import removed to enforce post-commit pattern
 
 // ─── Types ──────────────────────────────────────────────────────────────────

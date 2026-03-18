@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -23,7 +23,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Find all menu items in liquor categories (or optionally filtered by category)
-    const menuItems = await db.menuItem.findMany({
+    const menuItems = await adminDb.menuItem.findMany({
       where: {
         locationId,
         isActive: true,

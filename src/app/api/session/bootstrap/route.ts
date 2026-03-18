@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getFloorPlanSnapshot } from '@/lib/snapshot'
 import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
@@ -82,7 +82,7 @@ async function getMenuForBootstrap(locationId: string) {
       },
     }),
 
-    db.menuItem.findMany({
+    adminDb.menuItem.findMany({
       where: { isActive: true, deletedAt: null, locationId },
       orderBy: { sortOrder: 'asc' },
       include: {
@@ -343,7 +343,7 @@ async function getOrderTypes(locationId: string) {
  * Get employee preferences (room order).
  */
 async function getEmployeePreferences(employeeId: string) {
-  const employee = await db.employee.findUnique({
+  const employee = await adminDb.employee.findUnique({
     where: { id: employeeId },
     select: { id: true, preferredRoomOrder: true },
   })

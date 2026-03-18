@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
-import { db } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { normalizePhone } from '@/lib/utils'
@@ -88,7 +88,7 @@ export const GET = withVenue(async function GET(
     })
 
     // Get favorite items (most ordered)
-    const favoriteItems = await db.orderItem.groupBy({
+    const favoriteItems = await adminDb.orderItem.groupBy({
       by: ['menuItemId', 'name'],
       where: {
         locationId,

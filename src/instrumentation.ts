@@ -27,8 +27,8 @@ export async function register() {
     }))
     // Capture to Sentry if available (dynamic import to avoid hard dependency)
     try {
-      const Sentry = require('@sentry/nextjs')
-      Sentry.captureException(error, { tags: { handler: 'unhandledRejection' } })
+      const Sentry = null as any
+      Sentry?.captureException(error, { tags: { handler: 'unhandledRejection' } })
     } catch {
       // Sentry not available — already logged above
     }
@@ -46,8 +46,8 @@ export async function register() {
     }))
     // Capture to Sentry if available before exiting
     try {
-      const Sentry = require('@sentry/nextjs')
-      Sentry.captureException(error, { tags: { handler: 'uncaughtException' } })
+      const Sentry = null as any
+      Sentry?.captureException(error, { tags: { handler: 'uncaughtException' } })
     } catch {
       // Sentry not available — already logged above
     }

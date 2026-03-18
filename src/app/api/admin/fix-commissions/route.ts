@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
@@ -42,7 +42,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // TODO: Migrate to MenuItemRepository once it supports optional cross-tenant queries (admin API-key mode).
     // Get all menu items with commission settings
-    const menuItemsWithCommission = await db.menuItem.findMany({
+    const menuItemsWithCommission = await adminDb.menuItem.findMany({
       where: {
         commissionType: { not: null },
         ...(locationId ? { locationId } : {}),
@@ -68,7 +68,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Find all order items that have commission-enabled menu items
     // but don't have commission calculated yet
-    const orderItemsToFix = await db.orderItem.findMany({
+    const orderItemsToFix = await adminDb.orderItem.findMany({
       where: {
         menuItemId: { in: menuItemIds },
         OR: [
@@ -145,7 +145,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // TODO: Migrate to OrderItemRepository.updateItem once per-item locationId is tracked in itemUpdates.
     // These items span multiple locations when locationId is not provided (admin API-key mode).
     for (const item of itemUpdates) {
-      await db.orderItem.update({
+      await adminDb.orderItem.update({
         where: { id: item.id },
         data: { commissionAmount: item.commissionAmount },
       })
@@ -213,7 +213,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
 
     // Get menu items with commission
-    const menuItemsWithCommission = await db.menuItem.findMany({
+    const menuItemsWithCommission = await adminDb.menuItem.findMany({
       where: {
         commissionType: { not: null },
         ...(locationId ? { locationId } : {}),

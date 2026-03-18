@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
@@ -42,7 +42,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Bootstrap: lightweight fetch for locationId
-    const fromCheck = await db.order.findFirst({
+    const fromCheck = await adminDb.order.findFirst({
       where: { id: fromOrderId },
       select: { id: true, locationId: true },
     })
@@ -339,7 +339,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Get open orders at this location (exclude current order)
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where: {
         locationId,
         id: { not: currentOrderId },

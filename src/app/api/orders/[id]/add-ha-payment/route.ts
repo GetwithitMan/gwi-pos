@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -26,7 +26,7 @@ export const POST = withVenue(async function POST(
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
     // Bootstrap: lightweight fetch for locationId, then use repository for tenant-safe access
-    const orderForAuth = await db.order.findFirst({
+    const orderForAuth = await adminDb.order.findFirst({
       where: { id: orderId },
       select: { locationId: true },
     })
@@ -114,7 +114,8 @@ export const POST = withVenue(async function POST(
 
     // Find or create the "House Account Payment" system menu item
     // TODO: Add MenuItemRepository.findByNameAndCategory() once available
-    let systemMenuItem = await db.menuItem.findFirst({
+    // TODO: Add MenuItemRepository.findByNameAndCategory() once available
+    let systemMenuItem = await adminDb.menuItem.findFirst({
       where: {
         locationId: order.locationId,
         name: 'House Account Payment',
@@ -125,7 +126,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!systemMenuItem) {
-      systemMenuItem = await db.menuItem.create({
+      systemMenuItem = await adminDb.menuItem.create({
         data: {
           locationId: order.locationId,
           categoryId: systemCategory.id,
@@ -138,7 +139,8 @@ export const POST = withVenue(async function POST(
 
     // Create the order item
     // TODO: Add OrderItemRepository.createItem() once that write method exists
-    const orderItem = await db.orderItem.create({
+    // TODO: Add OrderItemRepository.createItem() once that write method exists
+    const orderItem = await adminDb.orderItem.create({
       data: {
         locationId: order.locationId,
         orderId,

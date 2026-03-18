@@ -2,7 +2,7 @@
  * Shared types for inventory calculations
  */
 
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 
 export interface InventoryItemData {

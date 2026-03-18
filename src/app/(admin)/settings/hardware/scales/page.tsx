@@ -10,7 +10,10 @@ interface Scale {
   id: string
   name: string
   scaleType: string
-  portPath: string
+  connectionType: string
+  portPath: string | null
+  networkHost: string | null
+  networkPort: number | null
   baudRate: number
   dataBits: number
   parity: string
@@ -33,7 +36,10 @@ interface SerialPort {
 interface ScaleFormData {
   name: string
   scaleType: string
+  connectionType: string
   portPath: string
+  networkHost: string
+  networkPort: string
   baudRate: number
   dataBits: number
   parity: string
@@ -56,7 +62,10 @@ const SCALE_TYPE_DEFAULTS: Record<string, Partial<ScaleFormData>> = {
 const DEFAULT_FORM_DATA: ScaleFormData = {
   name: '',
   scaleType: 'CAS_PD_II',
+  connectionType: 'serial',
   portPath: '',
+  networkHost: '',
+  networkPort: '',
   baudRate: 9600,
   dataBits: 7,
   parity: 'even',
@@ -130,7 +139,10 @@ export default function ScalesPage() {
     setFormData({
       name: scale.name,
       scaleType: scale.scaleType,
-      portPath: scale.portPath,
+      connectionType: scale.connectionType || 'serial',
+      portPath: scale.portPath || '',
+      networkHost: scale.networkHost || '',
+      networkPort: scale.networkPort != null ? String(scale.networkPort) : '',
       baudRate: scale.baudRate,
       dataBits: scale.dataBits,
       parity: scale.parity,
@@ -142,7 +154,7 @@ export default function ScalesPage() {
     setManualPort(false)
     setError('')
     setShowModal(true)
-    fetchPorts()
+    if (scale.connectionType !== 'network') fetchPorts()
   }
 
   const handleScaleTypeChange = (scaleType: string) => {
@@ -159,9 +171,20 @@ export default function ScalesPage() {
       setError('Name is required')
       return
     }
-    if (!formData.portPath.trim()) {
-      setError('Port path is required')
+    if (formData.connectionType === 'serial' && !formData.portPath.trim()) {
+      setError('Port path is required for serial connections')
       return
+    }
+    if (formData.connectionType === 'network') {
+      if (!formData.networkHost.trim()) {
+        setError('Host address is required for network connections')
+        return
+      }
+      const port = parseInt(formData.networkPort)
+      if (!port || port < 1 || port > 65535) {
+        setError('Valid TCP port (1-65535) is required for network connections')
+        return
+      }
     }
 
     setSaving(true)
@@ -176,13 +199,23 @@ export default function ScalesPage() {
       const payload: Record<string, unknown> = {
         name: formData.name.trim(),
         scaleType: formData.scaleType,
-        portPath: formData.portPath.trim(),
+        connectionType: formData.connectionType,
         baudRate: formData.baudRate,
         dataBits: formData.dataBits,
         parity: formData.parity,
         stopBits: formData.stopBits,
         weightUnit: formData.weightUnit,
         precision: formData.precision,
+      }
+
+      if (formData.connectionType === 'serial') {
+        payload.portPath = formData.portPath.trim()
+        payload.networkHost = null
+        payload.networkPort = null
+      } else {
+        payload.portPath = null
+        payload.networkHost = formData.networkHost.trim()
+        payload.networkPort = parseInt(formData.networkPort)
       }
 
       if (formData.maxCapacity.trim()) {
@@ -325,7 +358,10 @@ export default function ScalesPage() {
                         )}
                       </div>
                       <p className="mt-1 text-sm text-gray-600">
-                        {scale.portPath} • {scale.baudRate} baud • {scale.weightUnit}
+                        {scale.connectionType === 'network'
+                          ? `${scale.networkHost}:${scale.networkPort} (TCP)`
+                          : `${scale.portPath} • ${scale.baudRate} baud`}
+                        {' • '}{scale.weightUnit}
                         {scale.maxCapacity != null && ` • max ${scale.maxCapacity}${scale.weightUnit}`}
                       </p>
                       {scale.lastSeenAt && (
@@ -428,51 +464,118 @@ export default function ScalesPage() {
             <p className="mt-1 text-xs text-gray-900">Serial settings auto-fill based on scale type</p>
           </div>
 
-          {/* Port Path */}
+          {/* Connection Type */}
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-900">Serial Port</label>
-            {!manualPort ? (
-              <div className="space-y-2">
-                <select
-                  value={formData.portPath}
-                  onChange={(e) => setFormData({ ...formData, portPath: e.target.value })}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
-                  disabled={portsLoading}
-                >
-                  <option value="">{portsLoading ? 'Scanning ports...' : 'Select a port'}</option>
-                  {availablePorts.map((p) => (
-                    <option key={p.path} value={p.path}>
-                      {p.path}{p.manufacturer ? ` (${p.manufacturer})` : ''}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setManualPort(true)}
-                  className="text-xs text-blue-500 hover:text-blue-700"
-                >
-                  Enter path manually
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
+            <label className="mb-1 block text-sm font-medium text-gray-900">Connection Type</label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="connectionType"
+                  value="serial"
+                  checked={formData.connectionType === 'serial'}
+                  onChange={() => {
+                    setFormData({ ...formData, connectionType: 'serial' })
+                    fetchPorts()
+                  }}
+                  className="h-4 w-4 text-blue-500"
+                />
+                <span className="text-sm text-gray-900">USB / Serial</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="connectionType"
+                  value="network"
+                  checked={formData.connectionType === 'network'}
+                  onChange={() => setFormData({ ...formData, connectionType: 'network' })}
+                  className="h-4 w-4 text-blue-500"
+                />
+                <span className="text-sm text-gray-900">Network (TCP)</span>
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              {formData.connectionType === 'network'
+                ? 'Connect via serial device server (e.g., Moxa, USR-TCP232)'
+                : 'Direct USB or serial connection to NUC'}
+            </p>
+          </div>
+
+          {/* Serial Port (only for serial connection) */}
+          {formData.connectionType === 'serial' && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-900">Serial Port</label>
+              {!manualPort ? (
+                <div className="space-y-2">
+                  <select
+                    value={formData.portPath}
+                    onChange={(e) => setFormData({ ...formData, portPath: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
+                    disabled={portsLoading}
+                  >
+                    <option value="">{portsLoading ? 'Scanning ports...' : 'Select a port'}</option>
+                    {availablePorts.map((p) => (
+                      <option key={p.path} value={p.path}>
+                        {p.path}{p.manufacturer ? ` (${p.manufacturer})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setManualPort(true)}
+                    className="text-xs text-blue-500 hover:text-blue-700"
+                  >
+                    Enter path manually
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={formData.portPath}
+                    onChange={(e) => setFormData({ ...formData, portPath: e.target.value })}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono focus:border-blue-500 focus:outline-none"
+                    placeholder="/dev/ttyUSB0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { setManualPort(false); fetchPorts() }}
+                    className="text-xs text-blue-500 hover:text-blue-700"
+                  >
+                    Scan for ports
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Network Host + Port (only for network connection) */}
+          {formData.connectionType === 'network' && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-900">Host Address</label>
                 <input
                   type="text"
-                  value={formData.portPath}
-                  onChange={(e) => setFormData({ ...formData, portPath: e.target.value })}
+                  value={formData.networkHost}
+                  onChange={(e) => setFormData({ ...formData, networkHost: e.target.value })}
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono focus:border-blue-500 focus:outline-none"
-                  placeholder="/dev/ttyUSB0"
+                  placeholder="192.168.1.100"
                 />
-                <button
-                  type="button"
-                  onClick={() => { setManualPort(false); fetchPorts() }}
-                  className="text-xs text-blue-500 hover:text-blue-700"
-                >
-                  Scan for ports
-                </button>
               </div>
-            )}
-          </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-900">TCP Port</label>
+                <input
+                  type="number"
+                  value={formData.networkPort}
+                  onChange={(e) => setFormData({ ...formData, networkPort: e.target.value })}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono focus:border-blue-500 focus:outline-none"
+                  placeholder="4001"
+                  min="1"
+                  max="65535"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Serial Settings */}
           <div className="grid grid-cols-4 gap-3">

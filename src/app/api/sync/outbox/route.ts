@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
@@ -24,7 +24,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Idempotent: check if already synced
-      const existing = await db.order.findFirst({ where: { offlineId: orderData.offlineId } })
+      const existing = await adminDb.order.findFirst({ where: { offlineId: orderData.offlineId } })
       if (existing) {
         synced.orders.push({ offlineId: orderData.offlineId, serverId: existing.id })
         continue
@@ -88,7 +88,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
       void (async () => {
-        const createdWithItems = await db.order.findUnique({
+        const createdWithItems = await adminDb.order.findUnique({
           where: { id: created.id },
           include: { items: true },
         })

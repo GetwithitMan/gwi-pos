@@ -7,7 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
@@ -26,7 +26,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Look up the employee's current role
-    const employee = await db.employee.findFirst({
+    const employee = await adminDb.employee.findFirst({
       where: { id: employeeId, deletedAt: null },
       select: { roleId: true },
     })

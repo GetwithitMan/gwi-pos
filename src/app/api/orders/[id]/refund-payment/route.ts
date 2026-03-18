@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -34,7 +34,7 @@ export const POST = withVenue(async function POST(
     // Fetch order (unlocked — lightweight check before acquiring lock)
     // NOTE: First fetch uses db directly because we don't have locationId yet.
     // Once we have locationId from this order, all subsequent queries use repositories.
-    const order = await db.order.findUnique({
+    const order = await adminDb.order.findUnique({
       where: { id, deletedAt: null },
       select: {
         id: true, locationId: true, orderNumber: true, status: true, deletedAt: true,

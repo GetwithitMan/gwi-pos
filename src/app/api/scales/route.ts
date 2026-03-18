@@ -38,7 +38,10 @@ export const GET = withVenue(async function GET() {
 const createScaleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   scaleType: z.string().default('CAS_PD_II'),
-  portPath: z.string().min(1, 'Port path is required'),
+  connectionType: z.enum(['serial', 'network']).default('serial'),
+  portPath: z.string().nullable().optional(),
+  networkHost: z.string().nullable().optional(),
+  networkPort: z.number().int().min(1).max(65535).nullable().optional(),
   baudRate: z.number().int().positive().default(9600),
   dataBits: z.number().int().min(5).max(8).default(7),
   parity: z.enum(['none', 'even', 'odd']).default('even'),
@@ -65,13 +68,31 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    const { maxCapacity, ...rest } = parsed.data
+    const { maxCapacity, connectionType, portPath, networkHost, networkPort, ...rest } = parsed.data
+
+    // Validate connection-type-specific fields
+    if (connectionType === 'network') {
+      if (!networkHost) {
+        return NextResponse.json({ error: 'Host address is required for network connections' }, { status: 400 })
+      }
+      if (!networkPort) {
+        return NextResponse.json({ error: 'TCP port is required for network connections' }, { status: 400 })
+      }
+    } else {
+      if (!portPath) {
+        return NextResponse.json({ error: 'Port path is required for serial connections' }, { status: 400 })
+      }
+    }
 
     let scale
     try {
       scale = await db.scale.create({
         data: {
           locationId,
+          connectionType,
+          portPath: connectionType === 'serial' ? portPath : null,
+          networkHost: connectionType === 'network' ? networkHost : null,
+          networkPort: connectionType === 'network' ? networkPort : null,
           ...rest,
           ...(maxCapacity !== undefined && { maxCapacity }),
         },

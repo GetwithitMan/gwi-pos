@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -70,7 +70,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Step 2: Fall back to MenuItem.sku exact match (backwards compat)
-    const menuItem = await db.menuItem.findFirst({
+    const menuItem = await adminDb.menuItem.findFirst({
       where: {
         locationId,
         sku: code,

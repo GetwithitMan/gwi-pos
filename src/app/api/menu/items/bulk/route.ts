@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -27,7 +27,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Maximum 50 items per request' }, { status: 400 })
     }
 
-    const items = await db.menuItem.findMany({
+    const items = await adminDb.menuItem.findMany({
       where: { id: { in: itemIds }, locationId, deletedAt: null },
       select: {
         id: true,

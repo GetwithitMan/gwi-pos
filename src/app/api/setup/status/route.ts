@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -21,10 +21,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         db.category.count({
           where: { locationId, deletedAt: null },
         }),
-        db.menuItem.count({
+        adminDb.menuItem.count({
           where: { locationId, deletedAt: null },
         }),
-        db.employee.count({
+        adminDb.employee.count({
           where: { locationId, deletedAt: null },
         }),
         db.table.count({

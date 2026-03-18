@@ -10,7 +10,7 @@
  */
 
 import crypto from 'crypto'
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 import { parseTimeToMinutes } from './service-date'
 import { transition } from './state-machine'
 import { findOrCreateCustomer } from './customer-matcher'

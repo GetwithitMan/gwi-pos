@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { PayrollPeriodStatus } from '@prisma/client'
+import { PayrollPeriodStatus } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
+// TODO: Phase 1 - No PayrollPeriodRepository yet.
+// db.payrollPeriod calls remain direct.
 
 // GET - List payroll periods
 export const GET = withVenue(async function GET(request: NextRequest) {

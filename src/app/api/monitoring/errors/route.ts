@@ -21,7 +21,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { Prisma, ErrorSeverity, ErrorLogStatus } from '@prisma/client'
+import { Prisma, ErrorSeverity, ErrorLogStatus } from '@/generated/prisma/client'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -58,21 +58,22 @@ export const GET = withVenue(async function GET(
     }
 
     // Get summary stats
+    // TODO: Add EmployeeRepository.getEmployeeStats() for tenant-safe aggregate queries
     const [orderCount, totalSales, totalCommission] = await Promise.all([
-      db.order.count({
+      adminDb.order.count({
         where: {
           employeeId: id,
           status: { in: ['paid', 'closed'] },
         },
       }),
-      db.order.aggregate({
+      adminDb.order.aggregate({
         where: {
           employeeId: id,
           status: { in: ['paid', 'closed'] },
         },
         _sum: { total: true },
       }),
-      db.order.aggregate({
+      adminDb.order.aggregate({
         where: {
           employeeId: id,
           status: { in: ['paid', 'closed'] },
@@ -356,7 +357,8 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Check for open orders (all active statuses, not just open/pending)
-    const openOrders = await db.order.count({
+    // TODO: Add OrderRepository.countOpenOrdersForEmployee() for tenant-safe count
+    const openOrders = await adminDb.order.count({
       where: {
         employeeId: id,
         status: { in: ['draft', 'open', 'sent', 'in_progress', 'split', 'pending'] },

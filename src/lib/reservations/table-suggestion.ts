@@ -6,7 +6,7 @@
  */
 
 import { checkSlotAvailability, type OperatingHours } from './availability'
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 import type { ReservationSettings } from '@/lib/settings'
 
 // ─── Types ──────────────────────────────────────────────────────────────────

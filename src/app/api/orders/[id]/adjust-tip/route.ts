@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { withVenue } from '@/lib/with-venue'
@@ -41,7 +41,7 @@ export const PATCH = withVenue(async function PATCH(
     // Lightweight order check for locationId (needed by auth)
     // NOTE: First fetch uses db directly because we don't have locationId yet.
     // Once we have locationId from this order, all subsequent queries use repositories.
-    const orderCheck = await db.order.findUnique({
+    const orderCheck = await adminDb.order.findUnique({
       where: { id: orderId },
       select: { id: true, locationId: true },
     })

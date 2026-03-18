@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
@@ -124,7 +124,7 @@ export const POST = withVenue(async function POST(
             blockTimeExpiresAt: expiresAt,
           }),
           // TODO: [Phase 2] Migrate menuItem and floorPlanElement updates to their own repositories
-          db.menuItem.update({
+          adminDb.menuItem.update({
             where: { id: item.menuItem!.id },
             data: {
               entertainmentStatus: 'in_use',

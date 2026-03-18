@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
@@ -131,7 +131,7 @@ export async function captureMenuSnapshot(locationId: string) {
         printerIds: true,
       },
     }),
-    db.menuItem.findMany({
+    adminDb.menuItem.findMany({
       where: { locationId, deletedAt: null },
       select: {
         id: true,

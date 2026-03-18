@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -13,7 +13,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     const { id: menuItemId } = await params
 
     // Verify menu item exists
-    const menuItem = await db.menuItem.findUnique({
+    const menuItem = await adminDb.menuItem.findUnique({
       where: { id: menuItemId },
       select: { id: true, locationId: true },
     })
@@ -102,7 +102,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     }
 
     // Verify menu item exists and get locationId
-    const menuItem = await db.menuItem.findUnique({
+    const menuItem = await adminDb.menuItem.findUnique({
       where: { id: menuItemId },
       select: { id: true, locationId: true },
     })

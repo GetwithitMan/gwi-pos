@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
@@ -48,7 +48,7 @@ export const GET = withVenue(async function GET(
     const { id } = await params
 
     // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const orderCheck = await db.order.findFirst({
+    const orderCheck = await adminDb.order.findFirst({
       where: { id },
       select: { id: true, locationId: true },
     })
@@ -202,7 +202,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const parentCheck = await db.order.findFirst({
+    const parentCheck = await adminDb.order.findFirst({
       where: { id },
       select: { id: true, locationId: true },
     })
@@ -723,7 +723,7 @@ export const PATCH = withVenue(async function PATCH(
       }
 
       // Bootstrap: lightweight fetch for locationId
-      const splitItemCheck = await db.order.findFirst({
+      const splitItemCheck = await adminDb.order.findFirst({
         where: { id },
         select: { id: true, locationId: true },
       })
@@ -877,7 +877,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Bootstrap: lightweight fetch for locationId
-    const moveCheck = await db.order.findFirst({
+    const moveCheck = await adminDb.order.findFirst({
       where: { id },
       select: { id: true, locationId: true },
     })
@@ -998,7 +998,7 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
 
     // Bootstrap: lightweight fetch for locationId
-    const deleteCheck = await db.order.findFirst({
+    const deleteCheck = await adminDb.order.findFirst({
       where: { id },
       select: { id: true, locationId: true },
     })

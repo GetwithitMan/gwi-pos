@@ -5,9 +5,17 @@
  * journal entries suitable for export to QuickBooks, Xero, or CSV.
  *
  * Invariant: total debits MUST equal total credits (balanced journal).
+ *
+ * TODO: Migrate to repositories. This file takes db: PrismaClient as a param
+ * and runs 6 parallel queries with complex WHERE shapes (date ranges, nested
+ * order filters, status arrays). Requires new repo methods for:
+ * - OrderRepository: findMany with date range + items include + category join
+ * - PaymentRepository: findMany with nested order date filter
+ * - OrderItemRepository: findMany by status + date range
+ * - No repos exist for: OrderDiscount, VoidLog, TimeClockEntry
  */
 
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings, DEFAULT_ACCOUNTING_SETTINGS, DEFAULT_GL_MAPPING } from '@/lib/settings'
 import type { AccountingGLMapping } from '@/lib/settings'

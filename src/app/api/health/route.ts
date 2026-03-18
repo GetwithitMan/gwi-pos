@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchFailoverActive, dispatchFailoverResolved } from '@/lib/socket-dispatch'
 import { getLocalLeaseExpiry } from '@/app/api/fence-check/route'
@@ -158,7 +158,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   let pendingReconciliation = 0
   if (databaseCheck && locationId) {
     try {
-      pendingReconciliation = await db.order.count({
+      pendingReconciliation = await adminDb.order.count({
         where: {
           locationId,
           status: { in: ['open', 'sent', 'in_progress'] },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -64,7 +64,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get all active employees
-    const employees = await db.employee.findMany({
+    const employees = await adminDb.employee.findMany({
       where: {
         locationId,
         isActive: true,

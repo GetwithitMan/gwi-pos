@@ -8,7 +8,7 @@
  * Key design: lock per 15-minute bucket, sorted ascending to prevent deadlocks.
  */
 
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 
 /**
  * Hash a string to a BigInt suitable for pg_advisory_xact_lock.

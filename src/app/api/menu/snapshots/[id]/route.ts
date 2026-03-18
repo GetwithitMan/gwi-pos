@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(
     const snapshotData = typeof snapshot.data === 'string' ? JSON.parse(snapshot.data) : snapshot.data
 
     // Calculate diff from current menu
-    const currentItemCount = await db.menuItem.count({
+    const currentItemCount = await adminDb.menuItem.count({
       where: { locationId, deletedAt: null },
     })
     const currentCategoryCount = await db.category.count({

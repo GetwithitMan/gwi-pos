@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
@@ -23,7 +23,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const orderCheck = await db.order.findFirst({
+    const orderCheck = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true },
     })
@@ -217,7 +217,7 @@ export const GET = withVenue(async function GET(
     const { id: orderId } = await params
 
     // Bootstrap: lightweight fetch for locationId + bottle service check
-    const getCheck = await db.order.findFirst({
+    const getCheck = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null, isBottleService: true },
       select: { id: true, locationId: true },
     })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
@@ -75,7 +75,7 @@ export const PUT = withVenue(async function PUT(
 
     // Check active orders before deactivation
     if (isActive === false && existing.isActive) {
-      const activeOrders = await db.order.count({
+      const activeOrders = await adminDb.order.count({
         where: {
           locationId,
           bottleServiceTierId: id,
@@ -150,7 +150,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Check active orders before deletion
-    const activeOrders = await db.order.count({
+    const activeOrders = await adminDb.order.count({
       where: {
         locationId,
         bottleServiceTierId: id,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
@@ -82,7 +82,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderWhere.employeeId = filterEmployeeId
     }
 
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where: orderWhere,
       select: {
         id: true,

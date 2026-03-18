@@ -21,7 +21,7 @@ import type { WeightReading } from '@/lib/scale/scale-protocol'
 import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 
 interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */
@@ -629,7 +629,7 @@ export async function dispatchEntertainmentStatusChanged(
 
     // Fetch MenuItem + category + linked FloorPlanElement in parallel
     const [menuItem, floorPlanElement, waitlistCount] = await Promise.all([
-      db.menuItem.findUnique({
+      adminDb.menuItem.findUnique({
         where: { id: payload.itemId },
         select: {
           id: true,

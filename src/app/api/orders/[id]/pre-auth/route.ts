@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
@@ -39,7 +39,7 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: { location: { select: { id: true, settings: true } } },
     })
@@ -105,7 +105,7 @@ export const POST = withVenue(async function POST(
     })
 
     // Update order preAuthAmount so Open Orders panel shows the hold amount
-    await db.order.update({
+    await adminDb.order.update({
       where: { id: orderId },
       data: { preAuthAmount },
     })

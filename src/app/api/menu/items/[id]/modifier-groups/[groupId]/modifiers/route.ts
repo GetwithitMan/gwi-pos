@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 

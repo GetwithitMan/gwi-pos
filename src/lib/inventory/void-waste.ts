@@ -6,11 +6,11 @@
  * and full-order inventory restoration when all payments are voided/refunded.
  */
 
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
-import { db } from '@/lib/db'
-import type { PrismaClient } from '@prisma/client'
+import { db, adminDb } from '@/lib/db'
+import type { PrismaClient } from '@/generated/prisma/client'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
@@ -258,7 +258,7 @@ export async function deductInventoryForVoidedItem(
     }
 
     // Fetch the order item with full recipe tree
-    const orderItem = await db.orderItem.findUnique({
+    const orderItem = await adminDb.orderItem.findUnique({
       where: { id: orderItemId },
       include: {
         order: { select: { locationId: true, orderNumber: true } },
@@ -570,7 +570,7 @@ export async function deductInventoryForVoidedItem(
       })
       const componentMenuItemIds = comboTemplate?.components.map(c => c.menuItemId!) || []
       if (componentMenuItemIds.length > 0) {
-        const componentMenuItems = await db.menuItem.findMany({
+        const componentMenuItems = await adminDb.menuItem.findMany({
           where: { id: { in: componentMenuItemIds }, deletedAt: null },
           include: {
             recipe: {

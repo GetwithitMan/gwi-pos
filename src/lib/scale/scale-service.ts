@@ -103,7 +103,10 @@ class ScaleService {
     locationId: string
     name: string
     scaleType: string
-    portPath: string
+    connectionType?: string
+    portPath?: string | null
+    networkHost?: string | null
+    networkPort?: number | null
     baudRate: number
     dataBits: number
     parity: string
@@ -145,7 +148,10 @@ class ScaleService {
     locationId: string
     name: string
     scaleType: string
-    portPath: string
+    connectionType?: string
+    portPath?: string | null
+    networkHost?: string | null
+    networkPort?: number | null
     baudRate: number
     dataBits: number
     parity: string
@@ -153,6 +159,18 @@ class ScaleService {
     weightUnit: string
     precision: number
   }): Promise<void> {
+    // Network scales are accessed directly by Android terminals via TCP — the NUC
+    // does not open a serial connection for them.
+    if (scale.connectionType === 'network') {
+      console.log(`[ScaleService] Scale "${scale.name}" is network-attached (${scale.networkHost}:${scale.networkPort}) — skipping NUC serial connection (Android connects directly)`)
+      return
+    }
+
+    if (!scale.portPath) {
+      console.error(`[ScaleService] Scale "${scale.name}" is serial but has no portPath — skipping`)
+      return
+    }
+
     const config: SerialConfig = {
       portPath: scale.portPath,
       baudRate: scale.baudRate,

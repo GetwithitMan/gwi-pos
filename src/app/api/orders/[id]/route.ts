@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
@@ -30,7 +30,7 @@ export const GET = withVenue(async function GET(
     // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
     // TODO: migrate to OrderRepository once a getOrderForSplitView() method exists
     if (view === 'split') {
-      const order = await db.order.findFirst({
+      const order = await adminDb.order.findFirst({
         where: { id, deletedAt: null },
         select: {
           id: true, orderNumber: true, status: true, orderType: true,
@@ -68,7 +68,7 @@ export const GET = withVenue(async function GET(
     // Lightweight panel view — items + modifiers only (no payments, pizzaData, ingredientModifications)
     // TODO: add repository method for panel view shape (getOrderForPanelView)
     if (view === 'panel') {
-      const order = await db.order.findFirst({
+      const order = await adminDb.order.findFirst({
         where: { id, deletedAt: null },
         select: {
           id: true,
@@ -205,7 +205,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Bootstrap: lightweight locationId fetch, then tenant-safe include
-    const getLocationCheck = await db.order.findFirst({
+    const getLocationCheck = await adminDb.order.findFirst({
       where: { id, deletedAt: null },
       select: { locationId: true },
     })
@@ -387,7 +387,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Two-step: lightweight locationId bootstrap, then tenant-safe fetch with select
-    const orderLocationCheck = await db.order.findFirst({
+    const orderLocationCheck = await adminDb.order.findFirst({
       where: { id },
       select: { locationId: true },
     })
@@ -624,19 +624,20 @@ export const PUT = withVenue(async function PUT(
     if (status !== undefined && ['voided', 'cancelled', 'closed'].includes(status)) {
       void (async () => {
         try {
-          const entertainmentItems = await db.menuItem.findMany({
+          // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
+          const entertainmentItems = await adminDb.menuItem.findMany({
             where: { currentOrderId: id, itemType: 'timed_rental' },
             select: { id: true, name: true },
           })
 
           if (entertainmentItems.length > 0) {
             // Clear blockTimeStartedAt on order items so Android stops showing timers
-            await db.orderItem.updateMany({
+            await adminDb.orderItem.updateMany({
               where: { orderId: id, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
               data: { blockTimeStartedAt: null },
             })
 
-            await db.menuItem.updateMany({
+            await adminDb.menuItem.updateMany({
               where: { currentOrderId: id, itemType: 'timed_rental' },
               data: {
                 entertainmentStatus: 'available',
@@ -646,7 +647,7 @@ export const PUT = withVenue(async function PUT(
             })
 
             for (const item of entertainmentItems) {
-              await db.floorPlanElement.updateMany({
+              await adminDb.floorPlanElement.updateMany({
                 where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
                 data: {
                   status: 'available',
@@ -741,7 +742,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Two-step: lightweight locationId bootstrap, then tenant-safe fetch with select
-    const patchLocationCheck = await db.order.findFirst({
+    const patchLocationCheck = await adminDb.order.findFirst({
       where: { id },
       select: { locationId: true },
     })
@@ -931,18 +932,19 @@ export const PATCH = withVenue(async function PATCH(
     if (status !== undefined && ['voided', 'cancelled', 'closed'].includes(status)) {
       void (async () => {
         try {
-          const entertainmentItems = await db.menuItem.findMany({
+          // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
+          const entertainmentItems = await adminDb.menuItem.findMany({
             where: { currentOrderId: id, itemType: 'timed_rental' },
             select: { id: true, name: true },
           })
 
           if (entertainmentItems.length > 0) {
-            await db.orderItem.updateMany({
+            await adminDb.orderItem.updateMany({
               where: { orderId: id, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
               data: { blockTimeStartedAt: null },
             })
 
-            await db.menuItem.updateMany({
+            await adminDb.menuItem.updateMany({
               where: { currentOrderId: id, itemType: 'timed_rental' },
               data: {
                 entertainmentStatus: 'available',
@@ -952,7 +954,7 @@ export const PATCH = withVenue(async function PATCH(
             })
 
             for (const item of entertainmentItems) {
-              await db.floorPlanElement.updateMany({
+              await adminDb.floorPlanElement.updateMany({
                 where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
                 data: {
                   status: 'available',

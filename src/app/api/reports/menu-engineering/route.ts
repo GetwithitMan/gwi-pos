@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -56,7 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const range = dateRangeToUTC(startDate || defaultStart, endDate || defaultEnd, timezone)
     const dateFilter = { gte: range.start, lte: range.end }
 
-    const orderItems = await db.orderItem.findMany({
+    const orderItems = await adminDb.orderItem.findMany({
       where: {
         order: {
           locationId,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrinterRole } from '@prisma/client'
+import { PrinterRole } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'

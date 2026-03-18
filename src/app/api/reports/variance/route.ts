@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { InventoryCountStatus } from '@prisma/client'
+import { InventoryCountStatus } from '@/generated/prisma/client'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateTheoreticalUsage, toNumber } from '@/lib/inventory-calculations'
 import { varianceQuerySchema, validateRequest } from '@/lib/validations'
 import { withVenue } from '@/lib/with-venue'
+// TODO: Phase 1 - No InventoryItemRepository or InventoryCountRepository yet.
+// db.inventoryItem, db.inventoryItemTransaction, db.inventoryCount calls remain direct.
 
 interface VarianceItem {
   inventoryItemId: string

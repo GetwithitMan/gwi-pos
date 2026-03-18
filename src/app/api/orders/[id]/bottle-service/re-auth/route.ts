@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
@@ -21,7 +21,7 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
     }
 
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null, isBottleService: true },
       include: {
         cards: {
@@ -66,7 +66,7 @@ export const POST = withVenue(async function POST(
       })
 
       // Update order pre-auth amount
-      await db.order.update({
+      await adminDb.order.update({
         where: { id: orderId },
         data: {
           preAuthAmount: newAuthAmount,

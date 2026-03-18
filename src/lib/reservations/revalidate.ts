@@ -6,7 +6,7 @@
  * cutoff enforcement, and staff override requirements.
  */
 
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 import type { ReservationSettings, DepositRules } from '@/lib/settings'
 import { checkSlotAvailability, type OperatingHours } from './availability'
 import { evaluateDepositRequired } from './deposit-rules'

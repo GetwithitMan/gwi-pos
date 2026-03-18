@@ -7,10 +7,14 @@
  * Called:
  *  1. Best-effort from pay route (immediate processing)
  *  2. Cron every 5 min (catch stragglers / retries)
+ *
+ * TODO: No repo migration possible. Uses $queryRaw with FOR UPDATE SKIP LOCKED
+ * for atomic claim, plus PendingDeduction/DeductionRun/InventoryItemTransaction
+ * models that have no repos. These are system-level operations, not tenant-scoped reads.
  */
 
 import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { deductInventoryForOrder } from '@/lib/inventory'
 import { emitCriticalToLocation } from '@/lib/socket-server'
 // NOTE: processLiquorInventory was removed from this processor (2026-03-09).

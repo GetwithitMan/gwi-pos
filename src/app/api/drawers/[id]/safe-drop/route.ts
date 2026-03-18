@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -99,7 +99,7 @@ export const POST = withVenue(async function POST(
 
     // Validate witness exists if provided
     if (witnessEmployeeId) {
-      const witness = await db.employee.findFirst({
+      const witness = await adminDb.employee.findFirst({
         where: { id: witnessEmployeeId, locationId: drawer.locationId, isActive: true, deletedAt: null },
         select: { id: true },
       })

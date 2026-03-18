@@ -19,7 +19,7 @@
 import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
 import { MOBILE_EVENTS, PAT_EVENTS } from '@/types/multi-surface'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { verifySessionToken, POS_SESSION_COOKIE } from '@/lib/auth-session'
 import { recordEvent, getEventsSince, getLatestEventId } from '@/lib/socket-event-buffer'
 import {
@@ -704,7 +704,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (!locationId) return
       const { orderId, employeeId } = data
       if (!orderId || !employeeId) return
-      void db.order.update({
+      void adminDb.order.update({
         where: { id: orderId },
         data: { employeeId },
       }).then(() => {

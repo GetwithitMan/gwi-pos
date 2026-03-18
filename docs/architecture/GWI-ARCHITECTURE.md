@@ -1,35 +1,50 @@
 # GWI POS - System Architecture
 
-**Version:** 2.0
-**Updated:** February 14, 2026
-**Model:** SaaS with Local Servers
+**Version:** 3.0
+**Updated:** March 18, 2026
+**Model:** Cloud-Primary SaaS with Local Execution
+
+> **Authoritative architecture reference:** [`LOCAL-CORE-CELLULAR-EDGE-HA.md`](./LOCAL-CORE-CELLULAR-EDGE-HA.md)
+> covers the full cloud-primary architecture, HA failover, cellular edge, fulfillment routing,
+> DR backup/restore, and observability. This document provides a broader system overview.
 
 ---
 
 ## Overview
 
-GWI POS is a hybrid SaaS point-of-sale system designed for bars and restaurants. Each location runs a local server for speed and offline capability, while a cloud admin console manages all locations centrally.
+GWI POS is a cloud-primary point-of-sale system designed for bars and restaurants. Neon PostgreSQL is the canonical source of truth for all data. Each location runs a local NUC server as the execution and continuity layer, providing sub-10ms latency and full offline capability. A cloud admin console (Mission Control) manages all locations centrally.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    GWI ADMIN CONSOLE (Cloud)                     │
+│              NEON POSTGRESQL (Canonical Source of Truth)         │
+│  • Cloud-primary: all data replicates here within 5s           │
+│  • Neon-wins conflict resolution on outage replay              │
+│  • One database per venue: gwi_pos_{slug}                      │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ Upstream sync (5s) / Downstream sync (5s)
+                              │ Outage queue replays FIFO when reconnected
+                              │
+┌─────────────────────────────────────────────────────────────────┐
+│                    GWI ADMIN CONSOLE (Mission Control)           │
 │  • Onboard new locations        • Push updates                  │
 │  • Manage subscriptions         • Aggregate reporting           │
 │  • Monitor all locations        • License enforcement           │
-│  DATABASE: Neon PostgreSQL (cloud replica, reporting only)      │
+│  • Fleet deployment             • Release channels              │
 └─────────────────────────────────────────────────────────────────┘
-                              ▲
-                              │ Background sync (5s upstream / 15s downstream)
+                              │
                               │ Internet can drop — POS keeps running
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                LOCAL SERVER (Ubuntu NUC)                         │
-│  Node.js (systemd) + Socket.io + LOCAL PostgreSQL 16 (PRIMARY) │
+│              LOCAL SERVER (Ubuntu NUC — Execution Layer)         │
+│  Node.js (systemd) + Socket.io + LOCAL PostgreSQL 16           │
 │                                                                 │
-│  • LOCAL PG is the source of truth for ALL transactions        │
+│  • Local execution layer — all POS ops hit local PG first      │
+│  • Replicates upstream to Neon (canonical SOR) within 5s       │
 │  • Works 100% OFFLINE — no internet needed for POS operations  │
 │  • Sub-10ms response times (everything stays on LAN)           │
-│  • Syncs orders/payments to Neon in background when online     │
+│  • During outage: NUC queues writes in OutageQueueEntry        │
+│  • On reconnect: FIFO replay with neon-wins conflict resolution│
 └─────────────────────────────────────────────────────────────────┘
                               ▲
                               │ Local network (WiFi/Ethernet)
@@ -102,19 +117,19 @@ Only after the POS is production-ready.
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | Application | Next.js 16.x | POS frontend + API |
-| Database | PostgreSQL 16 | Local data storage (fast) |
+| Database | PostgreSQL 16 | Local execution layer (sub-10ms, offline-capable) |
 | Real-time | Socket.io | Instant KDS/terminal updates |
 | Container | Docker Compose | Deployment + auto-restart |
 | Updates | Watchtower | Pull new images automatically |
 | OS | Ubuntu 24 LTS | Headless Linux server |
 
-### Cloud (Admin Console)
+### Cloud (Admin Console + Canonical SOR)
 
 | Component | Technology | Purpose |
 |-----------|------------|---------|
-| Framework | Next.js | Admin dashboard |
+| Framework | Next.js | Admin dashboard (Mission Control) |
 | Hosting | Vercel | Serverless deployment |
-| Database | PostgreSQL (Neon) | Aggregated data + licensing |
+| Database | PostgreSQL (Neon) | **Canonical source of truth** — all venue data |
 | Storage | S3/Backblaze | Backup storage |
 
 ---
@@ -174,10 +189,10 @@ Everything stays on the local network = instant.
 
 **Comparison:**
 
-| Architecture | Latency |
-|--------------|---------|
-| Cloud-only (Square) | 100-500ms per action |
-| GWI (local server) | < 50ms per action |
+| Architecture | Latency | Offline? |
+|--------------|---------|----------|
+| Cloud-only (Square) | 100-500ms per action | No |
+| GWI (cloud-primary + local execution) | < 50ms per action | Yes — full offline capability |
 
 ---
 
@@ -415,19 +430,23 @@ Any new query pattern that filters on multiple columns MUST:
 
 ## Database Strategy
 
-### Offline-First — Local PostgreSQL on NUC, Neon for Cloud Sync
+### Cloud-Primary — Neon is Canonical SOR, NUC is Local Execution Layer
 
 **This is the most critical architectural principle. Read it carefully before touching any database code.**
 
+> See [`LOCAL-CORE-CELLULAR-EDGE-HA.md`](./LOCAL-CORE-CELLULAR-EDGE-HA.md) Phase 6 for the full cloud-primary design.
+
 | Environment | DATABASE_URL | Purpose |
 |-------------|-------------|---------|
-| **NUC (production)** | `localhost:5432/thepasspos` | PRIMARY — offline-first, all POS ops |
+| **NUC (production)** | `localhost:5432/thepasspos` | Local execution — all POS ops hit local PG first |
 | **Dev (Mac)** | Neon cloud | Convenience — no local PG needed |
 | **Vercel (online ordering)** | Neon cloud | Serverless, no local disk |
 
-**The NUC's local PostgreSQL is the single source of truth for all POS operations.** Every order, payment, void, shift, tip, inventory transaction — everything goes to local PG first. Neon is only a cloud replica for admin dashboards and reporting.
+**Neon PostgreSQL is the canonical source of truth.** Every order, payment, void, shift, tip, inventory transaction — everything goes to local PG first for speed, then replicates upstream to Neon within 5 seconds. The NUC is the local execution and continuity layer: it provides sub-10ms latency and full offline capability, but Neon holds the authoritative copy of all data.
 
-The `neonClient` (at `src/lib/neon-client.ts`) is used **exclusively by background sync workers**. POS API routes NEVER use it.
+**During an internet outage**, the NUC temporarily becomes the write authority. Writes are queued in `OutageQueueEntry` and replayed FIFO when connectivity returns. Conflict resolution is **neon-wins** by default — if a record was modified in both Neon and the outage queue, the Neon version takes precedence.
+
+The `neonClient` (at `src/lib/neon-client.ts`) is used **exclusively by background sync workers**. POS API routes NEVER use it — they always hit local PG for speed.
 
 - Local NUC: Local PostgreSQL 16 (installed by installer.run, always at `localhost:5432/thepasspos`)
 - Dev / Vercel: Neon PostgreSQL (one database per venue: `gwi_pos_{slug}`)
@@ -453,7 +472,7 @@ type SyncModelConfig = {
 }
 ```
 
-**`fullResyncAllowed` rule:** Only set `true` on cloud-authoritative config tables (MenuItem, Employee, Printer, etc.) where the cloud copy is definitively correct. **NEVER** set `true` on NUC-authoritative tables (Order, Payment, Shift) — a full resync would destroy local-only data that hasn't synced yet. If a NUC's high-water mark gets corrupted for an NUC-owned table, the fix is to repair the `syncedAt` field, not a full resync.
+**`fullResyncAllowed` rule:** Only set `true` on cloud-authoritative config tables (MenuItem, Employee, Printer, etc.) where the cloud copy is definitively correct. **NEVER** set `true` on NUC-originated tables (Order, Payment, Shift) — a full resync would destroy local-only data that hasn't synced upstream yet. If a NUC's high-water mark gets corrupted for a NUC-originated table, the fix is to repair the `syncedAt` field, not a full resync. Note: even NUC-originated data ultimately replicates to Neon (the canonical SOR) — the `owner` field indicates where writes originate, not where authority resides.
 
 **Clock discipline:** All writes use DB-generated `NOW()`. Client timestamps are NEVER trusted for `createdAt`, `updatedAt`, or `syncedAt`. Last-write-wins is only safe when timestamps come from the DB clock.
 
@@ -750,23 +769,26 @@ services:
 
 ## Sync Strategy
 
-### What Gets Synced to Cloud
+### Cloud-Primary Sync (64 Models)
+
+All sync is configured in `src/lib/sync/sync-config.ts` (64 models as of March 2026).
 
 | Data | Direction | Frequency |
 |------|-----------|-----------|
-| Orders & Payments | Local → Cloud | Every 5 min |
-| Menu changes | Cloud → Local | On demand |
-| Employee changes | Bidirectional | Real-time when online |
-| Reports/Analytics | Local → Cloud | Nightly batch |
-| Backups | Local → Cloud | Hourly (pg_dump) |
+| Orders & Payments | NUC → Neon (upstream) | Every 5 seconds |
+| Menu / Settings | Neon → NUC (downstream) | Every 5 seconds |
+| Employee changes | Bidirectional | Every 5 seconds |
+| Reports/Analytics | NUC → Neon (upstream) | Every 5 seconds (+ nightly batch) |
+| Backups | NUC → Cloud | Hourly (pg_dump) |
 
-### Offline Handling
+### Offline Handling (Outage Queue)
 
 When internet is down:
-- POS continues working 100%
-- Orders queue locally
-- Payments: Cash only OR store-and-forward (processor dependent)
-- When back online: auto-sync everything
+- POS continues working 100% — NUC temporarily becomes write authority
+- All writes are queued in `OutageQueueEntry` for FIFO replay
+- Payments: Cash + store-and-forward (Datacap SAF)
+- When back online: outage queue replays with **neon-wins** conflict resolution
+- NUC never loses data — offline writes persist until successfully replayed
 
 ### Sync Fields
 
@@ -819,12 +841,12 @@ Check license with cloud
 | Problem with Others | GWI Solution |
 |---------------------|--------------|
 | Toast: Expensive hardware | Employees use their phones |
-| Square: Cloud latency | Local server = instant |
-| Cloud POS: Dies without internet | Works offline indefinitely |
-| App Store updates | Watchtower auto-updates |
+| Square: Cloud latency | Local execution layer = instant (sub-10ms) |
+| Cloud POS: Dies without internet | Cloud-primary with full offline continuity |
+| App Store updates | Watchtower auto-updates + MC release channels |
 
 **Your Pitch:**
-> "GWI keeps running when your internet doesn't. Sub-50ms response times. Servers use their own phones. No $500 terminals."
+> "GWI gives you cloud-primary data integrity with local-server speed. Sub-50ms response times, works offline indefinitely, staff use their own phones. No $500 terminals."
 
 ---
 
@@ -864,5 +886,5 @@ Check license with cloud
 
 ---
 
-*This document is the architecture source of truth for GWI POS.*
-*Last Updated: February 14, 2026*
+*This document provides a broad system overview. For the authoritative cloud-primary architecture reference, see [`LOCAL-CORE-CELLULAR-EDGE-HA.md`](./LOCAL-CORE-CELLULAR-EDGE-HA.md).*
+*Last Updated: March 18, 2026*

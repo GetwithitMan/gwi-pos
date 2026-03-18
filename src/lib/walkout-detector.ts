@@ -7,7 +7,7 @@
  * or auto-mark-walkout.
  */
 
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
 import { OrderRepository } from '@/lib/repositories'
 import { emitToLocation } from '@/lib/socket-server'
@@ -56,7 +56,7 @@ export async function detectPotentialWalkouts(locationId: string): Promise<{
   const cutoffTime = new Date(Date.now() - thresholdMinutes * 60 * 1000)
 
   // Find open orders that are older than the threshold, have a table, and no payments
-  const suspectOrders = await db.order.findMany({
+  const suspectOrders = await adminDb.order.findMany({
     where: {
       locationId,
       deletedAt: null,

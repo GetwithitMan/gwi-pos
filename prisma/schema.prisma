@@ -6394,11 +6394,16 @@ model Scale {
   scaleType String @default("CAS_PD_II") // Protocol type for factory pattern
 
   // Serial Port Configuration
-  portPath String // "/dev/ttyUSB0", "COM3", etc.
-  baudRate Int    @default(9600)
-  dataBits Int    @default(7)
-  parity   String @default("even") // "none" | "even" | "odd"
-  stopBits Int    @default(1)
+  portPath String? // "/dev/ttyUSB0", "COM3", etc. — null for network scales
+  baudRate Int     @default(9600)
+  dataBits Int     @default(7)
+  parity   String  @default("even") // "none" | "even" | "odd"
+  stopBits Int     @default(1)
+
+  // Network Connection (serial device server — e.g., Moxa, USR-TCP232)
+  connectionType String @default("serial") // "serial" | "network"
+  networkHost    String? // IP address of serial device server
+  networkPort    Int?    // TCP port of serial device server (typically 4001 or 8234)
 
   // Weight Configuration
   maxCapacity Decimal? // Max weight capacity
@@ -6420,7 +6425,6 @@ model Scale {
   terminals Terminal[]
 
   @@unique([locationId, name])
-  @@unique([locationId, portPath])
   @@index([locationId])
 }
 

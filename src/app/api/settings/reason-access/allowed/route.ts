@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -18,7 +18,7 @@ export async function resolveAllowedReasonIds(
   reasonType: 'void_reason' | 'comp_reason' | 'discount'
 ): Promise<{ ids: string[]; hasRules: boolean }> {
   // Get employee's role name
-  const employee = await db.employee.findUnique({
+  const employee = await adminDb.employee.findUnique({
     where: { id: employeeId },
     select: { roleId: true, role: { select: { name: true } } },
   })

@@ -1,8 +1,2 @@
-import * as Sentry from '@sentry/nextjs'
-
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  environment: process.env.NODE_ENV,
-  tracesSampleRate: 0,
-  debug: false,
-})
+// Sentry edge config — intentionally empty.
+// Sentry is initialized via dynamic import in instrumentation.ts register()

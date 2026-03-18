@@ -5,7 +5,7 @@
  * This is the core calculation shared by multiple reports.
  */
 
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import type {
   CalculateTheoreticalUsageParams,
   InventoryItemData,
@@ -23,7 +23,7 @@ export async function calculateTheoreticalUsage(
 
   // Get all completed orders in the date range
   // Note: PrepItemIngredient only links to InventoryItem (no nested prep items in schema)
-  const orders = await db.order.findMany({
+  const orders = await adminDb.order.findMany({
     where: {
       locationId,
       status: { in: ['completed', 'paid'] },

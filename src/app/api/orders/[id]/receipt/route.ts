@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice } from '@/lib/pricing'
@@ -14,7 +14,7 @@ export const GET = withVenue(async function GET(
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
 
-    const order = await db.order.findUnique({
+    const order = await adminDb.order.findUnique({
       where: { id },
       include: {
         employee: {

@@ -3,8 +3,8 @@
  * Determines stock status for menu items based on prep ingredient levels
  */
 
-import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import { db, adminDb } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 
@@ -139,7 +139,7 @@ export async function getAllMenuItemsStockStatus(
     : {}
 
   // Get all menu items with their ingredients
-  const menuItems = await db.menuItem.findMany({
+  const menuItems = await adminDb.menuItem.findMany({
     where: {
       locationId,
       deletedAt: null,

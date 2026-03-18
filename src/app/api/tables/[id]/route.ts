@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { softDeleteData } from '@/lib/floorplan/queries'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get a single table
@@ -274,7 +274,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Check for active orders (all active statuses, not just open)
-    const openOrders = await db.order.count({
+    const openOrders = await adminDb.order.count({
       where: { tableId: id, locationId, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split', 'pending'] } },
     })
 

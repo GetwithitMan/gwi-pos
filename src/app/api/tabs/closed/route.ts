@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+
+// TODO: Migrate db.order.count and db.order.findMany to OrderRepository
+// once a paginated query with complex includes (items, payments, cards) is supported.
 
 // GET /api/tabs/closed - List closed/paid bar tabs with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -55,8 +58,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Run count + data in parallel
     const [totalCount, tabs] = await Promise.all([
-      db.order.count({ where }),
-      db.order.findMany({
+      adminDb.order.count({ where }),
+      adminDb.order.findMany({
         where,
         include: {
           employee: {

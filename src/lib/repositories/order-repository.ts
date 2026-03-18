@@ -293,13 +293,13 @@ export async function getOrderByOfflineId(
 export async function updateOrder(
   id: string,
   locationId: string,
-  data: Prisma.OrderUpdateManyMutationInput,
+  data: Prisma.OrderUpdateManyMutationInput | Prisma.OrderUncheckedUpdateManyInput,
   tx?: TxClient,
 ) {
   const client = getClient(tx)
   const result = await client.order.updateMany({
     where: { id, locationId },
-    data,
+    data: data as Prisma.OrderUpdateManyMutationInput,
   })
   if (result.count === 0) {
     throw new Error(`Order ${id} not found for location ${locationId} -- update failed`)
@@ -318,14 +318,14 @@ export async function updateOrder(
 export async function updateOrderAndReturn<T extends Prisma.OrderInclude>(
   id: string,
   locationId: string,
-  data: Prisma.OrderUpdateManyMutationInput,
+  data: Prisma.OrderUpdateManyMutationInput | Prisma.OrderUncheckedUpdateManyInput,
   include?: T,
   tx?: TxClient,
 ) {
   const client = getClient(tx)
   const result = await client.order.updateMany({
     where: { id, locationId },
-    data,
+    data: data as Prisma.OrderUpdateManyMutationInput,
   })
   if (result.count === 0) {
     throw new Error(`Order ${id} not found for location ${locationId} -- update failed`)
@@ -343,14 +343,14 @@ export async function updateOrderAndReturn<T extends Prisma.OrderInclude>(
 export async function updateOrderAndSelect<T extends Prisma.OrderSelect>(
   id: string,
   locationId: string,
-  data: Prisma.OrderUpdateManyMutationInput,
+  data: Prisma.OrderUpdateManyMutationInput | Prisma.OrderUncheckedUpdateManyInput,
   select: T,
   tx?: TxClient,
 ) {
   const client = getClient(tx)
   const result = await client.order.updateMany({
     where: { id, locationId },
-    data,
+    data: data as Prisma.OrderUpdateManyMutationInput,
   })
   if (result.count === 0) {
     throw new Error(`Order ${id} not found for location ${locationId} -- update failed`)

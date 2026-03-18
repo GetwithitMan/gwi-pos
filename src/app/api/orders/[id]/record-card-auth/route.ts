@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { normalizeCardholderName } from '@/lib/datacap/helpers'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
@@ -66,7 +66,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Fetch the order
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: { location: { select: { id: true } } },
     })
@@ -78,7 +78,7 @@ export const POST = withVenue(async function POST(
     const locationId = order.locationId
 
     // Validate employee belongs to this location
-    const employee = await db.employee.findFirst({
+    const employee = await adminDb.employee.findFirst({
       where: { id: employeeId, locationId, deletedAt: null },
       select: { id: true },
     })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -172,7 +172,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Resolve menu item prices if menuItemId provided
     const menuItemIds = items.filter(i => i.menuItemId).map(i => i.menuItemId!)
     const menuItems = menuItemIds.length > 0
-      ? await db.menuItem.findMany({
+      ? await adminDb.menuItem.findMany({
           where: { id: { in: menuItemIds }, locationId, deletedAt: null },
           select: { id: true, name: true, price: true },
         })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
@@ -83,7 +83,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Bootstrap: lightweight locationId fetch, then tenant-safe include
-    const compVoidLocationCheck = await db.order.findFirst({
+    const compVoidLocationCheck = await adminDb.order.findFirst({
       where: { id: orderId },
       select: { locationId: true },
     })
@@ -375,7 +375,7 @@ export const POST = withVenue(async function POST(
     // Only void — comp means customer plays for free but is still using the item
     // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
     if (action === 'void' && item!.menuItem?.itemType === 'timed_rental') {
-      void db.menuItem.update({
+      void adminDb.menuItem.update({
         where: { id: item!.menuItem.id },
         data: {
           entertainmentStatus: 'available',
@@ -384,7 +384,7 @@ export const POST = withVenue(async function POST(
         },
       }).then(() => {
         // Also reset the floor plan element linked to this menu item
-        return db.floorPlanElement.updateMany({
+        return adminDb.floorPlanElement.updateMany({
           where: { linkedMenuItemId: item!.menuItem!.id, deletedAt: null },
           data: {
             status: 'available',
@@ -550,7 +550,7 @@ export const POST = withVenue(async function POST(
       void (async () => {
         try {
           // TODO: Add getOrdersByParentId to OrderRepository for split sibling queries
-          const siblings = await db.order.findMany({
+          const siblings = await adminDb.order.findMany({
             where: { parentOrderId: order.parentOrderId!, locationId: order.locationId, deletedAt: null },
             select: { id: true, status: true },
           })
@@ -676,7 +676,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Bootstrap: lightweight locationId fetch, then tenant-safe include
-    const restoreLocationCheck = await db.order.findFirst({
+    const restoreLocationCheck = await adminDb.order.findFirst({
       where: { id: orderId },
       select: { locationId: true },
     })
@@ -743,7 +743,7 @@ export const PUT = withVenue(async function PUT(
 
     // BUG #379: Restore entertainment status when un-voiding a timed_rental item
     if (item!.menuItem?.itemType === 'timed_rental') {
-      void db.menuItem.update({
+      void adminDb.menuItem.update({
         where: { id: item!.menuItem.id },
         data: {
           entertainmentStatus: 'in_use',
@@ -751,7 +751,7 @@ export const PUT = withVenue(async function PUT(
           currentOrderItemId: itemId,
         },
       }).then(() => {
-        return db.floorPlanElement.updateMany({
+        return adminDb.floorPlanElement.updateMany({
           where: { linkedMenuItemId: item!.menuItem!.id, deletedAt: null },
           data: {
             status: 'in_use',
@@ -796,7 +796,7 @@ export const GET = withVenue(async function GET(
     const employeeId = searchParams.get('employeeId')
 
     // Bootstrap: lightweight locationId fetch (no locationId available from request context yet)
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId },
       select: { locationId: true },
     })

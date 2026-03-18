@@ -1,6 +1,6 @@
 // src/app/api/floor-plan/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -188,7 +188,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Fetch open orders for these tables (status = open or in_progress)
     const openOrders = tableIds.length > 0
-      ? await db.order.findMany({
+      ? await adminDb.order.findMany({
       where: {
         tableId: { in: tableIds },
         status: { in: ['open', 'in_progress'] },

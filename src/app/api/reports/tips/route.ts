@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -7,6 +7,8 @@ import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+// TODO: Phase 1 - No TipLedgerEntryRepository, TipLedgerRepository, or ShiftRepository yet.
+// All db.tipLedgerEntry, db.tipLedger, db.shift calls remain direct.
 
 // Migrated from legacy TipBank/TipShare (Skill 273)
 // All tip data now sourced from TipLedgerEntry instead of TipShare/TipBank models.

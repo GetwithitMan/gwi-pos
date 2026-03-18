@@ -9,9 +9,13 @@
  * - Stations subscribe to tags via their tags array
  * - Expo stations receive ALL items regardless of tags
  * - Returns a manifest grouped by station for efficient printing/display
+ *
+ * TODO: Migrate db.order.findUnique to OrderRepository.getOrderByIdWithInclude
+ * once locationId is available at the call site (currently derived from the fetched order).
+ * TODO: Migrate db.station.* calls once a StationRepository is created.
  */
 
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import type {
   TemplateType,
   RoutedItem,
@@ -59,7 +63,7 @@ export class OrderRouter {
     if (preloadedOrder) {
       // Use pre-fetched order data — only fetch items with routing-specific includes
       orderData = preloadedOrder
-      items = await db.orderItem.findMany({
+      items = await adminDb.orderItem.findMany({
         where: {
           orderId,
           ...(itemIds ? { id: { in: itemIds } } : {}),
@@ -111,7 +115,7 @@ export class OrderRouter {
       })
     } else {
       // Full fetch — order + items in one query (original behavior)
-      const order = await db.order.findUnique({
+      const order = await adminDb.order.findUnique({
         where: { id: orderId },
         include: {
           table: {

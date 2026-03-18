@@ -3,7 +3,7 @@
 > **Before editing this feature:** Read `_CROSS-REF-MATRIX.md` → find this feature → read every listed dependency doc.
 
 ## Summary
-Hybrid local-first sync architecture. NUC (local PostgreSQL) is the source of truth for all POS operations. Neon cloud is the sync target for reporting and multi-location data. Android syncs TO NUC, not the other way. All mutations work offline via queue-based sync with exponential backoff retry and dead-letter handling.
+Cloud-primary sync architecture (since Phase 6, March 2026). **Neon cloud is the canonical source of truth** for all POS data in normal operation. The NUC (local PostgreSQL) serves as the local execution and continuity layer — it runs all POS operations locally for speed and resilience, replicating mutations upstream to Neon. During connectivity outages, the NUC temporarily becomes write authority, queueing writes in `OutageQueueEntry` for FIFO replay on recovery (neon-wins conflict resolution; cloud-originated data takes precedence on timestamp ties per INV-12). Android syncs TO NUC, not directly to Neon. All mutations work offline via queue-based sync with exponential backoff retry and dead-letter handling.
 
 ## Status
 `Active`
@@ -135,13 +135,29 @@ Terminal {
 
 ### Sync Architecture
 ```
-Android → NUC (local PG) → Neon Cloud
-  ↑ bootstrap/delta      ↑ upstream (5s)
-  ↓ outbox sync          ↓ downstream (5s) + cloud relay WS (instant push)
-                           ↕ cloud-relay-client.ts (WebSocket)
+                    ┌──────────────────────────────────────────────┐
+                    │        Neon Cloud (canonical SOR)            │
+                    └──────────┬───────────────┬───────────────────┘
+                               │               │
+                 upstream (5s) ↑               ↓ downstream (5s) + cloud relay WS (instant)
+                               │               │
+                    ┌──────────┴───────────────┴───────────────────┐
+                    │   NUC (local execution + outage continuity)  │
+                    └──────────┬───────────────┬───────────────────┘
+                               │               │
+              bootstrap/delta  ↓               ↑ outbox sync
+                               │               │
+                    ┌──────────┴───────────────┴───────────────────┐
+                    │              Android Devices                  │
+                    └──────────────────────────────────────────────┘
+
+Normal operation:  Neon is SOR → NUC executes locally → replicates upstream
+Outage mode:       NUC queues writes in OutageQueueEntry → FIFO replay on recovery
+Conflict rule:     neon-wins (cloud-originated data wins on timestamp ties)
 ```
 
 ### Upstream Sync (NUC → Neon, every 5s)
+Replicates local mutations to the canonical cloud SOR.
 1. Query local PG for records where `syncedAt IS NULL` or `updatedAt > syncedAt`
 2. Batch 50 rows per cycle
 3. Upsert to Neon via raw SQL
@@ -149,10 +165,11 @@ Android → NUC (local PG) → Neon Cloud
 5. Priority order: Orders/Payments (10) → Shifts (35) → Tips (45) → Inventory (50)
 
 ### Downstream Sync (Neon → NUC, every 5s)
+Pulls authoritative cloud data into the local execution layer.
 1. Use high-water mark (last `syncedAt` timestamp)
 2. Pull changed records from Neon
 3. Batch 100 rows
-4. LWW conflict resolution based on `updatedAt`
+4. Neon-wins conflict resolution based on `updatedAt` (cloud data takes precedence on ties)
 5. Priority order: Organization (1) → Location (2) → Employee (5) → Menu (6-9)
 6. Cloud relay WebSocket accelerates delivery — `DATA_CHANGED` event triggers immediate sync cycle
 
@@ -162,6 +179,14 @@ Outbound WebSocket from NUC to cloud (`cloud-relay-client.ts`). Accelerates clou
 - **Outbound events:** `SYNC_SUMMARY` (after each upstream cycle with rows synced > 0), `OUTAGE_DEAD_LETTER`, `HEALTH`
 - **Safety switch:** 5 consecutive failures → 2s polling fallback
 - **Env var:** `CLOUD_RELAY_URL` required; relay disabled when unset
+
+### Outage Continuity (OutageQueueEntry)
+When the NUC detects loss of Neon connectivity, it enters outage mode and temporarily becomes write authority. All mutations during outage are queued as `OutageQueueEntry` records for deterministic replay:
+1. Writes continue locally with zero interruption — POS operates 100% offline
+2. Each mutation is captured in OutageQueueEntry with JSONB metadata (retryCount tracking)
+3. On recovery, the outage-replay-worker replays entries FIFO (oldest first, 10s interval)
+4. Conflict resolution: **neon-wins** — cloud-originated data always takes precedence on timestamp ties (INV-12)
+5. Failed replays retry with backoff; persistent failures move to dead letter for manual review
 
 ### Outage Payment Flagging
 Payments processed during outage mode (`isInOutageMode() === true`) are automatically flagged with `needsReconciliation = true`. This applies to all 4 payment routes: pay, close-tab, refund, void. A reconciliation report is available at `GET /api/reports/outage-payments` (summary + detail of flagged payments) for EOD/shift close review.
@@ -179,10 +204,12 @@ Payments processed during outage mode (`isInOutageMode() === true`) are automati
 - Stale heartbeat sweep every 60s: mark terminals offline if `lastSeenAt > 120s`
 
 ### Edge Cases & Business Rules
+- **CRITICAL**: Neon is the canonical SOR — NUC is the local execution layer, not the source of truth
 - **CRITICAL**: DB-generated `NOW()` only — NEVER client timestamps
-- **CRITICAL**: `DATABASE_URL` on NUC MUST point to `localhost:5432/thepasspos`, NEVER neon.tech
+- **CRITICAL**: `DATABASE_URL` on NUC MUST point to `localhost:5432/thepasspos`, NEVER neon.tech (NUC executes locally for speed/resilience; sync workers handle replication)
 - `NEON_DATABASE_URL` is separate env var for sync workers only
-- POS API routes NEVER touch Neon directly
+- POS API routes NEVER touch Neon directly — all local reads/writes go through NUC PG
+- During outage, NUC queues writes in OutageQueueEntry; on recovery, FIFO replay with neon-wins resolution
 - All mutations enqueue to outbox when offline
 - Dead-letter queue for events that exceed max retry attempts (5)
 - Max 1000 cloud events per location (oldest pruned)
@@ -274,4 +301,4 @@ These rules were hardened via penetration testing and production debugging:
 
 ---
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-03-18*

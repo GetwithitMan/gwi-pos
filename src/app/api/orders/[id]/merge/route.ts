@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
@@ -35,7 +35,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Get target order -- first do a lightweight check to get locationId for tenant-scoped queries
-    const targetOrderCheck = await db.order.findUnique({
+    const targetOrderCheck = await adminDb.order.findUnique({
       where: { id: targetOrderId },
       select: { id: true, locationId: true },
     })

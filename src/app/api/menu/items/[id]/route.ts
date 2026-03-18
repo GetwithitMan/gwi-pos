@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { computeIsOrderableOnline } from '@/lib/online-availability'
@@ -291,7 +291,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // TODO: Migrate to MenuItemRepository.updateMenuItemAndReturn() once complex update shapes are supported
-    const item = await db.menuItem.update({
+    const item = await adminDb.menuItem.update({
       where: { id },
       data: {
         ...(categoryId !== undefined && categoryId !== null && { categoryId }),

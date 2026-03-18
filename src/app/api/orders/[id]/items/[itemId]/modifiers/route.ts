@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
@@ -25,7 +25,7 @@ export const PUT = withVenue(async function PUT(
 
     // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
     // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true },
     })

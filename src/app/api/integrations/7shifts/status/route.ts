@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 
 export const GET = withVenue(async function GET() {
   const location = await db.location.findFirst({ select: { id: true } })
@@ -17,7 +17,7 @@ export const GET = withVenue(async function GET() {
   const isEnabled = s?.enabled ?? false
 
   // P1: Count employees linked to a 7shifts user ID
-  const employeesLinked = await db.employee.count({
+  const employeesLinked = await adminDb.employee.count({
     where: {
       locationId: location.id,
       sevenShiftsUserId: { not: null },

@@ -4,10 +4,10 @@
  * Tracks prepared ingredient usage for daily count items.
  */
 
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import type { PrepStockDeductionResult } from './types'
 import { toNumber, getModifierMultiplier, isRemovalInstruction } from './helpers'
 import { convertUnits } from './unit-conversion'
@@ -26,7 +26,7 @@ export async function deductPrepStockForOrder(
 ): Promise<PrepStockDeductionResult> {
   try {
     // Get order with items and their ingredients
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         items: {
@@ -291,7 +291,7 @@ export async function restorePrepStockForVoid(
 
   try {
     // Get order with items and their ingredients
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         items: {

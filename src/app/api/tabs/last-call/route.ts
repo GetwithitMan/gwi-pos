@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -43,7 +43,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // TODO: Phase 2 — extract into OrderRepository once a findOpenBarTabs method with
     // cards/payments/employee includes is available
-    const openTabs = await db.order.findMany({
+    const openTabs = await adminDb.order.findMany({
       where: {
         locationId,
         status: 'open',
@@ -141,7 +141,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── Fetch all open tabs ──
     // TODO: Phase 2 — extract into OrderRepository once a findOpenBarTabs method with
     // items/cards/payments/employee includes is available
-    const openTabs = await db.order.findMany({
+    const openTabs = await adminDb.order.findMany({
       where: {
         locationId,
         status: 'open',

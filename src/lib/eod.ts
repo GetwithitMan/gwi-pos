@@ -10,7 +10,7 @@
  * and socket notifications.
  */
 
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
 import type { LocationSettings } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -123,7 +123,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
     const autoGratuityPct = eodSettings.autoGratuityPercent ?? 20
 
     // Find all open bar tabs with authorized cards
-    const openTabs = await db.order.findMany({
+    const openTabs = await adminDb.order.findMany({
       where: {
         locationId,
         orderType: 'bar_tab',
@@ -458,7 +458,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
   if (!dryRun) {
     // 6a. Stop all active entertainment sessions and calculate final charges
-    const staleEntertainment = await db.menuItem.findMany({
+    const staleEntertainment = await adminDb.menuItem.findMany({
       where: {
         locationId,
         itemType: 'timed_rental',
@@ -485,7 +485,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       for (const item of staleEntertainment) {
         if (item.currentOrderItemId) {
           try {
-            const orderItem = await db.orderItem.findUnique({
+            const orderItem = await adminDb.orderItem.findUnique({
               where: { id: item.currentOrderItemId },
               select: {
                 id: true,
@@ -504,7 +504,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
               )
 
               // Update the order item to reflect final session end time
-              await db.orderItem.update({
+              await adminDb.orderItem.update({
                 where: { id: orderItem.id },
                 data: {
                   blockTimeExpiresAt: now,
@@ -521,7 +521,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       }
 
       // Reset all entertainment menu items to available
-      await db.menuItem.updateMany({
+      await adminDb.menuItem.updateMany({
         where: { id: { in: staleEntertainment.map(i => i.id) } },
         data: {
           entertainmentStatus: 'available',

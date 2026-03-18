@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { findMatchingCombos, type MatcherComboTemplate, type MatcherOrderItem } from '@/lib/combo-matcher'
@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET(
     const { id: orderId } = await params
 
     // Load order with active items + location settings
-    const order = await db.order.findUnique({
+    const order = await adminDb.order.findUnique({
       where: { id: orderId },
       select: {
         id: true,

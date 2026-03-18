@@ -1,4 +1,4 @@
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 
 /**
  * Validate and correct the spirit tier / bottle product link for a modifier selection.
@@ -66,7 +66,7 @@ export async function validatePourMultiplier(
 ): Promise<{ valid: boolean; multiplier: number }> {
   if (!pourSize) return { valid: true, multiplier: 1.0 }
 
-  const menuItem = await db.menuItem.findUnique({
+  const menuItem = await adminDb.menuItem.findUnique({
     where: { id: menuItemId },
     select: { pourSizes: true }
   })

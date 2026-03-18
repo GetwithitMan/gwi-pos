@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -183,7 +183,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
       }
       // Verify manager exists and has manager permissions
-      const manager = await db.employee.findFirst({
+      const manager = await adminDb.employee.findFirst({
         where: { id: managerId, locationId, isActive: true, deletedAt: null },
         include: { role: true },
       })

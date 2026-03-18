@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
@@ -87,7 +87,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Fetch primary day orders (capped at 5000 to prevent memory exhaustion)
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where: {
         locationId,
         status: { in: [...REVENUE_ORDER_STATUSES] },
@@ -139,7 +139,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     if (compareDateStr) {
       const compareRange = getBusinessDayRange(compareDateStr, dayStartTime)
-      const compareOrders = await db.order.findMany({
+      const compareOrders = await adminDb.order.findMany({
         where: {
           locationId,
           status: { in: [...REVENUE_ORDER_STATUSES] },

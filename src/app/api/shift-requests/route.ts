@@ -4,8 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
-import { Prisma } from '@prisma/client'
-import type { ShiftRequestType, ShiftSwapRequestStatus } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
+import type { ShiftRequestType, ShiftSwapRequestStatus } from '@/generated/prisma/client'
 
 // GET - List shift requests for a location
 // Unified endpoint for managers and employees.

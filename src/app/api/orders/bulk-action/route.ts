@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
@@ -175,7 +175,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'toEmployeeId required for transfer' }, { status: 400 })
       }
 
-      const result = await db.order.updateMany({
+      const result = await adminDb.order.updateMany({
         where: {
           id: { in: orderIds },
           status: { in: ['open', 'sent', 'in_progress', 'split'] },

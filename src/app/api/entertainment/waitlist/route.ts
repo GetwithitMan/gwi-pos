@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { EntertainmentWaitlistStatus } from '@prisma/client'
+import { EntertainmentWaitlistStatus } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'

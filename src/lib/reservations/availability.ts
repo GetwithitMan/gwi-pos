@@ -5,7 +5,7 @@
  * Handles reservation blocks, table capacity, cross-midnight venues, and reduced capacity.
  */
 
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@/generated/prisma/client'
 import { parseTimeToMinutes, slotsOverlap, isWithinOperatingHours, minutesToTime } from './service-date'
 import type { ReservationSettings } from '@/lib/settings'
 

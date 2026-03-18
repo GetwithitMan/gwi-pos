@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -328,12 +328,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const dualNowEnabled = finalSettings.dualPricing?.enabled === true
     if (dualNowEnabled && newPct > 0 && newPct !== oldPct) {
       const multiplier = 1 + newPct / 100
-      const items = await db.menuItem.findMany({
+      const items = await adminDb.menuItem.findMany({
         where: { locationId: location.id, deletedAt: null, price: { gt: 0 } },
         select: { id: true, price: true },
       })
       await Promise.all(items.map(item =>
-        db.menuItem.update({
+        adminDb.menuItem.update({
           where: { id: item.id },
           data: { priceCC: Math.round(Number(item.price) * multiplier * 100) / 100 },
         })

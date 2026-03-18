@@ -76,13 +76,64 @@ These rules were discovered via penetration testing and prevent data loss, dupli
 
 ---
 
-## Data Ownership
+## Source of Truth — Cloud-Primary Hybrid Model
 
-| Owner | Models |
-|-------|--------|
-| **NUC** (source of truth) | Order, OrderItem, Payment, Shift, Drawer, TimeClockEntry, TipLedger, VoidLog, InventoryTransaction |
-| **Cloud** (source of truth) | MenuItem, Category, ModifierGroup, Modifier, Employee, Role, Table, Section, Printer, KDSScreen, OrderType, TaxRule |
-| **Cross-origin** | OnlineOrder (cloud creates → NUC dispatches), HardwareCommand (cloud writes → NUC executes) |
+> **INV-12:** Neon is the canonical source of record (SOR) in normal operation.
+> The NUC is the local execution layer — not a peer database.
+
+### Rules
+
+1. **Neon is the canonical SOR in normal operation (INV-12).** All cloud-owned models are authoritative in Neon.
+2. **NUC is the local execution layer** — handles all POS operations with sub-10ms latency. It is NOT a separate source of truth.
+3. **NUC temporarily becomes write authority during internet outages.** Writes queue in `OutageQueueEntry` for FIFO replay on reconnect.
+4. **Outage recovery:** FIFO replay with neon-wins conflict resolution. No manual merge required.
+5. **Cloud-owned models can be fully re-synced from Neon.** A NUC can be rebuilt from zero using downstream sync alone.
+6. **NUC-owned operational models must NOT be overwritten by downstream sync.** These flow upstream only.
+7. **Bidirectional models use `lastMutatedBy` column** to filter sync direction. Every NUC mutation to a bidirectional model MUST set `lastMutatedBy: 'local'`.
+
+### Source of Truth by Model
+
+| Category | Models | Owner | Sync Direction | Notes |
+|----------|--------|-------|---------------|-------|
+| **Org & Venue** | Organization, Location | Cloud | Neon → NUC | Provisioned in Mission Control |
+| **Staff** | Role, EmployeeRole, Employee | Cloud | Neon → NUC | Managed in MC or admin settings |
+| **Menu** | Category, MenuItem, ModifierGroup, Modifier, ComboTemplate, ComboComponent, ComboComponentOption, ModifierGroupTemplate, ModifierTemplate, ModifierInventoryLink | Cloud | Neon → NUC | Menu builder writes to Neon; NUC receives via downstream sync |
+| **Floor Plan** | Table, Section, SectionAssignment, FloorPlanElement | Cloud | Neon → NUC | Layout managed in admin |
+| **Order Types & Config** | OrderType, CourseConfig, PricingOptionGroup, PricingOption, PricingOptionInventoryLink | Cloud | Neon → NUC | |
+| **Hardware** | Printer, PrintRoute, PrintRule, KDSScreen, KDSScreenStation, Terminal, PaymentReader, Scale, Station, BergDevice, BergPluMapping | Cloud | Neon → NUC | Hardware config from admin/MC |
+| **Tax & Pricing** | TaxRule, PricingOptionGroup, PricingOption | Cloud | Neon → NUC | |
+| **Customers & Loyalty** | Customer, Coupon, DiscountRule, GiftCard, HouseAccount | Cloud | Neon → NUC | |
+| **Vendors & Inventory Config** | Vendor, InventoryItem, InventoryItemStorage, Ingredient, IngredientCategory, MenuItemRecipe, ItemBarcode, StorageLocation, PrepItem, PrepItemIngredient, InventorySettings | Cloud | Neon → NUC | Catalog and recipe definitions |
+| **Prep & Kitchen Config** | PrepStation, PrepTrayConfig | Cloud | Neon → NUC | |
+| **Scheduling** | Schedule, ScheduledShift | Cloud | Neon → NUC | |
+| **Events & Reservations** | Event, EventPricingTier, EventTableConfig, Reservation | Cloud | Neon → NUC | |
+| **Reasons & Preferences** | VoidReason, CompReason, ReasonAccess, QuickBarPreference, QuickBarDefault | Cloud | Neon → NUC | |
+| **Invoices** | Invoice, InvoiceLineItem | Cloud | Neon → NUC | |
+| **Miscellaneous Cloud** | CfdSettings, EntertainmentWaitlist | Cloud | Neon → NUC | |
+| **Orders & Line Items** | Order, OrderItem, OrderDiscount, OrderCard, OrderItemModifier | Bidirectional | Both (neon-wins) | `lastMutatedBy` determines sync direction; conflict resolution favors Neon |
+| **Payments** | Payment | Bidirectional | Both (neon-wins) | `lastMutatedBy` required on every NUC write |
+| **Bottle & Spirit** | BottleProduct, SpiritCategory, SpiritModifierGroup | Bidirectional | Both (neon-wins) | |
+| **Cake Orders** | CakeOrder, CakeQuote | Bidirectional | Both (neon-wins) | |
+| **Order Events & Snapshots** | OrderEvent, OrderSnapshot, OrderItemSnapshot, Seat | NUC | NUC → Neon | Event-sourced, append-only |
+| **Order Details** | OrderItemIngredient, OrderItemPizza, OrderOwnership, OrderOwnershipEntry, Ticket, OrderItemDiscount, RefundLog | NUC | NUC → Neon | |
+| **Shifts & Time** | Shift, Drawer, TimeClockEntry, Break | NUC | NUC → Neon | |
+| **Tips** | TipLedger, TipLedgerEntry, TipTransaction, TipDebt, CashTipDeclaration, TipShare, TipOutRule, TipPool, TipGroupTemplate, TipGroup, TipGroupMembership, TipGroupSegment, TipAdjustment | NUC | NUC → Neon | Tip ledger is immutable once written |
+| **Payroll** | PayrollPeriod, PayStub, PayrollSettings, PendingDeduction, DeductionRun | NUC | NUC → Neon | |
+| **Inventory Transactions** | InventoryItemTransaction, InventoryTransaction, StockAlert, InventoryCount, InventoryCountItem, InventoryCountEntry, WasteLog, WasteLogEntry, RecipeIngredient, MenuItemRecipeIngredient, MenuItemIngredient, IngredientSwapGroup, IngredientStockAdjustment, IngredientRecipe, IngredientCostHistory, VendorOrder, VendorOrderLineItem, MarginEdgeProductMapping | NUC | NUC → Neon | |
+| **Print & Audit** | PrintJob, VoidLog, AuditLog, ErrorLog | NUC | NUC → Neon | |
+| **Gift Card & House Acct Txns** | GiftCardTransaction, HouseAccountTransaction, CouponRedemption | NUC | NUC → Neon | |
+| **Pizza Config** | PizzaConfig, PizzaSize, PizzaCrust, PizzaSauce, PizzaCheese, PizzaTopping, PizzaSpecialty | NUC | NUC → Neon | |
+| **Cash & Finance** | PaidInOut | NUC | NUC → Neon | |
+| **Prep Counts** | DailyPrepCount, DailyPrepCountItem, DailyPrepCountTransaction | NUC | NUC → Neon | |
+| **Digital Receipts** | DigitalReceipt | NUC | NUC → Neon | |
+| **Berg & Spirits** | BergDispenseEvent, SpiritUpsellEvent | NUC | NUC → Neon | |
+| **Remote Approvals** | RemoteVoidApproval | NUC | NUC → Neon | |
+| **Sessions & Profiles** | TimedSession, CardProfile, WalkoutRetry | NUC | NUC → Neon | |
+| **Device & Payment Logs** | PaymentReaderLog, ChargebackCase, PmsChargeAttempt | NUC | NUC → Neon | |
+| **Scheduling (NUC)** | ShiftSwapRequest | NUC | NUC → Neon | |
+| **Bottle & Cake (NUC)** | BottleServiceTier, CakePayment, CakeOrderChange | NUC | NUC → Neon | |
+| **Venue & Integration Logs** | VenueLog, SevenShiftsDailySalesPush | NUC | NUC → Neon | |
+| **Local-Only (not synced)** | RegisteredDevice, MobileSession, ServerRegistrationToken, HardwareCommand, CloudEventQueue, SyncAuditEntry, HealthCheck, FulfillmentEvent, BridgeCheckpoint, OutageQueueEntry, SocketEventLog | Local | None | Ephemeral or NUC-specific operational state |
 
 ---
 
@@ -275,4 +326,4 @@ The Android native app is the **PRIMARY** POS interface. Web/browser is secondar
 
 ---
 
-*Last updated: 2026-02-28*
+*Last updated: 2026-03-18*

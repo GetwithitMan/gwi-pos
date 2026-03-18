@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/shared'
-import { SeatType } from '@prisma/client'
+import { SeatType } from '@/generated/prisma/client'
 import type { Seat, SeatPosition } from '../types'
 
 // Re-export existing seat utilities

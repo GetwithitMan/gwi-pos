@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
-import { db } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
@@ -9,6 +9,11 @@ import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
+// TODO: Phase 1 - Daily report uses ~18 parallel $queryRaw SQL aggregates.
+// No repository methods for raw SQL aggregates. All db.* calls remain direct.
+// Candidates for future migration: db.voidLog, db.timeClockEntry, db.paidInOut,
+// db.giftCardTransaction, db.tipLedgerEntry, db.category, db.tipTransaction,
+// and legacy path db.order.findMany (complex includes).
 
 // ============================================================
 // SQL-AGGREGATE DAILY REPORT (replaces in-memory iteration)
@@ -1255,7 +1260,7 @@ async function legacyReport(
     // Completed/paid orders
     // Exclude split parents to prevent double-counting when pay-all-splits
     // marks the parent as 'paid' alongside its children.
-    db.order.findMany({
+    adminDb.order.findMany({
       where: {
         locationId,
         deletedAt: null,
@@ -1309,7 +1314,7 @@ async function legacyReport(
       },
     }),
     // Voided orders
-    db.order.findMany({
+    adminDb.order.findMany({
       where: {
         locationId,
         deletedAt: null,

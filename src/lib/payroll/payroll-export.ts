@@ -3,9 +3,16 @@
  *
  * Aggregates time clock entries, tips, breaks, and commissions per employee
  * for a given date range. Returns PayrollRecord[] ready for formatting.
+ *
+ * TODO: Migrate to repositories. This file takes db: PrismaClient as a param
+ * and runs multiple aggregate queries with date ranges and employee batch lookups.
+ * Requires new repo methods for:
+ * - PaymentRepository: findMany by employeeId batch + paymentMethod + date range
+ * - OrderRepository: findMany by employeeId batch + paidAt date range + commissionTotal
+ * - No repos exist for: TimeClockEntry, Break, TipLedgerEntry, TipLedger
  */
 
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 
 export interface PayrollRecord {
   employeeId: string

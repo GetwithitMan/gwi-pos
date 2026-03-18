@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
@@ -97,7 +97,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Get the destination employee
-    const toEmployee = await db.employee.findUnique({
+    const toEmployee = await adminDb.employee.findUnique({
       where: { id: toEmployeeId },
       select: { id: true, displayName: true, firstName: true, lastName: true, isActive: true },
     })

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'crypto'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { listShifts } from '@/lib/7shifts-client'
 import { getBusinessDate, updateSyncStatus } from '../../integrations/7shifts/_helpers'
@@ -202,7 +202,7 @@ async function triggerSchedulePull(
     }
 
     for (const shift of shifts) {
-      const employee = await db.employee.findFirst({
+      const employee = await adminDb.employee.findFirst({
         where: { locationId, sevenShiftsUserId: String(shift.user_id), deletedAt: null },
         select: { id: true },
       })

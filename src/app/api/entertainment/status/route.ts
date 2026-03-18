@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { FloorPlanElementStatus, EntertainmentWaitlistStatus } from '@/generated/prisma/client'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
@@ -32,7 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // 1. Query MenuItems as PRIMARY source — all timed_rental items
-    const menuItems = await db.menuItem.findMany({
+    const menuItems = await adminDb.menuItem.findMany({
       where: {
         locationId,
         deletedAt: null,
@@ -119,7 +119,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           })
         : Promise.resolve([]),
       orderItemIdsForFallback.length > 0
-        ? db.orderItem.findMany({
+        ? adminDb.orderItem.findMany({
             where: { id: { in: orderItemIdsForFallback } },
             select: {
               id: true,

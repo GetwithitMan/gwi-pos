@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Recognize or create a card profile after payment
@@ -28,7 +28,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let orderCustomerId: string | null = null
     if (orderId) {
       try {
-        const order = await db.order.findUnique({
+        const order = await adminDb.order.findUnique({
           where: { id: orderId },
           select: { customerId: true },
         })

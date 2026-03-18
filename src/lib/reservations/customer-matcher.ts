@@ -5,7 +5,7 @@
  * Preference preservation: customer profile fields copy INTO reservation only when blank.
  */
 
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@/generated/prisma/client'
 import { formatPhoneE164 } from '../twilio'
 
 interface CustomerMatchParams {

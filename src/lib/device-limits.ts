@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 
 export type DeviceType = 'terminal' | 'handheld' | 'cellular' | 'kds' | 'printer'
 

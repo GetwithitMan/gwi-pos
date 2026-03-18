@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { HouseAccountStatus } from '@prisma/client'
+import { HouseAccountStatus } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+// TODO: Phase 1 - No HouseAccountRepository yet.
+// db.houseAccount and db.houseAccountTransaction calls remain direct.
 
 // GET - House Accounts Aging Report (P1-03)
 // Returns all accounts with balances grouped by how long they have been outstanding.

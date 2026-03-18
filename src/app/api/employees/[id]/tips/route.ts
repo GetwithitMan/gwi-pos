@@ -2,7 +2,7 @@
 // TipBank model removed in Skill 284. TipShare remains for payout lifecycle.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { centsToDollars, getLedgerBalance } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 
@@ -15,7 +15,7 @@ export const GET = withVenue(async function GET(
     const { id: employeeId } = await params
 
     // Look up employee to get locationId (required for ledger queries)
-    const employee = await db.employee.findUnique({
+    const employee = await adminDb.employee.findUnique({
       where: { id: employeeId },
       select: { id: true, locationId: true },
     })

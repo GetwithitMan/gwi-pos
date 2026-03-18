@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 
 /**
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     // TODO: Migrate to OrderRepository once a filtered-findMany with custom select + nested payments is supported.
     // Find orders that are still open/sent but have been idle for >30 minutes.
     // These may have had offline payments that never synced from Android devices.
-    const suspectOrders = await db.order.findMany({
+    const suspectOrders = await adminDb.order.findMany({
       where: {
         locationId,
         status: { in: ['open', 'sent', 'in_progress'] },
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create a reconciliation payment record
-    const payment = await db.payment.create({
+    const payment = await adminDb.payment.create({
       data: {
         orderId,
         amount,

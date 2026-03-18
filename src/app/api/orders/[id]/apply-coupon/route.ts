@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
@@ -29,7 +29,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Get the order with current totals and discounts
-    const order = await db.order.findUnique({
+    const order = await adminDb.order.findUnique({
       where: { id: orderId },
       include: {
         location: true,

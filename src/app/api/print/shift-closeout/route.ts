@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { buildShiftCloseoutReceipt } from '@/lib/escpos/shift-closeout-receipt'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
@@ -54,7 +54,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Get order count and cash transaction details from payments during this shift
     const endTime = shift.endedAt || new Date()
-    const payments = await db.payment.findMany({
+    const payments = await adminDb.payment.findMany({
       where: {
         employeeId: shift.employeeId,
         status: 'completed',

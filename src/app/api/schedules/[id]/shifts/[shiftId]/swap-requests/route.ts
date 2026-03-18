@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
-import type { ShiftRequestType } from '@prisma/client'
+import type { ShiftRequestType } from '@/generated/prisma/client'
 
 // GET - List swap/cover/drop requests for a specific shift
 export const GET = withVenue(async function GET(

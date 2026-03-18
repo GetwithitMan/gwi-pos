@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/shared'
-import { TableStatus as PrismaTableStatus } from '@prisma/client'
+import { TableStatus as PrismaTableStatus } from '@/generated/prisma/client'
 import type { Table, TableShape, TableStatus } from '../types'
 
 // Re-export existing utilities for internal use

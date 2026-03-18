@@ -5,7 +5,7 @@ import { parseSettings } from '@/lib/settings'
 import { createReceipt } from '@/lib/7shifts-client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { getBusinessDate, getDateRange, updateSyncStatus } from '../_helpers'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -44,7 +44,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Aggregate closed orders for the business date
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where: {
         locationId: location.id,
         status: 'closed',
@@ -60,7 +60,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Sum tips from payments on those orders
     let tipsAmountCents = 0
     if (orderIds.length > 0) {
-      const tipAgg = await db.payment.aggregate({
+      const tipAgg = await adminDb.payment.aggregate({
         where: { orderId: { in: orderIds }, deletedAt: null },
         _sum: { tipAmount: true },
       })

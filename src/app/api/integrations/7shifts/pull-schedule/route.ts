@@ -5,7 +5,7 @@ import { parseSettings } from '@/lib/settings'
 import { listShifts } from '@/lib/7shifts-client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { getBusinessDate, updateSyncStatus } from '../_helpers'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -65,7 +65,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     for (const shift of shifts) {
       // Find linked employee
-      const employee = await db.employee.findFirst({
+      const employee = await adminDb.employee.findFirst({
         where: {
           locationId: location.id,
           sevenShiftsUserId: String(shift.user_id),

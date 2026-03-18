@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 // GET — returns employee's quick bar items and location defaults
@@ -10,7 +10,7 @@ export const GET = withVenue(async function GET(
   try {
     const { id: employeeId } = await params
 
-    const employee = await db.employee.findUnique({
+    const employee = await adminDb.employee.findUnique({
       where: { id: employeeId },
       select: { locationId: true },
     })
@@ -49,7 +49,7 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'itemIds must be an array' }, { status: 400 })
     }
 
-    const employee = await db.employee.findUnique({
+    const employee = await adminDb.employee.findUnique({
       where: { id: employeeId },
       select: { locationId: true },
     })

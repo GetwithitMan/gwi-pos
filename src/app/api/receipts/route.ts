@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Create a digital receipt (called after payment)
@@ -66,7 +66,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // If searching by card last 4, we need to join through payment
     if (cardLast4) {
       // Find payments with this card
-      const payments = await db.payment.findMany({
+      const payments = await adminDb.payment.findMany({
         where: { locationId, cardLast4, deletedAt: null },
         select: { id: true },
       })

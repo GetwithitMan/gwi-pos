@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission, requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -336,7 +336,7 @@ export const PUT = withVenue(async function PUT(
       let openOrders: { id: string; orderNumber: number | null; tabName: string | null; status: string; total: number }[] = []
       if (shiftForError) {
         try {
-          const orders = await db.order.findMany({
+          const orders = await adminDb.order.findMany({
             where: {
               locationId: shiftForError.locationId,
               employeeId: shiftForError.employeeId,

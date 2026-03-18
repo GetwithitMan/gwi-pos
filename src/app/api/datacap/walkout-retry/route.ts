@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
@@ -118,7 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             },
           }),
           // Update order status to 'paid' so it no longer appears as open/walkout
-          db.order.update({
+          adminDb.order.update({
             where: { id: retry.orderId },
             data: {
               status: 'paid',
@@ -128,7 +128,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             },
           }),
           // Create Payment record for reconciliation and reports
-          db.payment.create({
+          adminDb.payment.create({
             data: {
               locationId,
               orderId: retry.orderId,

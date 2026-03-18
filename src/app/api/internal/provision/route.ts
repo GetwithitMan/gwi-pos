@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
-import { PrismaClient, CashHandlingMode, CategoryType } from '@prisma/client'
+import { PrismaClient, CashHandlingMode, CategoryType } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { hash } from 'bcryptjs'
 import { randomInt } from 'crypto'

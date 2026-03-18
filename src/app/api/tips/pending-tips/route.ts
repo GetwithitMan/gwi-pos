@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -57,7 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Query card payments with tipAmount=0
-    const payments = await db.payment.findMany({
+    const payments = await adminDb.payment.findMany({
       where: {
         locationId,
         tipAmount: 0,

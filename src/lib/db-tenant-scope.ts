@@ -15,13 +15,23 @@ import { requestStore, getRequestLocationId, setRequestLocationId } from './requ
  * async getLocationId() (which itself is cached per-venue with 5min TTL).
  * Returns undefined during startup/migrations/cron — caller must skip scoping.
  */
+// Module-level fallback guard for contexts without AsyncLocalStorage
+// (RSC rendering, server components outside server.ts request wrapper).
+// Not concurrency-safe across multiple requests, but prevents the Map
+// overflow crash that kills the dev server entirely.
+let _globalResolving = false
+
 export async function resolveTenantLocationId(): Promise<string | undefined> {
   // Guard against infinite recursion: tenant extension intercepts findFirst →
   // calls resolveTenantLocationId → getLocationId → findFirst → loop.
-  // Uses per-request AsyncLocalStorage flag (concurrency-safe) instead of
-  // module-level `let` which was shared across concurrent requests.
+  // Uses per-request AsyncLocalStorage flag when available (concurrency-safe),
+  // falls back to module-level flag for RSC/no-store contexts.
   const store = requestStore.getStore()
-  if (store && store._resolvingLocationId) return undefined
+  if (store) {
+    if (store._resolvingLocationId) return undefined
+  } else {
+    if (_globalResolving) return undefined
+  }
 
   // Fast path: already cached in this request's AsyncLocalStorage
   const cached = getRequestLocationId()
@@ -29,7 +39,11 @@ export async function resolveTenantLocationId(): Promise<string | undefined> {
 
   // Slow path: async lookup (DB-backed, but cached per venue slug)
   // Lazy import to avoid circular dependency (location-cache.ts imports db.ts)
-  if (store) store._resolvingLocationId = true
+  if (store) {
+    store._resolvingLocationId = true
+  } else {
+    _globalResolving = true
+  }
   try {
     const { getLocationId } = await import('./location-cache')
     const id = await getLocationId()
@@ -39,7 +53,11 @@ export async function resolveTenantLocationId(): Promise<string | undefined> {
     }
     return undefined
   } finally {
-    if (store) store._resolvingLocationId = false
+    if (store) {
+      store._resolvingLocationId = false
+    } else {
+      _globalResolving = false
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -35,7 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get total count for pagination (tenant-scoped)
     const total = await EmployeeRepository.countEmployees(locationId, filterWhere)
 
-    const employees = await db.employee.findMany({
+    const employees = await adminDb.employee.findMany({
       where: {
         locationId,
         deletedAt: null,

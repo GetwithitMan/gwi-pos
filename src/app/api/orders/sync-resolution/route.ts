@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -122,7 +122,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           // Mark this idempotency key as voided - never process it
           // Check if there's an existing payment to void
           // TODO: PaymentRepository lacks OR-based lookups (idempotencyKey OR offlineIntentId)
-          const existingPayment = await db.payment.findFirst({
+          const existingPayment = await adminDb.payment.findFirst({
             where: {
               OR: [
                 { idempotencyKey: tx.idempotencyKey },
@@ -176,7 +176,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // 1. DEDUPLICATION CHECK (Idempotency)
         // ========================================
         // TODO: PaymentRepository lacks OR-based lookups (idempotencyKey OR offlineIntentId)
-        const existingPayment = await db.payment.findFirst({
+        const existingPayment = await adminDb.payment.findFirst({
           where: {
             OR: [
               { idempotencyKey: tx.idempotencyKey },
@@ -221,7 +221,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // If we have a local order ID, find the synced order first
         // TODO: Add OrderRepository.getOrderByOfflineLocalId() for tenant-safe offline sync lookup
         if (tx.localOrderId && !tx.orderId.startsWith('c')) {
-          const syncedOrder = await db.order.findFirst({
+          const syncedOrder = await adminDb.order.findFirst({
             where: { offlineLocalId: tx.localOrderId },
           })
 
@@ -446,7 +446,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get all payments for the period
     // TODO: Add PaymentRepository.getPaymentsForPeriod() with date range + custom select support
-    const allPayments = await db.payment.findMany({
+    const allPayments = await adminDb.payment.findMany({
       where: {
         locationId,
         ...dateFilter,
@@ -474,7 +474,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get recent offline payments for the audit log
     // TODO: Add PaymentRepository.getOfflinePayments() with date range + include support
-    const recentOfflinePayments = await db.payment.findMany({
+    const recentOfflinePayments = await adminDb.payment.findMany({
       where: {
         locationId,
         isOfflineCapture: true,

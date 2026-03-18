@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -68,7 +68,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     startDate.setDate(today.getDate() - lookbackDays)
 
     // Fetch paid/closed orders in the lookback window using the businessDayDate OR-fallback pattern
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where: {
         locationId,
         status: { in: [...REVENUE_ORDER_STATUSES] },

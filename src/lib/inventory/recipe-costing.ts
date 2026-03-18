@@ -2,7 +2,7 @@
  * Recipe Costing & Ingredient Cost Calculation
  */
 
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 import type { RecipeCostingResult } from './types'

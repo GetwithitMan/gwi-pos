@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
@@ -8,6 +8,11 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { REVENUE_ORDER_STATUSES, roundMoney } from '@/lib/domain/reports'
+// TODO: Phase 1 - Live dashboard uses complex aggregate/findMany with OR conditions,
+// db.orderItem.aggregate, db.order.aggregate, db.paidInOut.findMany, db.pendingDeduction.count.
+// No repository methods match these complex query shapes. All db.* calls remain direct.
+// Candidates for future migration: OrderRepository (needs aggregate + complex OR where),
+// PaidInOutRepository, PendingDeductionRepository.
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -62,7 +67,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     ] = await Promise.all([
       // Today's closed/paid orders for sales metrics
       // Use businessDayDate as primary boundary, fall back to createdAt
-      db.order.findMany({
+      adminDb.order.findMany({
         where: {
           locationId,
           deletedAt: null,
@@ -84,7 +89,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       // Last week same day - orders closed up to the equivalent time of day
       // Use businessDayDate as primary boundary, fall back to createdAt
-      db.order.findMany({
+      adminDb.order.findMany({
         where: {
           locationId,
           deletedAt: null,
@@ -102,7 +107,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
 
       // Open tickets
-      db.order.findMany({
+      adminDb.order.findMany({
         where: {
           locationId,
           deletedAt: null,
@@ -115,7 +120,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
 
       // Voided items today — use itemTotal (price * quantity) for accurate dollar impact
-      db.orderItem.aggregate({
+      adminDb.orderItem.aggregate({
         where: {
           locationId,
           deletedAt: null,
@@ -127,7 +132,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
 
       // Comped items today — use itemTotal (price * quantity) for accurate dollar impact
-      db.orderItem.aggregate({
+      adminDb.orderItem.aggregate({
         where: {
           locationId,
           deletedAt: null,
@@ -140,7 +145,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       // Discount totals from orders today
       // Use businessDayDate as primary boundary, fall back to createdAt
-      db.order.aggregate({
+      adminDb.order.aggregate({
         where: {
           locationId,
           deletedAt: null,

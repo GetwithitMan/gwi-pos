@@ -8,10 +8,14 @@
  *
  * Allocation of actual tip dollars to ledger entries is handled by tip-allocation.ts.
  * This module is strictly about group lifecycle and segment management.
+ *
+ * TODO: Migrate to repositories once TipGroup/TipGroupMembership/TipGroupSegment
+ * repos are created. The tx.employee.findMany in createSegment could use
+ * EmployeeRepository but is inside $transaction blocks that pass tx directly.
  */
 
 import { db } from '@/lib/db'
-import { TipGroupSplitMode, TipGroupStatus, TipGroupMembershipStatus } from '@prisma/client'
+import { TipGroupSplitMode, TipGroupStatus, TipGroupMembershipStatus } from '@/generated/prisma/client'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

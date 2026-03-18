@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -61,7 +61,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
         if (mapping.menuItemId) {
           // Query OrderItems by menuItemId using nested order filter (matches liquor report pattern)
-          const orderItems = await db.orderItem.findMany({
+          const orderItems = await adminDb.orderItem.findMany({
             where: {
               locationId,
               menuItemId: mapping.menuItemId,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -68,14 +68,14 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
      
     async function batchBusinessDayQuery(findManyArgs: any, mode = businessDayMode): Promise<any[]> {
       if (mode === 'none') {
-        return db.order.findMany(findManyArgs)
+        return adminDb.order.findMany(findManyArgs)
       }
       const op = mode === 'previous' ? 'lt' : 'gte'
       const { where, take: outerTake, ...rest } = findManyArgs
       const [primary, legacy] = await Promise.all([
         // Each sub-query gets the full take limit — we'll trim after merge
-        db.order.findMany({ where: { ...where, businessDayDate: { [op]: businessDayStart } }, ...(outerTake ? { take: outerTake } : {}), ...rest }),
-        db.order.findMany({ where: { ...where, businessDayDate: null, createdAt: { [op]: businessDayStart } }, ...(outerTake ? { take: outerTake } : {}), ...rest }),
+        adminDb.order.findMany({ where: { ...where, businessDayDate: { [op]: businessDayStart } }, ...(outerTake ? { take: outerTake } : {}), ...rest }),
+        adminDb.order.findMany({ where: { ...where, businessDayDate: null, createdAt: { [op]: businessDayStart } }, ...(outerTake ? { take: outerTake } : {}), ...rest }),
       ])
       // Merge and re-sort (both sub-queries are individually sorted, merge maintains order)
       const merged = [...primary, ...legacy]
@@ -104,12 +104,12 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
       let count: number
       if (businessDayMode === 'none') {
-        count = await db.order.count({ where: baseWhere })
+        count = await adminDb.order.count({ where: baseWhere })
       } else {
         const op = businessDayMode === 'previous' ? 'lt' : 'gte'
         const [primary, legacy] = await Promise.all([
-          db.order.count({ where: { ...baseWhere, businessDayDate: { [op]: businessDayStart } } }),
-          db.order.count({ where: { ...baseWhere, businessDayDate: null, createdAt: { [op]: businessDayStart } } }),
+          adminDb.order.count({ where: { ...baseWhere, businessDayDate: { [op]: businessDayStart } } }),
+          adminDb.order.count({ where: { ...baseWhere, businessDayDate: null, createdAt: { [op]: businessDayStart } } }),
         ])
         count = primary + legacy
       }
@@ -427,7 +427,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
     try {
       // TODO: Add MenuItemRepository.findByCurrentOrderIds() once that repository exists
-      const entertainmentItems = await db.menuItem.findMany({
+      const entertainmentItems = await adminDb.menuItem.findMany({
         where: {
           currentOrderId: { in: orderIds },
           entertainmentStatus: 'in_use',

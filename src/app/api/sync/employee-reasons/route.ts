@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { resolveAllowedReasonIds } from '@/app/api/settings/reason-access/allowed/route'
 
@@ -14,7 +14,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get employee to determine locationId
-    const employee = await db.employee.findUnique({
+    const employee = await adminDb.employee.findUnique({
       where: { id: employeeId },
       select: { locationId: true },
     })

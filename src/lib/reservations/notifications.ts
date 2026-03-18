@@ -8,7 +8,7 @@
 import crypto from 'crypto'
 import { sendSMS } from '@/lib/twilio'
 import { sendEmail } from '@/lib/email-service'
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 
 // ============================================
 // Types

@@ -5,7 +5,7 @@
  * after payment processing.
  */
 
-import type { PaymentMethod } from '@prisma/client'
+import type { PaymentMethod } from '@/generated/prisma/client'
 import { roundToCents } from '@/lib/pricing'
 import type { OrderUpdateData } from './types'
 

@@ -1,4 +1,8 @@
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
+
+// TODO: Refactor to accept locationId and use OrderRepository.getOrderByIdWithSelect()
+// instead of db.order.findUnique (dangerous no-tenant-guard pattern).
+// Callers currently pass `db` or `tx` as a parameter -- need to thread locationId from route context.
 
 const CLAIM_EXPIRY_MS = 60_000 // 60 seconds
 

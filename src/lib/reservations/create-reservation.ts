@@ -7,7 +7,7 @@
  */
 
 import crypto from 'crypto'
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 import type { ReservationSettings, DepositRules, ReservationMessageTemplates } from '@/lib/settings'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 

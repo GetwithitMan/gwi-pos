@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -25,7 +25,7 @@ export const GET = withVenue(async function GET(
     const employeeId = searchParams.get('employeeId')
 
     // Fetch order to get locationId
-    const order = await db.order.findUnique({
+    const order = await adminDb.order.findUnique({
       where: { id: orderId },
       select: {
         id: true,
@@ -85,7 +85,7 @@ export const GET = withVenue(async function GET(
         orderBy: { createdAt: 'asc' },
       }),
       // Payment records for this order
-      db.payment.findMany({
+      adminDb.payment.findMany({
         where: {
           orderId,
           deletedAt: null,

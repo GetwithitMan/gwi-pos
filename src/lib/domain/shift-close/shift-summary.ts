@@ -3,6 +3,14 @@
  *
  * Calculates sales, tips, cash, and labor cost for a shift period.
  * Uses db directly (not tx) — called before the close transaction.
+ *
+ * TODO: Migrate to repositories. All 8 queries use complex WHERE shapes
+ * (date ranges, nested order.locationId, employeeId + status combos) that
+ * don't match existing repo methods. Requires new repo methods for:
+ * - PaymentRepository: findMany by employeeId + date range + nested order.locationId
+ * - OrderRepository: findMany by employeeId + date range + status + select
+ * - OrderItemRepository: count with nested order filters (employeeId + date range)
+ * - No repos exist for: PaidInOut, TimeClockEntry
  */
 
 import { db } from '@/lib/db'

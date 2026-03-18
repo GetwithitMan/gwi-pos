@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
@@ -123,7 +123,7 @@ export const POST = withVenue(withTiming(async function POST(
     })
 
     // M2: Count held items so the client can warn "X items held back"
-    const heldItemCount = await db.orderItem.count({
+    const heldItemCount = await adminDb.orderItem.count({
       where: { orderId: id, isHeld: true, deletedAt: null, status: { not: 'voided' } },
     })
 
@@ -142,7 +142,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Stamp delayStartedAt on delayed items so countdown survives page reload
     if (delayedItems.length > 0) {
-      await db.orderItem.updateMany({
+      await adminDb.orderItem.updateMany({
         where: { id: { in: delayedItems.map(i => i.id) } },
         data: { delayStartedAt: now },
       })

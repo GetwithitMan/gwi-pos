@@ -48,7 +48,10 @@ export const GET = withVenue(async function GET(
 const updateScaleSchema = z.object({
   name: z.string().min(1).optional(),
   scaleType: z.string().optional(),
-  portPath: z.string().min(1).optional(),
+  connectionType: z.enum(['serial', 'network']).optional(),
+  portPath: z.string().nullable().optional(),
+  networkHost: z.string().nullable().optional(),
+  networkPort: z.number().int().min(1).max(65535).nullable().optional(),
   baudRate: z.number().int().positive().optional(),
   dataBits: z.number().int().min(5).max(8).optional(),
   parity: z.enum(['none', 'even', 'odd']).optional(),
@@ -96,12 +99,38 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
-    const { maxCapacity, ...rest } = parsed.data
+    const { maxCapacity, connectionType, portPath, networkHost, networkPort, ...rest } = parsed.data
+
+    // Determine effective connection type (use incoming or fall back to existing)
+    const effectiveConnectionType = connectionType ?? existing.connectionType ?? 'serial'
+
+    // Validate connection-type-specific fields when connection type is being set or changed
+    if (connectionType !== undefined || portPath !== undefined || networkHost !== undefined || networkPort !== undefined) {
+      if (effectiveConnectionType === 'network') {
+        const effectiveHost = networkHost !== undefined ? networkHost : existing.networkHost
+        const effectivePort = networkPort !== undefined ? networkPort : existing.networkPort
+        if (!effectiveHost) {
+          return NextResponse.json({ error: 'Host address is required for network connections' }, { status: 400 })
+        }
+        if (!effectivePort) {
+          return NextResponse.json({ error: 'TCP port is required for network connections' }, { status: 400 })
+        }
+      } else {
+        const effectivePath = portPath !== undefined ? portPath : existing.portPath
+        if (!effectivePath) {
+          return NextResponse.json({ error: 'Port path is required for serial connections' }, { status: 400 })
+        }
+      }
+    }
 
     const scale = await db.scale.update({
       where: { id },
       data: {
         ...rest,
+        ...(connectionType !== undefined && { connectionType }),
+        ...(portPath !== undefined && { portPath }),
+        ...(networkHost !== undefined && { networkHost }),
+        ...(networkPort !== undefined && { networkPort }),
         ...(maxCapacity !== undefined && { maxCapacity }),
       },
     })

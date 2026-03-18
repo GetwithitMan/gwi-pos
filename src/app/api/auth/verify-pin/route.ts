@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
@@ -210,7 +210,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Fall through to existing O(N) scan for backwards compatibility
     // Get active employees for this location (tenant-scoped via deletedAt guard)
-    const employees = await db.employee.findMany({
+    const employees = await adminDb.employee.findMany({
       where: {
         locationId,
         isActive: true,

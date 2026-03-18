@@ -1,4 +1,4 @@
-import type { Employee } from '@prisma/client';
+import type { Employee } from '@/generated/prisma/client';
 
 // ═══════════════════════════════════════════════════════════════
 // Floor Plan Serializers - Consistent DTO shapes

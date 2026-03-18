@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Fetch completed/paid orders with card payments in the date window
-    const orders = await db.order.findMany({
+    const orders = await adminDb.order.findMany({
       where: {
         locationId,
         status: { in: [...REVENUE_ORDER_STATUSES] },

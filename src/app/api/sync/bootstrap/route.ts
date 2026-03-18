@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { buildSpiritTiersFromItem, normalizeModifier } from '@/lib/spirit-tiers'
 import { parseSettings } from '@/lib/settings'
@@ -26,6 +26,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.info(`[bootstrap] cellular terminal=${auth.terminal.id} locationId=${locationId} venueSlug=${venueSlug}`)
   }
 
+  // Fetch scale config if terminal is bound to a scale (needed for both cached and non-cached paths)
+  const scaleConfig = auth.terminal.scaleId ? await db.scale.findUnique({
+    where: { id: auth.terminal.scaleId },
+    select: { id: true, connectionType: true, networkHost: true, networkPort: true, name: true },
+  }) : null
+
   // Check sync bootstrap cache (15s TTL — prevents stampede when multiple devices boot)
   const syncCacheKey = `sync-bootstrap-${locationId}`
   const cachedBootstrap = syncBootstrapCache.get(syncCacheKey)
@@ -41,6 +47,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       kitchenPrinterId: auth.terminal.kitchenPrinterId ?? null,
       barPrinterId: auth.terminal.barPrinterId ?? null,
       isTestMode: cachedData.terminalConfig?.isTestMode ?? false,
+      scaleConfig: scaleConfig ? {
+        id: scaleConfig.id,
+        connectionType: scaleConfig.connectionType,
+        networkHost: scaleConfig.networkHost ?? null,
+        networkPort: scaleConfig.networkPort ?? null,
+        name: scaleConfig.name,
+      } : null,
     }
     cachedData.syncVersion = Date.now()
     return NextResponse.json({ data: cachedData })
@@ -88,7 +101,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       orderBy: { sortOrder: 'asc' },
     }),
-    db.employee.findMany({
+    adminDb.employee.findMany({
       where: { locationId, deletedAt: null, isActive: true },
       include: { role: { select: { id: true, name: true, permissions: true } } },
     }),
@@ -113,7 +126,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.cfdSettings.findFirst({ where: { locationId, deletedAt: null } }),
     // Open orders: allows device to rebuild state after mid-service reboot
     // without relying solely on socket catch-up (which may miss events)
-    db.order.findMany({
+    adminDb.order.findMany({
       where: {
         locationId,
         status: { notIn: ['closed', 'voided', 'paid', 'cancelled'] },
@@ -435,6 +448,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           const p = (settings as any)?.payments
           return p?.datacapEnvironment ? p.datacapEnvironment === 'cert' : (p?.testMode ?? false)
         })(),
+        scaleConfig: scaleConfig ? {
+          id: scaleConfig.id,
+          connectionType: scaleConfig.connectionType,
+          networkHost: scaleConfig.networkHost ?? null,
+          networkPort: scaleConfig.networkPort ?? null,
+          name: scaleConfig.name,
+        } : null,
       },
       cfdSettings: cfdSettings ? {
         tipMode: cfdSettings.tipMode,

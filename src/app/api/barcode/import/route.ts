@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -47,7 +47,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const existingSet = new Set(existingBarcodes.map(b => b.barcode))
 
     // Pre-fetch menu items and inventory items for name lookups
-    const menuItems = await db.menuItem.findMany({
+    const menuItems = await adminDb.menuItem.findMany({
       where: { locationId, deletedAt: null },
       select: { id: true, name: true },
     })

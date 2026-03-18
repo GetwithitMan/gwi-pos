@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { InventoryStockChangePayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 // GET - Get single inventory item
 export const GET = withVenue(async function GET(
@@ -127,15 +130,52 @@ export const PUT = withVenue(async function PUT(
       updateData.priceSource = body.priceSource || 'manual'
     }
 
-    const item = await db.inventoryItem.update({
-      where: { id },
-      data: updateData,
-      include: {
-        defaultVendor: {
-          select: { id: true, name: true },
+    // Detect if stock is changing to queue socket event
+    const stockChanged = body.currentStock !== undefined &&
+      Number(body.currentStock) !== Number(existing.currentStock)
+
+    // Wrap update + socket outbox in a single atomic transaction
+    const item = await db.$transaction(async (tx) => {
+      const result = await tx.inventoryItem.update({
+        where: { id },
+        data: updateData,
+        include: {
+          defaultVendor: {
+            select: { id: true, name: true },
+          },
         },
-      },
+      })
+
+      // Queue critical socket event if stock changed (outbox pattern)
+      if (stockChanged) {
+        const newStock = Number(result.currentStock)
+        const prevStock = Number(existing.currentStock)
+        const parLevel = existing.parLevel ? Number(existing.parLevel) : null
+        const stockLevel = newStock <= 0 ? 'critical'
+          : (parLevel && newStock <= parLevel * 0.25) ? 'low'
+          : (parLevel && newStock <= parLevel * 0.5) ? 'ok'
+          : 'good'
+
+        const stockPayload: InventoryStockChangePayload = {
+          ingredientId: id,
+          name: result.name,
+          currentStock: newStock,
+          previousStock: prevStock,
+          unit: result.storageUnit || 'each',
+          stockLevel,
+        }
+        await queueSocketEvent(tx, existing.locationId, SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, stockPayload)
+      }
+
+      return result
     })
+
+    // Transaction committed — flush outbox if stock changed
+    if (stockChanged) {
+      void flushSocketOutbox(existing.locationId).catch((err) => {
+        console.warn('[inventory/items/update] Outbox flush failed, catch-up will deliver:', err)
+      })
+    }
 
     return NextResponse.json({ data: {
       item: {
@@ -174,9 +214,28 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    await db.inventoryItem.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    // Wrap soft-delete + socket outbox in a single atomic transaction
+    await db.$transaction(async (tx) => {
+      await tx.inventoryItem.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      })
+
+      // Queue critical socket event for stock change (item removed from inventory)
+      const stockPayload: InventoryStockChangePayload = {
+        ingredientId: id,
+        name: existing.name,
+        currentStock: 0,
+        previousStock: Number(existing.currentStock),
+        unit: existing.storageUnit || 'each',
+        stockLevel: 'critical',
+      }
+      await queueSocketEvent(tx, existing.locationId, SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, stockPayload)
+    })
+
+    // Transaction committed — flush outbox
+    void flushSocketOutbox(existing.locationId).catch((err) => {
+      console.warn('[inventory/items/delete] Outbox flush failed, catch-up will deliver:', err)
     })
 
     return NextResponse.json({ data: { success: true } })

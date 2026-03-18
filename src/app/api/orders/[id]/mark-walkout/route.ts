@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
@@ -21,7 +21,7 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
     }
 
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         cards: {
@@ -52,7 +52,7 @@ export const POST = withVenue(async function POST(
     const maxRetries = Math.floor(walkoutMaxRetryDays / walkoutRetryFrequencyDays)
 
     // Mark order as walkout
-    await db.order.update({
+    await adminDb.order.update({
       where: { id: orderId },
       data: {
         isWalkout: true,

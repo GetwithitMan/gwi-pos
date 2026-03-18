@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templates'
@@ -412,7 +412,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
         // ── requireTipsAdjusted check ──────────────────────────────────────
         if (!force && locSettings.clockOut?.requireTipsAdjusted) {
-          const unadjustedTips = await db.payment.findMany({
+          const unadjustedTips = await adminDb.payment.findMany({
             where: {
               order: { employeeId: entry.employeeId, locationId: entry.locationId },
               paymentMethod: { in: ['credit', 'debit', 'card'] },

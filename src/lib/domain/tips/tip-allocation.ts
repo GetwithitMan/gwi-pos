@@ -13,7 +13,7 @@
  * a segment-by-segment breakdown of how an employee's tips were earned.
  */
 
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips/tip-ledger'
 import type { TxClient } from '@/lib/domain/tips/tip-ledger'
@@ -43,7 +43,7 @@ import { parseSettings } from '@/lib/settings'
 async function fetchOrderItemsForAllocation(
   orderId: string,
 ): Promise<Array<{ itemTotal: number; createdAt: Date }>> {
-  const items = await db.orderItem.findMany({
+  const items = await adminDb.orderItem.findMany({
     where: { orderId, deletedAt: null, status: { not: 'voided' } },
     select: { itemTotal: true, createdAt: true },
   })

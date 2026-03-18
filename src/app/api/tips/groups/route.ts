@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { TipGroupStatus } from '@prisma/client'
+import { TipGroupStatus } from '@/generated/prisma/client'
 import { startTipGroup } from '@/lib/domain/tips/tip-groups'
 import type { TipGroupInfo } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'

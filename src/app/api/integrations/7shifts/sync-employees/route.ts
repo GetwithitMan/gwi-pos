@@ -5,7 +5,7 @@ import { parseSettings } from '@/lib/settings'
 import { getCompanyUsers } from '@/lib/7shifts-client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { EmployeeRepository } from '@/lib/repositories'
 
 /**
@@ -76,7 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check if employee already exists (linked by sevenShiftsUserId)
-    const existing = await db.employee.findFirst({
+    const existing = await adminDb.employee.findFirst({
       where: {
         locationId: location.id,
         sevenShiftsUserId: String(user.id),

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { getLocationTaxRate } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
@@ -41,7 +41,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Get the original order with all details
-    const order = await db.order.findUnique({
+    const order = await adminDb.order.findUnique({
       where: { id },
       include: {
         employee: true,

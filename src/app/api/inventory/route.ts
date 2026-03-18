@@ -16,6 +16,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { InventoryAdjustmentPayload, InventoryStockChangePayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 // GET - List inventory levels and transactions
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -140,7 +143,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const quantityBefore = item.currentStock ?? 0
     const quantityAfter = quantityBefore + quantityChange
 
-    // Wrap transaction record + stock update in an atomic transaction
+    // Wrap transaction record + stock update + socket outbox in an atomic transaction
     // to prevent TOCTOU race between read and write.
     const { transaction } = await prisma.$transaction(async (tx) => {
       const txRecord = await tx.inventoryTransaction.create({
@@ -169,10 +172,46 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
 
+      // Queue critical socket events inside the transaction (outbox pattern)
+      const stockLevel = quantityAfter <= 0 ? 'critical'
+        : quantityAfter <= (item.lowStockAlert ?? 0) ? 'low'
+        : quantityAfter <= (item.lowStockAlert ?? 0) * 2 ? 'ok'
+        : 'good'
+
+      const stockPayload: InventoryStockChangePayload = {
+        ingredientId: menuItemId,
+        name: item.name,
+        currentStock: quantityAfter,
+        previousStock: quantityBefore,
+        unit: 'each',
+        stockLevel,
+      }
+      await queueSocketEvent(tx, locationId, SOCKET_EVENTS.INVENTORY_STOCK_CHANGE, stockPayload)
+
+      const adjustPayload: InventoryAdjustmentPayload = {
+        adjustments: [{
+          ingredientId: menuItemId,
+          name: item.name,
+          previousStock: quantityBefore,
+          newStock: quantityAfter,
+          change: quantityChange,
+          unit: 'each',
+        }],
+        adjustedById: employeeId || '',
+        adjustedByName: '',
+        totalItems: 1,
+      }
+      await queueSocketEvent(tx, locationId, SOCKET_EVENTS.INVENTORY_ADJUSTMENT, adjustPayload)
+
       return { transaction: txRecord }
     })
 
-    // Check for low stock alert
+    // Transaction committed — flush outbox
+    void flushSocketOutbox(locationId).catch((err) => {
+      console.warn('[inventory/adjust] Outbox flush failed, catch-up will deliver:', err)
+    })
+
+    // Check for low stock alert (non-critical, outside transaction)
     if (quantityAfter <= (item.lowStockAlert ?? 0) && quantityAfter > 0) {
       await prisma.stockAlert.create({
         data: {

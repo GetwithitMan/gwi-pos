@@ -5,7 +5,7 @@
  * CRITICAL: Only includes customers with marketingOptIn = true.
  */
 
-import type { PrismaClient } from '@prisma/client'
+import type { PrismaClient } from '@/generated/prisma/client'
 
 export interface SegmentCustomer {
   id: string

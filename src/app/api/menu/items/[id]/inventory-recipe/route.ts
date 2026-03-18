@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import {
   calculateIngredientCosts,
   calculateRecipeCosting,
@@ -17,7 +17,7 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const menuItem = await db.menuItem.findUnique({
+    const menuItem = await adminDb.menuItem.findUnique({
       where: { id },
       select: { id: true, name: true, price: true },
     })
@@ -99,7 +99,7 @@ export const POST = withVenue(async function POST(
 
     const { portionSize, portionUnit, prepInstructions, ingredients } = validation.data
 
-    const menuItem = await db.menuItem.findUnique({
+    const menuItem = await adminDb.menuItem.findUnique({
       where: { id },
       select: { id: true, locationId: true, price: true },
     })

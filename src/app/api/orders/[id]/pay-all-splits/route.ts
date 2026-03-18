@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchPaymentProcessed, dispatchOrderClosed, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 // deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
@@ -51,7 +51,7 @@ export const POST = withVenue(async function POST(
     const effectiveIdempotencyKey = idempotencyKey || crypto.randomUUID()
 
     // Fetch parent order with its split children
-    const parentOrder = await db.order.findUnique({
+    const parentOrder = await adminDb.order.findUnique({
       where: { id: parentOrderId },
       include: {
         location: true,

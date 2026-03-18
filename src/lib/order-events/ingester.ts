@@ -8,7 +8,7 @@
  * to legacy tables in one atomic flow.
  */
 
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@/generated/prisma/client'
 import { emitToLocation } from '@/lib/socket-server'
 import {
   type OrderEventPayload,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -27,7 +27,7 @@ export const POST = withVenue(async function POST(
 
     // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
     // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
-    const order = await db.order.findFirst({
+    const order = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         cards: {

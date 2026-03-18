@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -100,7 +100,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Check if category has items
-    const itemCount = await db.menuItem.count({
+    const itemCount = await adminDb.menuItem.count({
       where: { categoryId: id, deletedAt: null }
     })
 

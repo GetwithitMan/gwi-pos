@@ -2,7 +2,7 @@
  * Shared helper functions for inventory calculations
  */
 
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 import type { MultiplierSettings, InventoryItemData, PrepItemWithIngredients } from './types'

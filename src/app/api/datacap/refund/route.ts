@@ -26,7 +26,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Look up reader to get its locationId for client config
-    const { db } = await import('@/lib/db')
+    const { db, adminDb } = await import('@/lib/db')
     const reader = await db.paymentReader.findFirst({
       where: { id: readerId, deletedAt: null },
       select: { id: true, locationId: true },
@@ -43,7 +43,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // BUG #470 FIX: Cap refund amount — look up original payment by datacapRecordNo
-    const originalPayment = await db.payment.findFirst({
+    const originalPayment = await adminDb.payment.findFirst({
       where: { datacapRecordNo: recordNo, locationId: reader.locationId, deletedAt: null },
       select: { id: true, amount: true, refundedAmount: true },
     })

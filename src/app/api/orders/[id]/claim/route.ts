@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderClaimed, dispatchOrderReleased } from '@/lib/socket-dispatch'
 
@@ -106,7 +106,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Look up employee name for socket event
-    const employee = await db.employee.findUnique({
+    const employee = await adminDb.employee.findUnique({
       where: { id: employeeId },
       select: { firstName: true, lastName: true },
     })

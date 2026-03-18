@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -83,7 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Look up employee names
     const employeeIds = [...buckets.keys()].filter((id): id is string => id !== null)
     const employees = employeeIds.length > 0
-      ? await db.employee.findMany({
+      ? await adminDb.employee.findMany({
           where: { id: { in: employeeIds } },
           select: { id: true, firstName: true, lastName: true },
         })

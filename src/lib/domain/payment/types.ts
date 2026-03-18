@@ -5,7 +5,7 @@
  * Route-level DTOs (NextRequest/NextResponse) stay in the route.
  */
 
-import type { PaymentMethod, PaymentStatus } from '@prisma/client'
+import type { PaymentMethod, PaymentStatus } from '@/generated/prisma/client'
 import type { db } from '@/lib/db'
 
 // ─── Transaction Client ─────────────────────────────────────────────────────

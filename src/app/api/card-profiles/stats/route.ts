@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -44,7 +44,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Query recent orders: find payments where cardLast4 matches + locationId, join to Order
-    const recentPayments = await db.payment.findMany({
+    const recentPayments = await adminDb.payment.findMany({
       where: {
         locationId,
         cardLast4: last4,

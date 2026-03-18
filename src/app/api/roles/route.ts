@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { CashHandlingMode } from '@prisma/client'
+import { CashHandlingMode } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { withVenue } from '@/lib/with-venue'

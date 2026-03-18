@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { Prisma, ShiftSwapRequestStatus } from '@prisma/client'
+import { Prisma, ShiftSwapRequestStatus } from '@/generated/prisma/client'
 
 // GET - List shift requests for the current location
 // Query params: locationId (required), status? (filter), employeeId? (filter as requestedToEmployeeId),

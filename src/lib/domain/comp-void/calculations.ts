@@ -5,7 +5,7 @@
  * No DB, no side effects, no framework types.
  */
 
-import type { Prisma } from '@prisma/client'
+import type { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 import { roundToCents } from '@/lib/pricing'
 

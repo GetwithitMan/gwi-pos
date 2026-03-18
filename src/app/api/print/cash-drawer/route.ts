@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { ESCPOS } from '@/lib/escpos/commands'
 import { requirePermission } from '@/lib/api-auth'
@@ -93,7 +93,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           const locSettings = parseSettings(await getLocationSettings(resolvedLocationId))
           if (!locSettings.alerts.enabled || !locSettings.alerts.cashDrawerAlertEnabled) return
 
-          const employee = await db.employee.findUnique({
+          const employee = await adminDb.employee.findUnique({
             where: { id: empId },
             select: { firstName: true, lastName: true, displayName: true },
           })

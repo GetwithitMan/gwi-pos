@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -77,7 +77,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Completed/paid orders with all related data
       // Exclude split parents to prevent double-counting when pay-all-splits
       // marks the parent as 'paid' alongside its children.
-      db.order.findMany({
+      adminDb.order.findMany({
         where: {
           locationId,
           deletedAt: null,

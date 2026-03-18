@@ -2,12 +2,18 @@
  * Auto-Deduction on Order Paid
  *
  * Deducts inventory when an order is paid/closed.
+ *
+ * TODO: Migrate db.order.findUnique to OrderRepository.getOrderByIdWithInclude
+ * once locationId is threaded from callers. Currently orderId-only (no tenant guard).
+ * The massive ORDER_INVENTORY_INCLUDE tree makes this non-trivial.
+ * Also needs repos for: InventoryItem, InventoryItemTransaction, ComboTemplate,
+ * PizzaTopping, PizzaSauce, PizzaCheese, PizzaCrust, PizzaSize, Ingredient.
  */
 
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
@@ -282,7 +288,7 @@ export async function deductInventoryForOrder(
     }
 
     // Fetch the order with full recipe tree
-    const order = await db.order.findUnique({
+    const order = await adminDb.order.findUnique({
       where: { id: orderId },
       include: ORDER_INVENTORY_INCLUDE,
     })
@@ -358,7 +364,7 @@ export async function deductInventoryForOrder(
       )
 
       if (componentMenuItemIds.length > 0) {
-        const componentMenuItems = await db.menuItem.findMany({
+        const componentMenuItems = await adminDb.menuItem.findMany({
           where: { id: { in: componentMenuItemIds }, deletedAt: null },
           include: {
             recipe: {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -46,7 +46,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get active + comped order items in the date range
     // Comped items still consumed food (cost was incurred), only revenue was waived
-    const orderItems = await db.orderItem.findMany({
+    const orderItems = await adminDb.orderItem.findMany({
       where: {
         order: {
           locationId,

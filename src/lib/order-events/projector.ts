@@ -10,7 +10,7 @@
  * All monetary values are integer cents (number).
  */
 
-import { Prisma, PrismaClient } from '@prisma/client'
+import { Prisma, PrismaClient } from '@/generated/prisma/client'
 
 import {
   OrderState,

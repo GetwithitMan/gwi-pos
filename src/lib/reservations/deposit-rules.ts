@@ -5,7 +5,7 @@
  * Amounts are in cents throughout (matching defaultAmountCents / perGuestAmountCents).
  */
 
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@/generated/prisma/client'
 import { DepositRules, getEffectiveDepositMode } from '../settings'
 import crypto from 'crypto'
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseSettings } from '@/lib/settings'
@@ -35,7 +35,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Two-step: lightweight fetch for locationId, then full fetch with include
-    const orderCheck = await db.order.findFirst({
+    const orderCheck = await adminDb.order.findFirst({
       where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true },
     })
