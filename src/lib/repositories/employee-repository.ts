@@ -175,7 +175,7 @@ export async function countEmployees(
  */
 export async function createEmployee(
   locationId: string,
-  data: Omit<Prisma.EmployeeCreateInput, 'location'> & { roleId: string },
+  data: Omit<Prisma.EmployeeCreateInput, 'location' | 'role'> & { roleId: string },
   tx?: TxClient,
 ) {
   const client = getClient(tx)
