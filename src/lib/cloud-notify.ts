@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cloud-notify')
+
 /**
  * Fire-and-forget notification to Mission Control that venue data changed.
  *
@@ -34,6 +37,6 @@ export function notifyDataChanged(params: NotifyParams): void {
     body: JSON.stringify(params),
     signal: AbortSignal.timeout(3000),
   }).catch((err) => {
-    console.warn('[Cloud Notify] Failed to notify MC:', err instanceof Error ? err.message : err)
+    log.warn('[Cloud Notify] Failed to notify MC:', err instanceof Error ? err.message : err)
   })
 }

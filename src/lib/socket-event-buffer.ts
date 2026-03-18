@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('socket-event-buffer')
+
 /**
  * Socket Event Buffer — Server-Side Event Replay for Reconnection Catch-Up
  *
@@ -79,7 +82,7 @@ export function recordEvent(locationId: string, event: string, data: unknown, ro
       )
     } catch (err) {
       // PG down or table doesn't exist — in-memory buffer still works
-      console.warn('[SocketEventLog] PG write failed (in-memory only):', err instanceof Error ? err.message : err)
+      log.warn('[SocketEventLog] PG write failed (in-memory only):', err instanceof Error ? err.message : err)
     }
   })().catch(console.error)
 
@@ -145,7 +148,7 @@ export async function getEventsSince(
 
     return pgEvents
   } catch (err) {
-    console.warn('[SocketEventLog] PG read failed, using in-memory only:', err instanceof Error ? err.message : err)
+    log.warn('[SocketEventLog] PG read failed, using in-memory only:', err instanceof Error ? err.message : err)
     // Fall back to whatever is in memory
     if (!buffer) return []
     return buffer.events.filter(

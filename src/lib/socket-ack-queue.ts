@@ -1,3 +1,6 @@
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('socket-ack')
+
 /**
  * Socket Acknowledgment Queue — QoS 1 for Critical Events
  *
@@ -75,7 +78,7 @@ export function getRetryableEvents(): PendingAck[] {
   for (const [ackId, pending] of pendingAcks) {
     // Expired — remove and warn
     if (now - pending.createdAt > ACK_TIMEOUT_MS) {
-      console.warn('[socket-ack] Event expired without acknowledgment', {
+      log.warn('[socket-ack] Event expired without acknowledgment', {
         ackId,
         event: pending.event,
         locationId: pending.locationId,

@@ -1,5 +1,8 @@
 import { createHmac, randomUUID } from 'crypto'
 import { queueCloudEvent } from '@/lib/cloud-event-queue'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cloud-events')
+
 
 export async function emitCloudEvent(eventType: string, payload: unknown): Promise<void> {
   const cloudUrl = process.env.BACKOFFICE_API_URL
@@ -28,7 +31,7 @@ export async function emitCloudEvent(eventType: string, payload: unknown): Promi
       .update(bodyString)
       .digest('hex')
   } else {
-    console.warn('[CloudEvent] SERVER_API_KEY not set — sending unsigned event', { eventType })
+    log.warn('[CloudEvent] SERVER_API_KEY not set — sending unsigned event', { eventType })
   }
 
   try {
@@ -43,9 +46,9 @@ export async function emitCloudEvent(eventType: string, payload: unknown): Promi
       throw new Error(`HTTP ${res.status} ${res.statusText}`)
     }
 
-    console.log(`[CloudEvent] Emitted ${eventType} (${eventId})`)
+    log.info(`[CloudEvent] Emitted ${eventType} (${eventId})`)
   } catch (error) {
-    console.error('[CloudEvent] Failed to emit', { eventType, eventId, error })
+    log.error('[CloudEvent] Failed to emit', { eventType, eventId, error })
     await queueCloudEvent(eventId, venueId, venueId, eventType, bodyString)
   }
 }
