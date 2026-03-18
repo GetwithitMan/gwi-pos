@@ -26,6 +26,9 @@ export const ORDER_EVENT_TYPES = [
   'NOTE_CHANGED',
   'ORDER_METADATA_UPDATED',
   'COMP_VOID_APPLIED',
+  'ITEM_MODIFIER_REMOVED',
+  'TAB_CAPTURE_DECLINED',
+  'WALKOUT_MARKED',
 ] as const
 
 export type OrderEventType = (typeof ORDER_EVENT_TYPES)[number]
@@ -167,6 +170,26 @@ export interface CompVoidAppliedPayload {
   approvedById?: string | null
 }
 
+export interface ItemModifierRemovedPayload {
+  lineItemId: string
+  modifierId?: string | null
+  modifierName?: string | null
+  reason?: string | null
+}
+
+export interface TabCaptureDeclinedPayload {
+  employeeId: string
+  errorMessage: string
+  retryCount: number
+  maxRetries: number
+}
+
+export interface WalkoutMarkedPayload {
+  reason: string
+  retryCount?: number | null
+  employeeId?: string | null
+}
+
 // ── Union type for dispatching ──────────────────────────────────────
 
 export type OrderEventPayload =
@@ -187,6 +210,9 @@ export type OrderEventPayload =
   | { type: 'NOTE_CHANGED'; payload: NoteChangedPayload }
   | { type: 'ORDER_METADATA_UPDATED'; payload: OrderMetadataUpdatedPayload }
   | { type: 'COMP_VOID_APPLIED'; payload: CompVoidAppliedPayload }
+  | { type: 'ITEM_MODIFIER_REMOVED'; payload: ItemModifierRemovedPayload }
+  | { type: 'TAB_CAPTURE_DECLINED'; payload: TabCaptureDeclinedPayload }
+  | { type: 'WALKOUT_MARKED'; payload: WalkoutMarkedPayload }
 
 // ── State Models (match Android OrderState) ─────────────────────────
 
