@@ -327,6 +327,26 @@ const LOCAL_ONLY_TABLES = new Set([
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
   'PaymentSession', // local payment state machine
   'SyncConflict', 'SyncWatermark', // quarantine infrastructure
+  // Reservation infrastructure
+  'ReservationIdempotencyKey', 'ReservationDepositToken', 'ReservationTable',
+  'ReservationEvent', 'ReservationBlock', 'ReservationDeposit',
+  // Delivery infrastructure
+  'DeliveryZone', 'DeliveryDriver', 'DeliveryDriverDocument', 'DeliveryDriverSession',
+  'DeliveryRun', 'DeliveryAddress', 'DeliveryProofOfDelivery', 'DeliveryTracking',
+  'DeliveryAuditLog', 'DeliveryException', 'DeliveryNotification', 'DeliveryOrder',
+  'DeliveryNotificationAttempt',
+  // Cake/loyalty/portal
+  'CakeCalendarBlock', 'CustomerPortalSession', 'LoyaltyReward', 'LoyaltyRedemption',
+  // Membership
+  'MembershipPlan', 'Membership', 'MembershipCharge', 'MembershipEvent',
+  // Marketing + upsell
+  'MarketingCampaign', 'MarketingRecipient', 'UpsellRule', 'UpsellEvent',
+  // Misc operational
+  'CoverCharge', 'WaitlistEntry', 'MenuSnapshot', 'CustomerFeedback', 'PourLog',
+  'SavedCard', 'CateringOrder', 'CateringOrderItem', 'ServerRotationState',
+  'ThirdPartyOrder', 'SharedReport', 'PaymentLink', 'CellularDevice', 'KDSScreenLink',
+  // Lowercase Prisma mapped tables
+  'cloud_event_queue', 'order_events', 'order_snapshots', 'order_item_snapshots',
 ])
 
 /** System/internal tables that are not Prisma models */

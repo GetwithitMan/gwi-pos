@@ -1,7 +1,8 @@
 # Server Hardening Plan
 
-> **Status:** Planned — Not yet started
+> **Status:** COMPLETE
 > **Created:** 2026-03-18
+> **Completed:** 2026-03-18
 > **Priority:** P0 items before any new feature work
 
 ## Executive Summary
@@ -309,15 +310,19 @@ Routes call services. Workers call the same services. No localhost loop.
 
 ## Execution Order
 
-| Step | Item | Priority |
-|------|------|----------|
-| 1 | Fail-closed sync config | P0 |
-| 2 | Repository-based tenant-safe DB layer | P0 |
-| 3 | Signed proxy-to-app tenant context | P0 |
-| 4 | Replace localhost internal jobs with services | P0 |
-| 5 | Hard CI type gate | P0 |
-| 6 | Worker manager + structured logs + trace IDs | P1 |
-| 7 | Per-model sync conflict policy | P1 |
-| 8 | Proxy modularization | P1 |
-| 9 | Cellular revocation / tighter grace | P1 |
-| 10 | CSP + security header tightening | P2 |
+| Step | Item | Priority | Status |
+|------|------|----------|--------|
+| 0 | Typed runtime config | P0 | DONE |
+| 1 | Fail-closed sync config | P0 | DONE |
+| 2 | Tenant-safe DB layer + validation | P0 | DONE |
+| 3 | Replace localhost jobs with services | P0 | DONE |
+| 4 | Signed proxy-to-app tenant JWT | P0 | DONE |
+| 5 | Hard CI type + schema drift gate | P0 | DONE |
+| 6 | Money/order conflict quarantine (v1 log-only) | P0 | DONE |
+| 7 | Proxy modularization (7 modules) | P1 | DONE |
+| 8 | Worker manager + health + lifecycle | P1 | DONE |
+| 9 | Structured logs + trace IDs (edge + sync) | P1 | DONE |
+| 10 | Cellular revocation + tighter grace | P1 | DONE |
+| 11 | CSP + security header tightening | P2 | DONE |
+| 12 | RLS auto-enforcement in transactions | P2 | DONE |
+| 13 | ESLint ban on unscoped tenant queries | P2 | DONE |

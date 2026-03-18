@@ -8,6 +8,7 @@
  * Only runs when SYNC_ENABLED=true and NEON_DATABASE_URL is configured.
  */
 
+import { randomUUID } from 'crypto'
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
 import { createChildLogger } from '@/lib/logger'
@@ -209,6 +210,8 @@ async function replayEntry(entry: {
 async function processOutageQueue(): Promise<void> {
   if (isReplaying) return
   isReplaying = true
+  // Per-cycle trace ID for log correlation
+  const cycleId = randomUUID().slice(0, 8)
 
   try {
     const isOnline = await checkNeonConnectivity()
@@ -234,7 +237,7 @@ async function processOutageQueue(): Promise<void> {
 
     const totalDeadLettered = (deadLettered || 0) + (agedOut || 0)
     if (totalDeadLettered > 0) {
-      log.error({ totalDeadLettered, maxRetry: deadLettered || 0, agedOut: agedOut || 0 }, 'CRITICAL: entries dead-lettered — orders may be lost. Check OutageQueueEntry table.')
+      log.error({ cycleId, totalDeadLettered, maxRetry: deadLettered || 0, agedOut: agedOut || 0 }, 'CRITICAL: entries dead-lettered — orders may be lost. Check OutageQueueEntry table.')
 
       // Emit cloud event for MC alerting
       void (async () => {
@@ -312,7 +315,7 @@ async function processOutageQueue(): Promise<void> {
 
     if (pending.length === 0) return
 
-    log.info(`Processing ${pending.length} queued entries`)
+    log.info({ cycleId, count: pending.length }, `Processing ${pending.length} queued entries`)
 
     for (const entry of pending) {
       // Idempotency: skip entries already being processed in this cycle
@@ -339,14 +342,14 @@ async function processOutageQueue(): Promise<void> {
             entry.id,
           )
           metrics.conflictCount++
-          log.warn({ err, tableName: entry.tableName, recordId: entry.recordId }, 'Conflict during replay')
+          log.warn({ cycleId, err, tableName: entry.tableName, recordId: entry.recordId }, 'Conflict during replay')
         } else {
           await masterClient.$executeRawUnsafe(
             `UPDATE "OutageQueueEntry" SET status = 'failed' WHERE id = $1`,
             entry.id,
           )
           metrics.failedCount++
-          log.error({ err, tableName: entry.tableName, recordId: entry.recordId }, 'Failed to replay entry')
+          log.error({ cycleId, err, tableName: entry.tableName, recordId: entry.recordId }, 'Failed to replay entry')
         }
       }
     }

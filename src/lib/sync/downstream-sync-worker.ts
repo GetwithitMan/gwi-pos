@@ -15,6 +15,7 @@
 // to avoid circular dependencies. These should be converted to top-level imports
 // once the socket module dependency graph is cleaned up.
 
+import { randomUUID } from 'crypto'
 import { createChildLogger } from '@/lib/logger'
 import { neonClient, hasNeonConnection } from '../neon-client'
 
@@ -824,6 +825,8 @@ async function runDownstreamCycle(): Promise<void> {
   if (!hasNeonConnection()) return
   if (cycleRunning) return // Prevent overlapping cycles
   cycleRunning = true
+  // Per-cycle trace ID for log correlation
+  const cycleId = randomUUID().slice(0, 8)
 
   try {
     const models = getDownstreamModels()
@@ -837,10 +840,10 @@ async function runDownstreamCycle(): Promise<void> {
         totalSynced += synced
 
         if (synced > 0) {
-          log.info({ table: tableName, rows: synced }, 'Table synced')
+          log.info({ cycleId, table: tableName, rows: synced }, 'Table synced')
         }
       } catch (err) {
-        log.error({ err, table: tableName }, 'Table sync failed')
+        log.error({ cycleId, err, table: tableName }, 'Table sync failed')
       }
     }
 
@@ -848,7 +851,7 @@ async function runDownstreamCycle(): Promise<void> {
     metrics.rowsSyncedTotal += totalSynced
 
     if (totalSynced > 0) {
-      log.info({ rows: totalSynced }, 'Cycle complete')
+      log.info({ cycleId, rows: totalSynced }, 'Cycle complete')
     }
 
     // Sync cellular deny list at the end of each cycle
@@ -856,7 +859,7 @@ async function runDownstreamCycle(): Promise<void> {
       log.error({ err }, 'Cellular deny list sync failed')
     })
   } catch (err) {
-    log.error({ err }, 'Cycle error')
+    log.error({ cycleId, err }, 'Cycle error')
   } finally {
     cycleRunning = false
   }
@@ -986,6 +989,7 @@ export async function triggerImmediateDownstreamSync(_domain?: string, modelName
  */
 async function runDownstreamCycleForModels(modelNames: string[]): Promise<void> {
   if (!hasNeonConnection()) return
+  const cycleId = randomUUID().slice(0, 8)
 
   try {
     const allModels = getDownstreamModels()
@@ -1001,10 +1005,10 @@ async function runDownstreamCycleForModels(modelNames: string[]): Promise<void> 
         totalSynced += synced
 
         if (synced > 0) {
-          log.info({ table: tableName, rows: synced }, 'Table synced (immediate)')
+          log.info({ cycleId, table: tableName, rows: synced }, 'Table synced (immediate)')
         }
       } catch (err) {
-        log.error({ err, table: tableName }, 'Table sync failed')
+        log.error({ cycleId, err, table: tableName }, 'Table sync failed')
       }
     }
 
@@ -1012,9 +1016,9 @@ async function runDownstreamCycleForModels(modelNames: string[]): Promise<void> 
     metrics.rowsSyncedTotal += totalSynced
 
     if (totalSynced > 0) {
-      log.info({ rows: totalSynced, models: modelNames }, 'Immediate cycle complete')
+      log.info({ cycleId, rows: totalSynced, models: modelNames }, 'Immediate cycle complete')
     }
   } catch (err) {
-    log.error({ err }, 'Immediate cycle error')
+    log.error({ cycleId, err }, 'Immediate cycle error')
   }
 }

@@ -8,6 +8,7 @@
  * Only runs when SYNC_ENABLED=true and NEON_DATABASE_URL is configured.
  */
 
+import { randomUUID } from 'crypto'
 import { createChildLogger } from '@/lib/logger'
 import { neonClient, hasNeonConnection } from '../neon-client'
 
@@ -289,6 +290,8 @@ async function runSyncCycle(): Promise<void> {
   if (!hasNeonConnection()) return
   if (cycleRunning) return // Prevent overlapping cycles
   cycleRunning = true
+  // Per-cycle trace ID for log correlation (short UUID prefix for readability)
+  const cycleId = randomUUID().slice(0, 8)
 
   try {
     // Quick connectivity check — if Neon is unreachable, bail early
@@ -341,10 +344,10 @@ async function runSyncCycle(): Promise<void> {
         totalSynced += synced
 
         if (synced > 0) {
-          log.info({ table: tableName, rows: synced }, 'Table synced')
+          log.info({ cycleId, table: tableName, rows: synced }, 'Table synced')
         }
       } catch (err) {
-        log.error({ err, table: tableName }, 'Table sync failed')
+        log.error({ cycleId, err, table: tableName }, 'Table sync failed')
         metrics.errorCount++
       }
     }
@@ -370,10 +373,10 @@ async function runSyncCycle(): Promise<void> {
     }
 
     if (totalSynced > 0) {
-      log.info({ synced: totalSynced, pending: metrics.pendingCount }, 'Cycle complete')
+      log.info({ cycleId, synced: totalSynced, pending: metrics.pendingCount }, 'Cycle complete')
     }
   } catch (err) {
-    log.error({ err }, 'Cycle error')
+    log.error({ cycleId, err }, 'Cycle error')
     metrics.errorCount++
     consecutiveFailures++
 

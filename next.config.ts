@@ -45,10 +45,12 @@ const nextConfig: NextConfig = {
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       // Enforced CSP — strict policy. unsafe-inline kept for styles only (Tailwind).
       // unsafe-eval added in dev for webpack HMR, removed in production.
+      // DEBT: Move to nonce-based CSP to remove script unsafe-inline — requires
+      // Next.js nonce injection on all Script components. Target: post-React 19 migration.
       {
         key: 'Content-Security-Policy',
         value: process.env.NODE_ENV === 'production'
-          ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'"
+          ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
           : "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'",
       },
       // Report-only CSP without unsafe-inline on scripts — catches any inline script
@@ -57,6 +59,15 @@ const nextConfig: NextConfig = {
         key: 'Content-Security-Policy-Report-Only',
         value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'; report-uri /api/csp-report",
       },
+      // Restrict unused browser APIs — POS has no camera/microphone/geolocation needs
+      {
+        key: 'Permissions-Policy',
+        value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+      },
+      // Isolate browsing context to prevent cross-origin window attacks
+      { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+      // Restrict resource loading to same-origin (prevents speculative side-channel attacks)
+      { key: 'Cross-Origin-Resource-Policy', value: 'same-origin' },
     ]
     if (process.env.NODE_ENV === 'production') {
       securityHeaders.unshift({ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' })
