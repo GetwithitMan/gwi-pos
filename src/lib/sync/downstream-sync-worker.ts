@@ -15,7 +15,10 @@
 // to avoid circular dependencies. These should be converted to top-level imports
 // once the socket module dependency graph is cleaned up.
 
+import { createChildLogger } from '@/lib/logger'
 import { neonClient, hasNeonConnection } from '../neon-client'
+
+const log = createChildLogger('downstream-sync')
 import { masterClient } from '../db'
 import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, getBusinessKey, DOWNSTREAM_INTERVAL_MS, type ConflictStrategy } from './sync-config'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig } from '../fulfillment-router'
@@ -93,7 +96,7 @@ async function ensureSyncStateTable(): Promise<void> {
       )`
     )
   } catch (err) {
-    console.error('[DownstreamSync] Failed to create _gwi_sync_state table:', err instanceof Error ? err.message : err)
+    log.error({ err }, 'Failed to create _gwi_sync_state table')
   }
 }
 
@@ -131,7 +134,7 @@ async function initHighWaterMarks(): Promise<void> {
       highWaterMarks.set(tableName, new Date('1970-01-01T00:00:00Z'))
     }
   }
-  console.log(`[DownstreamSync] High-water marks initialized for ${highWaterMarks.size} tables (${persistedHwms.size} from DB, ${highWaterMarks.size - persistedHwms.size} from epoch)`)
+  log.info({ total: highWaterMarks.size, fromDb: persistedHwms.size, fromEpoch: highWaterMarks.size - persistedHwms.size }, 'High-water marks initialized')
 }
 
 /** Load column names for all downstream tables */
@@ -153,7 +156,7 @@ async function loadColumnMetadata(): Promise<void> {
       // Skip tables that don't exist locally yet
     }
   }
-  console.log(`[DownstreamSync] Column metadata loaded for ${columnCache.size} tables`)
+  log.info({ tables: columnCache.size }, 'Column metadata loaded')
 }
 
 /** Build PG type cast from column metadata */
@@ -304,10 +307,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
               }
             } catch (quarantineErr) {
               // Quarantine check failed — fall through to normal upsert (safe default)
-              console.error(
-                `[DownstreamSync] Quarantine check failed for ${tableName}:${row.id}:`,
-                quarantineErr instanceof Error ? quarantineErr.message : quarantineErr
-              )
+              log.error({ err: quarantineErr, table: tableName, recordId: row.id }, 'Quarantine check failed')
             }
           }
         } else {
@@ -340,9 +340,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
           row.id as string, ...bkValues
         )
         if (conflicting.length > 0) {
-          console.log(
-            `[DownstreamSync] ${tableName}: resolving business-key conflict — local id ${conflicting[0].id} replaced by Neon id ${row.id}`
-          )
+          log.info({ table: tableName, localId: conflicting[0].id, neonId: row.id }, 'Resolving business-key conflict — local replaced by Neon')
           await masterClient.$executeRawUnsafe(
             `DELETE FROM "${tableName}" WHERE "id" = $1`,
             conflicting[0].id
@@ -361,7 +359,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       // Downstream notification pipeline — fires registered handlers for this row
       const rowLocationId = (row.locationId as string) || ''
       void dispatchDownstreamNotifications(tableName, row, rowLocationId).catch((err) => {
-        console.error(`[DownstreamSync] Notification pipeline error for ${tableName}:${row.id}:`, err)
+        log.error({ err, table: tableName, recordId: row.id }, 'Notification pipeline error')
       })
 
       synced++
@@ -389,13 +387,9 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       // [locationId, name]). Log as warning rather than error. The row will be
       // retried next cycle since HWM is not advanced past failed rows.
       if (errMsg.includes('unique constraint') || errMsg.includes('duplicate key') || errMsg.includes('Unique constraint')) {
-        console.warn(
-          `[DownstreamSync] ${tableName} row ${row.id}: unique constraint violation (duplicate business key) — skipping`
-        )
+        log.warn({ table: tableName, recordId: row.id }, 'Unique constraint violation (duplicate business key) — skipping')
       } else {
-        console.error(
-          `[DownstreamSync] ${tableName} row ${row.id}:`, errMsg
-        )
+        log.error({ table: tableName, recordId: row.id, errMsg }, 'Row sync failed')
       }
       metrics.conflictCount++
       // Do NOT advance HWM for failed rows — they must be retried on next cycle
@@ -410,10 +404,7 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         syncedIds
       )
     } catch (err) {
-      console.error(
-        `[DownstreamSync] ${tableName} batch syncedAt stamp failed (${syncedIds.length} rows, will retry next cycle):`,
-        err instanceof Error ? err.message : err
-      )
+      log.error({ err, table: tableName, rowCount: syncedIds.length }, 'Batch syncedAt stamp failed (will retry next cycle)')
     }
   }
 
@@ -429,14 +420,14 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         tableName, maxSyncedAt.toISOString()
       )
     } catch (err) {
-      console.error(`[DownstreamSync] Failed to persist HWM for ${tableName}:`, err instanceof Error ? err.message : err)
+      log.error({ err, table: tableName }, 'Failed to persist HWM')
     }
   }
 
   // Update downstream watermarks per-location (for quarantine conflict detection)
   for (const [locId, maxTs] of locationWatermarks) {
     void updateDownstreamWatermark(locId, maxTs).catch((err) => {
-      console.error(`[DownstreamSync] Failed to update watermark for location ${locId}:`, err instanceof Error ? err.message : err)
+      log.error({ err, locationId: locId }, 'Failed to update watermark')
     })
   }
 
@@ -458,7 +449,7 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
       orderId
     )
     if (existingEvents.length > 0) {
-      console.log(`[DownstreamSync] FulfillmentEvents already exist for order ${orderId} — skipping`)
+      log.info({ orderId }, 'FulfillmentEvents already exist — skipping')
       return
     }
   } catch {
@@ -547,7 +538,7 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
         JSON.stringify({ items: action.items, stationName: action.stationName, idempotencyKey: action.idempotencyKey })
       )
     } catch (err) {
-      console.error(`[DownstreamSync] Failed to persist FulfillmentEvent ${action.type}:`, err)
+      log.error({ err, actionType: action.type, orderId }, 'Failed to persist FulfillmentEvent')
     }
   }
 
@@ -633,11 +624,11 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
       // pipeline's open-orders-dispatch handler already dispatches it per-location
       // with deduplication. Calling it here would cause a double-dispatch.
     } catch (err) {
-      console.error('[DownstreamSync] Socket dispatch for cloud order failed:', err)
+      log.error({ err, orderId }, 'Socket dispatch for cloud order failed')
     }
-  })().catch(console.error)
+  })().catch((err) => log.error({ err }, 'Unhandled error in cloud order socket dispatch'))
 
-  console.log(`[DownstreamSync] Fulfillment routed for cloud order ${orderId} (${items.length} items, ${actions.length} events persisted)`)
+  log.info({ orderId, itemCount: items.length, eventCount: actions.length }, 'Fulfillment routed for cloud order')
 }
 
 /**
@@ -658,10 +649,10 @@ async function handleCloudDeduction(row: Record<string, unknown>): Promise<void>
       locationId, orderId
     )
 
-    console.log(`[DownstreamSync] Created PendingDeduction for cloud order ${orderId}`)
+    log.info({ orderId }, 'Created PendingDeduction for cloud order')
   } catch (err) {
     // PendingDeduction table may not exist yet — non-fatal
-    console.error('[DownstreamSync] Failed to create PendingDeduction:', err instanceof Error ? err.message : err)
+    log.error({ err, orderId }, 'Failed to create PendingDeduction')
   }
 }
 
@@ -685,7 +676,7 @@ async function handleCloudTableStatus(row: Record<string, unknown>): Promise<voi
     await dispatchFloorPlanUpdate(locationId)
     await dispatchTableStatusChanged(locationId, { tableId, status: 'occupied' })
   } catch (err) {
-    console.error('[DownstreamSync] Failed to update table status:', err instanceof Error ? err.message : err)
+    log.error({ err, tableId, locationId }, 'Failed to update table status')
   }
 }
 
@@ -754,32 +745,21 @@ async function detectBidirectionalConflict(
       case 'neon-wins':
         // Neon always wins — cloud is canonical
         if (localUpdatedAt > neonUpdatedAt) {
-          console.warn(
-            `[DownstreamSync] Conflict on ${tableName}:${neonRow.id} — ` +
-            `local is newer (${localUpdatedAt.toISOString()} > ${neonUpdatedAt.toISOString()}) ` +
-            `but neon-wins strategy applied (local lastMutatedBy=${local.lastMutatedBy})`
-          )
+          log.warn({ table: tableName, recordId: neonRow.id, localUpdatedAt: localUpdatedAt.toISOString(), neonUpdatedAt: neonUpdatedAt.toISOString(), lastMutatedBy: local.lastMutatedBy }, 'Conflict — local is newer but neon-wins strategy applied')
           metrics.conflictCount++
         }
         return 'apply'
 
       case 'local-wins':
         // Local always wins — skip Neon version
-        console.warn(
-          `[DownstreamSync] Conflict on ${tableName}:${neonRow.id} — ` +
-          `local-wins strategy, skipping Neon version (local lastMutatedBy=${local.lastMutatedBy})`
-        )
+        log.warn({ table: tableName, recordId: neonRow.id, lastMutatedBy: local.lastMutatedBy }, 'Conflict — local-wins strategy, skipping Neon version')
         metrics.conflictCount++
         return 'skip'
 
       case 'latest-wins':
         // Only skip Neon version if local is strictly newer AND locally mutated
         if (localUpdatedAt > neonUpdatedAt && local.lastMutatedBy !== 'cloud') {
-          console.warn(
-            `[DownstreamSync] Conflict on ${tableName}:${neonRow.id} — ` +
-            `local is strictly newer (${localUpdatedAt.toISOString()} > ${neonUpdatedAt.toISOString()}) ` +
-            `and lastMutatedBy=${local.lastMutatedBy}, keeping local version`
-          )
+          log.warn({ table: tableName, recordId: neonRow.id, localUpdatedAt: localUpdatedAt.toISOString(), neonUpdatedAt: neonUpdatedAt.toISOString(), lastMutatedBy: local.lastMutatedBy }, 'Conflict — local is strictly newer, keeping local version')
           metrics.conflictCount++
           return 'skip'
         }
@@ -857,13 +837,10 @@ async function runDownstreamCycle(): Promise<void> {
         totalSynced += synced
 
         if (synced > 0) {
-          console.log(`[DownstreamSync] ${tableName}: ${synced} rows`)
+          log.info({ table: tableName, rows: synced }, 'Table synced')
         }
       } catch (err) {
-        console.error(
-          `[DownstreamSync] Table ${tableName}:`,
-          err instanceof Error ? err.message : err
-        )
+        log.error({ err, table: tableName }, 'Table sync failed')
       }
     }
 
@@ -871,15 +848,15 @@ async function runDownstreamCycle(): Promise<void> {
     metrics.rowsSyncedTotal += totalSynced
 
     if (totalSynced > 0) {
-      console.log(`[DownstreamSync] Cycle: ${totalSynced} rows synced`)
+      log.info({ rows: totalSynced }, 'Cycle complete')
     }
 
     // Sync cellular deny list at the end of each cycle
     void syncCellularDenyList().catch((err) => {
-      console.error('[DownstreamSync] Cellular deny list sync failed:', err)
+      log.error({ err }, 'Cellular deny list sync failed')
     })
   } catch (err) {
-    console.error('[DownstreamSync] Cycle error:', err)
+    log.error({ err }, 'Cycle error')
   } finally {
     cycleRunning = false
   }
@@ -947,7 +924,7 @@ function initDownstreamNotifications(): void {
     errorPolicy: 'skip',
   })
 
-  console.log('[DownstreamSync] Notification pipeline initialized (4 handlers)')
+  log.info('Notification pipeline initialized (4 handlers)')
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -955,11 +932,11 @@ function initDownstreamNotifications(): void {
 export function startDownstreamSyncWorker(): void {
   if (timer) return
   if (!hasNeonConnection()) {
-    console.log('[DownstreamSync] No Neon connection — worker disabled')
+    log.info('No Neon connection — worker disabled')
     return
   }
 
-  console.log(`[DownstreamSync] Starting (interval: ${DOWNSTREAM_INTERVAL_MS}ms)`)
+  log.info({ intervalMs: DOWNSTREAM_INTERVAL_MS }, 'Starting')
   metrics.running = true
   initDownstreamNotifications()
 
@@ -975,7 +952,7 @@ export function stopDownstreamSyncWorker(): void {
     clearInterval(timer)
     timer = null
     metrics.running = false
-    console.log('[DownstreamSync] Stopped')
+    log.info('Stopped')
   }
 }
 
@@ -1024,13 +1001,10 @@ async function runDownstreamCycleForModels(modelNames: string[]): Promise<void> 
         totalSynced += synced
 
         if (synced > 0) {
-          console.log(`[DownstreamSync] ${tableName}: ${synced} rows (immediate)`)
+          log.info({ table: tableName, rows: synced }, 'Table synced (immediate)')
         }
       } catch (err) {
-        console.error(
-          `[DownstreamSync] Table ${tableName}:`,
-          err instanceof Error ? err.message : err
-        )
+        log.error({ err, table: tableName }, 'Table sync failed')
       }
     }
 
@@ -1038,9 +1012,9 @@ async function runDownstreamCycleForModels(modelNames: string[]): Promise<void> 
     metrics.rowsSyncedTotal += totalSynced
 
     if (totalSynced > 0) {
-      console.log(`[DownstreamSync] Immediate: ${totalSynced} rows synced for [${modelNames.join(', ')}]`)
+      log.info({ rows: totalSynced, models: modelNames }, 'Immediate cycle complete')
     }
   } catch (err) {
-    console.error('[DownstreamSync] Immediate cycle error:', err)
+    log.error({ err }, 'Immediate cycle error')
   }
 }

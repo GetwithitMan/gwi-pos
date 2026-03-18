@@ -1,5 +1,8 @@
 import { createHmac } from 'crypto'
 import { db } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('cloud-events')
 
 const MAX_QUEUE_SIZE = 1000
 const RETRY_INTERVAL_MS = 30_000
@@ -42,7 +45,7 @@ export async function queueCloudEvent(
       })
     }
   } catch (error) {
-    console.error('[CloudEventQueue] Failed to queue event', { eventId, error })
+    log.error({ err: error, eventId }, 'Failed to queue event')
   }
 }
 
@@ -70,7 +73,7 @@ async function processQueue(): Promise<void> {
             lastError: event.lastError || 'Max attempts exceeded',
           },
         })
-        console.error('[CloudEventQueue] Dead-lettered', { id: event.id, eventType: event.eventType, attempts: event.attempts })
+        log.error({ id: event.id, eventType: event.eventType, attempts: event.attempts }, 'Dead-lettered')
         continue
       }
 
@@ -91,7 +94,7 @@ async function processQueue(): Promise<void> {
           .update(bodyString)
           .digest('hex')
       } else {
-        console.warn('[CloudEventQueue] SERVER_API_KEY not set — sending unsigned event', { eventType: event.eventType })
+        log.warn({ eventType: event.eventType }, 'SERVER_API_KEY not set — sending unsigned event')
       }
 
       try {
@@ -115,7 +118,7 @@ async function processQueue(): Promise<void> {
             deletedAt: new Date(),
           },
         })
-        console.log(`[CloudEventQueue] Retried successfully: ${event.eventType} (${event.id})`)
+        log.info({ eventType: event.eventType, id: event.id }, 'Retried successfully')
       } catch (error) {
         const attempts = event.attempts + 1
         const backoff = Math.min(Math.pow(2, attempts) * 1000, MAX_BACKOFF_MS)
@@ -129,26 +132,26 @@ async function processQueue(): Promise<void> {
             nextRetryAt: new Date(Date.now() + backoff),
           },
         })
-        console.error('[CloudEventQueue] Retry failed', { id: event.id, eventType: event.eventType, attempts, error: errorMessage })
+        log.error({ id: event.id, eventType: event.eventType, attempts, errMsg: errorMessage }, 'Retry failed')
       }
     }
   } catch (error) {
-    console.error('[CloudEventQueue] Worker cycle failed', error)
+    log.error({ err: error }, 'Worker cycle failed')
   }
 }
 
 export function startCloudEventWorker(): void {
   if (workerInterval) return
   workerInterval = setInterval(() => {
-    void processQueue().catch(console.error)
+    void processQueue().catch((err) => log.error({ err }, 'processQueue unhandled error'))
   }, RETRY_INTERVAL_MS)
-  console.log('[CloudEventQueue] Worker started (30s interval)')
+  log.info({ intervalMs: RETRY_INTERVAL_MS }, 'Worker started')
 }
 
 export function stopCloudEventWorker(): void {
   if (workerInterval) {
     clearInterval(workerInterval)
     workerInterval = null
-    console.log('[CloudEventQueue] Worker stopped')
+    log.info('Worker stopped')
   }
 }

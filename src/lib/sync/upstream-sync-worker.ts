@@ -8,7 +8,10 @@
  * Only runs when SYNC_ENABLED=true and NEON_DATABASE_URL is configured.
  */
 
+import { createChildLogger } from '@/lib/logger'
 import { neonClient, hasNeonConnection } from '../neon-client'
+
+const log = createChildLogger('upstream-sync')
 import { masterClient } from '../db'
 import { getUpstreamModels, getBidirectionalModelNames, UPSTREAM_INTERVAL_MS } from './sync-config'
 import { QUARANTINE_PROTECTED_MODELS } from './sync-conflict-quarantine'
@@ -82,7 +85,7 @@ export async function queueOutageWrite(
       idempotencyKey,
     )
   } catch (err) {
-    console.error(`[UpstreamSync] Failed to queue outage write for ${tableName}:${recordId}:`, err)
+    log.error({ err, table: tableName, recordId }, 'Failed to queue outage write')
   }
 }
 
@@ -129,13 +132,10 @@ async function loadColumnMetadata(): Promise<void> {
         columnTypeMap.set(tableName, castMap)
       }
     } catch (err) {
-      console.error(
-        `[UpstreamSync] Failed to load columns for ${tableName}:`,
-        err instanceof Error ? err.message : err
-      )
+      log.error({ err, table: tableName }, 'Failed to load columns')
     }
   }
-  console.log(`[UpstreamSync] Column metadata loaded for ${columnCache.size} tables`)
+  log.info({ tables: columnCache.size }, 'Column metadata loaded')
 }
 
 /** Build PG type cast from column metadata */
@@ -219,10 +219,7 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
       } catch (versionErr) {
         // Non-fatal — column may not exist yet (migration not run).
         // Fall through to upload with current version.
-        console.warn(
-          `[UpstreamSync] ${tableName} syncVersion increment failed (will sync without version):`,
-          versionErr instanceof Error ? versionErr.message : versionErr
-        )
+        log.warn({ err: versionErr, table: tableName }, 'syncVersion increment failed (will sync without version)')
       }
     }
 
@@ -245,10 +242,7 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
         )
         synced += chunk.length
       } catch (stampErr) {
-        console.error(
-          `[UpstreamSync] ${tableName} batch syncedAt stamp failed (${chunk.length} rows, will retry next cycle):`,
-          stampErr instanceof Error ? stampErr.message : stampErr
-        )
+        log.error({ err: stampErr, table: tableName, rowCount: chunk.length }, 'Batch syncedAt stamp failed (will retry next cycle)')
         metrics.errorCount++
       }
     } catch (err) {
@@ -270,9 +264,7 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
           const rowErrMsg = rowErr instanceof Error ? rowErr.message : String(rowErr)
 
           if (rowErrMsg.includes('unique constraint') || rowErrMsg.includes('duplicate key') || rowErrMsg.includes('Unique constraint')) {
-            console.warn(
-              `[UpstreamSync] ${tableName} row ${row.id}: unique constraint violation on Neon — marking synced to prevent retry loop`
-            )
+            log.warn({ table: tableName, recordId: row.id }, 'Unique constraint violation on Neon — marking synced to prevent retry loop')
             try {
               await masterClient.$executeRawUnsafe(
                 `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
@@ -282,9 +274,7 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
               // Best effort
             }
           } else {
-            console.error(
-              `[UpstreamSync] ${tableName} row ${row.id}:`, rowErrMsg
-            )
+            log.error({ table: tableName, recordId: row.id, errMsg: rowErrMsg }, 'Row sync failed')
           }
           metrics.errorCount++
         }
@@ -309,19 +299,19 @@ async function runSyncCycle(): Promise<void> {
       metrics.errorCount++
       if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
         isInOutage = true
-        console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
+        log.warn({ consecutiveFailures }, 'OUTAGE DETECTED — queuing writes')
         const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
-        if (locId) void dispatchOutageStatus(locId, true).catch(console.error)
+        if (locId) void dispatchOutageStatus(locId, true).catch((err) => log.error({ err }, 'Failed to dispatch outage status'))
       }
       return
     }
 
     // Connectivity restored — clear outage if active
     if (isInOutage) {
-      console.log(`[UpstreamSync] Connectivity restored after ${consecutiveFailures} failures — exiting outage mode`)
+      log.info({ consecutiveFailures }, 'Connectivity restored — exiting outage mode')
       isInOutage = false
       const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
-      if (locId) void dispatchOutageStatus(locId, false).catch(console.error)
+      if (locId) void dispatchOutageStatus(locId, false).catch((err) => log.error({ err }, 'Failed to dispatch outage-cleared status'))
     }
     consecutiveFailures = 0
 
@@ -351,13 +341,10 @@ async function runSyncCycle(): Promise<void> {
         totalSynced += synced
 
         if (synced > 0) {
-          console.log(`[UpstreamSync] ${tableName}: ${synced} rows`)
+          log.info({ table: tableName, rows: synced }, 'Table synced')
         }
       } catch (err) {
-        console.error(
-          `[UpstreamSync] Table ${tableName}:`,
-          err instanceof Error ? err.message : err
-        )
+        log.error({ err, table: tableName }, 'Table sync failed')
         metrics.errorCount++
       }
     }
@@ -379,16 +366,14 @@ async function runSyncCycle(): Promise<void> {
             timestamp: new Date().toISOString(),
           })
         } catch { /* relay not available */ }
-      })().catch(console.error)
+      })().catch((err) => log.error({ err }, 'Relay emit failed'))
     }
 
     if (totalSynced > 0) {
-      console.log(
-        `[UpstreamSync] Cycle: ${totalSynced} synced, ${metrics.pendingCount} pending`
-      )
+      log.info({ synced: totalSynced, pending: metrics.pendingCount }, 'Cycle complete')
     }
   } catch (err) {
-    console.error('[UpstreamSync] Cycle error:', err)
+    log.error({ err }, 'Cycle error')
     metrics.errorCount++
     consecutiveFailures++
 
@@ -402,13 +387,13 @@ async function runSyncCycle(): Promise<void> {
         details: { consecutiveFailures, totalSynced: 0 },
         stackTrace: err instanceof Error ? err.stack : undefined,
       })
-    ).catch(console.error)
+    ).catch((venueErr) => log.error({ err: venueErr }, 'Venue logger failed'))
 
     if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
       isInOutage = true
-      console.warn(`[UpstreamSync] OUTAGE DETECTED — ${consecutiveFailures} consecutive failures, queuing writes`)
+      log.warn({ consecutiveFailures }, 'OUTAGE DETECTED — queuing writes')
       const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
-      if (locId) void dispatchOutageStatus(locId, true).catch(console.error)
+      if (locId) void dispatchOutageStatus(locId, true).catch((err2) => log.error({ err: err2 }, 'Failed to dispatch outage status'))
     }
   } finally {
     cycleRunning = false
@@ -420,11 +405,11 @@ async function runSyncCycle(): Promise<void> {
 export function startUpstreamSyncWorker(): void {
   if (timer) return
   if (!hasNeonConnection()) {
-    console.log('[UpstreamSync] No Neon connection — worker disabled')
+    log.info('No Neon connection — worker disabled')
     return
   }
 
-  console.log(`[UpstreamSync] Starting (interval: ${UPSTREAM_INTERVAL_MS}ms)`)
+  log.info({ intervalMs: UPSTREAM_INTERVAL_MS }, 'Starting')
   metrics.running = true
 
   void loadColumnMetadata().then(() => {
@@ -439,7 +424,7 @@ export function stopUpstreamSyncWorker(): void {
     clearInterval(timer)
     timer = null
     metrics.running = false
-    console.log('[UpstreamSync] Stopped')
+    log.info('Stopped')
   }
 }
 

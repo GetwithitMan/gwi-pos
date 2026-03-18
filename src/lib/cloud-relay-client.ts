@@ -10,6 +10,9 @@
  */
 
 import { io, Socket } from 'socket.io-client'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('cloud-relay')
 
 let relaySocket: Socket | null = null
 let consecutiveFailures = 0
@@ -41,14 +44,14 @@ interface RelayHealthStats {
 export function startCloudRelayClient(): void {
   const url = process.env.CLOUD_RELAY_URL
   if (!url) {
-    console.log('[CloudRelay] CLOUD_RELAY_URL not set — relay disabled')
+    log.info('CLOUD_RELAY_URL not set — relay disabled')
     return
   }
 
   const serverApiKey = process.env.SERVER_API_KEY
   const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
   if (!serverApiKey || !locationId) {
-    console.warn('[CloudRelay] Missing SERVER_API_KEY or POS_LOCATION_ID — relay disabled')
+    log.warn('Missing SERVER_API_KEY or POS_LOCATION_ID — relay disabled')
     return
   }
 
@@ -66,20 +69,20 @@ export function startCloudRelayClient(): void {
   })
 
   relaySocket.on('connect', () => {
-    console.log('[CloudRelay] Connected to', url)
+    log.info({ url }, 'Connected')
     isConnected = true
     consecutiveFailures = 0
     resetFallbackInterval()
   })
 
   relaySocket.on('disconnect', (reason) => {
-    console.log('[CloudRelay] Disconnected:', reason)
+    log.info({ reason }, 'Disconnected')
     isConnected = false
     consecutiveFailures++
 
     if (consecutiveFailures >= FAST_FALLBACK_THRESHOLD) {
       setFallbackInterval(FAST_FALLBACK_INTERVAL_MS)
-      console.warn(`[CloudRelay] ${consecutiveFailures} consecutive failures — polling fallback accelerated to ${FAST_FALLBACK_INTERVAL_MS}ms`)
+      log.warn({ consecutiveFailures, fallbackMs: FAST_FALLBACK_INTERVAL_MS }, 'Polling fallback accelerated')
     }
   })
 
@@ -87,7 +90,7 @@ export function startCloudRelayClient(): void {
     consecutiveFailures++
     // Only log every 5th failure to avoid log spam
     if (consecutiveFailures % 5 === 1) {
-      console.warn(`[CloudRelay] Connection error (attempt ${consecutiveFailures}):`, err.message)
+      log.warn({ consecutiveFailures, errMsg: err.message }, 'Connection error')
     }
 
     if (consecutiveFailures >= FAST_FALLBACK_THRESHOLD) {
@@ -98,17 +101,17 @@ export function startCloudRelayClient(): void {
   // ── Inbound Events from Cloud ──────────────────────────────────────────
 
   relaySocket.on('DATA_CHANGED', (models?: string[]) => {
-    console.log('[CloudRelay] DATA_CHANGED received, models:', models || 'all')
+    log.info({ models: models || 'all' }, 'DATA_CHANGED received')
     void triggerSync(models)
   })
 
   relaySocket.on('CONFIG_UPDATED', (models?: string[]) => {
-    console.log('[CloudRelay] CONFIG_UPDATED received, models:', models || 'all')
+    log.info({ models: models || 'all' }, 'CONFIG_UPDATED received')
     void triggerSync(models)
   })
 
   relaySocket.on('COMMAND', (commandType: string, payload: unknown) => {
-    console.log('[CloudRelay] COMMAND received:', commandType)
+    log.info({ commandType }, 'COMMAND received')
     // Future: handle remote commands (FORCE_SYNC, etc.)
     if (commandType === 'FORCE_SYNC') {
       void triggerSync()
@@ -128,7 +131,7 @@ export function startCloudRelayClient(): void {
   }, 60_000) // Every 60s
   heartbeatTimer.unref()
 
-  console.log('[CloudRelay] Client initialized, connecting to', url)
+  log.info({ url }, 'Client initialized, connecting')
 }
 
 /**
@@ -141,7 +144,7 @@ export function stopCloudRelayClient(): void {
     relaySocket.disconnect()
     relaySocket = null
     isConnected = false
-    console.log('[CloudRelay] Client stopped')
+    log.info('Client stopped')
   }
 }
 
@@ -174,7 +177,7 @@ async function triggerSync(models?: string[]): Promise<void> {
     const { triggerImmediateDownstreamSync } = await import('./sync/downstream-sync-worker')
     await triggerImmediateDownstreamSync(undefined, models)
   } catch (err) {
-    console.error('[CloudRelay] Downstream sync trigger failed:', err instanceof Error ? err.message : err)
+    log.error({ err }, 'Downstream sync trigger failed')
   }
 }
 
@@ -194,7 +197,7 @@ function setFallbackInterval(ms: number): void {
 function resetFallbackInterval(): void {
   if (currentFallbackInterval !== DEFAULT_FALLBACK_INTERVAL_MS) {
     currentFallbackInterval = DEFAULT_FALLBACK_INTERVAL_MS
-    console.log('[CloudRelay] Polling fallback restored to', DEFAULT_FALLBACK_INTERVAL_MS, 'ms')
+    log.info({ fallbackMs: DEFAULT_FALLBACK_INTERVAL_MS }, 'Polling fallback restored')
   }
 }
 

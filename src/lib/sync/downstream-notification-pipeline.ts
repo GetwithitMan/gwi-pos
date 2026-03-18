@@ -8,6 +8,10 @@
  * Replaces inline void hooks in downstream-sync-worker.ts.
  */
 
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('downstream-notify')
+
 type ErrorPolicy = 'log' | 'retry' | 'skip'
 
 interface DownstreamHandler {
@@ -40,7 +44,7 @@ export async function dispatchDownstreamNotifications(
     } catch (err) {
       metrics.get(h.name)!.failure++
       if (h.errorPolicy === 'log') {
-        console.error(`[DownstreamNotify] ${h.name} failed for ${tableName}:${row.id}:`, err instanceof Error ? err.message : err)
+        log.error({ err, handler: h.name, table: tableName, recordId: row.id }, 'Handler failed')
       }
       // 'skip' = silent, 'retry' = future enhancement
     }

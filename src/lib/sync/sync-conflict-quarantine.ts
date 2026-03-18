@@ -13,8 +13,11 @@
  * move to explicit row versions or sync watermarks.
  */
 
+import { createChildLogger } from '@/lib/logger'
 import { masterClient } from '../db'
 import { parseBool } from '../env-parse'
+
+const log = createChildLogger('sync-quarantine')
 
 // ── Mode ─────────────────────────────────────────────────────────────────────
 // SYNC_QUARANTINE_MODE controls behavior when a conflict is detected:
@@ -72,7 +75,7 @@ export async function loadWatermarks(): Promise<void> {
     for (const row of rows) {
       watermarkCache.set(row.locationId, row.lastAcknowledgedDownstreamAt)
     }
-    console.log(`[SyncQuarantine] Loaded ${watermarkCache.size} watermark(s)`)
+    log.info({ count: watermarkCache.size }, 'Loaded watermarks')
   } catch {
     // Table may not exist yet — will be created by migration 075
   }
@@ -92,7 +95,7 @@ export async function updateDownstreamWatermark(locationId: string, acknowledged
       acknowledgedAt.toISOString(),
     )
   } catch (err) {
-    console.error('[SyncQuarantine] Failed to persist watermark:', err instanceof Error ? err.message : err)
+    log.error({ err, locationId }, 'Failed to persist watermark')
   }
 }
 
@@ -163,7 +166,7 @@ export async function checkQuarantine(
 
   const watermark = watermarkCache.get(locationId) ?? new Date('1970-01-01T00:00:00Z')
 
-  console.warn(JSON.stringify({
+  log.warn({
     event: 'sync_conflict_quarantine',
     model,
     recordId,
@@ -175,8 +178,7 @@ export async function checkQuarantine(
     ...(incomingSyncVersion != null ? { incomingSyncVersion } : {}),
     detectionMethod: (incomingSyncVersion != null && localSyncVersion != null) ? 'version' : 'timestamp',
     mode,
-    timestamp: new Date().toISOString(),
-  }))
+  }, 'Sync conflict detected')
 
   // Persist quarantine record
   try {
@@ -192,7 +194,7 @@ export async function checkQuarantine(
     )
   } catch (err) {
     // Non-fatal — table may not exist yet
-    console.error('[SyncQuarantine] Failed to persist conflict record:', err instanceof Error ? err.message : err)
+    log.error({ err, model, recordId }, 'Failed to persist conflict record')
   }
 
   // In blocking mode, skip the downstream upsert — row is quarantined.
