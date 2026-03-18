@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * Transaction payload from offline queue
@@ -137,6 +138,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 refundReason: tx.voidReason || 'Voided before sync',
               },
             })
+          }
+
+          // Emit PAYMENT_VOIDED event if an existing payment was voided
+          if (existingPayment) {
+            void emitOrderEvent(locationId, tx.orderId, 'PAYMENT_VOIDED', {
+              paymentId: existingPayment.id,
+              reason: tx.voidReason || 'Voided offline before sync',
+              employeeId: tx.employeeId || null,
+            }).catch(err => console.error('[SyncResolution] Failed to emit PAYMENT_VOIDED event:', err))
           }
 
           // Log the void attempt for audit
@@ -306,6 +316,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
           return newPayment
         })
+
+        // Emit PAYMENT_APPLIED event for the synced payment
+        void emitOrderEvent(locationId, resolvedOrderId, 'PAYMENT_APPLIED', {
+          paymentId: payment.id,
+          method: tx.method === 'card' ? 'credit' : tx.method,
+          amountCents: Math.round(tx.amount * 100),
+          tipCents: Math.round((tx.tipAmount || 0) * 100),
+          totalCents: Math.round(tx.amount * 100),
+          cardBrand: tx.cardBrand || null,
+          cardLast4: tx.cardLast4 || null,
+          status: 'approved',
+        }).catch(err => console.error('[SyncResolution] Failed to emit PAYMENT_APPLIED event:', err))
 
         // Log successful offline sync
         void logAuditEntry({

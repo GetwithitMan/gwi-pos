@@ -6,6 +6,7 @@ import { mergeWithDefaults, DEFAULT_HOST_VIEW, DEFAULT_WAITLIST_SETTINGS } from 
 import { getNextServer, buildServerInfoList } from '@/lib/host/server-rotation'
 import { dispatchFloorPlanUpdate, dispatchWaitlistChanged, dispatchTableStatusChanged, dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { transition } from '@/lib/reservations/state-machine'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export const dynamic = 'force-dynamic'
 
@@ -193,6 +194,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
         select: { id: true, orderNumber: true },
       })
+
+      // Emit ORDER_CREATED event for the new order
+      void emitOrderEvent(locationId, order.id, 'ORDER_CREATED', {
+        locationId,
+        employeeId: assignedServerId,
+        orderType: 'dine_in',
+        tableId,
+        tabName: null,
+        guestCount: size,
+        orderNumber: nextNum,
+      }).catch(err => console.error('[host/seat] Failed to emit ORDER_CREATED event:', err))
     }
 
     // Update server rotation state (increment table count, update lastSeatedAt)
