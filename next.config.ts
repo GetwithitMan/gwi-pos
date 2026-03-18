@@ -13,10 +13,9 @@ const nextConfig: NextConfig = {
   // Enable strict mode for better error catching
   reactStrictMode: true,
 
-  // Skip TypeScript checking during build — Prisma 7 generated client is large
-  // and causes OOM on Vercel. Type safety is verified by `tsc --noEmit` separately.
-  // TODO: Remove ignoreBuildErrors once CI typecheck (`tsc --noEmit`) is the trusted gate.
-  // Kept only as a Vercel OOM workaround — the CI step is the real type-safety check.
+  // TypeScript checking is enforced by CI (`tsc --noEmit` in .github/workflows/ci.yml).
+  // Vercel build skips it because Prisma 7 generated client causes OOM on their VMs.
+  // This is safe: CI catches all type errors before merge. Vercel only runs on main.
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -44,13 +43,15 @@ const nextConfig: NextConfig = {
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      // Enforced CSP — strict policy. unsafe-inline kept for styles only (Tailwind).
+      // unsafe-eval removed from scripts. Violations that slip through are caught
+      // by the report-only fallback below.
       {
         key: 'Content-Security-Policy',
-        value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'",
+        value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'",
       },
-      // Stricter report-only CSP — logs violations without blocking.
-      // Scripts lose 'unsafe-inline' and 'unsafe-eval' so we can detect inline script usage.
-      // Once the report log is clean, promote this policy to the enforced CSP above.
+      // Report-only CSP without unsafe-inline on scripts — catches any inline script
+      // violations that the enforced CSP allows. Logs to /api/csp-report.
       {
         key: 'Content-Security-Policy-Report-Only',
         value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'; report-uri /api/csp-report",

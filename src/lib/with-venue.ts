@@ -42,6 +42,9 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       const headersList = await headers()
       const slug = headersList.get('x-venue-slug')
 
+      // Hoisted so locationId from verified JWT is available to requestStore below
+      let verifiedLocationId: string | undefined
+
       // ── Tenant JWT verification (when enabled) ──────────────────────
       if (config.tenantJwtEnabled && config.tenantSigningKey && slug) {
         const tenantJwt = headersList.get('x-tenant-context')
@@ -84,6 +87,11 @@ export function withVenue(handler: RouteHandler): RouteHandler {
             { status: 403, headers: { 'Content-Type': 'application/json' } }
           )
         }
+
+        // Capture verified locationId from JWT (cryptographically trusted)
+        if (payload.locationId) {
+          verifiedLocationId = payload.locationId
+        }
       }
 
       if (slug) {
@@ -93,13 +101,23 @@ export function withVenue(handler: RouteHandler): RouteHandler {
         try {
           prisma = getDbForVenue(slug)
         } catch (err) {
-          console.error(`[withVenue] DB routing error for slug "${slug}":`, err)
+          logger.error(`[withVenue] DB routing error for slug "${slug}":`, err)
           return new Response(
             JSON.stringify({ error: 'DB routing error' }),
             { status: 500, headers: { 'Content-Type': 'application/json' } }
           )
         }
-        return requestStore.run({ slug, prisma }, () => handler(request, context))
+
+        // Thread locationId into request context so route handlers can access it
+        // without a bootstrap query. Sources (in priority order):
+        //   1. Signed tenant JWT payload (cryptographically verified above)
+        //   2. x-location-id header (set by proxy for cellular terminals)
+        //   3. undefined (route must bootstrap from entity ID — legacy path)
+        const locationId = verifiedLocationId
+          || headersList.get('x-location-id')
+          || undefined
+
+        return requestStore.run({ slug, prisma, locationId }, () => handler(request, context))
       }
 
       // No slug (main domain, local dev via `next dev`) — use master client
