@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
-import { dispatchFloorPlanUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrderUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * Atomic Seat Management API (Skill 121)
@@ -14,6 +19,10 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
  *
  * INSERT: Add a seat at position N, shift all seats >= N up by 1
  * REMOVE: Remove seat at position N, shift all seats > N down by 1
+ *
+ * Socket events use the transactional outbox pattern — order:updated is written
+ * inside the DB transaction and flushed after commit for crash safety.
+ * Floor plan updates remain fire-and-forget (non-critical UI with snapshot cache).
  */
 
 type SeatTimestamps = Record<string, string>
@@ -48,6 +57,9 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
+    // Resolve employeeId from session
+    const { employeeId } = await getActorFromRequest(request)
+
     const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
@@ -63,6 +75,12 @@ export const GET = withVenue(async function GET(
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Auth check
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Calculate total seat count
@@ -179,12 +197,12 @@ export const GET = withVenue(async function GET(
  *
  * INSERT at position 3 with 4 seats:
  *   Before: [S1, S2, S3, S4]
- *   After:  [S1, S2, NEW, S3→S4, S4→S5]
+ *   After:  [S1, S2, NEW, S3->S4, S4->S5]
  *   Items on S3 become S4, items on S4 become S5
  *
  * REMOVE at position 2 with 4 seats:
  *   Before: [S1, S2, S3, S4]
- *   After:  [S1, S3→S2, S4→S3]
+ *   After:  [S1, S3->S2, S4->S3]
  *   Items on S2 go to "Shared", items on S3 become S2, etc.
  */
 export const POST = withVenue(async function POST(
@@ -201,6 +219,19 @@ export const POST = withVenue(async function POST(
         { error: 'Action is required' },
         { status: 400 }
       )
+    }
+
+    // Resolve employeeId from body or session
+    const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
+
+    // Auth check: fetch order locationId for permission validation (before any mutations)
+    const orderForAuth = await db.order.findUnique({ where: { id: orderId }, select: { locationId: true } })
+    if (!orderForAuth) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+    const auth = await requirePermission(employeeId, orderForAuth.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // RESET_TABLE: Remove ALL temp seats on a table regardless of which order created them
@@ -226,6 +257,13 @@ export const POST = withVenue(async function POST(
         data: { extraSeatCount: 0 },
       })
       void dispatchFloorPlanUpdate(table.locationId, { async: true }).catch(console.error)
+      // Event sourcing: emit GUEST_COUNT_CHANGED for any orders that had extraSeats reset
+      // (orderId in this path is the current order context — emit for it)
+      void emitOrderEvent(table.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+        action: 'RESET_TABLE',
+        tableId: resetTableId,
+        extraSeatCount: 0,
+      }).catch(err => console.error('[order-events] seating RESET_TABLE emit failed:', err))
       return NextResponse.json({ data: { action: 'RESET_TABLE', success: true, softDeletedSeats: deleted.count } })
     }
 
@@ -242,6 +280,13 @@ export const POST = withVenue(async function POST(
       // Dispatch floor plan update so all terminals see temp seats removed
       if (cleaned?.tableId) {
         void dispatchFloorPlanUpdate(cleaned.locationId, { async: true }).catch(console.error)
+      }
+      // Event sourcing: emit GUEST_COUNT_CHANGED for cleanup (extra seats zeroed)
+      if (cleaned) {
+        void emitOrderEvent(cleaned.locationId, orderId, 'GUEST_COUNT_CHANGED', {
+          count: 0, // extraSeatCount reset — actual baseSeatCount still applies
+          action: 'CLEANUP',
+        }).catch(err => console.error('[order-events] seating CLEANUP emit failed:', err))
       }
       return NextResponse.json({ data: { action: 'CLEANUP', success: true } })
     }
@@ -383,12 +428,17 @@ export const POST = withVenue(async function POST(
           if (newTotalSeats > order.baseSeatCount * 2) {
             warning = 'high_seat_count'
           }
-
-          // Floor plan update dispatched after transaction commits (see below)
         }
 
+        // Queue order:updated inside transaction for crash safety
+        const updatedPayload: OrderUpdatedPayload = {
+          orderId,
+          changes: ['seat-insert', ...(warning ? [`warning:${warning}`] : [])],
+        }
+        await queueSocketEvent(tx, locationIdForDispatch!, SOCKET_EVENTS.ORDER_UPDATED, updatedPayload)
+
         return {
-          action: 'INSERT',
+          action: 'INSERT' as const,
           position,
           newTotalSeats,
           seatVersion: updatedOrder.seatVersion,
@@ -463,7 +513,6 @@ export const POST = withVenue(async function POST(
 
         // Delete the most recently added temp seat for this order (LIFO)
         if (order.table) {
-          const locationId = order.table.locationId
           const lastTempSeat = await tx.seat.findFirst({
             where: {
               tableId: order.table.id,
@@ -478,12 +527,17 @@ export const POST = withVenue(async function POST(
             // Soft delete — consistent with project-wide soft-delete policy
             await tx.seat.update({ where: { id: lastTempSeat.id }, data: { deletedAt: new Date() } })
           }
-
-          // Floor plan update dispatched after transaction commits (see below)
         }
 
+        // Queue order:updated inside transaction for crash safety
+        const updatedPayload: OrderUpdatedPayload = {
+          orderId,
+          changes: ['seat-remove', ...(itemsOnRemovedSeat.length > 0 ? [`items-moved-to-shared:${itemsOnRemovedSeat.length}`] : [])],
+        }
+        await queueSocketEvent(tx, locationIdForDispatch!, SOCKET_EVENTS.ORDER_UPDATED, updatedPayload)
+
         return {
-          action: 'REMOVE',
+          action: 'REMOVE' as const,
           position,
           newTotalSeats: currentTotalSeats - 1,
           seatVersion: updatedOrder.seatVersion,
@@ -496,9 +550,17 @@ export const POST = withVenue(async function POST(
       }
     })
 
+    // Flush outbox after transaction commits
+    if (locationIdForDispatch) {
+      void flushSocketOutbox(locationIdForDispatch).catch((err) => {
+        console.warn('[seating] Outbox flush failed, catch-up will deliver:', err)
+      })
+    }
+
     // BUG-C2 fix: Dispatch floor plan update AFTER transaction commits.
     // Previously dispatched inside the transaction, which invalidated the snapshot
     // cache before the seat record was committed — causing stale data to be cached.
+    // Floor plan updates are non-critical UI events — fire-and-forget is appropriate.
     if (locationIdForDispatch) {
       void dispatchFloorPlanUpdate(locationIdForDispatch, { async: true }).catch(console.error)
     }
@@ -508,14 +570,6 @@ export const POST = withVenue(async function POST(
       void emitOrderEvent(locationIdForDispatch, orderId, 'GUEST_COUNT_CHANGED', {
         count: result.newTotalSeats,
       }).catch(console.error)
-    }
-
-    // Dispatch socket event so other terminals know about seat changes
-    if (locationIdForDispatch) {
-      void dispatchOrderUpdated(locationIdForDispatch, {
-        orderId,
-        changes: [`seat-${result.action.toLowerCase()}`, ...(result.itemsMovedToShared ? [`items-moved-to-shared:${result.itemsMovedToShared}`] : [])],
-      }).catch(() => {})
     }
 
     return NextResponse.json({ data: result })

@@ -8,6 +8,7 @@ import {
   dispatchOrderSummaryUpdated,
   buildOrderSummary,
 } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * POST /api/orders/[id]/auto-discounts
@@ -42,6 +43,24 @@ export const POST = withVenue(async function POST(
     }
 
     const result = await evaluateAutoDiscounts(orderId, order.locationId)
+
+    // Emit order events for event sourcing
+    for (const applied of result.applied) {
+      void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
+        discountId: applied.id,
+        type: 'auto',
+        value: applied.percent ?? 0,
+        amountCents: Math.round((applied.amount ?? 0) * 100),
+        reason: applied.name ?? 'Auto-discount',
+        lineItemId: null,
+      }).catch(err => console.error('[auto-discounts] Failed to emit DISCOUNT_APPLIED event:', err))
+    }
+    for (const discountId of result.removed) {
+      void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+        discountId,
+        lineItemId: null,
+      }).catch(err => console.error('[auto-discounts] Failed to emit DISCOUNT_REMOVED event:', err))
+    }
 
     // Fire-and-forget socket dispatches for cross-terminal sync
     if (result.applied.length > 0 || result.removed.length > 0) {

@@ -4,8 +4,13 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader, normalizeCardholderName } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { TabUpdatedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
@@ -43,6 +48,12 @@ export const POST = withVenue(async function POST(
     }
 
     const locationId = order.locationId
+
+    // Auth check
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
     const settings = parseSettings(order.location.settings)
 
     // Pre-auth amount = current order total (first drink), minimum $1
@@ -75,6 +86,11 @@ export const POST = withVenue(async function POST(
           data: { tabStatus: 'open', version: { increment: 1 } },
         })
         console.warn('[EDGE-7] Auto-recovered stale pending_auth', { orderId, staleAt: order.updatedAt.toISOString() })
+        // Event sourcing: record the auto-recovery as metadata update
+        void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+          tabStatus: 'open',
+          reason: 'stale_pending_auth_recovery',
+        }).catch(err => console.error('[order-events] EDGE-7 recovery emit failed:', err))
       } else {
         // Still within 5-minute window — another terminal may be processing
         return NextResponse.json({
@@ -151,28 +167,40 @@ export const POST = withVenue(async function POST(
     const approved = preAuthResponse.cmdStatus === 'Approved'
 
     if (!approved) {
-      // Decline — update tab status to auth_failed, don't create OrderCard
+      // Decline — update tab status + queue socket events atomically
       const declineFirstName = normalizeCardholderName(cardholderName)
-      await db.order.update({
-        where: { id: orderId },
-        data: {
-          tabStatus: 'auth_failed',
-          tabName: declineFirstName || order.tabName,
-          version: { increment: 1 },
-        },
+      await db.$transaction(async (tx) => {
+        await tx.order.update({
+          where: { id: orderId },
+          data: {
+            tabStatus: 'auth_failed',
+            tabName: declineFirstName || order.tabName,
+            version: { increment: 1 },
+          },
+        })
+
+        // Queue socket events inside transaction for crash safety
+        const tabPayload: TabUpdatedPayload = { orderId, status: 'auth_failed' }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.TAB_UPDATED, tabPayload)
+
+        const listPayload: OrdersListChangedPayload = {
+          trigger: 'updated',
+          orderId,
+          tableId: order.tableId || undefined,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
       })
 
-      // Fire-and-forget: notify all terminals of auth failure
-      void dispatchTabUpdated(locationId, {
-        orderId,
-        status: 'auth_failed',
-      }).catch(() => {})
-      dispatchTabStatusUpdate(locationId, { orderId, status: 'auth_failed' })
-      void dispatchOpenOrdersChanged(locationId, {
-        trigger: 'created',
-        orderId,
-        tableId: order.tableId || undefined,
-      }).catch(() => {})
+      // Flush outbox after commit
+      void flushSocketOutbox(locationId).catch((err) => {
+        console.warn('[open-tab] Outbox flush failed, catch-up will deliver:', err)
+      })
+
+      // Event sourcing: record the auth failure as metadata update
+      void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+        tabStatus: 'auth_failed',
+        tabName: declineFirstName || order.tabName || null,
+      }).catch(err => console.error('[order-events] open-tab decline emit failed:', err))
 
       return NextResponse.json({
         data: {

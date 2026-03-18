@@ -5,8 +5,9 @@
  * and distributes discounts proportionally.
  */
 
-import { OrderItemStatus } from '@prisma/client'
+import { OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, ItemSplitResult } from './types'
 
@@ -312,6 +313,40 @@ export async function createItemSplit(
       version: { increment: 1 },
     },
   })
+
+  // ── Event emission (fire-and-forget, outside transaction) ──
+  // Emit ITEM_REMOVED for each item moved from the source order
+  void emitOrderEvents(order.locationId, order.id, validItemsToMove.map(item => ({
+    type: 'ITEM_REMOVED' as const,
+    payload: {
+      lineItemId: item.id,
+      reason: `Moved to split order #${baseOrderNumber}-${nextSplitIndex}`,
+    },
+  }))).catch(err => console.error('[item-split] Failed to emit ITEM_REMOVED events:', err))
+
+  // Emit ORDER_CREATED for the new child split order
+  void emitOrderEvent(order.locationId, newOrder.id, 'ORDER_CREATED', {
+    locationId: order.locationId,
+    employeeId: order.employeeId,
+    orderType: order.orderType || 'dine_in',
+    tableId: order.tableId,
+    tabName: order.tabName,
+    guestCount: 1,
+    orderNumber: newOrder.orderNumber,
+    displayNumber: newOrder.displayNumber,
+    parentOrderId: order.parentOrderId || order.id,
+    splitIndex: nextSplitIndex,
+    splitType: 'by_item',
+    movedItemCount: validItemsToMove.length,
+  }).catch(err => console.error('[item-split] Failed to emit ORDER_CREATED for child:', err))
+
+  // Emit ORDER_CLOSED on the parent order with closedStatus='split'
+  void emitOrderEvent(order.locationId, order.id, 'ORDER_CLOSED', {
+    closedStatus: 'split',
+    reason: `Item split — ${validItemsToMove.length} item(s) moved`,
+    splitType: 'by_item',
+    childOrderIds: [newOrder.id],
+  }).catch(err => console.error('[item-split] Failed to emit ORDER_CLOSED for parent:', err))
 
   return {
     newOrder,

@@ -18,6 +18,7 @@ import {
 } from '@/lib/domain/tips/table-ownership'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -155,6 +156,13 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       customPercent,
     })
 
+    // Emit order event for ownership change
+    void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+      employeeId,
+      ownershipAction: 'owner_added',
+      splitType,
+    }).catch(err => console.error('[ownership] Failed to emit ORDER_METADATA_UPDATED event:', err))
+
     return NextResponse.json({ data: { ownership } })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -242,6 +250,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       splits,
     })
 
+    // Emit order event for ownership splits update
+    void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+      ownershipAction: 'splits_updated',
+      splitCount: splits.length,
+    }).catch(err => console.error('[ownership] Failed to emit ORDER_METADATA_UPDATED event:', err))
+
     // Fire-and-forget socket dispatch for cross-terminal sync
     void dispatchOrderUpdated(locationId, {
       orderId,
@@ -305,6 +319,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       )
     }
 
+    // ── Fetch order for locationId (needed for auth check + event emission) ──
+    const { db: database } = await import('@/lib/db')
+    const orderForDelete = await database.order.findUnique({
+      where: { id: orderId },
+      select: { locationId: true },
+    })
+
     // ── Auth check ──────────────────────────────────────────────────────
     // Self-removal: the requesting employee is removing themselves
     // Manager: requires TIPS_MANAGE_GROUPS permission
@@ -312,15 +333,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     const isSelfRemoval = requestingEmployeeId === employeeId
 
     if (!isSelfRemoval) {
-      // Need locationId for permission check — get it from the ownership record
-      // We look up the order to find locationId
-      const { db } = await import('@/lib/db')
-      const order = await db.order.findUnique({
-        where: { id: orderId },
-        select: { locationId: true },
-      })
-
-      if (!order) {
+      if (!orderForDelete) {
         return NextResponse.json(
           { error: 'Order not found' },
           { status: 404 }
@@ -329,7 +342,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
 
       const auth = await requireAnyPermission(
         requestingEmployeeId,
-        order.locationId,
+        orderForDelete.locationId,
         [PERMISSIONS.TIPS_MANAGE_GROUPS]
       )
       if (!auth.authorized) {
@@ -353,6 +366,14 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
 
     // null means ownership was deactivated (no owners remaining)
     const deactivated = result === null
+
+    // Emit order event for ownership removal
+    if (orderForDelete?.locationId) {
+      void emitOrderEvent(orderForDelete.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+        employeeId,
+        ownershipAction: deactivated ? 'ownership_deactivated' : 'owner_removed',
+      }).catch(err => console.error('[ownership] Failed to emit ORDER_METADATA_UPDATED event:', err))
+    }
 
     return NextResponse.json({ data: {
       success: true,

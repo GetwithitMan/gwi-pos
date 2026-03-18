@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { FloorPlanElementStatus, EntertainmentWaitlistStatus } from '@prisma/client'
+import { FloorPlanElementStatus, EntertainmentWaitlistStatus } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentWaitlistNotify, dispatchEntertainmentWaitlistChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import {
   validateEntertainmentStatus,
   calculateMinutesRemaining,
@@ -346,6 +347,31 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         sessionExpiresAt: true,
       },
     })
+
+    // ── Event emission for entertainment status changes ──
+    // When an entertainment item transitions to 'available' (session ended) and was linked to an order
+    if (status === 'available' && element.currentOrderId) {
+      void emitOrderEvent(locationId, element.currentOrderId, 'ORDER_METADATA_UPDATED', {
+        entertainmentStatus: 'available',
+        elementId,
+        elementName: updatedElement.name || updatedElement.visualType,
+        sessionEnded: true,
+      }).catch(err => console.error('[entertainment/status] Failed to emit ORDER_METADATA_UPDATED (session ended):', err))
+    }
+
+    // When an entertainment item transitions to 'in_use' with an order linked
+    if (status === 'in_use' && (currentOrderId || element.currentOrderId)) {
+      const linkedOrderId = currentOrderId || element.currentOrderId
+      if (linkedOrderId) {
+        void emitOrderEvent(locationId, linkedOrderId, 'ORDER_METADATA_UPDATED', {
+          entertainmentStatus: 'in_use',
+          elementId,
+          elementName: updatedElement.name || updatedElement.visualType,
+          sessionStartedAt: updatedElement.sessionStartedAt?.toISOString() || null,
+          sessionExpiresAt: updatedElement.sessionExpiresAt?.toISOString() || null,
+        }).catch(err => console.error('[entertainment/status] Failed to emit ORDER_METADATA_UPDATED (session started):', err))
+      }
+    }
 
     // When entering maintenance, cancel all waiting/notified waitlist entries
     if (status === 'maintenance') {

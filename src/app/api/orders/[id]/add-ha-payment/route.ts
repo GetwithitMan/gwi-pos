@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Add a house account balance payment as an order line item
 export const POST = withVenue(async function POST(
@@ -172,6 +173,18 @@ export const POST = withVenue(async function POST(
         total: newTotal,
       },
     })
+
+    // Emit order events for event sourcing
+    void emitOrderEvent(order.locationId, orderId, 'ITEM_ADDED', {
+      lineItemId: orderItem.id,
+      menuItemId: systemMenuItem.id,
+      name: orderItem.name,
+      priceCents: Math.round(amount * 100),
+      quantity: 1,
+      isHeld: false,
+      soldByWeight: false,
+      specialNotes: orderItem.specialNotes,
+    }).catch(err => console.error('[add-ha-payment] Failed to emit ITEM_ADDED event:', err))
 
     // Emit socket events for real-time updates
     void dispatchOpenOrdersChanged(order.locationId, {

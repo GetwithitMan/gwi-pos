@@ -5,8 +5,9 @@
  * Items without seat assignments stay on the parent.
  */
 
-import { OrderItemStatus } from '@prisma/client'
+import { OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, SeatSplitResult } from './types'
 
@@ -303,6 +304,45 @@ export async function createSeatSplit(
       version: { increment: 1 },
     },
   })
+
+  // ── Event emission (fire-and-forget, outside transaction) ──
+  // Emit ITEM_REMOVED for each item moved from the source order
+  if (itemIdsToRemove.length > 0) {
+    void emitOrderEvents(order.locationId, order.id, itemIdsToRemove.map(itemId => ({
+      type: 'ITEM_REMOVED' as const,
+      payload: {
+        lineItemId: itemId,
+        reason: 'Moved via seat split',
+      },
+    }))).catch(err => console.error('[seat-split] Failed to emit ITEM_REMOVED events:', err))
+  }
+
+  // Emit ORDER_CREATED for each child split order (one per seat)
+  for (const child of splitOrders) {
+    void emitOrderEvent(order.locationId, child.id, 'ORDER_CREATED', {
+      locationId: order.locationId,
+      employeeId: order.employeeId,
+      orderType: order.orderType || 'dine_in',
+      tableId: order.tableId,
+      tabName: order.tabName,
+      guestCount: 1,
+      orderNumber: child.orderNumber,
+      displayNumber: child.displayNumber,
+      parentOrderId: order.id,
+      splitIndex: child.splitIndex,
+      splitType: 'by_seat',
+      seatNumber: child.seatNumber,
+    }).catch(err => console.error('[seat-split] Failed to emit ORDER_CREATED for child:', err))
+  }
+
+  // Emit ORDER_CLOSED on the parent order with closedStatus='split'
+  void emitOrderEvent(order.locationId, order.id, 'ORDER_CLOSED', {
+    closedStatus: 'split',
+    reason: `Seat split — ${sortedSeats.length} seat(s)`,
+    splitType: 'by_seat',
+    childOrderIds: splitOrders.map(c => c.id),
+    seatNumbers: sortedSeats,
+  }).catch(err => console.error('[seat-split] Failed to emit ORDER_CLOSED for parent:', err))
 
   return {
     splitOrders,

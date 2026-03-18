@@ -6,6 +6,7 @@
  */
 
 import { roundToCents } from '@/lib/pricing'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsForEvenSplit } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, EvenSplitResult } from './types'
 
@@ -109,6 +110,33 @@ export async function createEvenSplit(
       version: { increment: 1 },
     },
   })
+
+  // ── Event emission (fire-and-forget, outside transaction) ──
+  // Emit ORDER_CREATED for each child split order
+  for (const child of createdSplits) {
+    void emitOrderEvent(order.locationId, child.id, 'ORDER_CREATED', {
+      locationId: order.locationId,
+      employeeId: order.employeeId,
+      orderType: order.orderType || 'dine_in',
+      tableId: order.tableId,
+      tabName: order.tabName,
+      guestCount: 1,
+      orderNumber: child.orderNumber,
+      displayNumber: child.displayNumber,
+      parentOrderId: order.id,
+      splitIndex: child.splitIndex,
+      splitType: 'even',
+    }).catch(err => console.error('[even-split] Failed to emit ORDER_CREATED for child:', err))
+  }
+
+  // Emit ORDER_CLOSED on the parent order with closedStatus='split'
+  void emitOrderEvent(order.locationId, order.id, 'ORDER_CLOSED', {
+    closedStatus: 'split',
+    reason: `Even split ${numWays} ways`,
+    splitType: 'even',
+    childOrderIds: createdSplits.map(c => c.id),
+    numWays,
+  }).catch(err => console.error('[even-split] Failed to emit ORDER_CLOSED for parent:', err))
 
   return { splitOrders: createdSplits }
 }

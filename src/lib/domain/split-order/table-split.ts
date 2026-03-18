@@ -5,8 +5,9 @@
  * Items without table assignments stay on the parent.
  */
 
-import { OrderItemStatus } from '@prisma/client'
+import { OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
+import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, TableSplitResult } from './types'
 
@@ -307,6 +308,44 @@ export async function createTableSplit(
       version: { increment: 1 },
     },
   })
+
+  // ── Event emission (fire-and-forget, outside transaction) ──
+  // Emit ITEM_REMOVED for each item moved from the source order
+  if (itemIdsToRemove.length > 0) {
+    void emitOrderEvents(order.locationId, order.id, itemIdsToRemove.map(itemId => ({
+      type: 'ITEM_REMOVED' as const,
+      payload: {
+        lineItemId: itemId,
+        reason: 'Moved via table split',
+      },
+    }))).catch(err => console.error('[table-split] Failed to emit ITEM_REMOVED events:', err))
+  }
+
+  // Emit ORDER_CREATED for each child split order (one per table)
+  for (const child of splitOrders) {
+    void emitOrderEvent(order.locationId, child.id, 'ORDER_CREATED', {
+      locationId: order.locationId,
+      employeeId: order.employeeId,
+      orderType: order.orderType || 'dine_in',
+      tableId: child.tableId,
+      tabName: order.tabName,
+      guestCount: 1,
+      orderNumber: child.orderNumber,
+      displayNumber: child.displayNumber,
+      parentOrderId: order.id,
+      splitIndex: child.splitIndex,
+      splitType: 'by_table',
+      tableName: child.tableName,
+    }).catch(err => console.error('[table-split] Failed to emit ORDER_CREATED for child:', err))
+  }
+
+  // Emit ORDER_CLOSED on the parent order with closedStatus='split'
+  void emitOrderEvent(order.locationId, order.id, 'ORDER_CLOSED', {
+    closedStatus: 'split',
+    reason: `Table split — ${tablesWithItems.length} table(s)`,
+    splitType: 'by_table',
+    childOrderIds: splitOrders.map(c => c.id),
+  }).catch(err => console.error('[table-split] Failed to emit ORDER_CLOSED for parent:', err))
 
   return {
     splitOrders,

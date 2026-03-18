@@ -50,6 +50,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               where: { id: { in: expiredItems.map(i => i.id) } },
               data: { kitchenStatus: 'delivered', isCompleted: true, completedAt: new Date() },
             })
+            // Group expired items by orderId for batched event emission
+            const expiredByOrder = new Map<string, string[]>()
             for (const item of expiredItems) {
               dispatchItemStatus(locationId!, {
                 orderId: item.orderId,
@@ -58,6 +60,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 stationId: '',
                 updatedBy: 'system',
               }, { async: true }).catch(console.error)
+              const list = expiredByOrder.get(item.orderId) || []
+              list.push(item.id)
+              expiredByOrder.set(item.orderId, list)
+            }
+            // Event sourcing: emit ITEM_UPDATED for expired entertainment items
+            for (const [oid, ids] of expiredByOrder) {
+              void emitOrderEvents(locationId!, oid, ids.map(id => ({
+                type: 'ITEM_UPDATED' as const,
+                payload: { lineItemId: id, kitchenStatus: 'delivered', isCompleted: true },
+              }))).catch(err => console.error('[order-events] KDS entertainment expiry emit failed:', err))
             }
           }
         } catch (err) {
