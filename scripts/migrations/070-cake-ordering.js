@@ -502,6 +502,17 @@ module.exports.up = async function up(prisma) {
     console.log(`${PREFIX} CakeOrderChange_changeType_check already exists`)
   }
 
+  // ─── 14b. Ensure OrderType.allowTips column exists ─────────────────────────────
+  // Column is in the Prisma schema but may not exist yet on Neon (no prior migration added it).
+  const allowTipsExists = await prisma.$queryRawUnsafe(`
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'OrderType' AND column_name = 'allowTips' LIMIT 1
+  `)
+  if (allowTipsExists.length === 0) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "OrderType" ADD COLUMN "allowTips" BOOLEAN NOT NULL DEFAULT true`)
+    console.log(`${PREFIX} Added OrderType.allowTips column`)
+  }
+
   // ─── 15. Seed system OrderTypes per Location ──────────────────────────────────
   // cake_deposit_settlement: isSystem=true, no tips, immutable, skip KDS/print
   const depositSeeded = await prisma.$queryRawUnsafe(`
