@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type { Socket } from 'socket.io-client'
@@ -80,6 +80,14 @@ function isOrderReady(order: TrackerOrder): boolean {
 // ---------------------------------------------------------------------------
 
 export default function OrderTrackerPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-black text-white">Loading...</div>}>
+      <OrderTrackerContent />
+    </Suspense>
+  )
+}
+
+function OrderTrackerContent() {
   const searchParams = useSearchParams()
   const locationId = searchParams.get('locationId')
 
