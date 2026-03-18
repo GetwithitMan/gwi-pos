@@ -28,6 +28,7 @@ import {
   getRetryableEvents,
   markRetryAttempt,
 } from './socket-ack-queue'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // Dynamic import for socket.io (optional dependency)
 const io: typeof import('socket.io').Server | null = null
@@ -713,6 +714,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           trigger: 'transferred',
           orderId,
         })
+        // Fire-and-forget: emit ORDER_METADATA_UPDATED for event-sourced sync
+        void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+          employeeId,
+        }).catch(err => console.error('[Socket] Failed to emit ORDER_METADATA_UPDATED for tab transfer:', err))
       }).catch((err: unknown) => {
         console.error('[Socket] tab:transfer-request DB update failed:', err)
         socket.emit('tab:error', { orderId, message: 'Failed to transfer tab' })

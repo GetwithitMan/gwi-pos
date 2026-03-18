@@ -11,6 +11,7 @@ import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * Detect potential walkouts for a location.
@@ -127,6 +128,12 @@ export async function detectPotentialWalkouts(locationId: string): Promise<{
         },
       },
     })
+
+    // Fire-and-forget: emit WALKOUT_MARKED event for event-sourced sync
+    void emitOrderEvent(locationId, order.id, 'WALKOUT_MARKED', {
+      reason: 'walkout_detector',
+      employeeId: null,
+    }).catch(err => console.error('[WalkoutDetector] Failed to emit WALKOUT_MARKED:', err))
 
     flaggedOrders.push({
       id: order.id,

@@ -6,6 +6,7 @@
  */
 
 import { db } from '@/lib/db'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // ============================================================================
 // ORDER ITEM BATCH UPDATES
@@ -36,6 +37,24 @@ export async function batchUpdateOrderItemStatus(
     where: { id: { in: itemIds } },
     data,
   })
+
+  // Fire-and-forget: emit ITEM_UPDATED for each affected item
+  void (async () => {
+    try {
+      const items = await db.orderItem.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true, orderId: true, order: { select: { locationId: true } } },
+      })
+      for (const item of items) {
+        void emitOrderEvent(item.order.locationId, item.orderId, 'ITEM_UPDATED', {
+          lineItemId: item.id,
+          kitchenStatus: status,
+        }).catch(err => console.error('[batch-updates] Failed to emit ITEM_UPDATED:', err))
+      }
+    } catch (err) {
+      console.error('[batch-updates] Failed to look up items for event emission:', err)
+    }
+  })()
 }
 
 // ============================================================================
