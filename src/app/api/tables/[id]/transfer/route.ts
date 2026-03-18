@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
@@ -37,9 +38,8 @@ export const POST = withVenue(async function POST(
     }
 
     // Verify target employee exists
-    const toEmployee = await db.employee.findUnique({
-      where: { id: toEmployeeId },
-      select: { id: true, firstName: true, lastName: true, displayName: true },
+    const toEmployee = await EmployeeRepository.getEmployeeByIdWithSelect(toEmployeeId, table.locationId, {
+      id: true, firstName: true, lastName: true, displayName: true,
     })
 
     if (!toEmployee) {
@@ -50,28 +50,16 @@ export const POST = withVenue(async function POST(
     }
 
     // Find all open orders for this table and transfer them
-    const openOrders = await db.order.findMany({
-      where: {
-        tableId,
-        status: { in: ['open', 'sent'] },
-      },
-    })
+    const openOrders = await OrderRepository.getActiveOrdersForTable(tableId, table.locationId)
 
-    // Update all orders to new employee
-    if (openOrders.length > 0) {
-      await db.order.updateMany({
-        where: {
-          tableId,
-          status: { in: ['open', 'sent'] },
-        },
-        data: {
-          employeeId: toEmployeeId,
-        },
-      })
+    // Update all orders to new employee (filter to open/sent only like original)
+    const transferableOrders = openOrders.filter(o => o.status === 'open' || o.status === 'sent')
+    for (const order of transferableOrders) {
+      await OrderRepository.updateOrder(order.id, table.locationId, { employeeId: toEmployeeId })
     }
 
     // Create audit log entry for each transferred order
-    for (const order of openOrders) {
+    for (const order of transferableOrders) {
       await db.auditLog.create({
         data: {
           locationId: table.locationId,
@@ -103,7 +91,7 @@ export const POST = withVenue(async function POST(
         entityId: tableId,
         details: {
           tableName: table.name,
-          ordersTransferred: openOrders.length,
+          ordersTransferred: transferableOrders.length,
           fromEmployeeId,
           toEmployeeId,
           toEmployeeName: toEmployee.displayName || `${toEmployee.firstName} ${toEmployee.lastName}`,
@@ -113,7 +101,7 @@ export const POST = withVenue(async function POST(
     })
 
     // Emit order events for each transferred order (fire-and-forget)
-    for (const order of openOrders) {
+    for (const order of transferableOrders) {
       void emitOrderEvent(table.locationId, order.id, 'ORDER_METADATA_UPDATED', {
         employeeId: toEmployeeId,
       })
@@ -132,8 +120,8 @@ export const POST = withVenue(async function POST(
         id: toEmployee.id,
         name: toEmployee.displayName || `${toEmployee.firstName} ${toEmployee.lastName}`,
       },
-      ordersTransferred: openOrders.length,
-      orderIds: openOrders.map(o => o.id),
+      ordersTransferred: transferableOrders.length,
+      orderIds: transferableOrders.map(o => o.id),
     } })
   } catch (error) {
     console.error('Failed to transfer table:', error)

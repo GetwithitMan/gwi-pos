@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_HOST_VIEW, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
@@ -159,16 +160,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Check for an existing open order on this table
-    let order = await db.order.findFirst({
-      where: {
-        locationId,
-        tableId,
-        status: { in: ['open', 'pending'] },
-        deletedAt: null,
-      },
-      select: { id: true, orderNumber: true },
-    })
+    // Check for an existing open order on this table (tenant-scoped)
+    const existingTableOrders = await OrderRepository.getActiveOrdersForTable(tableId, locationId)
+    let order: { id: string; orderNumber: number } | null =
+      existingTableOrders.length > 0
+        ? { id: existingTableOrders[0].id, orderNumber: existingTableOrders[0].orderNumber }
+        : null
 
     // Create a new order if none exists
     if (!order && assignedServerId) {
@@ -232,9 +229,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Fetch assigned server name for response
     let serverName: string | null = null
     if (assignedServerId) {
-      const emp = await db.employee.findUnique({
-        where: { id: assignedServerId },
-        select: { firstName: true, lastName: true },
+      const emp = await EmployeeRepository.getEmployeeByIdWithSelect(assignedServerId, locationId, {
+        firstName: true, lastName: true,
       })
       if (emp) serverName = `${emp.firstName} ${emp.lastName}`.trim()
     }

@@ -6,6 +6,7 @@ import { getCompanyUsers } from '@/lib/7shifts-client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
+import { EmployeeRepository } from '@/lib/repositories'
 
 /**
  * POST /api/integrations/7shifts/sync-employees
@@ -86,10 +87,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Guard (c): Deactivate employees that are inactive in 7shifts
     if (!user.is_active) {
       if (existing && existing.isActive && !existing.deletedAt) {
-        await db.employee.update({
-          where: { id: existing.id },
-          data: { isActive: false },
-        })
+        await EmployeeRepository.deactivateEmployee(existing.id, location.id)
         reasons.push(`Deactivated: ${fullName} — inactive in 7shifts`)
         deactivated++
       } else if (!existing) {
@@ -103,10 +101,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (existing) {
       // Already linked — reactivate if previously deactivated
       if (!existing.isActive || existing.deletedAt) {
-        await db.employee.update({
-          where: { id: existing.id },
-          data: { isActive: true, deletedAt: null },
-        })
+        await EmployeeRepository.updateEmployee(existing.id, location.id, { isActive: true, deletedAt: null })
         reasons.push(`Reactivated: ${fullName}`)
       }
       synced++
@@ -116,20 +111,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Guard (b): Create employee without PIN as inactive
     // New employee from 7shifts — create in POS
     // They need a PIN assignment before they can use the system
-    await db.employee.create({
-      data: {
-        locationId: location.id,
-        firstName: user.first_name,
-        lastName: user.last_name,
-        email: user.email || null,
-        pin: '0000', // Placeholder — must be changed
-        requiresPinChange: true,
-        roleId: defaultRole.id,
-        isActive: false, // Inactive until PIN is assigned
-        sevenShiftsUserId: String(user.id),
-        sevenShiftsRoleId: user.role_ids[0] ? String(user.role_ids[0]) : null,
-        sevenShiftsDepartmentId: user.department_ids?.[0] ? String(user.department_ids[0]) : null,
-      },
+    await EmployeeRepository.createEmployee(location.id, {
+      firstName: user.first_name,
+      lastName: user.last_name,
+      email: user.email || null,
+      pin: '0000', // Placeholder — must be changed
+      requiresPinChange: true,
+      roleId: defaultRole.id,
+      isActive: false, // Inactive until PIN is assigned
+      sevenShiftsUserId: String(user.id),
+      sevenShiftsRoleId: user.role_ids[0] ? String(user.role_ids[0]) : null,
+      sevenShiftsDepartmentId: user.department_ids?.[0] ? String(user.department_ids[0]) : null,
     })
 
     reasons.push(`Created (inactive): ${fullName} — needs PIN assignment`)

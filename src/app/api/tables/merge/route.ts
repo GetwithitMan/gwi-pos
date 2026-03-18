@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
@@ -59,18 +60,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Find open orders on source table
-    const openOrders = await db.order.findMany({
-      where: {
-        tableId: sourceTableId,
-        status: { in: ['open', 'sent', 'in_progress', 'split'] },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        orderNumber: true,
-      },
-    })
+    // Find open orders on source table (tenant-scoped)
+    const openOrders = await OrderRepository.getActiveOrdersForTable(sourceTableId, locationId)
 
     if (openOrders.length === 0) {
       return NextResponse.json(
@@ -81,17 +72,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // --- Execute merge in a transaction ---
     await db.$transaction(async (tx) => {
-      // Move all open orders from source to target
-      await tx.order.updateMany({
-        where: {
-          tableId: sourceTableId,
-          status: { in: ['open', 'sent', 'in_progress', 'split'] },
-          deletedAt: null,
-        },
-        data: {
-          tableId: targetTableId,
-        },
-      })
+      // Move all open orders from source to target (tenant-scoped)
+      for (const order of openOrders) {
+        await OrderRepository.updateOrder(order.id, locationId, { tableId: targetTableId }, tx)
+      }
 
       // Set source table back to available
       await tx.table.update({

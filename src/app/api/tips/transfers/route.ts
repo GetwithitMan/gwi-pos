@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
+import { EmployeeRepository } from '@/lib/repositories'
 import {
   postToTipLedger,
   getLedgerEntries,
@@ -92,13 +93,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // ── Look up employee names (read-only, outside transaction) ──────────
     const [fromEmployee, toEmployee] = await Promise.all([
-      db.employee.findUnique({
-        where: { id: fromEmployeeId, deletedAt: null },
-        select: { id: true, firstName: true, lastName: true, displayName: true },
+      EmployeeRepository.getEmployeeByIdWithSelect(fromEmployeeId, locationId, {
+        id: true, firstName: true, lastName: true, displayName: true,
       }),
-      db.employee.findUnique({
-        where: { id: toEmployeeId, deletedAt: null },
-        select: { id: true, firstName: true, lastName: true, displayName: true },
+      EmployeeRepository.getEmployeeByIdWithSelect(toEmployeeId, locationId, {
+        id: true, firstName: true, lastName: true, displayName: true,
       }),
     ])
 

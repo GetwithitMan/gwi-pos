@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
@@ -7,6 +8,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export const dynamic = 'force-dynamic'
 
@@ -223,10 +225,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // If there's an orderId, update the order type to delivery
     if (orderId) {
-      void db.order.updateMany({
-        where: { id: orderId, locationId },
-        data: { orderType: 'delivery' },
-      }).catch(console.error)
+      void OrderRepository.updateOrder(orderId, locationId, { orderType: 'delivery' }).catch(console.error)
+
+      // Emit ORDER_METADATA_UPDATED for the order type change
+      void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+        orderType: 'delivery',
+        deliveryOrderId: delivery.id,
+        customerName: customerName.trim(),
+        address: address?.trim() || null,
+      }).catch(err => console.error('[delivery] Failed to emit ORDER_METADATA_UPDATED:', err))
     }
 
     // Fire-and-forget socket dispatch

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged, dispatchEntertainmentUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -22,36 +23,27 @@ async function recalculateOrderAfterPriceChange(
   locationId: string
 ): Promise<void> {
   try {
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      select: {
-        tipTotal: true,
-        discountTotal: true,
-        isTaxExempt: true,
-        location: { select: { settings: true } },
-      },
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+      location: { select: { settings: true } },
     })
     if (!order) return
 
     const totals = await recalculateOrderTotals(
       db,
       orderId,
-      order.location.settings,
+      (order as any).location.settings,
       Number(order.tipTotal) || 0,
       order.isTaxExempt
     )
 
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        subtotal: totals.subtotal,
-        taxTotal: totals.taxTotal,
-        taxFromInclusive: totals.taxFromInclusive,
-        taxFromExclusive: totals.taxFromExclusive,
-        total: totals.total,
-        commissionTotal: totals.commissionTotal,
-        itemCount: totals.itemCount,
-      },
+    await OrderRepository.updateOrder(orderId, locationId, {
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      taxFromInclusive: totals.taxFromInclusive,
+      taxFromExclusive: totals.taxFromExclusive,
+      total: totals.total,
+      commissionTotal: totals.commissionTotal,
+      itemCount: totals.itemCount,
     })
 
     // Dispatch real-time totals update so all terminals see the corrected tax
@@ -102,41 +94,38 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get the order item and verify it's an entertainment item
-    const orderItem = await db.orderItem.findUnique({
-      where: { id: orderItemId },
-      include: {
-        menuItem: {
-          select: {
-            id: true,
-            name: true,
-            itemType: true,
-            price: true,
-            timedPricing: true,
-            ratePerMinute: true,
-            minimumCharge: true,
-            incrementMinutes: true,
-            graceMinutes: true,
-            blockTimeMinutes: true,
-            happyHourEnabled: true,
-            happyHourDiscount: true,
-            happyHourStart: true,
-            happyHourEnd: true,
-            happyHourDays: true,
-            prepaidPackages: true,
-            overtimeEnabled: true,
-            overtimeMode: true,
-            overtimeMultiplier: true,
-            overtimePerMinuteRate: true,
-            overtimeFlatFee: true,
-            overtimeGraceMinutes: true,
-          },
+    const orderItem = await OrderItemRepository.getItemByIdWithInclude(orderItemId, locationId, {
+      menuItem: {
+        select: {
+          id: true,
+          name: true,
+          itemType: true,
+          price: true,
+          timedPricing: true,
+          ratePerMinute: true,
+          minimumCharge: true,
+          incrementMinutes: true,
+          graceMinutes: true,
+          blockTimeMinutes: true,
+          happyHourEnabled: true,
+          happyHourDiscount: true,
+          happyHourStart: true,
+          happyHourEnd: true,
+          happyHourDays: true,
+          prepaidPackages: true,
+          overtimeEnabled: true,
+          overtimeMode: true,
+          overtimeMultiplier: true,
+          overtimePerMinuteRate: true,
+          overtimeFlatFee: true,
+          overtimeGraceMinutes: true,
         },
-        order: {
-          select: {
-            id: true,
-            status: true,
-            locationId: true,
-          },
+      },
+      order: {
+        select: {
+          id: true,
+          status: true,
+          locationId: true,
         },
       },
     })
@@ -286,40 +275,37 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get the order item with menuItem for tier-based price recalculation
-    const orderItem = await db.orderItem.findUnique({
-      where: { id: orderItemId },
-      include: {
-        menuItem: {
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            timedPricing: true,
-            ratePerMinute: true,
-            minimumCharge: true,
-            incrementMinutes: true,
-            graceMinutes: true,
-            blockTimeMinutes: true,
-            happyHourEnabled: true,
-            happyHourDiscount: true,
-            happyHourStart: true,
-            happyHourEnd: true,
-            happyHourDays: true,
-            prepaidPackages: true,
-            overtimeEnabled: true,
-            overtimeMode: true,
-            overtimeMultiplier: true,
-            overtimePerMinuteRate: true,
-            overtimeFlatFee: true,
-            overtimeGraceMinutes: true,
-          },
+    const orderItem = await OrderItemRepository.getItemByIdWithInclude(orderItemId, locationId, {
+      menuItem: {
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          timedPricing: true,
+          ratePerMinute: true,
+          minimumCharge: true,
+          incrementMinutes: true,
+          graceMinutes: true,
+          blockTimeMinutes: true,
+          happyHourEnabled: true,
+          happyHourDiscount: true,
+          happyHourStart: true,
+          happyHourEnd: true,
+          happyHourDays: true,
+          prepaidPackages: true,
+          overtimeEnabled: true,
+          overtimeMode: true,
+          overtimeMultiplier: true,
+          overtimePerMinuteRate: true,
+          overtimeFlatFee: true,
+          overtimeGraceMinutes: true,
         },
-        order: {
-          select: {
-            id: true,
-            status: true,
-            locationId: true,
-          },
+      },
+      order: {
+        select: {
+          id: true,
+          status: true,
+          locationId: true,
         },
       },
     })
@@ -479,28 +465,25 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const parsedExpiresAt = new Date(newExpiresAt)
 
     // Get the order item with menuItem for price recalculation
-    const orderItem = await db.orderItem.findUnique({
-      where: { id: orderItemId },
-      include: {
-        menuItem: {
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            timedPricing: true,
-            ratePerMinute: true,
-            minimumCharge: true,
-            incrementMinutes: true,
-            graceMinutes: true,
-            blockTimeMinutes: true,
-          },
+    const orderItem = await OrderItemRepository.getItemByIdWithInclude(orderItemId, locationId, {
+      menuItem: {
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          timedPricing: true,
+          ratePerMinute: true,
+          minimumCharge: true,
+          incrementMinutes: true,
+          graceMinutes: true,
+          blockTimeMinutes: true,
         },
-        order: {
-          select: {
-            id: true,
-            status: true,
-            locationId: true,
-          },
+      },
+      order: {
+        select: {
+          id: true,
+          status: true,
+          locationId: true,
         },
       },
     })
@@ -644,39 +627,36 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get the order item
-    const orderItem = await db.orderItem.findUnique({
-      where: { id: orderItemId },
-      include: {
-        menuItem: {
-          select: {
-            id: true,
-            name: true,
-            price: true,
-            timedPricing: true,
-            ratePerMinute: true,
-            minimumCharge: true,
-            incrementMinutes: true,
-            graceMinutes: true,
-            blockTimeMinutes: true,
-            happyHourEnabled: true,
-            happyHourDiscount: true,
-            happyHourStart: true,
-            happyHourEnd: true,
-            happyHourDays: true,
-            prepaidPackages: true,
-            overtimeEnabled: true,
-            overtimeMode: true,
-            overtimeMultiplier: true,
-            overtimePerMinuteRate: true,
-            overtimeFlatFee: true,
-            overtimeGraceMinutes: true,
-          },
+    const orderItem = await OrderItemRepository.getItemByIdWithInclude(orderItemId, locationId, {
+      menuItem: {
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          timedPricing: true,
+          ratePerMinute: true,
+          minimumCharge: true,
+          incrementMinutes: true,
+          graceMinutes: true,
+          blockTimeMinutes: true,
+          happyHourEnabled: true,
+          happyHourDiscount: true,
+          happyHourStart: true,
+          happyHourEnd: true,
+          happyHourDays: true,
+          prepaidPackages: true,
+          overtimeEnabled: true,
+          overtimeMode: true,
+          overtimeMultiplier: true,
+          overtimePerMinuteRate: true,
+          overtimeFlatFee: true,
+          overtimeGraceMinutes: true,
         },
-        order: {
-          select: {
-            id: true,
-            locationId: true,
-          },
+      },
+      order: {
+        select: {
+          id: true,
+          locationId: true,
         },
       },
     })

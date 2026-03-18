@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { EmployeeRepository } from '@/lib/repositories'
 import {
   sendVoidApprovalSMS,
   generateApprovalToken,
@@ -81,16 +82,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fetch the manager
-    const manager = await db.employee.findUnique({
-      where: { id: managerId },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        displayName: true,
-        phone: true,
-        isActive: true,
-      },
+    const manager = await EmployeeRepository.getEmployeeByIdWithSelect(managerId, locationId, {
+      id: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
+      phone: true,
+      isActive: true,
     })
 
     if (!manager || !manager.isActive) {
@@ -120,14 +118,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fetch the requester (server)
-    const requester = await db.employee.findUnique({
-      where: { id: requestedById },
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        displayName: true,
-      },
+    const requester = await EmployeeRepository.getEmployeeByIdWithSelect(requestedById, locationId, {
+      id: true,
+      firstName: true,
+      lastName: true,
+      displayName: true,
     })
 
     if (!requester) {

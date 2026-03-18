@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { MenuItemRepository, OrderRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { validateBridgeHMAC, decryptBridgeSecret } from '@/lib/berg/hmac'
 import { resolvePlu } from '@/lib/berg/plu-resolver'
@@ -291,16 +292,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               errorReason = 'MULTIPLE_OPEN_ORDERS'
               // Still look up price for dollar exposure
               if (resolvedPlu?.menuItemId) {
-                const menuItem = await db.menuItem.findUnique({
-                  where: { id: resolvedPlu.menuItemId },
-                  select: { price: true },
+                const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(resolvedPlu.menuItemId, device.locationId, {
+                  price: true,
                 })
                 if (menuItem) pourCost = menuItem.price
               }
             } else if (result.order && autoRingMode === 'AUTO_RING' && resolvedPlu?.menuItemId) {
-              const menuItem = await db.menuItem.findUnique({
-                where: { id: resolvedPlu.menuItemId },
-                include: { category: { select: { categoryType: true } } },
+              const menuItem = await MenuItemRepository.getMenuItemByIdWithInclude(resolvedPlu.menuItemId, device.locationId, {
+                category: { select: { categoryType: true } },
               })
               if (menuItem) {
                 const oi = await db.orderItem.create({
@@ -324,9 +323,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             } else if (!result.order) {
               // Still look up price for dollar exposure even when no order found
               if (resolvedPlu?.menuItemId) {
-                const menuItem = await db.menuItem.findUnique({
-                  where: { id: resolvedPlu.menuItemId },
-                  select: { price: true },
+                const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(resolvedPlu.menuItemId, device.locationId, {
+                  price: true,
                 })
                 if (menuItem) pourCost = menuItem.price
               }
@@ -384,9 +382,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       orderId = result.order.id
 
       if (autoRingMode === 'AUTO_RING' && resolvedPlu.menuItemId) {
-        const menuItem = await db.menuItem.findUnique({
-          where: { id: resolvedPlu.menuItemId },
-          include: { category: { select: { categoryType: true } } },
+        const menuItem = await MenuItemRepository.getMenuItemByIdWithInclude(resolvedPlu.menuItemId, device.locationId, {
+          category: { select: { categoryType: true } },
         })
         if (menuItem) {
           const oi = await db.orderItem.create({
