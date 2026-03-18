@@ -1,2 +1,5 @@
 export * from './base-repository'
 export * as OrderRepository from './order-repository'
+export * as OrderItemRepository from './order-item-repository'
+export * as EmployeeRepository from './employee-repository'
+export * as PaymentRepository from './payment-repository'
