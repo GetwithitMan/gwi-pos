@@ -16,15 +16,10 @@
  * Both channels are required. Neither is a projection of the other.
  */
 
-// TODO: Refactor to use emitOrderAndSocketEvents() from '@/lib/domain/emit-order-and-socket'
-// to enforce the dual-channel contract structurally instead of manually.
-
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
-import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
-import type { OrderClosedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { emitOrderAndSocketEvents } from '@/lib/domain/emit-order-and-socket'
 
 export interface CleanupResult {
   closedCount: number
@@ -85,9 +80,10 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
   const ids = emptyStaleOrders.map(o => o.id)
   const reason = `Auto-cancelled: stale $0 draft (older than ${maxAgeHours}h)`
 
-  // Wrap DB mutation + socket outbox in a single transaction for crash safety.
-  // If the process crashes after commit, SocketEventLog rows survive and
-  // flushAllPendingOutbox() picks them up on restart.
+  // Dual-channel emission via unified wrapper: socket outbox (transactional)
+  // + order events (post-commit). See emit-order-and-socket.ts for contract.
+  const flushFns: Array<() => Promise<void>> = []
+
   const result = await db.$transaction(async (tx) => {
     const updated = await tx.order.updateMany({
       where: { id: { in: ids } },
@@ -99,22 +95,14 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
       },
     })
 
-    // ── Channel 1: Socket outbox (transactional, crash-durable) ──
-    // These queueSocketEvent calls are INSIDE the $transaction. They persist
-    // in SocketEventLog atomically with the order update. If the process
-    // crashes after commit, flushAllPendingOutbox() recovers them on restart.
     for (const id of ids) {
-      const closedPayload: OrderClosedPayload = {
-        orderId: id,
-        status: 'cancelled',
-        closedAt: now.toISOString(),
-        closedByEmployeeId: null,
-        locationId,
-      }
-      await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_CLOSED, closedPayload)
-
-      const listPayload: OrdersListChangedPayload = { trigger: 'cancelled', orderId: id }
-      await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+      const { flush } = await emitOrderAndSocketEvents(tx, locationId, id, [
+        { socketEvent: SOCKET_EVENTS.ORDER_CLOSED, socketPayload: { orderId: id, status: 'cancelled', closedAt: now.toISOString(), closedByEmployeeId: null, locationId } },
+        { socketEvent: SOCKET_EVENTS.ORDERS_LIST_CHANGED, socketPayload: { trigger: 'cancelled', orderId: id } },
+      ], [
+        { type: 'ORDER_CLOSED', payload: { closedStatus: 'cancelled', reason } },
+      ])
+      flushFns.push(flush)
     }
 
     return updated
@@ -122,23 +110,9 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
 
   logger.log(`[cleanup-stale-orders] Closed ${result.count} stale draft orders for location ${locationId}`)
 
-  // Flush socket outbox after commit — best-effort, catch-up handles failures
-  void flushSocketOutbox(locationId).catch((err) => {
-    console.warn('[cleanup-stale-orders] Outbox flush failed, catch-up will deliver:', err)
-  })
-
-  // ── Channel 2: Order event stream (post-commit, best-effort) ──
-  // These emitOrderEvent calls run AFTER the transaction has committed.
-  // They write to the OrderEvent table for event-sourced audit/domain truth.
-  // A crash between the commit above and this loop loses these events.
-  // Downstream consumers must tolerate gaps and reconcile from snapshots.
-  for (const id of ids) {
-    await emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
-      closedStatus: 'cancelled',
-      reason,
-    }).catch((err) => {
-      console.error(`[cleanup-stale-orders] Failed to emit ORDER_CLOSED event for order ${id}:`, err)
-    })
+  // Post-commit: flush socket outbox + emit domain events
+  for (const flush of flushFns) {
+    void flush()
   }
 
   return {

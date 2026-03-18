@@ -19,19 +19,14 @@
  * Both channels are required. Neither is a projection of the other.
  */
 
-// TODO: Refactor to use emitOrderAndSocketEvents() from '@/lib/domain/emit-order-and-socket'
-// to enforce the dual-channel contract structurally instead of manually.
-
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { logger } from '@/lib/logger'
-import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
-import type { PaymentProcessedPayload, OrderClosedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { emitOrderAndSocketEvents } from '@/lib/domain/emit-order-and-socket'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -158,9 +153,10 @@ export async function processWalkoutRetry(
       const captureAmount = Number(retry.amount)
       const paymentMethod = orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
 
-      // Interactive transaction: DB mutations + socket outbox in one atomic unit.
-      // If the process crashes after commit, SocketEventLog rows survive and
-      // flushAllPendingOutbox() picks them up on restart.
+      // Dual-channel emission via unified wrapper: socket outbox (transactional)
+      // + order events (post-commit). See emit-order-and-socket.ts for contract.
+      let flushEvents: () => Promise<void>
+
       const createdPayment = await db.$transaction(async (tx) => {
         await tx.orderCard.update({
           where: { id: orderCard.id },
@@ -187,69 +183,21 @@ export async function processWalkoutRetry(
           },
         })
 
-        // ── Channel 1: Socket outbox (transactional, crash-durable) ──
-        // These queueSocketEvent calls are INSIDE the $transaction. They persist
-        // in SocketEventLog atomically with the payment/order updates. If the
-        // process crashes after commit, flushAllPendingOutbox() recovers them.
-        const paymentPayload: PaymentProcessedPayload = {
-          orderId: retry.orderId,
-          paymentId: payment.id,
-          status: 'approved',
-          method: paymentMethod,
-          amount: captureAmount,
-          tipAmount: 0,
-          totalAmount: captureAmount,
-          employeeId: employeeId || null,
-          isClosed: true,
-        }
-        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.PAYMENT_PROCESSED, paymentPayload)
-
-        const closedPayload: OrderClosedPayload = {
-          orderId: retry.orderId,
-          status: 'paid',
-          closedAt: now.toISOString(),
-          closedByEmployeeId: employeeId || null,
-          locationId,
-        }
-        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_CLOSED, closedPayload)
-
-        const listPayload: OrdersListChangedPayload = { trigger: 'paid', orderId: retry.orderId }
-        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+        const { flush } = await emitOrderAndSocketEvents(tx, locationId, retry.orderId, [
+          { socketEvent: SOCKET_EVENTS.PAYMENT_PROCESSED, socketPayload: { orderId: retry.orderId, paymentId: payment.id, status: 'approved', method: paymentMethod, amount: captureAmount, tipAmount: 0, totalAmount: captureAmount, employeeId: employeeId || null, isClosed: true } },
+          { socketEvent: SOCKET_EVENTS.ORDER_CLOSED, socketPayload: { orderId: retry.orderId, status: 'paid', closedAt: now.toISOString(), closedByEmployeeId: employeeId || null, locationId } },
+          { socketEvent: SOCKET_EVENTS.ORDERS_LIST_CHANGED, socketPayload: { trigger: 'paid', orderId: retry.orderId } },
+        ], [
+          { type: 'PAYMENT_APPLIED', payload: { paymentId: payment.id, method: paymentMethod, amountCents: Math.round(captureAmount * 100), tipCents: 0, totalCents: Math.round(captureAmount * 100), cardBrand: orderCard.cardType || 'unknown', cardLast4: orderCard.cardLast4, status: 'approved' } },
+          { type: 'ORDER_CLOSED', payload: { closedStatus: 'paid' } },
+        ])
+        flushEvents = flush
 
         return payment
       })
 
-      // Flush socket outbox after commit — best-effort, catch-up handles failures
-      void flushSocketOutbox(locationId).catch((err) => {
-        console.warn('[walkout-retry] Outbox flush failed, catch-up will deliver:', err)
-      })
-
-      // ── Channel 2: Order event stream (post-commit, best-effort) ──
-      // These emitOrderEvents calls run AFTER the transaction has committed.
-      // They write to the OrderEvent table for event-sourced audit/domain truth.
-      // A crash between the commit above and this emit loses these events.
-      // Downstream consumers must tolerate gaps and reconcile from snapshots.
-      await emitOrderEvents(locationId, retry.orderId, [
-        {
-          type: 'PAYMENT_APPLIED',
-          payload: {
-            paymentId: createdPayment.id,
-            method: paymentMethod,
-            amountCents: Math.round(captureAmount * 100),
-            tipCents: 0,
-            totalCents: Math.round(captureAmount * 100),
-            cardBrand: orderCard.cardType || 'unknown',
-            cardLast4: orderCard.cardLast4,
-            status: 'approved',
-          },
-        },
-        {
-          type: 'ORDER_CLOSED',
-          payload: { closedStatus: 'paid' },
-        },
-      ]).catch((err) => {
-        console.error(`[walkout-retry] Failed to emit events for order ${retry.orderId}:`, err)
-      })
+      // Post-commit: flush socket outbox + emit domain events
+      void flushEvents!()
 
       return {
         success: true,
