@@ -367,6 +367,7 @@ export async function POST(request: NextRequest) {
       )
       const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
+      // TX-KEEP: CREATE — online checkout order with nested items/modifiers inside order-number lock; no repo create method
       return tx.order.create({
         data: {
           locationId,
@@ -471,12 +472,12 @@ export async function POST(request: NextRequest) {
     // ── 10. Payment approved — update order status + create Payment record ────
 
     await venueDb.$transaction([
-      // Mark order as 'received' (online-specific status: paid but not yet served)
+      // TX-KEEP: COMPLEX — mark order received after PayAPI approval; batch transaction with payment create
       venueDb.order.update({
         where: { id: order.id },
         data: { status: 'received' },
       }),
-      // Record payment
+      // TX-KEEP: CREATE — online payment record after PayAPI approval; no repo create method for venueDb context
       venueDb.payment.create({
         data: {
           locationId,

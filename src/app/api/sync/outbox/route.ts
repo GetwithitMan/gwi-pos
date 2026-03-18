@@ -42,6 +42,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
+        // TX-KEEP: CREATE — offline terminal order with nested items/modifiers inside order-number lock; no repo create method
         return tx.order.create({
           data: {
             locationId,

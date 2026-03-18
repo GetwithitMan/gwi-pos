@@ -121,7 +121,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // OrderRepository.updateOrder support tx, but the complex payment→order-totals logic
     // is tightly coupled here. Migrate when stable.
     const payment = await db.$transaction(async (tx) => {
-      // Create the payment record
+      // TX-KEEP: CREATE — offline-captured payment record; no repo create method that accepts tx
       const newPayment = await tx.payment.create({
         data: {
           locationId: order.locationId,
@@ -147,7 +147,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
 
-      // Update order totals
+      // TX-KEEP: COMPLEX — aggregate all completed payments for order to compute totals; tightly coupled with payment creation above
       const orderPayments = await tx.payment.findMany({
         where: { orderId: resolvedOrderId, status: 'completed' },
       })
@@ -305,9 +305,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    // TODO: Phase 1 - PaymentRepository.markReconciled() works per-payment with locationId.
-    // This batch update by ID array without locationId can't use it directly.
-    // Needs either a batch reconcile repository method or locationId from request context.
+    // TX-KEEP: BULK — batch reconcile payments by ID array without locationId; no batch repo method
     const result = await adminDb.payment.updateMany({
       where: {
         id: { in: paymentIds },

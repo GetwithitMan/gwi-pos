@@ -136,7 +136,7 @@ export const POST = withVenue(async function POST(
     // Transfer items in a transaction
     let sourceWasCancelled = false
     await db.$transaction(async (tx) => {
-      // Move items to destination order
+      // TX-KEEP: RELATION — move items to destination order; orderId is a relation FK not in OrderItemUpdateManyMutationInput
       await tx.orderItem.updateMany({
         where: {
           id: { in: itemIds },

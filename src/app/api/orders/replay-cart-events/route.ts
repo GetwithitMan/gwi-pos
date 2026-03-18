@@ -279,6 +279,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   seatTimestamps[i.toString()] = now
                 }
 
+                // TX-KEEP: CREATE — replay ORDER_STARTED creates order with client ID inside order-number lock; no repo create method
                 const order = await tx.order.create({
                   data: {
                     id: clientOrderId, // Use client-provided ID for correlation
@@ -379,6 +380,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                     }))
                   : []
 
+                // TX-KEEP: CREATE — replay ITEM_ADDED creates order item with nested modifiers; no repo create method
                 await tx.orderItem.create({
                   data: {
                     locationId,

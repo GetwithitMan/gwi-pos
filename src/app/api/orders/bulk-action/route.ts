@@ -56,8 +56,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           data: { status: 'voided' },
         })
 
-        // Void the orders
-        // NOTE: Uses tx directly — bulk update across multiple orders by ID array has no repo method
+        // TX-KEEP: BULK — void multiple orders by ID array; no repo method for batch order status updates
         const result = await tx.order.updateMany({
           where: {
             id: { in: orderIds },
@@ -115,8 +114,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       const cancelledTableIds = await db.$transaction(async (tx) => {
-        // Fetch the orders to get their tableIds for cleanup
-        // NOTE: Uses tx directly — bulk findMany/updateMany by ID array has no single-order repo method
+        // TX-KEEP: BULK — fetch multiple orders by ID array for table cleanup; no batch repo method
         const targetOrders = await tx.order.findMany({
           where: {
             id: { in: orderIds },
@@ -128,7 +126,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
         const tableIds = targetOrders.map(o => o.tableId).filter((t): t is string => !!t)
 
-        // Soft-delete / cancel
+        // TX-KEEP: BULK — batch cancel multiple orders by ID array; no repo method for batch status change
         const result = await tx.order.updateMany({
           where: {
             id: { in: orderIds },
@@ -182,6 +180,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'toEmployeeId required for transfer' }, { status: 400 })
       }
 
+      // TX-KEEP: BULK — batch transfer multiple orders to new employee by ID array; no batch repo method
       const result = await adminDb.order.updateMany({
         where: {
           id: { in: orderIds },

@@ -124,7 +124,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           // Lock table row to prevent concurrent double-claim
           if (tableId) {
             await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
-            // NOTE: Uses tx directly — querying by tableId (not orderId) has no OrderRepository method
+            // TX-KEEP: LOCK — find active order on table inside FOR UPDATE lock to prevent double-claim
             const existingOrder = await tx.order.findFirst({
               where: {
                 tableId,
@@ -150,6 +150,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           )
           const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
+          // TX-KEEP: CREATE — draft order shell inside advisory lock; no repo create method
           return tx.order.create({
             data: {
               locationId,
@@ -505,7 +506,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         // Lock table row to prevent concurrent double-claim (Bug 13)
         if (tableId) {
           await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
-          // NOTE: Uses tx directly — querying by tableId (not orderId) has no OrderRepository method
+          // TX-KEEP: LOCK — find active order on table inside FOR UPDATE lock to prevent double-claim
           const existingOrder = await tx.order.findFirst({
             where: {
               tableId,
@@ -531,6 +532,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         )
         const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
+        // TX-KEEP: CREATE — full order with nested items/modifiers inside advisory lock; no repo create method
         const created = await tx.order.create({
           data: {
             locationId,

@@ -137,9 +137,7 @@ export const POST = withVenue(async function POST(
         throw new Error('SOURCE_ORDER_INVALID')
       }
 
-      // Move all active (non-soft-deleted) items from source to target
-      // NOTE: Uses raw tx.orderItem.updateMany because orderId is a relation field
-      // that cannot be set through OrderItemUpdateManyMutationInput
+      // TX-KEEP: RELATION — move items to target order; orderId is a relation FK not in OrderItemUpdateManyMutationInput
       const moved = await tx.orderItem.updateMany({
         where: { orderId: sourceOrderId, locationId, deletedAt: null },
         data: { orderId: targetOrderId },

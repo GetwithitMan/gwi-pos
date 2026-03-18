@@ -585,7 +585,7 @@ export const POST = withVenue(async function POST(
           }),
         ]
 
-        // Create the split order
+        // TX-KEEP: CREATE — split child order with nested item+modifier creates; no repo method for full split creation
         const splitOrder = await tx.order.create({
           data: {
             locationId: parentOrder.locationId,
@@ -790,6 +790,7 @@ export const PATCH = withVenue(async function PATCH(
           const price = i === ways - 1 ? lastFractionPrice : fractionPrice
           // Place in next available split, or keep in source if not enough splits
           const targetSplit = targetSplits[i - 1] || sourceSplit
+          // TX-KEEP: CREATE — fractional copy of split item with nested modifiers; no repo create method
           await tx.orderItem.create({
             data: {
               locationId: parentOrder.locationId,
@@ -931,8 +932,7 @@ export const PATCH = withVenue(async function PATCH(
         ? moveInclRateRaw / 100 : undefined)
 
     await db.$transaction(async (tx) => {
-      // Move item to destination split
-      // NOTE: Uses tx directly — orderId is a relation field not in OrderItemUpdateManyMutationInput
+      // TX-KEEP: RELATION — orderId is a relation FK not in OrderItemUpdateManyMutationInput
       await tx.orderItem.update({
         where: { id: itemId },
         data: { orderId: toSplitId },
@@ -1043,8 +1043,7 @@ export const DELETE = withVenue(async function DELETE(
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`
       await tx.$queryRaw`SELECT id FROM "Order" WHERE "parentOrderId" = ${id} FOR UPDATE`
 
-      // Re-check for payments inside the lock (prevents race where payment occurs between check and delete)
-      // NOTE: Uses tx directly — cross-order findMany by parentOrderId has no single-order repo method
+      // TX-KEEP: LOCK — re-check splits inside FOR UPDATE lock to prevent race with concurrent payment
       const splits = await tx.order.findMany({
         where: { parentOrderId: id, locationId: parentOrder.locationId, deletedAt: null },
         include: { payments: { where: { status: 'completed' } } },
@@ -1059,17 +1058,16 @@ export const DELETE = withVenue(async function DELETE(
 
       // Bug 21: Soft-delete child order items to prevent orphan accumulation
       // Each split/unsplit cycle creates new item copies; without cleanup, old copies pile up
-      // NOTE: Uses tx directly — cross-order bulk update by orderId IN array has no repo method
       const childOrderIds = splits.map(s => s.id)
       if (childOrderIds.length > 0) {
+        // TX-KEEP: BULK — cross-order bulk soft-delete by orderId IN array; no repo method for multi-order item updates
         await tx.orderItem.updateMany({
           where: { orderId: { in: childOrderIds }, locationId: parentOrder.locationId, deletedAt: null },
           data: { deletedAt: new Date() },
         })
       }
 
-      // Soft-delete all split orders
-      // NOTE: Uses tx directly — cross-order bulk update by parentOrderId has no repo method
+      // TX-KEEP: BULK — soft-delete all split child orders by parentOrderId; no repo method for batch split deletion
       await tx.order.updateMany({
         where: { parentOrderId: id, locationId: parentOrder.locationId },
         data: { deletedAt: new Date(), status: 'cancelled' },
@@ -1079,7 +1077,7 @@ export const DELETE = withVenue(async function DELETE(
       await OrderItemRepository.updateItemsWhere(id, parentOrder.locationId, { deletedAt: { not: null } }, { deletedAt: null }, tx)
 
       // Bug 11: Recalculate parent totals from restored items
-      // TODO: Add OrderItemRepository.getItemsForOrderWithModifiersWhere() for status-filtered + include
+      // TX-KEEP: COMPLEX — status-filtered findMany with modifiers include; no repo method for this combination
       const restoredItems = await tx.orderItem.findMany({
         where: { orderId: id, locationId: parentOrder.locationId, deletedAt: null, status: 'active' },
         include: { modifiers: true },

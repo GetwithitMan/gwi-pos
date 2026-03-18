@@ -25,8 +25,8 @@ export const PUT = withVenue(async function PUT(
     const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
-    let orderLocationId1 = getRequestLocationId()
-    if (!orderLocationId1) {
+    let postLocationId = getRequestLocationId()
+    if (!postLocationId) {
       // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
       const orderCheck = await adminDb.order.findFirst({
         where: { id: orderId },
@@ -39,11 +39,11 @@ export const PUT = withVenue(async function PUT(
           { status: 404 }
         )
       }
-      orderLocationId1 = orderCheck.locationId
+      postLocationId = orderCheck.locationId
     }
 
     // Get the order with location settings
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderLocationId1, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, postLocationId, {
       location: true,
     })
 

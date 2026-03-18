@@ -268,6 +268,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
       const orderNumber = ((lastOrderRows as any[])[0]?.orderNumber ?? 0) + 1
 
+      // TX-KEEP: CREATE — bar tab order with pre-auth data inside order-number lock; no repo create method
       const created = await tx.order.create({
         data: {
           locationId: resolvedLocationId,

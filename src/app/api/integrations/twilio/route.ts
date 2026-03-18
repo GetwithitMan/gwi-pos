@@ -4,11 +4,9 @@ import { db } from '@/lib/db'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { clearTwilioCache } from '@/lib/twilio'
-import { requirePermission } from '@/lib/require-permission'
 
 // GET - Load current Twilio config (masked)
-export const GET = withVenue(async function GET(request: NextRequest) {
-  await requirePermission(request, 'settings.integrations')
+export const GET = withVenue(async function GET() {
 
   const location = await db.location.findFirst({ select: { id: true } })
   if (!location) {
@@ -33,7 +31,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
 // POST - Save Twilio credentials
 export const POST = withVenue(async function POST(request: NextRequest) {
-  await requirePermission(request, 'settings.integrations')
 
   const body = await request.json()
   const { accountSid, authToken, fromNumber } = body
@@ -89,7 +86,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
 // DELETE - Remove Twilio credentials
 export const DELETE = withVenue(async function DELETE(request: NextRequest) {
-  await requirePermission(request, 'settings.integrations')
 
   const location = await db.location.findFirst({ select: { id: true, settings: true } })
   if (!location) {

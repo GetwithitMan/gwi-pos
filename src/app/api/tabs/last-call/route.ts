@@ -282,7 +282,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               version: { increment: 1 },
             }, tx)
 
-            // Create a cash payment record for tabs closed without a card
+            // TX-KEEP: CREATE — cash payment for cardless tab at last call; no repo create method that accepts tx
             await tx.payment.create({
               data: {
                 orderId: tab.id,

@@ -141,6 +141,7 @@ export const POST = withVenue(async function POST(
           captureDeclinedAt: null,
           lastCaptureError: null,
         }, tx)
+        // TX-KEEP: CREATE — payment record for same_card retry capture; no repo create method that accepts tx
         await tx.payment.create({
           data: {
             locationId,
@@ -245,6 +246,7 @@ export const POST = withVenue(async function POST(
       const paymentAmount = Number(order.total)
       const tipAmount = Number(order.tipTotal) || 0
       await db.$transaction(async (tx) => {
+        // TX-KEEP: CREATE — cash fallback payment record for retry capture; no repo create method that accepts tx
         await tx.payment.create({
           data: {
             locationId,

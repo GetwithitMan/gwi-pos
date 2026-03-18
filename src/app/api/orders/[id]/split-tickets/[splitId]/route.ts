@@ -126,8 +126,7 @@ export const DELETE = withVenue(async function DELETE(
           ? autoMergeInclRateRaw / 100 : undefined)
 
       await db.$transaction(async (tx) => {
-        // Move all items back to parent (orderId is a relation FK -- raw tx needed)
-        // TODO: Add OrderItemRepository.moveItemsToOrder() to handle orderId reassignment
+        // TX-KEEP: RELATION — move items back to parent order; orderId is a relation FK not in OrderItemUpdateManyMutationInput
         await tx.orderItem.updateMany({
           where: { orderId: lastSplit.id, locationId },
           data: { orderId: id },

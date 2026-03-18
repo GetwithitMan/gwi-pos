@@ -332,8 +332,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
     // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)
-    // NOTE: Uses tx directly — complex include (location+customer+items+employee+table+payments)
-    // exceeds what OrderRepository.getOrderByIdWithInclude covers; locationId not yet available.
+    // TX-KEEP: COMPLEX — complex include (location+customer+items+employee+table+payments) inside FOR UPDATE lock; locationId not yet available
     timing.start('db-fetch')
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -459,7 +458,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
       if (order.status === 'paid' || order.status === 'closed') {
-        // TODO: Add getLatestPaymentForOrder to PaymentRepository
+        // TX-KEEP: COMPLEX — latest payment lookup inside FOR UPDATE lock; no repo method for latest-payment-by-order
         const existingPayment = await tx.payment.findFirst({
           where: { orderId, locationId: order.locationId },
           orderBy: { createdAt: 'desc' },
@@ -503,8 +502,7 @@ export const POST = withVenue(withTiming(async function POST(
         ) }
       }
 
-      // P0: Validate total payments across all splits don't exceed parent total
-      // TODO: Add cross-order payment aggregate to PaymentRepository
+      // TX-KEEP: COMPLEX — cross-order payment aggregate across all split siblings inside FOR UPDATE lock; no repo method
       const allSplitPayments = await tx.payment.aggregate({
         where: {
           order: { parentOrderId: order.parentOrderId },
@@ -614,7 +612,7 @@ export const POST = withVenue(withTiming(async function POST(
         }
         await Promise.all(settlementUpdates)
 
-        // TODO: Add getActiveItemsForOrderWithModifiers to OrderItemRepository (status + modifiers)
+        // TX-KEEP: COMPLEX — active items with modifiers include for entertainment settlement recalc; no repo method for status-filtered items with modifiers
         const activeItems = await (tx as any).orderItem.findMany({
           where: { orderId, locationId: order.locationId, status: 'active', deletedAt: null },
           include: { modifiers: true },
@@ -1137,7 +1135,7 @@ export const POST = withVenue(withTiming(async function POST(
     timing.end('db-pay', 'Payment ingestion')
 
     if (ingestResult.alreadyPaid) {
-      // TODO: Add getLatestPaymentForOrder to PaymentRepository
+      // TX-KEEP: COMPLEX — latest payment lookup after ingest race inside FOR UPDATE lock; no repo method
       const existingPayment = await tx.payment.findFirst({
         where: { orderId, locationId: order.locationId },
         orderBy: { createdAt: 'desc' },
@@ -1303,7 +1301,7 @@ export const POST = withVenue(withTiming(async function POST(
             `SELECT id FROM "Order" WHERE "parentOrderId" = $1 FOR UPDATE`,
             order.parentOrderId!,
           )
-          // TODO: Add getOrdersByParentId to OrderRepository for split sibling queries
+          // TX-KEEP: LOCK — read all sibling split orders inside FOR UPDATE lock to check if all are paid
           const allSiblings = await ptx.order.findMany({
             where: { parentOrderId: order.parentOrderId!, locationId: order.locationId },
             select: { id: true, status: true },

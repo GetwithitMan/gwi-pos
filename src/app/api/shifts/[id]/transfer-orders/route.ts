@@ -135,6 +135,7 @@ export const POST = withVenue(async function POST(
     // ── Bulk transfer in a transaction ──────────────────────────────────
     const result = await db.$transaction(async (tx) => {
       // Find all open orders for the shift employee (already tenant-scoped by locationId)
+      // TX-KEEP: COMPLEX — find all open orders for shift employee with custom status filter; no repo method for shift-scoped order queries
       const openOrders = await tx.order.findMany({
         where: {
           locationId: shift.locationId,
@@ -156,8 +157,7 @@ export const POST = withVenue(async function POST(
 
       const orderIds = openOrders.map((o) => o.id)
 
-      // Bulk update all orders (locationId added for tenant safety)
-      // TODO: Phase 2 — extract into OrderRepository.bulkUpdateOrders() for tenant-safe batch ops
+      // TX-KEEP: BULK — bulk reassign all open orders to new employee by ID array; no batch repo method
       await tx.order.updateMany({
         where: { id: { in: orderIds }, locationId: shift.locationId },
         data: { employeeId: toEmployeeId },

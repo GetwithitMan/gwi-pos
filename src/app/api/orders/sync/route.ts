@@ -157,7 +157,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Inclusive items already contain tax; only exclusive tax is added on top
       const total = Math.round((subtotal + taxFromExclusive) * 100) / 100
 
-      // Create the order
+      // TX-KEEP: CREATE — offline-synced order inside order-number lock; no repo create method
       const newOrder = await tx.order.create({
         data: {
           locationId,
@@ -182,6 +182,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Create order items in parallel
       await Promise.all(
         orderItems.map(item =>
+          // TX-KEEP: CREATE — offline-synced order items with orderId FK; no batch repo create method
           tx.orderItem.create({
             data: {
               ...item,

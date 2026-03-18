@@ -192,6 +192,7 @@ export const POST = withVenue(async function POST(
         modifiers: carryModifiers.map(m => ({ price: Number(m.price) })),
       })
 
+      // TX-KEEP: CREATE — combo OrderItem with nested modifiers; no repo create method for items with includes
       const comboItem = await tx.orderItem.create({
         data: {
           orderId,
@@ -224,8 +225,7 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      // Recalculate order totals from remaining active items
-      // TODO: Add OrderItemRepository.getItemsForOrderWhereWithIncludes() for custom include + status filter
+      // TX-KEEP: COMPLEX — active items with modifiers+ingredientModifications include for totals recalc; no repo method for this combination
       const allActiveItems = await tx.orderItem.findMany({
         where: { orderId, locationId: order.locationId, deletedAt: null, status: 'active' },
         include: {

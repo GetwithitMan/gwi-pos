@@ -269,6 +269,7 @@ export async function POST(request: NextRequest) {
     // Create order with items in a transaction
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const order = await venueDb.$transaction(async (tx: any) => {
+      // TX-KEEP: CREATE — QR dine-in order with computed totals; no repo create method
       const newOrder = await tx.order.create({
         data: {
           locationId,
@@ -303,6 +304,7 @@ export async function POST(request: NextRequest) {
 
       // Create order items
       for (const oi of orderItemsData) {
+        // TX-KEEP: CREATE — QR order items created individually with orderId FK; no batch repo create method
         await tx.orderItem.create({
           data: {
             orderId: newOrder.id,

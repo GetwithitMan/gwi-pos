@@ -148,8 +148,7 @@ export const POST = withVenue(async function POST(
         await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${split.id} FOR UPDATE`
       }
 
-      // Re-check that splits are still unpaid after acquiring locks
-      // NOTE: Uses tx directly — cross-order findMany with IN clause has no single-order repo method
+      // TX-KEEP: LOCK — re-check split payment status inside FOR UPDATE lock to prevent double-pay
       const lockedSplits = await tx.order.findMany({
         where: { id: { in: unpaidSplitIds }, locationId: parentOrder.locationId, deletedAt: null },
         select: { id: true, status: true },
@@ -167,6 +166,7 @@ export const POST = withVenue(async function POST(
             ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
             : cashSplitTotal
 
+          // TX-KEEP: CREATE — payment record per split inside FOR UPDATE lock; no batch payment create repo method
           return tx.payment.create({
             data: {
               locationId: split.locationId,
@@ -193,7 +193,7 @@ export const POST = withVenue(async function POST(
 
       // Batch-update all unpaid splits to paid + mark parent as paid
       await Promise.all([
-        // NOTE: Uses tx directly — batch update across multiple orders by ID array has no repo method
+        // TX-KEEP: BULK — batch mark all unpaid split orders as paid by ID array; no batch repo method
         tx.order.updateMany({
           where: { id: { in: unpaidSplitIds }, locationId: parentOrder.locationId },
           data: { status: 'paid', paidAt: now },
