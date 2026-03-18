@@ -19,9 +19,12 @@
  */
 
 import { db } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
 import { postToTipLedger } from '@/lib/domain/tips/tip-ledger'
 import type { TxClient } from '@/lib/domain/tips/tip-ledger'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+
+const log = createChildLogger('tips')
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -103,8 +106,9 @@ export async function processDeliveryTipSplit(
 
     // Validate percentages
     if (kitchenTipSplitPercent <= 0 || kitchenTipSplitPercent > 100) {
-      console.warn(
-        `[delivery-tip-split] Invalid kitchenTipSplitPercent: ${kitchenTipSplitPercent}. Skipping.`,
+      log.warn(
+        { kitchenTipSplitPercent, orderId },
+        'Invalid kitchenTipSplitPercent, skipping delivery tip split',
       )
       return noopResult
     }
@@ -270,7 +274,7 @@ export async function processDeliveryTipSplit(
       kitchenRecipients: shares,
     }
   } catch (error) {
-    console.error('[processDeliveryTipSplit] Error:', error)
+    log.error({ err: error, orderId, driverEmployeeId }, 'Delivery tip split failed')
     // Don't throw — tip split failure should not block delivery completion
     return noopResult
   }

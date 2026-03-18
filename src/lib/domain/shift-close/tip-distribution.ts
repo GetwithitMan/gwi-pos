@@ -6,8 +6,11 @@
  */
 
 import { db } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 import type { TxClient, TipDistributionInput, TipDistributionSummary, SalesData } from './types'
+
+const log = createChildLogger('shift-close')
 
 // Process explicit tip distribution from the client
 // Returns the actual total tip-out amount (server-computed, BUG #417/#421 fix)
@@ -119,7 +122,7 @@ export async function processTipDistribution(
       })
 
       if (employeesWithRole.length === 0) {
-        console.warn(`No employees found with role ${tipOut.toRoleId} for tip-out`)
+        log.warn({ roleId: tipOut.toRoleId, locationId }, 'No employees found with role for tip-out')
         continue
       }
 

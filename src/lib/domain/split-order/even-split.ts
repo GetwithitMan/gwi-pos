@@ -6,9 +6,12 @@
  */
 
 import { roundToCents } from '@/lib/pricing'
+import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsForEvenSplit } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, EvenSplitResult } from './types'
+
+const log = createChildLogger('split-order')
 
 /**
  * Create an even N-way split inside an existing transaction.
@@ -126,7 +129,7 @@ export async function createEvenSplit(
       parentOrderId: order.id,
       splitIndex: child.splitIndex,
       splitType: 'even',
-    }).catch(err => console.error('[even-split] Failed to emit ORDER_CREATED for child:', err))
+    }).catch(err => log.error({ err, orderId: child.id }, 'Failed to emit ORDER_CREATED for child'))
   }
 
   // Emit ORDER_CLOSED on the parent order with closedStatus='split'
@@ -136,7 +139,7 @@ export async function createEvenSplit(
     splitType: 'even',
     childOrderIds: createdSplits.map(c => c.id),
     numWays,
-  }).catch(err => console.error('[even-split] Failed to emit ORDER_CLOSED for parent:', err))
+  }).catch(err => log.error({ err, orderId: order.id }, 'Failed to emit ORDER_CLOSED for parent'))
 
   return { splitOrders: createdSplits }
 }

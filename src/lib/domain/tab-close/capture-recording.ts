@@ -9,7 +9,10 @@
 
 import type { TxClient, CaptureFailureResult, CaptureSuccessInput } from './types'
 import { enableSyncReplication } from '@/lib/db-helpers'
+import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+
+const log = createChildLogger('tab-close')
 
 interface BarTabSettings {
   maxCaptureRetries?: number
@@ -117,13 +120,14 @@ export async function recordCaptureSuccess(
   if (currentOrder.status === 'paid' || currentOrder.status === 'closed') {
     // Capture already recorded by another path — the Datacap charge happened but
     // someone else closed the tab. Log for reconciliation (possible double-capture).
-    console.error('[PAYMENT-SAFETY] Order already closed when recording capture', {
+    log.error({
       orderId: input.orderId,
       currentStatus: currentOrder.status,
       capturedAmount: input.totalCaptured,
       authCode: input.authCode,
       datacapRecordNo: input.capturedCard.recordNo,
-    })
+      audit: 'PAYMENT-SAFETY',
+    }, 'Order already closed when recording capture')
     throw new Error('Order was already closed — capture recorded for reconciliation')
   }
 

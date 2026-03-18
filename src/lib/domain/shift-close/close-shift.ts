@@ -8,9 +8,12 @@
 import type { TxClient, ShiftCloseInput, ShiftCloseResult } from './types'
 import { processTipDistribution, autoProcessTipDistribution } from './tip-distribution'
 import { parseSettings } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
 import { getLocationSettings } from '@/lib/location-cache'
 import { OrderRepository } from '@/lib/repositories'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+
+const log = createChildLogger('shift-close')
 
 export async function closeShift(
   tx: TxClient,
@@ -124,9 +127,11 @@ export async function closeShift(
   // Cap tip-outs so they never exceed gross tips (prevents negative net tips).
   // If rules produce a higher total, scale proportionally so the ratio is preserved.
   if (actualTipOutTotal > serverGrossTips && serverGrossTips > 0) {
-    console.warn(
-      `[Shift ${shiftId}] Tip-out total $${actualTipOutTotal.toFixed(2)} exceeds gross tips $${serverGrossTips.toFixed(2)} — capping to gross tips`
-    )
+    log.warn({
+      shiftId,
+      tipOutTotal: actualTipOutTotal,
+      grossTips: serverGrossTips,
+    }, 'Tip-out total exceeds gross tips — capping to gross tips')
     actualTipOutTotal = Math.round(serverGrossTips * 100) / 100
   } else if (serverGrossTips <= 0) {
     // No tips earned — zero out tip-outs to prevent negative net

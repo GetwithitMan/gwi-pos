@@ -7,9 +7,12 @@
 
 import { OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
+import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, ItemSplitResult } from './types'
+
+const log = createChildLogger('split-order')
 
 /** Split items into inclusive/exclusive subtotals */
 function splitSubtotals(items: SplitOrderItem[]): { inclSub: number; exclSub: number } {
@@ -323,7 +326,7 @@ export async function createItemSplit(
       lineItemId: item.id,
       reason: `Moved to split order #${baseOrderNumber}-${nextSplitIndex}`,
     },
-  }))).catch(err => console.error('[item-split] Failed to emit ITEM_REMOVED events:', err))
+  }))).catch(err => log.error({ err, orderId: order.id }, 'Failed to emit ITEM_REMOVED events'))
 
   // Emit ORDER_CREATED for the new child split order
   void emitOrderEvent(order.locationId, newOrder.id, 'ORDER_CREATED', {
@@ -339,7 +342,7 @@ export async function createItemSplit(
     splitIndex: nextSplitIndex,
     splitType: 'by_item',
     movedItemCount: validItemsToMove.length,
-  }).catch(err => console.error('[item-split] Failed to emit ORDER_CREATED for child:', err))
+  }).catch(err => log.error({ err, orderId: newOrder.id }, 'Failed to emit ORDER_CREATED for child'))
 
   // Emit ORDER_CLOSED on the parent order with closedStatus='split'
   void emitOrderEvent(order.locationId, order.id, 'ORDER_CLOSED', {
@@ -347,7 +350,7 @@ export async function createItemSplit(
     reason: `Item split — ${validItemsToMove.length} item(s) moved`,
     splitType: 'by_item',
     childOrderIds: [newOrder.id],
-  }).catch(err => console.error('[item-split] Failed to emit ORDER_CLOSED for parent:', err))
+  }).catch(err => log.error({ err, orderId: order.id }, 'Failed to emit ORDER_CLOSED for parent'))
 
   return {
     newOrder,

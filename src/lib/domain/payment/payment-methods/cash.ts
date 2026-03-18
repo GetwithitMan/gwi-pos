@@ -8,8 +8,11 @@ import {
   calculateRoundingAdjustment,
   roundAmount,
 } from '@/lib/payment'
+import { createChildLogger } from '@/lib/logger'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding, roundToCents } from '@/lib/pricing'
 import type { PaymentInput, PaymentRecord } from '../types'
+
+const log = createChildLogger('payment')
 
 /**
  * Process a cash payment — applies rounding, calculates change, and sets dual pricing fields.
@@ -68,7 +71,7 @@ export function processCashPayment(
     const expectedCashAmount = orderTotal
     const roundingTolerance = (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) ? 0.50 : 0.01
     if (Math.abs(finalAmount - expectedCashAmount) > roundingTolerance) {
-      console.warn(`[DualPricing] Cash payment amount $${finalAmount} differs from total $${expectedCashAmount} for order ${orderId}`)
+      log.warn({ orderId, finalAmount, expectedCashAmount, roundingTolerance }, 'Cash payment amount differs from order total')
     }
   }
 

@@ -24,9 +24,12 @@
  *   await flush()
  */
 
+import { createChildLogger } from '@/lib/logger'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import type { OrderEventType } from '@/lib/order-events/types'
+
+const log = createChildLogger('event-emission')
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -96,9 +99,9 @@ export async function emitOrderAndSocketEvents(
   const flush = async () => {
     // Flush socket outbox — best-effort, catch-up handles failures
     await flushSocketOutbox(locationId).catch((err) => {
-      console.warn(
-        `[emit-order-and-socket] Outbox flush failed for location ${locationId}, catch-up will deliver:`,
-        err instanceof Error ? err.message : err,
+      log.warn(
+        { err: err instanceof Error ? err : undefined, locationId },
+        'Outbox flush failed, catch-up will deliver',
       )
     })
 
@@ -113,9 +116,9 @@ export async function emitOrderAndSocketEvents(
         domainEvents[0].type,
         domainEvents[0].payload,
       ).catch((err) => {
-        console.error(
-          `[emit-order-and-socket] Failed to emit ${domainEvents[0].type} for order ${orderId}:`,
-          err instanceof Error ? err.message : err,
+        log.error(
+          { err: err instanceof Error ? err : undefined, orderId, eventType: domainEvents[0].type },
+          'Failed to emit domain event',
         )
       })
     } else if (domainEvents.length > 1) {
@@ -124,9 +127,9 @@ export async function emitOrderAndSocketEvents(
         orderId,
         domainEvents.map((e) => ({ type: e.type, payload: e.payload })),
       ).catch((err) => {
-        console.error(
-          `[emit-order-and-socket] Failed to emit ${domainEvents.length} events for order ${orderId}:`,
-          err instanceof Error ? err.message : err,
+        log.error(
+          { err: err instanceof Error ? err : undefined, orderId, eventCount: domainEvents.length },
+          'Failed to emit domain events',
         )
       })
     }

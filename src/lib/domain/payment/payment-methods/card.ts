@@ -8,7 +8,10 @@ import {
   generateFakeAuthCode,
   generateFakeTransactionId,
 } from '@/lib/payment'
+import { createChildLogger } from '@/lib/logger'
 import type { PaymentInput, PaymentRecord } from '../types'
+
+const log = createChildLogger('payment')
 
 /**
  * Process a credit/debit card payment — maps Datacap fields and generates fallback auth codes.
@@ -23,7 +26,7 @@ export function processCardPayment(
   // didn't return it. We still allow the payment through (blocking could strand a successful
   // charge) but log a warning so it shows up in monitoring.
   if (!payment.cardLast4 || !/^\d{4}$/.test(payment.cardLast4)) {
-    console.warn(`[Pay] Card payment missing cardLast4 for order ${orderId} (method=${payment.method}). Defaulting to '0000'.`)
+    log.warn({ orderId, method: payment.method }, 'Card payment missing cardLast4, defaulting to 0000')
     payment.cardLast4 = '0000'
   }
 

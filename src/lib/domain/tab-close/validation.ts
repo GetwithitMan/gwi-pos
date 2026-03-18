@@ -6,7 +6,10 @@
  * Takes a TxClient param — owns DB reads/writes within caller's transaction.
  */
 
+import { createChildLogger } from '@/lib/logger'
 import type { TxClient, TabCloseInput, TabCloseValidationResult, TabCloseOrder } from './types'
+
+const log = createChildLogger('tab-close')
 
 const ZOMBIE_THRESHOLD_MS = 60_000
 
@@ -73,11 +76,11 @@ export async function validateTabForClose(
     const isZombie = Date.now() - lastUpdated > ZOMBIE_THRESHOLD_MS
 
     if (isZombie) {
-      console.warn('[Tab Close] Recovering zombie closing state', {
+      log.warn({
         orderId: input.orderId,
         lastUpdated: order.updatedAt,
         stuckForMs: Date.now() - lastUpdated,
-      })
+      }, 'Recovering zombie closing state')
       await tx.order.update({
         where: { id: input.orderId },
         data: { tabStatus: 'open', version: { increment: 1 } },
@@ -109,11 +112,12 @@ export async function validateTabForClose(
 
   // AUDIT: Empty tab with pre-auth — will release card holds ($0 capture path)
   if (order.items.length === 0 && order.cards.length > 0) {
-    console.warn('[AUDIT] EMPTY_TAB_CLOSE: Order has pre-auth cards but zero items — releasing holds', {
+    log.warn({
       orderId: input.orderId,
       cardCount: order.cards.length,
       employeeId: input.employeeId,
-    })
+      audit: 'EMPTY_TAB_CLOSE',
+    }, 'Order has pre-auth cards but zero items — releasing holds')
   }
 
   // Mark tab as 'closing' to prevent concurrent close-tab from another terminal.

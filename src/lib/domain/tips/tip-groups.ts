@@ -15,7 +15,10 @@
  */
 
 import { db } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
 import { TipGroupSplitMode, TipGroupStatus, TipGroupMembershipStatus } from '@/generated/prisma/client'
+
+const log = createChildLogger('tips')
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -164,10 +167,10 @@ async function createSegment(
 
     const weightedMembers = employees.map(emp => {
       if (!emp.role?.tipWeight) {
-        console.warn('[tip-groups] Employee has no role/tipWeight, defaulting to weight=1 (equal split)', {
+        log.warn({
           employeeId: emp.id,
           groupId,
-        })
+        }, 'Employee has no role/tipWeight, defaulting to weight=1 (equal split)')
       }
       return {
         employeeId: emp.id,

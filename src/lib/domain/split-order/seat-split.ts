@@ -7,9 +7,12 @@
 
 import { OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
+import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, SeatSplitResult } from './types'
+
+const log = createChildLogger('split-order')
 
 /**
  * Create a by-seat split inside an existing transaction.
@@ -315,7 +318,7 @@ export async function createSeatSplit(
         lineItemId: itemId,
         reason: 'Moved via seat split',
       },
-    }))).catch(err => console.error('[seat-split] Failed to emit ITEM_REMOVED events:', err))
+    }))).catch(err => log.error({ err, orderId: order.id }, 'Failed to emit ITEM_REMOVED events'))
   }
 
   // Emit ORDER_CREATED for each child split order (one per seat)
@@ -333,7 +336,7 @@ export async function createSeatSplit(
       splitIndex: child.splitIndex,
       splitType: 'by_seat',
       seatNumber: child.seatNumber,
-    }).catch(err => console.error('[seat-split] Failed to emit ORDER_CREATED for child:', err))
+    }).catch(err => log.error({ err, orderId: child.id }, 'Failed to emit ORDER_CREATED for child'))
   }
 
   // Emit ORDER_CLOSED on the parent order with closedStatus='split'
@@ -343,7 +346,7 @@ export async function createSeatSplit(
     splitType: 'by_seat',
     childOrderIds: splitOrders.map(c => c.id),
     seatNumbers: sortedSeats,
-  }).catch(err => console.error('[seat-split] Failed to emit ORDER_CLOSED for parent:', err))
+  }).catch(err => log.error({ err, orderId: order.id }, 'Failed to emit ORDER_CLOSED for parent'))
 
   return {
     splitOrders,
