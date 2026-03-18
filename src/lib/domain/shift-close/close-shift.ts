@@ -9,6 +9,7 @@ import type { TxClient, ShiftCloseInput, ShiftCloseResult } from './types'
 import { processTipDistribution, autoProcessTipDistribution } from './tip-distribution'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { OrderRepository } from '@/lib/repositories'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export async function closeShift(
@@ -42,14 +43,15 @@ export async function closeShift(
   const requireClose = locSettings.barTabs?.requireCloseTabsBeforeShift ?? true
 
   if (requireClose) {
-    const openOrderCount = await tx.order.count({
-      where: {
-        locationId,
+    const openOrderCount = await OrderRepository.countOrders(
+      locationId,
+      {
         employeeId,
         status: { in: ['open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
       },
-    })
+      tx,
+    )
 
     if (openOrderCount > 0) {
       // Manager override: transfer orders and proceed

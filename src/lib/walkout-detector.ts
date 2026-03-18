@@ -9,6 +9,7 @@
 
 import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
+import { OrderRepository } from '@/lib/repositories'
 import { emitToLocation } from '@/lib/socket-server'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -107,10 +108,7 @@ export async function detectPotentialWalkouts(locationId: string): Promise<{
       ? `${flagPrefix}\n${order.notes}`
       : flagPrefix
 
-    await db.order.update({
-      where: { id: order.id },
-      data: { notes: updatedNotes },
-    })
+    await OrderRepository.updateOrder(order.id, locationId, { notes: updatedNotes })
 
     // Create audit log
     await db.auditLog.create({

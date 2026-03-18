@@ -18,8 +18,9 @@
  * this module call postToTipLedger() sequentially outside of transactions.
  */
 
-import type { Prisma } from '@prisma/client'
+import type { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
+import { PaymentRepository } from '@/lib/repositories'
 import { postToTipLedger } from './tip-ledger'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -142,22 +143,24 @@ export async function performTipAdjustment(params: {
 
   // 3. For tip_amount adjustments, update the Payment record
   if (paymentUpdate) {
-    const payment = await db.payment.findUnique({
-      where: { id: paymentUpdate.paymentId },
-      select: { amount: true },
-    })
+    const payment = await PaymentRepository.getPaymentByIdWithSelect(
+      paymentUpdate.paymentId,
+      locationId,
+      { amount: true },
+    )
 
     if (payment) {
       const tipAmountDecimal = paymentUpdate.tipAmountCents / 100
       const totalAmount = Number(payment.amount) + tipAmountDecimal
 
-      await db.payment.update({
-        where: { id: paymentUpdate.paymentId },
-        data: {
+      await PaymentRepository.updatePayment(
+        paymentUpdate.paymentId,
+        locationId,
+        {
           tipAmount: tipAmountDecimal,
           totalAmount,
         },
-      })
+      )
     }
   }
 

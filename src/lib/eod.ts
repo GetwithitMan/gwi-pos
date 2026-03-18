@@ -16,6 +16,7 @@ import type { LocationSettings } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient, requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { detectPotentialWalkouts } from '@/lib/walkout-detector'
+import { OrderRepository } from '@/lib/repositories'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { enableSyncReplication } from '@/lib/db-helpers'
@@ -210,14 +211,11 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
         if (!approved) {
           // Capture declined — mark the tab
-          await db.order.update({
-            where: { id: tab.id },
-            data: {
-              tabStatus: 'declined_capture',
-              captureDeclinedAt: now,
-              captureRetryCount: { increment: 1 },
-              lastCaptureError: `EOD auto-capture declined: ${response.textResponse || 'Unknown'}`,
-            },
+          await OrderRepository.updateOrder(tab.id, locationId, {
+            tabStatus: 'declined_capture',
+            captureDeclinedAt: now,
+            captureRetryCount: { increment: 1 },
+            lastCaptureError: `EOD auto-capture declined: ${response.textResponse || 'Unknown'}`,
           })
           tabsDeclined++
           warnings.push(`Tab #${tab.orderNumber} ($${purchaseAmount.toFixed(2)}): capture declined`)
@@ -664,14 +662,14 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
   // ── 9. Orphaned offline payment warning ────────────────────────────────────
   if (!dryRun) {
     try {
-      const orphanedPaymentSuspects = await db.order.count({
-        where: {
-          locationId,
+      const orphanedPaymentSuspects = await OrderRepository.countOrders(
+        locationId,
+        {
           status: { in: ['open', 'sent', 'in_progress'] },
           updatedAt: { lt: new Date(Date.now() - 30 * 60 * 1000) },
           deletedAt: null,
         },
-      })
+      )
       if (orphanedPaymentSuspects > 0) {
         warnings.push(`${orphanedPaymentSuspects} order(s) may have orphaned offline card payments. Check Datacap batch report.`)
         console.warn(
