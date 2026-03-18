@@ -10,6 +10,7 @@ import {
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
+import { getRequestLocationId } from '@/lib/request-context'
 
 /**
  * POST /api/orders/[id]/auto-discounts
@@ -124,25 +125,30 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
-    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
-    const order = await adminDb.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let orderLocationId = getRequestLocationId()
+    if (!orderLocationId) {
+      // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+      // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
+      const order = await adminDb.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { id: true, locationId: true },
+      })
 
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      if (!order) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      orderLocationId = order.locationId
     }
 
     // TODO: No OrderDiscountRepository -- raw db with locationId guard
     const autoDiscounts = await db.orderDiscount.findMany({
       where: {
         orderId,
-        locationId: order.locationId,
+        locationId: orderLocationId,
         isAutomatic: true,
         deletedAt: null,
       },

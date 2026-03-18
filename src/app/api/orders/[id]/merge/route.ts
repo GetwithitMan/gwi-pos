@@ -9,6 +9,7 @@ import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchCFDOrderUpdated, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // POST - Merge another order into this one
 export const POST = withVenue(async function POST(
@@ -34,18 +35,21 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Get target order -- first do a lightweight check to get locationId for tenant-scoped queries
-    const targetOrderCheck = await adminDb.order.findUnique({
-      where: { id: targetOrderId },
-      select: { id: true, locationId: true },
-    })
-    if (!targetOrderCheck) {
-      return NextResponse.json(
-        { error: 'Target order not found' },
-        { status: 404 }
-      )
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const targetOrderCheck = await adminDb.order.findUnique({
+        where: { id: targetOrderId },
+        select: { id: true, locationId: true },
+      })
+      if (!targetOrderCheck) {
+        return NextResponse.json(
+          { error: 'Target order not found' },
+          { status: 404 }
+        )
+      }
+      locationId = targetOrderCheck.locationId
     }
-    const locationId = targetOrderCheck.locationId
 
     const targetOrder = await OrderRepository.getOrderByIdWithInclude(
       targetOrderId, locationId,

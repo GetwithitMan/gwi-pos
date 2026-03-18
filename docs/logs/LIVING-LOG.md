@@ -5,6 +5,44 @@
 
 ---
 
+## 2026-03-18 — KDS Overhaul (10 Phases) + Android KDS App
+
+### Summary
+KDS converted from a web-only app to a **native Android app** (`gwi-kds-android`). Web KDS at `/kds` remains as fallback. Documentation updated across 8 files to reflect the new architecture.
+
+### Android KDS App (`gwi-kds-android`)
+- **Two flavors:** FoodKDS (`com.gwi.kds.foodkds`) — kitchen/bar ticket display; PitBoss (`com.gwi.kds.pitboss`) — entertainment/timed rental management
+- **Modules:** `:app` (main + flavors), `:core` (Retrofit, Socket.IO, Room, Moshi, domain), `:feature-foodkds`, `:feature-pitboss`
+- **Tech:** Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi (Min SDK 26, Target SDK 36)
+- Connects to NUC via REST API + WebSocket (same auth pattern as Register)
+
+### KDS Overhaul Features (10 Phases)
+1. **Screen Communication** — linked screen chains with `send_to_next` and `multi_clear`
+2. **Display Modes** — configurable layouts per screen
+3. **Per-Order-Type Timing** — different thresholds for dine-in, takeout, delivery
+4. **All-Day Counts** — running item totals for the business day
+5. **Order Tracker** — visual progress through screen link chains
+6. **Keyboard/Bump Bar Navigation** — physical input mapped to bump and nav actions
+7. **Print on Bump** — automatic kitchen ticket print (fire-and-forget)
+8. **SMS on Ready** — customer notification via Twilio at final bump
+9. **Intermediate vs Final Bump** — screen chain awareness (forward state persistence)
+10. **Forward State Persistence** — `kdsForwardedToScreenId` + `kdsFinalCompleted` fields
+
+### Socket Events (KDS Android)
+- `kds:order-received`, `kds:item-status`, `kds:order-bumped`, `kds:order-forwarded`, `kds:multi-clear`
+
+### Docs Updated
+- `CLAUDE.md` — Doc routing table, key feature quick-ref, model hierarchy, dev commands
+- `docs/features/kds.md` — Full rewrite for Android-primary architecture
+- `docs/domains/KDS-DOMAIN.md` — Architecture diagram, layers, key files updated
+- `docs/flows/kds-bump.md` — Screen link processing, forward state, print/SMS on bump, 8 invariants
+- `docs/features/_INDEX.md` — KDS repos column updated
+- `docs/features/_CROSS-REF-MATRIX.md` — KDS row expanded with Android primary, new socket events, screen link rules
+- `docs/guides/ANDROID-INTEGRATION.md` — New KDS Android App section with build commands
+- `docs/logs/LIVING-LOG.md` — This entry
+
+---
+
 ## 2026-03-17 — Reservation Engine (Full System)
 
 ### Commits

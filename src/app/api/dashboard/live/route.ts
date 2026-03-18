@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
@@ -7,12 +6,16 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
-import { REVENUE_ORDER_STATUSES, roundMoney } from '@/lib/domain/reports'
-// TODO: Phase 1 - Live dashboard uses complex aggregate/findMany with OR conditions,
-// db.orderItem.aggregate, db.order.aggregate, db.paidInOut.findMany, db.pendingDeduction.count.
-// No repository methods match these complex query shapes. All db.* calls remain direct.
-// Candidates for future migration: OrderRepository (needs aggregate + complex OR where),
-// PaidInOutRepository, PendingDeductionRepository.
+import { roundMoney } from '@/lib/domain/reports'
+import {
+  getTodayRevenueOrders,
+  getOpenOrders,
+  getVoidedItemsAggregate,
+  getCompedItemsAggregate,
+  getDiscountTotalAggregate,
+  getPaidInOutTotals,
+  getFailedDeductionCount,
+} from '@/lib/query-services'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -54,141 +57,31 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalDayMs = endOfDay.getTime() - startOfDay.getTime()
     const dayFraction = Math.min(Math.max(elapsedMs / totalDayMs, 0), 1)
 
-    // All queries in parallel
+    const todayRange = { start: startOfDay, end: endOfDay }
+    const lastWeekPacingEnd = new Date(lastWeekRange.start.getTime() + elapsedMs)
+
+    // All queries in parallel via query services
     const [
       todayOrders,
       lastWeekOrders,
       openOrders,
       voidItems,
       compItems,
-      discountedOrders,
-      paidInOuts,
+      discountsTotalToday,
+      paidInOutTotals,
       pendingDeductionsFailed,
     ] = await Promise.all([
-      // Today's closed/paid orders for sales metrics
-      // Use businessDayDate as primary boundary, fall back to createdAt
-      adminDb.order.findMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: { in: [...REVENUE_ORDER_STATUSES] },
-          parentOrderId: null,
-          OR: [
-            { businessDayDate: { gte: startOfDay, lte: endOfDay } },
-            { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
-          ],
-        },
-        select: {
-          id: true,
-          subtotal: true,
-          total: true,
-          discountTotal: true,
-          taxTotal: true,
-        },
-      }),
+      getTodayRevenueOrders(locationId, todayRange),
 
       // Last week same day - orders closed up to the equivalent time of day
-      // Use businessDayDate as primary boundary, fall back to createdAt
-      adminDb.order.findMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: { in: [...REVENUE_ORDER_STATUSES] },
-          parentOrderId: null,
-          OR: [
-            { businessDayDate: { gte: lastWeekRange.start, lte: new Date(lastWeekRange.start.getTime() + elapsedMs) } },
-            { businessDayDate: null, createdAt: { gte: lastWeekRange.start, lte: new Date(lastWeekRange.start.getTime() + elapsedMs) } },
-          ],
-        },
-        select: {
-          id: true,
-          total: true,
-        },
-      }),
+      getTodayRevenueOrders(locationId, { start: lastWeekRange.start, end: lastWeekPacingEnd }),
 
-      // Open tickets
-      adminDb.order.findMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: { in: ['open', 'sent'] },
-        },
-        select: {
-          id: true,
-          total: true,
-        },
-      }),
-
-      // Voided items today — use itemTotal (price * quantity) for accurate dollar impact
-      adminDb.orderItem.aggregate({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: 'voided',
-          updatedAt: { gte: startOfDay, lte: endOfDay },
-        },
-        _sum: { itemTotal: true },
-        _count: { id: true },
-      }),
-
-      // Comped items today — use itemTotal (price * quantity) for accurate dollar impact
-      adminDb.orderItem.aggregate({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: 'comped',
-          updatedAt: { gte: startOfDay, lte: endOfDay },
-        },
-        _sum: { itemTotal: true },
-        _count: { id: true },
-      }),
-
-      // Discount totals from orders today
-      // Use businessDayDate as primary boundary, fall back to createdAt
-      adminDb.order.aggregate({
-        where: {
-          locationId,
-          deletedAt: null,
-          status: { in: [...REVENUE_ORDER_STATUSES] },
-          OR: [
-            { businessDayDate: { gte: startOfDay, lte: endOfDay } },
-            { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
-          ],
-          discountTotal: { gt: 0 },
-        },
-        _sum: { discountTotal: true },
-      }),
-
-      // Paid in/out today
-      db.paidInOut.findMany({
-        where: {
-          locationId,
-          deletedAt: null,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-        select: {
-          type: true,
-          amount: true,
-        },
-      }),
-
-      // Failed deductions
-      (async () => {
-        try {
-          return await db.pendingDeduction.count({
-            where: {
-              locationId,
-              OR: [
-                { status: 'dead' },
-                { status: 'failed', attempts: { gt: 3 } },
-              ],
-            },
-          })
-        } catch {
-          // PendingDeduction model may not be migrated yet
-          return 0
-        }
-      })(),
+      getOpenOrders(locationId),
+      getVoidedItemsAggregate(locationId, todayRange),
+      getCompedItemsAggregate(locationId, todayRange),
+      getDiscountTotalAggregate(locationId, todayRange),
+      getPaidInOutTotals(locationId, todayRange),
+      getFailedDeductionCount(locationId),
     ])
 
     // Calculate metrics
@@ -207,17 +100,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const openTicketCount = openOrders.length
     const openTicketValue = openOrders.reduce((sum, o) => sum + Number(o.total || 0), 0)
 
-    const voidsTotalToday = Number(voidItems._sum.itemTotal || 0)
-    const compsTotalToday = Number(compItems._sum.itemTotal || 0)
-    const discountsTotalToday = Number(discountedOrders._sum.discountTotal || 0)
+    const voidsTotalToday = voidItems.total
+    const compsTotalToday = compItems.total
 
-    // Paid in/out
-    let paidInTotal = 0
-    let paidOutTotal = 0
-    for (const pio of paidInOuts) {
-      if (pio.type === 'in') paidInTotal += Number(pio.amount || 0)
-      else paidOutTotal += Number(pio.amount || 0)
-    }
+    // Paid in/out (already calculated by query service)
+    const paidInTotal = paidInOutTotals.paidIn
+    const paidOutTotal = paidInOutTotals.paidOut
 
     return NextResponse.json({
       data: {

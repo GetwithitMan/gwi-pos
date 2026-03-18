@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getRequestLocationId } from '@/lib/request-context'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -101,14 +102,19 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return NextResponse.json({ error: 'ingredients array is required' }, { status: 400 })
     }
 
-    // Verify menu item exists and get locationId
-    const menuItem = await adminDb.menuItem.findUnique({
-      where: { id: menuItemId },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      // Verify menu item exists and get locationId
+      const menuItem = await adminDb.menuItem.findUnique({
+        where: { id: menuItemId },
+        select: { id: true, locationId: true },
+      })
 
-    if (!menuItem) {
-      return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      if (!menuItem) {
+        return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+      }
+      locationId = menuItem.locationId
     }
 
     // Deduplicate by ingredientId — keep last occurrence (latest settings win)
@@ -122,7 +128,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     }
 
     // Verify all ingredient IDs exist (no locationId filter — the ingredient may have been
-    // created under a different session locationId; the link record stamps menuItem.locationId)
+    // created under a different session locationId; the link record stamps locationId)
     const ingredientIds = deduped.map(i => i.ingredientId)
     const existingIngredients = await db.ingredient.findMany({
       where: { id: { in: ingredientIds }, deletedAt: null },
@@ -149,7 +155,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       if (deduped.length > 0) {
         await tx.menuItemIngredient.createMany({
           data: deduped.map((ing, index) => ({
-            locationId: menuItem.locationId,
+            locationId: locationId,
             menuItemId,
             ingredientId: ing.ingredientId,
             isIncluded: ing.isIncluded ?? true,
@@ -198,7 +204,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     const activeUpdated = updated.filter(mi => mi.ingredient && !mi.ingredient.deletedAt)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void dispatchMenuItemChanged(menuItem.locationId, {
+    void dispatchMenuItemChanged(locationId, {
       itemId: menuItemId,
       action: 'updated',
       changes: { ingredients: true },

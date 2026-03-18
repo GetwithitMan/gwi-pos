@@ -9,11 +9,27 @@ import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
-// TODO: Phase 1 - Daily report uses ~18 parallel $queryRaw SQL aggregates.
-// No repository methods for raw SQL aggregates. All db.* calls remain direct.
-// Candidates for future migration: db.voidLog, db.timeClockEntry, db.paidInOut,
-// db.giftCardTransaction, db.tipLedgerEntry, db.category, db.tipTransaction,
-// and legacy path db.order.findMany (complex includes).
+import {
+  getRevenueSummary,
+  getSalesByOrderType,
+  getCategorySales,
+  getCategoryVoids,
+  getPaymentSummary,
+  getDiscountSummary,
+  getWeightBasedSales,
+  getEntertainmentSummary,
+  getSurchargeBase,
+  getVoidLogs,
+  getPaidInOut as getDailyPaidInOut,
+  getGiftCardTransactions,
+  getCategories,
+  getCCTipFees,
+  getTipsBankedInRange,
+  getTipsCollectedInRange,
+  getTipSharesDistributedInRange,
+  getTimeClockEntries,
+  type BusinessDayRange,
+} from '@/lib/query-services'
 
 // ============================================================
 // SQL-AGGREGATE DAILY REPORT (replaces in-memory iteration)
@@ -75,9 +91,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // ── SQL-Aggregate path ────────────────────────────────────
-    // Common WHERE fragment for the business-day window.
-    // businessDayDate is preferred; if NULL, fall back to createdAt.
-    // Prisma tagged templates handle parameterization.
+    // All independent queries run in parallel via query services.
+
+    const range: BusinessDayRange = { start: startOfDay, end: endOfDay }
+    const pricingProgramForSurcharge = getPricingProgram(locationSettings)
+    const needsSurcharge = pricingProgramForSurcharge.model === 'surcharge'
+      && pricingProgramForSurcharge.enabled
+      && !!pricingProgramForSurcharge.surchargePercent
 
     // We run all independent queries in parallel.
     const [
@@ -89,7 +109,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       discountSummary,
       weightSummary,
       statsSummary,
-      surchargeOrders,
+      surchargeBase,
       voidLogs,
       timeEntries,
       paidInOuts,
@@ -98,405 +118,35 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       tipsCollectedToday,
       tipSharesDistributed,
       categories,
-      ccTipFees,
+      ccTipFeesResult,
       entertainmentSummary,
     ] = await Promise.all([
-      // 1) Revenue summary — order-level aggregates
-      // Exclude split parents: when pay-all-splits marks the parent as 'paid',
-      // both parent and children would be counted — doubling sales totals.
-      db.$queryRaw<RevenueSummaryRow[]>(Prisma.sql`
-        SELECT
-          COUNT(*)::int AS order_count,
-          COALESCE(SUM(o.subtotal), 0)::float AS subtotal,
-          COALESCE(SUM(o."taxTotal"), 0)::float AS tax_total,
-          COALESCE(SUM(o."taxFromInclusive"), 0)::float AS tax_from_inclusive,
-          COALESCE(SUM(o."taxFromExclusive"), 0)::float AS tax_from_exclusive,
-          COALESCE(SUM(o."tipTotal"), 0)::float AS tip_total,
-          COALESCE(SUM(o."discountTotal"), 0)::float AS discount_total,
-          COALESCE(SUM(o."commissionTotal"), 0)::float AS commission_total,
-          COALESCE(SUM(o."guestCount"), 0)::int AS guest_count,
-          COALESCE(SUM(
-            CASE WHEN o."closedAt" IS NOT NULL
-              THEN EXTRACT(EPOCH FROM (o."closedAt" - o."createdAt")) / 60.0
-              ELSE 0 END
-          ), 0)::float AS total_check_time_minutes,
-          COUNT(CASE WHEN o."closedAt" IS NOT NULL THEN 1 END)::int AS closed_count
-        FROM "Order" o
-        WHERE o."locationId" = ${locationId}
-          AND o.status IN ('completed', 'closed', 'paid')
-          AND o."deletedAt" IS NULL
-          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-      `),
-
-      // 2) Sales by order type
-      db.$queryRaw<OrderTypeSummaryRow[]>(Prisma.sql`
-        SELECT
-          COALESCE(o."orderType", 'Unknown') AS order_type,
-          COUNT(*)::int AS count,
-          COALESCE(SUM(o.subtotal + o."taxFromExclusive"), 0)::float AS gross,
-          COALESCE(SUM(o.subtotal - o."discountTotal"), 0)::float AS net
-        FROM "Order" o
-        WHERE o."locationId" = ${locationId}
-          AND o.status IN ('completed', 'closed', 'paid')
-          AND o."deletedAt" IS NULL
-          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-        GROUP BY COALESCE(o."orderType", 'Unknown')
-      `),
-
-      // 3) Category sales — items from completed orders, including modifier revenue
-      db.$queryRaw<CategorySalesRow[]>(Prisma.sql`
-        SELECT
-          c.id AS category_id,
-          c.name AS category_name,
-          COALESCE(c."categoryType", 'food') AS category_type,
-          COALESCE(SUM(CASE WHEN oi.status = 'active' THEN oi.quantity ELSE 0 END), 0)::int AS units,
-          COALESCE(SUM(
-            CASE WHEN oi.status = 'active'
-              THEN (oi.price * oi.quantity) + COALESCE(mod_totals.mod_total, 0)
-              ELSE 0 END
-          ), 0)::float AS gross,
-          COALESCE(SUM(
-            CASE WHEN oi.status = 'active' AND oi."isTaxInclusive" = true
-              THEN (oi.price * oi.quantity) + COALESCE(mod_totals.mod_total, 0)
-              ELSE 0 END
-          ), 0)::float AS inclusive_gross,
-          COALESCE(SUM(
-            CASE WHEN oi.status = 'active' AND o."subtotal" > 0 AND o."discountTotal" > 0
-              THEN (oi.price * oi.quantity)::float / NULLIF(o."subtotal"::float, 0) * o."discountTotal"::float
-              ELSE 0 END
-          ), 0)::float AS discount_share
-        FROM "OrderItem" oi
-        JOIN "Order" o ON oi."orderId" = o.id
-        JOIN "MenuItem" mi ON oi."menuItemId" = mi.id
-        JOIN "Category" c ON mi."categoryId" = c.id
-        LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(oim.price), 0)::float AS mod_total
-          FROM "OrderItemModifier" oim
-          WHERE oim."orderItemId" = oi.id
-        ) mod_totals ON true
-        WHERE o."locationId" = ${locationId}
-          AND o.status IN ('completed', 'closed', 'paid')
-          AND o."deletedAt" IS NULL
-          AND oi."deletedAt" IS NULL
-          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-        GROUP BY c.id, c.name, c."categoryType"
-      `),
-
-      // 4) Category voids — items from voided orders
-      db.$queryRaw<CategoryVoidsRow[]>(Prisma.sql`
-        SELECT
-          c.id AS category_id,
-          COALESCE(SUM(oi.price * oi.quantity), 0)::float AS void_amount
-        FROM "OrderItem" oi
-        JOIN "Order" o ON oi."orderId" = o.id
-        JOIN "MenuItem" mi ON oi."menuItemId" = mi.id
-        JOIN "Category" c ON mi."categoryId" = c.id
-        WHERE o."locationId" = ${locationId}
-          AND o.status = 'voided'
-          AND o."deletedAt" IS NULL
-          AND oi."deletedAt" IS NULL
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-        GROUP BY c.id
-      `),
-
-      // 5) Payment breakdown — from completed payments on completed orders
-      db.$queryRaw<PaymentSummaryRow[]>(Prisma.sql`
-        SELECT
-          p."paymentMethod"::text AS payment_method,
-          COALESCE(p."cardBrand", '') AS card_brand,
-          COUNT(*)::int AS count,
-          COALESCE(SUM(p.amount), 0)::float AS total,
-          COALESCE(SUM(p."tipAmount"), 0)::float AS tips,
-          COALESCE(SUM(p."roundingAdjustment"), 0)::float AS rounding
-        FROM "Payment" p
-        JOIN "Order" o ON p."orderId" = o.id
-        WHERE o."locationId" = ${locationId}
-          AND o.status IN ('completed', 'closed', 'paid')
-          AND o."deletedAt" IS NULL
-          AND p.status = 'completed'
-          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-        GROUP BY p."paymentMethod", p."cardBrand"
-      `),
-
-      // 6) Discount breakdown — from order discounts
-      db.$queryRaw<DiscountSummaryRow[]>(Prisma.sql`
-        SELECT
-          COALESCE(dr.name, od.name, 'Unknown') AS discount_name,
-          COUNT(*)::int AS count,
-          COALESCE(SUM(od.amount), 0)::float AS total
-        FROM "OrderDiscount" od
-        JOIN "Order" o ON od."orderId" = o.id
-        LEFT JOIN "DiscountRule" dr ON od."discountRuleId" = dr.id
-        WHERE o."locationId" = ${locationId}
-          AND o.status IN ('completed', 'closed', 'paid')
-          AND o."deletedAt" IS NULL
-          AND od."deletedAt" IS NULL
-          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-        GROUP BY COALESCE(dr.name, od.name, 'Unknown')
-      `),
-
-      // 7) Weight-based sales summary
-      db.$queryRaw<WeightSummaryRow[]>(Prisma.sql`
-        SELECT
-          COALESCE(oi."weightUnit", 'lb') AS weight_unit,
-          COALESCE(SUM(oi."itemTotal"), 0)::float AS revenue,
-          COALESCE(SUM(oi.quantity), 0)::int AS item_count,
-          COALESCE(SUM(oi.weight * oi.quantity), 0)::float AS total_weight
-        FROM "OrderItem" oi
-        JOIN "Order" o ON oi."orderId" = o.id
-        WHERE o."locationId" = ${locationId}
-          AND o.status IN ('completed', 'closed', 'paid')
-          AND o."deletedAt" IS NULL
-          AND oi."deletedAt" IS NULL
-          AND oi."soldByWeight" = true
-          AND oi.weight IS NOT NULL
-          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-        GROUP BY COALESCE(oi."weightUnit", 'lb')
-      `),
-
-      // 8) Stats — check time from orders with closedAt
-      // (covered in revenueSummary above — combined to avoid an extra query)
-      // Instead, we use this slot for surcharge detection.
-      // Actually, stats are already in revenueSummary. Use this for a placeholder.
+      getRevenueSummary(locationId, range),
+      getSalesByOrderType(locationId, range),
+      getCategorySales(locationId, range),
+      getCategoryVoids(locationId, range),
+      getPaymentSummary(locationId, range),
+      getDiscountSummary(locationId, range),
+      getWeightBasedSales(locationId, range),
       Promise.resolve(null),
-
-      // 9) Surcharge detection — orders that have a card payment (for surcharge calc)
-      // Only needed when surcharge pricing is active
-      ((): Promise<SurchargeOrderRow[]> => {
-        const pricingProgram = getPricingProgram(locationSettings)
-        if (pricingProgram.model !== 'surcharge' || !pricingProgram.enabled || !pricingProgram.surchargePercent) {
-          return Promise.resolve([])
-        }
-        return db.$queryRaw<SurchargeOrderRow[]>(Prisma.sql`
-          SELECT
-            COALESCE(SUM(
-              CASE WHEN EXISTS (
-                SELECT 1 FROM "Payment" p
-                WHERE p."orderId" = o.id
-                  AND p.status = 'completed'
-                  AND LOWER(p."paymentMethod"::text) IN ('credit', 'card')
-              )
-              THEN o.subtotal
-              ELSE 0 END
-            ), 0)::float AS surcharge_base
-          FROM "Order" o
-          WHERE o."locationId" = ${locationId}
-            AND o.status IN ('completed', 'closed', 'paid')
-            AND o."deletedAt" IS NULL
-            AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-            AND (
-              (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-              OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-            )
-        `)
-      })(),
-
-      // ── Row-level queries (kept as-is — lightweight) ──
-
-      // Void logs — need row-level for byReason breakdown
-      db.voidLog.findMany({
-        where: {
-          locationId,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-        take: 10000,
-      }),
-
-      // Time clock entries for labor
-      db.timeClockEntry.findMany({
-        where: {
-          locationId,
-          clockIn: { gte: startOfDay, lte: endOfDay },
-        },
-        take: 10000,
-        include: {
-          employee: {
-            select: {
-              hourlyRate: true,
-              role: { select: { name: true } },
-            },
-          },
-        },
-      }),
-
-      // Paid in/out
-      db.paidInOut.findMany({
-        where: {
-          locationId,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-        take: 10000,
-      }),
-
-      // Gift card transactions
-      db.giftCardTransaction.findMany({
-        where: {
-          locationId,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-        take: 10000,
-      }),
-
-      // Tips BANKED today
-      db.tipLedgerEntry.findMany({
-        where: {
-          locationId,
-          type: 'CREDIT',
-          sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
-          deletedAt: null,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-        take: 10000,
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-            },
-          },
-        },
-      }),
-
-      // Tips COLLECTED today
-      db.tipLedgerEntry.findMany({
-        where: {
-          locationId,
-          type: 'DEBIT',
-          sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
-          deletedAt: null,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-        take: 10000,
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-            },
-          },
-        },
-      }),
-
-      // Tip shares distributed today
-      db.tipLedgerEntry.findMany({
-        where: {
-          locationId,
-          sourceType: 'ROLE_TIPOUT',
-          deletedAt: null,
-          createdAt: { gte: startOfDay, lte: endOfDay },
-        },
-        take: 10000,
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-            },
-          },
-        },
-      }),
-
-      // Categories for reference
-      db.category.findMany({
-        where: { locationId, deletedAt: null },
-        select: { id: true, name: true, categoryType: true },
-      }),
-
-      // CC Tip Fees
-      db.tipTransaction.aggregate({
-        _sum: { ccFeeAmountCents: true },
-        _count: true,
-        where: {
-          locationId,
-          collectedAt: { gte: startOfDay, lte: endOfDay },
-          ccFeeAmountCents: { gt: 0 },
-          deletedAt: null,
-        },
-      }),
-
-      // Entertainment sessions — timed rental items with block time tracking
-      db.$queryRaw<EntertainmentSummaryRow[]>(Prisma.sql`
-        SELECT
-          COUNT(*)::int AS session_count,
-          COALESCE(SUM(oi."itemTotal"), 0)::float AS revenue,
-          COALESCE(SUM(oi."blockTimeMinutes" * oi.quantity), 0)::int AS total_minutes,
-          (
-            SELECT mi.name FROM "OrderItem" oi2
-            JOIN "MenuItem" mi ON oi2."menuItemId" = mi.id
-            JOIN "Order" o2 ON oi2."orderId" = o2.id
-            WHERE o2."locationId" = ${locationId}
-              AND o2.status IN ('completed', 'closed', 'paid')
-              AND o2."deletedAt" IS NULL
-              AND oi2."deletedAt" IS NULL
-              AND oi2."blockTimeStartedAt" IS NOT NULL
-              AND mi."itemType" = 'timed_rental'
-              AND (
-                (o2."businessDayDate" >= ${startOfDay} AND o2."businessDayDate" <= ${endOfDay})
-                OR (o2."businessDayDate" IS NULL AND o2."createdAt" >= ${startOfDay} AND o2."createdAt" <= ${endOfDay})
-              )
-            GROUP BY mi.id, mi.name
-            ORDER BY SUM(oi2."itemTotal") DESC
-            LIMIT 1
-          ) AS top_item_name
-        FROM "OrderItem" oi
-        JOIN "Order" o ON oi."orderId" = o.id
-        JOIN "MenuItem" mi ON oi."menuItemId" = mi.id
-        WHERE o."locationId" = ${locationId}
-          AND o.status IN ('completed', 'closed', 'paid')
-          AND o."deletedAt" IS NULL
-          AND oi."deletedAt" IS NULL
-          AND oi."blockTimeStartedAt" IS NOT NULL
-          AND mi."itemType" = 'timed_rental'
-          AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-          AND (
-            (o."businessDayDate" >= ${startOfDay} AND o."businessDayDate" <= ${endOfDay})
-            OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${startOfDay} AND o."createdAt" <= ${endOfDay})
-          )
-      `),
+      needsSurcharge ? getSurchargeBase(locationId, range) : Promise.resolve(0),
+      getVoidLogs(locationId, range),
+      getTimeClockEntries(locationId, range),
+      getDailyPaidInOut(locationId, range),
+      getGiftCardTransactions(locationId, range),
+      getTipsBankedInRange(locationId, range),
+      getTipsCollectedInRange(locationId, range),
+      getTipSharesDistributedInRange(locationId, range),
+      getCategories(locationId),
+      getCCTipFees(locationId, range),
+      getEntertainmentSummary(locationId, range),
     ])
 
     // ============================================
     // PROCESS AGGREGATE RESULTS
     // ============================================
 
-    const rev = revenueSummary[0] || {
-      order_count: 0, subtotal: 0, tax_total: 0, tax_from_inclusive: 0,
-      tax_from_exclusive: 0, tip_total: 0, discount_total: 0, commission_total: 0,
-      guest_count: 0, total_check_time_minutes: 0, closed_count: 0,
-    }
+    const rev = revenueSummary
 
     const adjustedGrossSales = Number(rev.subtotal) || 0
     const totalTax = Number(rev.tax_total) || 0
@@ -515,7 +165,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const pricingProgram = getPricingProgram(locationSettings)
     let totalSurcharge = 0
     if (pricingProgram.model === 'surcharge' && pricingProgram.enabled && pricingProgram.surchargePercent) {
-      const surchargeBase = surchargeOrders[0]?.surcharge_base || 0
       totalSurcharge = Math.round(Number(surchargeBase) * pricingProgram.surchargePercent) / 100
     }
 
@@ -1133,12 +782,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
 
       businessCosts: {
-        ccTipFees: round(Number(ccTipFees._sum.ccFeeAmountCents || 0) / 100),
-        ccTipFeeTransactions: ccTipFees._count || 0,
+        ccTipFees: round(ccTipFeesResult.totalCents / 100),
+        ccTipFeeTransactions: ccTipFeesResult.transactionCount,
       },
 
       entertainment: (() => {
-        const ent = entertainmentSummary[0]
+        const ent = entertainmentSummary
         if (!ent || Number(ent.session_count) === 0) return null
         const sessions = Number(ent.session_count) || 0
         const revenue = Number(ent.revenue) || 0
@@ -1160,78 +809,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 })
 
-// ============================================================
-// TYPE DEFINITIONS for raw SQL result rows
-// ============================================================
-
-interface RevenueSummaryRow {
-  order_count: number
-  subtotal: number
-  tax_total: number
-  tax_from_inclusive: number
-  tax_from_exclusive: number
-  tip_total: number
-  discount_total: number
-  commission_total: number
-  guest_count: number
-  total_check_time_minutes: number
-  closed_count: number
-}
-
-interface OrderTypeSummaryRow {
-  order_type: string
-  count: number
-  gross: number
-  net: number
-}
-
-interface CategorySalesRow {
-  category_id: string
-  category_name: string
-  category_type: string
-  units: number
-  gross: number
-  inclusive_gross: number
-  discount_share: number
-}
-
-interface CategoryVoidsRow {
-  category_id: string
-  void_amount: number
-}
-
-interface PaymentSummaryRow {
-  payment_method: string
-  card_brand: string
-  count: number
-  total: number
-  tips: number
-  rounding: number
-}
-
-interface DiscountSummaryRow {
-  discount_name: string
-  count: number
-  total: number
-}
-
-interface WeightSummaryRow {
-  weight_unit: string
-  revenue: number
-  item_count: number
-  total_weight: number
-}
-
-interface EntertainmentSummaryRow {
-  session_count: number
-  revenue: number
-  total_minutes: number
-  top_item_name: string | null
-}
-
-interface SurchargeOrderRow {
-  surcharge_base: number
-}
+// Type definitions now live in @/lib/query-services/order-reporting-queries.ts
 
 // ============================================================
 // LEGACY PATH — full in-memory processing (fallback via ?legacy=true)

@@ -17,6 +17,7 @@ import type {
   OrdersListChangedPayload,
 } from '@/lib/socket-events'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { getRequestLocationId } from '@/lib/request-context'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -34,17 +35,18 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing employeeId or retryMode' }, { status: 400 })
     }
 
-    // Two-step: lightweight fetch for locationId, then full fetch with include
-    const orderCheck = await adminDb.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      select: { id: true, locationId: true },
-    })
-
-    if (!orderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const orderCheck = await adminDb.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { id: true, locationId: true },
+      })
+      if (!orderCheck) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      locationId = orderCheck.locationId
     }
-
-    const locationId = orderCheck.locationId
 
     const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
       cards: {

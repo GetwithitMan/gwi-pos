@@ -3,48 +3,15 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { KDSSettingsSidebar } from '../../components/KDSSettingsSidebar'
+import type { ScreenConfig } from '../../components/KDSSettingsSidebar'
 import { ToastContainer } from '@/components/ui/ToastContainer'
 import { toast } from '@/stores/toast-store'
-import type { KDSOrderBehavior, KDSTransitionTimes, KDSOrderTypeFilters, KDSDisplayMode } from '@/lib/kds/types'
 
 // LocalStorage keys (matches kds/page.tsx)
 const DEVICE_TOKEN_KEY = 'kds_device_token'
 const SCREEN_CONFIG_KEY = 'kds_screen_config'
 
-export interface ScreenConfig {
-  id: string
-  name: string
-  slug: string | null
-  screenType: string
-  locationId: string
-  columns: number
-  fontSize: string
-  colorScheme: string
-  agingWarning: number
-  lateWarning: number
-  playSound: boolean
-  flashOnNew: boolean
-  isPaired: boolean
-  displayMode: KDSDisplayMode
-  transitionTimes: KDSTransitionTimes | null
-  orderBehavior: Partial<KDSOrderBehavior> | null
-  orderTypeFilters: KDSOrderTypeFilters | null
-  sourceLinks: Array<{
-    id: string
-    targetScreenId: string
-    targetScreenName: string
-    linkType: string
-    bumpAction: string
-    resetStrikethroughsOnSend: boolean
-  }>
-  stations: Array<{
-    id: string
-    name: string
-    displayName: string | null
-    stationType: string
-    color: string | null
-  }>
-}
+export type { ScreenConfig }
 
 function KDSSettingsContent() {
   const router = useRouter()

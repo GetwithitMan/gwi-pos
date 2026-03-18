@@ -9,9 +9,10 @@ import { SilentErrorBoundary } from '@/components/ui/SilentErrorBoundary'
 import { KDSClockModal } from '../components/KDSClockModal'
 import { ToastContainer } from '@/components/ui/ToastContainer'
 import DeliveryExpoRail from '@/components/delivery/DeliveryExpoRail'
-import { KDSOrderCard } from '../components/KDSOrderCard'
+import { KDSOrderCard, ORDER_TYPE_LABELS } from '../components/KDSOrderCard'
 import type { KDSItem, KDSOrder } from '../components/KDSOrderCard'
 import { KDSHeader } from '../components/KDSHeader'
+import { KDSAllDayCounts } from '../components/KDSAllDayCounts'
 
 // LocalStorage keys for device authentication
 const DEVICE_TOKEN_KEY = 'kds_device_token'
@@ -57,6 +58,33 @@ interface ScreenConfig {
   lateWarning: number
   playSound: boolean
   flashOnNew: boolean
+  // KDS Overhaul: new config fields
+  displayMode?: string // 'tiled' | 'classic' | 'split' | 'takeout'
+  transitionTimes?: Record<string, { caution: number; late: number }> | null
+  orderBehavior?: {
+    tapToStart?: boolean
+    mergeCards?: boolean
+    mergeWindowMinutes?: number
+    newCardPerSend?: boolean
+    moveCompletedToBottom?: boolean
+    strikeThroughModifiers?: boolean
+    resetTimerOnRecall?: boolean
+    intelligentSort?: boolean
+    showAllDayCounts?: boolean
+    allDayCountResetHour?: number
+    orderTrackerEnabled?: boolean
+    sendSmsOnReady?: boolean
+    printOnBump?: boolean
+    printerId?: string | null
+  } | null
+  orderTypeFilters?: Record<string, boolean> | null
+  sourceLinks?: Array<{
+    id: string
+    targetScreenId: string
+    targetScreenName: string
+    linkType: string
+    bumpAction: string
+  }>
   stations: Array<{
     id: string
     name: string
@@ -67,6 +95,32 @@ interface ScreenConfig {
 }
 
 type AuthState = 'checking' | 'authenticated' | 'requires_pairing' | 'employee_fallback'
+
+// Phase 2: Resolve per-order-type transition times with fallback to global thresholds
+function getThresholds(
+  orderType: string,
+  config: ScreenConfig | null,
+): { caution: number; late: number } {
+  const tt = config?.transitionTimes
+  if (tt && tt[orderType]) {
+    return tt[orderType]
+  }
+  return { caution: config?.agingWarning ?? 10, late: config?.lateWarning ?? 20 }
+}
+
+// Phase 2: Compute time status using per-order-type thresholds
+function computeTimeStatus(
+  createdAt: string,
+  orderType: string,
+  config: ScreenConfig | null,
+): { elapsed: number; status: 'fresh' | 'aging' | 'late' } {
+  const { caution, late } = getThresholds(orderType, config)
+  const elapsed = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60_000)
+  let status: 'fresh' | 'aging' | 'late' = 'fresh'
+  if (elapsed >= late) status = 'late'
+  else if (elapsed >= caution) status = 'aging'
+  return { elapsed, status }
+}
 
 function KDSContent() {
   const router = useRouter()
@@ -99,6 +153,9 @@ function KDSContent() {
   const [showKdsClockModal, setShowKdsClockModal] = useState(false)
   const [flashActive, setFlashActive] = useState(false)
   const socketRef = useRef<Socket | null>(null)
+
+  // Phase 10: Bump bar / keyboard navigation
+  const [selectedOrderIndex, setSelectedOrderIndex] = useState(0)
 
   // Authenticate device on mount (after hydration so employee fallback works)
   useEffect(() => {
@@ -371,21 +428,13 @@ function KDSContent() {
   }, [authState, socketConnected])
 
   // Client-side order age recomputation every 30s
-  // Recalculates elapsedMinutes and timeStatus from createdAt so cards
-  // update color/time without waiting for a server fetch.
+  // Phase 2: Uses per-order-type transition times with fallback to global thresholds
   useEffect(() => {
     if (orders.length === 0) return
 
-    const warningMin = screenConfig?.agingWarning ?? 10
-    const criticalMin = screenConfig?.lateWarning ?? 20
-
     const tick = () => {
-      const now = Date.now()
       setOrders(prev => prev.map(order => {
-        const elapsed = Math.floor((now - new Date(order.createdAt).getTime()) / 60_000)
-        let status: 'fresh' | 'aging' | 'late' = 'fresh'
-        if (elapsed >= criticalMin) status = 'late'
-        else if (elapsed >= warningMin) status = 'aging'
+        const { elapsed, status } = computeTimeStatus(order.createdAt, order.orderType, screenConfig)
         if (elapsed === order.elapsedMinutes && status === order.timeStatus) return order
         return { ...order, elapsedMinutes: elapsed, timeStatus: status }
       }))
@@ -393,7 +442,7 @@ function KDSContent() {
 
     const interval = setInterval(tick, 30_000)
     return () => clearInterval(interval)
-  }, [orders.length, screenConfig?.agingWarning, screenConfig?.lateWarning])
+  }, [orders.length, screenConfig])
 
   // Instant refresh on tab switch
   useEffect(() => {
@@ -403,6 +452,80 @@ function KDSContent() {
     document.addEventListener('visibilitychange', handler)
     return () => document.removeEventListener('visibilitychange', handler)
   }, [])
+
+  // Phase 10: Bump bar / keyboard shortcuts
+  // Arrow keys navigate between orders, Enter/Space bumps selected order
+  useEffect(() => {
+    if (authState !== 'authenticated' && authState !== 'employee_fallback') return
+
+    const handler = (e: KeyboardEvent) => {
+      // Don't capture when typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+
+      const orderCount = orders.length
+      if (orderCount === 0) return
+
+      switch (e.key) {
+        case 'ArrowRight':
+          e.preventDefault()
+          setSelectedOrderIndex(prev => Math.min(prev + 1, orderCount - 1))
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          setSelectedOrderIndex(prev => Math.max(prev - 1, 0))
+          break
+        case 'ArrowDown': {
+          // Move down by columns count
+          e.preventDefault()
+          const cols = screenConfig?.columns ?? 4
+          setSelectedOrderIndex(prev => Math.min(prev + cols, orderCount - 1))
+          break
+        }
+        case 'ArrowUp': {
+          e.preventDefault()
+          const cols = screenConfig?.columns ?? 4
+          setSelectedOrderIndex(prev => Math.max(prev - cols, 0))
+          break
+        }
+        case 'Enter':
+        case ' ':
+          // Bump the selected order
+          e.preventDefault()
+          if (socketConnected && orders[selectedOrderIndex]) {
+            handleBumpOrder(orders[selectedOrderIndex])
+          }
+          break
+        case 'Home':
+          e.preventDefault()
+          setSelectedOrderIndex(0)
+          break
+        case 'End':
+          e.preventDefault()
+          setSelectedOrderIndex(Math.max(orderCount - 1, 0))
+          break
+        case 'r':
+        case 'R':
+          // Refresh
+          e.preventDefault()
+          loadOrders()
+          break
+        case 'f':
+        case 'F':
+          // Toggle fullscreen
+          e.preventDefault()
+          toggleFullscreen()
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [authState, orders, selectedOrderIndex, socketConnected, screenConfig?.columns, handleBumpOrder, loadOrders])
+
+  // Reset selection when orders change
+  useEffect(() => {
+    setSelectedOrderIndex(prev => Math.min(prev, Math.max(orders.length - 1, 0)))
+  }, [orders.length])
 
   const sendHeartbeat = async () => {
     if (!screenConfig || !deviceToken) return
@@ -546,6 +669,11 @@ function KDSContent() {
         // Station mode: fetch from /api/kds with station filtering
         const params = new URLSearchParams({ locationId })
 
+        // KDS Overhaul: pass screenId for forwarding-aware item queries
+        if (screenConfig?.id) {
+          params.append('screenId', screenConfig.id)
+        }
+
         const stationIds = getStationIds()
         if (stationIds && stationIds.length > 0) {
           stationIds.forEach(id => params.append('stationId', id))
@@ -579,15 +707,19 @@ function KDSContent() {
         )
       }
 
-      // Recompute elapsed time and status client-side using screen config thresholds
-      const warningMin = screenConfig?.agingWarning ?? 10
-      const criticalMin = screenConfig?.lateWarning ?? 20
-      const now = Date.now()
+      // Phase 3: Apply order type filters
+      const typeFilters = screenConfig?.orderTypeFilters
+      if (typeFilters) {
+        filteredOrders = filteredOrders.filter((order: KDSOrder) => {
+          // If the order type is explicitly set to false, hide it
+          if (typeFilters[order.orderType] === false) return false
+          return true
+        })
+      }
+
+      // Phase 2: Recompute using per-order-type transition times
       filteredOrders = filteredOrders.map(order => {
-        const elapsed = Math.floor((now - new Date(order.createdAt).getTime()) / 60_000)
-        let status: 'fresh' | 'aging' | 'late' = 'fresh'
-        if (elapsed >= criticalMin) status = 'late'
-        else if (elapsed >= warningMin) status = 'aging'
+        const { elapsed, status } = computeTimeStatus(order.createdAt, order.orderType, screenConfig)
         return { ...order, elapsedMinutes: elapsed, timeStatus: status }
       })
 
@@ -609,7 +741,7 @@ function KDSContent() {
       const endpoint = expoMode ? '/api/kds/expo' : '/api/kds'
       const body = expoMode
         ? { itemIds: [itemId], action: 'serve' }
-        : { itemIds: [itemId], action: 'complete' }
+        : { itemIds: [itemId], action: 'complete', screenId: screenConfig?.id }
 
       await fetch(endpoint, {
         method: 'PUT',
@@ -643,6 +775,7 @@ function KDSContent() {
           itemIds: incompleteItemIds,
           action: 'bump_order',
           orderId: order.id,
+          screenId: screenConfig?.id,
         }),
       })
       loadOrders()
@@ -675,6 +808,7 @@ function KDSContent() {
           body: JSON.stringify({
             itemIds: [itemId],
             action: 'uncomplete',
+            screenId: screenConfig?.id,
           }),
         })
       }
@@ -693,6 +827,51 @@ function KDSContent() {
       setIsFullscreen(false)
     }
   }
+
+  // Phase 3: Display mode and grid class computation
+  const displayMode = screenConfig?.displayMode || 'tiled'
+  const cols = screenConfig?.columns ?? 4
+  // Classic mode: fewer, larger cards (max 3 columns, extra padding)
+  const effectiveCols = displayMode === 'classic' ? Math.min(cols, 3) : cols
+  const gridClassName = displayMode === 'classic'
+    ? `grid gap-6 ${
+        effectiveCols === 2 ? 'grid-cols-1 md:grid-cols-2' :
+        'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+      }`
+    : `grid gap-4 ${
+        cols <= 2 ? 'grid-cols-1 md:grid-cols-2' :
+        cols === 3 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3' :
+        cols === 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' :
+        cols === 5 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' :
+        'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6'
+      }`
+
+  // Phase 6: Sort orders based on behavior config
+  const sortedOrders = (() => {
+    let result = [...orders]
+    const behavior = screenConfig?.orderBehavior
+
+    // Move completed orders to bottom if configured
+    if (behavior?.moveCompletedToBottom) {
+      const active = result.filter(o => o.items.some(i => !i.isCompleted))
+      const completed = result.filter(o => o.items.every(i => i.isCompleted))
+      result = [...active, ...completed]
+    }
+
+    // Intelligent sort: prioritize late > aging > fresh
+    if (behavior?.intelligentSort) {
+      const statusPriority: Record<string, number> = { late: 0, aging: 1, fresh: 2 }
+      result.sort((a, b) => {
+        const pa = statusPriority[a.timeStatus] ?? 2
+        const pb = statusPriority[b.timeStatus] ?? 2
+        if (pa !== pb) return pa - pb
+        // Within same priority, older first
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      })
+    }
+
+    return result
+  })()
 
   // Show loading while checking auth
   if (authState === 'checking') {
@@ -800,13 +979,20 @@ function KDSContent() {
         <DeliveryExpoRail locationId={getLocationId()} />
       </SilentErrorBoundary>
 
-      {/* Orders Grid */}
+      {/* Phase 4: All Day Counts panel */}
+      <KDSAllDayCounts
+        locationId={getLocationId()}
+        resetHour={screenConfig?.orderBehavior?.allDayCountResetHour}
+        enabled={screenConfig?.orderBehavior?.showAllDayCounts}
+      />
+
+      {/* Orders Grid — Phase 3: Display mode aware */}
       <div className="p-4">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-gray-400 text-xl">Loading orders...</div>
           </div>
-        ) : orders.length === 0 ? (
+        ) : sortedOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64">
             <div className="w-24 h-24 bg-gray-800 rounded-full flex items-center justify-center mb-4">
               <svg className="w-12 h-12 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -816,9 +1002,63 @@ function KDSContent() {
             <p className="text-gray-400 text-xl">All caught up!</p>
             <p className="text-gray-500 text-sm mt-1">No pending orders</p>
           </div>
+        ) : displayMode === 'split' ? (
+          /* Split mode: grouped by order type */
+          <div className="space-y-6">
+            {Object.entries(
+              sortedOrders.reduce<Record<string, KDSOrder[]>>((acc, order) => {
+                const key = order.orderType
+                if (!acc[key]) acc[key] = []
+                acc[key].push(order)
+                return acc
+              }, {})
+            ).map(([orderType, groupOrders]) => (
+              <div key={orderType}>
+                <h2 className="text-lg font-bold text-gray-300 mb-3 uppercase tracking-wide">
+                  {ORDER_TYPE_LABELS[orderType] || orderType} ({groupOrders.length})
+                </h2>
+                <div className={gridClassName}>
+                  {groupOrders.map(order => {
+                    const globalIdx = sortedOrders.indexOf(order)
+                    return (
+                    <SilentErrorBoundary key={order.id} name="KDS Ticket">
+                      <KDSOrderCard
+                        order={order}
+                        onBumpItem={handleBumpItem}
+                        onUncompleteItem={handleUncompleteItem}
+                        onBumpOrder={handleBumpOrder}
+                        socketConnected={socketConnected}
+                        strikeThroughModifiers={screenConfig?.orderBehavior?.strikeThroughModifiers}
+                        isSelected={globalIdx === selectedOrderIndex}
+                      />
+                    </SilentErrorBoundary>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : displayMode === 'takeout' ? (
+          /* Takeout mode: single-column condensed list */
+          <div className="max-w-2xl mx-auto space-y-3">
+            {sortedOrders.map((order, idx) => (
+              <SilentErrorBoundary key={order.id} name="KDS Ticket">
+                <KDSOrderCard
+                  order={order}
+                  onBumpItem={handleBumpItem}
+                  onUncompleteItem={handleUncompleteItem}
+                  onBumpOrder={handleBumpOrder}
+                  socketConnected={socketConnected}
+                  strikeThroughModifiers={screenConfig?.orderBehavior?.strikeThroughModifiers}
+                  isSelected={idx === selectedOrderIndex}
+                />
+              </SilentErrorBoundary>
+            ))}
+          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-            {orders.map(order => (
+          /* Tiled (default) and Classic modes */
+          <div className={gridClassName}>
+            {sortedOrders.map((order, idx) => (
                 <SilentErrorBoundary key={order.id} name="KDS Ticket">
                   <KDSOrderCard
                     order={order}
@@ -826,6 +1066,8 @@ function KDSContent() {
                     onUncompleteItem={handleUncompleteItem}
                     onBumpOrder={handleBumpOrder}
                     socketConnected={socketConnected}
+                    strikeThroughModifiers={screenConfig?.orderBehavior?.strikeThroughModifiers}
+                    isSelected={idx === selectedOrderIndex}
                   />
                 </SilentErrorBoundary>
             ))}

@@ -717,6 +717,34 @@ export function ModifierDetailPanel({
             />
           </Field>
 
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <Field label="Price">
+                <CurrencyInput
+                  value={currencyInput(draft.price)}
+                  onChange={v => patch({ price: parseNum(v) ?? 0 })}
+                />
+                {showDualPricing && draft.price > 0 && (
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Cash: {formatCurrency(draft.price)} | Card: {formatCurrency(calculateCardPrice(draft.price, cashDiscountPct!))}
+                  </p>
+                )}
+              </Field>
+            </div>
+            <div className="flex-1">
+              <Field label="Price Type">
+                <SelectInput
+                  value={draft.priceType ?? 'upcharge'}
+                  onChange={v => patch({ priceType: v })}
+                  options={[
+                    { value: 'upcharge', label: 'Upcharge' },
+                    { value: 'flat', label: 'Flat' },
+                  ]}
+                />
+              </Field>
+            </div>
+          </div>
+
           <div className="flex items-center gap-6">
             <Toggle
               checked={draft.isActive !== false}
@@ -839,22 +867,36 @@ export function ModifierDetailPanel({
                       type="text"
                       placeholder="Name (e.g., Well Done)"
                       value={cpm.name}
-                      onChange={e => updateCustomPreMod(idx, 'name', e.target.value)}
+                      onChange={e => {
+                        const newName = e.target.value
+                        updateCustomPreMod(idx, 'name', newName)
+                        // Auto-sync label if it matches the old name (hasn't been manually customized)
+                        if (!cpm.shortLabel || cpm.shortLabel === cpm.name) {
+                          updateCustomPreMod(idx, 'shortLabel', newName)
+                        }
+                      }}
                       className="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="Label"
-                        value={cpm.shortLabel || ''}
-                        onChange={e => updateCustomPreMod(idx, 'shortLabel', e.target.value || undefined)}
+                        placeholder={cpm.name || 'Label'}
+                        value={cpm.shortLabel ?? cpm.name ?? ''}
+                        onChange={e => updateCustomPreMod(idx, 'shortLabel', e.target.value)}
                         maxLength={12}
                         className="w-20 rounded-md border border-gray-200 bg-white px-2 py-1 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
-                      <span className={`absolute right-1 top-1 text-[9px] ${(cpm.shortLabel?.length || 0) > 8 ? ((cpm.shortLabel?.length || 0) > 12 ? 'text-red-500' : 'text-yellow-500') : 'text-gray-400'}`}>
-                        {cpm.shortLabel?.length || 0}/8
+                      <span className={`absolute right-1 top-1 text-[9px] ${((cpm.shortLabel ?? cpm.name)?.length || 0) > 8 ? (((cpm.shortLabel ?? cpm.name)?.length || 0) > 12 ? 'text-red-500' : 'text-yellow-500') : 'text-gray-400'}`}>
+                        {(cpm.shortLabel ?? cpm.name)?.length || 0}/8
                       </span>
                     </div>
+                    <input
+                      type="color"
+                      value={cpm.color || '#f97316'}
+                      onChange={e => updateCustomPreMod(idx, 'color', e.target.value)}
+                      className="w-8 h-7 rounded border border-gray-200 cursor-pointer p-0"
+                      title="Button color"
+                    />
                   </div>
                   <div className="flex gap-2">
                     <input
@@ -925,52 +967,8 @@ export function ModifierDetailPanel({
           </div>
         </div>
 
-        {/* ── Section 2: Pricing ───────────────────────────────────── */}
-        <Section title="Pricing" defaultOpen>
-          <Field label="Price">
-            <CurrencyInput
-              value={currencyInput(draft.price)}
-              onChange={v => patch({ price: parseNum(v) ?? 0 })}
-            />
-            {showDualPricing && draft.price > 0 && (
-              <p className="text-[11px] text-gray-500 mt-1">
-                Cash: {formatCurrency(draft.price)} | Card: {formatCurrency(calculateCardPrice(draft.price, cashDiscountPct!))}
-              </p>
-            )}
-          </Field>
-
-          <Field label="Price Type">
-            <SelectInput
-              value={draft.priceType ?? 'upcharge'}
-              onChange={v => patch({ priceType: v })}
-              options={[
-                { value: 'upcharge', label: 'Upcharge' },
-                { value: 'flat', label: 'Flat' },
-              ]}
-            />
-          </Field>
-
-          <Field label="Extra Price">
-            <CurrencyInput
-              value={currencyInput(draft.extraPrice)}
-              onChange={v => patch({ extraPrice: parseNum(v) ?? 0 })}
-            />
-          </Field>
-
-          <Field label="Upsell Price" helper="Admin reference only (V1)">
-            <CurrencyInput
-              value={currencyInput(draft.upsellPrice)}
-              onChange={v => patch({ upsellPrice: parseNum(v) })}
-            />
-          </Field>
-
-          <Field label="Cost" helper="For margin tracking">
-            <CurrencyInput
-              value={currencyInput(draft.cost)}
-              onChange={v => patch({ cost: parseNum(v) })}
-            />
-          </Field>
-
+        {/* ── Section 2: Commission ───────────────────────────────── */}
+        <Section title="Commission" defaultOpen={false}>
           <Field label="Commission Type">
             <SelectInput
               value={draft.commissionType ?? 'none'}

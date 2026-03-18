@@ -59,6 +59,10 @@ export interface KDSOrderCardProps {
   onUncompleteItem: (itemId: string) => void
   onBumpOrder: (order: KDSOrder) => void
   socketConnected: boolean
+  // Phase 6: Behavior config
+  strikeThroughModifiers?: boolean
+  // Phase 10: Keyboard navigation
+  isSelected?: boolean
 }
 
 export const ORDER_TYPE_LABELS: Record<string, string> = {
@@ -135,6 +139,8 @@ export const KDSOrderCard = memo(function KDSOrderCard({
   onUncompleteItem,
   onBumpOrder,
   socketConnected,
+  strikeThroughModifiers = false,
+  isSelected = false,
 }: KDSOrderCardProps) {
   const allCompleted = order.items.every(item => item.isCompleted)
 
@@ -146,7 +152,7 @@ export const KDSOrderCard = memo(function KDSOrderCard({
     <div
       className={`bg-gray-800 rounded-lg border-t-4 overflow-hidden transition-all ${
         allCompleted ? 'opacity-50 border-green-500' : getTimeStatusBg(order.timeStatus)
-      }`}
+      } ${isSelected ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-gray-900' : ''}`}
     >
       {/* Order Header */}
       <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
@@ -278,7 +284,7 @@ export const KDSOrderCard = memo(function KDSOrderCard({
                             key={`${mod.key}-${idx}`}
                             className={`text-sm pl-4 ${
                               item.isCompleted ? 'text-gray-600' : depth === 0 ? 'text-yellow-400' : 'text-yellow-300'
-                            }`}
+                            } ${item.isCompleted && strikeThroughModifiers ? 'line-through' : ''}`}
                           >
                             {prefix}{mod.isNoneSelection ? '' : mod.isCustomEntry ? 'CUSTOM: ' : ''}{mod.swapTargetName ? `${mod.name} → ${mod.swapTargetName}` : mod.name}{mod.count > 1 ? ` ×${mod.count}` : ''}
                           </div>

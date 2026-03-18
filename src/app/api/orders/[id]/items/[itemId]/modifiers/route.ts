@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // PUT - Update modifiers on an existing order item
 export const PUT = withVenue(async function PUT(
@@ -23,21 +24,21 @@ export const PUT = withVenue(async function PUT(
       }>
     }
 
-    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
-    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
-    const order = await adminDb.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      select: { id: true, locationId: true },
-    })
-
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const order = await adminDb.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { id: true, locationId: true },
+      })
+      if (!order) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      locationId = order.locationId
     }
-
-    const locationId = order.locationId
 
     // Verify order item exists and belongs to this order
     const orderItem = await OrderItemRepository.getItemByIdWithSelect(itemId, locationId, {
@@ -81,13 +82,13 @@ export const PUT = withVenue(async function PUT(
     })
 
     // Fire-and-forget event emission
-    void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', {
+    void emitOrderEvent(locationId, orderId, 'ITEM_UPDATED', {
       lineItemId: itemId,
       modifiersJson: JSON.stringify(modifiers || []),
     }).catch(console.error)
 
     // Fire-and-forget socket dispatches so other terminals see updated modifiers/totals
-    void dispatchOpenOrdersChanged(order.locationId, {
+    void dispatchOpenOrdersChanged(locationId, {
       trigger: 'item_updated',
       orderId,
     }).catch(console.error)
@@ -104,7 +105,7 @@ export const PUT = withVenue(async function PUT(
             ...freshOrder,
             itemCount: freshOrder._count.items,
           })
-          await dispatchOrderSummaryUpdated(order.locationId, summary)
+          await dispatchOrderSummaryUpdated(locationId, summary)
         }
       } catch (err) {
         console.error('[modifiers/route] Failed to dispatch order summary:', err)

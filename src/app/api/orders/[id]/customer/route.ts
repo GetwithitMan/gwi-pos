@@ -9,6 +9,7 @@ import type { OrderUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // PUT - Link or unlink customer to/from order
 export const PUT = withVenue(async function PUT(
@@ -23,21 +24,26 @@ export const PUT = withVenue(async function PUT(
     // Resolve employeeId from body or session
     const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
 
-    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const orderCheck = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let orderLocationId1 = getRequestLocationId()
+    if (!orderLocationId1) {
+      // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+      const orderCheck = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { id: true, locationId: true },
+      })
 
-    if (!orderCheck) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      if (!orderCheck) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      orderLocationId1 = orderCheck.locationId
     }
 
     // Get the order with location settings
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderLocationId1, {
       location: true,
     })
 
@@ -149,20 +155,25 @@ export const GET = withVenue(async function GET(
     // Resolve employeeId from session
     const { employeeId } = await getActorFromRequest(request)
 
-    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const orderCheck = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let orderLocationId = getRequestLocationId()
+    if (!orderLocationId) {
+      // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+      const orderCheck = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { id: true, locationId: true },
+      })
 
-    if (!orderCheck) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      if (!orderCheck) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      orderLocationId = orderCheck.locationId
     }
 
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderLocationId!, {
       customer: true,
       location: true,
     })

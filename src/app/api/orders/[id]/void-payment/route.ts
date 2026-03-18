@@ -16,6 +16,7 @@ import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { getRequestLocationId } from '@/lib/request-context'
 
 class VoidValidationError extends Error {
   statusCode: number
@@ -53,23 +54,24 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Lightweight order check before acquiring locks (for locationId needed by auth)
-    // NOTE: First fetch uses db directly because we don't have locationId yet.
-    // Once we have locationId from this order, all subsequent queries use repositories.
-    const orderCheck = await adminDb.order.findUnique({
-      where: { id: orderId },
-      select: { id: true, locationId: true },
-    })
-
-    if (!orderCheck) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let voidLocationId = getRequestLocationId()
+    if (!voidLocationId) {
+      const orderCheck = await adminDb.order.findUnique({
+        where: { id: orderId },
+        select: { id: true, locationId: true },
+      })
+      if (!orderCheck) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      voidLocationId = orderCheck.locationId
     }
 
     // Verify manager has permission scoped to order's location
-    const authResult = await requirePermission(managerId, orderCheck.locationId, PERMISSIONS.MGR_VOID_PAYMENTS)
+    const authResult = await requirePermission(managerId, voidLocationId, PERMISSIONS.MGR_VOID_PAYMENTS)
     if (!authResult.authorized) {
       return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
     }
@@ -79,7 +81,7 @@ export const POST = withVenue(async function POST(
     const lockedRead = await db.$transaction(async (tx) => {
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-      const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, voidLocationId, {
         payments: {
           where: { deletedAt: null },
         },

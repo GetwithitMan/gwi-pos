@@ -264,6 +264,73 @@ Condiments (sauces + cheeses) support partition modes: `whole`, `left`/`right` (
 
 ---
 
+## KDS Android App (`gwi-kds-android`)
+
+The Kitchen Display System is a separate native Android app, distinct from the POS Register app (`gwi-android-register`).
+
+### Project Details
+| Detail | Value |
+|--------|-------|
+| Repo | `gwi-kds-android` |
+| Path | `/Users/brianlewis/Documents/My websites/GWI-POS FULL/gwi-kds-android` |
+| Modules | `:app`, `:core`, `:feature-foodkds`, `:feature-pitboss` |
+| Tech | Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi |
+| Min SDK | 26 |
+| Target SDK | 36 |
+
+### Build Flavors
+| Flavor | Application ID | Purpose |
+|--------|---------------|---------|
+| **FoodKDS** | `com.gwi.kds.foodkds` | Kitchen/bar ticket display, bump, routing, expo |
+| **PitBoss** | `com.gwi.kds.pitboss` | Entertainment/timed rental management |
+
+### How KDS Connects to NUC
+The Android KDS app connects to the same NUC server as the Register app:
+- **REST API** (Retrofit 2) — ticket fetch, bump commands, device pairing via `/api/kds/*` and `/api/hardware/kds-screens/*`
+- **WebSocket** (Socket.IO) — real-time updates using device token auth (same pattern as Register)
+
+### Socket Events
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `kds:order-received` | Server → KDS | New order ticket arrives |
+| `kds:item-status` | KDS → Server | Item bump status update |
+| `kds:order-bumped` | Bidirectional | Order bumped at a station |
+| `kds:order-forwarded` | Server → KDS | Order forwarded via screen link chain |
+| `kds:multi-clear` | Server → KDS | Bulk clear of completed tickets |
+
+### KDS Overhaul Features
+- Screen communication (linked screen chains with send_to_next and multi_clear)
+- Display modes (configurable layout per screen)
+- Per-order-type timing (different thresholds for dine-in, takeout, delivery)
+- All-day counts (running item totals for the business day)
+- Order tracker (visual progress through screen chain)
+- Keyboard/bump bar navigation (physical input support)
+- Print on bump (automatic kitchen ticket print)
+- SMS on ready (customer notification at final bump)
+- Forward state persistence (kdsForwardedToScreenId, kdsFinalCompleted)
+
+### Web KDS Fallback
+The web-based KDS pages at `src/app/(kds)/` still exist as a fallback for venues without Android KDS hardware. The Android app is the primary and recommended KDS client.
+
+### Build Commands
+```bash
+cd /path/to/gwi-kds-android
+./gradlew :app:assembleFoodkdsDebug    # FoodKDS debug APK
+./gradlew :app:assemblePitbossDebug    # PitBoss debug APK
+./gradlew :app:assembleFoodkdsRelease  # FoodKDS release APK
+./gradlew :app:assemblePitbossRelease  # PitBoss release APK
+./gradlew test                         # Run unit tests
+```
+
+### Impact on NUC Changes
+When modifying NUC server code that affects KDS:
+- Changes to `/api/kds/*` routes affect both Android KDS and web fallback
+- Changes to socket events (`kds:*`) require corresponding updates in `gwi-kds-android`
+- Changes to device pairing flow affect both KDS and Register apps
+- Changes to ticket data shape require Moshi model updates in `gwi-kds-android/core/`
+
+---
+
 ## Checklist: Adding a New Feature with Android Impact
 
 - [ ] Touch targets ≥ 48×48dp

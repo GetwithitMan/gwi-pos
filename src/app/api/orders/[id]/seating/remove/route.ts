@@ -4,20 +4,24 @@ import { NextResponse } from 'next/server'
 import { dispatchOrderUpdated, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { getRequestLocationId } from '@/lib/request-context'
 
 export const POST = withVenue(async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { removeAtSeatNumber } = await req.json()
   const { id: orderId } = await params
 
-  // Resolve locationId before the transaction for tenant-scoped operations
-  const orderCheck = await adminDb.order.findUnique({
-    where: { id: orderId },
-    select: { id: true, locationId: true },
-  })
-  if (!orderCheck) {
-    return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+  // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+  let locationId = getRequestLocationId()
+  if (!locationId) {
+    const orderCheck = await adminDb.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, locationId: true },
+    })
+    if (!orderCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+    locationId = orderCheck.locationId
   }
-  const locationId = orderCheck.locationId
 
   try {
     return await db.$transaction(async (tx) => {

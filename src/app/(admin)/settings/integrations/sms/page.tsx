@@ -6,28 +6,66 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/stores/toast-store'
 import { useAuthStore } from '@/stores/auth-store'
 
-interface TwilioStatus {
+interface TwilioConfig {
   configured: boolean
-  fromNumber: string | null
+  accountSid?: string
+  fromNumber?: string
 }
 
 export default function SmsIntegrationPage() {
   const employeeId = useAuthStore(s => s.employee?.id)
-  const [status, setStatus] = useState<TwilioStatus | null>(null)
-  const [testing, setTesting] = useState(false)
+  const [config, setConfig] = useState<TwilioConfig | null>(null)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [removing, setRemoving] = useState(false)
+
+  // Form fields
+  const [accountSid, setAccountSid] = useState('')
+  const [authToken, setAuthToken] = useState('')
+  const [fromNumber, setFromNumber] = useState('')
 
   useEffect(() => {
-    fetch('/api/integrations/status')
+    fetch('/api/integrations/twilio')
       .then(res => res.json())
       .then(data => {
-        setStatus(data.twilio)
+        setConfig(data.data)
+        if (data.data?.fromNumber) {
+          setFromNumber(data.data.fromNumber)
+        }
         setLoading(false)
       })
-      .catch(() => {
-        setLoading(false)
-      })
+      .catch(() => setLoading(false))
   }, [])
+
+  async function handleSave() {
+    if (!accountSid || !authToken || !fromNumber) {
+      toast.error('All three fields are required')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/integrations/twilio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accountSid, authToken, fromNumber }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to save')
+        return
+      }
+      toast.success('Twilio credentials saved')
+      setConfig({ configured: true, accountSid: `***${accountSid.slice(-4)}`, fromNumber: data.data.fromNumber })
+      setAccountSid('')
+      setAuthToken('')
+      setFromNumber(data.data.fromNumber)
+    } catch {
+      toast.error('Failed to save credentials')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function handleTest() {
     setTesting(true)
@@ -38,10 +76,10 @@ export default function SmsIntegrationPage() {
         body: JSON.stringify({ service: 'twilio', employeeId }),
       })
       const data = await res.json()
-      if (data.data.success) {
+      if (data.data?.success) {
         toast.success(data.data.message)
       } else {
-        toast.error(data.data.message)
+        toast.error(data.data?.message || 'Test failed')
       }
     } catch {
       toast.error('Failed to test connection')
@@ -50,14 +88,31 @@ export default function SmsIntegrationPage() {
     }
   }
 
-  const configured = status?.configured ?? false
+  async function handleRemove() {
+    if (!confirm('Remove Twilio credentials? SMS features will stop working.')) return
+    setRemoving(true)
+    try {
+      await fetch('/api/integrations/twilio', { method: 'DELETE' })
+      toast.success('Twilio credentials removed')
+      setConfig({ configured: false })
+      setAccountSid('')
+      setAuthToken('')
+      setFromNumber('')
+    } catch {
+      toast.error('Failed to remove credentials')
+    } finally {
+      setRemoving(false)
+    }
+  }
+
+  const configured = config?.configured ?? false
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">SMS Integration (Twilio)</h1>
-          <p className="text-gray-900">Connect a Twilio SMS account to enable text message alerts and manager approvals. Twilio is a third-party messaging service — you need a Twilio account to use this feature.</p>
+          <p className="text-gray-600">Connect your Twilio account to enable text message alerts, manager approvals, and customer notifications.</p>
         </div>
         {!loading && (
           <span className={`px-3 py-1 rounded-full text-sm font-medium ${
@@ -77,75 +132,118 @@ export default function SmsIntegrationPage() {
             <ul className="space-y-2 text-sm text-gray-600">
               <li className="flex items-start gap-2">
                 <span className="text-blue-500 mt-0.5">&#8226;</span>
-                <span><strong>Remote Void/Comp Approval</strong> — Send a text message to the manager when a server requests to void or comp (give away for free) an item. Manager approves or denies by text.</span>
+                <span><strong>Remote Void/Comp Approval</strong> — Text a manager when a server requests to void or comp an item. Manager approves or denies by text.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-500 mt-0.5">&#8226;</span>
-                <span><strong>High-Value Tab Alerts</strong> — Send a text message alert when a tab exceeds the configured dollar threshold. Helps managers catch unusually large or suspicious orders.</span>
+                <span><strong>High-Value Tab Alerts</strong> — Alert when a tab exceeds a dollar threshold.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-blue-500 mt-0.5">&#8226;</span>
-                <span><strong>Walkout Tab Detection</strong> — Send a text message when a tab is flagged as a walkout (customer left without paying).</span>
+                <span><strong>Walkout Detection</strong> — Alert when a tab is flagged as a walkout.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-blue-500 mt-0.5">&#8226;</span>
+                <span><strong>Customer Receipts & Notifications</strong> — Text receipts, delivery updates, and reservation confirmations.</span>
               </li>
             </ul>
           </CardContent>
         </Card>
 
+        {/* Credentials Form */}
         <Card>
           <CardHeader>
-            <CardTitle>Connection Status</CardTitle>
+            <CardTitle>{configured ? 'Update Credentials' : 'Connect Your Twilio Account'}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Status</span>
-                <span className={`text-sm font-medium ${configured ? 'text-green-700' : 'text-yellow-700'}`}>
-                  {loading ? 'Checking...' : configured ? 'Credentials configured' : 'Not configured'}
-                </span>
+            {configured && (
+              <div className="mb-4 rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                Connected — SID ending in <strong>{config?.accountSid?.slice(-4)}</strong>, sending from <strong>{config?.fromNumber}</strong>
               </div>
-              {status?.fromNumber && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">From Number</span>
-                  <span className="text-sm font-mono text-gray-800">{status.fromNumber}</span>
-                </div>
-              )}
-              <div className="pt-2">
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Account SID</label>
+                <input
+                  type="text"
+                  value={accountSid}
+                  onChange={e => setAccountSid(e.target.value)}
+                  placeholder={configured ? 'Enter new SID to update' : 'AC...'}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Found on your Twilio Console dashboard. Starts with &quot;AC&quot;.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Auth Token</label>
+                <input
+                  type="password"
+                  value={authToken}
+                  onChange={e => setAuthToken(e.target.value)}
+                  placeholder={configured ? 'Enter new token to update' : 'Your auth token'}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Found on your Twilio Console dashboard. Keep this secret.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From Phone Number</label>
+                <input
+                  type="tel"
+                  value={fromNumber}
+                  onChange={e => setFromNumber(e.target.value)}
+                  placeholder="+1 (555) 123-4567"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">Your Twilio phone number that messages will be sent from.</p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
                 <Button
-                  onClick={handleTest}
-                  disabled={!configured || testing}
-                  variant="outline"
-                  size="sm"
-                  title={!configured ? 'Configure your Twilio credentials in your server settings first, then test the connection here.' : 'Test the Twilio SMS connection'}
+                  onClick={handleSave}
+                  disabled={saving || (!accountSid && !authToken)}
                 >
-                  {testing ? 'Testing...' : 'Test Connection'}
+                  {saving ? 'Saving...' : configured ? 'Update Credentials' : 'Save & Connect'}
                 </Button>
-                {!configured && (
-                  <p className="text-xs text-gray-600 mt-1">Configure your Twilio credentials in your server settings first.</p>
+
+                {configured && (
+                  <>
+                    <Button
+                      onClick={handleTest}
+                      disabled={testing}
+                      variant="outline"
+                    >
+                      {testing ? 'Testing...' : 'Test Connection'}
+                    </Button>
+
+                    <Button
+                      onClick={handleRemove}
+                      disabled={removing}
+                      variant="outline"
+                      className="text-red-600 border-red-300 hover:bg-red-50"
+                    >
+                      {removing ? 'Removing...' : 'Disconnect'}
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
           </CardContent>
         </Card>
 
+        {/* Setup Help */}
         <Card>
           <CardHeader>
-            <CardTitle>Setup Instructions</CardTitle>
+            <CardTitle>How to Get Your Twilio Credentials</CardTitle>
           </CardHeader>
           <CardContent>
             <ol className="space-y-3 text-sm text-gray-600 list-decimal list-inside">
-              <li>Create a Twilio account at <strong>twilio.com</strong></li>
-              <li>Get your Account SID, Auth Token, and purchase a phone number</li>
-              <li>Add the following to your <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">.env.local</code> file:</li>
+              <li>Go to <strong>twilio.com</strong> and create a free account (or log in)</li>
+              <li>From the <strong>Console Dashboard</strong>, copy your <strong>Account SID</strong> and <strong>Auth Token</strong></li>
+              <li>Go to <strong>Phone Numbers</strong> and buy a number (or use an existing one)</li>
+              <li>Paste all three values above and click <strong>Save &amp; Connect</strong></li>
             </ol>
-            <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto mt-3">
-{`TWILIO_ACCOUNT_SID=your_sid_here
-TWILIO_AUTH_TOKEN=your_token_here
-TWILIO_FROM_NUMBER=+1234567890`}
-            </pre>
-            <p className="text-sm text-gray-900 mt-3">4. Restart the POS server for changes to take effect.</p>
-            <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
-              These credentials are set in your venue&apos;s server configuration. Ask your IT person or our support team to update them — you don&apos;t need to make changes yourself.
-            </div>
           </CardContent>
         </Card>
       </div>

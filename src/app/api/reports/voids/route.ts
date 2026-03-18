@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
-import { VoidType, Prisma } from '@/generated/prisma/client'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
-// TODO: Phase 1 - No VoidLogRepository yet. db.voidLog calls remain direct.
+import { getVoidLogsDetailed, getOrderItemNames } from '@/lib/query-services'
 
 // GET - Get void/comp report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -48,56 +46,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       end = current.end
     }
 
-    // Build where clause
-    const where: Prisma.VoidLogWhereInput = {
-      order: { locationId },
-      createdAt: { gte: start, lte: end },
-    }
+    // Get void logs via query service
+    const voidLogs = await getVoidLogsDetailed(
+      locationId,
+      { start, end },
+      { employeeId: employeeId || undefined, voidType: voidType || undefined },
+    )
 
-    if (employeeId) {
-      where.employeeId = employeeId
-    }
-
-    if (voidType) {
-      where.voidType = voidType as VoidType
-    }
-
-    // Get void logs
-    const voidLogs = await db.voidLog.findMany({
-      where,
-      include: {
-        order: {
-          select: {
-            orderNumber: true,
-            orderType: true,
-            tabName: true,
-          },
-        },
-        employee: {
-          select: {
-            id: true,
-            displayName: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    // Get item names for item voids
+    // Get item names for item voids via query service
     const itemIds = voidLogs
       .filter(log => log.itemId)
       .map(log => log.itemId as string)
 
-    // TODO: Phase 1 - Migrate to OrderItemRepository once it supports findMany by ID list
-    // Currently no repository method for batch ID lookup with custom select (no locationId in voidLog item lookup).
-    const items = await adminDb.orderItem.findMany({
-      where: { id: { in: itemIds } },
-      select: { id: true, name: true },
-    })
-
-    const itemMap = new Map(items.map(i => [i.id, i.name]))
+    const itemMap = await getOrderItemNames(itemIds)
 
     // Calculate summary
     const summary = {

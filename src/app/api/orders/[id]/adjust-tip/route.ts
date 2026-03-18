@@ -14,6 +14,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { getRequestLocationId } from '@/lib/request-context'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -38,22 +39,27 @@ export const PATCH = withVenue(async function PATCH(
       )
     }
 
-    // Lightweight order check for locationId (needed by auth)
-    // NOTE: First fetch uses db directly because we don't have locationId yet.
-    // Once we have locationId from this order, all subsequent queries use repositories.
-    const orderCheck = await adminDb.order.findUnique({
-      where: { id: orderId },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      // Lightweight order check for locationId (needed by auth)
+      // NOTE: First fetch uses db directly because we don't have locationId yet.
+      // Once we have locationId from this order, all subsequent queries use repositories.
+      const orderCheck = await adminDb.order.findUnique({
+        where: { id: orderId },
+        select: { id: true, locationId: true },
+      })
 
-    if (!orderCheck) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      if (!orderCheck) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      locationId = orderCheck.locationId
     }
 
-    const authResult = await requirePermission(managerId, orderCheck.locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
+    const authResult = await requirePermission(managerId, locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
     if (!authResult.authorized) {
       return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })
     }
@@ -64,7 +70,7 @@ export const PATCH = withVenue(async function PATCH(
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
       // Re-read order with payment inside lock
-      const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
         payments: {
           where: { id: paymentId, deletedAt: null },
         },
@@ -130,15 +136,15 @@ export const PATCH = withVenue(async function PATCH(
       const newTotalAmount = Number(payment.amount) + newTipAmount
 
       // Update payment
-      await PaymentRepository.updatePayment(paymentId, orderCheck.locationId, {
+      await PaymentRepository.updatePayment(paymentId, locationId, {
         tipAmount: newTipAmount,
         totalAmount: newTotalAmount,
         lastMutatedBy: 'local',
       }, tx)
-      const updatedPayment = await PaymentRepository.getPaymentByIdOrThrow(paymentId, orderCheck.locationId, tx)
+      const updatedPayment = await PaymentRepository.getPaymentByIdOrThrow(paymentId, locationId, tx)
 
       // Update order tip total
-      const allPayments = await PaymentRepository.getPaymentsForOrderByStatus(orderId, orderCheck.locationId, ['completed', 'refunded', 'pending'], tx)
+      const allPayments = await PaymentRepository.getPaymentsForOrderByStatus(orderId, locationId, ['completed', 'refunded', 'pending'], tx)
 
       const newOrderTipTotal = allPayments.reduce(
         (sum, p) => sum + Number(p.tipAmount),
@@ -148,7 +154,7 @@ export const PATCH = withVenue(async function PATCH(
       // Bug 15: Recalculate Order.total to include new tip total
       const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxFromExclusive || 0) - Number(order.discountTotal) + newOrderTipTotal)
 
-      await OrderRepository.updateOrder(orderId, orderCheck.locationId, {
+      await OrderRepository.updateOrder(orderId, locationId, {
         tipTotal: newOrderTipTotal,
         total: newOrderTotal,
         version: { increment: 1 },

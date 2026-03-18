@@ -3,7 +3,43 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { KDSOrderBehavior, KDSTransitionTimes, KDSOrderTypeFilters, KDSDisplayMode, KDSScreenLinkData } from '@/lib/kds/types'
 import { DEFAULT_ORDER_BEHAVIOR, mergeOrderBehavior } from '@/lib/kds/defaults'
-import type { ScreenConfig } from '../kds/settings/page'
+
+// ── Screen Config Type ──
+
+export interface ScreenConfig {
+  id: string
+  name: string
+  slug: string | null
+  screenType: string
+  locationId: string
+  columns: number
+  fontSize: string
+  colorScheme: string
+  agingWarning: number
+  lateWarning: number
+  playSound: boolean
+  flashOnNew: boolean
+  isPaired: boolean
+  displayMode: KDSDisplayMode
+  transitionTimes: KDSTransitionTimes | null
+  orderBehavior: Partial<KDSOrderBehavior> | null
+  orderTypeFilters: KDSOrderTypeFilters | null
+  sourceLinks: Array<{
+    id: string
+    targetScreenId: string
+    targetScreenName: string
+    linkType: string
+    bumpAction: string
+    resetStrikethroughsOnSend: boolean
+  }>
+  stations: Array<{
+    id: string
+    name: string
+    displayName: string | null
+    stationType: string
+    color: string | null
+  }>
+}
 
 // ── Props ──
 

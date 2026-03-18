@@ -48,6 +48,7 @@ export interface CustomPreMod {
   name: string
   shortLabel?: string
   kitchenLabel?: string
+  color?: string           // hex color for button display
   priceAdjustment: number  // in cents
   multiplier: number       // default 1.0
   sortOrder: number

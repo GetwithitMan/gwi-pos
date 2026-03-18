@@ -595,6 +595,31 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           {mod.isDefault && (
             <Star className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />
           )}
+          {/* Read-only pre-modifier pills — configured via detail panel editor */}
+          {(() => {
+            const pills: React.ReactNode[] = []
+            if (mod.allowNo) pills.push(<span key="no" className="text-[9px] px-1 bg-red-100 text-red-600 rounded">No</span>)
+            if (mod.allowLite) pills.push(<span key="lite" className="text-[9px] px-1 bg-yellow-100 text-yellow-600 rounded">Lite</span>)
+            if (mod.allowExtra) pills.push(<span key="extra" className="text-[9px] px-1 bg-green-100 text-green-600 rounded">Extra</span>)
+            if (mod.allowOnSide) pills.push(<span key="side" className="text-[9px] px-1 bg-blue-100 text-blue-600 rounded">Side</span>)
+            // Custom pre-modifiers
+            if (mod.customPreModifiers?.length) {
+              for (const cpm of mod.customPreModifiers) {
+                if (!cpm.isActive) continue
+                const bgColor = cpm.color || '#f97316'
+                pills.push(
+                  <span
+                    key={`cpm-${cpm.name}`}
+                    className="text-[9px] px-1.5 py-0.5 rounded text-white font-medium"
+                    style={{ backgroundColor: bgColor }}
+                  >
+                    {cpm.shortLabel || cpm.name}
+                  </span>
+                )
+              }
+            }
+            return pills.length > 0 ? <div className="flex gap-0.5 shrink-0">{pills}</div> : null
+          })()}
           {mod.swapEnabled && (mod.swapTargets?.length ?? 0) > 0 && (
             <span className="text-[9px] px-1 py-0.5 bg-purple-100 text-purple-600 rounded shrink-0">⇄ {mod.swapTargets!.length}</span>
           )}

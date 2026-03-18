@@ -84,7 +84,7 @@ Every feature in this registry has a dedicated doc in `docs/features/`. Before c
 | Feature | Doc | Status | Repos | Top Dependencies |
 |---------|-----|--------|-------|-----------------|
 | **Floor Plan** | [floor-plan.md](floor-plan.md) | Active | pos, android | Orders, Entertainment, Employees |
-| **KDS (Kitchen Display)** | [kds.md](kds.md) | Active | pos, android | Orders, Hardware, Menu |
+| **KDS (Kitchen Display)** | [kds.md](kds.md) | Active | kds-android (primary), pos (server+fallback), android | Orders, Hardware, Menu |
 | **Coursing** | [coursing.md](coursing.md) | Active | pos | Orders, KDS, Menu |
 | **Events & Tickets** | [events-tickets.md](events-tickets.md) | Active | pos | Orders, Customers, Payments |
 | **Customers** | [customers.md](customers.md) | Active | pos | Orders, Payments, Events |

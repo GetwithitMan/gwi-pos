@@ -119,11 +119,12 @@ This matrix answers: "If I change feature X, what else might break?"
 ### KDS (Kitchen Display System)
 | | |
 |---|---|
+| **Primary Client** | `gwi-kds-android` — native Android app (FoodKDS + PitBoss flavors). Web fallback at `src/app/(kds)/`. |
 | **Depends On** | Orders (receives tickets from send-to-kitchen), Hardware (device pairing, printer backup), Menu (modifier depth display), Roles (station assignment) |
-| **Depended On By** | Orders (bump status syncs back to order), Entertainment (entertainment KDS dashboard) |
+| **Depended On By** | Orders (bump status syncs back to order), Entertainment (PitBoss flavor for entertainment KDS), Delivery (delivery order timing) |
 | **Shared Models** | `KdsScreen`, `KdsScreenItem`, `HardwareDevice` |
-| **Shared Socket Events** | `kds:ticket-updated`, `kds:item-bumped`, `kds:order-bumped`, `item:bumped`, `session:completed` |
-| **Critical Rules** | Tag-based routing (items route to stations by tag). Print API is fire-and-forget. KDS events are now event-sourced (via `emitKdsEvent()`). |
+| **Shared Socket Events** | `kds:order-received`, `kds:item-status`, `kds:item-bumped`, `kds:order-bumped`, `kds:order-forwarded`, `kds:multi-clear`, `session:completed` |
+| **Critical Rules** | Android KDS is primary, web is fallback. Tag-based routing (items route to stations by tag). Screen link chains (send_to_next, multi_clear). Print API is fire-and-forget. Intermediate bumps do NOT write OrderEvents — only final bumps do. Forward state (kdsForwardedToScreenId, kdsFinalCompleted) persists server-side. |
 
 ---
 

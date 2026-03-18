@@ -9,6 +9,7 @@ import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
 import { dispatchAlert } from '@/lib/alert-service'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-links'
+import { sendSMS, isTwilioConfigured, formatPhoneE164 } from '@/lib/twilio'
 
 // Throttle entertainment expiry scan — once per 30s, not every KDS poll
 let _lastExpiryCheck = 0
@@ -623,6 +624,64 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       // Delivery auto-advance: preparing → ready_for_pickup when all items bumped
       if (action === 'complete' || action === 'bump_order') {
         void checkKdsBumpDeliveryAdvance(orderId, locationId).catch(console.error)
+      }
+
+      // Phase 9: Print on bump — fire-and-forget print when configured and this is a final bump
+      if ((action === 'complete' || action === 'bump_order') && !isIntermediateBump && screenId) {
+        void (async () => {
+          try {
+            const screen = await db.kDSScreen.findUnique({
+              where: { id: screenId },
+              select: { orderBehavior: true },
+            })
+            const behavior = screen?.orderBehavior as { printOnBump?: boolean } | null
+            if (behavior?.printOnBump) {
+              void dispatchPrintWithRetry(
+                `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`,
+                { orderId, itemIds },
+                { locationId, employeeId: body.employeeId || null, orderId }
+              )
+            }
+          } catch (err) {
+            console.error('[KDS] Print-on-bump check failed:', err)
+          }
+        })()
+      }
+
+      // Phase 8: SMS on ready — send SMS when order is fully bumped (final) and configured
+      if ((action === 'bump_order') && !isIntermediateBump && screenId && isTwilioConfigured()) {
+        void (async () => {
+          try {
+            const screen = await db.kDSScreen.findUnique({
+              where: { id: screenId },
+              select: { orderBehavior: true },
+            })
+            const behavior = screen?.orderBehavior as { sendSmsOnReady?: boolean } | null
+            if (!behavior?.sendSmsOnReady) return
+
+            // Look up order for customer phone
+            const order = await adminDb.order.findUnique({
+              where: { id: orderId },
+              select: {
+                orderNumber: true,
+                orderType: true,
+                customer: { select: { phone: true, firstName: true } },
+              },
+            })
+            if (!order?.customer?.phone) return
+
+            const phone = formatPhoneE164(order.customer.phone)
+            if (!phone) return
+
+            const name = order.customer.firstName || 'there'
+            await sendSMS({
+              to: phone,
+              body: `Hi ${name}! Your order #${order.orderNumber} is ready${order.orderType === 'takeout' ? ' for pickup' : ''}. Thank you!`,
+            })
+          } catch (err) {
+            console.error('[KDS] SMS-on-ready failed:', err)
+          }
+        })()
       }
     }
 

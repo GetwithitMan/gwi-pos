@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@/generated/prisma/client'
-import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
-// TODO: Phase 1 - No TipLedgerEntryRepository, TipLedgerRepository, or ShiftRepository yet.
-// All db.tipLedgerEntry, db.tipLedger, db.shift calls remain direct.
+import {
+  getTipOutEntries,
+  getBankedTipEntries,
+  getTipLedgerBalances,
+  getTipOutCounterparts,
+  getShiftsWithTips,
+} from '@/lib/query-services'
 
 // Migrated from legacy TipBank/TipShare (Skill 273)
 // All tip data now sourced from TipLedgerEntry instead of TipShare/TipBank models.
@@ -54,47 +57,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       dateFilter.createdAt = { ...dateFilter.createdAt, lte: endRange.end }
     }
 
-    // ── Tip shares: query TipLedgerEntry where sourceType = 'ROLE_TIPOUT' ──
-    // DEBIT entries = tip-outs given, CREDIT entries = tip-outs received.
-    // Paired by sourceId (both DEBIT and CREDIT share the same sourceId = TipShare.id).
-    const tipOutFilter: Prisma.TipLedgerEntryWhereInput = {
-      locationId,
-      sourceType: 'ROLE_TIPOUT',
-      deletedAt: null,
-      ...dateFilter,
-    }
-    if (employeeId) {
-      tipOutFilter.employeeId = employeeId
-    }
-
-    // Build banked tip filter
-    const bankedTipFilter: Prisma.TipLedgerEntryWhereInput = {
-      locationId,
-      deletedAt: null,
-      sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP', 'PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
-      ...dateFilter,
-    }
-    if (employeeId) {
-      bankedTipFilter.employeeId = employeeId
-    }
-
-    // Build ledger balance filter
-    const ledgerBalanceFilter: Prisma.TipLedgerWhereInput = {
-      locationId,
-      deletedAt: null,
-    }
-    if (employeeId) {
-      ledgerBalanceFilter.employeeId = employeeId
-    }
-
-    // Build shifts filter
-    const shiftsFilter: Prisma.ShiftWhereInput = {
-      locationId,
-      status: 'closed',
-      grossTips: { not: null },
-    }
+    // Build shift date filter
+    const shiftDateFilter: { endedAt?: { gte?: Date; lte?: Date } } = {}
     if (startDate || endDate) {
-      const endedAtFilter: Prisma.DateTimeNullableFilter = {}
+      const endedAtFilter: { gte?: Date; lte?: Date } = {}
       if (startDate) {
         const startRange = getBusinessDayRange(startDate, dayStartTime)
         endedAtFilter.gte = startRange.start
@@ -103,67 +69,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         const endRange = getBusinessDayRange(endDate, dayStartTime)
         endedAtFilter.lte = endRange.end
       }
-      shiftsFilter.endedAt = endedAtFilter
-    }
-    if (employeeId) {
-      shiftsFilter.employeeId = employeeId
+      shiftDateFilter.endedAt = endedAtFilter
     }
 
-    // Fetch all four independent queries in parallel
+    // Fetch all four independent queries in parallel via query services
     const [tipOutEntries, bankedEntries, ledgerBalances, shifts] = await Promise.all([
-      // Tip-out entries
-      db.tipLedgerEntry.findMany({
-        where: tipOutFilter,
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-              role: { select: { name: true } },
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      // Banked tips
-      db.tipLedgerEntry.findMany({
-        where: bankedTipFilter,
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-              role: { select: { name: true } },
-            },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      // Ledger balances
-      db.tipLedger.findMany({
-        where: ledgerBalanceFilter,
-        select: { employeeId: true, currentBalanceCents: true },
-      }),
-      // Shifts with tip data
-      db.shift.findMany({
-        where: shiftsFilter,
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-              role: { select: { name: true } },
-            },
-          },
-        },
-        orderBy: { endedAt: 'desc' },
-      }),
+      getTipOutEntries(locationId, dateFilter, employeeId),
+      getBankedTipEntries(locationId, dateFilter, employeeId),
+      getTipLedgerBalances(locationId, employeeId),
+      getShiftsWithTips(locationId, shiftDateFilter, employeeId),
     ])
 
     // Fetch counterpart entries if filtering by employee (depends on tipOutEntries)
@@ -174,26 +88,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     let allTipOutEntries = tipOutEntries
     if (employeeId && uniqueSourceIds.length > 0) {
-      const counterparts = await db.tipLedgerEntry.findMany({
-        where: {
-          locationId,
-          sourceType: 'ROLE_TIPOUT',
-          sourceId: { in: uniqueSourceIds },
-          deletedAt: null,
-          employeeId: { not: employeeId },
-        },
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-              role: { select: { name: true } },
-            },
-          },
-        },
-      })
+      const counterparts = await getTipOutCounterparts(locationId, uniqueSourceIds, employeeId)
       allTipOutEntries = [...tipOutEntries, ...counterparts]
     }
 

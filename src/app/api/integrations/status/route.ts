@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
-import { parseSettings } from '@/lib/settings'
+import { parseSettings, type VenueSettings } from '@/lib/settings'
 import { db } from '@/lib/db'
 
 export const GET = withVenue(async function GET() {
@@ -10,10 +10,11 @@ export const GET = withVenue(async function GET() {
   let sevenShiftsConfigured = false
   let marginEdgeConfigured = false
   let slackConfigured = !!process.env.SLACK_WEBHOOK_URL
+  let settings: VenueSettings | null = null
   try {
     const location = await db.location.findFirst({ select: { id: true } })
     if (location) {
-      const settings = parseSettings(await getLocationSettings(location.id))
+      settings = parseSettings(await getLocationSettings(location.id))
       const pms = settings.hotelPms
       oraclePmsConfigured = !!(pms?.enabled && pms.baseUrl && pms.clientId && pms.clientSecret && pms.appKey && pms.hotelId)
       const s7 = settings.sevenShifts
@@ -29,10 +30,22 @@ export const GET = withVenue(async function GET() {
     // Non-fatal — status check should not throw
   }
 
+  // Twilio: check DB settings first, then env vars
+  let twilioConfigured = false
+  let twilioFromNumber: string | null = null
+  const tw = settings?.twilio
+  if (tw?.accountSid && tw?.authToken && tw?.fromNumber) {
+    twilioConfigured = true
+    twilioFromNumber = `***${tw.fromNumber.slice(-4)}`
+  } else if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER) {
+    twilioConfigured = true
+    twilioFromNumber = `***${process.env.TWILIO_FROM_NUMBER.slice(-4)}`
+  }
+
   return NextResponse.json({ data: {
     twilio: {
-      configured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER),
-      fromNumber: process.env.TWILIO_FROM_NUMBER ? `***${process.env.TWILIO_FROM_NUMBER.slice(-4)}` : null,
+      configured: twilioConfigured,
+      fromNumber: twilioFromNumber,
     },
     resend: {
       configured: !!process.env.RESEND_API_KEY,

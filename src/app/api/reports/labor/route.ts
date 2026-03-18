@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
-import { REVENUE_ORDER_STATUSES, calculateLaborCost, roundMoney } from '@/lib/domain/reports'
+import { calculateLaborCost, roundMoney } from '@/lib/domain/reports'
+import { getTimeClockEntries, getActiveEmployees, getSalesTotalForPeriod } from '@/lib/query-services'
 
 // GET labor report - hours worked, costs, overtime
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -36,49 +36,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Build employee filter
     const employeeFilter = employeeId ? { employeeId } : {}
 
-    // Fetch time entries and employees in parallel (independent queries)
+    // Build date range for query services
+    const rangeStart = startDate ? new Date(startDate) : new Date(0)
+    const rangeEnd = endDate ? new Date(endDate + 'T23:59:59') : new Date()
+    const range = { start: rangeStart, end: rangeEnd }
+
+    // Fetch time entries and employees in parallel via query services
     const [entries, employees] = await Promise.all([
-      // Time clock entries
-      db.timeClockEntry.findMany({
-        where: {
-          locationId,
-          ...dateFilter,
-          ...employeeFilter,
-          clockOut: { not: null }, // Only completed shifts
-        },
-        include: {
-          employee: {
-            select: {
-              id: true,
-              displayName: true,
-              firstName: true,
-              lastName: true,
-              hourlyRate: true,
-              role: {
-                select: { name: true },
-              },
-            },
-          },
-        },
-        orderBy: { clockIn: 'desc' },
+      getTimeClockEntries(locationId, range, {
+        employeeId: employeeId || undefined,
+        completedOnly: true,
       }),
-      // All active employees (including those with no entries)
-      adminDb.employee.findMany({
-        where: {
-          locationId,
-          isActive: true,
-        },
-        select: {
-          id: true,
-          displayName: true,
-          firstName: true,
-          lastName: true,
-          hourlyRate: true,
-          role: {
-            select: { name: true },
-          },
-        },
-      }),
+      getActiveEmployees(locationId),
     ])
 
     // Initialize summary stats
@@ -287,29 +256,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.totalHours - a.totalHours)
 
-    // Calculate labor cost as percentage of sales (if we have sales data)
+    // Calculate labor cost as percentage of sales via query service
     let laborCostPercent = null
-    try {
-      const salesFilter: Record<string, unknown> = { locationId, status: { in: [...REVENUE_ORDER_STATUSES] }, deletedAt: null }
-      if (startDate || endDate) {
-        const dateRange: Record<string, Date> = {}
-        if (startDate) dateRange.gte = new Date(startDate)
-        if (endDate) dateRange.lte = new Date(endDate + 'T23:59:59')
-        salesFilter.OR = [
-          { businessDayDate: dateRange },
-          { businessDayDate: null, createdAt: dateRange },
-        ]
-      }
-      const salesAgg = await db.orderSnapshot.aggregate({
-        where: salesFilter,
-        _sum: { subtotalCents: true },
-      })
-      const totalSales = (salesAgg._sum.subtotalCents || 0) / 100
-      if (totalSales > 0) {
-        laborCostPercent = Math.round((totalLaborCost / totalSales) * 10000) / 100
-      }
-    } catch {
-      // Ignore sales calculation errors
+    const totalSales = await getSalesTotalForPeriod(locationId, startDate, endDate)
+    if (totalSales !== null && totalSales > 0) {
+      laborCostPercent = Math.round((totalLaborCost / totalSales) * 10000) / 100
     }
 
     return NextResponse.json({ data: {

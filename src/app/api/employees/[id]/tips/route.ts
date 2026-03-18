@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { centsToDollars, getLedgerBalance } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // GET - Get pending tips for an employee
 export const GET = withVenue(async function GET(
@@ -14,20 +15,21 @@ export const GET = withVenue(async function GET(
   try {
     const { id: employeeId } = await params
 
-    // Look up employee to get locationId (required for ledger queries)
-    const employee = await adminDb.employee.findUnique({
-      where: { id: employeeId },
-      select: { id: true, locationId: true },
-    })
-
-    if (!employee) {
-      return NextResponse.json(
-        { error: 'Employee not found' },
-        { status: 404 }
-      )
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const employee = await adminDb.employee.findUnique({
+        where: { id: employeeId },
+        select: { id: true, locationId: true },
+      })
+      if (!employee) {
+        return NextResponse.json(
+          { error: 'Employee not found' },
+          { status: 404 }
+        )
+      }
+      locationId = employee.locationId
     }
-
-    const { locationId } = employee
 
     // ── Pending tips: ROLE_TIPOUT credits (tip shares received) ──────────
     // These replace the old db.tipShare.findMany({ status: 'pending' })

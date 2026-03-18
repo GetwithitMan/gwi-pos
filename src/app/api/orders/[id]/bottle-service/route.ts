@@ -7,6 +7,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // POST - Open a bottle service tab (with tier selection + deposit pre-auth)
 export const POST = withVenue(async function POST(
@@ -22,18 +23,23 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required fields: readerId, employeeId, tierId' }, { status: 400 })
     }
 
-    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const orderCheck = await adminDb.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let orderLocationId = getRequestLocationId()
+    if (!orderLocationId) {
+      // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+      const orderCheck = await adminDb.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { id: true, locationId: true },
+      })
 
-    if (!orderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      if (!orderCheck) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      orderLocationId = orderCheck.locationId
     }
 
     // Get order with location settings
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderLocationId, {
       location: { select: { id: true, settings: true } },
     })
 
@@ -216,17 +222,22 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    // Bootstrap: lightweight fetch for locationId + bottle service check
-    const getCheck = await adminDb.order.findFirst({
-      where: { id: orderId, deletedAt: null, isBottleService: true },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let getLocationId = getRequestLocationId()
+    if (!getLocationId) {
+      // Bootstrap: lightweight fetch for locationId + bottle service check
+      const getCheck = await adminDb.order.findFirst({
+        where: { id: orderId, deletedAt: null, isBottleService: true },
+        select: { id: true, locationId: true },
+      })
 
-    if (!getCheck) {
-      return NextResponse.json({ error: 'Bottle service order not found' }, { status: 404 })
+      if (!getCheck) {
+        return NextResponse.json({ error: 'Bottle service order not found' }, { status: 404 })
+      }
+      getLocationId = getCheck.locationId
     }
 
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, getCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, getLocationId, {
       location: { select: { settings: true } },
       cards: {
         where: { deletedAt: null },

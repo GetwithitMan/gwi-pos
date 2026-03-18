@@ -178,6 +178,16 @@ npm run db:studio    # Prisma Studio
 ```
 
 ```bash
+# KDS Android (gwi-kds-android)
+cd /path/to/gwi-kds-android
+./gradlew :app:assembleFoodkdsDebug    # Build FoodKDS debug APK
+./gradlew :app:assemblePitbossDebug    # Build PitBoss debug APK
+./gradlew :app:assembleFoodkdsRelease  # Build FoodKDS release APK
+./gradlew :app:assemblePitbossRelease  # Build PitBoss release APK
+./gradlew test                         # Run unit tests
+```
+
+```bash
 # Migrations
 node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migrations/
 # Migration tracking: _gwi_migrations table — never re-runs applied migrations
@@ -191,6 +201,16 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 `Organization` → `Location` → `Category` → `MenuItem` → `OrderItem` → `OrderItemModifier`
 `ModifierGroup` → `Modifier` | `Order` → `OrderItem` | `OrderSnapshot` → `OrderItemSnapshot`
 
+### KDS Android App (`gwi-kds-android`)
+| Module | Purpose |
+|--------|---------|
+| `:app` | Main application, Hilt entry point, build flavors (foodkds/pitboss) |
+| `:core` | Shared data layer (Retrofit API, Socket.IO client, Room DB, Moshi, domain models, UI components) |
+| `:feature-foodkds` | Food KDS screens — ticket display, bump, screen links, all-day counts, order tracker |
+| `:feature-pitboss` | PitBoss/Entertainment — timed rental management, session tracking |
+
+Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. Min SDK 26, Target SDK 36.
+
 ### Key Feature Quick-Ref
 | Feature | Detail |
 |---------|--------|
@@ -200,6 +220,7 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | Stacking | `allowStacking: true` — tap same modifier twice for 2x |
 | Linked items | `Modifier.linkedMenuItemId` — spirit upgrades with price/inventory tracking |
 | Timed rentals | Block time (fixed) or per-minute billing, timer auto-start on send |
+| KDS | Android-native (primary) at `gwi-kds-android`. Two flavors: FoodKDS (`com.gwi.kds.foodkds`) + PitBoss (`com.gwi.kds.pitboss`). Web fallback at `/kds`. |
 | Tip sharing | Auto tip-outs at shift close → payroll. See `docs/domains/TIPS-DOMAIN.md` |
 
 ## Doc Routing Table
@@ -225,7 +246,7 @@ node scripts/nuc-pre-migrate.js          # Run all pending from scripts/migratio
 | Inventory / recipes | `docs/features/inventory.md` | `docs/domains/INVENTORY-DOMAIN.md` | `src/lib/inventory-calculations.ts` |
 | Purchase orders / receiving | `docs/features/purchase-orders.md` | `docs/skills/SPEC-491-PURCHASE-ORDERS.md` | `src/app/api/inventory/orders/`, `src/app/(admin)/inventory/orders/` |
 | Tabs / pre-auth | `docs/features/tabs.md` | `docs/domains/TABS-DOMAIN.md` | `src/app/api/tabs/` |
-| KDS / kitchen | `docs/features/kds.md` | `docs/domains/KDS-DOMAIN.md` | `src/app/(kds)/` |
+| KDS / kitchen | `docs/features/kds.md` | `docs/domains/KDS-DOMAIN.md` | `gwi-kds-android` (primary), `src/app/(kds)/` (web fallback), `src/app/api/kds/` |
 | Shifts / payroll | `docs/features/shifts.md` | `docs/domains/EMPLOYEES-DOMAIN.md` | `src/app/api/shifts/` |
 | Employees | `docs/features/employees.md` | `docs/domains/EMPLOYEES-DOMAIN.md` | `src/app/(admin)/employees/` |
 | Time clock | `docs/features/time-clock.md` | `docs/domains/EMPLOYEES-DOMAIN.md` | `src/app/api/time-clock/` |

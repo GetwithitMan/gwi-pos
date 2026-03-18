@@ -372,11 +372,20 @@ export function ModifierGroupSection({
                           <button
                             key={i}
                             onClick={() => onToggleCustomPreMod(group.id, modifier.id, cp)}
-                            className={`px-1.5 py-0.5 text-[9px] rounded transition-all ${
+                            className={`px-1.5 py-0.5 text-[9px] rounded transition-all font-semibold ${
                               isCpmSelected
-                                ? 'bg-gray-700 text-white font-semibold ring-1 ring-offset-1'
-                                : 'bg-gray-100 text-gray-700 opacity-70 hover:opacity-100'
+                                ? 'text-white ring-1 ring-offset-1'
+                                : 'opacity-60 hover:opacity-100'
                             }`}
+                            style={cp.color ? {
+                              backgroundColor: isCpmSelected ? cp.color : undefined,
+                              color: isCpmSelected ? '#fff' : cp.color,
+                              borderColor: cp.color,
+                              border: isCpmSelected ? undefined : `1px solid ${cp.color}`,
+                            } : {
+                              backgroundColor: isCpmSelected ? '#374151' : '#f3f4f6',
+                              color: isCpmSelected ? '#fff' : '#374151',
+                            }}
                           >
                             {label}
                             {cp.priceAdjustment !== 0 && (

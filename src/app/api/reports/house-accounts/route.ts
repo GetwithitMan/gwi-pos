@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { HouseAccountStatus } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-// TODO: Phase 1 - No HouseAccountRepository yet.
-// db.houseAccount and db.houseAccountTransaction calls remain direct.
+import { getHouseAccountsWithCharges, getLastHouseAccountPayments } from '@/lib/query-services'
 
 // GET - House Accounts Aging Report (P1-03)
 // Returns all accounts with balances grouped by how long they have been outstanding.
@@ -28,43 +26,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const today = new Date()
 
-    // Fetch all matching house accounts, including their charge and payment transactions
-    const accounts = await db.houseAccount.findMany({
-      where: {
-        locationId,
-        deletedAt: null,
-        status: statusFilter,
-      },
-      include: {
-        // All charge transactions (for aging bucket calculation)
-        transactions: {
-          where: {
-            deletedAt: null,
-            type: 'charge',
-          },
-          orderBy: { createdAt: 'asc' },
-        },
-      },
-      orderBy: { name: 'asc' },
-    })
+    // Fetch all matching house accounts with charge transactions via query service
+    const accounts = await getHouseAccountsWithCharges(locationId, statusFilter)
 
-    // Fetch the last payment transaction per account in a single query
-    // (grouped by houseAccountId, ordered by createdAt desc, take 1 each)
-    const lastPayments = await db.houseAccountTransaction.findMany({
-      where: {
-        locationId,
-        deletedAt: null,
-        type: 'payment',
-        houseAccountId: { in: accounts.map(a => a.id) },
-      },
-      orderBy: { createdAt: 'desc' },
-      distinct: ['houseAccountId'],
-      select: {
-        houseAccountId: true,
-        createdAt: true,
-        amount: true,
-      },
-    })
+    // Fetch the last payment transaction per account via query service
+    const lastPayments = await getLastHouseAccountPayments(locationId, accounts.map(a => a.id))
 
     // Build a lookup map: houseAccountId → last payment record
     const lastPaymentMap = new Map(lastPayments.map(p => [p.houseAccountId, p]))
