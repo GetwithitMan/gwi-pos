@@ -8,6 +8,12 @@ import { formatCurrency } from './utils'
 // Re-export for backwards compatibility
 export { formatCurrency }
 
+/** Convert Prisma Decimal / number / null to plain number. Returns 0 for null/undefined. */
+export function toNumber(value: unknown): number {
+  if (value === null || value === undefined) return 0
+  return Number(value)
+}
+
 /**
  * Round a dollar value to exactly 2 decimal places using integer cents.
  * Prevents floating-point drift (e.g. 10.2 * 0.1 → 1.0200000000000002).
