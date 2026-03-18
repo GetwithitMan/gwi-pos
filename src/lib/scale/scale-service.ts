@@ -10,6 +10,9 @@ import type { ScaleProtocol, WeightReading, SerialConfig } from './scale-protoco
 import { createScaleProtocol } from './scale-factory'
 import { db } from '@/lib/db'
 import { dispatchScaleWeight, dispatchScaleStatus } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('scale-service')
 
 interface ManagedScale {
   id: string
@@ -33,7 +36,7 @@ class ScaleService {
     // Scale service only runs on NUC (local server with serial ports)
     // Skip on Vercel/cloud deployments where serial ports don't exist
     if (process.env.VERCEL || process.env.NODE_ENV === 'test') {
-      console.log('[ScaleService] Skipping initialization (cloud/test environment)')
+      log.info('Skipping initialization (cloud/test environment)')
       return
     }
 
@@ -44,15 +47,15 @@ class ScaleService {
         where: { isActive: true, deletedAt: null },
       })
 
-      console.log(`[ScaleService] Found ${activeScales.length} active scale(s)`)
+      log.info({ count: activeScales.length }, 'Found active scale(s)')
 
       for (const scale of activeScales) {
         void this.connectScale(scale).catch((err) => {
-          console.error(`[ScaleService] Failed to connect scale "${scale.name}" (${scale.id}):`, err)
+          log.error({ err, scaleId: scale.id, scaleName: scale.name }, 'Failed to connect scale')
         })
       }
     } catch (err) {
-      console.error('[ScaleService] Failed to load scales from DB — server continues without scales:', err)
+      log.error({ err }, 'Failed to load scales from DB — server continues without scales')
     }
   }
 
@@ -162,12 +165,12 @@ class ScaleService {
     // Network scales are accessed directly by Android terminals via TCP — the NUC
     // does not open a serial connection for them.
     if (scale.connectionType === 'network') {
-      console.log(`[ScaleService] Scale "${scale.name}" is network-attached (${scale.networkHost}:${scale.networkPort}) — skipping NUC serial connection (Android connects directly)`)
+      log.info({ scaleName: scale.name, networkHost: scale.networkHost, networkPort: scale.networkPort }, 'Scale is network-attached — skipping NUC serial connection (Android connects directly)')
       return
     }
 
     if (!scale.portPath) {
-      console.error(`[ScaleService] Scale "${scale.name}" is serial but has no portPath — skipping`)
+      log.error({ scaleName: scale.name }, 'Scale is serial but has no portPath — skipping')
       return
     }
 
@@ -198,7 +201,7 @@ class ScaleService {
     })
 
     protocol.onError((err) => {
-      console.error(`[ScaleService] Scale "${scale.name}" error:`, err.message)
+      log.error({ scaleName: scale.name, error: err.message }, 'Scale error')
       void this.updateScaleStatus(scale.id, false, err.message)
       void dispatchScaleStatus(scale.locationId, scale.id, {
         connected: false,
@@ -207,7 +210,7 @@ class ScaleService {
     })
 
     protocol.onDisconnect(() => {
-      console.warn(`[ScaleService] Scale "${scale.name}" disconnected`)
+      log.warn({ scaleName: scale.name }, 'Scale disconnected')
       void this.updateScaleStatus(scale.id, false, 'Disconnected')
       void dispatchScaleStatus(scale.locationId, scale.id, {
         connected: false,
@@ -220,12 +223,12 @@ class ScaleService {
     // Attempt connection
     try {
       await protocol.connect()
-      console.log(`[ScaleService] Scale "${scale.name}" connected on ${scale.portPath}`)
+      log.info({ scaleName: scale.name, portPath: scale.portPath }, 'Scale connected')
       void this.updateScaleStatus(scale.id, true, null)
       void dispatchScaleStatus(scale.locationId, scale.id, { connected: true })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[ScaleService] Scale "${scale.name}" connect failed:`, msg)
+      log.error({ scaleName: scale.name, error: msg }, 'Scale connect failed')
       void this.updateScaleStatus(scale.id, false, msg)
       // Auto-reconnect is handled by the protocol implementation
     }
@@ -245,7 +248,7 @@ class ScaleService {
         },
       })
     } catch (err) {
-      console.error(`[ScaleService] Failed to update scale status in DB:`, err)
+      log.error({ err, scaleId }, 'Failed to update scale status in DB')
     }
   }
 }

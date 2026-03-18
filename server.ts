@@ -64,17 +64,17 @@ function startEodScheduler() {
     try {
       const result = await cleanupStaleOrders({ locationId })
       if (result.closedCount > 0) {
-        console.log(`[EOD] Cleaned up ${result.closedCount} stale draft orders`)
+        logger.info({ closedCount: result.closedCount }, 'Cleaned up stale draft orders')
       }
     } catch (err) {
-      console.error('[EOD] Stale order cleanup failed:', err)
+      logger.error({ err }, 'Stale order cleanup failed')
     }
   }
 
   function scheduleNext() {
     const delay = msUntilNext4AM()
     const nextRun = new Date(Date.now() + delay)
-    console.log(`[EOD] Next stale-order cleanup scheduled for ${nextRun.toLocaleString()}`)
+    logger.info({ nextRun: nextRun.toISOString() }, 'Next stale-order cleanup scheduled')
 
     const timer = setTimeout(async () => {
       await runEodCleanup()
@@ -102,7 +102,7 @@ function startDraftCleanupInterval() {
     try {
       const result = await cleanupStaleOrders({ locationId, maxAgeHours: MAX_AGE_HOURS })
       if (result.closedCount > 0) {
-        console.log(`[DraftCleanup] Cancelled ${result.closedCount} abandoned draft orders (>${MAX_AGE_HOURS}h old)`)
+        logger.info({ closedCount: result.closedCount, maxAgeHours: MAX_AGE_HOURS }, 'Cancelled abandoned draft orders')
       }
     } catch {
       // Silent — non-critical background task
@@ -161,9 +161,9 @@ function startWalkoutRetryScheduler() {
         }
       }
 
-      console.log(`[WalkoutRetry] Sweep complete: ${due.length} attempted, ${succeeded} succeeded, ${failed} failed`)
+      logger.info({ attempted: due.length, succeeded, failed }, 'Walkout retry sweep complete')
     } catch (err) {
-      console.error('[WalkoutRetry] Sweep failed:', err)
+      logger.error({ err }, 'Walkout retry sweep failed')
     }
   }
 
@@ -221,24 +221,23 @@ async function main() {
 
   // Initialize Socket.io (skip if standalone ws-server handles sockets)
   if (process.env.WS_STANDALONE === 'true') {
-    console.log(`[Server] Socket.io disabled (WS_STANDALONE=true, using ws-server on ${process.env.WS_SERVER_URL || 'localhost:3001'})`)
+    logger.info({ wsServerUrl: process.env.WS_SERVER_URL || 'localhost:3001' }, 'Socket.io disabled (WS_STANDALONE=true, using ws-server)')
   } else {
     try {
       await initializeSocketServer(httpServer)
-      console.log(`[Server] Socket.io initialized on path ${process.env.SOCKET_PATH || '/api/socket'}`)
+      logger.info({ socketPath: process.env.SOCKET_PATH || '/api/socket' }, 'Socket.io initialized')
     } catch (err) {
-      console.error('[Server] Failed to initialize Socket.io:', err)
+      logger.error({ err }, 'Failed to initialize Socket.io')
       // Continue without sockets — POS will fall back to polling
     }
   }
 
   httpServer.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`[Server] Port ${port} is already in use. Another process is running on this port.`)
-      console.error('[Server] Run: lsof -i :' + port + '  to find the process.')
+      logger.error({ port }, 'Port is already in use. Run: lsof -i :<port> to find the process.')
       process.exit(1)
     }
-    console.error('[Server] HTTP server error:', err)
+    logger.error({ err }, 'HTTP server error')
     process.exit(1)
   })
 
@@ -249,9 +248,9 @@ async function main() {
     const { validateSyncCoverage } = await import('./src/lib/sync/sync-config')
     await validateSyncCoverage(masterClient)
   } catch (err) {
-    console.error('[Server] Sync coverage validation failed:', err instanceof Error ? err.message : err)
+    logger.error({ err: err instanceof Error ? err.message : err }, 'Sync coverage validation failed')
     if (config.isProduction) {
-      console.error('[Server] FATAL: Cannot start with sync coverage errors in production')
+      logger.fatal('Cannot start with sync coverage errors in production')
       process.exit(1)
     }
     // Dev: continue with warning
@@ -264,15 +263,15 @@ async function main() {
     // Schema verification (non-blocking, logs warnings)
     void import('./src/lib/schema-verify').then(({ verifySchema }) =>
       verifySchema()
-    ).catch(console.error)
+    ).catch(err => logger.error({ err }, 'Schema verification failed'))
 
     // Tenant model set validation — fatal in production, warning in dev
     void import('./src/lib/tenant-validation').then(({ validateTenantModelSets }) =>
       validateTenantModelSets(masterClient, { failOnStale: config.isProduction })
     ).then(undefined, (err) => {
-      console.error('[Server] Tenant model set validation failed:', err instanceof Error ? err.message : err)
+      logger.error({ err: err instanceof Error ? err.message : err }, 'Tenant model set validation failed')
       if (config.isProduction) {
-        console.error('[Server] FATAL: Cannot start with stale tenant model registry in production')
+        logger.fatal('Cannot start with stale tenant model registry in production')
         process.exit(1)
       }
     })
@@ -297,9 +296,9 @@ async function main() {
     // Sync workers — only when sync is enabled, not backup, and Neon URL present
     const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl
     if (config.syncEnabled && config.stationRole === 'backup') {
-      console.warn('[Server] STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
+      logger.warn('STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
     } else if (config.syncEnabled && !config.neonDatabaseUrl) {
-      console.error('[Server] SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
+      logger.error('SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
     }
 
     if (syncReady) {
@@ -353,7 +352,7 @@ async function main() {
       process.exit(1)
     }
     if (syncReady) {
-      console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
+      logger.info('Bidirectional sync workers started (NUC <-> Neon)')
     }
   })
 
@@ -367,31 +366,31 @@ async function main() {
     const io = getSocketServer()
     if (io) {
       io.close()
-      console.log('[Server] Socket.io closed')
+      logger.info('Socket.io closed')
     }
 
     // Stop accepting new connections. Existing connections stay alive
     // until they finish or the drain timeout fires.
     httpServer.close(() => {
-      console.log('[Server] HTTP server closed — all connections drained')
+      logger.info('HTTP server closed — all connections drained')
     })
-    console.log('[Server] HTTP server draining in-flight requests (10s max)...')
+    logger.info('HTTP server draining in-flight requests (10s max)...')
 
     // Allow up to 10 seconds for in-flight requests to complete.
     // If connections don't close naturally, we exit anyway.
     const drainTimeout = setTimeout(() => {
-      console.warn('[Server] Drain timeout reached — forcing exit')
+      logger.warn('Drain timeout reached — forcing exit')
       process.exit(0)
     }, 10_000)
     drainTimeout.unref()
 
     // While draining, disconnect background services in parallel
     await masterClient.$disconnect()
-    console.log('[Server] Prisma disconnected')
+    logger.info('Prisma disconnected')
 
     await stopAllWorkers()
     await disconnectNeon()
-    console.log('[Server] Neon client disconnected')
+    logger.info('Neon client disconnected')
 
     // If we get here before drain timeout, all services are cleaned up.
     // Wait for the HTTP server to fully close (connections drained) or
@@ -421,7 +420,6 @@ async function main() {
   })
 }
 
-// TODO: migrate remaining console calls to structured logger
 main().catch((err) => {
   logger.fatal({ err }, 'Fatal server error')
   process.exit(1)

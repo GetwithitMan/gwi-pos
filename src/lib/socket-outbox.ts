@@ -36,6 +36,9 @@
 
 import { emitToLocation, emitCriticalToLocation } from '@/lib/socket-server'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('socket-outbox')
 
 /** Events that use QoS 1 (acknowledged delivery with retry). */
 const CRITICAL_EMIT_EVENTS = new Set([
@@ -174,10 +177,7 @@ export async function flushSocketOutbox(
         // Emit failed (socket server down, IPC unreachable, etc.)
         // Leave flushed=false — catch-up will deliver on reconnect
         failed++
-        console.warn(
-          `[SocketOutbox] Emit failed for event ${row.id} (${row.event}):`,
-          emitErr instanceof Error ? emitErr.message : emitErr,
-        )
+        log.warn({ eventId: Number(row.id), event: row.event, error: emitErr instanceof Error ? emitErr.message : String(emitErr) }, 'Emit failed for outbox event')
       }
     }
 
@@ -192,10 +192,7 @@ export async function flushSocketOutbox(
     }
   } catch (err) {
     // DB read/update failed — events stay unflushed, catch-up will handle them
-    console.warn(
-      '[SocketOutbox] Flush failed for location', locationId,
-      err instanceof Error ? err.message : err,
-    )
+    log.warn({ locationId, error: err instanceof Error ? err.message : String(err) }, 'Flush failed for location')
   }
 
   return { flushed, failed }
@@ -227,10 +224,10 @@ export async function flushAllPendingOutbox(): Promise<{ total: number }> {
     }
 
     if (total > 0) {
-      console.log(`[SocketOutbox] Startup recovery: flushed ${total} pending events across ${locations.length} locations`)
+      log.info({ total, locationCount: locations.length }, 'Startup recovery: flushed pending events')
     }
   } catch (err) {
-    console.warn('[SocketOutbox] Startup flush failed:', err instanceof Error ? err.message : err)
+    log.warn({ error: err instanceof Error ? err.message : String(err) }, 'Startup flush failed')
   }
 
   return { total }

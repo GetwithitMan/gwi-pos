@@ -10,6 +10,9 @@ import { calculateSplitTax } from '@/lib/order-calculations'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, TableSplitResult } from './types'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('table-split')
 
 /**
  * Create a by-table split inside an existing transaction.
@@ -319,7 +322,7 @@ export async function createTableSplit(
         lineItemId: itemId,
         reason: 'Moved via table split',
       },
-    }))).catch(err => console.error('[table-split] Failed to emit ITEM_REMOVED events:', err))
+    }))).catch(err => log.error({ err }, 'Failed to emit ITEM_REMOVED events'))
   }
 
   // Emit ORDER_CREATED for each child split order (one per table)
@@ -337,7 +340,7 @@ export async function createTableSplit(
       splitIndex: child.splitIndex,
       splitType: 'by_table',
       tableName: child.tableName,
-    }).catch(err => console.error('[table-split] Failed to emit ORDER_CREATED for child:', err))
+    }).catch(err => log.error({ err }, 'Failed to emit ORDER_CREATED for child'))
   }
 
   // Emit ORDER_CLOSED on the parent order with closedStatus='split'
@@ -346,7 +349,7 @@ export async function createTableSplit(
     reason: `Table split — ${tablesWithItems.length} table(s)`,
     splitType: 'by_table',
     childOrderIds: splitOrders.map(c => c.id),
-  }).catch(err => console.error('[table-split] Failed to emit ORDER_CLOSED for parent:', err))
+  }).catch(err => log.error({ err }, 'Failed to emit ORDER_CLOSED for parent'))
 
   return {
     splitOrders,

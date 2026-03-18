@@ -10,6 +10,7 @@
  * and socket notifications.
  */
 
+import { createChildLogger } from '@/lib/logger'
 import { db, adminDb } from '@/lib/db'
 import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
 import type { LocationSettings } from '@/lib/settings'
@@ -34,6 +35,8 @@ import {
 } from '@/lib/socket-dispatch'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { writeFile } from 'fs/promises'
+
+const log = createChildLogger('eod')
 
 // ─── Public Types ────────────────────────────────────────────────────────────
 
@@ -318,7 +321,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
           where: { orderId: tab.id },
           create: { orderId: tab.id, locationId, status: 'pending', attempts: 0, maxAttempts: 5 },
           update: {},
-        }).then(() => processNextDeduction()).catch(console.error)
+        }).then(() => processNextDeduction()).catch(err => log.error({ err }, 'Inventory deduction failed'))
 
         // Tip allocation
         if (gratuityAmount > 0 && tab.employeeId) {
@@ -330,7 +333,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
             totalTipsDollars: gratuityAmount,
             tipBankSettings: locSettings.tipBank,
             kind: 'auto_gratuity',
-          }).catch(err => console.error('[EOD] Tip allocation failed for tab', tab.id, err))
+          }).catch(err => log.error({ err, tabId: tab.id }, 'Tip allocation failed for tab'))
         }
 
         // Socket dispatches for tab close
@@ -417,7 +420,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
           rolledOverFrom: `EOD reset (${triggeredBy})`,
         })
       )
-    ).catch(console.error)
+    ).catch(err => log.error({ err }, 'Failed to emit ORDER_METADATA_UPDATED for rolled-over orders'))
 
     void dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
   }
@@ -577,11 +580,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
     // Log entertainment EOD summary
     if (entertainmentReset > 0 || waitlistCancelled > 0) {
-      console.log(
-        `[EOD] Entertainment cleanup: Stopped ${entertainmentReset} sessions, ` +
-        `cancelled ${waitlistCancelled} waitlist entries, ` +
-        `$${entertainmentTotalCharges.toFixed(2)} total charges`
-      )
+      log.info({ entertainmentReset, waitlistCancelled, entertainmentTotalCharges: entertainmentTotalCharges.toFixed(2) }, 'Entertainment cleanup complete')
     }
   }
 
@@ -615,7 +614,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
               },
             },
           })
-          console.log(`[EOD] Batch close succeeded for reader ${reader.name} (${reader.id})`)
+          log.info({ readerId: reader.id, readerName: reader.name }, 'Batch close succeeded')
 
           // Write last-batch.json for NUC heartbeat reporting (fire-and-forget)
           void writeFile('/opt/gwi-pos/last-batch.json', JSON.stringify({
@@ -641,21 +640,21 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
             },
           })
           warnings.push(`Batch close failed for reader ${reader.name}: ${readerErr instanceof Error ? readerErr.message : 'Unknown'}`)
-          console.error(`[EOD] Batch close failed for reader ${reader.name}:`, readerErr)
+          log.error({ err: readerErr, readerId: reader.id, readerName: reader.name }, 'Batch close failed for reader')
         }
       }
       batchCloseSuccess = allSucceeded
     } catch (err) {
       batchCloseSuccess = false
       warnings.push(`Batch close init failed: ${err instanceof Error ? err.message : 'Unknown'}`)
-      console.error('[EOD] Batch close init failed:', err)
+      log.error({ err }, 'Batch close init failed')
     }
   }
 
   // ── 8. Walkout detection ───────────────────────────────────────────────────
   if (!dryRun) {
     void detectPotentialWalkouts(locationId).catch(err => {
-      console.error('[EOD] Walkout detection failed:', err)
+      log.error({ err }, 'Walkout detection failed')
     })
   }
 
@@ -672,13 +671,10 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       )
       if (orphanedPaymentSuspects > 0) {
         warnings.push(`${orphanedPaymentSuspects} order(s) may have orphaned offline card payments. Check Datacap batch report.`)
-        console.warn(
-          `[EOD] WARNING: ${orphanedPaymentSuspects} stale open order(s) found at location ${locationId}. ` +
-          `These may have orphaned offline card payments.`
-        )
+        log.warn({ orphanedPaymentSuspects, locationId }, 'Stale open orders found — may have orphaned offline card payments')
       }
     } catch (err) {
-      console.error('[EOD] Orphaned payment check failed:', err)
+      log.error({ err }, 'Orphaned payment check failed')
     }
   }
 
@@ -742,7 +738,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       batchCloseSuccess: stats.batchCloseSuccess,
       businessDay: businessDayDate,
       triggeredBy,
-    }).catch(console.error)
+    }).catch(err => log.error({ err }, 'Failed to emit eod:reset-complete socket event'))
   }
 
   return stats

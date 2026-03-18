@@ -7,12 +7,15 @@
  * or auto-mark-walkout.
  */
 
+import { createChildLogger } from '@/lib/logger'
 import { db, adminDb } from '@/lib/db'
 import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
 import { OrderRepository } from '@/lib/repositories'
 import { emitToLocation } from '@/lib/socket-server'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+
+const log = createChildLogger('walkout-detector')
 
 /**
  * Detect potential walkouts for a location.
@@ -41,7 +44,7 @@ export async function detectPotentialWalkouts(locationId: string): Promise<{
   })
 
   if (!location) {
-    console.warn(`[WalkoutDetector] Location not found: ${locationId}`)
+    log.warn({ locationId }, 'Location not found')
     return { flaggedCount: 0, flaggedOrders: [] }
   }
 
@@ -131,7 +134,7 @@ export async function detectPotentialWalkouts(locationId: string): Promise<{
     void emitOrderEvent(locationId, order.id, 'WALKOUT_MARKED', {
       reason: 'walkout_detector',
       employeeId: null,
-    }).catch(err => console.error('[WalkoutDetector] Failed to emit WALKOUT_MARKED:', err))
+    }).catch(err => log.error({ err }, 'Failed to emit WALKOUT_MARKED'))
 
     flaggedOrders.push({
       id: order.id,
@@ -146,14 +149,14 @@ export async function detectPotentialWalkouts(locationId: string): Promise<{
     count: flaggedOrders.length,
     orders: flaggedOrders,
     timestamp: now.toISOString(),
-  }).catch(console.error)
+  }).catch(err => log.error({ err }, 'Failed to emit walkout:potential-detected socket event'))
 
   // Dispatch open orders changed so terminals refresh their order lists
   void dispatchOpenOrdersChanged(locationId, {
     trigger: 'item_updated' as any,
   }, { async: true }).catch(() => {})
 
-  console.log(`[WalkoutDetector] Flagged ${flaggedOrders.length} potential walkout(s) for location ${locationId}`)
+  log.info({ flaggedCount: flaggedOrders.length, locationId }, 'Flagged potential walkout(s)')
 
   return { flaggedCount: flaggedOrders.length, flaggedOrders }
 }

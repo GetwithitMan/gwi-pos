@@ -5,6 +5,10 @@
  * and batch size. Drives both upstream and downstream sync workers.
  */
 
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('sync-config')
+
 export type SyncDirection = 'upstream' | 'downstream' | 'bidirectional' | 'none'
 export type SyncOwner = 'nuc' | 'cloud' | 'both' | 'none'
 export type ConflictStrategy = 'neon-wins' | 'local-wins' | 'latest-wins' | 'quarantine'
@@ -365,7 +369,7 @@ export async function validateSyncCoverage(
   // ── 2. Validate LOCAL_ONLY_TABLES entries exist ─────────────────────
   for (const name of LOCAL_ONLY_TABLES) {
     if (!actualTableNames.has(name) && !configuredModels.has(name)) {
-      console.warn(`[SYNC CONFIG] Stale LOCAL_ONLY_TABLES entry: "${name}" — table does not exist in DB`)
+      log.warn({ table: name }, 'Stale LOCAL_ONLY_TABLES entry — table does not exist in DB')
     }
   }
 
@@ -396,10 +400,10 @@ export async function validateSyncCoverage(
   // ── 4. Report ──────────────────────────────────────────────────────
   if (errors.length > 0) {
     const errorMessage = `[SYNC CONFIG] FATAL — ${errors.length} validation error(s):\n\n${errors.join('\n\n')}`
-    console.error(errorMessage)
+    log.error(errorMessage)
     throw new Error(errorMessage)
   }
 
   const totalSynced = Object.values(effectiveSyncModels).filter(c => c.direction !== 'none').length
-  console.log(`[SYNC CONFIG] ✓ ${totalSynced} tables syncing, ${Object.keys(effectiveSyncModels).length} total configured`)
+  log.info({ totalSynced, totalConfigured: Object.keys(effectiveSyncModels).length }, 'Sync coverage validated')
 }

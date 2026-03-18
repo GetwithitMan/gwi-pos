@@ -30,6 +30,9 @@ import type { OwnershipInfo } from '@/lib/domain/tips/table-ownership'
 import type { TipBankSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('tip-allocation')
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -210,10 +213,7 @@ export async function allocateTipsForOrder(params: {
     { id: true },
   )
   if (!primaryEmployee) {
-    console.warn(
-      `[tip-allocation] primaryEmployeeId ${primaryEmployeeId} not found in DB. ` +
-        `Skipping tip allocation for order ${orderId} to prevent FK constraint failure.`
-    )
+    log.warn({ primaryEmployeeId, orderId }, 'primaryEmployeeId not found in DB — skipping tip allocation to prevent FK constraint failure')
     const txn = await db.tipTransaction.create({
       data: {
         locationId,
@@ -681,10 +681,7 @@ async function allocateWithOwnership(params: {
         }
 
         // Segment not found or empty -- fall through to direct allocation
-        console.warn(
-          `[tip-allocation] No segment found for group ${ownerGroup.id} at ${collectedAt.toISOString()}. ` +
-            `Falling back to direct allocation for owner ${slice.employeeId}.`
-        )
+        log.warn({ groupId: ownerGroup.id, collectedAt: collectedAt.toISOString(), ownerId: slice.employeeId }, 'No segment found for group — falling back to direct allocation for owner')
       }
 
       // Owner is NOT in a group (or group had no valid segment) -- direct credit
@@ -824,10 +821,7 @@ async function allocateToGroup(params: {
   if (!segment) {
     // No segment found (edge case: group exists but no segment covers this time).
     // Fall back to individual allocation so the tip is not lost.
-    console.warn(
-      `[tip-allocation] No segment found for group ${groupId} at ${collectedAt.toISOString()}. ` +
-        `Falling back to individual allocation for employee ${primaryEmployeeId}.`
-    )
+    log.warn({ groupId, collectedAt: collectedAt.toISOString(), primaryEmployeeId }, 'No segment found for group — falling back to individual allocation')
     return allocateIndividual({
       locationId,
       orderId,
@@ -846,10 +840,7 @@ async function allocateToGroup(params: {
 
   // Edge case: empty segment (should not happen, but be safe)
   if (memberIds.length === 0) {
-    console.warn(
-      `[tip-allocation] Segment ${segment.id} has empty splitJson. ` +
-        `Falling back to individual allocation for employee ${primaryEmployeeId}.`
-    )
+    log.warn({ segmentId: segment.id, primaryEmployeeId }, 'Segment has empty splitJson — falling back to individual allocation')
     return allocateIndividual({
       locationId,
       orderId,

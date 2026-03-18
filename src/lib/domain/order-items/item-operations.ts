@@ -12,6 +12,9 @@ import { getBestPricingRuleForItem } from '@/lib/settings'
 import type { PricingRule, PricingAdjustment } from '@/lib/settings'
 import { validateSpiritTier, validatePourMultiplier } from '@/lib/liquor-validation'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('item-operations')
 
 // ─── Create Order Item ──────────────────────────────────────────────────────
 
@@ -77,23 +80,23 @@ export async function createOrderItem(
           mod.linkedBottleProductId || null
         )
         if (result.correctedBottleId !== mod.linkedBottleProductId) {
-          console.log('[liquor-audit]', JSON.stringify({
+          log.info({
             event: 'spirit_backfill',
             orderId,
             menuItemId: item.menuItemId,
             modifierId: mod.modifierId,
             clientSentBottleId: mod.linkedBottleProductId || null,
             correctedBottleId: result.correctedBottleId,
-          }))
+          }, 'Liquor audit: spirit backfill')
         }
         if (!mod.spiritTier && !mod.linkedBottleProductId && result.spiritTier) {
-          console.log('[liquor-audit]', JSON.stringify({
+          log.info({
             event: 'old_client_detected',
             orderId,
             menuItemId: item.menuItemId,
             modifierId: mod.modifierId,
             note: 'Client sent spirit modifier with neither spiritTier nor linkedBottleProductId',
-          }))
+          }, 'Liquor audit: old client detected')
         }
         return {
           ...mod,
@@ -108,26 +111,26 @@ export async function createOrderItem(
   if (item.pourSize && validatedPourMultiplier == null) {
     const pourResult = await validatePourMultiplier(item.menuItemId, item.pourSize)
     validatedPourMultiplier = pourResult.multiplier
-    console.log('[liquor-audit]', JSON.stringify({
+    log.info({
       event: 'pour_multiplier_backfill',
       orderId,
       menuItemId: item.menuItemId,
       pourSize: item.pourSize,
       resolvedMultiplier: pourResult.multiplier,
       valid: pourResult.valid,
-    }))
+    }, 'Liquor audit: pour multiplier backfill')
     if (!pourResult.valid) {
-      console.warn('[liquor-audit]', JSON.stringify({
+      log.warn({
         event: 'pour_multiplier_rejected',
         menuItemId: item.menuItemId, pourSize: item.pourSize, defaulted: pourResult.multiplier,
-      }))
+      }, 'Liquor audit: pour multiplier rejected')
     }
   } else if (validatedPourMultiplier != null && (validatedPourMultiplier <= 0 || validatedPourMultiplier > 10)) {
-    console.warn('[liquor-audit]', JSON.stringify({
+    log.warn({
       event: 'pour_multiplier_out_of_range',
       orderId,
       menuItemId: item.menuItemId, pourMultiplier: validatedPourMultiplier,
-    }))
+    }, 'Liquor audit: pour multiplier out of range')
     validatedPourMultiplier = 1.0
   }
 
@@ -252,7 +255,7 @@ export async function createOrderItem(
       : null,
   }, {
     correlationId: item.correlationId ?? null,
-  }).catch(err => console.error('[item-operations] Failed to emit ITEM_ADDED:', err))
+  }).catch(err => log.error({ err }, 'Failed to emit ITEM_ADDED'))
 
   return { ...createdItem, correlationId: item.correlationId }
 }
@@ -305,7 +308,7 @@ async function resolvePizzaData(
   const resolvedCheeseId = await resolvePizzaId(pc.cheeseId, 'pizzaCheese')
 
   if (!resolvedSizeId || !resolvedCrustId) {
-    console.warn(`[Pizza] Could not resolve size(${pc.sizeId}->${resolvedSizeId}) or crust(${pc.crustId}->${resolvedCrustId}) — skipping pizzaData`)
+    log.warn({ sizeId: pc.sizeId, resolvedSizeId, crustId: pc.crustId, resolvedCrustId }, 'Could not resolve pizza size or crust — skipping pizzaData')
     return undefined
   }
 
@@ -380,14 +383,14 @@ export async function softDeleteOrderItem(
         modifierId: mod.modifierId ?? null,
         modifierName: mod.name ?? null,
         reason: 'item_removed',
-      }).catch(err => console.error('[item-operations] Failed to emit ITEM_MODIFIER_REMOVED:', err))
+      }).catch(err => log.error({ err }, 'Failed to emit ITEM_MODIFIER_REMOVED'))
     }
 
     // Emit ITEM_REMOVED for the item itself
     void emitOrderEvent(locationId, orderId, 'ITEM_REMOVED', {
       lineItemId: itemId,
       reason: null,
-    }).catch(err => console.error('[item-operations] Failed to emit ITEM_REMOVED:', err))
+    }).catch(err => log.error({ err }, 'Failed to emit ITEM_REMOVED'))
   }
 }
 
