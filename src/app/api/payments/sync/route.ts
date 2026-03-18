@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 
 /**
  * POST /api/payments/sync
@@ -47,6 +48,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check for duplicate sync (idempotency via intentId)
+    // TODO: Phase 1 - Cannot use PaymentRepository.getPaymentByOfflineIntentId() here
+    // because locationId is not yet known (resolved from order below).
     if (intentId) {
       const existingPayment = await db.payment.findFirst({
         where: {
@@ -70,6 +73,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let resolvedOrderId = orderId
 
     // If we only have localOrderId, find the synced order — read from Order (where sync creates records)
+    // TODO: Phase 1 - Cannot use OrderRepository.getOrderByOfflineId() here
+    // because locationId is not yet known (resolved from order below).
     if (!resolvedOrderId && localOrderId) {
       const syncedOrder = await db.order.findFirst({
         where: {
@@ -89,6 +94,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Verify the order exists — selective fetch (only needed fields)
+    // TODO: Phase 1 - Cannot use OrderRepository.getOrderByIdWithSelect() here
+    // because locationId is not yet known — it's resolved FROM this query.
     const order = await db.order.findUnique({
       where: { id: resolvedOrderId },
       select: { id: true, locationId: true, total: true, status: true, paidAt: true },
@@ -98,11 +105,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Verify employee exists — minimal select
-    const employee = await db.employee.findUnique({
-      where: { id: employeeId },
-      select: { id: true },
-    })
+    // Verify employee exists — tenant-safe via EmployeeRepository
+    const employee = await EmployeeRepository.checkEmployeeExists(employeeId, order.locationId)
 
     if (!employee) {
       return NextResponse.json({ error: 'Employee not found' }, { status: 400 })
@@ -112,6 +116,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const paymentMethodString = paymentMethod === 'card' ? 'credit' : paymentMethod
 
     // Create the payment in a transaction
+    // TODO: Phase 1 - Inner tx calls (tx.payment.create, tx.payment.findMany, tx.order.update)
+    // need TxClient-aware repository methods. PaymentRepository.createPayment and
+    // OrderRepository.updateOrder support tx, but the complex payment→order-totals logic
+    // is tightly coupled here. Migrate when stable.
     const payment = await db.$transaction(async (tx) => {
       // Create the payment record
       const newPayment = await tx.payment.create({
@@ -182,7 +190,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }).catch(console.error)
 
     // Check if this payment closed the order, emit ORDER_CLOSED if so (fire-and-forget)
-    void db.order.findUnique({ where: { id: resolvedOrderId }, select: { status: true } })
+    void OrderRepository.getOrderByIdWithSelect(resolvedOrderId, order.locationId, { status: true })
       .then(updated => {
         if (updated?.status === 'paid') {
           return emitOrderEvent(order.locationId, resolvedOrderId, 'ORDER_CLOSED', {
@@ -240,7 +248,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
-    // Query payments
+    // TODO: Phase 1 - PaymentRepository has getPaymentsNeedingReconciliation() but it
+    // doesn't support isOfflineCapture filter, date range, or order include.
+    // Needs a dedicated repository method for offline payment queries.
     const payments = await db.payment.findMany({
       where: {
         locationId,
@@ -298,7 +308,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    // Update all specified payments
+    // TODO: Phase 1 - PaymentRepository.markReconciled() works per-payment with locationId.
+    // This batch update by ID array without locationId can't use it directly.
+    // Needs either a batch reconcile repository method or locationId from request context.
     const result = await db.payment.updateMany({
       where: {
         id: { in: paymentIds },
