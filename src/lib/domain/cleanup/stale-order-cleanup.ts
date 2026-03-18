@@ -16,6 +16,9 @@
  * Both channels are required. Neither is a projection of the other.
  */
 
+// TODO: Refactor to use emitOrderAndSocketEvents() from '@/lib/domain/emit-order-and-socket'
+// to enforce the dual-channel contract structurally instead of manually.
+
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { emitOrderEvent } from '@/lib/order-events/emitter'

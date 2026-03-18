@@ -1,35 +1,41 @@
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 
 /**
- * Prisma extension that logs warnings for direct Order/OrderItem mutations.
+ * Event-Source Migration Guard
  *
- * These tables are LEGACY — being replaced by OrderSnapshot/OrderItemSnapshot
- * via the event-sourced pipeline. All mutations should emit events via
- * emitOrderEvent/emitOrderEvents from '@/lib/order-events/emitter'.
+ * Prisma extension that logs warnings when Order/OrderItem are written
+ * directly instead of through the event-sourced pipeline.
  *
- * This guard does NOT block writes (that would break the app during migration),
- * but logs them so they can be tracked and eliminated.
+ * Context: Order and OrderItem are being migrated to event-sourced writes
+ * via emitOrderEvent/emitOrderEvents. The canonical read model is now
+ * OrderSnapshot/OrderItemSnapshot (projected from events).
+ *
+ * This guard tracks remaining direct-write call sites so they can be
+ * systematically migrated. It does NOT block writes — that would break
+ * the app during the transition. Writes from the event projector and
+ * batch ingester are excluded (they ARE the event pipeline).
+ *
+ * Remove this guard once all Order/OrderItem writes go through events.
  */
 
-const LEGACY_MODELS = new Set(['Order', 'OrderItem'])
-
-function logLegacyWrite(model: string, action: string) {
+function logDirectWrite(model: string, action: string) {
   const stack = new Error().stack || ''
+  // Exclude writes from the event pipeline itself
   const isFromProjector = stack.includes('projector') || stack.includes('order-events')
   const isFromBatchRoute = stack.includes('order-events/batch')
 
   if (!isFromProjector && !isFromBatchRoute) {
     console.warn(
-      `[LEGACY_ORDER_WRITE] ${model}.${action} — ` +
-      `This write should be replaced by event emission. ` +
-      `See CLAUDE.md "Event-Sourced Order Writes" section.`
+      `[ORDER_WRITE_GUARD] ${model}.${action} — ` +
+      `Direct write detected. Migrate to event emission. ` +
+      `See CLAUDE.md "Event-Sourced Orders" section.`
     )
   }
 }
 
 /**
- * Prisma client extension that intercepts legacy Order/OrderItem write operations
- * and logs warnings. Uses $extends (not deprecated $use middleware).
+ * Prisma client extension that intercepts direct Order/OrderItem write operations
+ * and logs warnings for migration tracking.
  *
  * Usage: const client = new PrismaClient().$extends(orderWriteGuardExtension)
  */
@@ -37,61 +43,61 @@ export const orderWriteGuardExtension = Prisma.defineExtension({
   query: {
     order: {
       async create({ args, query }) {
-        logLegacyWrite('Order', 'create')
+        logDirectWrite('Order', 'create')
         return query(args)
       },
       async createMany({ args, query }) {
-        logLegacyWrite('Order', 'createMany')
+        logDirectWrite('Order', 'createMany')
         return query(args)
       },
       async update({ args, query }) {
-        logLegacyWrite('Order', 'update')
+        logDirectWrite('Order', 'update')
         return query(args)
       },
       async updateMany({ args, query }) {
-        logLegacyWrite('Order', 'updateMany')
+        logDirectWrite('Order', 'updateMany')
         return query(args)
       },
       async delete({ args, query }) {
-        logLegacyWrite('Order', 'delete')
+        logDirectWrite('Order', 'delete')
         return query(args)
       },
       async deleteMany({ args, query }) {
-        logLegacyWrite('Order', 'deleteMany')
+        logDirectWrite('Order', 'deleteMany')
         return query(args)
       },
       async upsert({ args, query }) {
-        logLegacyWrite('Order', 'upsert')
+        logDirectWrite('Order', 'upsert')
         return query(args)
       },
     },
     orderItem: {
       async create({ args, query }) {
-        logLegacyWrite('OrderItem', 'create')
+        logDirectWrite('OrderItem', 'create')
         return query(args)
       },
       async createMany({ args, query }) {
-        logLegacyWrite('OrderItem', 'createMany')
+        logDirectWrite('OrderItem', 'createMany')
         return query(args)
       },
       async update({ args, query }) {
-        logLegacyWrite('OrderItem', 'update')
+        logDirectWrite('OrderItem', 'update')
         return query(args)
       },
       async updateMany({ args, query }) {
-        logLegacyWrite('OrderItem', 'updateMany')
+        logDirectWrite('OrderItem', 'updateMany')
         return query(args)
       },
       async delete({ args, query }) {
-        logLegacyWrite('OrderItem', 'delete')
+        logDirectWrite('OrderItem', 'delete')
         return query(args)
       },
       async deleteMany({ args, query }) {
-        logLegacyWrite('OrderItem', 'deleteMany')
+        logDirectWrite('OrderItem', 'deleteMany')
         return query(args)
       },
       async upsert({ args, query }) {
-        logLegacyWrite('OrderItem', 'upsert')
+        logDirectWrite('OrderItem', 'upsert')
         return query(args)
       },
     },

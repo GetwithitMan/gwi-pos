@@ -16,6 +16,7 @@ import { initializeSocketServer, getSocketServer } from './src/lib/socket-server
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
 import { config } from './src/lib/system-config'
+import { registerWorker, startAllWorkers, stopAllWorkers } from './src/lib/worker-registry'
 import { startCloudEventWorker, stopCloudEventWorker } from './src/lib/cloud-event-queue'
 import { startOnlineOrderDispatchWorker, stopOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
 import { startHardwareCommandWorker } from './src/lib/hardware-command-worker'
@@ -253,7 +254,7 @@ async function main() {
     // Dev: continue with warning
   }
 
-  httpServer.listen(port, () => {
+  httpServer.listen(port, async () => {
     console.log(`[Server] GWI POS ready on http://${hostname}:${port}`)
     console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
     console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
@@ -274,33 +275,83 @@ async function main() {
       }
     })
 
-    startCloudEventWorker()
-    startEodScheduler()
-    startDraftCleanupInterval()
-    startWalkoutRetryScheduler()
-    startOnlineOrderDispatchWorker(port)
-    startHardwareCommandWorker()
-    void scaleService.initialize().catch(console.error)
+    // ── Register workers ──────────────────────────────────────────────
+    // Order matters: required workers first, then degraded, then optional.
+    // Conditional workers check their preconditions inside the start fn.
 
-    // Bidirectional sync workers (NUC ↔ Neon)
-    if (config.syncEnabled) {
-      if (config.stationRole === 'backup') {
-        console.warn('[Server] STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
-      } else if (!config.neonDatabaseUrl) {
-        console.error('[Server] SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
-      } else {
-        startUpstreamSyncWorker()
-        startDownstreamSyncWorker()
-        startOutageReplayWorker()
-        startFulfillmentBridge()
-        startBridgeCheckpoint()
-        try {
-          startCloudRelayClient()
-        } catch (err) {
-          console.error('[Server] Cloud relay client failed to start:', err instanceof Error ? err.message : err)
-        }
-        console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
-      }
+    registerWorker('cloudEventWorker', 'required',
+      () => startCloudEventWorker(),
+      () => stopCloudEventWorker()
+    )
+    registerWorker('onlineOrderDispatch', 'required',
+      () => startOnlineOrderDispatchWorker(port),
+      () => stopOnlineOrderDispatchWorker()
+    )
+    registerWorker('hardwareCommand', 'required',
+      () => startHardwareCommandWorker(),
+      () => { /* no stop — interval-based, exits with process */ }
+    )
+
+    // Sync workers — only when sync is enabled, not backup, and Neon URL present
+    const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl
+    if (config.syncEnabled && config.stationRole === 'backup') {
+      console.warn('[Server] STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
+    } else if (config.syncEnabled && !config.neonDatabaseUrl) {
+      console.error('[Server] SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
+    }
+
+    if (syncReady) {
+      registerWorker('upstreamSync', 'degraded',
+        () => startUpstreamSyncWorker(),
+        () => stopUpstreamSyncWorker()
+      )
+      registerWorker('downstreamSync', 'degraded',
+        () => startDownstreamSyncWorker(),
+        () => stopDownstreamSyncWorker()
+      )
+      registerWorker('outageReplay', 'degraded',
+        () => startOutageReplayWorker(),
+        () => stopOutageReplayWorker()
+      )
+      registerWorker('fulfillmentBridge', 'degraded',
+        () => startFulfillmentBridge(),
+        () => stopFulfillmentBridge()
+      )
+      registerWorker('bridgeCheckpoint', 'degraded',
+        () => startBridgeCheckpoint(),
+        () => stopBridgeCheckpoint()
+      )
+      registerWorker('cloudRelay', 'optional',
+        () => startCloudRelayClient(),
+        () => stopCloudRelayClient()
+      )
+    }
+
+    registerWorker('eodScheduler', 'optional',
+      () => startEodScheduler(),
+      () => { /* timer-based, unref'd — exits with process */ }
+    )
+    registerWorker('draftCleanup', 'optional',
+      () => startDraftCleanupInterval(),
+      () => { /* interval-based, unref'd — exits with process */ }
+    )
+    registerWorker('walkoutRetry', 'optional',
+      () => startWalkoutRetryScheduler(),
+      () => { /* interval-based, unref'd — exits with process */ }
+    )
+    registerWorker('scaleService', 'optional',
+      () => scaleService.initialize(),
+      () => { /* no teardown — USB handle released on exit */ }
+    )
+
+    try {
+      await startAllWorkers()
+    } catch (err) {
+      console.error('[Server] FATAL: required worker failed — aborting boot:', err instanceof Error ? err.message : err)
+      process.exit(1)
+    }
+    if (syncReady) {
+      console.log('[Server] Bidirectional sync workers started (NUC ↔ Neon)')
     }
   })
 
@@ -336,17 +387,7 @@ async function main() {
     await masterClient.$disconnect()
     console.log('[Server] Prisma disconnected')
 
-    stopCloudEventWorker()
-    stopOnlineOrderDispatchWorker()
-
-    if (config.syncEnabled) {
-      stopUpstreamSyncWorker()
-      stopDownstreamSyncWorker()
-      stopOutageReplayWorker()
-      stopFulfillmentBridge()
-      await stopBridgeCheckpoint()
-      stopCloudRelayClient()
-    }
+    await stopAllWorkers()
     await disconnectNeon()
     console.log('[Server] Neon client disconnected')
 

@@ -19,6 +19,9 @@
  * Both channels are required. Neither is a projection of the other.
  */
 
+// TODO: Refactor to use emitOrderAndSocketEvents() from '@/lib/domain/emit-order-and-socket'
+// to enforce the dual-channel contract structurally instead of manually.
+
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
