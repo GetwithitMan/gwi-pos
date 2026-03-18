@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { PAYMENT_STATES } from '@/lib/domain/payment/payment-state-machine'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type {
+  PaymentProcessedPayload,
+  OrderClosedPayload,
+  OrdersListChangedPayload,
+} from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -25,21 +34,28 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing employeeId or retryMode' }, { status: 400 })
     }
 
-    const order = await db.order.findFirst({
+    // Two-step: lightweight fetch for locationId, then full fetch with include
+    const orderCheck = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
-      include: {
-        cards: {
-          where: { deletedAt: null, status: 'authorized' },
-          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
-        },
+      select: { id: true, locationId: true },
+    })
+
+    if (!orderCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    const locationId = orderCheck.locationId
+
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+      cards: {
+        where: { deletedAt: null, status: 'authorized' },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
       },
     })
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
-
-    const locationId = order.locationId
     const now = new Date()
 
     if (retryMode === 'same_card') {
@@ -73,27 +89,28 @@ export const POST = withVenue(async function POST(
 
       if (!capturedCard || !captureResponse) {
         // Still declined — increment retry count
-        await db.order.update({
-          where: { id: orderId },
-          data: {
-            captureRetryCount: { increment: 1 },
-            captureDeclinedAt: now,
-            lastCaptureError: 'Retry failed - all cards declined',
-          },
+        await OrderRepository.updateOrder(orderId, locationId, {
+          captureRetryCount: { increment: 1 },
+          captureDeclinedAt: now,
+          lastCaptureError: 'Retry failed - all cards declined',
         })
 
         // Check walkout threshold
         const locSettings = parseSettings(await getLocationSettings(locationId))
-        const updated = await db.order.findUnique({ where: { id: orderId }, select: { captureRetryCount: true } })
+        const updated = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, { captureRetryCount: true })
         const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 3
         if (locSettings.barTabs?.autoFlagWalkoutAfterDeclines && updated && updated.captureRetryCount >= maxRetries) {
-          await db.order.update({
-            where: { id: orderId },
-            data: { isWalkout: true, walkoutAt: now },
-          })
+          await OrderRepository.updateOrder(orderId, locationId, { isWalkout: true, walkoutAt: now })
         }
 
-        dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
+        // Queue socket event inside a lightweight transaction for crash safety
+        await db.$transaction(async (tx) => {
+          const listPayload: OrdersListChangedPayload = { trigger: 'updated', orderId }
+          await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+        })
+        void flushSocketOutbox(locationId).catch((err) => {
+          console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
+        })
 
         // Event emission: capture retry failed
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -106,25 +123,23 @@ export const POST = withVenue(async function POST(
         })
       }
 
-      // Success — close the tab
+      // Success — close the tab with FSM-validated payment status
       // BUG #461 FIX: Create Payment record for same_card retry capture
-      await db.$transaction([
-        db.orderCard.update({
-          where: { id: capturedCard.id },
+      const paymentMethod = capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
+      await db.$transaction(async (tx) => {
+        await tx.orderCard.update({
+          where: { id: capturedCard!.id },
           data: { status: 'captured', capturedAmount: purchaseAmount, capturedAt: now, tipAmount: 0 },
-        }),
-        db.order.update({
-          where: { id: orderId },
-          data: {
-            status: 'paid',
-            tabStatus: 'closed',
-            paidAt: now,
-            closedAt: now,
-            captureDeclinedAt: null,
-            lastCaptureError: null,
-          },
-        }),
-        db.payment.create({
+        })
+        await OrderRepository.updateOrder(orderId, locationId, {
+          status: 'paid',
+          tabStatus: 'closed',
+          paidAt: now,
+          closedAt: now,
+          captureDeclinedAt: null,
+          lastCaptureError: null,
+        }, tx)
+        await tx.payment.create({
           data: {
             locationId,
             orderId,
@@ -132,22 +147,54 @@ export const POST = withVenue(async function POST(
             amount: purchaseAmount,
             tipAmount: 0,
             totalAmount: purchaseAmount,
-            paymentMethod: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
-            cardBrand: capturedCard.cardType || 'unknown',
-            cardLast4: capturedCard.cardLast4,
-            authCode: captureResponse.authCode || null,
-            datacapRecordNo: capturedCard.recordNo,
-            status: 'completed',
+            paymentMethod,
+            cardBrand: capturedCard!.cardType || 'unknown',
+            cardLast4: capturedCard!.cardLast4,
+            authCode: captureResponse!.authCode || null,
+            datacapRecordNo: capturedCard!.recordNo,
+            status: PAYMENT_STATES.COMPLETED,
           },
-        }),
+        })
         // Void remaining authorized cards
-        ...order.cards
-          .filter(c => c.id !== capturedCard!.id)
-          .map(c => db.orderCard.update({ where: { id: c.id }, data: { status: 'voided' } })),
-      ])
+        for (const c of order.cards.filter(c => c.id !== capturedCard!.id)) {
+          await tx.orderCard.update({ where: { id: c.id }, data: { status: PAYMENT_STATES.VOIDED } })
+        }
 
-      dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any, orderId }, { async: true }).catch(() => {})
-      if (order.tableId) dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+        // Queue critical socket events inside transaction for crash safety
+        const paymentPayload: PaymentProcessedPayload = {
+          orderId,
+          status: PAYMENT_STATES.COMPLETED,
+          method: paymentMethod,
+          amount: purchaseAmount,
+          tipAmount: 0,
+          totalAmount: purchaseAmount,
+          employeeId,
+          isClosed: true,
+          cardBrand: capturedCard!.cardType || null,
+          cardLast4: capturedCard!.cardLast4 || null,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.PAYMENT_PROCESSED, paymentPayload)
+
+        const closedPayload: OrderClosedPayload = {
+          orderId,
+          status: 'paid',
+          closedAt: now.toISOString(),
+          closedByEmployeeId: employeeId,
+          locationId,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_CLOSED, closedPayload)
+
+        const listPayload: OrdersListChangedPayload = { trigger: 'paid', orderId }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+      })
+
+      // Flush outbox after commit
+      void flushSocketOutbox(locationId).catch((err) => {
+        console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
+      })
+
+      // Floor plan update is non-critical UI — fire-and-forget
+      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
 
       // Event emission: retry capture succeeded — payment applied + order closed
       void emitOrderEvents(locationId, orderId, [
@@ -155,13 +202,13 @@ export const POST = withVenue(async function POST(
           type: 'PAYMENT_APPLIED',
           payload: {
             paymentId: orderId, // No individual payment ID available from batch tx
-            method: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+            method: paymentMethod,
             amountCents: Math.round(purchaseAmount * 100),
             tipCents: 0,
             totalCents: Math.round(purchaseAmount * 100),
             cardBrand: capturedCard.cardType || 'unknown',
             cardLast4: capturedCard.cardLast4,
-            status: 'completed',
+            status: PAYMENT_STATES.COMPLETED,
           },
         },
         {
@@ -186,16 +233,17 @@ export const POST = withVenue(async function POST(
           await validateReader(card.readerId, locationId)
           const client = await requireDatacapClient(locationId)
           await client.voidSale(card.readerId, { recordNo: card.recordNo })
-          await db.orderCard.update({ where: { id: card.id }, data: { status: 'voided' } })
+          await db.orderCard.update({ where: { id: card.id }, data: { status: PAYMENT_STATES.VOIDED } })
         } catch (err) {
           console.warn(`[Retry Cash] Failed to void card ${card.cardLast4}:`, err)
         }
       }
 
-      // Create cash payment
+      // Create cash payment with FSM-validated status + queue socket events atomically
       const paymentAmount = Number(order.total)
-      await db.$transaction([
-        db.payment.create({
+      const tipAmount = Number(order.tipTotal) || 0
+      await db.$transaction(async (tx) => {
+        await tx.payment.create({
           data: {
             locationId,
             orderId,
@@ -203,27 +251,54 @@ export const POST = withVenue(async function POST(
             paymentMethod: 'cash',
             amount: paymentAmount,
             totalAmount: paymentAmount,
-            tipAmount: Number(order.tipTotal) || 0,
-            status: 'completed',
+            tipAmount,
+            status: PAYMENT_STATES.COMPLETED,
             amountTendered: paymentAmount,
             changeGiven: 0,
           },
-        }),
-        db.order.update({
-          where: { id: orderId },
-          data: {
-            status: 'paid',
-            tabStatus: 'closed',
-            paidAt: now,
-            closedAt: now,
-            captureDeclinedAt: null,
-            lastCaptureError: null,
-          },
-        }),
-      ])
+        })
+        await OrderRepository.updateOrder(orderId, locationId, {
+          status: 'paid',
+          tabStatus: 'closed',
+          paidAt: now,
+          closedAt: now,
+          captureDeclinedAt: null,
+          lastCaptureError: null,
+        }, tx)
 
-      dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any, orderId }, { async: true }).catch(() => {})
-      if (order.tableId) dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+        // Queue critical socket events inside transaction for crash safety
+        const paymentPayload: PaymentProcessedPayload = {
+          orderId,
+          status: PAYMENT_STATES.COMPLETED,
+          method: 'cash',
+          amount: paymentAmount,
+          tipAmount,
+          totalAmount: paymentAmount,
+          employeeId,
+          isClosed: true,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.PAYMENT_PROCESSED, paymentPayload)
+
+        const closedPayload: OrderClosedPayload = {
+          orderId,
+          status: 'paid',
+          closedAt: now.toISOString(),
+          closedByEmployeeId: employeeId,
+          locationId,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_CLOSED, closedPayload)
+
+        const listPayload: OrdersListChangedPayload = { trigger: 'paid', orderId }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+      })
+
+      // Flush outbox after commit
+      void flushSocketOutbox(locationId).catch((err) => {
+        console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
+      })
+
+      // Floor plan update is non-critical UI — fire-and-forget
+      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
 
       // Event emission: cash retry payment applied + order closed
       void emitOrderEvents(locationId, orderId, [
@@ -233,9 +308,9 @@ export const POST = withVenue(async function POST(
             paymentId: orderId,
             method: 'cash',
             amountCents: Math.round(paymentAmount * 100),
-            tipCents: Math.round((Number(order.tipTotal) || 0) * 100),
+            tipCents: Math.round(tipAmount * 100),
             totalCents: Math.round(paymentAmount * 100),
-            status: 'completed',
+            status: PAYMENT_STATES.COMPLETED,
           },
         },
         {
@@ -253,7 +328,7 @@ export const POST = withVenue(async function POST(
         return NextResponse.json({ error: auth.error || 'Manager permission required' }, { status: 403 })
       }
 
-      // Void all authorized cards
+      // Void all authorized cards at Datacap (outside DB transaction)
       for (const card of order.cards) {
         try {
           await validateReader(card.readerId, locationId)
@@ -264,46 +339,61 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      // Void all cards and the order
-      await db.$transaction([
-        db.orderCard.updateMany({
+      // Void all cards, close order, audit log, and queue socket events atomically
+      await db.$transaction(async (tx) => {
+        await tx.orderCard.updateMany({
           where: { orderId, status: 'authorized' },
-          data: { status: 'voided' },
-        }),
-        db.order.update({
-          where: { id: orderId },
-          data: {
-            status: 'voided',
-            tabStatus: 'closed',
-            closedAt: now,
-            captureDeclinedAt: null,
-            lastCaptureError: null,
-          },
-        }),
-      ])
+          data: { status: PAYMENT_STATES.VOIDED },
+        })
+        await OrderRepository.updateOrder(orderId, locationId, {
+          status: PAYMENT_STATES.VOIDED,
+          tabStatus: 'closed',
+          closedAt: now,
+          captureDeclinedAt: null,
+          lastCaptureError: null,
+        }, tx)
 
-      // Audit log
-      await db.auditLog.create({
-        data: {
+        // Audit log inside transaction
+        await tx.auditLog.create({
+          data: {
+            locationId,
+            employeeId,
+            action: 'manager_void_declined_tab',
+            entityType: 'order',
+            entityId: orderId,
+            details: { reason: 'Manager voided declined capture tab' },
+          },
+        })
+
+        // Queue critical socket events inside transaction for crash safety
+        const closedPayload: OrderClosedPayload = {
+          orderId,
+          status: PAYMENT_STATES.VOIDED,
+          closedAt: now.toISOString(),
+          closedByEmployeeId: employeeId,
           locationId,
-          employeeId,
-          action: 'manager_void_declined_tab',
-          entityType: 'order',
-          entityId: orderId,
-          details: { reason: 'Manager voided declined capture tab' },
-        },
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_CLOSED, closedPayload)
+
+        const listPayload: OrdersListChangedPayload = { trigger: 'voided', orderId }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
       })
 
-      dispatchOpenOrdersChanged(locationId, { trigger: 'voided' as any, orderId }, { async: true }).catch(() => {})
-      if (order.tableId) dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+      // Flush outbox after commit
+      void flushSocketOutbox(locationId).catch((err) => {
+        console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
+      })
+
+      // Floor plan update is non-critical UI — fire-and-forget
+      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
 
       // Event emission: manager voided the declined tab
       void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
-        closedStatus: 'voided',
+        closedStatus: PAYMENT_STATES.VOIDED,
         reason: 'Manager voided declined capture tab',
       }).catch(console.error)
 
-      return NextResponse.json({ data: { success: true, action: 'voided' } })
+      return NextResponse.json({ data: { success: true, action: PAYMENT_STATES.VOIDED } })
     }
 
     return NextResponse.json({ error: 'Invalid retryMode' }, { status: 400 })

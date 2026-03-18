@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -40,16 +41,26 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Get source order with location for tax rate
-    const fromOrder = await db.order.findUnique({
+    // Bootstrap: lightweight fetch for locationId
+    const fromCheck = await db.order.findFirst({
       where: { id: fromOrderId },
-      include: {
-        location: true,
-        items: {
-          where: { id: { in: itemIds } },
-          include: {
-            modifiers: true,
-          },
+      select: { id: true, locationId: true },
+    })
+
+    if (!fromCheck) {
+      return NextResponse.json(
+        { error: 'Source order not found' },
+        { status: 404 }
+      )
+    }
+
+    // Get source order with location for tax rate
+    const fromOrder = await OrderRepository.getOrderByIdWithInclude(fromOrderId, fromCheck.locationId, {
+      location: true,
+      items: {
+        where: { id: { in: itemIds } },
+        include: {
+          modifiers: true,
         },
       },
     })
@@ -74,10 +85,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Get destination order
-    const toOrder = await db.order.findUnique({
-      where: { id: toOrderId },
-      include: { location: true },
+    // Get destination order (same location as source)
+    const toOrder = await OrderRepository.getOrderByIdWithInclude(toOrderId, fromOrder.locationId, {
+      location: true,
     })
 
     if (!toOrder) {
@@ -176,19 +186,16 @@ export const POST = withVenue(async function POST(
         Number(toOrder.inclusiveTaxRate) || undefined
       )
 
-      await tx.order.update({
-        where: { id: toOrderId },
-        data: {
-          subtotal: destTotals.subtotal,
-          taxTotal: destTotals.taxTotal,
-          taxFromInclusive: destTotals.taxFromInclusive,
-          taxFromExclusive: destTotals.taxFromExclusive,
-          discountTotal: destTotals.discountTotal,
-          total: destTotals.total,
-          itemCount: destItems.reduce((sum, i) => sum + i.quantity, 0),
-          version: { increment: 1 },
-        },
-      })
+      await OrderRepository.updateOrder(toOrderId, fromOrder.locationId, {
+        subtotal: destTotals.subtotal,
+        taxTotal: destTotals.taxTotal,
+        taxFromInclusive: destTotals.taxFromInclusive,
+        taxFromExclusive: destTotals.taxFromExclusive,
+        discountTotal: destTotals.discountTotal,
+        total: destTotals.total,
+        itemCount: destItems.reduce((sum, i) => sum + i.quantity, 0),
+        version: { increment: 1 },
+      }, tx)
 
       // Update source order totals
       const sourceItems = await tx.orderItem.findMany({
@@ -217,26 +224,20 @@ export const POST = withVenue(async function POST(
         Number(fromOrder.inclusiveTaxRate) || undefined
       )
 
-      await tx.order.update({
-        where: { id: fromOrderId },
-        data: {
-          subtotal: sourceTotals.subtotal,
-          taxTotal: sourceTotals.taxTotal,
-          taxFromInclusive: sourceTotals.taxFromInclusive,
-          taxFromExclusive: sourceTotals.taxFromExclusive,
-          discountTotal: sourceTotals.discountTotal,
-          total: sourceTotals.total,
-          itemCount: sourceItems.reduce((sum, i) => sum + i.quantity, 0),
-          version: { increment: 1 },
-        },
-      })
+      await OrderRepository.updateOrder(fromOrderId, fromOrder.locationId, {
+        subtotal: sourceTotals.subtotal,
+        taxTotal: sourceTotals.taxTotal,
+        taxFromInclusive: sourceTotals.taxFromInclusive,
+        taxFromExclusive: sourceTotals.taxFromExclusive,
+        discountTotal: sourceTotals.discountTotal,
+        total: sourceTotals.total,
+        itemCount: sourceItems.reduce((sum, i) => sum + i.quantity, 0),
+        version: { increment: 1 },
+      }, tx)
 
       // Auto-cancel source order if all items were transferred out
       if (sourceItems.length === 0) {
-        await tx.order.update({
-          where: { id: fromOrderId },
-          data: { status: 'cancelled', closedAt: new Date() },
-        })
+        await OrderRepository.updateOrder(fromOrderId, fromOrder.locationId, { status: 'cancelled', closedAt: new Date() }, tx)
         sourceWasCancelled = true
       }
 
@@ -328,9 +329,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Get current order to exclude it
-    const currentOrder = await db.order.findUnique({
-      where: { id: currentOrderId },
-    })
+    const currentOrder = await OrderRepository.getOrderById(currentOrderId, locationId)
 
     if (!currentOrder) {
       return NextResponse.json(

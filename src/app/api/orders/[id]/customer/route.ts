@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrderUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // PUT - Link or unlink customer to/from order
 export const PUT = withVenue(async function PUT(
@@ -15,10 +20,25 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { customerId } = body as { customerId: string | null }
 
-    // Get the order
-    const order = await db.order.findUnique({
+    // Resolve employeeId from body or session
+    const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
+
+    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+    const orderCheck = await db.order.findFirst({
       where: { id: orderId },
-      include: { location: true },
+      select: { id: true, locationId: true },
+    })
+
+    if (!orderCheck) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    // Get the order with location settings
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+      location: true,
     })
 
     if (!order) {
@@ -26,6 +46,12 @@ export const PUT = withVenue(async function PUT(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Verify customer exists if linking
@@ -51,22 +77,27 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    // Update order with customer
-    await db.order.update({
-      where: { id: orderId },
-      data: { customerId: customerId || null },
+    // Update order + queue socket event atomically
+    await db.$transaction(async (tx) => {
+      await OrderRepository.updateOrder(orderId, order.locationId, { customerId: customerId || null }, tx)
+
+      // Queue order:updated inside transaction for crash safety
+      const updatedPayload: OrderUpdatedPayload = {
+        orderId,
+        changes: ['customer'],
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_UPDATED, updatedPayload)
+    })
+
+    // Flush outbox after commit
+    void flushSocketOutbox(order.locationId).catch((err) => {
+      console.warn('[customer] Outbox flush failed, catch-up will deliver:', err)
     })
 
     // Fire-and-forget event emission
     void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
       customerId: customerId || null,
     }).catch(console.error)
-
-    // Fire-and-forget socket dispatch for cross-terminal sync
-    void dispatchOrderUpdated(order.locationId, {
-      orderId,
-      changes: ['customer'],
-    }).catch(() => {})
 
     // Get loyalty settings
     const settings = parseSettings(order.location.settings)
@@ -115,12 +146,25 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    const order = await db.order.findUnique({
+    // Resolve employeeId from session
+    const { employeeId } = await getActorFromRequest(request)
+
+    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+    const orderCheck = await db.order.findFirst({
       where: { id: orderId },
-      include: {
-        customer: true,
-        location: true,
-      },
+      select: { id: true, locationId: true },
+    })
+
+    if (!orderCheck) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+      customer: true,
+      location: true,
     })
 
     if (!order) {
@@ -128,6 +172,12 @@ export const GET = withVenue(async function GET(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     const settings = parseSettings(order.location.settings)

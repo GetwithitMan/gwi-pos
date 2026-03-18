@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { validateRequest } from '@/lib/validations'
@@ -46,60 +47,67 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const order = await db.order.findUnique({
+    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+    const orderCheck = await db.order.findFirst({
       where: { id },
-      include: {
-        splitOrders: {
-          where: { deletedAt: null },
-          include: {
-            items: {
-              select: {
-                id: true,
-                name: true,
-                price: true,
-                quantity: true,
-                itemTotal: true,
-                status: true,
-                seatNumber: true,
-                isCompleted: true,
-                specialNotes: true,
-                modifiers: {
-                  select: {
-                    id: true,
-                    name: true,
-                    price: true,
-                    preModifier: true,
-                    depth: true,
-                    quantity: true,
-                    isCustomEntry: true,
-                    customEntryName: true,
-                    customEntryPrice: true,
-                    swapTargetName: true,
-                    swapPricingMode: true,
-                    swapEffectivePrice: true,
-                    linkedMenuItemId: true,
-                    linkedMenuItemName: true,
-                    spiritTier: true,
-                  },
+      select: { id: true, locationId: true },
+    })
+
+    if (!orderCheck) {
+      throw new NotFoundError('Order')
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(id, orderCheck.locationId, {
+      splitOrders: {
+        where: { deletedAt: null },
+        include: {
+          items: {
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              quantity: true,
+              itemTotal: true,
+              status: true,
+              seatNumber: true,
+              isCompleted: true,
+              specialNotes: true,
+              modifiers: {
+                select: {
+                  id: true,
+                  name: true,
+                  price: true,
+                  preModifier: true,
+                  depth: true,
+                  quantity: true,
+                  isCustomEntry: true,
+                  customEntryName: true,
+                  customEntryPrice: true,
+                  swapTargetName: true,
+                  swapPricingMode: true,
+                  swapEffectivePrice: true,
+                  linkedMenuItemId: true,
+                  linkedMenuItemName: true,
+                  spiritTier: true,
                 },
               },
             },
-            employee: {
-              select: { id: true, displayName: true, firstName: true, lastName: true },
-            },
-            cards: {
-              where: { status: 'authorized', deletedAt: null },
-              select: { cardLast4: true, cardType: true },
-              take: 1,
-              orderBy: { createdAt: 'desc' },
-            },
-            payments: {
-              where: { status: 'completed' },
-              select: { totalAmount: true },
-            },
           },
-          orderBy: { splitIndex: 'asc' },
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+          cards: {
+            where: { status: 'authorized', deletedAt: null },
+            select: { cardLast4: true, cardType: true },
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+          },
+          payments: {
+            where: { status: 'completed' },
+            select: { totalAmount: true },
+          },
         },
+        orderBy: { splitIndex: 'asc' },
       },
     })
 
@@ -193,15 +201,22 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Get the parent order with all items
-    const parentOrder = await db.order.findUnique({
+    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+    const parentCheck = await db.order.findFirst({
       where: { id },
-      include: {
-        location: true,
-        items: {
-          where: { deletedAt: null },
-          include: { modifiers: true },
-        },
+      select: { id: true, locationId: true },
+    })
+
+    if (!parentCheck) {
+      throw new NotFoundError('Order')
+    }
+
+    // Get the parent order with all items
+    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, parentCheck.locationId, {
+      location: true,
+      items: {
+        where: { deletedAt: null },
+        include: { modifiers: true },
       },
     })
 
@@ -609,20 +624,17 @@ export const POST = withVenue(async function POST(
       })
 
       // Update parent: status='split', zero out totals (children own all items now)
-      await tx.order.update({
-        where: { id: parentOrder.id },
-        data: {
-          status: 'split',
-          subtotal: 0,
-          taxTotal: 0,
-          taxFromInclusive: 0,
-          taxFromExclusive: 0,
-          total: 0,
-          notes: parentOrder.notes
-            ? `${parentOrder.notes}\n[Split into ${splits.length} tickets]`
-            : `[Split into ${splits.length} tickets]`,
-        },
-      })
+      await OrderRepository.updateOrder(parentOrder.id, parentOrder.locationId, {
+        status: 'split',
+        subtotal: 0,
+        taxTotal: 0,
+        taxFromInclusive: 0,
+        taxFromExclusive: 0,
+        total: 0,
+        notes: parentOrder.notes
+          ? `${parentOrder.notes}\n[Split into ${splits.length} tickets]`
+          : `[Split into ${splits.length} tickets]`,
+      }, tx)
 
       return splits
     })
@@ -710,16 +722,20 @@ export const PATCH = withVenue(async function PATCH(
         throw new ValidationError('itemId, fromSplitId, and ways (2-10) are required')
       }
 
-      const parentOrder = await db.order.findUnique({
+      // Bootstrap: lightweight fetch for locationId
+      const splitItemCheck = await db.order.findFirst({
         where: { id },
-        include: {
-          location: true,
-          splitOrders: {
-            where: { deletedAt: null },
-            include: {
-              items: { where: { deletedAt: null }, include: { modifiers: true } },
-              payments: { where: { status: 'completed' } },
-            },
+        select: { id: true, locationId: true },
+      })
+      if (!splitItemCheck) throw new NotFoundError('Order')
+
+      const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, splitItemCheck.locationId, {
+        location: true,
+        splitOrders: {
+          where: { deletedAt: null },
+          include: {
+            items: { where: { deletedAt: null }, include: { modifiers: true } },
+            payments: { where: { status: 'completed' } },
           },
         },
       })
@@ -826,16 +842,13 @@ export const PATCH = withVenue(async function PATCH(
           }
           const subtotal = inclSub + exclSub
           const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(inclSub, exclSub, taxRate, inclusiveRate)
-          await tx.order.update({
-            where: { id: split.id },
-            data: {
-              subtotal,
-              taxTotal: totalTax,
-              taxFromInclusive,
-              taxFromExclusive,
-              total: Math.round((subtotal + taxFromExclusive) * 100) / 100,
-            },
-          })
+          await OrderRepository.updateOrder(split.id, parentOrder.locationId, {
+            subtotal,
+            taxTotal: totalTax,
+            taxFromInclusive,
+            taxFromExclusive,
+            total: Math.round((subtotal + taxFromExclusive) * 100) / 100,
+          }, tx)
         }
       })
 
@@ -863,17 +876,21 @@ export const PATCH = withVenue(async function PATCH(
       throw new ValidationError('Cannot move item to the same split')
     }
 
-    // Verify parent order exists and has splits
-    const parentOrder = await db.order.findUnique({
+    // Bootstrap: lightweight fetch for locationId
+    const moveCheck = await db.order.findFirst({
       where: { id },
-      include: {
-        location: true,
-        splitOrders: {
-          where: { deletedAt: null, id: { in: [fromSplitId, toSplitId] } },
-          include: {
-            items: { where: { deletedAt: null } },
-            payments: { where: { status: 'completed' } },
-          },
+      select: { id: true, locationId: true },
+    })
+    if (!moveCheck) throw new NotFoundError('Order')
+
+    // Verify parent order exists and has splits
+    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, moveCheck.locationId, {
+      location: true,
+      splitOrders: {
+        where: { deletedAt: null, id: { in: [fromSplitId, toSplitId] } },
+        include: {
+          items: { where: { deletedAt: null } },
+          payments: { where: { status: 'completed' } },
         },
       },
     })
@@ -921,16 +938,13 @@ export const PATCH = withVenue(async function PATCH(
       }
       const fromSubtotal = fromInclSub + fromExclSub
       const fromTax = calculateSplitTax(fromInclSub, fromExclSub, taxRate, inclusiveRate)
-      await tx.order.update({
-        where: { id: fromSplitId },
-        data: {
-          subtotal: fromSubtotal,
-          taxTotal: fromTax.totalTax,
-          taxFromInclusive: fromTax.taxFromInclusive,
-          taxFromExclusive: fromTax.taxFromExclusive,
-          total: Math.round((fromSubtotal + fromTax.taxFromExclusive) * 100) / 100,
-        },
-      })
+      await OrderRepository.updateOrder(fromSplitId, parentOrder.locationId, {
+        subtotal: fromSubtotal,
+        taxTotal: fromTax.totalTax,
+        taxFromInclusive: fromTax.taxFromInclusive,
+        taxFromExclusive: fromTax.taxFromExclusive,
+        total: Math.round((fromSubtotal + fromTax.taxFromExclusive) * 100) / 100,
+      }, tx)
 
       // Recalculate destination split totals (split-aware tax)
       const toItems = [...toSplit.items, item]
@@ -941,16 +955,13 @@ export const PATCH = withVenue(async function PATCH(
       }
       const toSubtotal = toInclSub + toExclSub
       const toTax = calculateSplitTax(toInclSub, toExclSub, taxRate, inclusiveRate)
-      await tx.order.update({
-        where: { id: toSplitId },
-        data: {
-          subtotal: toSubtotal,
-          taxTotal: toTax.totalTax,
-          taxFromInclusive: toTax.taxFromInclusive,
-          taxFromExclusive: toTax.taxFromExclusive,
-          total: Math.round((toSubtotal + toTax.taxFromExclusive) * 100) / 100,
-        },
-      })
+      await OrderRepository.updateOrder(toSplitId, parentOrder.locationId, {
+        subtotal: toSubtotal,
+        taxTotal: toTax.totalTax,
+        taxFromInclusive: toTax.taxFromInclusive,
+        taxFromExclusive: toTax.taxFromExclusive,
+        total: Math.round((toSubtotal + toTax.taxFromExclusive) * 100) / 100,
+      }, tx)
     })
 
     // Fire-and-forget socket emit
@@ -986,17 +997,21 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id } = await params
 
-    // Get parent order with splits
-    const parentOrder = await db.order.findUnique({
+    // Bootstrap: lightweight fetch for locationId
+    const deleteCheck = await db.order.findFirst({
       where: { id },
-      include: {
-        location: true,
-        splitOrders: {
-          where: { deletedAt: null },
-          include: {
-            items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } } } },
-            payments: true,
-          },
+      select: { id: true, locationId: true },
+    })
+    if (!deleteCheck) throw new NotFoundError('Order')
+
+    // Get parent order with splits
+    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, deleteCheck.locationId, {
+      location: true,
+      splitOrders: {
+        where: { deletedAt: null },
+        include: {
+          items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } } } },
+          payments: true,
         },
       },
     })
@@ -1094,20 +1109,17 @@ export const DELETE = withVenue(async function DELETE(
       const parentItemCount = restoredItems.reduce((sum, i) => sum + i.quantity, 0)
 
       // Restore parent order with recalculated totals
-      await tx.order.update({
-        where: { id },
-        data: {
-          status: 'open',
-          subtotal: parentSubtotal,
-          discountTotal: childDiscountTotal,
-          taxTotal: mergeTax.totalTax,
-          taxFromInclusive: mergeTax.taxFromInclusive,
-          taxFromExclusive: mergeTax.taxFromExclusive,
-          total: parentTotal,
-          itemCount: parentItemCount,
-          notes: parentOrder.notes?.replace(/\n?\[Split into \d+ tickets\]/, '') || null,
-        },
-      })
+      await OrderRepository.updateOrder(id, parentOrder.locationId, {
+        status: 'open',
+        subtotal: parentSubtotal,
+        discountTotal: childDiscountTotal,
+        taxTotal: mergeTax.totalTax,
+        taxFromInclusive: mergeTax.taxFromInclusive,
+        taxFromExclusive: mergeTax.taxFromExclusive,
+        total: parentTotal,
+        itemCount: parentItemCount,
+        notes: parentOrder.notes?.replace(/\n?\[Split into \d+ tickets\]/, '') || null,
+      }, tx)
     })
 
     // Fire-and-forget socket dispatches + cache invalidation

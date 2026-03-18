@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, dispatchCFDOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchCFDOrderUpdated } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
@@ -12,6 +13,9 @@ import { checkOrderClaim } from '@/lib/order-claim'
 import { dispatchAlert } from '@/lib/alert-service'
 import { getLocationSettings } from '@/lib/location-cache'
 import { isDiscountable } from '@/lib/domain/order-status'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -48,12 +52,16 @@ export const POST = withVenue(async function POST(
 
     // Track successful discount application for alert dispatch (mutable ref for TypeScript closure tracking)
     const alertRef: { info: { locationId: string; orderNumber: number; discountName: string; discountAmount: number; employeeId: string | null } | null } = { info: null }
+    // Track locationId for outbox flush after transaction commits
+    let outboxLocationId: string | null = null
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount applications from bypassing stacking/cap guards
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
       // Get the order with current totals
+      // TODO(tenant-safety): Migrate to OrderRepository — needs locationId before this query,
+      // but locationId comes FROM this fetch. Add locationId to FOR UPDATE raw query above.
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
@@ -72,6 +80,9 @@ export const POST = withVenue(async function POST(
           { status: 404 }
         )
       }
+
+      // Capture locationId for outbox flush after commit
+      outboxLocationId = order.locationId
 
       // Auth check — require manager.discounts permission
       const auth = await requirePermission(body.employeeId, order.locationId, PERMISSIONS.MGR_DISCOUNTS)
@@ -149,40 +160,37 @@ export const POST = withVenue(async function POST(
             Number(order.inclusiveTaxRate) || undefined
           )
 
-          await tx.order.update({
-            where: { id: orderId },
-            data: {
-              discountTotal: totals.discountTotal,
-              taxTotal: totals.taxTotal,
-              taxFromInclusive: totals.taxFromInclusive,
-              taxFromExclusive: totals.taxFromExclusive,
-              total: totals.total,
-              version: { increment: 1 },
-            },
-          })
-
-          // Socket dispatches for cross-terminal sync
-          void dispatchOrderTotalsUpdate(order.locationId, orderId, {
-            subtotal: totals.subtotal,
-            taxTotal: totals.taxTotal,
-            tipTotal: Number(order.tipTotal),
+          await OrderRepository.updateOrder(orderId, order.locationId, {
             discountTotal: totals.discountTotal,
+            taxTotal: totals.taxTotal,
+            taxFromInclusive: totals.taxFromInclusive,
+            taxFromExclusive: totals.taxFromExclusive,
             total: totals.total,
-            commissionTotal: Number(order.commissionTotal || 0),
-          }, { async: true }).catch(() => {})
-          void dispatchOpenOrdersChanged(order.locationId, {
+            version: { increment: 1 },
+          }, tx)
+
+          // Queue critical socket events in the outbox (atomic with discount removal)
+          const toggleTotalsPayload: OrderTotalsUpdatedPayload = {
+            orderId,
+            totals: {
+              subtotal: totals.subtotal,
+              taxTotal: totals.taxTotal,
+              tipTotal: Number(order.tipTotal),
+              discountTotal: totals.discountTotal,
+              total: totals.total,
+              commissionTotal: Number(order.commissionTotal || 0),
+            },
+            timestamp: new Date().toISOString(),
+          }
+          await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_TOTALS_UPDATED, toggleTotalsPayload)
+
+          const toggleListPayload: OrdersListChangedPayload = {
             trigger: 'item_updated',
             orderId,
-          }, { async: true }).catch(() => {})
+          }
+          await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, toggleListPayload)
 
-          // Emit order event for discount removed via toggle (fire-and-forget)
-          void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
-            discountId: alreadyApplied.id,
-            lineItemId: null,
-          })
-
-          // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
-          void dispatchOrderSummaryUpdated(order.locationId, {
+          const toggleSummaryPayload: OrderSummaryUpdatedPayload = {
             orderId: order.id,
             orderNumber: order.orderNumber,
             status: order.status,
@@ -199,7 +207,14 @@ export const POST = withVenue(async function POST(
             itemCount: order.itemCount ?? 0,
             updatedAt: new Date().toISOString(),
             locationId: order.locationId,
-          }, { async: true }).catch(() => {})
+          }
+          await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_SUMMARY_UPDATED, toggleSummaryPayload)
+
+          // Emit order event for discount removed via toggle (fire-and-forget)
+          void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+            discountId: alreadyApplied.id,
+            lineItemId: null,
+          })
 
           // CFD: update customer display with new totals (fire-and-forget)
           void dispatchCFDOrderUpdated(order.locationId, {
@@ -444,17 +459,14 @@ export const POST = withVenue(async function POST(
       }))
       const totals = calculateOrderTotals(applyItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, 0, undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
 
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          discountTotal: totals.discountTotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-          version: { increment: 1 },
-        },
-      })
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        version: { increment: 1 },
+      }, tx)
 
       // Emit order event for discount applied (fire-and-forget)
       void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
@@ -465,22 +477,28 @@ export const POST = withVenue(async function POST(
         reason: body.reason || null,
       })
 
-      // Fire-and-forget socket dispatches for cross-terminal sync
-      void dispatchOrderTotalsUpdate(order.locationId, orderId, {
-        subtotal: totals.subtotal,
-        taxTotal: totals.taxTotal,
-        tipTotal: Number(order.tipTotal),
-        discountTotal: totals.discountTotal,
-        total: totals.total,
-        commissionTotal: Number(order.commissionTotal || 0),
-      }, { async: true }).catch(() => {})
-      void dispatchOpenOrdersChanged(order.locationId, {
+      // Queue critical socket events in the outbox (atomic with discount application)
+      const applyTotalsPayload: OrderTotalsUpdatedPayload = {
+        orderId,
+        totals: {
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          tipTotal: Number(order.tipTotal),
+          discountTotal: totals.discountTotal,
+          total: totals.total,
+          commissionTotal: Number(order.commissionTotal || 0),
+        },
+        timestamp: new Date().toISOString(),
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_TOTALS_UPDATED, applyTotalsPayload)
+
+      const applyListPayload: OrdersListChangedPayload = {
         trigger: 'item_updated',
         orderId,
-      }, { async: true }).catch(() => {})
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, applyListPayload)
 
-      // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
-      void dispatchOrderSummaryUpdated(order.locationId, {
+      const applySummaryPayload: OrderSummaryUpdatedPayload = {
         orderId: order.id,
         orderNumber: order.orderNumber,
         status: order.status,
@@ -497,9 +515,10 @@ export const POST = withVenue(async function POST(
         itemCount: order.itemCount ?? 0,
         updatedAt: new Date().toISOString(),
         locationId: order.locationId,
-      }, { async: true }).catch(() => {})
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_SUMMARY_UPDATED, applySummaryPayload)
 
-      // CFD: update customer display with new totals (fire-and-forget)
+      // CFD: update customer display with new totals (fire-and-forget, non-critical UI)
       void dispatchCFDOrderUpdated(order.locationId, {
         orderId,
         orderNumber: order.orderNumber,
@@ -542,6 +561,13 @@ export const POST = withVenue(async function POST(
         requiresApproval,
       } })
     })
+
+    // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
+    if (outboxLocationId) {
+      void flushSocketOutbox(outboxLocationId).catch((err) => {
+        console.warn('[discount] Outbox flush failed, catch-up will deliver:', err)
+      })
+    }
 
     // Audit trail for discount application
     if (alertRef.info) {
@@ -660,6 +686,8 @@ export const DELETE = withVenue(async function DELETE(
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
       // Get the order and discount
+      // TODO(tenant-safety): Migrate to OrderRepository — needs locationId before this query,
+      // but locationId comes FROM this fetch. Add locationId to FOR UPDATE raw query above.
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
@@ -738,39 +766,42 @@ export const DELETE = withVenue(async function DELETE(
       }))
       const totals = calculateOrderTotals(deleteItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, 0, undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
 
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          discountTotal: totals.discountTotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-          version: { increment: 1 },
-        },
-      })
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        version: { increment: 1 },
+      }, tx)
 
       // Emit order event for discount removed (fire-and-forget)
       void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
         discountId,
       })
 
-      // Fire-and-forget socket dispatches for cross-terminal sync
-      void dispatchOrderTotalsUpdate(order.locationId, orderId, {
-        subtotal: totals.subtotal,
-        taxTotal: totals.taxTotal,
-        tipTotal: Number(order.tipTotal),
-        discountTotal: totals.discountTotal,
-        total: totals.total,
-        commissionTotal: Number(order.commissionTotal || 0),
-      }, { async: true }).catch(() => {})
-      void dispatchOpenOrdersChanged(order.locationId, {
+      // Queue critical socket events in the outbox (atomic with discount removal)
+      const delTotalsPayload: OrderTotalsUpdatedPayload = {
+        orderId,
+        totals: {
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          tipTotal: Number(order.tipTotal),
+          discountTotal: totals.discountTotal,
+          total: totals.total,
+          commissionTotal: Number(order.commissionTotal || 0),
+        },
+        timestamp: new Date().toISOString(),
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_TOTALS_UPDATED, delTotalsPayload)
+
+      const delListPayload: OrdersListChangedPayload = {
         trigger: 'item_updated',
         orderId,
-      }, { async: true }).catch(() => {})
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, delListPayload)
 
-      // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
-      void dispatchOrderSummaryUpdated(order.locationId, {
+      const delSummaryPayload: OrderSummaryUpdatedPayload = {
         orderId: order.id,
         orderNumber: order.orderNumber,
         status: order.status,
@@ -787,9 +818,10 @@ export const DELETE = withVenue(async function DELETE(
         itemCount: order.itemCount ?? 0,
         updatedAt: new Date().toISOString(),
         locationId: order.locationId,
-      }, { async: true }).catch(() => {})
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_SUMMARY_UPDATED, delSummaryPayload)
 
-      // CFD: update customer display with new totals (fire-and-forget)
+      // CFD: update customer display with new totals (fire-and-forget, non-critical UI)
       void dispatchCFDOrderUpdated(order.locationId, {
         orderId,
         orderNumber: order.orderNumber,
@@ -807,7 +839,7 @@ export const DELETE = withVenue(async function DELETE(
         taxFromExclusive: totals.taxFromExclusive,
       })
 
-      return NextResponse.json({ data: {
+      return { response: NextResponse.json({ data: {
         success: true,
         orderTotals: {
           subtotal: totals.subtotal,
@@ -815,8 +847,16 @@ export const DELETE = withVenue(async function DELETE(
           taxTotal: totals.taxTotal,
           total: totals.total,
         },
-      } })
+      } }), locationId: order.locationId }
     })
+
+    // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
+    if (result && 'locationId' in result) {
+      void flushSocketOutbox(result.locationId).catch((err) => {
+        console.warn('[discount/delete] Outbox flush failed, catch-up will deliver:', err)
+      })
+      return result.response
+    }
 
     return result
   } catch (error) {

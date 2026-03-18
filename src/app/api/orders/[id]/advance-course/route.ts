@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { OrderRouter } from '@/lib/order-router'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderUpdated, dispatchNewOrder, dispatchItemStatus } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchItemStatus } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrderUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // POST - Advance to next course
 // Marks current course as served and fires the next course
@@ -16,13 +22,26 @@ export const POST = withVenue(async function POST(
     const body = await request.json().catch(() => ({}))
     const { markServed = true } = body
 
-    const order = await db.order.findUnique({
+    // Resolve employeeId from body or session
+    const employeeId = body.employeeId || (await getActorFromRequest(request)).employeeId
+
+    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+    const orderCheck = await db.order.findFirst({
       where: { id: orderId },
-      include: {
-        items: {
-          where: { status: 'active', deletedAt: null },
-          orderBy: { courseNumber: 'asc' },
-        },
+      select: { id: true, locationId: true },
+    })
+
+    if (!orderCheck) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+      items: {
+        where: { status: 'active', deletedAt: null },
+        orderBy: { courseNumber: 'asc' },
       },
     })
 
@@ -31,6 +50,12 @@ export const POST = withVenue(async function POST(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Auth check
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Get unique course numbers from items
@@ -76,32 +101,39 @@ export const POST = withVenue(async function POST(
 
     // If there's a next course, fire it
     if (nextCourse) {
-      // Fire next course items
-      const firedItems = await db.orderItem.updateMany({
-        where: {
+      // Fire next course items + update order + queue socket events atomically
+      const firedItems = await db.$transaction(async (tx) => {
+        const fired = await tx.orderItem.updateMany({
+          where: {
+            orderId,
+            courseNumber: nextCourse,
+            status: 'active',
+            courseStatus: { in: ['pending'] },
+            isHeld: false,
+          },
+          data: {
+            courseStatus: 'fired',
+            firedAt: new Date(),
+          },
+        })
+
+        // Update order's current course
+        await OrderRepository.updateOrder(orderId, order.locationId, { currentCourse: nextCourse, version: { increment: 1 } }, tx)
+
+        // Queue order:updated inside transaction for crash safety
+        const updatedPayload: OrderUpdatedPayload = {
           orderId,
-          courseNumber: nextCourse,
-          status: 'active',
-          courseStatus: { in: ['pending'] },
-          isHeld: false,
-        },
-        data: {
-          courseStatus: 'fired',
-          firedAt: new Date(),
-        },
+          changes: ['course-advanced', `course-${nextCourse}`],
+        }
+        await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_UPDATED, updatedPayload)
+
+        return fired
       })
 
-      // Update order's current course
-      await db.order.update({
-        where: { id: orderId },
-        data: { currentCourse: nextCourse, version: { increment: 1 } },
+      // Flush outbox after commit
+      void flushSocketOutbox(order.locationId).catch((err) => {
+        console.warn('[advance-course] Outbox flush failed, catch-up will deliver:', err)
       })
-
-      // Fire-and-forget socket dispatch for cross-terminal sync
-      void dispatchOrderUpdated(order.locationId, {
-        orderId,
-        changes: ['course-advanced', `course-${nextCourse}`],
-      }).catch(() => {})
 
       // Dispatch kds:item-status for current course items marked as served/delivered
       if (markServed && currentCourseItems.length > 0) {
@@ -158,11 +190,19 @@ export const POST = withVenue(async function POST(
       } })
     }
 
-    // Fire-and-forget socket dispatch for cross-terminal sync
-    void dispatchOrderUpdated(order.locationId, {
-      orderId,
-      changes: ['courses-complete'],
-    }).catch(() => {})
+    // Queue order:updated inside transaction for crash safety
+    await db.$transaction(async (tx) => {
+      const completedPayload: OrderUpdatedPayload = {
+        orderId,
+        changes: ['courses-complete'],
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_UPDATED, completedPayload)
+    })
+
+    // Flush outbox after commit
+    void flushSocketOutbox(order.locationId).catch((err) => {
+      console.warn('[advance-course] Outbox flush failed, catch-up will deliver:', err)
+    })
 
     // Dispatch kds:item-status for current course items marked as served/delivered
     if (markServed && currentCourseItems.length > 0) {

@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
+import { getLocationId } from '@/lib/location-cache'
 
 // Default course names for display
 const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
@@ -22,16 +24,20 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      include: {
-        items: {
-          where: { status: 'active', deletedAt: null },
-          orderBy: [
-            { courseNumber: 'asc' },
-            { seatNumber: 'asc' },
-          ],
-        },
+    // Resolve locationId for tenant-safe queries
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+    }
+
+    // Tenant-safe order fetch via OrderRepository
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+      items: {
+        where: { status: 'active', deletedAt: null },
+        orderBy: [
+          { courseNumber: 'asc' },
+          { seatNumber: 'asc' },
+        ],
       },
     })
 
@@ -160,9 +166,14 @@ export const POST = withVenue(async function POST(
     const body = await request.json()
     const { courseNumber, action, courseMode } = body
 
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-    })
+    // Resolve locationId for tenant-safe queries
+    const postLocationId = await getLocationId()
+    if (!postLocationId) {
+      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+    }
+
+    // Tenant-safe order fetch via OrderRepository
+    const order = await OrderRepository.getOrderById(orderId, postLocationId)
 
     if (!order) {
       return NextResponse.json(
@@ -180,33 +191,27 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      const updated = await db.order.update({
-        where: { id: orderId },
-        data: { courseMode },
-      })
+      await OrderRepository.updateOrder(orderId, postLocationId, { courseMode })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(() => {})
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { courseMode })
 
       return NextResponse.json({ data: {
         success: true,
-        courseMode: updated.courseMode,
+        courseMode,
       } })
     }
 
     // Handle set current course
     if (action === 'set_current' && courseNumber !== undefined) {
-      const updated = await db.order.update({
-        where: { id: orderId },
-        data: { currentCourse: courseNumber },
-      })
+      await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(() => {})
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { currentCourse: courseNumber })
 
       return NextResponse.json({ data: {
         success: true,
-        currentCourse: updated.currentCourse,
+        currentCourse: courseNumber,
       } })
     }
 
@@ -220,34 +225,26 @@ export const POST = withVenue(async function POST(
 
     switch (action) {
       case 'fire': {
-        // Query item IDs before batch update for event emission
-        const fireItemIds = (await db.orderItem.findMany({
-          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending', isHeld: false },
-          select: { id: true },
+        // Query item IDs before batch update for event emission (tenant-safe)
+        const fireItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+          courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending', isHeld: false,
         })).map(i => i.id)
 
         // Fire all items in this course (excluding held items unless explicitly including them)
-        const firedItems = await db.orderItem.updateMany({
-          where: {
-            orderId,
-            courseNumber,
-            status: 'active',
-            deletedAt: null,
-            courseStatus: 'pending',
-            isHeld: false,
-          },
-          data: {
-            courseStatus: 'fired',
-            firedAt: new Date(),
-          },
+        const firedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+          courseNumber,
+          status: 'active',
+          deletedAt: null,
+          courseStatus: 'pending',
+          isHeld: false,
+        }, {
+          courseStatus: 'fired',
+          firedAt: new Date(),
         })
 
         // Update current course if this course is higher
         if (courseNumber > order.currentCourse) {
-          await db.order.update({
-            where: { id: orderId },
-            data: { currentCourse: courseNumber },
-          })
+          await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber })
         }
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
@@ -268,34 +265,26 @@ export const POST = withVenue(async function POST(
       }
 
       case 'fire_all': {
-        // Query item IDs before batch update for event emission
-        const fireAllItemIds = (await db.orderItem.findMany({
-          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['pending'] } },
-          select: { id: true },
+        // Query item IDs before batch update for event emission (tenant-safe)
+        const fireAllItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+          courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['pending'] },
         })).map(i => i.id)
 
         // Fire all items in this course including held items
-        const allFiredItems = await db.orderItem.updateMany({
-          where: {
-            orderId,
-            courseNumber,
-            status: 'active',
-            deletedAt: null,
-            courseStatus: { in: ['pending'] },
-          },
-          data: {
-            courseStatus: 'fired',
-            firedAt: new Date(),
-            isHeld: false,
-          },
+        const allFiredItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+          courseNumber,
+          status: 'active',
+          deletedAt: null,
+          courseStatus: { in: ['pending'] },
+        }, {
+          courseStatus: 'fired',
+          firedAt: new Date(),
+          isHeld: false,
         })
 
         // Update current course
         if (courseNumber > order.currentCourse) {
-          await db.order.update({
-            where: { id: orderId },
-            data: { currentCourse: courseNumber },
-          })
+          await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber })
         }
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})
@@ -316,24 +305,19 @@ export const POST = withVenue(async function POST(
       }
 
       case 'hold': {
-        // Query item IDs before batch update for event emission
-        const holdItemIds = (await db.orderItem.findMany({
-          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending' },
-          select: { id: true },
+        // Query item IDs before batch update for event emission (tenant-safe)
+        const holdItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+          courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending',
         })).map(i => i.id)
 
         // Hold all pending items in this course
-        const heldItems = await db.orderItem.updateMany({
-          where: {
-            orderId,
-            courseNumber,
-            status: 'active',
-            deletedAt: null,
-            courseStatus: 'pending',
-          },
-          data: {
-            isHeld: true,
-          },
+        const heldItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+          courseNumber,
+          status: 'active',
+          deletedAt: null,
+          courseStatus: 'pending',
+        }, {
+          isHeld: true,
         })
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-held'] }).catch(() => {})
@@ -354,24 +338,19 @@ export const POST = withVenue(async function POST(
       }
 
       case 'release': {
-        // Query item IDs before batch update for event emission
-        const releaseItemIds = (await db.orderItem.findMany({
-          where: { orderId, courseNumber, status: 'active', deletedAt: null, isHeld: true },
-          select: { id: true },
+        // Query item IDs before batch update for event emission (tenant-safe)
+        const releaseItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+          courseNumber, status: 'active', deletedAt: null, isHeld: true,
         })).map(i => i.id)
 
         // Release hold on all items in this course
-        const releasedItems = await db.orderItem.updateMany({
-          where: {
-            orderId,
-            courseNumber,
-            status: 'active',
-            deletedAt: null,
-            isHeld: true,
-          },
-          data: {
-            isHeld: false,
-          },
+        const releasedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+          courseNumber,
+          status: 'active',
+          deletedAt: null,
+          isHeld: true,
+        }, {
+          isHeld: false,
         })
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-released'] }).catch(() => {})
@@ -392,25 +371,20 @@ export const POST = withVenue(async function POST(
       }
 
       case 'mark_ready': {
-        // Query item IDs before batch update for event emission
-        const readyItemIds = (await db.orderItem.findMany({
-          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: 'fired' },
-          select: { id: true },
+        // Query item IDs before batch update for event emission (tenant-safe)
+        const readyItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+          courseNumber, status: 'active', deletedAt: null, courseStatus: 'fired',
         })).map(i => i.id)
 
         // Mark all fired items in course as ready
-        const readyItems = await db.orderItem.updateMany({
-          where: {
-            orderId,
-            courseNumber,
-            status: 'active',
-            deletedAt: null,
-            courseStatus: 'fired',
-          },
-          data: {
-            courseStatus: 'ready',
-            kitchenStatus: 'ready',
-          },
+        const readyItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+          courseNumber,
+          status: 'active',
+          deletedAt: null,
+          courseStatus: 'fired',
+        }, {
+          courseStatus: 'ready',
+          kitchenStatus: 'ready',
         })
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-ready'] }).catch(() => {})
@@ -431,25 +405,20 @@ export const POST = withVenue(async function POST(
       }
 
       case 'mark_served': {
-        // Query item IDs before batch update for event emission
-        const servedItemIds = (await db.orderItem.findMany({
-          where: { orderId, courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['fired', 'ready'] } },
-          select: { id: true },
+        // Query item IDs before batch update for event emission (tenant-safe)
+        const servedItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+          courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['fired', 'ready'] },
         })).map(i => i.id)
 
         // Mark all ready items in course as served
-        const servedItems = await db.orderItem.updateMany({
-          where: {
-            orderId,
-            courseNumber,
-            status: 'active',
-            deletedAt: null,
-            courseStatus: { in: ['fired', 'ready'] },
-          },
-          data: {
-            courseStatus: 'served',
-            kitchenStatus: 'delivered',
-          },
+        const servedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+          courseNumber,
+          status: 'active',
+          deletedAt: null,
+          courseStatus: { in: ['fired', 'ready'] },
+        }, {
+          courseStatus: 'served',
+          kitchenStatus: 'delivered',
         })
 
         void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-served'] }).catch(() => {})

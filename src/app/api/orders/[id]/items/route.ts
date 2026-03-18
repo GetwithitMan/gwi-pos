@@ -14,6 +14,8 @@ import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
+import { getLocationId } from '@/lib/location-cache'
 import {
   type AddItemInput,
   validateAddItemsInput,
@@ -144,11 +146,16 @@ export const POST = withVenue(async function POST(
       return apiError.badRequest(inputValidation.error, ERROR_CODES.VALIDATION_ERROR)
     }
 
-    // Auth checks — fetch order metadata once for all permission guards
+    // Resolve locationId for tenant-safe queries
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return apiError.badRequest('Location not found', ERROR_CODES.VALIDATION_ERROR)
+    }
+
+    // Auth checks — fetch order metadata once for all permission guards (tenant-safe)
     if (requestingEmployeeId) {
-      const orderMeta = await db.order.findUnique({
-        where: { id: orderId },
-        select: { employeeId: true, locationId: true },
+      const orderMeta = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {
+        employeeId: true, locationId: true,
       })
 
       // Guard: editing another employee's order requires pos.edit_others_orders
@@ -201,30 +208,30 @@ export const POST = withVenue(async function POST(
 
     // Idempotency check — if this key was already processed, return current order
     if (idempotencyKey) {
-      const existing = await db.orderItem.findFirst({
-        where: { orderId, idempotencyKey, deletedAt: null },
+      const existing = await OrderItemRepository.getItemsForOrderWhere(orderId, locationId, {
+        idempotencyKey, deletedAt: null,
       })
-      if (existing) {
-        const order = await db.order.findUniqueOrThrow({
-          where: { id: orderId },
-          include: {
-            employee: {
-              select: { id: true, displayName: true, firstName: true, lastName: true },
-            },
-            items: {
-              include: {
-                modifiers: true,
-                ingredientModifications: true,
-                pizzaData: true,
-              },
+      if (existing.length > 0) {
+        const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+          items: {
+            include: {
+              modifiers: true,
+              ingredientModifications: true,
+              pizzaData: true,
             },
           },
         })
+        if (!order) return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
         return NextResponse.json({ data: mapOrderForResponse(order) })
       }
     }
 
     // Use a transaction to ensure atomic append
+    // TODO: [Phase 2] Migrate tx.order.findUnique/update calls inside this transaction to
+    // OrderRepository methods with tx parameter once the FOR UPDATE lock pattern is validated
     const result = await db.$transaction(async (tx) => {
       // Lock the order row to prevent concurrent modifications (FOR UPDATE)
       const [lockedOrder] = await tx.$queryRaw<any[]>`
@@ -530,11 +537,9 @@ export const POST = withVenue(async function POST(
     // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
     void dispatchOrderSummaryUpdated(result.updatedOrder.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(() => {})
 
-    // If this is a bar tab, notify phone that items updated
+    // If this is a bar tab, notify phone that items updated (tenant-safe)
     if (result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.status === 'open') {
-      const updatedItemCount = await db.orderItem.count({
-        where: { orderId, deletedAt: null, status: 'active' },
-      })
+      const updatedItemCount = await OrderItemRepository.countItemsForOrder(orderId, locationId)
       dispatchTabItemsUpdated(result.updatedOrder.locationId, { orderId, itemCount: updatedItemCount })
     }
 

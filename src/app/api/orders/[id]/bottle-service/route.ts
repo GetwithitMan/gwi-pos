@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -21,10 +22,19 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required fields: readerId, employeeId, tierId' }, { status: 400 })
     }
 
-    // Get order
-    const order = await db.order.findFirst({
+    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+    const orderCheck = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
-      include: { location: { select: { id: true, settings: true } } },
+      select: { id: true, locationId: true },
+    })
+
+    if (!orderCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Get order with location settings
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+      location: { select: { id: true, settings: true } },
     })
 
     if (!order) {
@@ -59,10 +69,7 @@ export const POST = withVenue(async function POST(
     const client = await requireDatacapClient(locationId)
 
     // Step 1: Set tab status to pending_auth
-    await db.order.update({
-      where: { id: orderId },
-      data: { tabStatus: 'pending_auth' },
-    })
+    await OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'pending_auth' })
 
     // Step 2: CollectCardData to read chip
     let cardholderName: string | undefined
@@ -92,12 +99,9 @@ export const POST = withVenue(async function POST(
     const approved = preAuthResponse.cmdStatus === 'Approved'
 
     if (!approved) {
-      await db.order.update({
-        where: { id: orderId },
-        data: {
-          tabStatus: 'no_card',
-          tabName: cardholderName || order.tabName,
-        },
+      await OrderRepository.updateOrder(orderId, locationId, {
+        tabStatus: 'no_card',
+        tabName: cardholderName || order.tabName,
       })
 
       return NextResponse.json({
@@ -126,8 +130,8 @@ export const POST = withVenue(async function POST(
     }
 
     // Create OrderCard + update Order in a transaction
-    const [orderCard] = await db.$transaction([
-      db.orderCard.create({
+    const orderCard = await db.$transaction(async (tx) => {
+      const card = await tx.orderCard.create({
         data: {
           locationId,
           orderId,
@@ -140,26 +144,24 @@ export const POST = withVenue(async function POST(
           isDefault: true,
           status: 'authorized',
         },
-      }),
-      db.order.update({
-        where: { id: orderId },
-        data: {
-          tabStatus: 'open',
-          tabName: finalCardholderName || order.tabName,
-          isBottleService: true,
-          bottleServiceTierId: tierId,
-          bottleServiceDeposit: depositAmount,
-          bottleServiceMinSpend: Number(tier.minimumSpend),
-          bottleServiceCurrentSpend: Number(order.subtotal) || 0,
-          preAuthId: preAuthResponse.authCode,
-          preAuthAmount: depositAmount,
-          preAuthLast4: finalCardLast4,
-          preAuthCardBrand: finalCardType,
-          preAuthRecordNo: recordNo,
-          preAuthReaderId: readerId,
-        },
-      }),
-    ])
+      })
+      await OrderRepository.updateOrder(orderId, locationId, {
+        tabStatus: 'open',
+        tabName: finalCardholderName || order.tabName,
+        isBottleService: true,
+        bottleServiceTierId: tierId,
+        bottleServiceDeposit: depositAmount,
+        bottleServiceMinSpend: Number(tier.minimumSpend),
+        bottleServiceCurrentSpend: Number(order.subtotal) || 0,
+        preAuthId: preAuthResponse.authCode,
+        preAuthAmount: depositAmount,
+        preAuthLast4: finalCardLast4,
+        preAuthCardBrand: finalCardType,
+        preAuthRecordNo: recordNo,
+        preAuthReaderId: readerId,
+      }, tx)
+      return card
+    })
 
     // Fire-and-forget: emit order event for event-sourced sync
     void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -214,14 +216,21 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    const order = await db.order.findFirst({
+    // Bootstrap: lightweight fetch for locationId + bottle service check
+    const getCheck = await db.order.findFirst({
       where: { id: orderId, deletedAt: null, isBottleService: true },
-      include: {
-        location: { select: { settings: true } },
-        cards: {
-          where: { deletedAt: null },
-          orderBy: { isDefault: 'desc' },
-        },
+      select: { id: true, locationId: true },
+    })
+
+    if (!getCheck) {
+      return NextResponse.json({ error: 'Bottle service order not found' }, { status: 404 })
+    }
+
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, getCheck.locationId, {
+      location: { select: { settings: true } },
+      cards: {
+        where: { deletedAt: null },
+        orderBy: { isDefault: 'desc' },
       },
     })
 

@@ -5,6 +5,8 @@ import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchOrderUpdated } f
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
+import { getLocationId } from '@/lib/location-cache'
 
 // POST /api/orders/[id]/fire-course - Fire items for a specific course
 // Used by coursing system to send delayed courses to kitchen
@@ -24,17 +26,20 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Validate course ordering: prior courses should be fired first
+    // Resolve locationId for tenant-safe queries
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location not found' }, { status: 400 })
+    }
+
+    // Validate course ordering: prior courses should be fired first (tenant-safe)
     if (courseNumber > 1 && !body.force) {
-      const priorUnfiredItems = await db.orderItem.findMany({
-        where: {
-          orderId: id,
-          courseNumber: { lt: courseNumber },
-          kitchenStatus: 'pending',
-          isHeld: false,
-          deletedAt: null,
-          status: 'active',
-        },
+      const priorUnfiredItems = await OrderItemRepository.getItemsForOrderWhere(id, locationId, {
+        courseNumber: { lt: courseNumber },
+        kitchenStatus: 'pending',
+        isHeld: false,
+        deletedAt: null,
+        status: 'active',
       })
       if (priorUnfiredItems.length > 0) {
         return NextResponse.json({
@@ -45,23 +50,20 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Get the order with items for this course that haven't been sent yet
+    // Get the order with items for this course that haven't been sent yet (tenant-safe)
     // Bug 3 fix: When courseNumber === 1, also include items with null courseNumber
     // (unassigned items default to course 1 on the client: item.courseNumber ?? 1)
-    const order = await db.order.findFirst({
-      where: { id, deletedAt: null },
-      include: {
-        items: {
-          where: {
-            deletedAt: null,
-            courseNumber: courseNumber === 1 ? { in: [1, null] } : courseNumber,
-            kitchenStatus: 'pending',
-            isHeld: false,
-          },
-          include: {
-            menuItem: {
-              select: { id: true, name: true, itemType: true, blockTimeMinutes: true }
-            }
+    const order = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
+      items: {
+        where: {
+          deletedAt: null,
+          courseNumber: courseNumber === 1 ? { in: [1, null] } : courseNumber,
+          kitchenStatus: 'pending',
+          isHeld: false,
+        },
+        include: {
+          menuItem: {
+            select: { id: true, name: true, itemType: true, blockTimeMinutes: true }
           }
         }
       }
@@ -98,15 +100,14 @@ export const POST = withVenue(async function POST(
     const timedItems = order.items.filter(i => i.menuItem?.itemType === 'timed_rental' && i.blockTimeMinutes)
     const regularItemIds = order.items.filter(i => !(i.menuItem?.itemType === 'timed_rental' && i.blockTimeMinutes)).map(i => i.id)
 
-    // Batch update regular items in one query
+    // Batch update regular items in one query (tenant-safe)
     if (regularItemIds.length > 0) {
-      await db.orderItem.updateMany({
-        where: { id: { in: regularItemIds } },
-        data: {
-          kitchenStatus: 'sent',
-          courseStatus: 'fired',
-          firedAt: now,
-        },
+      await OrderItemRepository.updateItemsWhere(id, locationId, {
+        id: { in: regularItemIds },
+      }, {
+        kitchenStatus: 'sent',
+        courseStatus: 'fired',
+        firedAt: now,
       })
     }
 
@@ -115,16 +116,14 @@ export const POST = withVenue(async function POST(
       await Promise.all(timedItems.map(item => {
         const expiresAt = new Date(now.getTime() + item.blockTimeMinutes! * 60 * 1000)
         return Promise.all([
-          db.orderItem.update({
-            where: { id: item.id },
-            data: {
-              kitchenStatus: 'sent',
-              courseStatus: 'fired',
-              firedAt: now,
-              blockTimeStartedAt: now,
-              blockTimeExpiresAt: expiresAt,
-            },
+          OrderItemRepository.updateItem(item.id, locationId, {
+            kitchenStatus: 'sent',
+            courseStatus: 'fired',
+            firedAt: now,
+            blockTimeStartedAt: now,
+            blockTimeExpiresAt: expiresAt,
           }),
+          // TODO: [Phase 2] Migrate menuItem and floorPlanElement updates to their own repositories
           db.menuItem.update({
             where: { id: item.menuItem!.id },
             data: {
@@ -149,11 +148,8 @@ export const POST = withVenue(async function POST(
       }))
     }
 
-    // Update current course on the order
-    await db.order.update({
-      where: { id },
-      data: { currentCourse: courseNumber, version: { increment: 1 } },
-    })
+    // Update current course on the order (tenant-safe)
+    await OrderRepository.updateOrder(id, locationId, { currentCourse: courseNumber, version: { increment: 1 } })
 
     // Route order items to stations using tag-based routing engine
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)

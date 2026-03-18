@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 import { OrderRouter } from '@/lib/order-router'
-import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
-import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
+import { startEntertainmentSession } from '@/lib/batch-updates'
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { withVenue } from '@/lib/with-venue'
@@ -18,6 +19,9 @@ import { checkOrderClaim } from '@/lib/order-claim'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { isModifiable } from '@/lib/domain/order-status'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -194,25 +198,28 @@ export const POST = withVenue(withTiming(async function POST(
     // TODO: Add the 30-second void-delay guard in comp-void/route.ts (requires manager approval
     // for voids within 30s of sentAt to prevent send→void→pocket-cash attacks).
     timing.start('db-update')
+    const newStatus = order.status === 'draft' ? 'open' : order.status
     const orderUpdateData: Record<string, unknown> = { version: { increment: 1 }, sentAt: now }
     if (order.status === 'draft') {
       orderUpdateData.status = 'open'
     }
-    await db.order.update({
-      where: { id },
-      data: orderUpdateData,
-    })
 
-    // Batch update regular items (single query)
-    if (regularItemIds.length > 0) {
-      await batchUpdateOrderItemStatus(regularItemIds, 'sent', now)
-    }
+    // Atomic transaction: order update + item status + socket event outbox
+    await db.$transaction(async (tx) => {
+      await OrderRepository.updateOrder(id, order.locationId, orderUpdateData as any, tx)
 
-    // Batch update entertainment items with sessions in a single transaction
-    if (entertainmentUpdates.length > 0) {
-      await db.$transaction(
-        entertainmentUpdates.map(({ itemId, sessionEnd }) =>
-          db.orderItem.update({
+      // Batch update regular items
+      if (regularItemIds.length > 0) {
+        await tx.orderItem.updateMany({
+          where: { id: { in: regularItemIds } },
+          data: { kitchenStatus: 'sent', firedAt: now },
+        })
+      }
+
+      // Batch update entertainment items with sessions
+      if (entertainmentUpdates.length > 0) {
+        for (const { itemId, sessionEnd } of entertainmentUpdates) {
+          await tx.orderItem.update({
             where: { id: itemId },
             data: {
               kitchenStatus: 'sent',
@@ -221,9 +228,47 @@ export const POST = withVenue(withTiming(async function POST(
               blockTimeExpiresAt: sessionEnd,
             },
           })
-        )
-      )
-      // Start entertainment sessions outside transaction (touches menu items + floor plan)
+        }
+      }
+
+      // Queue critical socket events in the outbox (atomic with business writes)
+      const listChangedPayload: OrdersListChangedPayload = {
+        trigger: 'sent',
+        orderId: order.id,
+        tableId: order.tableId || undefined,
+        orderNumber: order.orderNumber,
+        status: 'occupied',
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listChangedPayload)
+
+      const summaryPayload: OrderSummaryUpdatedPayload = {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: newStatus,
+        tableId: order.tableId || null,
+        tableName: order.tabName || null,
+        tabName: order.tabName || null,
+        guestCount: order.guestCount ?? 0,
+        employeeId: order.employeeId || null,
+        subtotalCents: Math.round(Number(order.subtotal) * 100),
+        taxTotalCents: Math.round(Number(order.taxTotal) * 100),
+        discountTotalCents: Math.round(Number(order.discountTotal) * 100),
+        tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+        totalCents: Math.round(Number(order.total) * 100),
+        itemCount: order.itemCount ?? 0,
+        updatedAt: new Date().toISOString(),
+        locationId: order.locationId,
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_SUMMARY_UPDATED, summaryPayload)
+    })
+
+    // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
+    void flushSocketOutbox(order.locationId).catch((err) => {
+      console.warn('[send] Outbox flush failed, catch-up will deliver:', err)
+    })
+
+    // Start entertainment sessions outside transaction (touches menu items + floor plan)
+    if (entertainmentUpdates.length > 0) {
       await Promise.all(
         entertainmentUpdates.map(({ itemId, menuItemId, sessionEnd }) =>
           startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
@@ -236,7 +281,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Queue for Neon replay if in outage mode — read back full row to
     // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
-      const fullOrder = await db.order.findUnique({ where: { id: order.id } })
+      const fullOrder = await OrderRepository.getOrderById(order.id, order.locationId)
       if (fullOrder) {
         void queueOutageWrite('Order', fullOrder.id, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
       }
@@ -346,12 +391,15 @@ export const POST = withVenue(withTiming(async function POST(
       }
     })()
 
-    // Dispatch real-time socket events to KDS screens (fire and forget)
+    // Dispatch real-time socket events to KDS screens (fire-and-forget)
+    // KDS uses tag-based routing (emitToTags) which the outbox doesn't support,
+    // so this remains fire-and-forget. The outbox handles ORDERS_LIST_CHANGED
+    // and ORDER_SUMMARY_UPDATED above for crash-safe delivery.
     void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {
       console.error('[API /orders/[id]/send] Socket dispatch failed:', err)
     })
 
-    // For entertainment items, dispatch session updates and status changes
+    // For entertainment items, dispatch session updates and status changes (non-critical UI)
     for (const item of itemsToProcess) {
       if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
         const sessionExpiresAt = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString()
@@ -410,30 +458,6 @@ export const POST = withVenue(withTiming(async function POST(
     void emitOrderEvent(order.locationId, id, 'ORDER_SENT', {
       sentItemIds: updatedItemIds,
     })
-
-    // Dispatch open orders update with 'sent' trigger — delta-only, no full snapshot reload
-    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'sent', orderId: order.id, tableId: order.tableId || undefined, orderNumber: order.orderNumber, status: 'occupied' }, { async: true }).catch(() => {})
-
-    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
-    // Send route transitions draft→open but doesn't change totals; emit status change
-    void dispatchOrderSummaryUpdated(order.locationId, {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      status: order.status === 'draft' ? 'open' : order.status,
-      tableId: order.tableId || null,
-      tableName: order.tabName || null,
-      tabName: order.tabName || null,
-      guestCount: order.guestCount ?? 0,
-      employeeId: order.employeeId || null,
-      subtotalCents: Math.round(Number(order.subtotal) * 100),
-      taxTotalCents: Math.round(Number(order.taxTotal) * 100),
-      discountTotalCents: Math.round(Number(order.discountTotal) * 100),
-      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
-      totalCents: Math.round(Number(order.total) * 100),
-      itemCount: order.itemCount ?? 0,
-      updatedAt: new Date().toISOString(),
-      locationId: order.locationId,
-    }, { async: true }).catch(() => {})
 
     // Evaluate auto-discount rules after items are sent (fire-and-forget)
     void evaluateAutoDiscounts(order.id, order.locationId).catch(console.error)
