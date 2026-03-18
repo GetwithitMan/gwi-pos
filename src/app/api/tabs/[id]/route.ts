@@ -233,16 +233,12 @@ export const PUT = withVenue(async function PUT(
 
     // Wrap update + socket outbox in a single atomic transaction
     const updated = await db.$transaction(async (tx) => {
-      // TODO: Phase 2 — extract into OrderRepository.updateOrderAndReturn() once tx-passthrough is finalized
-      const result = await tx.order.update({
-        where: { id },
-        data: updateData,
-        include: {
-          employee: {
-            select: { id: true, displayName: true, firstName: true, lastName: true },
-          },
+      const result = await OrderRepository.updateOrderAndReturn(id, locationId, updateData as any, {
+        employee: {
+          select: { id: true, displayName: true, firstName: true, lastName: true },
         },
-      })
+      }, tx) as any
+      if (!result) throw new Error(`Tab ${id} not found for location ${locationId}`)
 
       // Queue critical socket events inside the transaction (outbox pattern)
       const tabPayload: TabUpdatedPayload = { orderId: id, status: result.status }
@@ -365,8 +361,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Wrap soft-delete + socket outbox in a single atomic transaction
     await db.$transaction(async (tx) => {
-      // TODO: Phase 2 — use OrderRepository.softDeleteOrder(id, locationId, tx) once outbox is co-located
-      await tx.order.update({ where: { id }, data: { deletedAt: new Date() } })
+      await OrderRepository.softDeleteOrder(id, locationId, tx)
 
       // Queue critical socket events inside the transaction (outbox pattern)
       const listPayload: OrdersListChangedPayload = {

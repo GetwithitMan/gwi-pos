@@ -233,8 +233,6 @@ export const POST = withVenue(async function POST(
     }
 
     // Use a transaction to ensure atomic append
-    // TODO: [Phase 2] Migrate tx.order.findUnique/update calls inside this transaction to
-    // OrderRepository methods with tx parameter once the FOR UPDATE lock pattern is validated
     const result = await db.$transaction(async (tx) => {
       // Lock the order row to prevent concurrent modifications (FOR UPDATE)
       const [lockedOrder] = await tx.$queryRaw<any[]>`
@@ -250,22 +248,19 @@ export const POST = withVenue(async function POST(
       if (!statusCheck.valid) throw new Error(statusCheck.error)
 
       // Get full order data with includes (row is already locked within this tx)
-      const existingOrder = await tx.order.findUnique({
-        where: { id: orderId },
-        include: {
-          location: true,
-          items: {
-            include: {
-              modifiers: true,
-              ingredientModifications: true,
-            },
-          },
-          payments: {
-            where: { deletedAt: null },
-            select: { id: true, status: true },
+      const existingOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+        location: true,
+        items: {
+          include: {
+            modifiers: true,
+            ingredientModifications: true,
           },
         },
-      })
+        payments: {
+          where: { deletedAt: null },
+          select: { id: true, status: true },
+        },
+      }, tx)
 
       if (!existingOrder) {
         throw new Error('Order not found')
@@ -282,7 +277,7 @@ export const POST = withVenue(async function POST(
         const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
         if (!existingOrder.businessDayDate || existingOrder.businessDayDate < businessDayStart) {
-          await tx.order.update({ where: { id: orderId }, data: { businessDayDate: businessDayStart } })
+          await OrderRepository.updateOrder(orderId, locationId, { businessDayDate: businessDayStart }, tx)
         }
       } catch (promoErr) {
         console.warn('[BusinessDay] Failed to promote businessDayDate on item add:', promoErr)
@@ -358,15 +353,15 @@ export const POST = withVenue(async function POST(
       )
 
       // Update order totals + bump version for concurrency control
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
+      const updatedOrder = await OrderRepository.updateOrderAndReturn(
+        orderId, locationId,
+        {
           ...totals,
           ...(existingOrder.isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
           version: { increment: 1 },
           lastMutatedBy: 'local',
         },
-        include: {
+        {
           employee: {
             select: { id: true, displayName: true, firstName: true, lastName: true },
           },
@@ -378,7 +373,9 @@ export const POST = withVenue(async function POST(
             },
           },
         },
-      })
+        tx,
+      ) as any
+      if (!updatedOrder) throw new Error('Order not found after update')
 
       // Audit log: items added
       await tx.auditLog.create({
@@ -512,7 +509,7 @@ export const POST = withVenue(async function POST(
     const response = {
       ...mapOrderForResponse(result.updatedOrder),
       // Map items with correlationId for newly created items
-      items: result.updatedOrder.items.map(item =>
+      items: result.updatedOrder.items.map((item: any) =>
         mapOrderItemForResponse(item, correlationMap.get(item.id))
       ),
     }

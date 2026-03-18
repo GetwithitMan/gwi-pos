@@ -57,9 +57,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
 
         // Void the orders
+        // NOTE: Uses tx directly — bulk update across multiple orders by ID array has no repo method
         const result = await tx.order.updateMany({
           where: {
             id: { in: orderIds },
+            locationId,
             status: { in: ['open', 'sent', 'in_progress', 'split'] },
             deletedAt: null,
           },
@@ -114,9 +116,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       const cancelledTableIds = await db.$transaction(async (tx) => {
         // Fetch the orders to get their tableIds for cleanup
+        // NOTE: Uses tx directly — bulk findMany/updateMany by ID array has no single-order repo method
         const targetOrders = await tx.order.findMany({
           where: {
             id: { in: orderIds },
+            locationId,
             status: { in: ['draft', 'open', 'split'] },
             deletedAt: null,
           },
@@ -128,6 +132,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         const result = await tx.order.updateMany({
           where: {
             id: { in: orderIds },
+            locationId,
             status: { in: ['draft', 'open', 'split'] },
             deletedAt: null,
           },

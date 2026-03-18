@@ -7,7 +7,7 @@ import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { OrderRepository } from '@/lib/repositories'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 
 interface ApplyItemDiscountRequest {
   type: 'percent' | 'fixed'
@@ -52,15 +52,20 @@ export const POST = withVenue(async function POST(
       // Lock the Order row to prevent concurrent discount applications from producing incorrect totals
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-      // Fetch order with items for split-aware tax
-      // TODO: OrderRepository.getOrderByIdWithInclude inside tx needs location + items with modifiers + status filter
-      const order = await tx.order.findFirst({
-        where: { id: orderId, deletedAt: null },
-        include: {
-          location: true,
-          items: { where: { deletedAt: null, status: 'active' }, include: { modifiers: true } },
-        },
-      })
+      // Fetch order with items for split-aware tax (tenant-safe via OrderRepository)
+      const [lockedDisc] = await tx.$queryRawUnsafe<Array<{ locationId: string }>>(
+        'SELECT "locationId" FROM "Order" WHERE id = $1', orderId
+      )
+      if (!lockedDisc) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, lockedDisc.locationId, {
+        location: true,
+        items: { where: { deletedAt: null, status: 'active' }, include: { modifiers: true } },
+      }, tx)
 
       if (!order) {
         return NextResponse.json(
@@ -80,12 +85,10 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      // Fetch item
-      // TODO: OrderItemRepository.getItemByIdWithInclude needs menuItem nested select support inside tx
-      const item = await tx.orderItem.findFirst({
-        where: { id: itemId, orderId, deletedAt: null },
-        include: { menuItem: { select: { itemType: true } } },
-      })
+      // Fetch item (tenant-safe via OrderItemRepository)
+      const item = await OrderItemRepository.getItemByIdWithInclude(itemId, order.locationId, {
+        menuItem: { select: { itemType: true } },
+      }, tx)
 
       if (!item) {
         return NextResponse.json(
@@ -292,15 +295,20 @@ export const DELETE = withVenue(async function DELETE(
         )
       }
 
-      // Fetch order with items for split-aware tax recalculation
-      // TODO: OrderRepository.getOrderByIdWithInclude inside tx needs location + filtered items
-      const order = await tx.order.findFirst({
-        where: { id: orderId, deletedAt: null },
-        include: {
-          location: true,
-          items: { where: { deletedAt: null, status: 'active' }, include: { modifiers: true } },
-        },
-      })
+      // Fetch order with items for split-aware tax recalculation (tenant-safe via OrderRepository)
+      const [lockedDiscDel] = await tx.$queryRawUnsafe<Array<{ locationId: string }>>(
+        'SELECT "locationId" FROM "Order" WHERE id = $1', orderId
+      )
+      if (!lockedDiscDel) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, lockedDiscDel.locationId, {
+        location: true,
+        items: { where: { deletedAt: null, status: 'active' }, include: { modifiers: true } },
+      }, tx)
 
       if (!order) {
         return NextResponse.json(

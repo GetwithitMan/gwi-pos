@@ -165,14 +165,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const orderTotal = Number(order.total)
       const isFullyPaid = totalPaid >= orderTotal
 
-      await tx.order.update({
-        where: { id: resolvedOrderId },
-        data: {
-          tipTotal: totalTips,
-          status: isFullyPaid ? 'paid' : order.status,
-          paidAt: isFullyPaid ? new Date() : order.paidAt,
-        },
-      })
+      await OrderRepository.updateOrder(resolvedOrderId, order.locationId, {
+        tipTotal: totalTips,
+        status: isFullyPaid ? 'paid' : order.status,
+        paidAt: isFullyPaid ? new Date() : order.paidAt,
+      }, tx)
 
       return newPayment
     })

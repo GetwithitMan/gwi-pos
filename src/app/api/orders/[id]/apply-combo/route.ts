@@ -60,17 +60,15 @@ export const POST = withVenue(async function POST(
         throw new Error('ORDER_NOT_MODIFIABLE')
       }
 
-      // Load order with location settings
-      const order = await tx.order.findUniqueOrThrow({
-        where: { id: orderId },
-        include: {
-          location: { select: { settings: true } },
-          payments: {
-            where: { deletedAt: null },
-            select: { id: true, status: true },
-          },
+      // Load order with location settings (tenant-safe via OrderRepository)
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, lockedOrder.locationId, {
+        location: { select: { settings: true } },
+        payments: {
+          where: { deletedAt: null },
+          select: { id: true, status: true },
         },
-      })
+      }, tx)
+      if (!order) throw new Error('ORDER_NOT_FOUND')
 
       // Block if active payments exist
       const hasActivePayment = order.payments?.some(
@@ -227,8 +225,9 @@ export const POST = withVenue(async function POST(
       })
 
       // Recalculate order totals from remaining active items
+      // TODO: Add OrderItemRepository.getItemsForOrderWhereWithIncludes() for custom include + status filter
       const allActiveItems = await tx.orderItem.findMany({
-        where: { orderId, deletedAt: null, status: 'active' },
+        where: { orderId, locationId: order.locationId, deletedAt: null, status: 'active' },
         include: {
           modifiers: { where: { deletedAt: null } },
           ingredientModifications: true,

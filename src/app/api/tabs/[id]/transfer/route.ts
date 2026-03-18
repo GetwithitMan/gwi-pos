@@ -118,21 +118,17 @@ export const POST = withVenue(async function POST(
 
     // Wrap tab update + audit log + socket outbox in a single atomic transaction
     const updatedTab = await db.$transaction(async (tx) => {
-      // TODO: Phase 2 — extract into OrderRepository.updateOrderAndReturn() once tx-passthrough is finalized
-      const result = await tx.order.update({
-        where: { id: tabId },
-        data: {
-          employeeId: toEmployeeId,
-          notes: tab.notes
-            ? `${tab.notes}\n[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`
-            : `[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`,
+      const result = await OrderRepository.updateOrderAndReturn(tabId, locationId, {
+        employeeId: toEmployeeId,
+        notes: tab.notes
+          ? `${tab.notes}\n[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`
+          : `[Transferred from ${tab.employee.displayName || tab.employee.firstName} to ${toEmployee.displayName || toEmployee.firstName}${reason ? `: ${reason}` : ''}]`,
+      } as any, {
+        employee: {
+          select: { id: true, displayName: true, firstName: true, lastName: true },
         },
-        include: {
-          employee: {
-            select: { id: true, displayName: true, firstName: true, lastName: true },
-          },
-        },
-      })
+      }, tx) as any
+      if (!result) throw new Error(`Tab ${tabId} not found for location ${locationId}`)
 
       // Audit log
       await tx.auditLog.create({

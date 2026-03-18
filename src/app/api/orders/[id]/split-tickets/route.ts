@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { validateRequest } from '@/lib/validations'
@@ -11,6 +12,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { dispatchFloorPlanUpdate, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // ============================================
 // Validation Schemas
@@ -47,17 +49,20 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const orderCheck = await adminDb.order.findFirst({
-      where: { id },
-      select: { id: true, locationId: true },
-    })
-
-    if (!orderCheck) {
-      throw new NotFoundError('Order')
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const orderCheck = await adminDb.order.findFirst({
+        where: { id },
+        select: { id: true, locationId: true },
+      })
+      if (!orderCheck) {
+        throw new NotFoundError('Order')
+      }
+      locationId = orderCheck.locationId
     }
 
-    const order = await OrderRepository.getOrderByIdWithInclude(id, orderCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
       splitOrders: {
         where: { deletedAt: null },
         include: {
@@ -202,18 +207,21 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const parentCheck = await adminDb.order.findFirst({
-      where: { id },
-      select: { id: true, locationId: true },
-    })
-
-    if (!parentCheck) {
-      throw new NotFoundError('Order')
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let postLocationId = getRequestLocationId()
+    if (!postLocationId) {
+      const parentCheck = await adminDb.order.findFirst({
+        where: { id },
+        select: { id: true, locationId: true },
+      })
+      if (!parentCheck) {
+        throw new NotFoundError('Order')
+      }
+      postLocationId = parentCheck.locationId
     }
 
     // Get the parent order with all items
-    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, parentCheck.locationId, {
+    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, postLocationId, {
       location: true,
       items: {
         where: { deletedAt: null },
@@ -617,14 +625,7 @@ export const POST = withVenue(async function POST(
       // Previously only fractionally-split items were deleted, leaving whole
       // items on the parent with stale totals. This caused "Pay All" to pay
       // the parent's snapshot instead of the real split totals.
-      await tx.orderItem.updateMany({
-        where: {
-          orderId: id,
-          locationId: parentOrder.locationId,
-          deletedAt: null,
-        },
-        data: { deletedAt: new Date() },
-      })
+      await OrderItemRepository.updateItemsWhere(id, parentOrder.locationId, { deletedAt: null }, { deletedAt: new Date() }, tx)
 
       // Update parent: status='split', zero out totals (children own all items now)
       await OrderRepository.updateOrder(parentOrder.id, parentOrder.locationId, {
@@ -725,14 +726,18 @@ export const PATCH = withVenue(async function PATCH(
         throw new ValidationError('itemId, fromSplitId, and ways (2-10) are required')
       }
 
-      // Bootstrap: lightweight fetch for locationId
-      const splitItemCheck = await adminDb.order.findFirst({
-        where: { id },
-        select: { id: true, locationId: true },
-      })
-      if (!splitItemCheck) throw new NotFoundError('Order')
+      // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+      let splitItemLocationId = getRequestLocationId()
+      if (!splitItemLocationId) {
+        const splitItemCheck = await adminDb.order.findFirst({
+          where: { id },
+          select: { id: true, locationId: true },
+        })
+        if (!splitItemCheck) throw new NotFoundError('Order')
+        splitItemLocationId = splitItemCheck.locationId
+      }
 
-      const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, splitItemCheck.locationId, {
+      const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, splitItemLocationId, {
         location: true,
         splitOrders: {
           where: { deletedAt: null },
@@ -772,16 +777,13 @@ export const PATCH = withVenue(async function PATCH(
 
       await db.$transaction(async (tx) => {
         // Update original item to first fraction
-        await tx.orderItem.update({
-          where: { id: itemId },
-          data: {
-            price: fractionPrice,
-            itemTotal: fractionPrice,
-            specialNotes: item.specialNotes
-              ? `${item.specialNotes} (1/${ways})`
-              : `(1/${ways})`,
-          },
-        })
+        await OrderItemRepository.updateItem(itemId, parentOrder.locationId, {
+          price: fractionPrice,
+          itemTotal: fractionPrice,
+          specialNotes: item.specialNotes
+            ? `${item.specialNotes} (1/${ways})`
+            : `(1/${ways})`,
+        }, tx)
 
         // Create fraction copies for remaining ways
         for (let i = 1; i < ways; i++) {
@@ -836,9 +838,7 @@ export const PATCH = withVenue(async function PATCH(
         // Recalculate totals on all affected splits (split-aware tax)
         for (const split of parentOrder.splitOrders) {
           if (split.payments.length > 0) continue
-          const freshItems = await tx.orderItem.findMany({
-            where: { orderId: split.id, deletedAt: null },
-          })
+          const freshItems = await OrderItemRepository.getItemsForOrder(split.id, parentOrder.locationId, tx)
           let inclSub = 0, exclSub = 0
           for (const fi of freshItems) {
             const t = Number(fi.price) * fi.quantity
@@ -880,15 +880,19 @@ export const PATCH = withVenue(async function PATCH(
       throw new ValidationError('Cannot move item to the same split')
     }
 
-    // Bootstrap: lightweight fetch for locationId
-    const moveCheck = await adminDb.order.findFirst({
-      where: { id },
-      select: { id: true, locationId: true },
-    })
-    if (!moveCheck) throw new NotFoundError('Order')
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let moveLocationId = getRequestLocationId()
+    if (!moveLocationId) {
+      const moveCheck = await adminDb.order.findFirst({
+        where: { id },
+        select: { id: true, locationId: true },
+      })
+      if (!moveCheck) throw new NotFoundError('Order')
+      moveLocationId = moveCheck.locationId
+    }
 
     // Verify parent order exists and has splits
-    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, moveCheck.locationId, {
+    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, moveLocationId, {
       location: true,
       splitOrders: {
         where: { deletedAt: null, id: { in: [fromSplitId, toSplitId] } },
@@ -928,6 +932,7 @@ export const PATCH = withVenue(async function PATCH(
 
     await db.$transaction(async (tx) => {
       // Move item to destination split
+      // NOTE: Uses tx directly — orderId is a relation field not in OrderItemUpdateManyMutationInput
       await tx.orderItem.update({
         where: { id: itemId },
         data: { orderId: toSplitId },
@@ -1001,15 +1006,19 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id } = await params
 
-    // Bootstrap: lightweight fetch for locationId
-    const deleteCheck = await adminDb.order.findFirst({
-      where: { id },
-      select: { id: true, locationId: true },
-    })
-    if (!deleteCheck) throw new NotFoundError('Order')
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let deleteLocationId = getRequestLocationId()
+    if (!deleteLocationId) {
+      const deleteCheck = await adminDb.order.findFirst({
+        where: { id },
+        select: { id: true, locationId: true },
+      })
+      if (!deleteCheck) throw new NotFoundError('Order')
+      deleteLocationId = deleteCheck.locationId
+    }
 
     // Get parent order with splits
-    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, deleteCheck.locationId, {
+    const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, deleteLocationId, {
       location: true,
       splitOrders: {
         where: { deletedAt: null },
@@ -1035,8 +1044,9 @@ export const DELETE = withVenue(async function DELETE(
       await tx.$queryRaw`SELECT id FROM "Order" WHERE "parentOrderId" = ${id} FOR UPDATE`
 
       // Re-check for payments inside the lock (prevents race where payment occurs between check and delete)
+      // NOTE: Uses tx directly — cross-order findMany by parentOrderId has no single-order repo method
       const splits = await tx.order.findMany({
-        where: { parentOrderId: id, deletedAt: null },
+        where: { parentOrderId: id, locationId: parentOrder.locationId, deletedAt: null },
         include: { payments: { where: { status: 'completed' } } },
       })
       const hasPayments = splits.some(s => s.payments.length > 0)
@@ -1049,33 +1059,29 @@ export const DELETE = withVenue(async function DELETE(
 
       // Bug 21: Soft-delete child order items to prevent orphan accumulation
       // Each split/unsplit cycle creates new item copies; without cleanup, old copies pile up
+      // NOTE: Uses tx directly — cross-order bulk update by orderId IN array has no repo method
       const childOrderIds = splits.map(s => s.id)
       if (childOrderIds.length > 0) {
         await tx.orderItem.updateMany({
-          where: { orderId: { in: childOrderIds }, deletedAt: null },
+          where: { orderId: { in: childOrderIds }, locationId: parentOrder.locationId, deletedAt: null },
           data: { deletedAt: new Date() },
         })
       }
 
       // Soft-delete all split orders
+      // NOTE: Uses tx directly — cross-order bulk update by parentOrderId has no repo method
       await tx.order.updateMany({
-        where: { parentOrderId: id },
+        where: { parentOrderId: id, locationId: parentOrder.locationId },
         data: { deletedAt: new Date(), status: 'cancelled' },
       })
 
       // Restore soft-deleted parent items
-      await tx.orderItem.updateMany({
-        where: {
-          orderId: id,
-          locationId: parentOrder.locationId,
-          deletedAt: { not: null },
-        },
-        data: { deletedAt: null },
-      })
+      await OrderItemRepository.updateItemsWhere(id, parentOrder.locationId, { deletedAt: { not: null } }, { deletedAt: null }, tx)
 
       // Bug 11: Recalculate parent totals from restored items
+      // TODO: Add OrderItemRepository.getItemsForOrderWithModifiersWhere() for status-filtered + include
       const restoredItems = await tx.orderItem.findMany({
-        where: { orderId: id, deletedAt: null, status: 'active' },
+        where: { orderId: id, locationId: parentOrder.locationId, deletedAt: null, status: 'active' },
         include: { modifiers: true },
       })
 

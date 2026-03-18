@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { OrderRouter } from '@/lib/order-router'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchNewOrder, dispatchItemStatus } from '@/lib/socket-dispatch'
@@ -10,6 +11,7 @@ import type { OrderUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // POST - Advance to next course
 // Marks current course as served and fires the next course
@@ -25,20 +27,25 @@ export const POST = withVenue(async function POST(
     // Resolve employeeId from body or session
     const employeeId = body.employeeId || (await getActorFromRequest(request)).employeeId
 
-    // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-    const orderCheck = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
+      const orderCheck = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { id: true, locationId: true },
+      })
 
-    if (!orderCheck) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
+      if (!orderCheck) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
+      locationId = orderCheck.locationId
     }
 
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
       items: {
         where: { status: 'active', deletedAt: null },
         orderBy: { courseNumber: 'asc' },
@@ -103,19 +110,15 @@ export const POST = withVenue(async function POST(
     if (nextCourse) {
       // Fire next course items + update order + queue socket events atomically
       const firedItems = await db.$transaction(async (tx) => {
-        const fired = await tx.orderItem.updateMany({
-          where: {
-            orderId,
-            courseNumber: nextCourse,
-            status: 'active',
-            courseStatus: { in: ['pending'] },
-            isHeld: false,
-          },
-          data: {
-            courseStatus: 'fired',
-            firedAt: new Date(),
-          },
-        })
+        const fired = await OrderItemRepository.updateItemsWhere(orderId, order.locationId, {
+          courseNumber: nextCourse,
+          status: 'active',
+          courseStatus: { in: ['pending'] },
+          isHeld: false,
+        }, {
+          courseStatus: 'fired',
+          firedAt: new Date(),
+        }, tx)
 
         // Update order's current course
         await OrderRepository.updateOrder(orderId, order.locationId, { currentCourse: nextCourse, version: { increment: 1 } }, tx)

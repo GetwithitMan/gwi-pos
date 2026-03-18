@@ -10,6 +10,7 @@ import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { parseSettings } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import * as OrderRepository from '@/lib/repositories/order-repository'
 
 const PayAllSplitsSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit']),
@@ -148,8 +149,9 @@ export const POST = withVenue(async function POST(
       }
 
       // Re-check that splits are still unpaid after acquiring locks
+      // NOTE: Uses tx directly — cross-order findMany with IN clause has no single-order repo method
       const lockedSplits = await tx.order.findMany({
-        where: { id: { in: unpaidSplitIds }, deletedAt: null },
+        where: { id: { in: unpaidSplitIds }, locationId: parentOrder.locationId, deletedAt: null },
         select: { id: true, status: true },
       })
       const stillUnpaid = lockedSplits.filter(s => s.status !== 'paid')
@@ -191,14 +193,12 @@ export const POST = withVenue(async function POST(
 
       // Batch-update all unpaid splits to paid + mark parent as paid
       await Promise.all([
+        // NOTE: Uses tx directly — batch update across multiple orders by ID array has no repo method
         tx.order.updateMany({
-          where: { id: { in: unpaidSplitIds } },
+          where: { id: { in: unpaidSplitIds }, locationId: parentOrder.locationId },
           data: { status: 'paid', paidAt: now },
         }),
-        tx.order.update({
-          where: { id: parentOrderId },
-          data: { status: 'paid', paidAt: now, closedAt: now },
-        }),
+        OrderRepository.updateOrder(parentOrderId, parentOrder.locationId, { status: 'paid', paidAt: now, closedAt: now }, tx),
         // Reset table if parent had one
         ...(parentOrder.tableId
           ? [tx.table.update({ where: { id: parentOrder.tableId }, data: { status: 'available' } })]

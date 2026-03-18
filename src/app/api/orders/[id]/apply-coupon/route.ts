@@ -5,6 +5,7 @@ import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository } from '@/lib/repositories'
 
 interface ApplyCouponRequest {
   code: string
@@ -280,17 +281,14 @@ export const POST = withVenue(async function POST(
         Number(order.inclusiveTaxRate) || undefined
       )
 
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          discountTotal: totals.discountTotal,
-          taxTotal: totals.taxTotal,
-          taxFromInclusive: totals.taxFromInclusive,
-          taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
-          version: { increment: 1 },
-        },
-      })
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        version: { increment: 1 },
+      }, tx)
 
       return { discount, totals }
     })

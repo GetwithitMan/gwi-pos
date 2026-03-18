@@ -124,9 +124,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           // Lock table row to prevent concurrent double-claim
           if (tableId) {
             await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
+            // NOTE: Uses tx directly — querying by tableId (not orderId) has no OrderRepository method
             const existingOrder = await tx.order.findFirst({
               where: {
                 tableId,
+                locationId,
                 status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
                 deletedAt: null,
               },
@@ -503,9 +505,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         // Lock table row to prevent concurrent double-claim (Bug 13)
         if (tableId) {
           await tx.$queryRawUnsafe(`SELECT id FROM "Table" WHERE id = $1 FOR UPDATE`, tableId)
+          // NOTE: Uses tx directly — querying by tableId (not orderId) has no OrderRepository method
           const existingOrder = await tx.order.findFirst({
             where: {
               tableId,
+              locationId,
               status: { in: ['draft', 'open', 'in_progress', 'sent', 'split'] },
               deletedAt: null,
             },

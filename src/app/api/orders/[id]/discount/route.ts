@@ -57,22 +57,25 @@ export const POST = withVenue(async function POST(
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount applications from bypassing stacking/cap guards
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      const [lockedRow] = await tx.$queryRawUnsafe<Array<{ id: string; locationId: string }>>(
+        'SELECT id, "locationId" FROM "Order" WHERE id = $1 FOR UPDATE', orderId
+      )
+      if (!lockedRow) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
 
-      // Get the order with current totals
-      // TODO(tenant-safety): Migrate to OrderRepository — needs locationId before this query,
-      // but locationId comes FROM this fetch. Add locationId to FOR UPDATE raw query above.
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: {
-          location: true,
-          discounts: { where: { deletedAt: null } },
-          items: {
-            where: { deletedAt: null, status: 'active' },
-            include: { modifiers: true },
-          },
+      // Get the order with current totals (tenant-safe via OrderRepository)
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, lockedRow.locationId, {
+        location: true,
+        discounts: { where: { deletedAt: null } },
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          include: { modifiers: true },
         },
-      })
+      }, tx)
 
       if (!order) {
         return NextResponse.json(
@@ -683,25 +686,28 @@ export const DELETE = withVenue(async function DELETE(
 
     const result = await db.$transaction(async (tx) => {
       // Lock the Order row to prevent concurrent discount removals from producing incorrect totals
-      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      const [lockedRowDel] = await tx.$queryRawUnsafe<Array<{ id: string; locationId: string }>>(
+        'SELECT id, "locationId" FROM "Order" WHERE id = $1 FOR UPDATE', orderId
+      )
+      if (!lockedRowDel) {
+        return NextResponse.json(
+          { error: 'Order not found' },
+          { status: 404 }
+        )
+      }
 
-      // Get the order and discount
-      // TODO(tenant-safety): Migrate to OrderRepository — needs locationId before this query,
-      // but locationId comes FROM this fetch. Add locationId to FOR UPDATE raw query above.
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: {
-          location: true,
-          discounts: {
-            where: { deletedAt: null },
-            include: { discountRule: { select: { name: true } } },
-          },
-          items: {
-            where: { deletedAt: null, status: 'active' },
-            include: { modifiers: true },
-          },
+      // Get the order and discount (tenant-safe via OrderRepository)
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, lockedRowDel.locationId, {
+        location: true,
+        discounts: {
+          where: { deletedAt: null },
+          include: { discountRule: { select: { name: true } } },
         },
-      })
+        items: {
+          where: { deletedAt: null, status: 'active' },
+          include: { modifiers: true },
+        },
+      }, tx)
 
       if (!order) {
         return NextResponse.json(

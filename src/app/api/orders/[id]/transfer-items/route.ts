@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -9,6 +10,7 @@ import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { getRequestLocationId } from '@/lib/request-context'
 
 interface TransferItemsRequest {
   toOrderId: string
@@ -41,21 +43,26 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Bootstrap: lightweight fetch for locationId
-    const fromCheck = await adminDb.order.findFirst({
-      where: { id: fromOrderId },
-      select: { id: true, locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let fromLocationId = getRequestLocationId()
+    if (!fromLocationId) {
+      // Bootstrap: lightweight fetch for locationId
+      const fromCheck = await adminDb.order.findFirst({
+        where: { id: fromOrderId },
+        select: { id: true, locationId: true },
+      })
 
-    if (!fromCheck) {
-      return NextResponse.json(
-        { error: 'Source order not found' },
-        { status: 404 }
-      )
+      if (!fromCheck) {
+        return NextResponse.json(
+          { error: 'Source order not found' },
+          { status: 404 }
+        )
+      }
+      fromLocationId = fromCheck.locationId
     }
 
     // Get source order with location for tax rate
-    const fromOrder = await OrderRepository.getOrderByIdWithInclude(fromOrderId, fromCheck.locationId, {
+    const fromOrder = await OrderRepository.getOrderByIdWithInclude(fromOrderId, fromLocationId, {
       location: true,
       items: {
         where: { id: { in: itemIds } },
@@ -141,10 +148,9 @@ export const POST = withVenue(async function POST(
       })
 
       // Update MenuItem.currentOrderId for transferred timed_rental items
-      const transferredItems = await tx.orderItem.findMany({
-        where: { id: { in: itemIds }, orderId: toOrderId },
-        include: { menuItem: { select: { id: true, itemType: true } } },
-      })
+      const transferredItems = await OrderItemRepository.getItemsByIdsWithInclude(itemIds, fromOrder.locationId, {
+        menuItem: { select: { id: true, itemType: true } },
+      }, tx)
 
       for (const item of transferredItems) {
         if (item.menuItem?.itemType === 'timed_rental') {
@@ -160,10 +166,7 @@ export const POST = withVenue(async function POST(
       }
 
       // Update destination order totals
-      const destItems = await tx.orderItem.findMany({
-        where: { orderId: toOrderId },
-        include: { modifiers: true },
-      })
+      const destItems = await OrderItemRepository.getItemsForOrderWithModifiers(toOrderId, fromOrder.locationId, tx)
 
       let newSubtotal = 0
       for (const item of destItems) {
@@ -198,10 +201,7 @@ export const POST = withVenue(async function POST(
       }, tx)
 
       // Update source order totals
-      const sourceItems = await tx.orderItem.findMany({
-        where: { orderId: fromOrderId },
-        include: { modifiers: true },
-      })
+      const sourceItems = await OrderItemRepository.getItemsForOrderWithModifiers(fromOrderId, fromOrder.locationId, tx)
 
       let sourceSubtotal = 0
       for (const item of sourceItems) {

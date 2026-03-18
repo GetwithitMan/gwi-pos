@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
@@ -65,27 +66,24 @@ export const POST = withVenue(withTiming(async function POST(
     timing.start('db-fetch')
     const order = await db.$transaction(async (tx) => {
       // Lock the order row — any concurrent send will block here until we commit
-      const [locked] = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-        `SELECT id FROM "Order" WHERE id = $1 AND "deletedAt" IS NULL FOR UPDATE`,
+      const [locked] = await tx.$queryRawUnsafe<Array<{ id: string; locationId: string }>>(
+        `SELECT id, "locationId" FROM "Order" WHERE id = $1 AND "deletedAt" IS NULL FOR UPDATE`,
         id,
       )
       if (!locked) return null
 
-      return tx.order.findFirst({
-        where: { id, deletedAt: null },
-        include: {
-          table: { select: { id: true, name: true, abbreviation: true } },
-          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
-          items: {
-            where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
-            include: {
-              menuItem: {
-                select: { id: true, name: true, itemType: true, blockTimeMinutes: true, fulfillmentType: true, fulfillmentStationId: true }
-              }
+      return OrderRepository.getOrderByIdWithInclude(id, locked.locationId, {
+        table: { select: { id: true, name: true, abbreviation: true } },
+        employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+        items: {
+          where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
+          include: {
+            menuItem: {
+              select: { id: true, name: true, itemType: true, blockTimeMinutes: true, fulfillmentType: true, fulfillmentStationId: true }
             }
           }
         }
-      })
+      }, tx)
     })
 
     timing.end('db-fetch', 'Fetch order (locked)')
@@ -210,24 +208,18 @@ export const POST = withVenue(withTiming(async function POST(
 
       // Batch update regular items
       if (regularItemIds.length > 0) {
-        await tx.orderItem.updateMany({
-          where: { id: { in: regularItemIds } },
-          data: { kitchenStatus: 'sent', firedAt: now },
-        })
+        await OrderItemRepository.updateItemsByIds(regularItemIds, order.locationId, { kitchenStatus: 'sent', firedAt: now }, tx)
       }
 
       // Batch update entertainment items with sessions
       if (entertainmentUpdates.length > 0) {
         for (const { itemId, sessionEnd } of entertainmentUpdates) {
-          await tx.orderItem.update({
-            where: { id: itemId },
-            data: {
-              kitchenStatus: 'sent',
-              firedAt: now,
-              blockTimeStartedAt: now,
-              blockTimeExpiresAt: sessionEnd,
-            },
-          })
+          await OrderItemRepository.updateItem(itemId, order.locationId, {
+            kitchenStatus: 'sent',
+            firedAt: now,
+            blockTimeStartedAt: now,
+            blockTimeExpiresAt: sessionEnd,
+          }, tx)
         }
       }
 

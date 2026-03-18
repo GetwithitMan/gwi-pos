@@ -3,6 +3,7 @@ import { db, adminDb } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { PaymentRepository } from '@/lib/repositories'
 
 // POST - Create a chargeback case (manual entry for now)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -76,10 +77,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Mark matched payment as needing reconciliation
       if (matchedPaymentId) {
-        await tx.payment.update({
-          where: { id: matchedPaymentId },
-          data: { needsReconciliation: true },
-        })
+        await PaymentRepository.updatePayment(matchedPaymentId, locationId, { needsReconciliation: true }, tx)
       }
 
       // Create audit log for chargeback
