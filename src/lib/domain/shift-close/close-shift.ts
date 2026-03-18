@@ -9,6 +9,7 @@ import type { TxClient, ShiftCloseInput, ShiftCloseResult } from './types'
 import { processTipDistribution, autoProcessTipDistribution } from './tip-distribution'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 export async function closeShift(
   tx: TxClient,
@@ -74,6 +75,13 @@ export async function closeShift(
           },
           data: { employeeId: requestingEmployeeId },
         })
+
+        // Phase 2: Emit ORDER_METADATA_UPDATED for each transferred order
+        for (const transferredOrder of ordersToTransfer) {
+          void emitOrderEvent(locationId, transferredOrder.id, 'ORDER_METADATA_UPDATED', {
+            employeeId: requestingEmployeeId,
+          })
+        }
       } else {
         throw new Error(`OPEN_ORDERS:${openOrderCount}`)
       }

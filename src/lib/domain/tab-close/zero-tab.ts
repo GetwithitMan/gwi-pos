@@ -7,6 +7,7 @@
 
 import type { TxClient, ZeroTabReleaseResult } from './types'
 import { enableSyncReplication } from '@/lib/db-helpers'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 /**
  * Record zero-tab release results in the database.
@@ -21,6 +22,7 @@ export async function recordZeroTabResult(
   tx: TxClient,
   orderId: string,
   releaseResults: ZeroTabReleaseResult[],
+  locationId: string,
 ): Promise<void> {
   await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
   await enableSyncReplication(tx)
@@ -50,6 +52,11 @@ export async function recordZeroTabResult(
         version: { increment: 1 },
       },
     })
+
+    // Phase 2: Emit ORDER_CLOSED event alongside direct write
+    void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
+      closedStatus: 'voided',
+    })
   } else {
     // Partial or full failure — revert to 'open' for retry.
     // C6 FIX: Do NOT revert to 'open' because released cards are already gone.
@@ -61,6 +68,11 @@ export async function recordZeroTabResult(
         tabStatus: 'open',
         version: { increment: 1 },
       },
+    })
+
+    // Phase 2: Emit ORDER_REOPENED event alongside direct write
+    void emitOrderEvent(locationId, orderId, 'ORDER_REOPENED', {
+      reason: 'card_release_partial_failure',
     })
   }
 }

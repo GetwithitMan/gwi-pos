@@ -11,6 +11,7 @@ import { calculateItemTotal } from '@/lib/order-calculations'
 import { getBestPricingRuleForItem } from '@/lib/settings'
 import type { PricingRule, PricingAdjustment } from '@/lib/settings'
 import { validateSpiritTier, validatePourMultiplier } from '@/lib/liquor-validation'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // ─── Create Order Item ──────────────────────────────────────────────────────
 
@@ -217,6 +218,40 @@ export async function createOrderItem(
     },
   })
 
+  // Phase 2 server hardening: emit ITEM_ADDED alongside the direct write.
+  // Fire-and-forget — do NOT block the request on event persistence.
+  void emitOrderEvent(locationId, orderId, 'ITEM_ADDED', {
+    lineItemId: createdItem.id,
+    menuItemId: createdItem.menuItemId,
+    name: createdItem.name,
+    priceCents: Math.round(Number(createdItem.price) * 100),
+    quantity: createdItem.quantity,
+    isTaxInclusive: createdItem.isTaxInclusive ?? false,
+    modifiersJson: createdItem.modifiers?.length
+      ? JSON.stringify(createdItem.modifiers)
+      : null,
+    specialNotes: createdItem.specialNotes ?? null,
+    seatNumber: createdItem.seatNumber ?? null,
+    courseNumber: createdItem.courseNumber ?? null,
+    isHeld: createdItem.isHeld || false,
+    soldByWeight: createdItem.soldByWeight || false,
+    weight: createdItem.weight ?? null,
+    weightUnit: createdItem.weightUnit ?? null,
+    unitPriceCents: createdItem.unitPrice != null
+      ? Math.round(Number(createdItem.unitPrice) * 100)
+      : null,
+    grossWeight: createdItem.grossWeight ?? null,
+    tareWeight: createdItem.tareWeight ?? null,
+    pricingOptionId: createdItem.pricingOptionId ?? null,
+    pricingOptionLabel: createdItem.pricingOptionLabel ?? null,
+    pourSize: createdItem.pourSize ?? null,
+    pourMultiplier: createdItem.pourMultiplier != null
+      ? Number(createdItem.pourMultiplier)
+      : null,
+  }, {
+    correlationId: item.correlationId ?? null,
+  }).catch(err => console.error('[item-operations] Failed to emit ITEM_ADDED:', err))
+
   return { ...createdItem, correlationId: item.correlationId }
 }
 
@@ -307,6 +342,20 @@ export async function softDeleteOrderItem(
   tx: TxClient,
   itemId: string
 ): Promise<void> {
+  // Fetch item details for event emission (orderId, locationId, active modifiers)
+  const itemForEvent = await tx.orderItem.findUnique({
+    where: { id: itemId },
+    select: {
+      id: true,
+      orderId: true,
+      locationId: true,
+      modifiers: {
+        where: { deletedAt: null },
+        select: { id: true, modifierId: true, name: true },
+      },
+    },
+  })
+
   const now = new Date()
   await tx.orderItemModifier.updateMany({
     where: { orderItemId: itemId },
@@ -316,6 +365,28 @@ export async function softDeleteOrderItem(
     where: { id: itemId },
     data: { deletedAt: now, status: 'removed' },
   })
+
+  // Phase 2 server hardening: emit events alongside the direct writes.
+  // Fire-and-forget — do NOT block the request on event persistence.
+  if (itemForEvent) {
+    const { orderId, locationId, modifiers } = itemForEvent
+
+    // Emit ITEM_MODIFIER_REMOVED for each active modifier being soft-deleted
+    for (const mod of modifiers) {
+      void emitOrderEvent(locationId, orderId, 'ITEM_MODIFIER_REMOVED', {
+        lineItemId: itemId,
+        modifierId: mod.modifierId ?? null,
+        modifierName: mod.name ?? null,
+        reason: 'item_removed',
+      }).catch(err => console.error('[item-operations] Failed to emit ITEM_MODIFIER_REMOVED:', err))
+    }
+
+    // Emit ITEM_REMOVED for the item itself
+    void emitOrderEvent(locationId, orderId, 'ITEM_REMOVED', {
+      lineItemId: itemId,
+      reason: null,
+    }).catch(err => console.error('[item-operations] Failed to emit ITEM_REMOVED:', err))
+  }
 }
 
 // ─── Fetch Active Modifier Total ────────────────────────────────────────────

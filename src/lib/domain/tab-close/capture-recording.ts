@@ -9,6 +9,7 @@
 
 import type { TxClient, CaptureFailureResult, CaptureSuccessInput } from './types'
 import { enableSyncReplication } from '@/lib/db-helpers'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 interface BarTabSettings {
   maxCaptureRetries?: number
@@ -28,6 +29,8 @@ export async function recordCaptureFailure(
   orderId: string,
   errorMessage: string,
   barTabSettings: BarTabSettings,
+  locationId: string,
+  employeeId: string,
 ): Promise<CaptureFailureResult> {
   await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
 
@@ -48,15 +51,31 @@ export async function recordCaptureFailure(
   })
 
   const maxRetries = barTabSettings.maxCaptureRetries ?? 5
+  const retryCount = updatedOrder?.captureRetryCount || 1
   const autoWalkout = barTabSettings.autoFlagWalkoutAfterDeclines ?? false
+
+  // Phase 2: Emit TAB_CAPTURE_DECLINED event alongside direct write
+  void emitOrderEvent(locationId, orderId, 'TAB_CAPTURE_DECLINED', {
+    employeeId,
+    errorMessage,
+    retryCount,
+    maxRetries,
+  })
+
   if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
     await tx.order.update({
       where: { id: orderId },
       data: { isWalkout: true, walkoutAt: new Date() },
     })
+
+    // Phase 2: Emit WALKOUT_MARKED event alongside direct write
+    void emitOrderEvent(locationId, orderId, 'WALKOUT_MARKED', {
+      reason: 'capture_max_retries_exceeded',
+      retryCount,
+    })
   }
 
-  return { retryCount: updatedOrder?.captureRetryCount || 1, maxRetries }
+  return { retryCount, maxRetries }
 }
 
 /**
@@ -172,6 +191,23 @@ export async function recordCaptureSuccess(
       data: { status: 'voided' },
     })
   }
+
+  // Phase 2: Emit PAYMENT_APPLIED event alongside direct write
+  void emitOrderEvent(input.locationId, input.orderId, 'PAYMENT_APPLIED', {
+    paymentId: createdPayment.id,
+    method: input.capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+    amountCents: Math.round(input.purchaseAmount * 100),
+    tipCents: Math.round(input.tipAmount * 100),
+    totalCents: Math.round(input.totalCaptured * 100),
+    cardBrand: input.capturedCard.cardType || null,
+    cardLast4: input.capturedCard.cardLast4 || null,
+    status: 'approved',
+  })
+
+  // Phase 2: Emit ORDER_CLOSED event alongside direct write
+  void emitOrderEvent(input.locationId, input.orderId, 'ORDER_CLOSED', {
+    closedStatus: 'paid',
+  })
 
   return createdPayment.id
 }

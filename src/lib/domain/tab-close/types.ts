@@ -5,7 +5,7 @@
  * No framework imports (NextRequest/NextResponse) — route-agnostic.
  */
 
-import type { Prisma } from '@prisma/client'
+import type { Prisma } from '@/generated/prisma/client'
 
 // ─── Transaction Client ─────────────────────────────────────────────────────
 
