@@ -196,12 +196,18 @@ function createPrismaClient(url?: string) {
           return query(args)
         },
         async findUnique({ model, args, query }) {
-          const result = await query(args) as any
+          // Defense-in-depth: post-read check for tenant models.
+          // Primary enforcement should be in repository/service methods
+          // with explicit tenant-scoped queries. This interceptor catches
+          // any unscoped findUnique that slips through.
+          const result = await query(args)
           if (result && TENANT_SCOPED_MODELS.has(model)) {
             const lid = await resolveTenantLocationId()
-            if (lid && result.locationId && result.locationId !== lid) {
-              console.log('[tenant-scope] MISMATCH', JSON.stringify({
-                model, operation: 'findUnique', expected: lid, actual: result.locationId,
+            const resultLocationId = (result as Record<string, unknown>).locationId as string | undefined
+            if (lid && resultLocationId && resultLocationId !== lid) {
+              console.error(JSON.stringify({
+                event: 'tenant_breach_detected', model, operation: 'findUnique',
+                expected: lid, actual: resultLocationId,
               }))
               return null
             }
@@ -209,12 +215,14 @@ function createPrismaClient(url?: string) {
           return result
         },
         async findUniqueOrThrow({ model, args, query }) {
-          const result = await query(args) as any
+          const result = await query(args)
           if (result && TENANT_SCOPED_MODELS.has(model)) {
             const lid = await resolveTenantLocationId()
-            if (lid && result.locationId && result.locationId !== lid) {
-              console.log('[tenant-scope] MISMATCH', JSON.stringify({
-                model, operation: 'findUniqueOrThrow', expected: lid, actual: result.locationId,
+            const resultLocationId = (result as Record<string, unknown>).locationId as string | undefined
+            if (lid && resultLocationId && resultLocationId !== lid) {
+              console.error(JSON.stringify({
+                event: 'tenant_breach_detected', model, operation: 'findUniqueOrThrow',
+                expected: lid, actual: resultLocationId,
               }))
               throw new Error(`[tenant-scope] ${model} record belongs to a different location`)
             }
@@ -238,14 +246,19 @@ function createPrismaClient(url?: string) {
         async groupBy({ model, args, query }) {
           const lid = await resolveTenantLocationId()
           if (lid && TENANT_SCOPED_MODELS.has(model)) {
-            (args as any).where = { ...(args as any).where, locationId: lid }
+            const existing = (args as Record<string, unknown>).where as Record<string, unknown> | undefined
+            ;(args as Record<string, unknown>).where = { ...existing, locationId: lid }
           }
           return query(args)
         },
         async update({ model, args, query }) {
+          // Defense-in-depth: inject locationId into update WHERE.
+          // Primary enforcement should be in repository methods that
+          // use composite where clauses (e.g., { id, locationId }).
           const lid = await resolveTenantLocationId()
           if (lid && TENANT_SCOPED_MODELS.has(model)) {
-            args.where = { ...args.where, locationId: lid } as any
+            const existing = args.where as Record<string, unknown>
+            args.where = { ...existing, locationId: lid } as typeof args.where
           }
           return query(args)
         },
@@ -259,7 +272,8 @@ function createPrismaClient(url?: string) {
         async delete({ model, args, query }) {
           const lid = await resolveTenantLocationId()
           if (lid && TENANT_SCOPED_MODELS.has(model)) {
-            args.where = { ...args.where, locationId: lid } as any
+            const existing = args.where as Record<string, unknown>
+            args.where = { ...existing, locationId: lid } as typeof args.where
           }
           return query(args)
         },

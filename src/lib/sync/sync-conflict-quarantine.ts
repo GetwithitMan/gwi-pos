@@ -14,6 +14,19 @@
  */
 
 import { masterClient } from '../db'
+import { parseBool } from '../env-parse'
+
+// ── Mode ─────────────────────────────────────────────────────────────────────
+// SYNC_QUARANTINE_MODE controls behavior when a conflict is detected:
+//   'log-only' (default) — record conflict, still apply neon-wins
+//   'blocking' — record conflict, skip upsert (quarantine the row)
+export type QuarantineMode = 'log-only' | 'blocking'
+
+function getQuarantineMode(): QuarantineMode {
+  const raw = process.env.SYNC_QUARANTINE_MODE
+  if (raw === 'blocking') return 'blocking'
+  return 'log-only'
+}
 
 // ── Protected models ─────────────────────────────────────────────────────────
 // All bidirectional models with money impact
@@ -122,7 +135,8 @@ export async function checkQuarantine(
   // ── CONFLICT DETECTED ──────────────────────────────────────────────────
   // Local row changed since last sync, and cloud version is not newer.
 
-  // Log the quarantine record
+  const mode = getQuarantineMode()
+
   console.warn(JSON.stringify({
     event: 'sync_conflict_quarantine',
     model,
@@ -131,7 +145,7 @@ export async function checkQuarantine(
     localUpdatedAt: localUpdatedAt.toISOString(),
     cloudUpdatedAt: incomingUpdatedAt.toISOString(),
     watermark: watermark.toISOString(),
-    mode: 'log-only', // v1: log but still apply neon-wins
+    mode,
     timestamp: new Date().toISOString(),
   }))
 
@@ -152,8 +166,9 @@ export async function checkQuarantine(
     console.error('[SyncQuarantine] Failed to persist conflict record:', err instanceof Error ? err.message : err)
   }
 
-  // v1: Log-only — still apply neon-wins
-  return 'apply'
+  // In blocking mode, skip the downstream upsert — row is quarantined.
+  // In log-only mode, record the conflict but still apply neon-wins.
+  return mode === 'blocking' ? 'quarantine' : 'apply'
 }
 
 // ── Metrics ──────────────────────────────────────────────────────────────────
