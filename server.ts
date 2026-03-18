@@ -263,10 +263,16 @@ async function main() {
       verifySchema()
     ).catch(console.error)
 
-    // Tenant model set validation (non-blocking)
+    // Tenant model set validation — fatal in production, warning in dev
     void import('./src/lib/tenant-validation').then(({ validateTenantModelSets }) =>
-      validateTenantModelSets(masterClient)
-    ).catch(console.error)
+      validateTenantModelSets(masterClient, { failOnStale: config.isProduction })
+    ).then(undefined, (err) => {
+      console.error('[Server] Tenant model set validation failed:', err instanceof Error ? err.message : err)
+      if (config.isProduction) {
+        console.error('[Server] FATAL: Cannot start with stale tenant model registry in production')
+        process.exit(1)
+      }
+    })
 
     startCloudEventWorker()
     startEodScheduler()

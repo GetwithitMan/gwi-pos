@@ -8,6 +8,9 @@
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { OrderClosedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 export interface CleanupResult {
   closedCount: number
@@ -66,24 +69,54 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
 
   const now = new Date()
   const ids = emptyStaleOrders.map(o => o.id)
+  const reason = `Auto-cancelled: stale $0 draft (older than ${maxAgeHours}h)`
 
-  const result = await db.order.updateMany({
-    where: { id: { in: ids } },
-    data: {
-      status: 'cancelled',
-      closedAt: now,
-      deletedAt: now,
-      notes: `Auto-cancelled: stale $0 draft (older than ${maxAgeHours}h)`,
-    },
+  // Wrap DB mutation + socket outbox in a single transaction for crash safety.
+  // If the process crashes after commit, SocketEventLog rows survive and
+  // flushAllPendingOutbox() picks them up on restart.
+  const result = await db.$transaction(async (tx) => {
+    const updated = await tx.order.updateMany({
+      where: { id: { in: ids } },
+      data: {
+        status: 'cancelled',
+        closedAt: now,
+        deletedAt: now,
+        notes: reason,
+      },
+    })
+
+    // Queue socket events inside the transaction (outbox pattern)
+    for (const id of ids) {
+      const closedPayload: OrderClosedPayload = {
+        orderId: id,
+        status: 'cancelled',
+        closedAt: now.toISOString(),
+        closedByEmployeeId: null,
+        locationId,
+      }
+      await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_CLOSED, closedPayload)
+
+      const listPayload: OrdersListChangedPayload = { trigger: 'cancelled', orderId: id }
+      await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+    }
+
+    return updated
   })
 
   logger.log(`[cleanup-stale-orders] Closed ${result.count} stale draft orders for location ${locationId}`)
 
-  // Emit ORDER_CLOSED events for each cancelled order (fire-and-forget)
+  // Flush outbox after commit — best-effort, catch-up handles failures
+  void flushSocketOutbox(locationId).catch((err) => {
+    console.warn('[cleanup-stale-orders] Outbox flush failed, catch-up will deliver:', err)
+  })
+
+  // Emit event-sourced ORDER_CLOSED events (awaited for reliability, errors logged)
   for (const id of ids) {
-    void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+    await emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
       closedStatus: 'cancelled',
-      reason: `Auto-cancelled: stale $0 draft (older than ${maxAgeHours}h)`,
+      reason,
+    }).catch((err) => {
+      console.error(`[cleanup-stale-orders] Failed to emit ORDER_CLOSED event for order ${id}:`, err)
     })
   }
 

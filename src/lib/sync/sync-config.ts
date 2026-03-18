@@ -37,7 +37,7 @@ export interface SyncModelConfig {
  *   - Downstream: rows WHERE lastMutatedBy = 'cloud' (cloud-originated)
  * None: local-only or special handling
  */
-export const SYNC_MODELS: Record<string, SyncModelConfig> = {
+export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   // ── Bidirectional (NUC ↔ Neon, filtered by lastMutatedBy) ─────────────
   Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 50, conflictStrategy: 'neon-wins' },
   OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 50, conflictStrategy: 'neon-wins' },
@@ -80,88 +80,88 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   Break:                      { direction: 'upstream', owner: 'nuc', priority: 41, batchSize: 100 },
 
   // ── Cloud-owned (downstream: Neon → NUC) ──────────────────────────────
-  Organization:           { direction: 'downstream', owner: 'cloud', priority: 1, batchSize: 10 },
-  Location:               { direction: 'downstream', owner: 'cloud', priority: 2, batchSize: 10 },
-  Role:                   { direction: 'downstream', owner: 'cloud', priority: 3, batchSize: 50 },
-  EmployeeRole:           { direction: 'downstream', owner: 'cloud', priority: 4, batchSize: 50 },
-  Employee:               { direction: 'downstream', owner: 'cloud', priority: 5, batchSize: 100 },
-  Category:               { direction: 'downstream', owner: 'cloud', priority: 6, batchSize: 100, businessKey: ['locationId', 'name'] },
-  MenuItem:               { direction: 'downstream', owner: 'cloud', priority: 7, batchSize: 100, businessKey: ['categoryId', 'name'] },
-  ModifierGroup:          { direction: 'downstream', owner: 'cloud', priority: 8, batchSize: 100, businessKey: ['locationId', 'name'] },
-  Modifier:               { direction: 'downstream', owner: 'cloud', priority: 9, batchSize: 100, businessKey: ['modifierGroupId', 'name'] },
-  Table:                  { direction: 'downstream', owner: 'cloud', priority: 10, batchSize: 100, businessKey: ['locationId', 'name'] },
-  Section:                { direction: 'downstream', owner: 'cloud', priority: 11, batchSize: 50, businessKey: ['locationId', 'name'] },
-  OrderType:              { direction: 'downstream', owner: 'cloud', priority: 12, batchSize: 50 },
-  Printer:                { direction: 'downstream', owner: 'cloud', priority: 13, batchSize: 50 },
-  PrintRoute:             { direction: 'downstream', owner: 'cloud', priority: 14, batchSize: 50 },
-  PrintRule:              { direction: 'downstream', owner: 'cloud', priority: 15, batchSize: 50 },
-  KDSScreen:              { direction: 'downstream', owner: 'cloud', priority: 16, batchSize: 50 },
-  KDSScreenStation:       { direction: 'downstream', owner: 'cloud', priority: 17, batchSize: 50 },
-  Terminal:               { direction: 'downstream', owner: 'cloud', priority: 18, batchSize: 50 },
-  PaymentReader:          { direction: 'downstream', owner: 'cloud', priority: 19, batchSize: 50 },
-  Scale:                  { direction: 'downstream', owner: 'cloud', priority: 20, batchSize: 10 },
-  Station:                { direction: 'downstream', owner: 'cloud', priority: 21, batchSize: 50 },
-  PricingOptionGroup:     { direction: 'downstream', owner: 'cloud', priority: 22, batchSize: 100 },
-  PricingOption:          { direction: 'downstream', owner: 'cloud', priority: 23, batchSize: 100 },
-  CourseConfig:           { direction: 'downstream', owner: 'cloud', priority: 24, batchSize: 50 },
-  Customer:               { direction: 'downstream', owner: 'cloud', priority: 25, batchSize: 100 },
-  Coupon:                 { direction: 'downstream', owner: 'cloud', priority: 26, batchSize: 50 },
-  DiscountRule:           { direction: 'downstream', owner: 'cloud', priority: 27, batchSize: 50 },
-  GiftCard:               { direction: 'downstream', owner: 'cloud', priority: 28, batchSize: 100 },
-  HouseAccount:           { direction: 'downstream', owner: 'cloud', priority: 29, batchSize: 50 },
-  Vendor:                 { direction: 'downstream', owner: 'cloud', priority: 30, batchSize: 50 },
-  InventoryItem:          { direction: 'downstream', owner: 'cloud', priority: 31, batchSize: 100 },
-  InventoryItemStorage:   { direction: 'downstream', owner: 'cloud', priority: 32, batchSize: 100 },
-  Ingredient:             { direction: 'downstream', owner: 'cloud', priority: 33, batchSize: 100 },
-  IngredientCategory:     { direction: 'downstream', owner: 'cloud', priority: 34, batchSize: 50 },
-  MenuItemRecipe:         { direction: 'downstream', owner: 'cloud', priority: 35, batchSize: 100 },
-  ComboTemplate:          { direction: 'downstream', owner: 'cloud', priority: 36, batchSize: 50 },
-  ComboComponent:         { direction: 'downstream', owner: 'cloud', priority: 37, batchSize: 50 },
-  ComboComponentOption:   { direction: 'downstream', owner: 'cloud', priority: 38, batchSize: 50 },
-  ModifierGroupTemplate:  { direction: 'downstream', owner: 'cloud', priority: 39, batchSize: 50 },
-  ModifierTemplate:       { direction: 'downstream', owner: 'cloud', priority: 40, batchSize: 50 },
-  ModifierInventoryLink:  { direction: 'downstream', owner: 'cloud', priority: 41, batchSize: 50 },
-  PrepStation:            { direction: 'downstream', owner: 'cloud', priority: 42, batchSize: 50 },
-  PrepTrayConfig:         { direction: 'downstream', owner: 'cloud', priority: 43, batchSize: 50 },
-  TaxRule:                { direction: 'downstream', owner: 'cloud', priority: 44, batchSize: 50 },
-  SectionAssignment:      { direction: 'downstream', owner: 'cloud', priority: 45, batchSize: 50 },
-  BergDevice:             { direction: 'downstream', owner: 'cloud', priority: 46, batchSize: 50 },
-  BergPluMapping:         { direction: 'downstream', owner: 'cloud', priority: 47, batchSize: 100 },
-  BottleProduct:          { direction: 'bidirectional', owner: 'both', priority: 48, batchSize: 100 },
-  Invoice:                { direction: 'downstream', owner: 'cloud', priority: 49, batchSize: 100 },
-  InvoiceLineItem:        { direction: 'downstream', owner: 'cloud', priority: 50, batchSize: 100 },
-  Schedule:               { direction: 'downstream', owner: 'cloud', priority: 51, batchSize: 50 },
-  ScheduledShift:         { direction: 'downstream', owner: 'cloud', priority: 52, batchSize: 100 },
-  Event:                  { direction: 'downstream', owner: 'cloud', priority: 53, batchSize: 100 },
-  EventPricingTier:       { direction: 'downstream', owner: 'cloud', priority: 54, batchSize: 50 },
-  EventTableConfig:       { direction: 'downstream', owner: 'cloud', priority: 55, batchSize: 50 },
-  Reservation:            { direction: 'downstream', owner: 'cloud', priority: 56, batchSize: 100 },
-  ItemBarcode:            { direction: 'downstream', owner: 'cloud', priority: 57, batchSize: 100 },
-  VoidReason:             { direction: 'downstream', owner: 'cloud', priority: 58, batchSize: 50 },
-  CompReason:             { direction: 'downstream', owner: 'cloud', priority: 59, batchSize: 50 },
-  FloorPlanElement:       { direction: 'downstream', owner: 'cloud', priority: 60, batchSize: 100 },
-  EntertainmentWaitlist:  { direction: 'downstream', owner: 'cloud', priority: 61, batchSize: 100 },
-  StorageLocation:        { direction: 'downstream', owner: 'cloud', priority: 62, batchSize: 50 },
-  PrepItem:               { direction: 'downstream', owner: 'cloud', priority: 63, batchSize: 100 },
-  PrepItemIngredient:     { direction: 'downstream', owner: 'cloud', priority: 64, batchSize: 100 },
-  PricingOptionInventoryLink: { direction: 'downstream', owner: 'cloud', priority: 65, batchSize: 100 },
-  SpiritCategory:         { direction: 'bidirectional', owner: 'both', priority: 66, batchSize: 50 },
-  SpiritModifierGroup:    { direction: 'bidirectional', owner: 'both', priority: 67, batchSize: 50 },
-  InventorySettings:      { direction: 'downstream', owner: 'cloud', priority: 68, batchSize: 10 },
-  CfdSettings:            { direction: 'downstream', owner: 'cloud', priority: 69, batchSize: 10 },
+  Organization:           { direction: 'downstream', owner: 'cloud', priority: 201, batchSize: 10 },
+  Location:               { direction: 'downstream', owner: 'cloud', priority: 202, batchSize: 10 },
+  Role:                   { direction: 'downstream', owner: 'cloud', priority: 203, batchSize: 50 },
+  EmployeeRole:           { direction: 'downstream', owner: 'cloud', priority: 204, batchSize: 50 },
+  Employee:               { direction: 'downstream', owner: 'cloud', priority: 205, batchSize: 100 },
+  Category:               { direction: 'downstream', owner: 'cloud', priority: 206, batchSize: 100, businessKey: ['locationId', 'name'] },
+  MenuItem:               { direction: 'downstream', owner: 'cloud', priority: 207, batchSize: 100, businessKey: ['categoryId', 'name'] },
+  ModifierGroup:          { direction: 'downstream', owner: 'cloud', priority: 208, batchSize: 100, businessKey: ['locationId', 'name'] },
+  Modifier:               { direction: 'downstream', owner: 'cloud', priority: 209, batchSize: 100, businessKey: ['modifierGroupId', 'name'] },
+  Table:                  { direction: 'downstream', owner: 'cloud', priority: 210, batchSize: 100, businessKey: ['locationId', 'name'] },
+  Section:                { direction: 'downstream', owner: 'cloud', priority: 211, batchSize: 50, businessKey: ['locationId', 'name'] },
+  OrderType:              { direction: 'downstream', owner: 'cloud', priority: 212, batchSize: 50 },
+  Printer:                { direction: 'downstream', owner: 'cloud', priority: 213, batchSize: 50 },
+  PrintRoute:             { direction: 'downstream', owner: 'cloud', priority: 214, batchSize: 50 },
+  PrintRule:              { direction: 'downstream', owner: 'cloud', priority: 215, batchSize: 50 },
+  KDSScreen:              { direction: 'downstream', owner: 'cloud', priority: 216, batchSize: 50 },
+  KDSScreenStation:       { direction: 'downstream', owner: 'cloud', priority: 217, batchSize: 50 },
+  Terminal:               { direction: 'downstream', owner: 'cloud', priority: 218, batchSize: 50 },
+  PaymentReader:          { direction: 'downstream', owner: 'cloud', priority: 219, batchSize: 50 },
+  Scale:                  { direction: 'downstream', owner: 'cloud', priority: 220, batchSize: 10 },
+  Station:                { direction: 'downstream', owner: 'cloud', priority: 221, batchSize: 50 },
+  PricingOptionGroup:     { direction: 'downstream', owner: 'cloud', priority: 222, batchSize: 100 },
+  PricingOption:          { direction: 'downstream', owner: 'cloud', priority: 223, batchSize: 100 },
+  CourseConfig:           { direction: 'downstream', owner: 'cloud', priority: 224, batchSize: 50 },
+  Customer:               { direction: 'downstream', owner: 'cloud', priority: 225, batchSize: 100 },
+  Coupon:                 { direction: 'downstream', owner: 'cloud', priority: 226, batchSize: 50 },
+  DiscountRule:           { direction: 'downstream', owner: 'cloud', priority: 227, batchSize: 50 },
+  GiftCard:               { direction: 'downstream', owner: 'cloud', priority: 228, batchSize: 100 },
+  HouseAccount:           { direction: 'downstream', owner: 'cloud', priority: 229, batchSize: 50 },
+  Vendor:                 { direction: 'downstream', owner: 'cloud', priority: 230, batchSize: 50 },
+  InventoryItem:          { direction: 'downstream', owner: 'cloud', priority: 231, batchSize: 100 },
+  InventoryItemStorage:   { direction: 'downstream', owner: 'cloud', priority: 232, batchSize: 100 },
+  Ingredient:             { direction: 'downstream', owner: 'cloud', priority: 233, batchSize: 100 },
+  IngredientCategory:     { direction: 'downstream', owner: 'cloud', priority: 234, batchSize: 50 },
+  MenuItemRecipe:         { direction: 'downstream', owner: 'cloud', priority: 235, batchSize: 100 },
+  ComboTemplate:          { direction: 'downstream', owner: 'cloud', priority: 236, batchSize: 50 },
+  ComboComponent:         { direction: 'downstream', owner: 'cloud', priority: 237, batchSize: 50 },
+  ComboComponentOption:   { direction: 'downstream', owner: 'cloud', priority: 238, batchSize: 50 },
+  ModifierGroupTemplate:  { direction: 'downstream', owner: 'cloud', priority: 239, batchSize: 50 },
+  ModifierTemplate:       { direction: 'downstream', owner: 'cloud', priority: 240, batchSize: 50 },
+  ModifierInventoryLink:  { direction: 'downstream', owner: 'cloud', priority: 241, batchSize: 50 },
+  PrepStation:            { direction: 'downstream', owner: 'cloud', priority: 242, batchSize: 50 },
+  PrepTrayConfig:         { direction: 'downstream', owner: 'cloud', priority: 243, batchSize: 50 },
+  TaxRule:                { direction: 'downstream', owner: 'cloud', priority: 244, batchSize: 50 },
+  SectionAssignment:      { direction: 'downstream', owner: 'cloud', priority: 245, batchSize: 50 },
+  BergDevice:             { direction: 'downstream', owner: 'cloud', priority: 246, batchSize: 50 },
+  BergPluMapping:         { direction: 'downstream', owner: 'cloud', priority: 247, batchSize: 100 },
+  BottleProduct:          { direction: 'bidirectional', owner: 'both', priority: 33, batchSize: 100 },
+  Invoice:                { direction: 'downstream', owner: 'cloud', priority: 249, batchSize: 100 },
+  InvoiceLineItem:        { direction: 'downstream', owner: 'cloud', priority: 250, batchSize: 100 },
+  Schedule:               { direction: 'downstream', owner: 'cloud', priority: 251, batchSize: 50 },
+  ScheduledShift:         { direction: 'downstream', owner: 'cloud', priority: 252, batchSize: 100 },
+  Event:                  { direction: 'downstream', owner: 'cloud', priority: 253, batchSize: 100 },
+  EventPricingTier:       { direction: 'downstream', owner: 'cloud', priority: 254, batchSize: 50 },
+  EventTableConfig:       { direction: 'downstream', owner: 'cloud', priority: 255, batchSize: 50 },
+  Reservation:            { direction: 'downstream', owner: 'cloud', priority: 256, batchSize: 100 },
+  ItemBarcode:            { direction: 'downstream', owner: 'cloud', priority: 257, batchSize: 100 },
+  VoidReason:             { direction: 'downstream', owner: 'cloud', priority: 258, batchSize: 50 },
+  CompReason:             { direction: 'downstream', owner: 'cloud', priority: 259, batchSize: 50 },
+  FloorPlanElement:       { direction: 'downstream', owner: 'cloud', priority: 260, batchSize: 100 },
+  EntertainmentWaitlist:  { direction: 'downstream', owner: 'cloud', priority: 261, batchSize: 100 },
+  StorageLocation:        { direction: 'downstream', owner: 'cloud', priority: 262, batchSize: 50 },
+  PrepItem:               { direction: 'downstream', owner: 'cloud', priority: 263, batchSize: 100 },
+  PrepItemIngredient:     { direction: 'downstream', owner: 'cloud', priority: 264, batchSize: 100 },
+  PricingOptionInventoryLink: { direction: 'downstream', owner: 'cloud', priority: 265, batchSize: 100 },
+  SpiritCategory:         { direction: 'bidirectional', owner: 'both', priority: 34, batchSize: 50 },
+  SpiritModifierGroup:    { direction: 'bidirectional', owner: 'both', priority: 37, batchSize: 50 },
+  InventorySettings:      { direction: 'downstream', owner: 'cloud', priority: 268, batchSize: 10 },
+  CfdSettings:            { direction: 'downstream', owner: 'cloud', priority: 269, batchSize: 10 },
 
   // ── Liquor Builder + Spirit Upgrades (NUC → Neon) ────────────────────
   // SpiritCategory, BottleProduct, SpiritModifierGroup moved to bidirectional above
-  SpiritUpsellEvent:      { direction: 'upstream', owner: 'nuc', priority: 73, batchSize: 100 },
+  SpiritUpsellEvent:      { direction: 'upstream', owner: 'nuc', priority: 140, batchSize: 100 },
 
   // ── Pizza Builder (NUC → Neon) ──────────────────────────────────────
-  PizzaConfig:            { direction: 'upstream', owner: 'nuc', priority: 74, batchSize: 10 },
-  PizzaSize:              { direction: 'upstream', owner: 'nuc', priority: 75, batchSize: 50 },
-  PizzaCrust:             { direction: 'upstream', owner: 'nuc', priority: 76, batchSize: 50 },
-  PizzaSauce:             { direction: 'upstream', owner: 'nuc', priority: 77, batchSize: 50 },
-  PizzaCheese:            { direction: 'upstream', owner: 'nuc', priority: 78, batchSize: 50 },
-  PizzaTopping:           { direction: 'upstream', owner: 'nuc', priority: 79, batchSize: 100 },
-  PizzaSpecialty:         { direction: 'upstream', owner: 'nuc', priority: 80, batchSize: 50 },
+  PizzaConfig:            { direction: 'upstream', owner: 'nuc', priority: 141, batchSize: 10 },
+  PizzaSize:              { direction: 'upstream', owner: 'nuc', priority: 142, batchSize: 50 },
+  PizzaCrust:             { direction: 'upstream', owner: 'nuc', priority: 143, batchSize: 50 },
+  PizzaSauce:             { direction: 'upstream', owner: 'nuc', priority: 144, batchSize: 50 },
+  PizzaCheese:            { direction: 'upstream', owner: 'nuc', priority: 145, batchSize: 50 },
+  PizzaTopping:           { direction: 'upstream', owner: 'nuc', priority: 146, batchSize: 100 },
+  PizzaSpecialty:         { direction: 'upstream', owner: 'nuc', priority: 147, batchSize: 50 },
 
   // ── Tips + Payroll (NUC → Neon) ─────────────────────────────────────
   PaidInOut:              { direction: 'upstream', owner: 'nuc', priority: 81, batchSize: 100 },
@@ -226,9 +226,9 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   CakeOrderChange:        { direction: 'upstream', owner: 'nuc', priority: 126, batchSize: 200 },
 
   // ── Misc Config (downstream — cloud-owned) ─────────────────────────
-  ReasonAccess:           { direction: 'downstream', owner: 'cloud', priority: 70, batchSize: 50 },
-  QuickBarPreference:     { direction: 'downstream', owner: 'cloud', priority: 71, batchSize: 50 },
-  QuickBarDefault:        { direction: 'downstream', owner: 'cloud', priority: 72, batchSize: 50 },
+  ReasonAccess:           { direction: 'downstream', owner: 'cloud', priority: 270, batchSize: 50 },
+  QuickBarPreference:     { direction: 'downstream', owner: 'cloud', priority: 271, batchSize: 50 },
+  QuickBarDefault:        { direction: 'downstream', owner: 'cloud', priority: 272, batchSize: 50 },
 
   // ── Operational Logs (NUC → Neon, lower priority) ───────────────────
   VenueLog:               { direction: 'upstream', owner: 'nuc', priority: 130, batchSize: 100 },
@@ -250,12 +250,19 @@ export const SYNC_MODELS: Record<string, SyncModelConfig> = {
   BridgeCheckpoint:       { direction: 'none', owner: 'nuc', priority: 81, batchSize: 10 },
   OutageQueueEntry:       { direction: 'none', owner: 'nuc', priority: 82, batchSize: 100 },
   SocketEventLog:         { direction: 'none', owner: 'nuc', priority: 83, batchSize: 0 },
-}
+} as const
+
+/**
+ * Effective runtime registry — starts as a shallow copy of SYNC_MODELS.
+ * validateSyncCoverage() may add auto-registered or local-only entries here.
+ * All getter functions read from this, never from SYNC_MODELS.
+ */
+let effectiveSyncModels: Record<string, SyncModelConfig> = { ...SYNC_MODELS }
 
 /** Return upstream models sorted by FK-dependency priority (lowest first).
  *  Includes bidirectional models (they sync upstream with lastMutatedBy filter). */
 export function getUpstreamModels(): [string, SyncModelConfig][] {
-  return Object.entries(SYNC_MODELS)
+  return Object.entries(effectiveSyncModels)
     .filter(([, c]) => c.direction === 'upstream' || c.direction === 'bidirectional')
     .sort(([, a], [, b]) => a.priority - b.priority)
 }
@@ -263,7 +270,7 @@ export function getUpstreamModels(): [string, SyncModelConfig][] {
 /** Return downstream models sorted by FK-dependency priority (lowest first).
  *  Includes bidirectional models (they sync downstream with lastMutatedBy filter). */
 export function getDownstreamModels(): [string, SyncModelConfig][] {
-  return Object.entries(SYNC_MODELS)
+  return Object.entries(effectiveSyncModels)
     .filter(([, c]) => c.direction === 'downstream' || c.direction === 'bidirectional')
     .sort(([, a], [, b]) => a.priority - b.priority)
 }
@@ -271,7 +278,7 @@ export function getDownstreamModels(): [string, SyncModelConfig][] {
 /** Return only bidirectional model names */
 export function getBidirectionalModelNames(): Set<string> {
   return new Set(
-    Object.entries(SYNC_MODELS)
+    Object.entries(effectiveSyncModels)
       .filter(([, c]) => c.direction === 'bidirectional')
       .map(([name]) => name)
   )
@@ -279,12 +286,12 @@ export function getBidirectionalModelNames(): Set<string> {
 
 /** Get the conflict resolution strategy for a model (default: 'neon-wins') */
 export function getConflictStrategy(model: string): ConflictStrategy {
-  return SYNC_MODELS[model]?.conflictStrategy ?? 'neon-wins'
+  return effectiveSyncModels[model]?.conflictStrategy ?? 'neon-wins'
 }
 
 /** Get the business key columns for a cloud-owned downstream model, if declared */
 export function getBusinessKey(model: string): string[] | undefined {
-  return SYNC_MODELS[model]?.businessKey
+  return effectiveSyncModels[model]?.businessKey
 }
 
 export const UPSTREAM_INTERVAL_MS = parseInt(
@@ -342,7 +349,10 @@ export async function validateSyncCoverage(
   )
 
   const actualTableNames = new Set(tables.map(t => t.table_name))
-  const configuredModels = new Set(Object.keys(SYNC_MODELS))
+  // Reset effective registry from the immutable canonical source each validation run
+  effectiveSyncModels = { ...SYNC_MODELS }
+
+  const configuredModels = new Set(Object.keys(effectiveSyncModels))
   const errors: string[] = []
 
   // ── 1. Check for unknown tables ─────────────────────────────────────
@@ -353,12 +363,12 @@ export async function validateSyncCoverage(
     if (configuredModels.has(table_name)) continue
 
     if (LOCAL_ONLY_TABLES.has(table_name)) {
-      // Known local-only — register silently
-      SYNC_MODELS[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
+      // Known local-only — register in effectiveSyncModels (never mutate SYNC_MODELS)
+      effectiveSyncModels[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
     } else if (allowAutoRegister) {
       // Dev auto-register with loud warning
-      const nextPriority = Math.max(...Object.values(SYNC_MODELS).map(c => c.priority)) + 1
-      SYNC_MODELS[table_name] = {
+      const nextPriority = Math.max(...Object.values(effectiveSyncModels).map(c => c.priority)) + 1
+      effectiveSyncModels[table_name] = {
         direction: 'upstream',
         owner: 'nuc',
         priority: nextPriority,
@@ -380,7 +390,7 @@ export async function validateSyncCoverage(
 
   // ── 3. Priority uniqueness for active models ───────────────────────
   const priorityMap = new Map<number, string[]>()
-  for (const [model, cfg] of Object.entries(SYNC_MODELS)) {
+  for (const [model, cfg] of Object.entries(effectiveSyncModels)) {
     if (cfg.direction === 'none' || cfg.priority === 0) continue
     const existing = priorityMap.get(cfg.priority) || []
     existing.push(model)
@@ -423,6 +433,6 @@ export async function validateSyncCoverage(
     console.warn(`[SYNC CONFIG] ⚠️  ${autoRegistered} table(s) auto-registered. Add them to sync-config.ts for permanent config.`)
   }
 
-  const totalSynced = Object.values(SYNC_MODELS).filter(c => c.direction !== 'none').length
-  console.log(`[SYNC CONFIG] ✓ ${totalSynced} tables syncing, ${Object.keys(SYNC_MODELS).length} total configured`)
+  const totalSynced = Object.values(effectiveSyncModels).filter(c => c.direction !== 'none').length
+  console.log(`[SYNC CONFIG] ✓ ${totalSynced} tables syncing, ${Object.keys(effectiveSyncModels).length} total configured`)
 }

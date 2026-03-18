@@ -38,9 +38,13 @@ export const NO_SOFT_DELETE_MODELS = new Set([
  * Validate that all model names in our sets actually exist in the database.
  * Call at boot. Logs warnings for stale entries (model removed from schema
  * but still listed here).
+ *
+ * @param options.failOnStale — When true (production/staging), throws if any
+ *   stale entries are found. When false (dev), logs a warning only.
  */
 export async function validateTenantModelSets(
-  db: { $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T> }
+  db: { $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T> },
+  options: { failOnStale?: boolean } = {}
 ): Promise<void> {
   try {
     const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
@@ -64,16 +68,25 @@ export async function validateTenantModelSets(
     }
 
     if (stale.length > 0) {
-      console.warn(
+      const msg =
         `[tenant-validation] ${stale.length} stale model(s) in validation sets — ` +
         `remove from tenant-validation.ts:\n  ${stale.join('\n  ')}`
-      )
+
+      if (options.failOnStale) {
+        throw new Error(msg)
+      }
+
+      console.warn(msg)
     } else {
       console.log(
         `[tenant-validation] ✓ All model sets valid (${TENANT_SCOPED_MODELS.size} tenant-scoped, ${NO_SOFT_DELETE_MODELS.size} no-soft-delete)`
       )
     }
   } catch (err) {
+    // Re-throw stale-entry errors so the caller (server.ts) can halt boot
+    if (options.failOnStale) {
+      throw err
+    }
     console.warn('[tenant-validation] Validation failed:', err instanceof Error ? err.message : err)
   }
 }

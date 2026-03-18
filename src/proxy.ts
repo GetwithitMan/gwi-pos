@@ -12,6 +12,10 @@ import {
 import { signTenantContext, hashBody } from '@/lib/tenant-context-signer'
 
 const GWI_ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
+// NOTE: proxy.ts runs in Next.js edge runtime where node:crypto is unavailable,
+// so we cannot import from @/lib/system-config (which uses randomBytes fallback).
+// These env reads are intentionally kept inline. with-venue.ts (Node runtime) uses
+// the typed config instead. Keep these two in sync with SystemConfig if renamed.
 const TENANT_JWT_ENABLED = process.env.TENANT_JWT_ENABLED === 'true'
 const TENANT_SIGNING_KEY = process.env.TENANT_SIGNING_KEY || ''
 
@@ -254,6 +258,11 @@ async function signAndAttachTenantJwt(
       TENANT_SIGNING_KEY,
     )
     headers.set('x-tenant-context', jwt)
+    // Pass body digest as a trusted internal header so with-venue can verify
+    // the JWT's bodySha256 claim without re-reading the request body.
+    if (bodySha256) {
+      headers.set('x-tenant-body-hash', bodySha256)
+    }
   } catch (err) {
     console.error('[proxy] Failed to sign tenant context:', err)
   }

@@ -23,10 +23,8 @@ import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { requestStore, getRequestPrisma } from './request-context'
 import { getDbForVenue, masterClient } from './db'
-import { verifyTenantContext, hashBody, type VerifyOptions } from './tenant-context-signer'
-
-const TENANT_JWT_ENABLED = process.env.TENANT_JWT_ENABLED === 'true'
-const TENANT_SIGNING_KEY = process.env.TENANT_SIGNING_KEY || ''
+import { verifyTenantContext, type VerifyOptions } from './tenant-context-signer'
+import { config } from './system-config'
 
 type RouteHandler = (request: any, context?: any) => Promise<Response> | Response
 
@@ -44,7 +42,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       const slug = headersList.get('x-venue-slug')
 
       // ── Tenant JWT verification (when enabled) ──────────────────────
-      if (TENANT_JWT_ENABLED && TENANT_SIGNING_KEY && slug) {
+      if (config.tenantJwtEnabled && config.tenantSigningKey && slug) {
         const tenantJwt = headersList.get('x-tenant-context')
         if (!tenantJwt) {
           console.error('[withVenue] Missing x-tenant-context JWT for slug:', slug)
@@ -59,19 +57,16 @@ export function withVenue(handler: RouteHandler): RouteHandler {
         const pathname = headersList.get('x-next-pathname') || (request as any)?.nextUrl?.pathname || '/'
         const verifyOpts: VerifyOptions = { method, path: pathname }
 
-        // For mutating methods, verify body hash
+        // For mutating methods, read the trusted body hash header set by proxy.ts
+        // instead of re-reading the request body (which is not safe to double-read).
         if (method !== 'GET' && method !== 'HEAD') {
-          try {
-            const body = await (request as any).text?.()
-            if (body) {
-              verifyOpts.bodySha256 = await hashBody(body)
-            }
-          } catch {
-            // Body may not be available — skip hash check
+          const bodyHash = headersList.get('x-tenant-body-hash')
+          if (bodyHash) {
+            verifyOpts.bodySha256 = bodyHash
           }
         }
 
-        const payload = await verifyTenantContext(tenantJwt, TENANT_SIGNING_KEY, verifyOpts)
+        const payload = await verifyTenantContext(tenantJwt, config.tenantSigningKey, verifyOpts)
         if (!payload) {
           console.error('[withVenue] Invalid tenant context JWT for slug:', slug)
           return new Response(

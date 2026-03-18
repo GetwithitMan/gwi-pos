@@ -21,6 +21,7 @@ export interface SystemConfig {
   readonly syncEnabled: boolean
   readonly posLocationId: string | undefined
   readonly stationRole: StationRole
+  readonly tenantJwtEnabled: boolean
   readonly tenantSigningKey: string
   readonly neonDatabaseUrl: string | undefined
   readonly provisionApiKey: string
@@ -84,6 +85,7 @@ function buildConfig(): SystemConfig {
     syncEnabled: parseBool(process.env.SYNC_ENABLED, false),
     posLocationId: process.env.POS_LOCATION_ID || undefined,
     stationRole: parseStationRole(process.env.STATION_ROLE),
+    tenantJwtEnabled: parseBool(process.env.TENANT_JWT_ENABLED, false),
     tenantSigningKey,
     neonDatabaseUrl: process.env.NEON_DATABASE_URL || undefined,
     provisionApiKey,

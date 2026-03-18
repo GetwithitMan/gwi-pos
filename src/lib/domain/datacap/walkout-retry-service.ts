@@ -15,6 +15,9 @@ import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { logger } from '@/lib/logger'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { SOCKET_EVENTS } from '@/lib/socket-events'
+import type { PaymentProcessedPayload, OrderClosedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,16 +142,21 @@ export async function processWalkoutRetry(
       }
 
       const captureAmount = Number(retry.amount)
-      const [, , createdPayment] = await db.$transaction([
-        db.orderCard.update({
+      const paymentMethod = orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
+
+      // Interactive transaction: DB mutations + socket outbox in one atomic unit.
+      // If the process crashes after commit, SocketEventLog rows survive and
+      // flushAllPendingOutbox() picks them up on restart.
+      const createdPayment = await db.$transaction(async (tx) => {
+        await tx.orderCard.update({
           where: { id: orderCard.id },
           data: { status: 'captured', capturedAmount: captureAmount, capturedAt: now },
-        }),
-        db.order.update({
+        })
+        await tx.order.update({
           where: { id: retry.orderId },
           data: { status: 'paid', tabStatus: 'closed', paidAt: now, closedAt: now },
-        }),
-        db.payment.create({
+        })
+        const payment = await tx.payment.create({
           data: {
             locationId,
             orderId: retry.orderId,
@@ -156,18 +164,51 @@ export async function processWalkoutRetry(
             amount: captureAmount,
             tipAmount: 0,
             totalAmount: captureAmount,
-            paymentMethod: orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+            paymentMethod,
             cardBrand: orderCard.cardType || 'unknown',
             cardLast4: orderCard.cardLast4,
             authCode: response.authCode || null,
             datacapRecordNo: orderCard.recordNo,
             status: 'completed',
           },
-        }),
-      ])
+        })
 
-      const paymentMethod = orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
-      void emitOrderEvents(locationId, retry.orderId, [
+        // Queue socket events inside the transaction (outbox pattern)
+        const paymentPayload: PaymentProcessedPayload = {
+          orderId: retry.orderId,
+          paymentId: payment.id,
+          status: 'approved',
+          method: paymentMethod,
+          amount: captureAmount,
+          tipAmount: 0,
+          totalAmount: captureAmount,
+          employeeId: employeeId || null,
+          isClosed: true,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.PAYMENT_PROCESSED, paymentPayload)
+
+        const closedPayload: OrderClosedPayload = {
+          orderId: retry.orderId,
+          status: 'paid',
+          closedAt: now.toISOString(),
+          closedByEmployeeId: employeeId || null,
+          locationId,
+        }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDER_CLOSED, closedPayload)
+
+        const listPayload: OrdersListChangedPayload = { trigger: 'paid', orderId: retry.orderId }
+        await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+
+        return payment
+      })
+
+      // Flush outbox after commit — best-effort, catch-up handles failures
+      void flushSocketOutbox(locationId).catch((err) => {
+        console.warn('[walkout-retry] Outbox flush failed, catch-up will deliver:', err)
+      })
+
+      // Emit event-sourced events (awaited for reliability, errors logged)
+      await emitOrderEvents(locationId, retry.orderId, [
         {
           type: 'PAYMENT_APPLIED',
           payload: {
@@ -185,7 +226,9 @@ export async function processWalkoutRetry(
           type: 'ORDER_CLOSED',
           payload: { closedStatus: 'paid' },
         },
-      ])
+      ]).catch((err) => {
+        console.error(`[walkout-retry] Failed to emit events for order ${retry.orderId}:`, err)
+      })
 
       return {
         success: true,

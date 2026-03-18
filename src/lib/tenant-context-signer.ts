@@ -43,15 +43,12 @@ function base64urlDecode(str: string): Uint8Array {
 
 // ── Signing ──────────────────────────────────────────────────────────────────
 
-const MAX_BODY_HASH_SIZE = 4096 // Hash first 4KB for very large bodies
-
 /**
  * Compute SHA-256 of a request body (base64url encoded).
- * For bodies > 4KB, hashes a prefix (rare in POS).
+ * Always hashes the full body — no truncation.
  */
 export async function hashBody(body: string): Promise<string> {
-  const prefix = body.length > MAX_BODY_HASH_SIZE ? body.slice(0, MAX_BODY_HASH_SIZE) : body
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(prefix))
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))
   return base64urlEncodeBytes(new Uint8Array(digest))
 }
 

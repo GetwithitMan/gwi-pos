@@ -27,10 +27,7 @@ export const POST = withVenue(async (request) => {
     const isAuthorized = (cronSecret && (authHeader === cronSecret || apiKey === cronSecret)) ||
                          (internalSecret && (authHeader === internalSecret || apiKey === internalSecret))
     if (!isAuthorized) {
-      const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
-      if (!['127.0.0.1', '::1', 'localhost'].includes(ip)) {
-        return NextResponse.json({ error: 'Unauthorized — API key required' }, { status: 401 })
-      }
+      return NextResponse.json({ error: 'Unauthorized — CRON_SECRET or INTERNAL_API_SECRET required' }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
