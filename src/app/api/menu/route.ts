@@ -5,7 +5,9 @@ import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
 import { getLocationId } from '@/lib/location-cache'
-import type { CategoryType, CategoryShow } from '@prisma/client'
+import type { CategoryType, CategoryShow } from '@/generated/prisma/client'
+
+// TODO: Migrate db.menuItem.findMany to MenuItemRepository once complex include+parallel shapes are supported
 
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'

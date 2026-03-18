@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { MenuItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 
 // Force dynamic rendering - never cache search results
@@ -24,6 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // SKU lookup — exact match, bypasses name/spirit/ingredient search
+    // TODO: Add MenuItemRepository.getMenuItemBySku() for tenant-safe SKU lookup
     if (sku) {
       const skuItem = await db.menuItem.findFirst({
         where: { locationId, sku: sku.trim(), deletedAt: null, isActive: true },
@@ -63,6 +65,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const searchQuery = query.trim()
 
     // 1. Direct menu item name search
+    // TODO: Migrate to MenuItemRepository.getMenuItems() once text-search where filters are supported
     const directMatches = await db.menuItem.findMany({
       where: {
         locationId,

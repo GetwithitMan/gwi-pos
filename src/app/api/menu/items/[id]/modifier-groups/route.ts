@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
+import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -134,10 +136,13 @@ function formatModifierGroup(group: {
 export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
-    const menuItem = await db.menuItem.findUnique({
-      where: { id: menuItemId },
-      select: { id: true, locationId: true },
+    const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(menuItemId, locationId, {
+      id: true, locationId: true,
     })
 
     if (!menuItem) {
@@ -216,6 +221,10 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
 export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const body = await request.json()
     const {
       name,
@@ -234,9 +243,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return NextResponse.json({ error: 'Modifier group name is required' }, { status: 400 })
     }
 
-    const menuItem = await db.menuItem.findUnique({
-      where: { id: menuItemId },
-      select: { id: true, locationId: true },
+    const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(menuItemId, locationId, {
+      id: true, locationId: true,
     })
 
     if (!menuItem) {

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 // Shared include shape for recipe queries
 const recipeInclude = {
@@ -109,18 +111,19 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
-    // Get the menu item with its recipe
-    const menuItem = await db.menuItem.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        price: true,
-        recipeIngredients: {
-          include: recipeInclude,
-          orderBy: { sortOrder: 'asc' },
-        },
+    // Get the menu item with its recipe (tenant-safe)
+    const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
+      id: true,
+      name: true,
+      price: true,
+      recipeIngredients: {
+        include: recipeInclude,
+        orderBy: { sortOrder: 'asc' },
       },
     })
 
@@ -166,6 +169,10 @@ export const POST = withVenue(async function POST(
     const { id } = await params
     const body = await request.json()
     const { ingredients } = body
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     if (!Array.isArray(ingredients)) {
       return NextResponse.json(
@@ -174,10 +181,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Verify menu item exists
-    const menuItem = await db.menuItem.findUnique({
-      where: { id },
-      select: { id: true, name: true, price: true, locationId: true },
+    // Verify menu item exists (tenant-safe)
+    const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
+      id: true, name: true, price: true, locationId: true,
     })
 
     if (!menuItem) {
@@ -309,6 +315,10 @@ export const PATCH = withVenue(async function PATCH(
   try {
     const { id } = await params
     const { bottleProductId, pourCount, isSubstitutable } = await request.json()
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     if (!bottleProductId) {
       return NextResponse.json(
@@ -317,10 +327,9 @@ export const PATCH = withVenue(async function PATCH(
       )
     }
 
-    // Verify menu item exists
-    const menuItem = await db.menuItem.findUnique({
-      where: { id },
-      select: { id: true, locationId: true },
+    // Verify menu item exists (tenant-safe)
+    const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
+      id: true, locationId: true,
     })
     if (!menuItem) {
       return NextResponse.json(
@@ -403,11 +412,14 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
-    // Get locationId for socket dispatch
-    const menuItem = await db.menuItem.findUnique({
-      where: { id },
-      select: { locationId: true },
+    // Get locationId for socket dispatch (tenant-safe)
+    const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
+      locationId: true,
     })
 
     await db.recipeIngredient.deleteMany({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
+import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { computeIsOrderableOnline } from '@/lib/online-availability'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -20,9 +21,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
-    const item = await db.menuItem.findFirst({
-      where: { id, deletedAt: null, locationId },
-      include: {
+    const item = await MenuItemRepository.getMenuItemByIdWithInclude(id, locationId, {
         category: {
           select: { id: true, name: true, categoryType: true },
         },
@@ -41,7 +40,6 @@ export const GET = withVenue(async function GET(
             },
           },
         },
-      },
     })
 
     if (!item) {
@@ -268,10 +266,14 @@ export const PUT = withVenue(async function PUT(
       allergenNotes,
     } = body
 
+    // Get locationId for tenant-safe queries
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
     // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
-    const oldItem = await db.menuItem.findUnique({
-      where: { id },
-      select: {
+    const oldItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
         isAvailable: true,
         locationId: true,
         showOnline: true,
@@ -281,9 +283,14 @@ export const PUT = withVenue(async function PUT(
         currentStock: true,
         trackInventory: true,
         lowStockAlert: true,
-      }
     })
 
+    // Verify item belongs to this location before updating
+    if (!oldItem) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+    }
+
+    // TODO: Migrate to MenuItemRepository.updateMenuItemAndReturn() once complex update shapes are supported
     const item = await db.menuItem.update({
       where: { id },
       data: {
@@ -466,16 +473,15 @@ export const DELETE = withVenue(async function DELETE(
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
-    const item = await db.menuItem.findFirst({
-      where: { id, locationId },
-      select: { locationId: true }
+    const item = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
+      locationId: true,
     })
 
     if (!item) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    await db.menuItem.update({ where: { id }, data: { deletedAt: new Date() } })
+    await MenuItemRepository.softDeleteMenuItem(id, locationId)
 
     // Invalidate server-side menu cache
     invalidateMenuCache(item.locationId)
@@ -536,10 +542,16 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
     }
 
-    const item = await db.menuItem.update({
-      where: { id },
-      data,
-      select: { id: true, name: true, isFeaturedCfd: true, entertainmentStatus: true },
+    // Get locationId for tenant-safe update
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    // Verify item belongs to this location, then update
+    await MenuItemRepository.updateMenuItem(id, locationId, data as Prisma.MenuItemUpdateManyMutationInput)
+    const item = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
+      id: true, name: true, isFeaturedCfd: true, entertainmentStatus: true,
     })
 
     return NextResponse.json({ data: { item } })

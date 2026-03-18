@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -34,6 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where.categoryId = categoryId
     }
 
+    // TODO: Migrate to MenuItemRepository once complex include+conditional shapes are supported
     const items = await db.menuItem.findMany({
       where,
       orderBy: { sortOrder: 'asc' },
@@ -288,9 +290,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Get max sort order in category
+    // Get max sort order in category (scoped to location)
     const maxSortOrder = await db.menuItem.aggregate({
-      where: { categoryId },
+      where: { categoryId, locationId: category.locationId },
       _max: { sortOrder: true }
     })
 
