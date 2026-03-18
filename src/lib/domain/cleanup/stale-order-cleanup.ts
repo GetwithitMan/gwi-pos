@@ -3,6 +3,17 @@
  *
  * Extracted from the route handler so that both the API endpoint
  * and the server.ts schedulers can call it without localhost HTTP.
+ *
+ * EVENT CHANNEL CONTRACT:
+ * This service emits through two independent channels:
+ *   1. Socket outbox (queueSocketEvent) — persisted in the same DB transaction.
+ *      Authoritative for real-time terminal/UI synchronization.
+ *      Crash-durable: recovered by flushAllPendingOutbox() on restart.
+ *   2. Order event stream (emitOrderEvent) — emitted after commit.
+ *      Authoritative for domain/audit event-sourced truth (OrderEvent table).
+ *      Best-effort: a crash between commit and emit loses the event.
+ *      Consumers must tolerate missing events (reconcile from snapshots).
+ * Both channels are required. Neither is a projection of the other.
  */
 
 import { db } from '@/lib/db'
@@ -85,7 +96,10 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
       },
     })
 
-    // Queue socket events inside the transaction (outbox pattern)
+    // ── Channel 1: Socket outbox (transactional, crash-durable) ──
+    // These queueSocketEvent calls are INSIDE the $transaction. They persist
+    // in SocketEventLog atomically with the order update. If the process
+    // crashes after commit, flushAllPendingOutbox() recovers them on restart.
     for (const id of ids) {
       const closedPayload: OrderClosedPayload = {
         orderId: id,
@@ -105,12 +119,16 @@ export async function cleanupStaleOrders(opts: CleanupOptions): Promise<CleanupR
 
   logger.log(`[cleanup-stale-orders] Closed ${result.count} stale draft orders for location ${locationId}`)
 
-  // Flush outbox after commit — best-effort, catch-up handles failures
+  // Flush socket outbox after commit — best-effort, catch-up handles failures
   void flushSocketOutbox(locationId).catch((err) => {
     console.warn('[cleanup-stale-orders] Outbox flush failed, catch-up will deliver:', err)
   })
 
-  // Emit event-sourced ORDER_CLOSED events (awaited for reliability, errors logged)
+  // ── Channel 2: Order event stream (post-commit, best-effort) ──
+  // These emitOrderEvent calls run AFTER the transaction has committed.
+  // They write to the OrderEvent table for event-sourced audit/domain truth.
+  // A crash between the commit above and this loop loses these events.
+  // Downstream consumers must tolerate gaps and reconcile from snapshots.
   for (const id of ids) {
     await emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
       closedStatus: 'cancelled',

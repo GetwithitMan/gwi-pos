@@ -6,6 +6,17 @@
  *
  * The scheduler calls listPendingRetries + processWalkoutRetry directly,
  * bypassing HTTP auth (trusted context — no employeeId needed).
+ *
+ * EVENT CHANNEL CONTRACT:
+ * This service emits through two independent channels:
+ *   1. Socket outbox (queueSocketEvent) — persisted in the same DB transaction.
+ *      Authoritative for real-time terminal/UI synchronization.
+ *      Crash-durable: recovered by flushAllPendingOutbox() on restart.
+ *   2. Order event stream (emitOrderEvents) — emitted after commit.
+ *      Authoritative for domain/audit event-sourced truth (OrderEvent table).
+ *      Best-effort: a crash between commit and emit loses the event.
+ *      Consumers must tolerate missing events (reconcile from snapshots).
+ * Both channels are required. Neither is a projection of the other.
  */
 
 import { db } from '@/lib/db'
@@ -173,7 +184,10 @@ export async function processWalkoutRetry(
           },
         })
 
-        // Queue socket events inside the transaction (outbox pattern)
+        // ── Channel 1: Socket outbox (transactional, crash-durable) ──
+        // These queueSocketEvent calls are INSIDE the $transaction. They persist
+        // in SocketEventLog atomically with the payment/order updates. If the
+        // process crashes after commit, flushAllPendingOutbox() recovers them.
         const paymentPayload: PaymentProcessedPayload = {
           orderId: retry.orderId,
           paymentId: payment.id,
@@ -202,12 +216,16 @@ export async function processWalkoutRetry(
         return payment
       })
 
-      // Flush outbox after commit — best-effort, catch-up handles failures
+      // Flush socket outbox after commit — best-effort, catch-up handles failures
       void flushSocketOutbox(locationId).catch((err) => {
         console.warn('[walkout-retry] Outbox flush failed, catch-up will deliver:', err)
       })
 
-      // Emit event-sourced events (awaited for reliability, errors logged)
+      // ── Channel 2: Order event stream (post-commit, best-effort) ──
+      // These emitOrderEvents calls run AFTER the transaction has committed.
+      // They write to the OrderEvent table for event-sourced audit/domain truth.
+      // A crash between the commit above and this emit loses these events.
+      // Downstream consumers must tolerate gaps and reconcile from snapshots.
       await emitOrderEvents(locationId, retry.orderId, [
         {
           type: 'PAYMENT_APPLIED',

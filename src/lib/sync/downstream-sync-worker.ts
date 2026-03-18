@@ -16,6 +16,7 @@ import { masterClient } from '../db'
 import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, getBusinessKey, DOWNSTREAM_INTERVAL_MS, type ConflictStrategy } from './sync-config'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig } from '../fulfillment-router'
 import { syncDenyList } from '../cellular-auth'
+import { checkQuarantine, QUARANTINE_PROTECTED_MODELS, loadWatermarks, updateDownstreamWatermark } from './sync-conflict-quarantine'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -223,21 +224,86 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   const dispatchedLocations = new Set<string>()
   /** Collect IDs of successfully synced rows for batch syncedAt stamping */
   const syncedIds: string[] = []
+  /** Per-location max synced timestamp for downstream watermark updates */
+  const locationWatermarks = new Map<string, Date>()
 
   for (const row of rows) {
     try {
       // Bidirectional conflict detection: check if local row was modified locally
       if (isBiDir && row.id) {
-        const conflictResult = await detectBidirectionalConflict(tableName, row, strategy, columns)
-        if (conflictResult === 'skip') {
-          // Local version is strictly newer and locally-mutated — skip Neon version
-          const rowUpdatedAt = row.updatedAt instanceof Date
-            ? row.updatedAt
-            : new Date(row.updatedAt as string)
-          if (rowUpdatedAt > maxSyncedAt) {
-            maxSyncedAt = rowUpdatedAt
+        const isProtected = QUARANTINE_PROTECTED_MODELS.has(tableName)
+
+        if (isProtected) {
+          // ── Quarantine path for money-impact models ──────────────────────
+          // Fetch local row for quarantine check (reuses the same SELECT
+          // that detectBidirectionalConflict would do, but fetches all columns
+          // so we can pass localData to checkQuarantine).
+          const hasUpdatedAt = columns.includes('updatedAt')
+          if (hasUpdatedAt) {
+            try {
+              const quotedLocalCols = columns.map((c) => `"${c}"`).join(', ')
+              const localRows = await masterClient.$queryRawUnsafe<Record<string, unknown>[]>(
+                `SELECT ${quotedLocalCols} FROM "${tableName}" WHERE id = $1 LIMIT 1`,
+                row.id as string,
+              )
+              const localRow = localRows.length > 0 ? localRows[0] : null
+              const localUpdatedAt = localRow?.updatedAt
+                ? (localRow.updatedAt instanceof Date ? localRow.updatedAt : new Date(localRow.updatedAt as string))
+                : null
+              const incomingUpdatedAt = row.updatedAt instanceof Date
+                ? row.updatedAt
+                : new Date(row.updatedAt as string)
+              const rowLocationId = (row.locationId as string) || ''
+
+              const decision = await checkQuarantine(
+                tableName,
+                row.id as string,
+                incomingUpdatedAt,
+                localUpdatedAt,
+                rowLocationId,
+                (localRow ?? {}) as Record<string, unknown>,
+                row as Record<string, unknown>,
+              )
+
+              if (decision === 'quarantine') {
+                // Future blocking mode — skip the upsert
+                if (incomingUpdatedAt > maxSyncedAt) {
+                  maxSyncedAt = incomingUpdatedAt
+                }
+                continue
+              }
+
+              // checkQuarantine returned 'apply' — still run the existing
+              // detectBidirectionalConflict for lastMutatedBy / NTP guard logic
+              // so local-wins rows are not overwritten.
+              const conflictResult = await detectBidirectionalConflict(tableName, row, strategy, columns)
+              if (conflictResult === 'skip') {
+                if (incomingUpdatedAt > maxSyncedAt) {
+                  maxSyncedAt = incomingUpdatedAt
+                }
+                continue
+              }
+            } catch (quarantineErr) {
+              // Quarantine check failed — fall through to normal upsert (safe default)
+              console.error(
+                `[DownstreamSync] Quarantine check failed for ${tableName}:${row.id}:`,
+                quarantineErr instanceof Error ? quarantineErr.message : quarantineErr
+              )
+            }
           }
-          continue
+        } else {
+          // ── Standard bidirectional conflict detection for non-protected models ──
+          const conflictResult = await detectBidirectionalConflict(tableName, row, strategy, columns)
+          if (conflictResult === 'skip') {
+            // Local version is strictly newer and locally-mutated — skip Neon version
+            const rowUpdatedAt = row.updatedAt instanceof Date
+              ? row.updatedAt
+              : new Date(row.updatedAt as string)
+            if (rowUpdatedAt > maxSyncedAt) {
+              maxSyncedAt = rowUpdatedAt
+            }
+            continue
+          }
         }
       }
 
@@ -328,6 +394,15 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       if (rowUpdatedAt > maxSyncedAt) {
         maxSyncedAt = rowUpdatedAt
       }
+
+      // Track per-location max timestamp for downstream watermark
+      const wmLocationId = row.locationId as string | undefined
+      if (wmLocationId) {
+        const existing = locationWatermarks.get(wmLocationId)
+        if (!existing || rowUpdatedAt > existing) {
+          locationWatermarks.set(wmLocationId, rowUpdatedAt)
+        }
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
 
@@ -378,6 +453,13 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
     } catch (err) {
       console.error(`[DownstreamSync] Failed to persist HWM for ${tableName}:`, err instanceof Error ? err.message : err)
     }
+  }
+
+  // Update downstream watermarks per-location (for quarantine conflict detection)
+  for (const [locId, maxTs] of locationWatermarks) {
+    void updateDownstreamWatermark(locId, maxTs).catch((err) => {
+      console.error(`[DownstreamSync] Failed to update watermark for location ${locId}:`, err instanceof Error ? err.message : err)
+    })
   }
 
   return synced
@@ -832,7 +914,7 @@ export function startDownstreamSyncWorker(): void {
   console.log(`[DownstreamSync] Starting (interval: ${DOWNSTREAM_INTERVAL_MS}ms)`)
   metrics.running = true
 
-  void Promise.all([initHighWaterMarks(), loadColumnMetadata()]).then(() => {
+  void Promise.all([initHighWaterMarks(), loadColumnMetadata(), loadWatermarks()]).then(() => {
     void runDownstreamCycle()
     timer = setInterval(() => void runDownstreamCycle(), DOWNSTREAM_INTERVAL_MS)
     timer.unref()
