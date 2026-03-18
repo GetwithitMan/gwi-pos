@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 
 // POST — update an order item's special notes
 export const POST = withVenue(async function POST(
@@ -18,28 +19,26 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'note must be a string' }, { status: 400 })
     }
 
-    // Verify order exists
-    const order = await db.order.findUnique({
-      where: { id: orderId },
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
+    const order = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true },
     })
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
+    const locationId = order.locationId
+
     // Verify item exists on this order
-    const item = await db.orderItem.findFirst({
-      where: { id: itemId, orderId },
-    })
-    if (!item) {
+    const item = await OrderItemRepository.getItemById(itemId, locationId)
+    if (!item || item.orderId !== orderId) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
     // Update the special notes
-    const updated = await db.orderItem.update({
-      where: { id: itemId },
-      data: { specialNotes: note || null },
-    })
+    const updated = await OrderItemRepository.updateItemAndReturn(itemId, locationId, { specialNotes: note || null })
 
     // Emit order event for sync
     void emitOrderEvent(order.locationId, orderId, 'ITEM_UPDATED', {

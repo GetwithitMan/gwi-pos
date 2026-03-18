@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { OrderStatus } from '@prisma/client'
+import { OrderStatus } from '@/generated/prisma/client'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
@@ -8,6 +8,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository, OrderItemRepository, PaymentRepository } from '@/lib/repositories'
 
 // ============================================
 // DELETE - Delete an empty split check
@@ -20,9 +21,10 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id, splitId } = await params
 
-    // Validate split order exists and belongs to this parent
-    const splitOrder = await db.order.findUnique({
-      where: { id: splitId },
+    // TODO: Initial split lookup uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
+    const splitOrder = await db.order.findFirst({
+      where: { id: splitId, deletedAt: null },
       select: {
         id: true,
         parentOrderId: true,
@@ -38,10 +40,10 @@ export const DELETE = withVenue(async function DELETE(
       throw new ValidationError('Split order does not belong to this parent')
     }
 
+    const locationId = splitOrder.locationId
+
     // Validate no active items
-    const activeItemCount = await db.orderItem.count({
-      where: { orderId: splitId, deletedAt: null },
-    })
+    const activeItemCount = await OrderItemRepository.countItemsForOrder(splitId, locationId)
 
     if (activeItemCount > 0) {
       return NextResponse.json(
@@ -51,9 +53,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Validate no payments
-    const paymentCount = await db.payment.count({
-      where: { orderId: splitId },
-    })
+    const paymentCount = await PaymentRepository.countPayments(locationId, { orderId: splitId })
 
     if (paymentCount > 0) {
       return NextResponse.json(
@@ -63,30 +63,32 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Get parent order info for socket emit
-    const parentOrder = await db.order.findUnique({
-      where: { id },
-      select: {
+    const parentOrder = await OrderRepository.getOrderByIdWithSelect(
+      id,
+      locationId,
+      {
         id: true,
         locationId: true,
         tableId: true,
         orderNumber: true,
         inclusiveTaxRate: true,
       },
-    })
+    )
 
     if (!parentOrder) {
       throw new NotFoundError('Parent order')
     }
 
     // Soft delete the empty split (preserve audit trail)
-    await db.order.update({
-      where: { id: splitId },
-      data: { deletedAt: new Date(), status: 'cancelled' as OrderStatus },
+    await OrderRepository.updateOrder(splitId, locationId, {
+      deletedAt: new Date(),
+      status: 'cancelled' as OrderStatus,
     })
 
     // Count remaining splits
+    // TODO: Complex query with _count -- no repository method; uses raw db
     const remainingSplits = await db.order.findMany({
-      where: { parentOrderId: id, deletedAt: null },
+      where: { parentOrderId: id, locationId, deletedAt: null },
       select: {
         id: true,
         _count: {
@@ -104,10 +106,7 @@ export const DELETE = withVenue(async function DELETE(
       const lastSplit = remainingSplits[0]
 
       // Get last split's items for totals recalculation
-      const lastSplitItems = await db.orderItem.findMany({
-        where: { orderId: lastSplit.id, deletedAt: null },
-        include: { modifiers: true },
-      })
+      const lastSplitItems = await OrderItemRepository.getItemsForOrderWithModifiers(lastSplit.id, locationId)
 
       // Get location for tax rate
       const location = await db.location.findUnique({
@@ -127,9 +126,10 @@ export const DELETE = withVenue(async function DELETE(
           ? autoMergeInclRateRaw / 100 : undefined)
 
       await db.$transaction(async (tx) => {
-        // Move all items back to parent
+        // Move all items back to parent (orderId is a relation FK -- raw tx needed)
+        // TODO: Add OrderItemRepository.moveItemsToOrder() to handle orderId reassignment
         await tx.orderItem.updateMany({
-          where: { orderId: lastSplit.id },
+          where: { orderId: lastSplit.id, locationId },
           data: { orderId: id },
         })
 
@@ -144,34 +144,26 @@ export const DELETE = withVenue(async function DELETE(
         const total = Math.round((subtotal + amTax.taxFromExclusive) * 100) / 100
 
         // Restore parent order
-        await tx.order.update({
-          where: { id },
-          data: {
-            status: 'open',
-            subtotal,
-            taxTotal: amTax.totalTax,
-            taxFromInclusive: amTax.taxFromInclusive,
-            taxFromExclusive: amTax.taxFromExclusive,
-            total,
-            notes: null,
-          },
-        })
+        await OrderRepository.updateOrder(id, locationId, {
+          status: 'open',
+          subtotal,
+          taxTotal: amTax.totalTax,
+          taxFromInclusive: amTax.taxFromInclusive,
+          taxFromExclusive: amTax.taxFromExclusive,
+          total,
+          notes: null,
+        }, tx)
 
         // Soft delete the last split (preserve audit trail)
-        await tx.order.update({
-          where: { id: lastSplit.id },
-          data: { deletedAt: new Date(), status: 'cancelled' as OrderStatus },
-        })
+        await OrderRepository.updateOrder(lastSplit.id, locationId, {
+          deletedAt: new Date(),
+          status: 'cancelled' as OrderStatus,
+        }, tx)
 
         // Restore any soft-deleted split items on parent
-        await tx.orderItem.updateMany({
-          where: {
-            orderId: id,
-            locationId: parentOrder.locationId,
-            deletedAt: { not: null },
-          },
-          data: { deletedAt: null },
-        })
+        await OrderItemRepository.updateItemsWhere(id, locationId, {
+          deletedAt: { not: null },
+        }, { deletedAt: null }, tx)
       })
 
       merged = true

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
+import { EmployeeRepository } from '@/lib/repositories'
 
 // GET - Check if employee has open tabs/orders
 export const GET = withVenue(async function GET(
@@ -89,15 +90,9 @@ export const POST = withVenue(async function POST(
     }
 
     // Verify target employee exists and is active
-    const targetEmployee = await db.employee.findFirst({
-      where: {
-        id: targetEmployeeId,
-        locationId,
-        isActive: true,
-      },
-    })
+    const targetEmployee = await EmployeeRepository.getEmployeeById(targetEmployeeId, locationId)
 
-    if (!targetEmployee) {
+    if (!targetEmployee || !targetEmployee.isActive) {
       return NextResponse.json(
         { error: 'Target employee not found or inactive' },
         { status: 404 }
@@ -105,7 +100,9 @@ export const POST = withVenue(async function POST(
     }
 
     // Query affected orders first (updateMany doesn't return IDs)
-    const affectedOrders = await db.order.findMany({
+    // TODO: OrderRepository.getOrdersByEmployee returns full objects; only need IDs.
+    // Consider adding a lightweight select variant.
+    const affectedOrdersFull = await db.order.findMany({
       where: {
         employeeId,
         locationId,
@@ -113,8 +110,10 @@ export const POST = withVenue(async function POST(
       },
       select: { id: true },
     })
+    const affectedOrders = affectedOrdersFull
 
     // Transfer all open orders to target employee
+    // TODO: Batch order update by employeeId -- no single repository method; raw db with locationId guard
     const result = await db.order.updateMany({
       where: {
         employeeId,

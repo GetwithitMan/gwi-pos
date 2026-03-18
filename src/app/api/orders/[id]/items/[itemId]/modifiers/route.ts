@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 
 // PUT - Update modifiers on an existing order item
 export const PUT = withVenue(async function PUT(
@@ -22,9 +23,10 @@ export const PUT = withVenue(async function PUT(
       }>
     }
 
-    // Verify order exists
-    const order = await db.order.findUnique({
-      where: { id: orderId },
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
+    const order = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true },
     })
 
@@ -35,10 +37,12 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
+    const locationId = order.locationId
+
     // Verify order item exists and belongs to this order
-    const orderItem = await db.orderItem.findUnique({
-      where: { id: itemId },
-      select: { id: true, orderId: true },
+    const orderItem = await OrderItemRepository.getItemByIdWithSelect(itemId, locationId, {
+      id: true,
+      orderId: true,
     })
 
     if (!orderItem || orderItem.orderId !== orderId) {
@@ -50,7 +54,7 @@ export const PUT = withVenue(async function PUT(
 
     // Delete existing modifiers and create new ones in a transaction
     await db.$transaction(async (tx) => {
-      // Delete existing modifiers
+      // Delete existing modifiers (no repository for OrderItemModifier)
       await tx.orderItemModifier.deleteMany({
         where: { orderItemId: itemId },
       })
@@ -59,7 +63,7 @@ export const PUT = withVenue(async function PUT(
       if (modifiers && modifiers.length > 0) {
         await tx.orderItemModifier.createMany({
           data: modifiers.map((mod) => ({
-            locationId: order.locationId,
+            locationId,
             orderItemId: itemId,
             modifierId: mod.id,
             name: mod.name,
@@ -71,14 +75,9 @@ export const PUT = withVenue(async function PUT(
       }
 
       // Increment resendCount on the order item
-      await tx.orderItem.update({
-        where: { id: itemId },
-        data: {
-          resendCount: {
-            increment: 1,
-          },
-        },
-      })
+      await OrderItemRepository.updateItem(itemId, locationId, {
+        resendCount: { increment: 1 },
+      }, tx)
     })
 
     // Fire-and-forget event emission
@@ -96,9 +95,9 @@ export const PUT = withVenue(async function PUT(
     // Re-fetch order with totals for Android cross-terminal summary
     void (async () => {
       try {
-        const freshOrder = await db.order.findUnique({
-          where: { id: orderId },
-          include: { table: { select: { name: true } }, _count: { select: { items: true } } },
+        const freshOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+          table: { select: { name: true } },
+          _count: { select: { items: true } },
         })
         if (freshOrder) {
           const summary = buildOrderSummary({

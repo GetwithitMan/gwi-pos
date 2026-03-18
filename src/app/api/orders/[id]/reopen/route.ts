@@ -10,6 +10,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -27,8 +28,8 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Get the order first so we have locationId for auth check
-    // Get the order with its payments (exclude soft-deleted)
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
@@ -128,9 +129,11 @@ export const POST = withVenue(async function POST(
     // W1-P4: Mark all existing completed payments as voided so the pay route's
     // alreadyPaid calculation starts fresh (old payments were for the previous close).
     if (order.payments.length > 0) {
+      // TODO: Batch payment void by orderId+status -- no single repository method; raw db with locationId guard
       await db.payment.updateMany({
         where: {
           orderId,
+          locationId: order.locationId,
           status: 'completed',
         },
         data: {
@@ -234,9 +237,12 @@ export const POST = withVenue(async function POST(
     }
 
     // W2-R2: Recalculate order totals from active items (payments were voided, totals are stale)
+    // TODO: OrderItemRepository.getItemsForOrderWithModifiers filters deletedAt:null but not status.
+    // Add a method or use getItemsForOrderWhere + include for status filter.
     const activeItems = await db.orderItem.findMany({
       where: {
         orderId,
+        locationId: order.locationId,
         deletedAt: null,
         status: { not: 'voided' },
       },
@@ -272,9 +278,10 @@ export const POST = withVenue(async function POST(
 
     // Update order to open status
     // Bug 9: Clear paidAt and closedAt so the pay route's alreadyPaid calculation isn't confused
-    const reopenedOrder = await db.order.update({
-      where: { id: orderId },
-      data: {
+    const reopenedOrder = await OrderRepository.updateOrderAndReturn(
+      orderId,
+      order.locationId,
+      {
         status: 'open',
         paidAt: null,
         closedAt: null,
@@ -289,7 +296,11 @@ export const POST = withVenue(async function POST(
         reopenReason: reason,
         version: { increment: 1 },
       },
-    })
+    )
+
+    if (!reopenedOrder) {
+      return NextResponse.json({ error: 'Failed to reopen order' }, { status: 500 })
+    }
 
     // Revert table status to occupied if order had a table
     if (order.tableId) {

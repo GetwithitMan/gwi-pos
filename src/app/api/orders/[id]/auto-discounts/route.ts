@@ -9,6 +9,7 @@ import {
   buildOrderSummary,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository } from '@/lib/repositories'
 
 /**
  * POST /api/orders/[id]/auto-discounts
@@ -23,8 +24,10 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
 
-    const order = await db.order.findUnique({
-      where: { id: orderId },
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
+    const order = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true, status: true },
     })
 
@@ -35,6 +38,8 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    const locationId = order.locationId
+
     if (order.status !== 'open' && order.status !== 'draft' && order.status !== 'in_progress') {
       return NextResponse.json(
         { error: 'Cannot evaluate discounts on a closed order' },
@@ -42,11 +47,11 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    const result = await evaluateAutoDiscounts(orderId, order.locationId)
+    const result = await evaluateAutoDiscounts(orderId, locationId)
 
     // Emit order events for event sourcing
     for (const applied of result.applied) {
-      void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
+      void emitOrderEvent(locationId, orderId, 'DISCOUNT_APPLIED', {
         discountId: applied.id,
         type: 'auto',
         value: applied.percent ?? 0,
@@ -56,7 +61,7 @@ export const POST = withVenue(async function POST(
       }).catch(err => console.error('[auto-discounts] Failed to emit DISCOUNT_APPLIED event:', err))
     }
     for (const discountId of result.removed) {
-      void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
+      void emitOrderEvent(locationId, orderId, 'DISCOUNT_REMOVED', {
         discountId,
         lineItemId: null,
       }).catch(err => console.error('[auto-discounts] Failed to emit DISCOUNT_REMOVED event:', err))
@@ -64,9 +69,8 @@ export const POST = withVenue(async function POST(
 
     // Fire-and-forget socket dispatches for cross-terminal sync
     if (result.applied.length > 0 || result.removed.length > 0) {
-      const updatedOrder = await db.order.findUnique({
-        where: { id: orderId },
-        include: { table: { select: { name: true } } },
+      const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+        table: { select: { name: true } },
       })
 
       if (updatedOrder) {
@@ -120,8 +124,10 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    const order = await db.order.findUnique({
-      where: { id: orderId },
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
+    const order = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true },
     })
 
@@ -132,6 +138,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
+    // TODO: No OrderDiscountRepository -- raw db with locationId guard
     const autoDiscounts = await db.orderDiscount.findMany({
       where: {
         orderId,

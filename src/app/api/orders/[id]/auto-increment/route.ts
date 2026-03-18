@@ -6,6 +6,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { OrderRepository } from '@/lib/repositories'
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
 // Called after adding items to a tab. Fires silently in the background.
@@ -24,7 +25,8 @@ export const POST = withVenue(async function POST(
     const body = await request.json().catch(() => ({}))
     const { employeeId, force } = body  // force=true bypasses threshold (user clicked Re-Auth)
 
-    // Get order with cards and settings
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
@@ -128,16 +130,18 @@ export const POST = withVenue(async function POST(
       if (approved) {
         // Update card's authorized amount AND order's preAuthAmount (for Open Orders display)
         const newAuthAmount = Number(defaultCard.authAmount) + dynamicIncrement
-        await db.$transaction([
-          db.orderCard.update({
+        await db.$transaction(async (tx) => {
+          // OrderCard has no repository -- raw tx
+          await tx.orderCard.update({
             where: { id: defaultCard.id },
             data: { authAmount: newAuthAmount },
-          }),
-          db.order.update({
-            where: { id: orderId },
-            data: { preAuthAmount: newAuthAmount, incrementAuthFailed: false, version: { increment: 1 } },
-          }),
-        ])
+          })
+          await OrderRepository.updateOrder(orderId, locationId, {
+            preAuthAmount: newAuthAmount,
+            incrementAuthFailed: false,
+            version: { increment: 1 },
+          }, tx)
+        })
 
         // Fire-and-forget event emission
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -164,9 +168,9 @@ export const POST = withVenue(async function POST(
       } else {
         // Increment failed — persist flag so banner shows even after refresh
         console.warn(`[Tab Auto-Increment] DECLINED Order=${orderId} Card=...${defaultCard.cardLast4} +$${dynamicIncrement} Error=${error?.text || 'Unknown'}`)
-        await db.order.update({
-          where: { id: orderId },
-          data: { incrementAuthFailed: true, version: { increment: 1 } },
+        await OrderRepository.updateOrder(orderId, locationId, {
+          incrementAuthFailed: true,
+          version: { increment: 1 },
         })
 
         // Fire-and-forget: notify terminals of increment failure (triggers red badge)

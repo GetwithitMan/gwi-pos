@@ -7,6 +7,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated,
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { OrderRepository } from '@/lib/repositories'
 
 // POST - Void an unclosed tab (releases all card holds)
 // Fires VoidSaleByRecordNo for each authorized OrderCard
@@ -23,6 +24,8 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
     }
 
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
@@ -80,13 +83,10 @@ export const POST = withVenue(async function POST(
     const allVoided = results.every((r) => r.voided)
 
     // Update order status
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        tabStatus: allVoided ? 'closed' : order.tabStatus,
-        status: allVoided ? 'voided' : order.status,
-        notes: reason ? `Tab voided: ${reason}` : order.notes,
-      },
+    await OrderRepository.updateOrder(orderId, locationId, {
+      tabStatus: allVoided ? 'closed' : order.tabStatus,
+      status: allVoided ? 'voided' : order.status,
+      notes: reason ? `Tab voided: ${reason}` : order.notes,
     })
 
     // Reset table to available when tab is fully voided
@@ -106,14 +106,16 @@ export const POST = withVenue(async function POST(
         const entertainmentItems = await db.menuItem.findMany({
           where: {
             currentOrderId: orderId,
+            locationId,
             itemType: 'timed_rental',
           },
           select: { id: true, name: true },
         })
 
         // Clear blockTimeStartedAt on order items
+        // TODO: Complex relation filter (menuItem.itemType) -- raw db with locationId guard
         await db.orderItem.updateMany({
-          where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
+          where: { orderId, locationId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
           data: { blockTimeStartedAt: null },
         })
 

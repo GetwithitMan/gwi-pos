@@ -13,6 +13,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { isOpen } from '@/lib/domain/order-status'
+import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 
 interface TransferPayload {
   toEmployeeId: string
@@ -43,7 +44,8 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // ── Fetch the order ─────────────────────────────────────────────────
+    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
+    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
     const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       select: {
@@ -92,22 +94,19 @@ export const POST = withVenue(async function POST(
     }
 
     // ── Validate destination employee ───────────────────────────────────
-    const toEmployee = await db.employee.findFirst({
-      where: {
-        id: toEmployeeId,
-        locationId: order.locationId,
-        isActive: true,
-        deletedAt: null,
-      },
-      select: {
+    const toEmployee = await EmployeeRepository.getEmployeeByIdWithSelect(
+      toEmployeeId,
+      order.locationId,
+      {
         id: true,
         firstName: true,
         lastName: true,
         displayName: true,
+        isActive: true,
       },
-    })
+    )
 
-    if (!toEmployee) {
+    if (!toEmployee || !toEmployee.isActive) {
       return NextResponse.json(
         { error: 'Destination employee not found or inactive' },
         { status: 404 }
@@ -133,20 +132,23 @@ export const POST = withVenue(async function POST(
 
     // ── Transfer the order ──────────────────────────────────────────────
     const previousEmployeeId = order.employeeId
-    const updatedOrder = await db.order.update({
-      where: { id: orderId },
-      data: { employeeId: toEmployeeId },
-      select: {
-        id: true,
-        orderNumber: true,
-        tabName: true,
-        status: true,
-        employeeId: true,
+    await OrderRepository.updateOrder(orderId, order.locationId, {
+      employeeId: toEmployeeId,
+    })
+    // Re-fetch with select for response (updateOrder returns count, not the record)
+    const updatedOrder = await OrderRepository.getOrderByIdWithInclude(
+      orderId,
+      order.locationId,
+      {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
       },
-    })
+    )
+
+    if (!updatedOrder) {
+      return NextResponse.json({ error: 'Failed to transfer order' }, { status: 500 })
+    }
 
     // ── Audit log ───────────────────────────────────────────────────────
     await db.auditLog.create({
