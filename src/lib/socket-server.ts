@@ -451,12 +451,18 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * Join station rooms based on terminal identity
      * Called when a KDS/terminal starts up
      */
-    socket.on('join_station', async ({ locationId, tags, terminalId, stationId }: JoinStationPayload) => {
+    socket.on('join_station', async ({ locationId, tags, terminalId, stationId }: JoinStationPayload, ackCallback?: (data: unknown) => void) => {
       try {
+        // Helper: respond via ack callback (if client sent one) AND emit event (for older clients)
+        const ack = (data: Record<string, unknown>) => {
+          if (typeof ackCallback === 'function') ackCallback(data)
+          socket.emit('joined', data)
+        }
+
         // Validate locationId against authenticated context
         if (socket.data.locationId && locationId !== socket.data.locationId) {
           log.warn(`Rejected join_station: socket bound to ${socket.data.locationId}, payload says ${locationId}`)
-          socket.emit('joined', { success: false, error: 'Location mismatch' })
+          ack({ success: false, error: 'Location mismatch' })
           return
         }
 
@@ -508,7 +514,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         if (process.env.DEBUG_SOCKETS) log.debug({ terminalId, location: `location:${locationId}`, tags: tags.map(t => `tag:${locationId}:${t}`), station: stationId ? `station:${stationId}` : null }, 'Terminal joined rooms')
 
         // Acknowledge successful join — include latestEventId for catch-up baseline
-        socket.emit('joined', { success: true, rooms: socket.rooms.size, latestEventId: await getLatestEventId(locationId) })
+        ack({ success: true, rooms: socket.rooms.size, latestEventId: await getLatestEventId(locationId) })
 
         // Mark terminal online on (re)connection — fire-and-forget
         recordReconnection()
