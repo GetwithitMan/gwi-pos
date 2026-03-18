@@ -10,6 +10,9 @@
 
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('outage-replay')
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -127,7 +130,7 @@ async function ensureColumnMetadata(tableName: string): Promise<void> {
       columnTypeMap.set(tableName, castMap)
     }
   } catch (err) {
-    console.error(`[OutageReplay] Failed to load column metadata for ${tableName}:`, err instanceof Error ? err.message : err)
+    log.error({ err, tableName }, 'Failed to load column metadata')
   }
 }
 
@@ -196,7 +199,7 @@ async function replayEntry(entry: {
     }
 
     default:
-      console.warn(`[OutageReplay] Unknown operation: ${operation} for ${tableName}:${recordId}`)
+      log.warn(`Unknown operation: ${operation} for ${tableName}:${recordId}`)
   }
 }
 
@@ -231,7 +234,7 @@ async function processOutageQueue(): Promise<void> {
 
     const totalDeadLettered = (deadLettered || 0) + (agedOut || 0)
     if (totalDeadLettered > 0) {
-      console.error(`[OUTAGE-REPLAY] CRITICAL: ${totalDeadLettered} entries dead-lettered (${deadLettered || 0} max-retry, ${agedOut || 0} aged-out). Orders may be lost. Check OutageQueueEntry table.`)
+      log.error({ totalDeadLettered, maxRetry: deadLettered || 0, agedOut: agedOut || 0 }, 'CRITICAL: entries dead-lettered — orders may be lost. Check OutageQueueEntry table.')
 
       // Emit cloud event for MC alerting
       void (async () => {
@@ -269,9 +272,9 @@ async function processOutageQueue(): Promise<void> {
             timestamp: new Date().toISOString(),
           })
         } catch (err) {
-          console.error('[OutageReplay] Failed to emit dead-letter cloud event:', err instanceof Error ? err.message : err)
+          log.error({ err }, 'Failed to emit dead-letter cloud event')
         }
-      })().catch(console.error)
+      })().catch((err) => log.error({ err }, 'dead-letter cloud event top-level error'))
     }
 
     // Reset failed entries < 24h old back to pending for retry, incrementing retry count
@@ -309,7 +312,7 @@ async function processOutageQueue(): Promise<void> {
 
     if (pending.length === 0) return
 
-    console.log(`[OutageReplay] Processing ${pending.length} queued entries`)
+    log.info(`Processing ${pending.length} queued entries`)
 
     for (const entry of pending) {
       // Idempotency: skip entries already being processed in this cycle
@@ -328,7 +331,7 @@ async function processOutageQueue(): Promise<void> {
       } catch (err: unknown) {
         if (isConnectivityError(err)) {
           // Leave as 'pending' — will retry next cycle when internet returns
-          console.warn(`[OutageReplay] Connectivity lost during replay, will retry: ${entry.tableName}:${entry.recordId}`)
+          log.warn(`Connectivity lost during replay, will retry: ${entry.tableName}:${entry.recordId}`)
           break // Stop processing this batch — internet is down
         } else if (isConflictError(err)) {
           await masterClient.$executeRawUnsafe(
@@ -336,20 +339,14 @@ async function processOutageQueue(): Promise<void> {
             entry.id,
           )
           metrics.conflictCount++
-          console.warn(
-            `[OutageReplay] Conflict on ${entry.tableName}:${entry.recordId}`,
-            err instanceof Error ? err.message : err
-          )
+          log.warn({ err, tableName: entry.tableName, recordId: entry.recordId }, 'Conflict during replay')
         } else {
           await masterClient.$executeRawUnsafe(
             `UPDATE "OutageQueueEntry" SET status = 'failed' WHERE id = $1`,
             entry.id,
           )
           metrics.failedCount++
-          console.error(
-            `[OutageReplay] Failed ${entry.tableName}:${entry.recordId}`,
-            err
-          )
+          log.error({ err, tableName: entry.tableName, recordId: entry.recordId }, 'Failed to replay entry')
         }
       }
     }
@@ -366,17 +363,17 @@ async function processOutageQueue(): Promise<void> {
 export function startOutageReplayWorker(): void {
   if (replayTimer) return
   if (!hasNeonConnection()) {
-    console.log('[OutageReplay] No Neon connection — worker disabled')
+    log.info('No Neon connection — worker disabled')
     return
   }
 
   replayTimer = setInterval(() => {
-    void processOutageQueue().catch(console.error)
+    void processOutageQueue().catch((err) => log.error({ err }, 'processOutageQueue cycle error'))
   }, 10_000) // every 10s
   replayTimer.unref()
 
   metrics.running = true
-  console.log('[OutageReplay] Worker started (interval: 10s)')
+  log.info('Worker started (interval: 10s)')
 }
 
 export function stopOutageReplayWorker(): void {
@@ -384,7 +381,7 @@ export function stopOutageReplayWorker(): void {
     clearInterval(replayTimer)
     replayTimer = null
     metrics.running = false
-    console.log('[OutageReplay] Worker stopped')
+    log.info('Worker stopped')
   }
 }
 

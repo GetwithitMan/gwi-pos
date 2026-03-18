@@ -18,6 +18,9 @@
 import { masterClient } from './db'
 import { emitToLocation, emitToTags } from './socket-server'
 import { shouldClaimBridge, isLeaseActive } from '@/lib/bridge-checkpoint'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('fulfillment-bridge')
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +122,7 @@ async function pollAndProcess(): Promise<void> {
           metrics.eventsFailed++
         }
 
-        console.error(`[FulfillmentBridge] Failed event ${event.id} (retry ${newRetryCount}/${MAX_RETRIES}):`, err)
+        log.error({ err, eventId: event.id, retryCount: newRetryCount, maxRetries: MAX_RETRIES }, 'Failed to process fulfillment event')
 
         await masterClient.$executeRawUnsafe(
           `UPDATE "FulfillmentEvent"
@@ -136,7 +139,7 @@ async function pollAndProcess(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[FulfillmentBridge] Poll cycle error:', err)
+    log.error({ err }, 'Poll cycle error')
   }
 }
 
@@ -188,7 +191,7 @@ async function executeHardwareAction(event: {
     }
 
     default:
-      console.warn(`[FulfillmentBridge] Unknown event type: ${event.type}`)
+      log.warn(`Unknown event type: ${event.type}`)
   }
 }
 
@@ -197,17 +200,17 @@ async function executeHardwareAction(event: {
 export function startFulfillmentBridge(): void {
   if (bridgeTimer) return
   if (!LOCATION_ID) {
-    console.log('[FulfillmentBridge] No POS_LOCATION_ID — worker disabled')
+    log.info('No POS_LOCATION_ID — worker disabled')
     return
   }
 
   bridgeTimer = setInterval(() => {
-    void pollAndProcess().catch(console.error)
+    void pollAndProcess().catch((err) => log.error({ err }, 'pollAndProcess cycle error'))
   }, POLL_INTERVAL)
   bridgeTimer.unref()
 
   metrics.running = true
-  console.log(`[FulfillmentBridge] Worker started (node: ${NODE_ID}, interval: ${POLL_INTERVAL}ms)`)
+  log.info({ nodeId: NODE_ID, intervalMs: POLL_INTERVAL }, 'Worker started')
 }
 
 export function stopFulfillmentBridge(): void {
@@ -215,7 +218,7 @@ export function stopFulfillmentBridge(): void {
     clearInterval(bridgeTimer)
     bridgeTimer = null
     metrics.running = false
-    console.log('[FulfillmentBridge] Worker stopped')
+    log.info('Worker stopped')
   }
 }
 

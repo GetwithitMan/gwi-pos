@@ -11,6 +11,9 @@
 
 import { masterClient } from './db'
 import { neonClient, hasNeonConnection } from './neon-client'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('hardware-commands')
 import { testPrinterConnection, sendToPrinter } from './printer-connection'
 import {
   buildDocument,
@@ -31,7 +34,7 @@ export function startHardwareCommandWorker() {
   // Skip on Vercel — this worker only runs on the NUC
   if (process.env.VERCEL) return
 
-  console.log('[HardwareCmd] Worker started (polling every 3s)')
+  log.info('Worker started (polling every 3s)')
 
   async function processPendingCommands() {
     // HardwareCommand lives on Neon — cloud admin writes commands, NUC executes
@@ -108,7 +111,7 @@ export function startHardwareCommandWorker() {
 
     } catch (err) {
       // Don't crash the worker on transient errors
-      console.error('[HardwareCmd] Poll error:', err)
+      log.error({ err }, 'Poll error')
     }
   }
 

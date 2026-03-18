@@ -17,6 +17,9 @@
  */
 
 import { masterClient } from './db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('bridge-checkpoint')
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -50,7 +53,7 @@ async function renewLease(): Promise<void> {
       )
       _bridgeTableExists = result[0]?.exists ?? false
       if (!_bridgeTableExists) {
-        console.warn('[BridgeCheckpoint] Table does not exist — lease management disabled until migration runs')
+        log.warn('Table does not exist — lease management disabled until migration runs')
       }
     } catch {
       _bridgeTableExists = false
@@ -88,11 +91,11 @@ async function renewLease(): Promise<void> {
       const dbNow = dbTimeRow.now instanceof Date ? dbTimeRow.now.getTime() : new Date(dbTimeRow.now as unknown as string).getTime()
       const drift = Math.abs(Date.now() - dbNow)
       if (drift > 5000) {
-        console.warn(`[BridgeCheckpoint] NTP drift detected: ${drift}ms between Node.js and PostgreSQL — lease expiry and sync timestamps may be unreliable`)
+        log.warn({ driftMs: drift }, 'NTP drift detected between Node.js and PostgreSQL — lease expiry and sync timestamps may be unreliable')
       }
     }
   } catch (err) {
-    console.error('[BridgeCheckpoint] Failed to renew lease:', err instanceof Error ? err.message : err)
+    log.error({ err }, 'Failed to renew lease')
   }
 }
 
@@ -155,19 +158,19 @@ export async function shouldClaimBridge(): Promise<boolean> {
 export function startBridgeCheckpoint(): void {
   if (checkpointTimer) return
   if (!LOCATION_ID) {
-    console.log('[BridgeCheckpoint] No POS_LOCATION_ID — checkpoint disabled')
+    log.info('No POS_LOCATION_ID — checkpoint disabled')
     return
   }
 
   // Renew immediately on start
-  void renewLease().catch(console.error)
+  void renewLease().catch((err) => log.error({ err }, 'initial lease renewal failed'))
 
   checkpointTimer = setInterval(() => {
-    void renewLease().catch(console.error)
+    void renewLease().catch((err) => log.error({ err }, 'lease renewal failed'))
   }, HEARTBEAT_INTERVAL)
   checkpointTimer.unref()
 
-  console.log(`[BridgeCheckpoint] Started (node: ${NODE_ID}, lease: ${LEASE_DURATION}ms, heartbeat: ${HEARTBEAT_INTERVAL}ms)`)
+  log.info({ nodeId: NODE_ID, leaseDurationMs: LEASE_DURATION, heartbeatIntervalMs: HEARTBEAT_INTERVAL }, 'Started')
 }
 
 export async function stopBridgeCheckpoint(): Promise<void> {
@@ -187,12 +190,12 @@ export async function stopBridgeCheckpoint(): Promise<void> {
         LOCATION_ID,
         NODE_ID,
       )
-      console.log('[BridgeCheckpoint] Stopped (lease released)')
+      log.info('Stopped (lease released)')
     } catch (err) {
       // Best-effort — if DB is unreachable, the lease will expire naturally in 90s
-      console.warn('[BridgeCheckpoint] Stopped (lease release failed, will expire in ≤90s):', err instanceof Error ? err.message : err)
+      log.warn({ err }, 'Stopped (lease release failed, will expire in ≤90s)')
     }
   } else {
-    console.log('[BridgeCheckpoint] Stopped')
+    log.info('Stopped')
   }
 }

@@ -25,6 +25,9 @@
 
 import { neonClient, hasNeonConnection } from './neon-client'
 import { masterClient } from './db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('online-orders')
 
 let workerInterval: ReturnType<typeof setInterval> | null = null
 
@@ -40,15 +43,15 @@ export function startOnlineOrderDispatchWorker(port: number): void {
   }
 
   if (!process.env.PROVISION_API_KEY) {
-    console.log('[OnlineOrderWorker] PROVISION_API_KEY not set — worker disabled (online ordering not configured)')
+    log.info('PROVISION_API_KEY not set — worker disabled (online ordering not configured)')
     return
   }
 
-  console.log('[OnlineOrderWorker] Started (15s polling interval)')
+  log.info('Started (15s polling interval)')
 
   workerInterval = setInterval(() => {
     void pollAndDispatch(port, locationId).catch((err) =>
-      console.error('[OnlineOrderWorker] Poll cycle error:', err)
+      log.error({ err }, 'Poll cycle error')
     )
   }, POLL_INTERVAL_MS)
 }
@@ -57,7 +60,7 @@ export function stopOnlineOrderDispatchWorker(): void {
   if (workerInterval) {
     clearInterval(workerInterval)
     workerInterval = null
-    console.log('[OnlineOrderWorker] Stopped')
+    log.info('Stopped')
   }
 }
 
@@ -82,17 +85,17 @@ async function pollAndDispatch(port: number, locationId: string): Promise<void> 
     )
 
     if (!res.ok) {
-      console.error(`[OnlineOrderWorker] Dispatch endpoint returned ${res.status}`)
+      log.error(`Dispatch endpoint returned ${res.status}`)
       return
     }
 
     const data = (await res.json()) as { dispatched: number; found: number; errors?: string[] }
 
     if (data.dispatched > 0) {
-      console.log(`[OnlineOrderWorker] Dispatched ${data.dispatched} online order(s) to kitchen`)
+      log.info(`Dispatched ${data.dispatched} online order(s) to kitchen`)
     }
     if (data.errors?.length) {
-      console.error('[OnlineOrderWorker] Dispatch errors:', data.errors)
+      log.error({ errors: data.errors }, 'Dispatch errors')
     }
   } catch {
     // Server might not be ready yet on startup — silently ignore
@@ -189,7 +192,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
 
     if (orders.length === 0) return
 
-    console.log(`[OnlineOrderWorker] Found ${orders.length} online order(s) in Neon`)
+    log.info(`Found ${orders.length} online order(s) in Neon`)
 
     for (const { id: orderId } of orders) {
       try {
@@ -238,14 +241,9 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
           await upsertRow('OrderItemModifier', mod)
         }
 
-        console.log(
-          `[OnlineOrderWorker] Pulled order ${orderId} (${items.length} items) from Neon`
-        )
+        log.info({ orderId, itemCount: items.length }, 'Pulled order from Neon')
       } catch (err) {
-        console.error(
-          `[OnlineOrderWorker] Error pulling order ${orderId}:`,
-          err instanceof Error ? err.message : err
-        )
+        log.error({ err, orderId }, 'Error pulling order from Neon')
         // Revert claim in Neon on failure
         await neonClient!
           .$executeRawUnsafe(
@@ -256,9 +254,6 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
       }
     }
   } catch (err) {
-    console.error(
-      '[OnlineOrderWorker] Neon pull error:',
-      err instanceof Error ? err.message : err
-    )
+    log.error({ err }, 'Neon pull error')
   }
 }

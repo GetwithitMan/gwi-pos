@@ -29,6 +29,9 @@ import {
   markRetryAttempt,
 } from './socket-ack-queue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('socket-server')
 
 // Dynamic import for socket.io (optional dependency)
 const io: typeof import('socket.io').Server | null = null
@@ -49,7 +52,7 @@ async function emitViaIPC(payload: { type: string; target: string | string[]; ev
     })
     return res.ok
   } catch {
-    console.warn('[Socket] IPC to ws-server failed')
+    log.warn('IPC to ws-server failed')
     return false
   }
 }
@@ -147,7 +150,7 @@ function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void 
   void db.$executeRawUnsafe(
     `UPDATE "Terminal" SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{cfdTerminalId}', $1::jsonb) WHERE id = $2`,
     JSON.stringify(cfdTerminalId), registerTerminalId
-  ).catch(err => console.warn('[Socket] CFD pairing persist failed:', err instanceof Error ? err.message : err))
+  ).catch((err) => log.warn({ err }, 'CFD pairing persist failed'))
 }
 
 async function markTerminalOffline(terminalId: string, locationId: string, reason: string, socketId: string): Promise<void> {
@@ -171,9 +174,9 @@ async function markTerminalOffline(terminalId: string, locationId: string, reaso
         entityId: terminalId,
         details: { reason, socketId },
       },
-    }).catch(console.error)
+    }).catch((err) => log.error({ err }, 'audit log for terminal disconnect failed'))
   } catch (err) {
-    console.error('[Socket] markTerminalOffline failed:', err)
+    log.error({ err }, 'markTerminalOffline failed')
   }
 }
 
@@ -202,9 +205,9 @@ async function markTerminalOnline(terminalId: string, locationId: string): Promi
         entityId: terminalId,
         details: { source: 'join_station' },
       },
-    }).catch(console.error)
+    }).catch((err) => log.error({ err }, 'audit log for terminal reconnect failed'))
   } catch (err) {
-    console.error('[Socket] markTerminalOnline failed:', err)
+    log.error({ err }, 'markTerminalOnline failed')
   }
 }
 
@@ -257,12 +260,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         }
       }
       if (pairings.length > 0) {
-        console.log(`[Socket] Rehydrated ${pairings.length} CFD-to-register pairings from Terminal.metadata`)
+        log.info(`Rehydrated ${pairings.length} CFD-to-register pairings from Terminal.metadata`)
       }
     } catch (err) {
-      console.warn('[Socket] CFD pairing rehydration failed:', err instanceof Error ? err.message : err)
+      log.warn({ err }, 'CFD pairing rehydration failed')
     }
-  })().catch(console.error)
+  })().catch((err) => log.error({ err }, 'CFD pairing rehydration top-level error'))
 
   // ==================== Authentication Middleware ====================
   // Validate session cookie or deviceToken before allowing connection.
@@ -336,7 +339,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         if (authTerminalId) socket.data.terminalId = authTerminalId
         if (authEmployeeId) socket.data.employeeId = authEmployeeId
         if (!authTerminalId && !authEmployeeId) {
-          console.warn(`[Socket] Path 3 LAN connection without identity (no terminalId/employeeId) from ${socket.handshake.address} — allowing but untracked`)
+          log.warn(`Path 3 LAN connection without identity (no terminalId/employeeId) from ${socket.handshake.address} — allowing but untracked`)
         }
         return next()
       }
@@ -355,14 +358,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
       return next(new Error('Authentication required'))
     } catch (err) {
-      console.error('[Socket] Auth middleware error:', err)
+      log.error({ err }, 'Auth middleware error')
       return next(new Error('Authentication error'))
     }
   })
 
   socketServer.on('connection', (socket: Socket) => {
     const clientIp = socket.handshake.address
-    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] New connection from ${clientIp} (${socket.id}) authenticated=${socket.data.authenticated}`)
+    if (process.env.DEBUG_SOCKETS) log.debug(`New connection from ${clientIp} (${socket.id}) authenticated=${socket.data.authenticated}`)
 
     // If device token auth happened in middleware, join location room
     if (socket.data.terminalId && socket.data.locationId) {
@@ -371,7 +374,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (socket.data.cfdTerminalId) {
         setCfdMapping(socket.data.cfdTerminalId, socket.data.terminalId)
       }
-      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Native client authenticated: ${socket.data.terminalName} (${socket.data.platform})`)
+      if (process.env.DEBUG_SOCKETS) log.debug(`Native client authenticated: ${socket.data.terminalName} (${socket.data.platform})`)
     }
 
     // Auto-join location room from handshake query (used by SocketEventProvider)
@@ -379,14 +382,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     const serverLocationId = process.env.POS_LOCATION_ID
     if (queryLocationId && typeof queryLocationId === 'string' && queryLocationId.length > 0) {
       if (serverLocationId && queryLocationId !== serverLocationId) {
-        console.warn(`[Socket] Rejected location join: client sent ${queryLocationId}, server expects ${serverLocationId}`)
+        log.warn(`Rejected location join: client sent ${queryLocationId}, server expects ${serverLocationId}`)
         socket.disconnect(true)
         return
       }
       // Store authenticated locationId on socket for later validation
       if (!socket.data.locationId) socket.data.locationId = queryLocationId
       socket.join(`location:${queryLocationId}`)
-      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Auto-joined location:${queryLocationId} from query`)
+      if (process.env.DEBUG_SOCKETS) log.debug(`Auto-joined location:${queryLocationId} from query`)
     }
 
     // Valid room prefixes for subscribe
@@ -400,13 +403,13 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     socket.on('subscribe', (channelName: string) => {
       try {
         if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
-          console.warn(`[Socket] Rejected subscribe to invalid room: ${channelName}`)
+          log.warn(`Rejected subscribe to invalid room: ${channelName}`)
           return
         }
         // Rate limit: max rooms per socket
         const joinedRooms = socket.data.joinedRooms as Set<string>
         if (!joinedRooms.has(channelName) && joinedRooms.size >= MAX_ROOMS_PER_SOCKET) {
-          console.warn(`[Socket] Rejected subscribe — socket ${socket.id} at max rooms (${MAX_ROOMS_PER_SOCKET}): ${channelName}`)
+          log.warn(`Rejected subscribe — socket ${socket.id} at max rooms (${MAX_ROOMS_PER_SOCKET}): ${channelName}`)
           return
         }
         // Validate location rooms against authenticated context
@@ -416,14 +419,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
             // First location subscription establishes the binding
             socket.data.locationId = roomLocationId
           } else if (roomLocationId !== socket.data.locationId) {
-            console.warn(`[Socket] Rejected cross-location subscribe: socket bound to ${socket.data.locationId}, tried ${roomLocationId}`)
+            log.warn(`Rejected cross-location subscribe: socket bound to ${socket.data.locationId}, tried ${roomLocationId}`)
             return
           }
         }
         socket.join(channelName)
         joinedRooms.add(channelName)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'subscribe', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'subscribe handler error')
       }
     })
     socket.on('unsubscribe', (channelName: string) => {
@@ -431,7 +434,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         socket.leave(channelName)
         ;(socket.data.joinedRooms as Set<string>)?.delete(channelName)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'unsubscribe', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'unsubscribe handler error')
       }
     })
 
@@ -452,7 +455,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         // Validate locationId against authenticated context
         if (socket.data.locationId && locationId !== socket.data.locationId) {
-          console.warn(`[Socket] Rejected join_station: socket bound to ${socket.data.locationId}, payload says ${locationId}`)
+          log.warn(`Rejected join_station: socket bound to ${socket.data.locationId}, payload says ${locationId}`)
           socket.emit('joined', { success: false, error: 'Location mismatch' })
           return
         }
@@ -502,11 +505,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           connectedAt: new Date(),
         })
 
-        if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} joined rooms:`, {
-          location: `location:${locationId}`,
-          tags: tags.map(t => `tag:${locationId}:${t}`),
-          station: stationId ? `station:${stationId}` : null,
-        })
+        if (process.env.DEBUG_SOCKETS) log.debug({ terminalId, location: `location:${locationId}`, tags: tags.map(t => `tag:${locationId}:${t}`), station: stationId ? `station:${stationId}` : null }, 'Terminal joined rooms')
 
         // Acknowledge successful join — include latestEventId for catch-up baseline
         socket.emit('joined', { success: true, rooms: socket.rooms.size, latestEventId: await getLatestEventId(locationId) })
@@ -515,7 +514,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         recordReconnection()
         void markTerminalOnline(terminalId, locationId)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'join_station', socketId: socket.id, terminalId, error: String(err) }))
+        log.error({ err, socketId: socket.id, terminalId }, 'join_station handler error')
       }
     })
 
@@ -527,7 +526,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         connectedTerminals.delete(terminalId)
         // Socket.io automatically cleans up room memberships on disconnect
       } catch (err) {
-        console.error(JSON.stringify({ event: 'leave_station', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'leave_station handler error')
       }
     })
 
@@ -562,7 +561,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
         // Validate locationId matches socket's authenticated context
         if (socket.data.locationId && catchUpLocationId !== socket.data.locationId) {
-          console.warn(`[Socket] catch-up rejected: socket bound to ${socket.data.locationId}, requested ${catchUpLocationId}`)
+          log.warn(`catch-up rejected: socket bound to ${socket.data.locationId}, requested ${catchUpLocationId}`)
           return
         }
 
@@ -592,7 +591,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           }
 
           const dedupedCount = missedEvents.length - directEvents.length - latestByType.size
-          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Catch-up: replaying ${directEvents.length + latestByType.size} events to ${socket.id} (since eid=${lastEventId}, deduped ${dedupedCount})`)
+          if (process.env.DEBUG_SOCKETS) log.debug(`Catch-up: replaying ${directEvents.length + latestByType.size} events to ${socket.id} (since eid=${lastEventId}, deduped ${dedupedCount})`)
 
           // Send non-deduplicatable events first (order-specific, payment, etc.)
           for (const evt of directEvents) {
@@ -604,7 +603,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           }
         }
       } catch (err) {
-        console.error(JSON.stringify({ event: 'catch-up', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'catch-up handler error')
       }
     })
 
@@ -619,7 +618,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         const locationId = socket.data.locationId
         if (!locationId) {
-          console.warn(`[Socket] order:editing rejected — no authenticated locationId on socket ${socket.id}`)
+          log.warn(`order:editing rejected — no authenticated locationId on socket ${socket.id}`)
           return
         }
         if (typeof data.orderId === 'string') {
@@ -630,7 +629,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           })
         }
       } catch (err) {
-        console.error(JSON.stringify({ event: 'order:editing', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'order:editing handler error')
       }
     })
 
@@ -638,7 +637,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         const locationId = socket.data.locationId
         if (!locationId) {
-          console.warn(`[Socket] order:editing-released rejected — no authenticated locationId on socket ${socket.id}`)
+          log.warn(`order:editing-released rejected — no authenticated locationId on socket ${socket.id}`)
           return
         }
         if (typeof data.orderId === 'string') {
@@ -648,7 +647,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           })
         }
       } catch (err) {
-        console.error(JSON.stringify({ event: 'order:editing-released', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'order:editing-released handler error')
       }
     })
 
@@ -693,7 +692,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           })
         }
       }).catch((err: unknown) => {
-        console.error('[Socket] tab:close-request internal call failed:', err)
+        log.error({ err }, 'tab:close-request internal call failed')
         socket.emit(MOBILE_EVENTS.TAB_CLOSED, { orderId, success: false, amount: 0, error: 'Failed to close tab' })
       })
     })
@@ -717,9 +716,9 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         // Fire-and-forget: emit ORDER_METADATA_UPDATED for event-sourced sync
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
           employeeId,
-        }).catch(err => console.error('[Socket] Failed to emit ORDER_METADATA_UPDATED for tab transfer:', err))
+        }).catch((err) => log.error({ err }, 'Failed to emit ORDER_METADATA_UPDATED for tab transfer'))
       }).catch((err: unknown) => {
-        console.error('[Socket] tab:transfer-request DB update failed:', err)
+        log.error({ err }, 'tab:transfer-request DB update failed')
         socket.emit('tab:error', { orderId, message: 'Failed to transfer tab' })
       })
     })
@@ -732,7 +731,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         if (!locationId) return
         socketServer.to(`location:${locationId}`).emit('tab:manager-alert', { ...data, locationId })
       } catch (err) {
-        console.error(JSON.stringify({ event: 'TAB_ALERT_MANAGER', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'TAB_ALERT_MANAGER handler error')
       }
     })
 
@@ -746,14 +745,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         const locationId = socket.data.locationId
         if (!locationId) {
-          console.warn(`[Socket] pat:pay-request rejected — no authenticated locationId on socket ${socket.id}`)
+          log.warn(`pat:pay-request rejected — no authenticated locationId on socket ${socket.id}`)
           return
         }
         if (typeof data.orderId !== 'string' || !data.orderId) return
-        if (process.env.DEBUG_SOCKETS) console.log(`[Socket] pat:pay-request relay: order ${data.orderId} → location:${locationId}`)
+        if (process.env.DEBUG_SOCKETS) log.debug(`pat:pay-request relay: order ${data.orderId} → location:${locationId}`)
         socketServer.to(`location:${locationId}`).except(socket.id).emit(PAT_EVENTS.PAY_REQUEST, data)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'pat:pay-request', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'pat:pay-request handler error')
       }
     })
 
@@ -765,14 +764,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         const locationId = socket.data.locationId
         if (!locationId) {
-          console.warn(`[Socket] pat:pay-result rejected — no authenticated locationId on socket ${socket.id}`)
+          log.warn(`pat:pay-result rejected — no authenticated locationId on socket ${socket.id}`)
           return
         }
         if (typeof data.orderId !== 'string' || !data.orderId) return
-        if (process.env.DEBUG_SOCKETS) console.log(`[Socket] pat:pay-result relay: order ${data.orderId} success=${data.success} → location:${locationId}`)
+        if (process.env.DEBUG_SOCKETS) log.debug(`pat:pay-result relay: order ${data.orderId} success=${data.success} → location:${locationId}`)
         socketServer.to(`location:${locationId}`).except(socket.id).emit(PAT_EVENTS.PAY_RESULT, data)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'pat:pay-result', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'pat:pay-result handler error')
       }
     })
 
@@ -812,20 +811,20 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         // Require authenticated locationId on sender
         const senderLocationId = socket.data.locationId
         if (!senderLocationId) {
-          console.warn(`[Socket] terminal_message rejected — no authenticated locationId on socket ${socket.id}`)
+          log.warn(`terminal_message rejected — no authenticated locationId on socket ${socket.id}`)
           return
         }
 
         // Validate event name against allow-list
         if (!TERMINAL_MESSAGE_ALLOWED_EVENTS.has(event)) {
-          console.warn(`[Socket] terminal_message rejected — event "${event}" not in allow-list (socket ${socket.id})`)
+          log.warn(`terminal_message rejected — event "${event}" not in allow-list (socket ${socket.id})`)
           return
         }
 
         // Validate target terminal belongs to the same location
         const targetInfo = connectedTerminals.get(terminalId)
         if (targetInfo && targetInfo.locationId !== senderLocationId) {
-          console.warn(`[Socket] terminal_message rejected — cross-location: sender ${senderLocationId}, target ${targetInfo.locationId}`)
+          log.warn(`terminal_message rejected — cross-location: sender ${senderLocationId}, target ${targetInfo.locationId}`)
           return
         }
 
@@ -838,7 +837,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           socketServer.to(`terminal:${terminalId}`).emit(event, data)
         }
       } catch (err) {
-        console.error(JSON.stringify({ event: 'terminal_message', socketId: socket.id, targetTerminal: terminalId, error: String(err) }))
+        log.error({ err, socketId: socket.id, targetTerminal: terminalId }, 'terminal_message handler error')
       }
     })
 
@@ -854,7 +853,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         socketServer.to(`terminal:${terminalId}`).emit('sync:completed', stats)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'sync_completed', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'sync_completed handler error')
       }
     })
 
@@ -877,7 +876,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           if (!cfdTerminalId) return
           void emitToTerminal(cfdTerminalId, cfdEvent, data)
         } catch (err) {
-          console.error(JSON.stringify({ event: cfdEvent, socketId: socket.id, error: String(err) }))
+          log.error({ err, socketId: socket.id, event: cfdEvent }, 'CFD register-to-cfd relay error')
         }
       })
     }
@@ -913,10 +912,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
             setCfdMapping(myTerminalId, register.id)
             void emitToTerminal(register.id, cfdEvent, data)
           }).catch((err: unknown) => {
-            console.error(JSON.stringify({ event: cfdEvent, lookupFailed: true, error: String(err) }))
+            log.error({ err, event: cfdEvent }, 'CFD-to-register lookup failed')
           })
         } catch (err) {
-          console.error(JSON.stringify({ event: cfdEvent, socketId: socket.id, error: String(err) }))
+          log.error({ err, socketId: socket.id, event: cfdEvent }, 'CFD cfd-to-register relay error')
         }
       })
     }
@@ -935,12 +934,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         const senderLocationId = socket.data.locationId
         if (!senderLocationId) {
-          console.warn(`[Socket] terminal:payment_request rejected — no authenticated locationId on socket ${socket.id}`)
+          log.warn(`terminal:payment_request rejected — no authenticated locationId on socket ${socket.id}`)
           return
         }
         void emitToTerminal(data.targetTerminalId, 'terminal:payment_request', data)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'terminal:payment_request', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'terminal:payment_request handler error')
       }
     })
 
@@ -957,12 +956,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       try {
         const senderLocationId = socket.data.locationId
         if (!senderLocationId) {
-          console.warn(`[Socket] terminal:payment_complete rejected — no authenticated locationId on socket ${socket.id}`)
+          log.warn(`terminal:payment_complete rejected — no authenticated locationId on socket ${socket.id}`)
           return
         }
         void emitToTerminal(data.toTerminalId, 'terminal:payment_complete', data)
       } catch (err) {
-        console.error(JSON.stringify({ event: 'terminal:payment_complete', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'terminal:payment_complete handler error')
       }
     })
 
@@ -975,7 +974,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         for (const [terminalId, info] of connectedTerminals.entries()) {
           if (info.socketId === socket.id) {
             connectedTerminals.delete(terminalId)
-            if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} disconnected: ${reason}`)
+            if (process.env.DEBUG_SOCKETS) log.debug(`Terminal ${terminalId} disconnected: ${reason}`)
             void markTerminalOffline(terminalId, info.locationId, reason, socket.id)
             handled = true
             break
@@ -990,12 +989,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           cfdToRegisterMap.delete(socket.data.cfdTerminalId)
         }
       } catch (err) {
-        console.error(JSON.stringify({ event: 'disconnect', socketId: socket.id, error: String(err) }))
+        log.error({ err, socketId: socket.id }, 'disconnect handler error')
       }
     })
 
     socket.on('error', (error: Error) => {
-      console.error(`[Socket] Error on ${socket.id}:`, error)
+      log.error({ err: error, socketId: socket.id }, 'socket error')
     })
   })
 
@@ -1007,7 +1006,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       rooms: socketServer.sockets.adapter.rooms.size,
     }
     if (stats.connections > 0) {
-      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Status:`, stats)
+      if (process.env.DEBUG_SOCKETS) log.debug(stats, 'Socket status')
     }
   }, 60000) // Every minute
 
@@ -1023,7 +1022,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       }
     }
     if (cleaned > 0) {
-      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Cleaned ${cleaned} stale terminal entries`)
+      if (process.env.DEBUG_SOCKETS) log.debug(`Cleaned ${cleaned} stale terminal entries`)
     }
   }, 60_000) // Every 60 seconds
 
@@ -1048,14 +1047,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         })
         markRetryAttempt(pending.ackId)
       } catch (err) {
-        console.error('[socket-ack] Retry emit failed:', err)
+        log.error({ err }, 'socket-ack retry emit failed')
       }
     }
   }, 2000)
 
   // Store in global so API routes can emit events (survives HMR)
   setSocketServer(socketServer)
-  if (process.env.DEBUG_SOCKETS) console.log('[Socket] Server initialized and stored in globalThis')
+  if (process.env.DEBUG_SOCKETS) log.debug('Server initialized and stored in globalThis')
   return socketServer
 }
 
@@ -1142,7 +1141,7 @@ export async function emitToLocation(locationId: string, event: string, data: un
   if (globalForSocket.socketServer) {
     const room = `location:${locationId}`
     const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
-    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
+    if (process.env.DEBUG_SOCKETS) log.debug(`emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
     // Record in buffer and inject _eid for client catch-up tracking
     const eid = recordEvent(locationId, event, data, room)
     const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
@@ -1174,7 +1173,7 @@ export async function emitCriticalToLocation(
   }
   if (globalForSocket.socketServer) {
     const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
-    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitCriticalToLocation: ${event} -> ${room} (${roomSockets?.size ?? 0} clients) ackId=${ackId}`)
+    if (process.env.DEBUG_SOCKETS) log.debug(`emitCriticalToLocation: ${event} -> ${room} (${roomSockets?.size ?? 0} clients) ackId=${ackId}`)
     // Also record in event buffer for catch-up
     const eid = recordEvent(locationId, event, payload, room)
     const enriched = { ...payload, _eid: eid }
@@ -1192,7 +1191,7 @@ export async function emitToTerminal(terminalId: string, event: string, data: un
   recordMetricEvent()
   const room = `terminal:${terminalId}`
   if (globalForSocket.socketServer) {
-    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitToTerminal: ${event} → ${room}`)
+    if (process.env.DEBUG_SOCKETS) log.debug(`emitToTerminal: ${event} → ${room}`)
     globalForSocket.socketServer.to(room).emit(event, data)
     return true
   }
