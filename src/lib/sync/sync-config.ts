@@ -7,7 +7,7 @@
 
 export type SyncDirection = 'upstream' | 'downstream' | 'bidirectional' | 'none'
 export type SyncOwner = 'nuc' | 'cloud' | 'both' | 'none'
-export type ConflictStrategy = 'neon-wins' | 'local-wins' | 'latest-wins'
+export type ConflictStrategy = 'neon-wins' | 'local-wins' | 'latest-wins' | 'quarantine'
 
 export interface SyncModelConfig {
   direction: SyncDirection
@@ -39,12 +39,12 @@ export interface SyncModelConfig {
  */
 export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   // ── Bidirectional (NUC ↔ Neon, filtered by lastMutatedBy) ─────────────
-  Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 50, conflictStrategy: 'neon-wins' },
-  OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 50, conflictStrategy: 'neon-wins' },
-  OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100, conflictStrategy: 'neon-wins' },
-  OrderCard:              { direction: 'bidirectional', owner: 'both', priority: 24, batchSize: 100, conflictStrategy: 'neon-wins' },
-  OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100, conflictStrategy: 'neon-wins' },
-  Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 50, conflictStrategy: 'neon-wins' },
+  Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 50, conflictStrategy: 'quarantine' },
+  OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 50, conflictStrategy: 'quarantine' },
+  OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100, conflictStrategy: 'quarantine' },
+  OrderCard:              { direction: 'bidirectional', owner: 'both', priority: 24, batchSize: 100, conflictStrategy: 'quarantine' },
+  OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100, conflictStrategy: 'quarantine' },
+  Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 50, conflictStrategy: 'quarantine' },
 
   // ── NUC-owned (upstream: NUC → Neon) ──────────────────────────────────
   OrderItemIngredient:    { direction: 'upstream', owner: 'nuc', priority: 26, batchSize: 100 },
@@ -254,7 +254,7 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
 
 /**
  * Effective runtime registry — starts as a shallow copy of SYNC_MODELS.
- * validateSyncCoverage() may add auto-registered or local-only entries here.
+ * validateSyncCoverage() may add local-only entries here.
  * All getter functions read from this, never from SYNC_MODELS.
  */
 let effectiveSyncModels: Record<string, SyncModelConfig> = { ...SYNC_MODELS }
@@ -308,12 +308,8 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
  * SYNC COVERAGE VALIDATOR (Fail-Closed)
  *
  * Called at server startup (blocking). Queries the database for all tables
- * and verifies every one is in SYNC_MODELS.
- *
- * Behavior:
- *   - Production/CI/Staging: Unknown tables → FATAL error (fail-closed)
- *   - Dev with ALLOW_SYNC_AUTO_REGISTER=true: Auto-register + warn
- *   - Dev without flag: FATAL error (same as prod)
+ * and verifies every one is in SYNC_MODELS. Unknown tables are always a
+ * FATAL error — there is no auto-register bypass.
  *
  * Also validates:
  *   - LOCAL_ONLY_TABLES/SYSTEM_TABLES entries exist in actual DB (catch stale names)
@@ -337,9 +333,7 @@ const SYSTEM_TABLES = new Set([
 
 export async function validateSyncCoverage(
   db: { $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T> },
-  opts?: { allowAutoRegister?: boolean },
 ): Promise<void> {
-  const allowAutoRegister = opts?.allowAutoRegister ?? false
 
   const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
     `SELECT table_name FROM information_schema.tables
@@ -356,8 +350,6 @@ export async function validateSyncCoverage(
   const errors: string[] = []
 
   // ── 1. Check for unknown tables ─────────────────────────────────────
-  let autoRegistered = 0
-
   for (const { table_name } of tables) {
     if (SYSTEM_TABLES.has(table_name)) continue
     if (configuredModels.has(table_name)) continue
@@ -365,17 +357,6 @@ export async function validateSyncCoverage(
     if (LOCAL_ONLY_TABLES.has(table_name)) {
       // Known local-only — register in effectiveSyncModels (never mutate SYNC_MODELS)
       effectiveSyncModels[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
-    } else if (allowAutoRegister) {
-      // Dev auto-register with loud warning
-      const nextPriority = Math.max(...Object.values(effectiveSyncModels).map(c => c.priority)) + 1
-      effectiveSyncModels[table_name] = {
-        direction: 'upstream',
-        owner: 'nuc',
-        priority: nextPriority,
-        batchSize: 50,
-      }
-      autoRegistered++
-      console.warn(`[SYNC CONFIG] ⚠️  Auto-registered "${table_name}" (upstream, priority: ${nextPriority}). Add to sync-config.ts!`)
     } else {
       errors.push(`Unknown table "${table_name}" — add it to SYNC_MODELS or LOCAL_ONLY_TABLES in sync-config.ts`)
     }
@@ -402,25 +383,14 @@ export async function validateSyncCoverage(
     .sort(([a], [b]) => a - b)
 
   if (collisions.length > 0) {
-    const ignoreDateStr = process.env.IGNORE_PRIORITY_COLLISIONS_UNTIL
-    const parsedDate = ignoreDateStr ? new Date(ignoreDateStr) : null
-    const ignoreDate = parsedDate && !isNaN(parsedDate.getTime()) ? parsedDate : null
-    const now = new Date()
-
     const collisionDetails = collisions
       .map(([priority, models]) => `  priority ${priority}: ${models.join(', ')}`)
       .join('\n')
 
-    if (ignoreDate && now < ignoreDate) {
-      console.warn(
-        `[SYNC CONFIG] Priority collisions (ignored until ${ignoreDateStr}):\n${collisionDetails}`
-      )
-    } else {
-      errors.push(
-        `Priority collisions detected (models sharing the same priority):\n${collisionDetails}\n` +
-        `Fix by assigning unique priorities, or set IGNORE_PRIORITY_COLLISIONS_UNTIL=YYYY-MM-DD to defer.`
-      )
-    }
+    errors.push(
+      `Priority collisions detected (models sharing the same priority):\n${collisionDetails}\n` +
+      `Fix by assigning unique priorities.`
+    )
   }
 
   // ── 4. Report ──────────────────────────────────────────────────────
@@ -428,10 +398,6 @@ export async function validateSyncCoverage(
     const errorMessage = `[SYNC CONFIG] FATAL — ${errors.length} validation error(s):\n\n${errors.join('\n\n')}`
     console.error(errorMessage)
     throw new Error(errorMessage)
-  }
-
-  if (autoRegistered > 0) {
-    console.warn(`[SYNC CONFIG] ⚠️  ${autoRegistered} table(s) auto-registered. Add them to sync-config.ts for permanent config.`)
   }
 
   const totalSynced = Object.values(effectiveSyncModels).filter(c => c.direction !== 'none').length

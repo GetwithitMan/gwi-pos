@@ -11,6 +11,10 @@
  * Only runs when SYNC_ENABLED=true and NEON_DATABASE_URL is configured.
  */
 
+// NOTE: Inline async imports (await import(...)) are used for socket modules
+// to avoid circular dependencies. These should be converted to top-level imports
+// once the socket module dependency graph is cleaned up.
+
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
 import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, getBusinessKey, DOWNSTREAM_INTERVAL_MS, type ConflictStrategy } from './sync-config'
@@ -366,6 +370,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         })
       }
 
+      // TRANSITIONAL: Best-effort socket dispatch for downstream-synced orders.
+      // Will be replaced by formal downstream notification via worker manager (Step 8).
       // Emit socket events when Order or OrderItem rows sync to local PG
       // so terminals know new data arrived without waiting for the next poll.
       // Deduplicate per locationId — at most one dispatch per location per batch.
@@ -573,6 +579,8 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
     }
   }
 
+  // TRANSITIONAL: Best-effort socket dispatch for downstream-synced orders.
+  // Will be replaced by formal downstream notification via worker manager (Step 8).
   // ── Emit socket events immediately for instant KDS display ──────────────
   // The bridge worker will also process the persisted FulfillmentEvents for
   // durable retry, but emitting here eliminates the 2s bridge poll latency
@@ -714,6 +722,11 @@ async function handleCloudTableStatus(row: Record<string, unknown>): Promise<voi
 // ── Bidirectional Conflict Detection ──────────────────────────────────────────
 
 /**
+ * @deprecated Legacy conflict detection for non-protected bidirectional models.
+ * Protected money/order models now use checkQuarantine() from sync-conflict-quarantine.ts.
+ * This function will be removed once all bidirectional models use versioned conflict handling.
+ * DO NOT add new models to this code path — use the quarantine system instead.
+ *
  * Detect conflicts for bidirectional models during downstream sync.
  *
  * When a Neon row arrives that also exists locally, compare timestamps

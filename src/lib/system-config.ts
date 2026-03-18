@@ -28,7 +28,6 @@ export interface SystemConfig {
   readonly neonDatabaseUrl: string | undefined
   readonly provisionApiKey: string
   readonly port: number
-  readonly allowSyncAutoRegister: boolean
 }
 
 // ── Build config ─────────────────────────────────────────────────────────────
@@ -69,7 +68,6 @@ function buildConfig(): SystemConfig {
     neonDatabaseUrl: process.env.NEON_DATABASE_URL || undefined,
     provisionApiKey,
     port: parsePort(process.env.PORT, 3005),
-    allowSyncAutoRegister: parseBool(process.env.ALLOW_SYNC_AUTO_REGISTER, false),
   })
 }
 

@@ -243,7 +243,7 @@ async function main() {
   // Ensures every DB table is in sync config. Fails boot in production if unknown.
   try {
     const { validateSyncCoverage } = await import('./src/lib/sync/sync-config')
-    await validateSyncCoverage(masterClient, { allowAutoRegister: config.allowSyncAutoRegister })
+    await validateSyncCoverage(masterClient)
   } catch (err) {
     console.error('[Server] Sync coverage validation failed:', err instanceof Error ? err.message : err)
     if (config.isProduction) {

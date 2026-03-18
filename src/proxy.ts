@@ -10,13 +10,27 @@ import {
   checkRateLimit,
 } from '@/lib/cellular-auth'
 import { signTenantContext, hashBody } from '@/lib/tenant-context-signer'
-import { parseBool, parseStationRole } from '@/lib/env-parse'
+import { parseBool, parseStationRole, parseNodeEnv } from '@/lib/env-parse'
 
-// Edge-safe config — parsed via shared env-parse.ts (no node:crypto dependency).
-// system-config.ts uses randomBytes for dev fallbacks and cannot run in edge runtime.
-const GWI_ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
-const TENANT_JWT_ENABLED = parseBool(process.env.TENANT_JWT_ENABLED, false)
-const TENANT_SIGNING_KEY = process.env.TENANT_SIGNING_KEY || ''
+// ── Edge-safe proxy config ──────────────────────────────────────────────
+// All env reads consolidated here. Uses shared parsers from env-parse.ts.
+// No direct process.env reads anywhere else in this file.
+const proxyConfig = {
+  gwiAccessSecret: process.env.GWI_ACCESS_SECRET ?? '',
+  tenantJwtEnabled: parseBool(process.env.TENANT_JWT_ENABLED, false),
+  tenantSigningKey: process.env.TENANT_SIGNING_KEY || '',
+  missionControlUrl: process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com',
+  provisionApiKey: process.env.PROVISION_API_KEY || '',
+  isNucStation: !!process.env.STATION_ROLE,
+  stationRole: parseStationRole(process.env.STATION_ROLE),
+  nodeEnv: parseNodeEnv(process.env.NODE_ENV),
+} as const
+
+// Fail-fast: PROVISION_API_KEY is required in production cloud deployments.
+// NUC stations use PIN-based auth and never serve cloud subdomain requests.
+if (!proxyConfig.provisionApiKey && proxyConfig.nodeEnv === 'production' && !proxyConfig.isNucStation) {
+  throw new Error('[Startup] PROVISION_API_KEY environment variable is required in production')
+}
 
 /**
  * Multi-tenant proxy with cloud auth enforcement.
@@ -63,17 +77,6 @@ const CLOUD_PARENT_DOMAINS = [
   '.ordercontrolcenter.com',
   '.barpos.restaurant',
 ]
-
-const MISSION_CONTROL_URL =
-  process.env.MISSION_CONTROL_URL || 'https://app.thepasspos.com'
-// PROVISION_API_KEY is only needed for cloud deployments (Vercel) to verify
-// pos-cloud-session JWTs. NUC stations (identified by STATION_ROLE) use
-// PIN-based auth and never serve cloud subdomain requests.
-const IS_NUC_STATION = !!process.env.STATION_ROLE
-if (!process.env.PROVISION_API_KEY && process.env.NODE_ENV === 'production' && !IS_NUC_STATION) {
-  throw new Error('[Startup] PROVISION_API_KEY environment variable is required in production')
-}
-const PROVISION_API_KEY = process.env.PROVISION_API_KEY || ''
 
 function isVercelPreview(hostname: string): boolean {
   return hostname.endsWith('.vercel.app') && hostname !== 'gwi-pos.vercel.app'
@@ -233,8 +236,8 @@ async function signAndAttachTenantJwt(
   venueSlug: string,
   locationId: string,
 ): Promise<void> {
-  if (!TENANT_JWT_ENABLED) return
-  if (!TENANT_SIGNING_KEY) {
+  if (!proxyConfig.tenantJwtEnabled) return
+  if (!proxyConfig.tenantSigningKey) {
     console.warn('[proxy] TENANT_JWT_ENABLED=true but no signing key — skipping JWT')
     return
   }
@@ -259,7 +262,7 @@ async function signAndAttachTenantJwt(
   try {
     const jwt = await signTenantContext(
       { venueSlug, locationId: locationId || '', method, path, bodySha256 },
-      TENANT_SIGNING_KEY,
+      proxyConfig.tenantSigningKey,
     )
     headers.set('x-tenant-context', jwt)
     // Pass body digest as a trusted internal header so with-venue can verify
@@ -297,7 +300,7 @@ export async function proxy(request: NextRequest) {
   // Read-only requests (GET/HEAD) still pass so health checks
   // and diagnostics remain functional.
   // ═══════════════════════════════════════════════════════════
-  if (process.env.STATION_ROLE === 'fenced') {
+  if (proxyConfig.stationRole === 'fenced') {
     // Allow the fence endpoint itself through so STONITH can get acknowledgment
     const isFenceEndpoint = pathname === '/api/internal/ha-fence'
     if (!isFenceEndpoint && request.method !== 'GET' && request.method !== 'HEAD') {
@@ -487,7 +490,7 @@ export async function proxy(request: NextRequest) {
   // ═══════════════════════════════════════════════════════════
   if (
     (hostname === 'www.barpos.restaurant' || hostname === 'barpos.restaurant') &&
-    GWI_ACCESS_SECRET
+    proxyConfig.gwiAccessSecret
   ) {
     // Always allow: the access gate page itself, its API routes,
     // auth routes (forgot/reset password), and internal admin API routes
@@ -503,7 +506,7 @@ export async function proxy(request: NextRequest) {
 
     const accessToken = request.cookies.get('gwi-access')?.value
     const accessPayload = accessToken
-      ? await verifyAccessToken(accessToken, GWI_ACCESS_SECRET)
+      ? await verifyAccessToken(accessToken, proxyConfig.gwiAccessSecret)
       : null
 
     if (!accessPayload) {
@@ -515,7 +518,7 @@ export async function proxy(request: NextRequest) {
     // Refresh the session cookie on every request — resets the 1-hour
     // inactivity clock so active users stay logged in automatically.
     const { signAccessToken } = await import('@/lib/access-gate')
-    const freshToken = await signAccessToken(accessPayload.email, GWI_ACCESS_SECRET)
+    const freshToken = await signAccessToken(accessPayload.email, proxyConfig.gwiAccessSecret)
     const response = NextResponse.next()
     response.cookies.set('gwi-access', freshToken, {
       httpOnly: true,
@@ -564,10 +567,10 @@ export async function proxy(request: NextRequest) {
     // at *.ordercontrolcenter.com skip this — they only need the
     // pos-cloud-session cookie from venue-login / cloud auth.
     const isBarposDomain = hostname.endsWith('.barpos.restaurant')
-    if (GWI_ACCESS_SECRET && isBarposDomain) {
+    if (proxyConfig.gwiAccessSecret && isBarposDomain) {
       const accessToken = request.cookies.get('gwi-access')?.value
       const accessPayload = accessToken
-        ? await verifyAccessToken(accessToken, GWI_ACCESS_SECRET)
+        ? await verifyAccessToken(accessToken, proxyConfig.gwiAccessSecret)
         : null
 
       if (!accessPayload) {
@@ -587,7 +590,7 @@ export async function proxy(request: NextRequest) {
     }
 
     // Validate JWT token (signature + expiry + slug match)
-    const payload = await verifyCloudToken(sessionToken, PROVISION_API_KEY)
+    const payload = await verifyCloudToken(sessionToken, proxyConfig.provisionApiKey)
 
     if (!payload || payload.slug !== venueSlug) {
       // Invalid or expired session → clear cookie, redirect to admin-login

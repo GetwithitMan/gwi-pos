@@ -43,6 +43,15 @@ async function resolveTenantLocationId(): Promise<string | undefined> {
   }
 }
 
+/** Apply soft-delete filter: inject `deletedAt: null` if not explicitly set. */
+function applySoftDeleteFilter(model: string, args: { where?: Record<string, unknown> }): void {
+  if (NO_SOFT_DELETE_MODELS.has(model)) return
+  args.where = args.where ?? {}
+  if ((args.where as Record<string, unknown>).deletedAt === undefined) {
+    (args.where as Record<string, unknown>).deletedAt = null
+  }
+}
+
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
   venueClients: Map<string, { client: PrismaClient; lastAccessed: number }> | undefined
@@ -86,75 +95,35 @@ function createPrismaClient(url?: string) {
     query: {
       $allModels: {
         async findMany({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async findFirst({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async findFirstOrThrow({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async findUnique({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async findUniqueOrThrow({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async count({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async aggregate({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async groupBy({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
       },
@@ -388,39 +357,19 @@ function createAdminClient(url?: string): PrismaClient {
     query: {
       $allModels: {
         async findMany({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async findFirst({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async findUnique({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
         async count({ model, args, query }) {
-          if (!NO_SOFT_DELETE_MODELS.has(model)) {
-            args.where = args.where ?? {}
-            if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null
-            }
-          }
+          applySoftDeleteFilter(model, args)
           return query(args)
         },
       },
