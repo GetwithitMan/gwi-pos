@@ -21,6 +21,8 @@ export interface TenantContextPayload {
   iat: number
   exp: number
   jti: string
+  iss: string
+  aud: string
   bodySha256?: string // required for POST/PUT/PATCH/DELETE
 }
 
@@ -60,7 +62,7 @@ export async function hashBody(body: string): Promise<string> {
  * @returns Signed JWT string
  */
 export async function signTenantContext(
-  payload: Omit<TenantContextPayload, 'iat' | 'exp' | 'jti'>,
+  payload: Omit<TenantContextPayload, 'iat' | 'exp' | 'jti' | 'iss' | 'aud'>,
   secret: string,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
@@ -69,6 +71,8 @@ export async function signTenantContext(
     iat: now,
     exp: now + 15, // 15 seconds max
     jti: crypto.randomUUID(),
+    iss: 'gwi-pos-proxy',
+    aud: 'gwi-pos-backend',
   }
 
   const encoder = new TextEncoder()
@@ -140,6 +144,9 @@ export async function verifyTenantContext(
     // Check expiry
     const now = Math.floor(Date.now() / 1000)
     if (!payload.exp || payload.exp < now) return null
+
+    // Check issuer/audience
+    if (payload.iss !== 'gwi-pos-proxy' || payload.aud !== 'gwi-pos-backend') return null
 
     // Check method binding
     if (payload.method !== opts.method) return null

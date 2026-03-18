@@ -9,11 +9,13 @@
  */
 
 import { randomBytes } from 'node:crypto'
+import { parseNodeEnv, parseBool, parseStationRole, parsePort } from './env-parse'
+import type { NodeEnv, StationRole } from './env-parse'
+
+// Re-export types so existing imports keep working
+export type { NodeEnv, StationRole }
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-export type NodeEnv = 'development' | 'production' | 'test'
-export type StationRole = 'primary' | 'backup' | 'fenced' | undefined
 
 export interface SystemConfig {
   readonly nodeEnv: NodeEnv
@@ -29,41 +31,18 @@ export interface SystemConfig {
   readonly allowSyncAutoRegister: boolean
 }
 
-// ── Parsing helpers ──────────────────────────────────────────────────────────
-
-function parseNodeEnv(raw: string | undefined): NodeEnv {
-  if (raw === 'production' || raw === 'test') return raw
-  return 'development'
-}
-
-function parseBool(raw: string | undefined, fallback: boolean): boolean {
-  if (raw === undefined || raw === '') return fallback
-  return raw === 'true' || raw === '1'
-}
-
-function parseStationRole(raw: string | undefined): StationRole {
-  if (raw === 'primary' || raw === 'backup' || raw === 'fenced') return raw
-  return undefined
-}
-
-function parsePort(raw: string | undefined, fallback: number): number {
-  if (!raw) return fallback
-  const n = parseInt(raw, 10)
-  if (isNaN(n) || n < 1 || n > 65535) return fallback
-  return n
-}
-
 // ── Build config ─────────────────────────────────────────────────────────────
 
 function buildConfig(): SystemConfig {
   const nodeEnv = parseNodeEnv(process.env.NODE_ENV)
   const isProduction = nodeEnv === 'production'
   const isStaging = parseBool(process.env.STAGING, false)
+  const requireProdKeys = isProduction || isStaging
 
   // Tenant signing key — required in prod/staging
   let tenantSigningKey = process.env.TENANT_SIGNING_KEY || ''
   if (!tenantSigningKey) {
-    if (isProduction || isStaging) {
+    if (requireProdKeys) {
       throw new Error(
         '[config] TENANT_SIGNING_KEY is required in production/staging. ' +
         'Generate one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'

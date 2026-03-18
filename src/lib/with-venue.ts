@@ -54,7 +54,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
 
         // Build verify options from request
         const method = (request as any)?.method || 'GET'
-        const pathname = headersList.get('x-next-pathname') || (request as any)?.nextUrl?.pathname || '/'
+        const pathname = headersList.get('x-original-path') || '/'
         const verifyOpts: VerifyOptions = { method, path: pathname }
 
         // For mutating methods, read the trusted body hash header set by proxy.ts
