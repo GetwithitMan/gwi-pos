@@ -2,6 +2,8 @@ import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as PaymentRepository from '@/lib/repositories/payment-repository'
+import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { OrderStatus, PaymentMethod, PaymentStatus, PmsAttemptStatus } from '@/generated/prisma/client'
 import { roundAmount } from '@/lib/payment'
 import { parseSettings } from '@/lib/settings'
@@ -85,7 +87,8 @@ export const POST = withVenue(withTiming(async function POST(
     // ── Permission checks OUTSIDE the transaction (no FOR UPDATE needed) ──
     // These calls hit the auth service / employee table, not the Order row.
     // Running them before the lock reduces contention time.
-    // TODO: migrate to OrderRepository.getOrderByIdWithSelect once locationId is available from request context
+    // NOTE: First fetch uses db directly because we don't have locationId yet.
+    // Once we have locationId from the order, all subsequent queries use repositories.
     const preCheckOrder = await db.order.findUnique({
       where: { id: orderId },
       select: { locationId: true, employeeId: true },
@@ -142,7 +145,8 @@ export const POST = withVenue(withTiming(async function POST(
 
     if (hasRoomCharge) {
       // Lightweight query for settings — no FOR UPDATE, no lock
-      // TODO: migrate to OrderRepository.getOrderByIdWithSelect once locationId is available from request context
+      // NOTE: Uses db directly because this runs before the main transaction and locationId
+      // may not be available yet (preCheckOrder could be null if room_charge is the only payment type).
       const locationForPms = await db.order.findUnique({
         where: { id: orderId },
         select: {
@@ -316,6 +320,8 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
     // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)
+    // NOTE: Uses tx directly — complex include (location+customer+items+employee+table+payments)
+    // exceeds what OrderRepository.getOrderByIdWithInclude covers; locationId not yet available.
     timing.start('db-fetch')
     const order = await tx.order.findUnique({
       where: { id: orderId },
@@ -441,8 +447,9 @@ export const POST = withVenue(withTiming(async function POST(
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
       if (order.status === 'paid' || order.status === 'closed') {
+        // TODO: Add getLatestPaymentForOrder to PaymentRepository
         const existingPayment = await tx.payment.findFirst({
-          where: { orderId },
+          where: { orderId, locationId: order.locationId },
           orderBy: { createdAt: 'desc' },
           select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
         })
@@ -476,10 +483,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Validate parent order is still in split state when paying a split child
     if (order.parentOrderId) {
-      const parentOrder = await tx.order.findUnique({
-        where: { id: order.parentOrderId },
-        select: { status: true, total: true },
-      })
+      const parentOrder = await OrderRepository.getOrderByIdWithSelect(order.parentOrderId, order.locationId, { status: true, total: true }, tx)
       if (!parentOrder || parentOrder.status !== 'split') {
         return { earlyReturn: NextResponse.json(
           { error: 'Parent order is no longer in split state' },
@@ -488,9 +492,11 @@ export const POST = withVenue(withTiming(async function POST(
       }
 
       // P0: Validate total payments across all splits don't exceed parent total
+      // TODO: Add cross-order payment aggregate to PaymentRepository
       const allSplitPayments = await tx.payment.aggregate({
         where: {
           order: { parentOrderId: order.parentOrderId },
+          locationId: order.locationId,
           status: 'completed',
         },
         _sum: { totalAmount: true },
@@ -588,19 +594,17 @@ export const POST = withVenue(withTiming(async function POST(
           const settledPrice = breakdown.totalCharge
 
           settlementUpdates.push(
-            tx.orderItem.update({
-              where: { id: item.id },
-              data: {
-                price: settledPrice,
-                itemTotal: settledPrice * item.quantity,
-              },
-            })
+            OrderItemRepository.updateItem(item.id, order.locationId, {
+              price: settledPrice,
+              itemTotal: settledPrice * item.quantity,
+            }, tx)
           )
         }
         await Promise.all(settlementUpdates)
 
-        const activeItems = await tx.orderItem.findMany({
-          where: { orderId, status: 'active', deletedAt: null },
+        // TODO: Add getActiveItemsForOrderWithModifiers to OrderItemRepository (status + modifiers)
+        const activeItems = await (tx as any).orderItem.findMany({
+          where: { orderId, locationId: order.locationId, status: 'active', deletedAt: null },
           include: { modifiers: true },
         })
         let newSubtotal = 0
@@ -635,17 +639,14 @@ export const POST = withVenue(withTiming(async function POST(
         const newTaxTotal = payTaxResult.totalTax
         const newTotal = roundToCents(newSubtotal + payTaxResult.taxFromExclusive - effectiveDiscount)
 
-        await tx.order.update({
-          where: { id: orderId },
-          data: {
-            subtotal: newSubtotal,
-            discountTotal: effectiveDiscount,
-            taxTotal: newTaxTotal,
-            taxFromInclusive: payTaxResult.taxFromInclusive,
-            taxFromExclusive: payTaxResult.taxFromExclusive,
-            total: newTotal,
-          },
-        })
+        await OrderRepository.updateOrder(orderId, order.locationId, {
+          subtotal: newSubtotal,
+          discountTotal: effectiveDiscount,
+          taxTotal: newTaxTotal,
+          taxFromInclusive: payTaxResult.taxFromInclusive,
+          taxFromExclusive: payTaxResult.taxFromExclusive,
+          total: newTotal,
+        }, tx)
 
         ;(order as any).subtotal = newSubtotal
         ;(order as any).discountTotal = effectiveDiscount
@@ -1124,12 +1125,13 @@ export const POST = withVenue(withTiming(async function POST(
     timing.end('db-pay', 'Payment ingestion')
 
     if (ingestResult.alreadyPaid) {
+      // TODO: Add getLatestPaymentForOrder to PaymentRepository
       const existingPayment = await tx.payment.findFirst({
-        where: { orderId },
+        where: { orderId, locationId: order.locationId },
         orderBy: { createdAt: 'desc' },
         select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
       })
-      const freshOrder = await tx.order.findUnique({ where: { id: orderId }, select: { total: true, status: true } })
+      const freshOrder = await OrderRepository.getOrderByIdWithSelect(orderId, order.locationId, { total: true, status: true }, tx)
       return { earlyReturn: NextResponse.json({ data: {
         success: true,
         alreadyPaid: true,
@@ -1214,8 +1216,9 @@ export const POST = withVenue(withTiming(async function POST(
       // Flag payments processed during outage for reconciliation visibility
       const paymentIds = ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id)
       if (paymentIds.length > 0) {
+        // TODO: Add batch updatePayments to PaymentRepository
         void db.payment.updateMany({
-          where: { id: { in: paymentIds } },
+          where: { id: { in: paymentIds }, locationId: order.locationId },
           data: { needsReconciliation: true },
         }).catch(err => {
           console.error('[CRITICAL-PAYMENT] Failed to flag payments for reconciliation:', err)
@@ -1227,8 +1230,9 @@ export const POST = withVenue(withTiming(async function POST(
       // would cause constraint violations on Neon replay.
       // CRITICAL: Outage queue writes are the ONLY path to Neon during outage.
       // If these fail, payment data is lost from cloud. Retry once.
+      // TODO: Add batch getPaymentsByIds to PaymentRepository
       const fullPayments = await db.payment.findMany({
-        where: { id: { in: paymentIds } }
+        where: { id: { in: paymentIds }, locationId: order.locationId }
       })
       for (const fp of fullPayments) {
         void queueOutageWrite('Payment', fp.id, 'INSERT', fp as unknown as Record<string, unknown>, order.locationId).catch(async (err) => {
@@ -1290,20 +1294,20 @@ export const POST = withVenue(withTiming(async function POST(
             `SELECT id FROM "Order" WHERE "parentOrderId" = $1 FOR UPDATE`,
             order.parentOrderId!,
           )
+          // TODO: Add getOrdersByParentId to OrderRepository for split sibling queries
           const allSiblings = await ptx.order.findMany({
-            where: { parentOrderId: order.parentOrderId! },
+            where: { parentOrderId: order.parentOrderId!, locationId: order.locationId },
             select: { id: true, status: true },
           })
           const terminalStatuses = ['paid', 'cancelled', 'voided', 'completed']
           const allSiblingsDone = allSiblings.every(s => terminalStatuses.includes(s.status))
           if (allSiblingsDone) {
-            const parentResult = await ptx.order.update({
-              where: { id: order.parentOrderId! },
-              data: { status: 'paid', paidAt: new Date(), closedAt: new Date() },
-              select: { tableId: true },
-            })
+            await OrderRepository.updateOrder(order.parentOrderId!, order.locationId, {
+              status: 'paid', paidAt: new Date(), closedAt: new Date(),
+            }, ptx)
+            const parentResult = await OrderRepository.getOrderByIdWithSelect(order.parentOrderId!, order.locationId, { tableId: true }, ptx)
             parentWasMarkedPaid = true
-            parentTableId = parentResult.tableId
+            parentTableId = parentResult?.tableId ?? null
           }
         })
       } catch (err) {
@@ -1368,7 +1372,6 @@ export const POST = withVenue(withTiming(async function POST(
     // Post-ingestion: update fields not in event state
     // CRITICAL: These writes update businessDayDate, tipTotal, primaryPaymentMethod.
     // If they fail, the order record is stale for reports and EOD. Retry once before giving up.
-    // TODO: migrate to OrderRepository.updateOrder — needs careful handling of retry logic (repo throws on count=0)
     const postPaymentOrderUpdate = orderIsPaid
       ? {
           businessDayDate: businessDayStart,
@@ -1383,14 +1386,14 @@ export const POST = withVenue(withTiming(async function POST(
           lastMutatedBy: paymentMutationOrigin,
         }
 
-    void db.order.update({ where: { id: orderId }, data: postPaymentOrderUpdate }).catch(async (err) => {
+    void OrderRepository.updateOrder(orderId, order.locationId, postPaymentOrderUpdate).catch(async (err) => {
       console.error('[CRITICAL-PAYMENT] Post-payment order update failed, retrying:', err)
       try {
         // Retry without version increment — if the first write committed but timed out,
         // we don't want to double-increment. The critical fields (businessDayDate, tipTotal,
         // primaryPaymentMethod) are idempotent, so a duplicate write is safe.
         const { version: _v, ...retryData } = postPaymentOrderUpdate as any
-        await db.order.update({ where: { id: orderId }, data: { ...retryData, lastMutatedBy: paymentMutationOrigin } })
+        await OrderRepository.updateOrder(orderId, order.locationId, { ...retryData, lastMutatedBy: paymentMutationOrigin })
       } catch (retryErr) {
         console.error('[CRITICAL-PAYMENT] Post-payment order update retry FAILED:', retryErr)
         // Log to error capture so it appears in monitoring dashboard
@@ -1449,8 +1452,9 @@ export const POST = withVenue(withTiming(async function POST(
 
         if (entertainmentItems.length > 0) {
           // Clear blockTimeStartedAt on order items so Android stops showing timers
+          // TODO: relation-filter (menuItem.itemType) not supported by OrderItemRepository.updateItemsWhere
           await db.orderItem.updateMany({
-            where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
+            where: { orderId, locationId: order.locationId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
             data: { blockTimeStartedAt: null },
           })
 
@@ -1538,8 +1542,9 @@ export const POST = withVenue(withTiming(async function POST(
       // Recalculate commission from active items only (voided items zeroed)
       void (async () => {
         try {
+          // TODO: Add getActiveItemsForOrderWithMenuItemCommission to OrderItemRepository
           const activeItems = await db.orderItem.findMany({
-            where: { orderId, status: 'active', deletedAt: null },
+            where: { orderId, locationId: order.locationId, status: 'active', deletedAt: null },
             include: {
               menuItem: { select: { commissionType: true, commissionValue: true } },
             },
@@ -1676,9 +1681,11 @@ export const POST = withVenue(withTiming(async function POST(
       if (order.tableId) {
         void (async () => {
           try {
+            // TODO: Add countOpenOrdersForTableExcluding to OrderRepository
             const otherOpenOrders = await db.order.count({
               where: {
                 tableId: order.tableId!,
+                locationId: order.locationId,
                 id: { not: order.id },
                 status: { in: ['open', 'sent', 'in_progress', 'draft', 'split'] },
                 deletedAt: null,

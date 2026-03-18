@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -37,6 +39,8 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     // Lightweight order check for locationId (needed by auth)
+    // NOTE: First fetch uses db directly because we don't have locationId yet.
+    // Once we have locationId from this order, all subsequent queries use repositories.
     const orderCheck = await db.order.findUnique({
       where: { id: orderId },
       select: { id: true, locationId: true },
@@ -60,14 +64,11 @@ export const PATCH = withVenue(async function PATCH(
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
       // Re-read order with payment inside lock
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: {
-          payments: {
-            where: { id: paymentId, deletedAt: null },
-          },
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+        payments: {
+          where: { id: paymentId, deletedAt: null },
         },
-      })
+      }, tx)
 
       if (!order) {
         return { error: 'Order not found', status: 404 } as const
@@ -129,23 +130,15 @@ export const PATCH = withVenue(async function PATCH(
       const newTotalAmount = Number(payment.amount) + newTipAmount
 
       // Update payment
-      const updatedPayment = await tx.payment.update({
-        where: { id: paymentId },
-        data: {
-          tipAmount: newTipAmount,
-          totalAmount: newTotalAmount,
-          lastMutatedBy: 'local',
-        },
-      })
+      await PaymentRepository.updatePayment(paymentId, orderCheck.locationId, {
+        tipAmount: newTipAmount,
+        totalAmount: newTotalAmount,
+        lastMutatedBy: 'local',
+      }, tx)
+      const updatedPayment = await PaymentRepository.getPaymentByIdOrThrow(paymentId, orderCheck.locationId, tx)
 
       // Update order tip total
-      const allPayments = await tx.payment.findMany({
-        where: {
-          orderId,
-          deletedAt: null,
-          status: { not: 'voided' },
-        },
-      })
+      const allPayments = await PaymentRepository.getPaymentsForOrderByStatus(orderId, orderCheck.locationId, ['completed', 'refunded', 'pending'], tx)
 
       const newOrderTipTotal = allPayments.reduce(
         (sum, p) => sum + Number(p.tipAmount),
@@ -155,15 +148,12 @@ export const PATCH = withVenue(async function PATCH(
       // Bug 15: Recalculate Order.total to include new tip total
       const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxFromExclusive || 0) - Number(order.discountTotal) + newOrderTipTotal)
 
-      await tx.order.update({
-        where: { id: orderId },
-        data: {
-          tipTotal: newOrderTipTotal,
-          total: newOrderTotal,
-          version: { increment: 1 },
-          lastMutatedBy: 'local',
-        },
-      })
+      await OrderRepository.updateOrder(orderId, orderCheck.locationId, {
+        tipTotal: newOrderTipTotal,
+        total: newOrderTotal,
+        version: { increment: 1 },
+        lastMutatedBy: 'local',
+      }, tx)
 
       return { order, payment, updatedPayment, oldTipAmount, newTotalAmount, newOrderTipTotal, newOrderTotal }
     }, { timeout: 30000 })
@@ -211,11 +201,11 @@ export const PATCH = withVenue(async function PATCH(
     // Queue outage writes if Neon is unreachable — read back full rows to
     // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
-      const fullPayment = await db.payment.findUnique({ where: { id: payment.id } })
+      const fullPayment = await PaymentRepository.getPaymentById(payment.id, order.locationId)
       if (fullPayment) {
         void queueOutageWrite('Payment', fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
       }
-      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
       if (fullOrder) {
         void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
       }

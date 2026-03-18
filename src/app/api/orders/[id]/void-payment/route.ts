@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
@@ -52,6 +54,8 @@ export const POST = withVenue(async function POST(
     }
 
     // Lightweight order check before acquiring locks (for locationId needed by auth)
+    // NOTE: First fetch uses db directly because we don't have locationId yet.
+    // Once we have locationId from this order, all subsequent queries use repositories.
     const orderCheck = await db.order.findUnique({
       where: { id: orderId },
       select: { id: true, locationId: true },
@@ -75,14 +79,11 @@ export const POST = withVenue(async function POST(
     const lockedRead = await db.$transaction(async (tx) => {
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-      const order = await tx.order.findUnique({
-        where: { id: orderId },
-        include: {
-          payments: {
-            where: { deletedAt: null },
-          },
+      const order = await OrderRepository.getOrderByIdWithInclude(orderId, orderCheck.locationId, {
+        payments: {
+          where: { deletedAt: null },
         },
-      })
+      }, tx)
 
       if (!order) {
         return { error: 'Order not found', status: 404 } as const
@@ -170,31 +171,27 @@ export const POST = withVenue(async function POST(
         await enableSyncReplication(tx)
 
         // Re-check payment status inside lock (may have changed since Phase 1)
-        const freshPayment = await tx.payment.findUnique({ where: { id: paymentId } })
+        const freshPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId, tx)
         if (freshPayment?.status === 'voided') {
           throw new VoidValidationError('Payment is already voided', 400)
         }
 
         // 1. Update payment to voided
-        const updated = await tx.payment.update({
-          where: { id: paymentId },
-          data: {
-            status: 'voided',
-            voidedAt: new Date(),
-            voidedBy: managerId,
-            voidReason: reason,
-            lastMutatedBy: 'local',
-          },
-        })
+        await PaymentRepository.updatePayment(paymentId, order.locationId, {
+          status: 'voided',
+          voidedAt: new Date(),
+          voidedBy: managerId,
+          voidReason: reason,
+          lastMutatedBy: 'local',
+        }, tx)
+        // Read back for return value (updatePayment returns count, not record)
+        const updated = await PaymentRepository.getPaymentByIdOrThrow(paymentId, order.locationId, tx)
 
         // 2. Update order status
-        await tx.order.update({
-          where: { id: orderId },
-          data: {
-            status: newOrderStatus,
-            lastMutatedBy: 'local',
-          },
-        })
+        await OrderRepository.updateOrder(orderId, order.locationId, {
+          status: newOrderStatus,
+          lastMutatedBy: 'local',
+        }, tx)
 
         // 3. Create audit log
         await tx.auditLog.create({
@@ -283,14 +280,13 @@ export const POST = withVenue(async function POST(
     // Queue outage writes if in outage mode (fire-and-forget)
     if (isInOutageMode()) {
       // Flag void processed during outage for reconciliation
-      void db.payment.update({
-        where: { id: paymentId },
-        data: { needsReconciliation: true },
+      void PaymentRepository.updatePayment(paymentId, order.locationId, {
+        needsReconciliation: true,
       }).catch(console.error)
 
-      const fullPayment = await db.payment.findUnique({ where: { id: paymentId } })
+      const fullPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId)
       if (fullPayment) void queueOutageWrite('Payment', paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
-      const fullOrder = await db.order.findUnique({ where: { id: orderId } })
+      const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
       if (fullOrder) void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
     }
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -41,6 +43,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    // NOTE: First fetch uses db directly because we don't have locationId yet.
+    // Once we have locationId from this order, all subsequent queries use repositories.
     const firstOrder = await db.order.findUnique({
       where: { id: adjustments[0].orderId },
       select: { locationId: true },
@@ -69,9 +73,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const prefetched = new Map<string, { order: any; adj: TipAdjustment }>()
 
     // Pre-fetch all orders + payments in batch to avoid N+1
+    // TODO: Add batch getOrdersByIds to OrderRepository for tenant-safe batch fetch
     const allOrderIds = [...new Set(adjustments.map(a => a.orderId))]
     const allOrders = await db.order.findMany({
-      where: { id: { in: allOrderIds } },
+      where: { id: { in: allOrderIds }, locationId: firstOrder.locationId },
       include: { payments: { where: { deletedAt: null } } },
     })
     const orderMap = new Map(allOrders.map(o => [o.id, o]))
@@ -141,22 +146,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           eligibleEntries.map(([, { order, adj }]) => {
             const payment = order.payments[0]
             const newTotalAmount = Number(payment.amount) + adj.tipAmount
-            return tx.payment.update({
-              where: { id: adj.paymentId },
-              data: {
-                tipAmount: adj.tipAmount,
-                totalAmount: newTotalAmount,
-                lastMutatedBy: 'local',
-              },
-            })
+            return PaymentRepository.updatePayment(adj.paymentId, order.locationId, {
+              tipAmount: adj.tipAmount,
+              totalAmount: newTotalAmount,
+              lastMutatedBy: 'local',
+            }, tx)
           })
         )
 
         // Batch 2: Fetch all payments for affected orders in one query (avoid N+1 findMany per order)
+        // TODO: Add batch getPaymentsForOrders to PaymentRepository for tenant-safe batch fetch
         const affectedOrderIds = [...new Set(eligibleEntries.map(([, { adj }]) => adj.orderId))]
-        const allOrderPayments = await tx.payment.findMany({
+        const allOrderPayments = await (tx as any).payment.findMany({
           where: {
             orderId: { in: affectedOrderIds },
+            locationId: firstOrder.locationId,
             deletedAt: null,
             status: { not: 'voided' },
           },
@@ -184,7 +188,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           // Recalculate order tip total from all non-voided payments (using overrides for this batch)
           const orderPayments = paymentsByOrder.get(adj.orderId) ?? []
           const newOrderTipTotal = orderPayments.reduce(
-            (sum, p) => sum + (tipOverrides.has(p.id) ? tipOverrides.get(p.id)! : Number(p.tipAmount)),
+            (sum: number, p: { id: string; tipAmount: unknown }) => sum + (tipOverrides.has(p.id) ? tipOverrides.get(p.id)! : Number(p.tipAmount)),
             0
           )
 
@@ -192,15 +196,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           const newOrderTotal = roundToCents(Number(order.subtotal) + Number(order.taxFromExclusive || 0) - Number(order.discountTotal) + newOrderTipTotal)
 
           orderUpdates.push(
-            tx.order.update({
-              where: { id: adj.orderId },
-              data: {
-                tipTotal: newOrderTipTotal,
-                total: newOrderTotal,
-                version: { increment: 1 },
-                lastMutatedBy: 'local',
-              },
-            })
+            OrderRepository.updateOrder(adj.orderId, order.locationId, {
+              tipTotal: newOrderTipTotal,
+              total: newOrderTotal,
+              version: { increment: 1 },
+              lastMutatedBy: 'local',
+            }, tx)
           )
 
           auditCreates.push(
@@ -263,9 +264,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const eligiblePaymentIds = eligibleEntries.map(([, { adj }]) => adj.paymentId)
       const eligibleOrderIds = [...new Set(eligibleEntries.map(([, { adj }]) => adj.orderId))]
 
+      // TODO: Add batch getPaymentsByIds / getOrdersByIds to repositories for tenant-safe batch fetch
       const [fullPayments, fullOrders] = await Promise.all([
-        db.payment.findMany({ where: { id: { in: eligiblePaymentIds } } }),
-        db.order.findMany({ where: { id: { in: eligibleOrderIds } } }),
+        db.payment.findMany({ where: { id: { in: eligiblePaymentIds }, locationId: firstOrder.locationId } }),
+        db.order.findMany({ where: { id: { in: eligibleOrderIds }, locationId: firstOrder.locationId } }),
       ])
 
       for (const fp of fullPayments) {

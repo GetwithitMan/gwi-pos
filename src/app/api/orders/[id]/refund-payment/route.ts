@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import * as OrderRepository from '@/lib/repositories/order-repository'
+import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
@@ -30,6 +32,8 @@ export const POST = withVenue(async function POST(
     }
 
     // Fetch order (unlocked — lightweight check before acquiring lock)
+    // NOTE: First fetch uses db directly because we don't have locationId yet.
+    // Once we have locationId from this order, all subsequent queries use repositories.
     const order = await db.order.findUnique({
       where: { id, deletedAt: null },
       select: {
@@ -78,11 +82,9 @@ export const POST = withVenue(async function POST(
     const phase1Result = await db.$transaction(async (tx) => {
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
-      const payment = await tx.payment.findFirst({
-        where: { id: paymentId, orderId: id, deletedAt: null },
-      })
+      const payment = await PaymentRepository.getPaymentById(paymentId, order.locationId, tx)
 
-      if (!payment) {
+      if (!payment || payment.orderId !== id) {
         return { error: 'Payment not found', status: 404 } as const
       }
 
@@ -151,7 +153,7 @@ export const POST = withVenue(async function POST(
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
       // Re-check payment status inside lock (may have changed between Phase 1 and Phase 3)
-      const freshPayment = await tx.payment.findUnique({ where: { id: paymentId } })
+      const freshPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId, tx)
       if (freshPayment?.status === 'voided') {
         return { error: 'Payment was voided between refund phases', status: 400 } as const
       }
@@ -174,15 +176,12 @@ export const POST = withVenue(async function POST(
 
       const isPartial = refundAmount < Number(payment.amount)
 
-      await tx.payment.update({
-        where: { id: paymentId },
-        data: {
-          status: isPartial ? 'completed' : 'refunded',
-          refundedAt: new Date(),
-          refundedAmount: freshTotalRefunded + refundAmount,
-          lastMutatedBy: 'local',
-        },
-      })
+      await PaymentRepository.updatePayment(paymentId, order.locationId, {
+        status: isPartial ? 'completed' : 'refunded',
+        refundedAt: new Date(),
+        refundedAmount: freshTotalRefunded + refundAmount,
+        lastMutatedBy: 'local',
+      }, tx)
 
       const refundLog = await tx.refundLog.create({
         data: {
@@ -284,12 +283,11 @@ export const POST = withVenue(async function POST(
     // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
       // Flag refund processed during outage for reconciliation
-      void db.payment.update({
-        where: { id: paymentId },
-        data: { needsReconciliation: true },
+      void PaymentRepository.updatePayment(paymentId, order.locationId, {
+        needsReconciliation: true,
       }).catch(console.error)
 
-      const fullPayment = await db.payment.findUnique({ where: { id: paymentId } })
+      const fullPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId)
       if (fullPayment) {
         void queueOutageWrite('Payment', fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
       }
@@ -301,8 +299,9 @@ export const POST = withVenue(async function POST(
       try {
         const tipReductionResult = await db.$transaction(async (tx) => {
           // Lock the payment row to prevent concurrent refund races
+          // TODO: FOR UPDATE lock kept as raw SQL — no repository equivalent
           await tx.$queryRaw`SELECT id FROM "Payment" WHERE id = ${paymentId} FOR UPDATE`
-          const freshPayment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId } })
+          const freshPayment = await PaymentRepository.getPaymentByIdOrThrow(paymentId, order.locationId, tx)
 
           const paymentTipAmount = Number(freshPayment.tipAmount)
           const paymentOriginalAmount = Number(freshPayment.amount)
@@ -328,24 +327,16 @@ export const POST = withVenue(async function POST(
 
           // Update Payment.tipAmount and totalAmount with fresh locked values
           const newTipAmount = Math.max(0, paymentTipAmount - tipReduction)
-          await tx.payment.update({
-            where: { id: paymentId },
-            data: {
-              tipAmount: newTipAmount,
-              totalAmount: Number(freshPayment.amount) - totalRefunded + newTipAmount,
-              lastMutatedBy: 'local',
-            },
-          })
+          await PaymentRepository.updatePayment(paymentId, order.locationId, {
+            tipAmount: newTipAmount,
+            totalAmount: Number(freshPayment.amount) - totalRefunded + newTipAmount,
+            lastMutatedBy: 'local',
+          }, tx)
 
           // Update Order.tipTotal from all non-voided payments (inside lock)
-          const allPayments = await tx.payment.findMany({
-            where: { orderId: id, deletedAt: null, status: { not: 'voided' } },
-          })
+          const allPayments = await PaymentRepository.getPaymentsForOrderByStatus(id, order.locationId, ['completed', 'refunded', 'pending'], tx)
           const newOrderTipTotal = allPayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
-          await tx.order.update({
-            where: { id },
-            data: { tipTotal: newOrderTipTotal, lastMutatedBy: 'local' },
-          })
+          await OrderRepository.updateOrder(id, order.locationId, { tipTotal: newOrderTipTotal, lastMutatedBy: 'local' }, tx)
 
           return { tipReduction, newOrderTipTotal }
         }, { timeout: 15000 })
@@ -376,10 +367,7 @@ export const POST = withVenue(async function POST(
     if (!isPartial) {
       void (async () => {
         try {
-          const allPayments = await db.payment.findMany({
-            where: { orderId: id, deletedAt: null },
-            select: { id: true, status: true },
-          })
+          const allPayments = await PaymentRepository.getPaymentsForOrder(id, order.locationId)
           const hasActivePayments = allPayments.some(
             (p) => p.status !== 'voided' && p.status !== 'refunded'
           )
