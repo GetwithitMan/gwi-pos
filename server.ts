@@ -15,6 +15,7 @@ import compression from 'compression'  // eslint-disable-line @typescript-eslint
 import { initializeSocketServer, getSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
+import { config } from './src/lib/system-config'
 import { startCloudEventWorker, stopCloudEventWorker } from './src/lib/cloud-event-queue'
 import { startOnlineOrderDispatchWorker, stopOnlineOrderDispatchWorker } from './src/lib/online-order-worker'
 import { startHardwareCommandWorker } from './src/lib/hardware-command-worker'
@@ -26,10 +27,12 @@ import { startFulfillmentBridge, stopFulfillmentBridge } from './src/lib/fulfill
 import { startBridgeCheckpoint, stopBridgeCheckpoint } from './src/lib/bridge-checkpoint'
 import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-relay-client'
 import { disconnectNeon } from './src/lib/neon-client'
+import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
+import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
 
-const dev = process.env.NODE_ENV !== 'production'
+const dev = config.nodeEnv !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
-const port = parseInt(process.env.PORT || '3005', 10)
+const port = config.port
 
 // ============================================================================
 // EOD Scheduler — runs stale order cleanup daily at 4 AM
@@ -49,18 +52,16 @@ function startEodScheduler() {
   }
 
   async function runEodCleanup() {
-    const locationId = process.env.POS_LOCATION_ID
+    const locationId = config.posLocationId
     if (!locationId) {
       // Cloud/dev mode without a fixed location — skip automatic cleanup
       return
     }
 
     try {
-      const url = `http://localhost:${port}/api/system/cleanup-stale-orders?locationId=${locationId}`
-      const res = await fetch(url, { method: 'POST' })
-      const data = await res.json()
-      if (data.data?.closedCount > 0) {
-        console.log(`[EOD] Cleaned up ${data.data.closedCount} stale draft orders`)
+      const result = await cleanupStaleOrders({ locationId })
+      if (result.closedCount > 0) {
+        console.log(`[EOD] Cleaned up ${result.closedCount} stale draft orders`)
       }
     } catch (err) {
       console.error('[EOD] Stale order cleanup failed:', err)
@@ -92,15 +93,13 @@ function startDraftCleanupInterval() {
   const MAX_AGE_HOURS = 1 // Cancel drafts older than 1 hour (more aggressive than EOD's 4h)
 
   async function cleanupDrafts() {
-    const locationId = process.env.POS_LOCATION_ID
+    const locationId = config.posLocationId
     if (!locationId) return
 
     try {
-      const url = `http://localhost:${port}/api/system/cleanup-stale-orders?locationId=${locationId}&maxAgeHours=${MAX_AGE_HOURS}`
-      const res = await fetch(url, { method: 'POST' })
-      const data = await res.json()
-      if (data.data?.closedCount > 0) {
-        console.log(`[DraftCleanup] Cancelled ${data.data.closedCount} abandoned draft orders (>${MAX_AGE_HOURS}h old)`)
+      const result = await cleanupStaleOrders({ locationId, maxAgeHours: MAX_AGE_HOURS })
+      if (result.closedCount > 0) {
+        console.log(`[DraftCleanup] Cancelled ${result.closedCount} abandoned draft orders (>${MAX_AGE_HOURS}h old)`)
       }
     } catch {
       // Silent — non-critical background task
@@ -126,17 +125,11 @@ function startWalkoutRetryScheduler() {
   const INTERVAL_MS = 6 * 60 * 60 * 1000 // 6 hours
 
   async function sweepWalkoutRetries() {
-    const locationId = process.env.POS_LOCATION_ID
+    const locationId = config.posLocationId
     if (!locationId) return // Cloud/dev mode — skip
 
     try {
-      // Fetch pending retries that are due
-      const listUrl = `http://localhost:${port}/api/datacap/walkout-retry?locationId=${locationId}&status=pending`
-      const listRes = await fetch(listUrl)
-      if (!listRes.ok) return
-
-      const listData = await listRes.json()
-      const retries: Array<{ id: string; nextRetryAt?: string; retryCount: number; maxRetries: number }> = listData.data || []
+      const retries = await listPendingRetries(locationId)
 
       // Filter to only those that are due and under the retry limit
       const now = new Date()
@@ -153,13 +146,9 @@ function startWalkoutRetryScheduler() {
 
       for (const retry of due) {
         try {
-          const retryRes = await fetch(`http://localhost:${port}/api/datacap/walkout-retry`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ walkoutRetryId: retry.id }),
-          })
-          const retryData = await retryRes.json()
-          if (retryData.data?.success) {
+          // Call service directly — no employeeId needed (trusted scheduler context)
+          const result = await processWalkoutRetry(retry.id)
+          if (result.success) {
             succeeded++
           } else {
             failed++
@@ -249,6 +238,21 @@ async function main() {
     process.exit(1)
   })
 
+  // ── Pre-listen validation (blocking) ──────────────────────────────────
+  // Sync coverage validation — BLOCKING before server accepts connections.
+  // Ensures every DB table is in sync config. Fails boot in production if unknown.
+  try {
+    const { validateSyncCoverage } = await import('./src/lib/sync/sync-config')
+    await validateSyncCoverage(masterClient, { allowAutoRegister: config.allowSyncAutoRegister })
+  } catch (err) {
+    console.error('[Server] Sync coverage validation failed:', err instanceof Error ? err.message : err)
+    if (config.isProduction) {
+      console.error('[Server] FATAL: Cannot start with sync coverage errors in production')
+      process.exit(1)
+    }
+    // Dev: continue with warning
+  }
+
   httpServer.listen(port, () => {
     console.log(`[Server] GWI POS ready on http://${hostname}:${port}`)
     console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
@@ -259,10 +263,9 @@ async function main() {
       verifySchema()
     ).catch(console.error)
 
-    // Sync coverage validation — ensures every DB table is in sync config.
-    // Logs CRITICAL error if any table is missing (prevents silent sync gaps).
-    void import('./src/lib/sync/sync-config').then(({ validateSyncCoverage }) =>
-      validateSyncCoverage(masterClient)
+    // Tenant model set validation (non-blocking)
+    void import('./src/lib/tenant-validation').then(({ validateTenantModelSets }) =>
+      validateTenantModelSets(masterClient)
     ).catch(console.error)
 
     startCloudEventWorker()
@@ -274,10 +277,10 @@ async function main() {
     void scaleService.initialize().catch(console.error)
 
     // Bidirectional sync workers (NUC ↔ Neon)
-    if (process.env.SYNC_ENABLED === 'true') {
-      if (process.env.STATION_ROLE === 'backup') {
+    if (config.syncEnabled) {
+      if (config.stationRole === 'backup') {
         console.warn('[Server] STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
-      } else if (!process.env.NEON_DATABASE_URL) {
+      } else if (!config.neonDatabaseUrl) {
         console.error('[Server] SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
       } else {
         startUpstreamSyncWorker()
@@ -330,7 +333,7 @@ async function main() {
     stopCloudEventWorker()
     stopOnlineOrderDispatchWorker()
 
-    if (process.env.SYNC_ENABLED === 'true') {
+    if (config.syncEnabled) {
       stopUpstreamSyncWorker()
       stopDownstreamSyncWorker()
       stopOutageReplayWorker()

@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck-and-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Schema drift check
+        run: |
+          npx prisma generate --generator client 2>/dev/null || true
+          if git diff --exit-code --quiet -- src/generated/ node_modules/.prisma/; then
+            echo "✓ Generated client matches committed state"
+          else
+            echo "::error::Schema drift detected — generated Prisma client differs from committed state. Run 'npx prisma generate' and commit."
+            git diff --stat -- src/generated/ node_modules/.prisma/
+            exit 1
+          fi
+
+      - name: Type check
+        run: NODE_OPTIONS='--max-old-space-size=8192' npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint

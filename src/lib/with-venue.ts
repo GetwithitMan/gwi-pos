@@ -23,8 +23,11 @@ import { NextResponse } from 'next/server'
 import { headers } from 'next/headers'
 import { requestStore, getRequestPrisma } from './request-context'
 import { getDbForVenue, masterClient } from './db'
+import { verifyTenantContext, hashBody, type VerifyOptions } from './tenant-context-signer'
 
- 
+const TENANT_JWT_ENABLED = process.env.TENANT_JWT_ENABLED === 'true'
+const TENANT_SIGNING_KEY = process.env.TENANT_SIGNING_KEY || ''
+
 type RouteHandler = (request: any, context?: any) => Promise<Response> | Response
 
 export function withVenue(handler: RouteHandler): RouteHandler {
@@ -39,6 +42,53 @@ export function withVenue(handler: RouteHandler): RouteHandler {
 
       const headersList = await headers()
       const slug = headersList.get('x-venue-slug')
+
+      // ── Tenant JWT verification (when enabled) ──────────────────────
+      if (TENANT_JWT_ENABLED && TENANT_SIGNING_KEY && slug) {
+        const tenantJwt = headersList.get('x-tenant-context')
+        if (!tenantJwt) {
+          console.error('[withVenue] Missing x-tenant-context JWT for slug:', slug)
+          return new Response(
+            JSON.stringify({ error: 'Missing tenant context' }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Build verify options from request
+        const method = (request as any)?.method || 'GET'
+        const pathname = headersList.get('x-next-pathname') || (request as any)?.nextUrl?.pathname || '/'
+        const verifyOpts: VerifyOptions = { method, path: pathname }
+
+        // For mutating methods, verify body hash
+        if (method !== 'GET' && method !== 'HEAD') {
+          try {
+            const body = await (request as any).text?.()
+            if (body) {
+              verifyOpts.bodySha256 = await hashBody(body)
+            }
+          } catch {
+            // Body may not be available — skip hash check
+          }
+        }
+
+        const payload = await verifyTenantContext(tenantJwt, TENANT_SIGNING_KEY, verifyOpts)
+        if (!payload) {
+          console.error('[withVenue] Invalid tenant context JWT for slug:', slug)
+          return new Response(
+            JSON.stringify({ error: 'Invalid tenant context' }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Verify slug matches
+        if (payload.venueSlug !== slug) {
+          console.error('[withVenue] Tenant JWT slug mismatch:', { jwt: payload.venueSlug, header: slug })
+          return new Response(
+            JSON.stringify({ error: 'Tenant context mismatch' }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } }
+          )
+        }
+      }
 
       if (slug) {
         // Safety rail: if slug is present but DB resolution fails, return 500

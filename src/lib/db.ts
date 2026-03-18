@@ -1,23 +1,13 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { headers } from 'next/headers'
 import { orderWriteGuardExtension } from './order-write-guard'
-import { getRequestPrisma, getRequestLocationId, setRequestLocationId } from './request-context'
+import { getRequestPrisma, getRequestLocationId, setRequestLocationId, requestStore } from './request-context'
+import { TENANT_SCOPED_MODELS, NO_SOFT_DELETE_MODELS } from './tenant-validation'
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required')
 }
-
-// ---------------------------------------------------------------------------
-// Tenant-scoping: models that have a locationId column and should be
-// automatically filtered by the current request's location.
-// ---------------------------------------------------------------------------
-const TENANT_SCOPED_MODELS = new Set([
-  'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'RecipeIngredient',
-  'SpiritUpsellEvent', 'BottleServiceTier', 'MenuItem', 'Category',
-  'Modifier', 'ModifierGroup', 'Order', 'OrderItem',
-  'InventoryItem', 'InventoryItemTransaction', 'Employee',
-])
 
 /**
  * Resolve the locationId for tenant scoping.
@@ -26,41 +16,37 @@ const TENANT_SCOPED_MODELS = new Set([
  * Returns undefined during startup/migrations/cron — caller must skip scoping.
  */
 async function resolveTenantLocationId(): Promise<string | undefined> {
+  // Guard against infinite recursion: tenant extension intercepts findFirst →
+  // calls resolveTenantLocationId → getLocationId → findFirst → loop.
+  // Uses per-request AsyncLocalStorage flag (concurrency-safe) instead of
+  // module-level `let` which was shared across concurrent requests.
+  const store = requestStore.getStore()
+  if (store && (store as any)._resolvingLocationId) return undefined
+
   // Fast path: already cached in this request's AsyncLocalStorage
   const cached = getRequestLocationId()
   if (cached) return cached
 
   // Slow path: async lookup (DB-backed, but cached per venue slug)
   // Lazy import to avoid circular dependency (location-cache.ts imports db.ts)
-  const { getLocationId } = await import('./location-cache')
-  const id = await getLocationId()
-  if (id) {
-    setRequestLocationId(id)
-    return id
+  if (store) (store as any)._resolvingLocationId = true
+  try {
+    const { getLocationId } = await import('./location-cache')
+    const id = await getLocationId()
+    if (id) {
+      setRequestLocationId(id)
+      return id
+    }
+    return undefined
+  } finally {
+    if (store) (store as any)._resolvingLocationId = false
   }
-
-  return undefined
 }
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
   venueClients: Map<string, { client: PrismaClient; lastAccessed: number }> | undefined
 }
-
-/**
- * Models that do NOT have a `deletedAt` column — skip soft-delete filtering.
- */
-const NO_SOFT_DELETE_MODELS = new Set([
-  'Organization', 'Location', 'SyncAuditEntry', 'HardwareCommand',
-  // Tables without deletedAt column — must skip soft-delete filter or queries crash
-  'BergDevice', 'BergPluMapping', 'BergDispenseEvent',
-  'QuickBarPreference', 'QuickBarDefault',
-  'DeductionRun', 'PendingDeduction', 'IngredientCostHistory',
-  'InventoryCountEntry', 'MarginEdgeProductMapping',
-  'PmsChargeAttempt', 'SevenShiftsDailySalesPush', 'WasteLog',
-  'ReasonAccess',
-  'OutageQueueEntry', 'FulfillmentEvent', 'BridgeCheckpoint',
-])
 
 function createPrismaClient(url?: string) {
   const connectionString = url || process.env.DATABASE_URL || ''
@@ -349,18 +335,9 @@ function resolveClient(): PrismaClient {
   if (contextPrisma) return contextPrisma
 
   // Priority 2: Next.js headers() (Vercel serverless)
-  // In Next.js 15+, headers() returns a Promise-like object that also
-  // supports synchronous property access (backward-compat layer).
-  try {
-    const headersList = headers()
-     
-    const slug = (headersList as any).get('x-venue-slug') as string | null
-    if (slug) {
-      return getDbForVenue(slug)
-    }
-  } catch {
-    // Not in a request context (module init, standalone scripts) — fall through
-  }
+  // In Next.js 16, headers() is fully async. In local dev without custom server,
+  // skip this path to avoid "headers() returns a Promise" warnings.
+  // On Vercel, withVenue() middleware sets the slug before route handlers run.
 
   // Priority 3: Master client
   return masterClient

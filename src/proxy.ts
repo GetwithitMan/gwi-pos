@@ -9,8 +9,11 @@ import {
   recordActivity,
   checkRateLimit,
 } from '@/lib/cellular-auth'
+import { signTenantContext, hashBody } from '@/lib/tenant-context-signer'
 
 const GWI_ACCESS_SECRET = process.env.GWI_ACCESS_SECRET ?? ''
+const TENANT_JWT_ENABLED = process.env.TENANT_JWT_ENABLED === 'true'
+const TENANT_SIGNING_KEY = process.env.TENANT_SIGNING_KEY || ''
 
 /**
  * Multi-tenant proxy with cloud auth enforcement.
@@ -216,6 +219,46 @@ function matchesRouteList(pathname: string, routes: Array<string | RegExp>): boo
   return false
 }
 
+/**
+ * Sign tenant context JWT and attach to request headers.
+ * Only active when TENANT_JWT_ENABLED=true.
+ * For mutating methods, hashes the request body for integrity binding.
+ */
+async function signAndAttachTenantJwt(
+  request: NextRequest,
+  headers: Headers,
+  venueSlug: string,
+  locationId: string,
+): Promise<void> {
+  if (!TENANT_JWT_ENABLED || !TENANT_SIGNING_KEY) return
+
+  const method = request.method
+  const path = request.nextUrl.pathname
+  let bodySha256: string | undefined
+
+  // Hash body for mutating methods
+  if (method !== 'GET' && method !== 'HEAD') {
+    try {
+      const body = await request.text()
+      if (body) {
+        bodySha256 = await hashBody(body)
+      }
+    } catch {
+      // Body may already be consumed — skip hash
+    }
+  }
+
+  try {
+    const jwt = await signTenantContext(
+      { venueSlug, locationId: locationId || '', method, path, bodySha256 },
+      TENANT_SIGNING_KEY,
+    )
+    headers.set('x-tenant-context', jwt)
+  } catch (err) {
+    console.error('[proxy] Failed to sign tenant context:', err)
+  }
+}
+
 function logCellularBlock(terminalId: string, locationId: string, pathname: string, reason: string): void {
   console.error(JSON.stringify({
     event: 'cellular_request_blocked',
@@ -264,6 +307,7 @@ export async function proxy(request: NextRequest) {
     const slugFromPath = onlineOrderMatch[2]
     const headers = new Headers(request.headers)
     headers.set('x-venue-slug', slugFromPath)
+    await signAndAttachTenantJwt(request, headers, slugFromPath, '')
     return NextResponse.next({ request: { headers } })
   }
 
@@ -395,6 +439,7 @@ export async function proxy(request: NextRequest) {
         return NextResponse.json({ error: 'Cellular token missing venueSlug; cannot resolve venue DB. Re-pair the device.' }, { status: 400 })
       }
       headers.set('x-venue-slug', payload.venueSlug)
+      await signAndAttachTenantJwt(request, headers, payload.venueSlug, payload.locationId)
 
       // Re-auth required routes: void/comp pass through but flagged
       if (matchesRouteList(pathname, CELLULAR_REAUTH_ROUTES)) {
@@ -494,6 +539,7 @@ export async function proxy(request: NextRequest) {
       const headers = new Headers(request.headers)
       headers.set('x-venue-slug', venueSlug)
       headers.set('x-cloud-mode', '1')
+      await signAndAttachTenantJwt(request, headers, venueSlug, '')
       return NextResponse.next({ request: { headers } })
     }
 
@@ -547,6 +593,7 @@ export async function proxy(request: NextRequest) {
     const headers = new Headers(request.headers)
     headers.set('x-venue-slug', venueSlug)
     headers.set('x-cloud-mode', '1')
+    await signAndAttachTenantJwt(request, headers, venueSlug, payload.posLocationId || '')
     return NextResponse.next({ request: { headers } })
   }
 
@@ -572,6 +619,7 @@ export async function proxy(request: NextRequest) {
   if (localVenueSlug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(localVenueSlug)) {
     const headers = new Headers(request.headers)
     headers.set('x-venue-slug', localVenueSlug)
+    await signAndAttachTenantJwt(request, headers, localVenueSlug, '')
     return NextResponse.next({ request: { headers } })
   }
 

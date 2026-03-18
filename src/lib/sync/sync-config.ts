@@ -298,28 +298,19 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
 )
 
 /**
- * SYNC COVERAGE VALIDATOR
+ * SYNC COVERAGE VALIDATOR (Fail-Closed)
  *
- * Called at server startup. Queries the database for all tables and
- * verifies every one is in SYNC_MODELS. If any table is missing,
- * logs a CRITICAL error so it's impossible to miss.
+ * Called at server startup (blocking). Queries the database for all tables
+ * and verifies every one is in SYNC_MODELS.
  *
- * This prevents the "58 missing models" problem from ever happening again.
- * New tables added via migration MUST be added to SYNC_MODELS before deploy.
- */
-/**
- * SYNC COVERAGE VALIDATOR + AUTO-REGISTER
+ * Behavior:
+ *   - Production/CI/Staging: Unknown tables → FATAL error (fail-closed)
+ *   - Dev with ALLOW_SYNC_AUTO_REGISTER=true: Auto-register + warn
+ *   - Dev without flag: FATAL error (same as prod)
  *
- * Called at server startup. Queries the database for all tables and
- * verifies every one is in SYNC_MODELS. If any table is missing,
- * it is AUTOMATICALLY added as upstream sync (NUC → Neon) with
- * default settings. No manual intervention needed.
- *
- * This means: add a model to schema.prisma, run migration, deploy.
- * The sync system picks it up automatically. Zero gaps. Ever.
- *
- * Tables that should NOT sync (operational/local-only) are explicitly
- * listed in LOCAL_ONLY_TABLES below.
+ * Also validates:
+ *   - LOCAL_ONLY_TABLES/SYSTEM_TABLES entries exist in actual DB (catch stale names)
+ *   - Priority uniqueness for active models (direction !== 'none', priority > 0)
  */
 
 /** Tables that must NEVER sync — operational/ephemeral NUC-local data */
@@ -328,6 +319,7 @@ const LOCAL_ONLY_TABLES = new Set([
   'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog',
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
   'PaymentSession', // local payment state machine
+  'SyncConflict', 'SyncWatermark', // quarantine infrastructure
 ])
 
 /** System/internal tables that are not Prisma models */
@@ -336,47 +328,101 @@ const SYSTEM_TABLES = new Set([
   '_pending_datacap_sales', '_pending_captures',
 ])
 
-export async function validateSyncCoverage(db: { $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T> }): Promise<void> {
-  try {
-    const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
-      `SELECT table_name FROM information_schema.tables
-       WHERE table_schema = 'public'
-       AND table_type = 'BASE TABLE'
-       AND table_name NOT LIKE '\\_%'`
-    )
+export async function validateSyncCoverage(
+  db: { $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T> },
+  opts?: { allowAutoRegister?: boolean },
+): Promise<void> {
+  const allowAutoRegister = opts?.allowAutoRegister ?? false
 
-    const configuredModels = new Set(Object.keys(SYNC_MODELS))
-    let autoRegistered = 0
+  const tables = await db.$queryRawUnsafe<Array<{ table_name: string }>>(
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema = 'public'
+     AND table_type = 'BASE TABLE'
+     AND table_name NOT LIKE '\\_%'`
+  )
 
-    for (const { table_name } of tables) {
-      if (SYSTEM_TABLES.has(table_name)) continue
-      if (configuredModels.has(table_name)) continue
+  const actualTableNames = new Set(tables.map(t => t.table_name))
+  const configuredModels = new Set(Object.keys(SYNC_MODELS))
+  const errors: string[] = []
 
-      if (LOCAL_ONLY_TABLES.has(table_name)) {
-        // Known local-only — register as none
-        SYNC_MODELS[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
-        console.log('[SYNC CONFIG] Registered local-only table:', table_name)
-      } else {
-        // Unknown table — auto-register as upstream sync (safe default)
-        const nextPriority = Math.max(...Object.values(SYNC_MODELS).map(c => c.priority)) + 1
-        SYNC_MODELS[table_name] = {
-          direction: 'upstream',
-          owner: 'nuc',
-          priority: nextPriority,
-          batchSize: 50,
-        }
-        autoRegistered++
-        console.warn('[SYNC CONFIG] Auto-registered NEW table for sync:', table_name, '(upstream, priority:', nextPriority + ')')
+  // ── 1. Check for unknown tables ─────────────────────────────────────
+  let autoRegistered = 0
+
+  for (const { table_name } of tables) {
+    if (SYSTEM_TABLES.has(table_name)) continue
+    if (configuredModels.has(table_name)) continue
+
+    if (LOCAL_ONLY_TABLES.has(table_name)) {
+      // Known local-only — register silently
+      SYNC_MODELS[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
+    } else if (allowAutoRegister) {
+      // Dev auto-register with loud warning
+      const nextPriority = Math.max(...Object.values(SYNC_MODELS).map(c => c.priority)) + 1
+      SYNC_MODELS[table_name] = {
+        direction: 'upstream',
+        owner: 'nuc',
+        priority: nextPriority,
+        batchSize: 50,
       }
+      autoRegistered++
+      console.warn(`[SYNC CONFIG] ⚠️  Auto-registered "${table_name}" (upstream, priority: ${nextPriority}). Add to sync-config.ts!`)
+    } else {
+      errors.push(`Unknown table "${table_name}" — add it to SYNC_MODELS or LOCAL_ONLY_TABLES in sync-config.ts`)
     }
-
-    if (autoRegistered > 0) {
-      console.warn('[SYNC CONFIG] ⚠️  ' + autoRegistered + ' table(s) auto-registered. Add them to sync-config.ts for permanent config.')
-    }
-
-    const totalSynced = Object.values(SYNC_MODELS).filter(c => c.direction !== 'none').length
-    console.log('[SYNC CONFIG] ✓ ' + totalSynced + ' tables syncing, ' + Object.keys(SYNC_MODELS).length + ' total configured')
-  } catch (err) {
-    console.warn('[SYNC CONFIG] Coverage check failed:', err instanceof Error ? err.message : err)
   }
+
+  // ── 2. Validate LOCAL_ONLY_TABLES entries exist ─────────────────────
+  for (const name of LOCAL_ONLY_TABLES) {
+    if (!actualTableNames.has(name) && !configuredModels.has(name)) {
+      console.warn(`[SYNC CONFIG] Stale LOCAL_ONLY_TABLES entry: "${name}" — table does not exist in DB`)
+    }
+  }
+
+  // ── 3. Priority uniqueness for active models ───────────────────────
+  const priorityMap = new Map<number, string[]>()
+  for (const [model, cfg] of Object.entries(SYNC_MODELS)) {
+    if (cfg.direction === 'none' || cfg.priority === 0) continue
+    const existing = priorityMap.get(cfg.priority) || []
+    existing.push(model)
+    priorityMap.set(cfg.priority, existing)
+  }
+
+  const collisions = [...priorityMap.entries()]
+    .filter(([, models]) => models.length > 1)
+    .sort(([a], [b]) => a - b)
+
+  if (collisions.length > 0) {
+    const ignoreDateStr = process.env.IGNORE_PRIORITY_COLLISIONS_UNTIL
+    const ignoreDate = ignoreDateStr ? new Date(ignoreDateStr) : null
+    const now = new Date()
+
+    const collisionDetails = collisions
+      .map(([priority, models]) => `  priority ${priority}: ${models.join(', ')}`)
+      .join('\n')
+
+    if (ignoreDate && now < ignoreDate) {
+      console.warn(
+        `[SYNC CONFIG] Priority collisions (ignored until ${ignoreDateStr}):\n${collisionDetails}`
+      )
+    } else {
+      errors.push(
+        `Priority collisions detected (models sharing the same priority):\n${collisionDetails}\n` +
+        `Fix by assigning unique priorities, or set IGNORE_PRIORITY_COLLISIONS_UNTIL=YYYY-MM-DD to defer.`
+      )
+    }
+  }
+
+  // ── 4. Report ──────────────────────────────────────────────────────
+  if (errors.length > 0) {
+    const errorMessage = `[SYNC CONFIG] FATAL — ${errors.length} validation error(s):\n\n${errors.join('\n\n')}`
+    console.error(errorMessage)
+    throw new Error(errorMessage)
+  }
+
+  if (autoRegistered > 0) {
+    console.warn(`[SYNC CONFIG] ⚠️  ${autoRegistered} table(s) auto-registered. Add them to sync-config.ts for permanent config.`)
+  }
+
+  const totalSynced = Object.values(SYNC_MODELS).filter(c => c.direction !== 'none').length
+  console.log(`[SYNC CONFIG] ✓ ${totalSynced} tables syncing, ${Object.keys(SYNC_MODELS).length} total configured`)
 }
