@@ -6,13 +6,14 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // GET /api/menu/items - Fetch menu items, optionally filtered by category
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
-    const locationId = searchParams.get('locationId') || await getLocationId()
+    const locationId = getRequestLocationId() || searchParams.get('locationId') || await getLocationId()
     const includeStock = searchParams.get('includeStock') === 'true'
 
     if (!locationId) {

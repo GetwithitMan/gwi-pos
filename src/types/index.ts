@@ -174,6 +174,10 @@ export interface ModifierGroup {
   modifierTypes?: string[]  // e.g., ['liquor'], ['food', 'combo'], etc.
   // Open entry (custom request) support
   allowOpenEntry?: boolean
+  // Allow None — show "None" button on required groups
+  allowNone?: boolean
+  // Whether "None" selection prints to kitchen tickets/KDS
+  nonePrintsToKitchen?: boolean
   // Spirit group fields (Liquor Builder)
   isSpiritGroup?: boolean
   spiritConfig?: {
@@ -201,6 +205,8 @@ export interface SelectedModifier {
   linkedBottleProductId?: string | null
   // Open-entry custom request modifier (freeform text from POS)
   isCustomEntry?: boolean
+  // None selection — explicit "None" chosen on a required modifier group
+  isNoneSelection?: boolean
   // Swap fields — when a modifier is swapped for an alternate item
   swapTargetName?: string
   swapTargetItemId?: string

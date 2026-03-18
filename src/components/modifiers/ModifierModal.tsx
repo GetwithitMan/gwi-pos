@@ -75,6 +75,8 @@ export function ModifierModal({
     customEntries,
     addCustomEntry,
     removeCustomEntry,
+    noneGroups,
+    toggleNone,
     selections,
     expandedGroups,
     setExpandedGroups,
@@ -446,6 +448,8 @@ export function ModifierModal({
           onOpenCustomEntry={handleOpenCustomEntry}
           onToggleCustomPreMod={toggleCustomPreMod}
           getSelectedCustomPreMod={getSelectedCustomPreMod}
+          isNoneSelected={noneGroups.has(group.id)}
+          onToggleNone={toggleNone}
         />
         {renderCustomEntrySection(group.id)}
 
@@ -476,6 +480,8 @@ export function ModifierModal({
               onOpenCustomEntry={handleOpenCustomEntry}
               onToggleCustomPreMod={toggleCustomPreMod}
               getSelectedCustomPreMod={getSelectedCustomPreMod}
+              isNoneSelected={noneGroups.has(childGroup.id)}
+              onToggleNone={toggleNone}
             />
             {renderCustomEntrySection(childGroup.id)}
 
@@ -505,6 +511,8 @@ export function ModifierModal({
                   onOpenCustomEntry={handleOpenCustomEntry}
                   onToggleCustomPreMod={toggleCustomPreMod}
                   getSelectedCustomPreMod={getSelectedCustomPreMod}
+                  isNoneSelected={noneGroups.has(grandChild.id)}
+                  onToggleNone={toggleNone}
                 />
                 {renderCustomEntrySection(grandChild.id)}
               </div>
@@ -706,6 +714,8 @@ export function ModifierModal({
                             onOpenCustomEntry={handleOpenCustomEntry}
                             onToggleCustomPreMod={toggleCustomPreMod}
                             getSelectedCustomPreMod={getSelectedCustomPreMod}
+                            isNoneSelected={noneGroups.has(group.id)}
+                            onToggleNone={toggleNone}
                           />
                           {renderCustomEntrySection(group.id)}
                         </div>
@@ -742,6 +752,8 @@ export function ModifierModal({
                             onOpenCustomEntry={handleOpenCustomEntry}
                             onToggleCustomPreMod={toggleCustomPreMod}
                             getSelectedCustomPreMod={getSelectedCustomPreMod}
+                            isNoneSelected={noneGroups.has(childGroup.id)}
+                            onToggleNone={toggleNone}
                           />
                           {renderCustomEntrySection(childGroup.id)}
                         </div>

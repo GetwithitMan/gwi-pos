@@ -24,6 +24,8 @@ export interface UiModifier {
   isCustomEntry?: boolean
   customEntryName?: string | null
   customEntryPrice?: number | null
+  // None selection
+  isNoneSelection?: boolean
   // Swap/substitution
   swapTargetName?: string | null
   swapTargetItemId?: string | null

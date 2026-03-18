@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // POST - Add a house account balance payment as an order line item
 export const POST = withVenue(async function POST(
@@ -25,13 +26,17 @@ export const POST = withVenue(async function POST(
     // Auth check
     const actor = await getActorFromRequest(request)
     const resolvedEmployeeId = actor.employeeId ?? employeeId
-    // Bootstrap: lightweight fetch for locationId, then use repository for tenant-safe access
-    const orderForAuth = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { locationId: true },
-    })
-    if (orderForAuth) {
-      const auth = await requirePermission(resolvedEmployeeId, orderForAuth.locationId, PERMISSIONS.POS_ACCESS)
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let haLocationId = getRequestLocationId()
+    if (!haLocationId) {
+      const orderForAuth = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { locationId: true },
+      })
+      haLocationId = orderForAuth?.locationId ?? undefined
+    }
+    if (haLocationId) {
+      const auth = await requirePermission(resolvedEmployeeId, haLocationId, PERMISSIONS.POS_ACCESS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
@@ -44,7 +49,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Validate the order exists and fetch current totals
-    const locationId = orderForAuth?.locationId
+    const locationId = haLocationId
     const order = locationId
       ? await OrderRepository.getOrderByIdWithSelect(orderId, locationId, { id: true, locationId: true, status: true, taxTotal: true, discountTotal: true, tipTotal: true })
       : null

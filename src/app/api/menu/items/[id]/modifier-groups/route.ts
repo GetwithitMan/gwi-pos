@@ -45,6 +45,8 @@ function formatModifierGroup(group: {
   modifierTypes: any
   showOnline: boolean
   allowOpenEntry: boolean
+  allowNone: boolean
+  nonePrintsToKitchen: boolean
   autoAdvance: boolean
   modifiers: ModifierWithChild[]
 }, allGroups: Map<string, typeof group>, orphanedModifierIds?: string[]): object {
@@ -62,6 +64,8 @@ function formatModifierGroup(group: {
     modifierTypes: group.modifierTypes,
     showOnline: group.showOnline,
     allowOpenEntry: group.allowOpenEntry,
+    allowNone: group.allowNone,
+    nonePrintsToKitchen: group.nonePrintsToKitchen,
     autoAdvance: group.autoAdvance,
     sortOrder: group.sortOrder,
     modifiers: group.modifiers.map(m => {
@@ -323,6 +327,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
             modifierTypes: sourceGroup.modifierTypes ?? Prisma.JsonNull,
             showOnline: sourceGroup.showOnline,
             allowOpenEntry: sourceGroup.allowOpenEntry,
+            allowNone: sourceGroup.allowNone,
+            nonePrintsToKitchen: sourceGroup.nonePrintsToKitchen,
             autoAdvance: sourceGroup.autoAdvance,
             exclusionGroupKey: null, // Don't copy exclusion key — user sets fresh
             sortOrder: (maxSort._max.sortOrder || 0) + 1,
@@ -350,6 +356,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
                 modifierTypes: mod.childModifierGroup.modifierTypes ?? Prisma.JsonNull,
                 showOnline: mod.childModifierGroup.showOnline,
                 allowOpenEntry: mod.childModifierGroup.allowOpenEntry,
+                allowNone: mod.childModifierGroup.allowNone,
+                nonePrintsToKitchen: mod.childModifierGroup.nonePrintsToKitchen,
                 autoAdvance: mod.childModifierGroup.autoAdvance,
                 sortOrder: (maxSort._max.sortOrder || 0) + 2 + childSortOffset,
               },
@@ -489,6 +497,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         modifierTypes: group.modifierTypes,
         showOnline: group.showOnline,
         allowOpenEntry: group.allowOpenEntry,
+        allowNone: group.allowNone,
+        nonePrintsToKitchen: group.nonePrintsToKitchen,
         autoAdvance: group.autoAdvance,
         sortOrder: group.sortOrder,
         modifiers: group.modifiers.map((m: any) => ({
@@ -658,6 +668,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         modifierTypes: group.modifierTypes,
         showOnline: group.showOnline,
         allowOpenEntry: group.allowOpenEntry,
+        allowNone: group.allowNone,
+        nonePrintsToKitchen: group.nonePrintsToKitchen,
         autoAdvance: group.autoAdvance,
         sortOrder: group.sortOrder,
         modifiers: group.modifiers.map(m => ({

@@ -14,6 +14,16 @@ interface PrepStation {
   color: string | null
 }
 
+interface ScreenLink {
+  id: string
+  targetScreenId: string
+  targetScreenName: string
+  linkType: string
+  bumpAction: string
+  resetStrikethroughsOnSend: boolean
+  isActive: boolean
+}
+
 interface KDSScreen {
   id: string
   name: string
@@ -34,6 +44,7 @@ interface KDSScreen {
   staticIp: string | null
   enforceStaticIp: boolean
   deviceInfo: { chromeVersion?: string; userAgent?: string } | null
+  displayMode: string
   stationCount: number
   stations: Array<{
     id: string
@@ -41,6 +52,7 @@ interface KDSScreen {
     sortOrder: number
     station: PrepStation
   }>
+  sourceLinks: ScreenLink[]
 }
 
 interface PairingModal {
@@ -95,6 +107,12 @@ export default function KDSScreensPage() {
   const [pairingModal, setPairingModal] = useState<PairingModal | null>(null)
   const [copySuccess, setCopySuccess] = useState<string | null>(null)
 
+  // Screen Communication state
+  const [linkTargetScreenId, setLinkTargetScreenId] = useState('')
+  const [linkType, setLinkType] = useState<'send_to_next' | 'multi_clear'>('send_to_next')
+  const [linkBumpAction, setLinkBumpAction] = useState<'bump' | 'strike_through' | 'no_action'>('bump')
+  const [savingLink, setSavingLink] = useState(false)
+
   const fetchData = useCallback(async () => {
     if (!locationId) return
     try {
@@ -146,6 +164,9 @@ export default function KDSScreensPage() {
       staticIp: screen.staticIp || '',
       enforceStaticIp: screen.enforceStaticIp,
     })
+    setLinkTargetScreenId('')
+    setLinkType('send_to_next')
+    setLinkBumpAction('bump')
     setError('')
     setShowModal(true)
   }
@@ -287,6 +308,50 @@ export default function KDSScreensPage() {
     }
   }
 
+  const handleAddLink = async (screen: KDSScreen) => {
+    if (!linkTargetScreenId || !locationId) return
+    setSavingLink(true)
+    try {
+      const res = await fetch('/api/kds/screen-links', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          sourceScreenId: screen.id,
+          targetScreenId: linkTargetScreenId,
+          linkType,
+          bumpAction: linkBumpAction,
+          employeeId: employee?.id,
+        }),
+      })
+      if (res.ok) {
+        setLinkTargetScreenId('')
+        fetchData()
+      } else {
+        const data = await res.json()
+        setError(data.error || 'Failed to add link')
+      }
+    } catch (err) {
+      console.error('Failed to add screen link:', err)
+    } finally {
+      setSavingLink(false)
+    }
+  }
+
+  const handleRemoveLink = async (linkId: string) => {
+    if (!locationId) return
+    try {
+      await fetch('/api/kds/screen-links', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: linkId, locationId, employeeId: employee?.id }),
+      })
+      fetchData()
+    } catch (err) {
+      console.error('Failed to remove screen link:', err)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <AdminPageHeader
@@ -383,6 +448,20 @@ export default function KDSScreensPage() {
                           <span className="text-xs text-gray-900">No stations assigned</span>
                         )}
                       </div>
+                      {/* Screen Communication Links */}
+                      {screen.sourceLinks && screen.sourceLinks.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {screen.sourceLinks.map((sl) => (
+                            <span
+                              key={sl.id}
+                              className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700"
+                            >
+                              {sl.linkType === 'send_to_next' ? 'Send →' : 'Multi Clear →'} {sl.targetScreenName}
+                              <span className="text-purple-400">({sl.bumpAction})</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                       {screen.lastSeenAt && (
                         <p className="mt-1 text-xs text-gray-900">
                           Last seen: {new Date(screen.lastSeenAt).toLocaleString()}
@@ -761,6 +840,90 @@ export default function KDSScreensPage() {
                 </div>
               </div>
             </div>
+
+              {/* Screen Communication */}
+              {editingScreen && (
+                <div className="rounded-lg border border-purple-200 bg-purple-50 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <svg className="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                    <span className="font-medium text-purple-900">Screen Communication</span>
+                  </div>
+
+                  {/* Existing Links */}
+                  {editingScreen.sourceLinks && editingScreen.sourceLinks.length > 0 && (
+                    <div className="mb-3 space-y-2">
+                      {editingScreen.sourceLinks.map((sl) => (
+                        <div key={sl.id} className="flex items-center justify-between rounded bg-white p-2 text-sm">
+                          <div>
+                            <span className="font-medium text-gray-900">{sl.linkType === 'send_to_next' ? 'Send to Next' : 'Multi Clear'}</span>
+                            <span className="mx-2 text-gray-400">→</span>
+                            <span className="text-gray-900">{sl.targetScreenName}</span>
+                            <span className="ml-2 text-xs text-gray-500">({sl.bumpAction})</span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveLink(sl.id)}
+                            className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
+                            title="Remove link"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add New Link */}
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <select
+                        value={linkTargetScreenId}
+                        onChange={(e) => setLinkTargetScreenId(e.target.value)}
+                        className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-purple-500 focus:outline-none"
+                      >
+                        <option value="">Target screen...</option>
+                        {screens
+                          .filter(s => s.id !== editingScreen.id)
+                          .map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                      </select>
+                      <select
+                        value={linkType}
+                        onChange={(e) => setLinkType(e.target.value as 'send_to_next' | 'multi_clear')}
+                        className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-purple-500 focus:outline-none"
+                      >
+                        <option value="send_to_next">Send to Next</option>
+                        <option value="multi_clear">Multi Clear</option>
+                      </select>
+                      <select
+                        value={linkBumpAction}
+                        onChange={(e) => setLinkBumpAction(e.target.value as 'bump' | 'strike_through' | 'no_action')}
+                        className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-purple-500 focus:outline-none"
+                      >
+                        <option value="bump">Bump Order</option>
+                        <option value="strike_through">Strike Through All</option>
+                        <option value="no_action">No Action</option>
+                      </select>
+                    </div>
+                    <button
+                      onClick={() => handleAddLink(editingScreen)}
+                      disabled={!linkTargetScreenId || savingLink}
+                      className="rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-600 disabled:opacity-50"
+                    >
+                      {savingLink ? 'Adding...' : 'Add Link'}
+                    </button>
+                  </div>
+
+                  <p className="mt-2 text-xs text-purple-700">
+                    <strong>Send to Next:</strong> When this screen bumps, forward items to the target screen (e.g., Kitchen → Expo). <br />
+                    <strong>Multi Clear:</strong> When this screen bumps, apply the action on the target screen&apos;s matching items.
+                  </p>
+                </div>
+              )}
 
             {/* Actions */}
             <div className="mt-6 flex justify-end gap-3">

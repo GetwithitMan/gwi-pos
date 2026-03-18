@@ -27,6 +27,8 @@ interface ModifierGroupSectionProps {
   onOpenCustomEntry?: (groupId: string) => void
   onToggleCustomPreMod?: (groupId: string, modifierId: string, cpm: CustomPreMod) => void
   getSelectedCustomPreMod?: (groupId: string, modifierId: string) => CustomPreMod | undefined
+  isNoneSelected?: boolean
+  onToggleNone?: (groupId: string) => void
 }
 
 export function ModifierGroupSection({
@@ -49,6 +51,8 @@ export function ModifierGroupSection({
   onOpenCustomEntry,
   onToggleCustomPreMod,
   getSelectedCustomPreMod,
+  isNoneSelected,
+  onToggleNone,
 }: ModifierGroupSectionProps) {
   const cpm = cardPriceMultiplier || 1
   const selectedCount = selections.length
@@ -389,6 +393,19 @@ export function ModifierGroupSection({
             </div>
           )
         })}
+
+        {group.allowNone && (
+          <button
+            onClick={() => onToggleNone?.(group.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg transition-colors ${
+              isNoneSelected
+                ? 'border-red-400 bg-red-50 text-red-700 font-medium'
+                : 'border-dashed border-gray-300 text-gray-600 hover:border-red-400 hover:text-red-600'
+            }`}
+          >
+            None
+          </button>
+        )}
 
         {group.allowOpenEntry && (
           <button

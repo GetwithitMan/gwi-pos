@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { getRequestLocationId } from '@/lib/request-context'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -21,17 +22,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields: orderIds, action, employeeId' }, { status: 400 })
     }
 
-    // Verify first order to get locationId — read from OrderSnapshot
-    const firstOrder = await db.orderSnapshot.findFirst({
-      where: { id: orderIds[0], deletedAt: null },
-      select: { locationId: true },
-    })
-
-    if (!firstOrder) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const firstOrder = await db.orderSnapshot.findFirst({
+        where: { id: orderIds[0], deletedAt: null },
+        select: { locationId: true },
+      })
+      if (!firstOrder) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      locationId = firstOrder.locationId
     }
-
-    const locationId = firstOrder.locationId
 
     // Require manager permission
     const auth = await requireAnyPermission(employeeId, locationId, [PERMISSIONS.MGR_BULK_OPERATIONS])

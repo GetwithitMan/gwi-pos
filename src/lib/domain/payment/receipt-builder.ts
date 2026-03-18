@@ -153,6 +153,7 @@ export function buildReceiptData(
         price: Number(mod.price),
         preModifier: mod.preModifier,
         isCustomEntry: mod.isCustomEntry ?? false,
+        isNoneSelection: mod.isNoneSelection ?? false,
         customEntryName: mod.customEntryName ?? null,
         customEntryPrice: mod.customEntryPrice != null ? Number(mod.customEntryPrice) : null,
         swapTargetName: mod.swapTargetName ?? null,

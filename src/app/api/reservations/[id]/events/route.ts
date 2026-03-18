@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { getRequestLocationId } from '@/lib/request-context'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -10,7 +11,8 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
-    const locationId = await getLocationId()
+    // Fast path: request context (JWT/cellular). Fallback: cached location.
+    const locationId = getRequestLocationId() || await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }

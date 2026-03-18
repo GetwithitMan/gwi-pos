@@ -78,6 +78,8 @@ interface MappedModifier {
   isCustomEntry: boolean
   customEntryName: string | null
   customEntryPrice: number | null
+  // None selection
+  isNoneSelection: boolean
   // Swap/substitution
   swapTargetName: string | null
   swapTargetItemId: string | null
@@ -165,6 +167,8 @@ export function mapOrderItemForResponse(item: any, correlationId?: string): Mapp
       isCustomEntry: mod.isCustomEntry ?? false,
       customEntryName: mod.customEntryName ?? null,
       customEntryPrice: mod.customEntryPrice != null ? Number(mod.customEntryPrice) : null,
+      // None selection
+      isNoneSelection: mod.isNoneSelection ?? false,
       // Swap/substitution
       swapTargetName: mod.swapTargetName ?? null,
       swapTargetItemId: mod.swapTargetItemId ?? null,

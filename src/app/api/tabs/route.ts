@@ -11,6 +11,7 @@ import type { OrderStatus } from '@/generated/prisma/client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // GET - List open tabs with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -24,9 +25,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Auth check: resolve actor from query param or session, then validate
     const actorId = employeeId || (await getActorFromRequest(request)).employeeId
     if (actorId) {
-      const actor = await adminDb.employee.findUnique({ where: { id: actorId, deletedAt: null }, select: { locationId: true } })
-      if (actor) {
-        const auth = await requirePermission(actorId, actor.locationId, PERMISSIONS.POS_ACCESS)
+      // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+      let tabsLocationId = getRequestLocationId()
+      if (!tabsLocationId) {
+        const actor = await adminDb.employee.findUnique({ where: { id: actorId, deletedAt: null }, select: { locationId: true } })
+        tabsLocationId = actor?.locationId
+      }
+      if (tabsLocationId) {
+        const auth = await requirePermission(actorId, tabsLocationId, PERMISSIONS.POS_ACCESS)
         if (!auth.authorized) {
           return NextResponse.json({ error: auth.error }, { status: auth.status })
         }

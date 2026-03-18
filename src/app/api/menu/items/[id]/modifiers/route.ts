@@ -93,6 +93,8 @@ export const GET = withVenue(async function GET(
           tieredPricingConfig: group.tieredPricingConfig,
           exclusionGroupKey: group.exclusionGroupKey,
           allowOpenEntry: group.allowOpenEntry,
+          allowNone: group.allowNone,
+          nonePrintsToKitchen: group.nonePrintsToKitchen,
           autoAdvance: group.autoAdvance,
           showOnline: true,
           spiritConfig: group.spiritConfig ? {

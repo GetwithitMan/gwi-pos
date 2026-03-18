@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema, KDSOrderTypeFiltersSchema } from '@/lib/kds/types'
 
 // GET all KDS screens for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -34,6 +35,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
           orderBy: { sortOrder: 'asc' },
         },
+        sourceLinks: {
+          where: { deletedAt: null },
+          include: { targetScreen: { select: { id: true, name: true } } },
+          orderBy: { sortOrder: 'asc' },
+        },
       },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
@@ -63,12 +69,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         staticIp: s.staticIp,
         enforceStaticIp: s.enforceStaticIp,
         deviceInfo: s.deviceInfo,
+        // KDS Overhaul: new fields
+        displayMode: s.displayMode,
+        transitionTimes: s.transitionTimes,
+        orderBehavior: s.orderBehavior,
+        orderTypeFilters: s.orderTypeFilters,
         stationCount: s.stations.length,
         stations: s.stations.map((st) => ({
           id: st.id,
           stationId: st.stationId,
           sortOrder: st.sortOrder,
           station: st.station,
+        })),
+        sourceLinks: s.sourceLinks.map((sl) => ({
+          id: sl.id,
+          targetScreenId: sl.targetScreenId,
+          targetScreenName: sl.targetScreen.name,
+          linkType: sl.linkType,
+          bumpAction: sl.bumpAction,
+          resetStrikethroughsOnSend: sl.resetStrikethroughsOnSend,
+          isActive: sl.isActive,
         })),
       })),
     } })
@@ -96,6 +116,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       stationIds = [],
       staticIp,
       enforceStaticIp = false,
+      displayMode,
+      transitionTimes,
+      orderBehavior,
+      orderTypeFilters,
       employeeId: bodyEmployeeId,
     } = body
 
@@ -126,6 +150,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
     const slug = existingSlug ? `${baseSlug}-${Date.now()}` : baseSlug
 
+    // Validate JSON fields if provided
+    if (displayMode !== undefined) {
+      const r = KDSDisplayModeSchema.safeParse(displayMode)
+      if (!r.success) return NextResponse.json({ error: 'Invalid displayMode' }, { status: 400 })
+    }
+    if (transitionTimes !== undefined && transitionTimes !== null) {
+      const r = KDSTransitionTimesSchema.safeParse(transitionTimes)
+      if (!r.success) return NextResponse.json({ error: 'Invalid transitionTimes' }, { status: 400 })
+    }
+    if (orderBehavior !== undefined && orderBehavior !== null) {
+      const r = KDSOrderBehaviorSchema.safeParse(orderBehavior)
+      if (!r.success) return NextResponse.json({ error: 'Invalid orderBehavior' }, { status: 400 })
+    }
+    if (orderTypeFilters !== undefined && orderTypeFilters !== null) {
+      const r = KDSOrderTypeFiltersSchema.safeParse(orderTypeFilters)
+      if (!r.success) return NextResponse.json({ error: 'Invalid orderTypeFilters' }, { status: 400 })
+    }
+
     // Create the screen
     const screen = await db.kDSScreen.create({
       data: {
@@ -142,6 +184,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         flashOnNew,
         staticIp: staticIp || null,
         enforceStaticIp,
+        ...(displayMode !== undefined && { displayMode }),
+        ...(transitionTimes !== undefined && { transitionTimes: transitionTimes ?? undefined }),
+        ...(orderBehavior !== undefined && { orderBehavior: orderBehavior ?? undefined }),
+        ...(orderTypeFilters !== undefined && { orderTypeFilters: orderTypeFilters ?? undefined }),
       },
     })
 

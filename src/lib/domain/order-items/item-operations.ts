@@ -185,6 +185,8 @@ export async function createOrderItem(
           isCustomEntry: mod.isCustomEntry || false,
           customEntryName: mod.isCustomEntry ? (mod.customEntryName || mod.name) : null,
           customEntryPrice: mod.isCustomEntry ? (mod.customEntryPrice ?? mod.price) : null,
+          // None selection
+          isNoneSelection: mod.isNoneSelection || false,
           // Swap/substitution
           swapTargetName: mod.swapTargetName || null,
           swapTargetItemId: mod.swapTargetItemId || null,

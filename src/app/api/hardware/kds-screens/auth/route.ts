@@ -105,6 +105,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
+    // Fetch source links for screen communication
+    const sourceLinks = await db.kDSScreenLink.findMany({
+      where: {
+        sourceScreenId: screen.id,
+        isActive: true,
+        deletedAt: null,
+      },
+      include: {
+        targetScreen: { select: { id: true, name: true } },
+      },
+      orderBy: { sortOrder: 'asc' },
+    })
+
     return NextResponse.json({ data: {
       authenticated: true,
       screen: {
@@ -121,6 +134,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         playSound: screen.playSound,
         flashOnNew: screen.flashOnNew,
         isPaired: screen.isPaired,
+        // KDS Overhaul: new fields
+        displayMode: screen.displayMode,
+        transitionTimes: screen.transitionTimes,
+        orderBehavior: screen.orderBehavior,
+        orderTypeFilters: screen.orderTypeFilters,
+        sourceLinks: sourceLinks.map(sl => ({
+          id: sl.id,
+          targetScreenId: sl.targetScreenId,
+          targetScreenName: sl.targetScreen.name,
+          linkType: sl.linkType,
+          bumpAction: sl.bumpAction,
+          resetStrikethroughsOnSend: sl.resetStrikethroughsOnSend,
+        })),
         stations: screen.stations.map((ss) => ({
           id: ss.station.id,
           name: ss.station.name,

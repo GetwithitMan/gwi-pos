@@ -19,6 +19,7 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isClosed } from '@/lib/domain/order-status'
+import { getRequestLocationId } from '@/lib/request-context'
 import {
   calculateItemTotal,
   isEmployeeMealReason,
@@ -82,16 +83,20 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: approvalError.error }, { status: approvalError.status })
     }
 
-    // Bootstrap: lightweight locationId fetch, then tenant-safe include
-    const compVoidLocationCheck = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { locationId: true },
-    })
-    if (!compVoidLocationCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let compVoidLocationId = getRequestLocationId()
+    if (!compVoidLocationId) {
+      const compVoidLocationCheck = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { locationId: true },
+      })
+      if (!compVoidLocationCheck) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      compVoidLocationId = compVoidLocationCheck.locationId
     }
 
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, compVoidLocationCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, compVoidLocationId, {
       location: true,
       payments: {
         where: { deletedAt: null },
@@ -675,16 +680,20 @@ export const PUT = withVenue(async function PUT(
       )
     }
 
-    // Bootstrap: lightweight locationId fetch, then tenant-safe include
-    const restoreLocationCheck = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { locationId: true },
-    })
-    if (!restoreLocationCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let restoreLocationId = getRequestLocationId()
+    if (!restoreLocationId) {
+      const restoreLocationCheck = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { locationId: true },
+      })
+      if (!restoreLocationCheck) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      restoreLocationId = restoreLocationCheck.locationId
     }
 
-    const order = await OrderRepository.getOrderByIdWithInclude(orderId, restoreLocationCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(orderId, restoreLocationId, {
       location: true,
       items: {
         where: { id: itemId },
@@ -795,21 +804,24 @@ export const GET = withVenue(async function GET(
     const { searchParams } = new URL(request.url)
     const employeeId = searchParams.get('employeeId')
 
-    // Bootstrap: lightweight locationId fetch (no locationId available from request context yet)
-    const order = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { locationId: true },
-    })
-
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let historyLocationId = getRequestLocationId()
+    if (!historyLocationId) {
+      const order = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { locationId: true },
+      })
+      if (!order) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      historyLocationId = order.locationId
     }
 
     if (!employeeId) {
       return NextResponse.json({ error: 'Employee ID is required' }, { status: 401 })
     }
 
-    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    const auth = await requirePermission(employeeId, historyLocationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

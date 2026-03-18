@@ -53,6 +53,8 @@ const orderItemModifierSchema = z.object({
   isCustomEntry: z.boolean().optional(),
   customEntryName: z.string().nullable().optional(),
   customEntryPrice: z.number().nullable().optional(),
+  // None Selection — explicit "None" on a required modifier group
+  isNoneSelection: z.boolean().optional(),
   // Swap — substitution fields
   swapTargetName: z.string().nullable().optional(),
   swapTargetItemId: z.string().nullable().optional(),

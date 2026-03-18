@@ -24,6 +24,7 @@ export interface ReceiptItem {
     price: number
     preModifier?: string | null
     isCustomEntry?: boolean
+    isNoneSelection?: boolean
     customEntryName?: string | null
     swapTargetName?: string | null
   }[]

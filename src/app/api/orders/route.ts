@@ -398,6 +398,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             isCustomEntry: mod.isCustomEntry || false,
             customEntryName: mod.customEntryName || null,
             customEntryPrice: mod.customEntryPrice ?? null,
+            // None selection
+            isNoneSelection: mod.isNoneSelection || false,
             // Swap fields
             swapTargetName: mod.swapTargetName || null,
             swapTargetItemId: mod.swapTargetItemId || null,
@@ -721,6 +723,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
                 spiritTier: m.spiritTier || null,
                 linkedBottleProductId: m.linkedBottleProductId || null,
                 isCustomEntry: m.isCustomEntry || false,
+                isNoneSelection: m.isNoneSelection || false,
                 swapTargetName: m.swapTargetName || null,
                 swapTargetItemId: m.swapTargetItemId || null,
                 swapPricingMode: m.swapPricingMode || null,

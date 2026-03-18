@@ -155,6 +155,7 @@ export const GET = withVenue(async function GET(
             depth: mod.depth,
             quantity: mod.quantity,
             isCustomEntry: mod.isCustomEntry,
+            isNoneSelection: mod.isNoneSelection,
             customEntryName: mod.customEntryName,
             customEntryPrice: mod.customEntryPrice ? Number(mod.customEntryPrice) : null,
             swapTargetName: mod.swapTargetName,
@@ -506,6 +507,7 @@ export const POST = withVenue(async function POST(
                 spiritTier: mod.spiritTier,
                 linkedBottleProductId: mod.linkedBottleProductId,
                 isCustomEntry: mod.isCustomEntry,
+                isNoneSelection: mod.isNoneSelection,
                 customEntryName: mod.customEntryName,
                 customEntryPrice: mod.customEntryPrice,
                 swapTargetName: mod.swapTargetName,
@@ -558,6 +560,7 @@ export const POST = withVenue(async function POST(
                   spiritTier: mod.spiritTier,
                   linkedBottleProductId: mod.linkedBottleProductId,
                   isCustomEntry: mod.isCustomEntry,
+                  isNoneSelection: mod.isNoneSelection,
                   customEntryName: mod.customEntryName,
                   customEntryPrice: mod.customEntryPrice
                     ? Math.round(Number(mod.customEntryPrice) * fe.fraction * 100) / 100
@@ -816,6 +819,7 @@ export const PATCH = withVenue(async function PATCH(
                   spiritTier: mod.spiritTier,
                   linkedBottleProductId: mod.linkedBottleProductId,
                   isCustomEntry: mod.isCustomEntry,
+                  isNoneSelection: mod.isNoneSelection,
                   customEntryName: mod.customEntryName,
                   customEntryPrice: mod.customEntryPrice,
                   swapTargetName: mod.swapTargetName,

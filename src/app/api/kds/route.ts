@@ -8,6 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
 import { dispatchAlert } from '@/lib/alert-service'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
+import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-links'
 
 // Throttle entertainment expiry scan — once per 30s, not every KDS poll
 let _lastExpiryCheck = 0
@@ -21,6 +22,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const stationId = searchParams.get('stationId')
     const showAll = searchParams.get('showAll') === 'true' // Expo mode
     const cursor = searchParams.get('cursor')
+    const screenId = searchParams.get('screenId') // KDS Overhaul: for forwarded-item queries
 
     if (!locationId) {
       return NextResponse.json(
@@ -125,7 +127,21 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             deletedAt: null,
             kitchenStatus: { not: 'pending' },  // Only show items that have been sent to kitchen
             status: { not: 'voided' },           // Hide voided items
-            ...(showAll ? {} : { isCompleted: false }),  // Normal mode: hide completed items
+            // KDS Overhaul: If screenId provided, use forwarding-aware filter
+            // Show items forwarded to this screen that aren't final-completed,
+            // OR normal unfinished items (for non-forwarding screens)
+            ...(screenId
+              ? {
+                  OR: [
+                    // Items forwarded TO this screen (Expo view)
+                    { kdsForwardedToScreenId: screenId, kdsFinalCompleted: false },
+                    // Normal items not yet completed (Kitchen view)
+                    ...(showAll ? [] : [{ isCompleted: false, kdsForwardedToScreenId: null }]),
+                    ...(showAll ? [{}] : []),
+                  ],
+                }
+              : showAll ? {} : { isCompleted: false }
+            ),
           },
           include: {
             menuItem: {
@@ -249,6 +265,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           specialNotes: item.specialNotes,
           isCompleted: item.isCompleted || false,
           completedAt: item.completedAt?.toISOString() || null,
+          completedBy: item.completedBy || null,
+          kdsForwardedToScreenId: item.kdsForwardedToScreenId || null,
+          kdsFinalCompleted: item.kdsFinalCompleted || false,
           kitchenSentAt: item.kitchenSentAt?.toISOString() || null,
           resendCount: item.resendCount || 0,
           lastResentAt: item.lastResentAt?.toISOString() || null,
@@ -268,6 +287,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               : mod.name,
             depth: mod.depth || 0,
             isCustomEntry: (mod as any).isCustomEntry ?? false,
+            isNoneSelection: (mod as any).isNoneSelection ?? false,
             customEntryName: (mod as any).customEntryName ?? null,
             swapTargetName: (mod as any).swapTargetName ?? null,
           })),
@@ -342,21 +362,28 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
     const locationId = firstItemForDispatch?.order?.locationId
 
+    // Resolve bumpedBy for completedBy field
+    const bumpedBy = body.employeeId || firstItemForDispatch?.order?.employeeId || 'unknown'
+    const screenId = body.screenId as string | undefined
+
     if (action === 'complete') {
       await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
         isCompleted: true,
         completedAt: now,
+        completedBy: bumpedBy,
       })
     } else if (action === 'uncomplete') {
       await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
         isCompleted: false,
         completedAt: null,
+        completedBy: null,
       })
     } else if (action === 'bump_order') {
       // Complete all items in the order
       await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
         isCompleted: true,
         completedAt: now,
+        completedBy: bumpedBy,
       })
     } else if (action === 'resend') {
       // Resend items to kitchen - batch update all at once
@@ -388,41 +415,72 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       const locationId = firstItemForDispatch.order.locationId
       const orderId = firstItemForDispatch.orderId
 
+      // KDS Overhaul: Determine if this screen has forward targets (intermediate vs final bump)
+      // If screenId is provided and screen has active send_to_next links, this is an INTERMEDIATE bump:
+      // - Do NOT emit terminal "Made" events
+      // - Do NOT mark as final completion
+      // - Process screen links instead (forward to next screen)
+      let isIntermediateBump = false
+      if (screenId && (action === 'complete' || action === 'bump_order')) {
+        try {
+          isIntermediateBump = await screenHasForwardTargets(screenId, locationId)
+        } catch (err) {
+          console.error('[KDS] Failed to check forward targets:', err)
+          // Fail open: treat as final bump if check fails
+        }
+      }
+
+      // KDS Overhaul: Fire-and-forget screen link processing after bump commits
+      if (screenId && (action === 'complete' || action === 'bump_order')) {
+        void processScreenLinks(locationId, {
+          orderId,
+          itemIds,
+          sourceScreenId: screenId,
+          action,
+          bumpedBy,
+        }).catch(err => console.error('[KDS] Screen link processing failed:', err))
+      }
+
       if (action === 'complete' || action === 'uncomplete') {
-        // Dispatch item status change for each item
-        for (const iid of itemIds) {
-          dispatchItemStatus(locationId, {
-            orderId,
-            itemId: iid,
-            status: action === 'complete' ? 'completed' : 'active',
-            stationId: body.stationId || '',
-            updatedBy: body.employeeId || firstItemForDispatch.order.employeeId || '',
-          }, { async: true }).catch(err => {
-            console.error('Failed to dispatch item status:', err)
-          })
+        // For uncomplete: always dispatch (it's a recall, not a forward)
+        // For complete: only dispatch terminal events if this is a FINAL bump
+        if (action === 'uncomplete' || !isIntermediateBump) {
+          for (const iid of itemIds) {
+            dispatchItemStatus(locationId, {
+              orderId,
+              itemId: iid,
+              status: action === 'complete' ? 'completed' : 'active',
+              stationId: body.stationId || '',
+              updatedBy: bumpedBy,
+            }, { async: true }).catch(err => {
+              console.error('Failed to dispatch item status:', err)
+            })
+          }
         }
       } else if (action === 'bump_order') {
-        // Dispatch order bumped event
-        dispatchOrderBumped(locationId, {
-          orderId,
-          stationId: body.stationId || '',
-          bumpedBy: body.employeeId || firstItemForDispatch.order.employeeId || '',
-          allItemsServed: true,
-        }, { async: true }).catch(err => {
-          console.error('Failed to dispatch order bumped:', err)
-        })
-        // Also dispatch per-item kds:item-status so Android terminals (which listen
-        // for kds:item-status but not kds:order-bumped) update kitchen status
-        for (const iid of itemIds) {
-          dispatchItemStatus(locationId, {
+        // Only emit terminal "Made" / order bumped if this is a FINAL bump
+        if (!isIntermediateBump) {
+          dispatchOrderBumped(locationId, {
             orderId,
-            itemId: iid,
-            status: 'completed',
             stationId: body.stationId || '',
-            updatedBy: body.employeeId || firstItemForDispatch.order.employeeId || '',
+            bumpedBy,
+            allItemsServed: true,
           }, { async: true }).catch(err => {
-            console.error('Failed to dispatch bump item status:', err)
+            console.error('Failed to dispatch order bumped:', err)
           })
+          // Also dispatch per-item kds:item-status so Android terminals (which listen
+          // for kds:item-status but not kds:order-bumped) update kitchen status
+          for (const iid of itemIds) {
+            dispatchItemStatus(locationId, {
+              orderId,
+              itemId: iid,
+              status: 'completed',
+              stationId: body.stationId || '',
+              updatedBy: bumpedBy,
+            }, { async: true }).catch(err => {
+              console.error('Failed to dispatch bump item status:', err)
+            })
+          }
         }
       } else if (action === 'resend') {
         // W1-K2: Dispatch resend event so all KDS screens re-show the resent items

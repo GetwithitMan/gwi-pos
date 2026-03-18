@@ -19,6 +19,7 @@ import {
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { getRequestLocationId } from '@/lib/request-context'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -319,12 +320,16 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       )
     }
 
-    // ── Fetch order for locationId (needed for auth check + event emission) ──
-    const { db: database } = await import('@/lib/db')
-    const orderForDelete = await database.order.findUnique({
-      where: { id: orderId },
-      select: { locationId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let deleteLocationId = getRequestLocationId()
+    let orderForDelete: { locationId: string } | null = deleteLocationId ? { locationId: deleteLocationId } : null
+    if (!deleteLocationId) {
+      const { db: database } = await import('@/lib/db')
+      orderForDelete = await database.order.findUnique({
+        where: { id: orderId },
+        select: { locationId: true },
+      })
+    }
 
     // ── Auth check ──────────────────────────────────────────────────────
     // Self-removal: the requesting employee is removing themselves

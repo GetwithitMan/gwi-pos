@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { getRequestLocationId } from '@/lib/request-context'
 
 /**
  * PUT /api/ingredients/bulk-move
@@ -53,14 +54,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       return updateResult.count
     })
 
-    // Real-time cross-terminal update — need locationId from one of the moved ingredients
+    // Real-time cross-terminal update — need locationId for socket dispatch
     if (result > 0) {
-      const sample = await db.ingredient.findFirst({
-        where: { id: { in: ingredientIds } },
-        select: { locationId: true },
-      })
-      if (sample) {
-        void emitToLocation(sample.locationId, 'inventory:changed', { action: 'bulk-move' }).catch(() => {})
+      // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+      let bulkMoveLocationId = getRequestLocationId()
+      if (!bulkMoveLocationId) {
+        const sample = await db.ingredient.findFirst({
+          where: { id: { in: ingredientIds } },
+          select: { locationId: true },
+        })
+        bulkMoveLocationId = sample?.locationId
+      }
+      if (bulkMoveLocationId) {
+        void emitToLocation(bulkMoveLocationId, 'inventory:changed', { action: 'bulk-move' }).catch(() => {})
       }
     }
 

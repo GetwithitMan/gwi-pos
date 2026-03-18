@@ -14,6 +14,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { roundToCents } from '@/lib/pricing'
+import { getRequestLocationId } from '@/lib/request-context'
 
 interface TipAdjustment {
   orderId: string
@@ -43,15 +44,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // NOTE: First fetch uses db directly because we don't have locationId yet.
-    // Once we have locationId from this order, all subsequent queries use repositories.
-    const firstOrder = await adminDb.order.findUnique({
-      where: { id: adjustments[0].orderId },
-      select: { locationId: true },
-    })
-    if (!firstOrder) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let batchLocationId = getRequestLocationId()
+    if (!batchLocationId) {
+      const firstOrderLookup = await adminDb.order.findUnique({
+        where: { id: adjustments[0].orderId },
+        select: { locationId: true },
+      })
+      if (!firstOrderLookup) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      batchLocationId = firstOrderLookup.locationId
     }
+    // Synthetic object for backward compat with downstream code that reads firstOrder.locationId
+    const firstOrder = { locationId: batchLocationId }
     const authResult = await requirePermission(employeeId, firstOrder.locationId, PERMISSIONS.TIPS_PERFORM_ADJUSTMENTS)
     if (!authResult.authorized) {
       return NextResponse.json({ error: authResult.error }, { status: authResult.status ?? 403 })

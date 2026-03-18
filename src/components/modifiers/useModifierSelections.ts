@@ -276,6 +276,9 @@ export function useModifierSelections(
   // Custom open-entry selections
   const [customEntries, setCustomEntries] = useState<CustomEntrySelection[]>([])
 
+  // None selections — groups where "None" was explicitly chosen
+  const [noneGroups, setNoneGroups] = useState<Set<string>>(new Set())
+
   // All selections keyed by groupId
   const [selections, setSelections] = useState<Record<string, SelectedModifier[]>>({})
   const [childGroups, setChildGroups] = useState<Record<string, ModifierGroup>>({})
@@ -404,6 +407,22 @@ export function useModifierSelections(
   // Remove a custom open-entry modifier
   const removeCustomEntry = (entryId: string) => {
     setCustomEntries(prev => prev.filter(e => e.id !== entryId))
+  }
+
+  // Toggle "None" for a modifier group (clears any existing selections for that group)
+  const toggleNone = (groupId: string) => {
+    setNoneGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+        // Clear any existing selections for this group when None is selected
+        setSelections(s => ({ ...s, [groupId]: [] }))
+        setCustomEntries(ce => ce.filter(e => e.groupId !== groupId))
+      }
+      return next
+    })
   }
 
   // Calculate total price from ingredient modifications
@@ -545,6 +564,14 @@ export function useModifierSelections(
   }
 
   const toggleModifier = (group: ModifierGroup, modifier: Modifier, preModifier?: string) => {
+    // Clear "None" when a modifier is selected
+    if (noneGroups.has(group.id)) {
+      setNoneGroups(prev => {
+        const next = new Set(prev)
+        next.delete(group.id)
+        return next
+      })
+    }
     const current = selections[group.id] || []
     const existingIndex = current.findIndex(s => s.id === modifier.id)
     const existingMod = existingIndex >= 0 ? current[existingIndex] : null
@@ -724,6 +751,8 @@ export function useModifierSelections(
   const canConfirm = () => {
     const topLevelOk = modifierGroups.every(group => {
       if (!group.isRequired) return true
+      // "None" satisfies the required constraint
+      if (noneGroups.has(group.id)) return true
       const selected = selections[group.id] || []
       const customCount = customEntries.filter(e => e.groupId === group.id).length
       return (selected.length + customCount) >= group.minSelections
@@ -767,6 +796,20 @@ export function useModifierSelections(
         depth: 0,
         isCustomEntry: true,
       })
+    }
+    // Include "None" selections for groups that print to kitchen
+    for (const groupId of noneGroups) {
+      const group = modifierGroups.find(g => g.id === groupId)
+        || Object.values(childGroups).find(g => g.id === groupId)
+      if (group?.nonePrintsToKitchen) {
+        result.push({
+          id: `none_${groupId}`,
+          name: `No ${group.displayName || group.name}`,
+          price: 0,
+          depth: 0,
+          isNoneSelection: true,
+        })
+      }
     }
     return result
   }
@@ -961,6 +1004,9 @@ export function useModifierSelections(
     customEntries,
     addCustomEntry,
     removeCustomEntry,
+    // None selections
+    noneGroups,
+    toggleNone,
     // Modifier selections
     selections,
     expandedGroups,

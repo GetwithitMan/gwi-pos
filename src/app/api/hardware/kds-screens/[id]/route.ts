@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema, KDSOrderTypeFiltersSchema } from '@/lib/kds/types'
 
 // GET single KDS screen
 export const GET = withVenue(async function GET(
@@ -74,7 +75,29 @@ export const PUT = withVenue(async function PUT(
       stationIds,
       staticIp,
       enforceStaticIp,
+      displayMode,
+      transitionTimes,
+      orderBehavior,
+      orderTypeFilters,
     } = body
+
+    // Validate new JSON fields if provided
+    if (displayMode !== undefined) {
+      const r = KDSDisplayModeSchema.safeParse(displayMode)
+      if (!r.success) return NextResponse.json({ error: 'Invalid displayMode' }, { status: 400 })
+    }
+    if (transitionTimes !== undefined && transitionTimes !== null) {
+      const r = KDSTransitionTimesSchema.safeParse(transitionTimes)
+      if (!r.success) return NextResponse.json({ error: 'Invalid transitionTimes' }, { status: 400 })
+    }
+    if (orderBehavior !== undefined && orderBehavior !== null) {
+      const r = KDSOrderBehaviorSchema.safeParse(orderBehavior)
+      if (!r.success) return NextResponse.json({ error: 'Invalid orderBehavior' }, { status: 400 })
+    }
+    if (orderTypeFilters !== undefined && orderTypeFilters !== null) {
+      const r = KDSOrderTypeFiltersSchema.safeParse(orderTypeFilters)
+      if (!r.success) return NextResponse.json({ error: 'Invalid orderTypeFilters' }, { status: 400 })
+    }
 
     // Update the screen
     await db.kDSScreen.update({
@@ -93,6 +116,10 @@ export const PUT = withVenue(async function PUT(
         ...(sortOrder !== undefined && { sortOrder }),
         ...(staticIp !== undefined && { staticIp: staticIp || null }),
         ...(enforceStaticIp !== undefined && { enforceStaticIp }),
+        ...(displayMode !== undefined && { displayMode }),
+        ...(transitionTimes !== undefined && { transitionTimes: transitionTimes ?? undefined }),
+        ...(orderBehavior !== undefined && { orderBehavior: orderBehavior ?? undefined }),
+        ...(orderTypeFilters !== undefined && { orderTypeFilters: orderTypeFilters ?? undefined }),
       },
     })
 

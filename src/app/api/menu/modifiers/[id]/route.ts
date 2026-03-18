@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // GET single modifier group with modifiers
 export const GET = withVenue(async function GET(
@@ -341,8 +342,11 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id } = await params
 
-    // Get locationId for cache invalidation
-    const group = await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let deleteLocationId = getRequestLocationId()
+    const group = deleteLocationId
+      ? { locationId: deleteLocationId }
+      : await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
 
     // Soft delete modifier group
     await db.modifierGroup.update({ where: { id }, data: { deletedAt: new Date() } })

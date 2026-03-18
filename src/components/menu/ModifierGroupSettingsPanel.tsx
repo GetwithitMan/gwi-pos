@@ -135,6 +135,33 @@ export function ModifierGroupSettingsPanel({
           <span className="text-xs text-gray-700">Open Entry</span>
         </label>
 
+        {/* Allow None */}
+        <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={group.allowNone ?? false}
+            onChange={(e) => {
+              onUpdate('allowNone', e.target.checked)
+              if (!e.target.checked) onUpdate('nonePrintsToKitchen', false)
+            }}
+            className="w-3.5 h-3.5 rounded"
+          />
+          <span className="text-xs text-gray-700">Allow None</span>
+        </label>
+
+        {/* None Prints to Kitchen (only visible when allowNone is on) */}
+        {(group.allowNone ?? false) && (
+          <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={group.nonePrintsToKitchen ?? false}
+              onChange={(e) => onUpdate('nonePrintsToKitchen', e.target.checked)}
+              className="w-3.5 h-3.5 rounded"
+            />
+            <span className="text-xs text-gray-700">Print None</span>
+          </label>
+        )}
+
         {/* autoAdvance */}
         <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
           <input
@@ -269,6 +296,34 @@ export function ModifierGroupSettingsPanel({
             />
             <span className="text-sm text-gray-900">Allow Open Entry</span>
           </label>
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={group.allowNone ?? false}
+                onChange={(e) => {
+                  onUpdate('allowNone', e.target.checked)
+                  if (!e.target.checked) onUpdate('nonePrintsToKitchen', false)
+                }}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm text-gray-900">Allow None</span>
+            </label>
+            <p className="text-xs text-gray-500 ml-7 mt-0.5">
+              Show a &quot;None&quot; button so staff can skip this required group
+            </p>
+            {(group.allowNone ?? false) && (
+              <label className="flex items-center gap-3 cursor-pointer ml-7 mt-1.5">
+                <input
+                  type="checkbox"
+                  checked={group.nonePrintsToKitchen ?? false}
+                  onChange={(e) => onUpdate('nonePrintsToKitchen', e.target.checked)}
+                  className="w-4 h-4 rounded"
+                />
+                <span className="text-sm text-gray-700">Print &quot;None&quot; to kitchen tickets</span>
+              </label>
+            )}
+          </div>
           <div>
             <label className="flex items-center gap-3 cursor-pointer">
               <input

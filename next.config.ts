@@ -44,11 +44,12 @@ const nextConfig: NextConfig = {
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       // Enforced CSP — strict policy. unsafe-inline kept for styles only (Tailwind).
-      // unsafe-eval removed from scripts. Violations that slip through are caught
-      // by the report-only fallback below.
+      // unsafe-eval added in dev for webpack HMR, removed in production.
       {
         key: 'Content-Security-Policy',
-        value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'",
+        value: process.env.NODE_ENV === 'production'
+          ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'"
+          : "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'",
       },
       // Report-only CSP without unsafe-inline on scripts — catches any inline script
       // violations that the enforced CSP allows. Logs to /api/csp-report.

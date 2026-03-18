@@ -40,6 +40,7 @@ export interface SplitOrderItemModifier {
   spiritTier: string | null
   linkedBottleProductId: string | null
   isCustomEntry: boolean
+  isNoneSelection: boolean
   customEntryName: string | null
   customEntryPrice: any | null // Prisma Decimal
   swapTargetName: string | null

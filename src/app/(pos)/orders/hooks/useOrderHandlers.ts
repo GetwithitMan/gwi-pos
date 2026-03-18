@@ -1059,6 +1059,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
           parentModifierId: mod.parentModifierId ?? null,
           // Open entry + swap fields
           isCustomEntry: mod.isCustomEntry ?? false,
+          isNoneSelection: mod.isNoneSelection ?? false,
           swapTargetName: mod.swapTargetName ?? null,
           swapTargetItemId: mod.swapTargetItemId ?? null,
           swapPricingMode: mod.swapPricingMode ?? null,
@@ -1109,6 +1110,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         parentModifierId: mod.parentModifierId ?? null,
         // Open entry + swap fields
         isCustomEntry: mod.isCustomEntry ?? false,
+        isNoneSelection: mod.isNoneSelection ?? false,
         swapTargetName: mod.swapTargetName ?? null,
         swapTargetItemId: mod.swapTargetItemId ?? null,
         swapPricingMode: mod.swapPricingMode ?? null,
@@ -1166,6 +1168,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         parentModifierId: mod.parentModifierId ?? null,
         // Open entry + swap fields
         isCustomEntry: mod.isCustomEntry ?? false,
+        isNoneSelection: mod.isNoneSelection ?? false,
         swapTargetName: mod.swapTargetName ?? null,
         swapTargetItemId: mod.swapTargetItemId ?? null,
         swapPricingMode: mod.swapPricingMode ?? null,

@@ -194,6 +194,85 @@ export async function dispatchOrderBumped(
 }
 
 /**
+ * Dispatch order forwarded event (KDS screen-to-screen communication)
+ *
+ * Emitted when a Kitchen screen bumps and has a send_to_next link.
+ * Target screens (e.g., Expo) listen for this to show forwarded items.
+ */
+export async function dispatchOrderForwarded(
+  locationId: string,
+  payload: {
+    eventId: string
+    orderId: string
+    itemIds: string[]
+    targetScreenId: string
+    sourceScreenId: string
+    linkType: string
+    bumpAction: string
+    resetStrikethroughs: boolean
+    bumpedBy: string
+    locationId: string
+    timestamp: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'kds:order-forwarded', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch order forwarded:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async order-forwarded dispatch failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch multi-clear event (KDS screen-to-screen communication)
+ *
+ * Emitted when a source screen bumps and has a multi_clear link.
+ * Target screens apply the configured bump action to matching items.
+ */
+export async function dispatchMultiClear(
+  locationId: string,
+  payload: {
+    eventId: string
+    orderId: string
+    itemIds: string[]
+    targetScreenId: string
+    sourceScreenId: string
+    bumpAction: string
+    locationId: string
+    timestamp: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'kds:multi-clear', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch multi-clear:', error)
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => console.error('[SocketDispatch] Async multi-clear dispatch failed:', err))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
  * Dispatch entertainment session update
  *
  * Called when entertainment timer starts/extends/stops.

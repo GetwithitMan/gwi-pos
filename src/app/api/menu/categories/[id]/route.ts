@@ -5,6 +5,7 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { getRequestLocationId } from '@/lib/request-context'
 
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
@@ -15,8 +16,8 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { name, color, categoryType, categoryShow, printerIds, showOnline } = body
 
-    // Resolve locationId — body → query param → fallback to cached location
-    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    // Fast path: request context → body → query param → fallback to cached location
+    const locationId = getRequestLocationId() || body.locationId || request.nextUrl.searchParams.get('locationId') || await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }

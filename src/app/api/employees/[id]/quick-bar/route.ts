@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // GET — returns employee's quick bar items and location defaults
 export const GET = withVenue(async function GET(
@@ -10,17 +11,22 @@ export const GET = withVenue(async function GET(
   try {
     const { id: employeeId } = await params
 
-    const employee = await adminDb.employee.findUnique({
-      where: { id: employeeId },
-      select: { locationId: true },
-    })
-    if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let qbLocationId = getRequestLocationId()
+    if (!qbLocationId) {
+      const employee = await adminDb.employee.findUnique({
+        where: { id: employeeId },
+        select: { locationId: true },
+      })
+      if (!employee) {
+        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      }
+      qbLocationId = employee.locationId
     }
 
     const [pref, defaults] = await Promise.all([
       db.quickBarPreference.findUnique({ where: { employeeId } }),
-      db.quickBarDefault.findUnique({ where: { locationId: employee.locationId } }),
+      db.quickBarDefault.findUnique({ where: { locationId: qbLocationId } }),
     ])
 
     return NextResponse.json({
@@ -49,18 +55,23 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'itemIds must be an array' }, { status: 400 })
     }
 
-    const employee = await adminDb.employee.findUnique({
-      where: { id: employeeId },
-      select: { locationId: true },
-    })
-    if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let putLocationId = getRequestLocationId()
+    if (!putLocationId) {
+      const employee = await adminDb.employee.findUnique({
+        where: { id: employeeId },
+        select: { locationId: true },
+      })
+      if (!employee) {
+        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      }
+      putLocationId = employee.locationId
     }
 
     await db.quickBarPreference.upsert({
       where: { employeeId },
       create: {
-        locationId: employee.locationId,
+        locationId: putLocationId,
         employeeId,
         itemIds: JSON.stringify(itemIds),
       },

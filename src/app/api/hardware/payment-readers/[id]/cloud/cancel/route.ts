@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getDatacapClient } from '@/lib/datacap/helpers'
+import { getRequestLocationId } from '@/lib/request-context'
 
 /**
  * Cloud reader cancel proxy
@@ -15,16 +16,20 @@ export const POST = withVenue(async function POST(
   try {
     const { id } = await params
 
-    const reader = await db.paymentReader.findFirst({
-      where: { id, deletedAt: null },
-      select: { locationId: true },
-    })
-
-    if (!reader) {
-      return NextResponse.json({ data: { success: false } })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let cancelLocationId = getRequestLocationId()
+    if (!cancelLocationId) {
+      const reader = await db.paymentReader.findFirst({
+        where: { id, deletedAt: null },
+        select: { locationId: true },
+      })
+      if (!reader) {
+        return NextResponse.json({ data: { success: false } })
+      }
+      cancelLocationId = reader.locationId
     }
 
-    const client = await getDatacapClient(reader.locationId)
+    const client = await getDatacapClient(cancelLocationId)
     await client.padReset(id)
 
     return NextResponse.json({ data: { success: true } })

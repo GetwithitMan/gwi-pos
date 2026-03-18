@@ -100,6 +100,7 @@ export async function createSeatSplit(
             spiritTier: mod.spiritTier,
             linkedBottleProductId: mod.linkedBottleProductId,
             isCustomEntry: mod.isCustomEntry,
+            isNoneSelection: mod.isNoneSelection,
             customEntryName: mod.customEntryName,
             customEntryPrice: mod.customEntryPrice,
             swapTargetName: mod.swapTargetName,

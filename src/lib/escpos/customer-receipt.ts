@@ -50,7 +50,7 @@ export interface ReceiptItem {
   name: string
   quantity: number
   price: number
-  modifiers: { name: string; price: number; preModifier?: string | null; isCustomEntry?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
+  modifiers: { name: string; price: number; preModifier?: string | null; isCustomEntry?: boolean; isNoneSelection?: boolean; customEntryName?: string | null; swapTargetName?: string | null }[]
   specialNotes?: string | null
 }
 
@@ -168,6 +168,8 @@ export function buildCustomerReceipt(
     content.push(twoColumnLine(itemText, priceText, width))
 
     for (const mod of item.modifiers) {
+      // Skip "None" selections on customer receipts — kitchen-only info
+      if (mod.isNoneSelection) continue
       // Build display name with pre-modifier labels, custom entry/swap prefixes
       let modDisplayName = mod.name
       // Pre-modifier labels: "No Onions", "Lite Ranch", "Extra Cheese", "Side Sauce"

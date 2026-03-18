@@ -47,6 +47,7 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string; 
           parentModifierId: m.parentModifierId ?? null,
           // Open entry (custom modifier)
           isCustomEntry: (m as any).isCustomEntry ?? false,
+          isNoneSelection: (m as any).isNoneSelection ?? false,
           customEntryName: (m as any).customEntryName ?? null,
           customEntryPrice: (m as any).customEntryPrice != null ? Number((m as any).customEntryPrice) : null,
           // Swap/substitution

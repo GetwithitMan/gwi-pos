@@ -118,6 +118,8 @@ export interface ModifierGroup {
   modifierTypes?: string[]
   showOnline?: boolean
   allowOpenEntry?: boolean
+  allowNone?: boolean
+  nonePrintsToKitchen?: boolean
   autoAdvance?: boolean
   isSpiritGroup?: boolean
 }

@@ -36,6 +36,7 @@ import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { PAYABLE_STATUSES } from '@/lib/domain/order-status'
+import { getRequestLocationId } from '@/lib/request-context'
 import {
   PaymentRequestSchema,
   normalizePaymentInput,
@@ -87,12 +88,23 @@ export const POST = withVenue(withTiming(async function POST(
     // ── Permission checks OUTSIDE the transaction (no FOR UPDATE needed) ──
     // These calls hit the auth service / employee table, not the Order row.
     // Running them before the lock reduces contention time.
-    // NOTE: First fetch uses db directly because we don't have locationId yet.
-    // Once we have locationId from the order, all subsequent queries use repositories.
-    const preCheckOrder = await adminDb.order.findFirst({
-      where: { id: orderId },
-      select: { locationId: true, employeeId: true },
-    })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let payLocationId = getRequestLocationId()
+    let preCheckOrder: { locationId: string; employeeId: string | null } | null = null
+    if (payLocationId) {
+      // We have locationId but still need employeeId for ownership check
+      const orderOwner = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { employeeId: true },
+      })
+      preCheckOrder = orderOwner ? { locationId: payLocationId, employeeId: orderOwner.employeeId } : null
+    } else {
+      preCheckOrder = await adminDb.order.findFirst({
+        where: { id: orderId },
+        select: { locationId: true, employeeId: true },
+      })
+      payLocationId = preCheckOrder?.locationId
+    }
     if (preCheckOrder && payEmployeeId) {
       // Normalize payment methods from the raw body for permission resolution
       const rawPaymentsForPerms = Array.isArray(body.payments)

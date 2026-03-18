@@ -260,6 +260,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   spiritTier: m.spiritTier || null,
                   linkedBottleProductId: m.linkedBottleProductId || null,
                   isCustomEntry: m.isCustomEntry || false,
+                  isNoneSelection: m.isNoneSelection || false,
                   swapTargetName: m.swapTargetName || null,
                   swapTargetItemId: m.swapTargetItemId || null,
                   swapPricingMode: m.swapPricingMode || null,

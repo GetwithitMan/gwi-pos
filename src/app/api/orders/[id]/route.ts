@@ -14,6 +14,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { validateTransition, isModifiable } from '@/lib/domain/order-status'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // GET - Get order details
 export const GET = withVenue(async function GET(
@@ -204,16 +205,20 @@ export const GET = withVenue(async function GET(
       } })
     }
 
-    // Bootstrap: lightweight locationId fetch, then tenant-safe include
-    const getLocationCheck = await adminDb.order.findFirst({
-      where: { id, deletedAt: null },
-      select: { locationId: true },
-    })
-    if (!getLocationCheck) {
-      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const getLocationCheck = await adminDb.order.findFirst({
+        where: { id, deletedAt: null },
+        select: { locationId: true },
+      })
+      if (!getLocationCheck) {
+        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+      }
+      locationId = getLocationCheck.locationId
     }
 
-    const order = await OrderRepository.getOrderByIdWithInclude(id, getLocationCheck.locationId, {
+    const order = await OrderRepository.getOrderByIdWithInclude(id, locationId, {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
@@ -386,16 +391,20 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // Two-step: lightweight locationId bootstrap, then tenant-safe fetch with select
-    const orderLocationCheck = await adminDb.order.findFirst({
-      where: { id },
-      select: { locationId: true },
-    })
-    if (!orderLocationCheck) {
-      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let resolvedLocationId = getRequestLocationId()
+    if (!resolvedLocationId) {
+      const orderLocationCheck = await adminDb.order.findFirst({
+        where: { id },
+        select: { locationId: true },
+      })
+      if (!orderLocationCheck) {
+        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+      }
+      resolvedLocationId = orderLocationCheck.locationId
     }
 
-    const existingOrder = await OrderRepository.getOrderByIdWithSelect(id, orderLocationCheck.locationId, {
+    const existingOrder = await OrderRepository.getOrderByIdWithSelect(id, resolvedLocationId, {
         id: true,
         status: true,
         locationId: true,
@@ -741,16 +750,20 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // Two-step: lightweight locationId bootstrap, then tenant-safe fetch with select
-    const patchLocationCheck = await adminDb.order.findFirst({
-      where: { id },
-      select: { locationId: true },
-    })
-    if (!patchLocationCheck) {
-      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let patchLocationId = getRequestLocationId()
+    if (!patchLocationId) {
+      const patchLocationCheck = await adminDb.order.findFirst({
+        where: { id },
+        select: { locationId: true },
+      })
+      if (!patchLocationCheck) {
+        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+      }
+      patchLocationId = patchLocationCheck.locationId
     }
 
-    const existing = await OrderRepository.getOrderByIdWithSelect(id, patchLocationCheck.locationId, {
+    const existing = await OrderRepository.getOrderByIdWithSelect(id, patchLocationId, {
         id: true,
         status: true,
         locationId: true,

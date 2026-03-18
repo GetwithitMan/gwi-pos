@@ -11,6 +11,7 @@ import type { OrderUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getRequestLocationId } from '@/lib/request-context'
 
 /**
  * Atomic Seat Management API (Skill 121)
@@ -61,17 +62,21 @@ export const GET = withVenue(async function GET(
     // Resolve employeeId from session
     const { employeeId } = await getActorFromRequest(request)
 
-    // Lightweight check to get locationId for tenant-scoped queries
-    const orderCheck = await adminDb.order.findUnique({
-      where: { id: orderId },
-      select: { id: true, locationId: true },
-    })
-    if (!orderCheck) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let seatingLocationId = getRequestLocationId()
+    if (!seatingLocationId) {
+      const orderCheck = await adminDb.order.findUnique({
+        where: { id: orderId },
+        select: { id: true, locationId: true },
+      })
+      if (!orderCheck) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      seatingLocationId = orderCheck.locationId
     }
 
     const order = await OrderRepository.getOrderByIdWithInclude(
-      orderId, orderCheck.locationId,
+      orderId, seatingLocationId,
       {
         location: true,
         items: {
@@ -232,12 +237,15 @@ export const POST = withVenue(async function POST(
     // Resolve employeeId from body or session
     const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
 
-    // Auth check: lightweight order lookup to get locationId for permission validation (before any mutations)
-    const orderForAuth = await adminDb.order.findUnique({ where: { id: orderId }, select: { id: true, locationId: true } })
-    if (!orderForAuth) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let orderLocationId = getRequestLocationId()
+    if (!orderLocationId) {
+      const orderForAuth = await adminDb.order.findUnique({ where: { id: orderId }, select: { id: true, locationId: true } })
+      if (!orderForAuth) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      orderLocationId = orderForAuth.locationId
     }
-    const orderLocationId = orderForAuth.locationId
     const auth = await requirePermission(employeeId, orderLocationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })

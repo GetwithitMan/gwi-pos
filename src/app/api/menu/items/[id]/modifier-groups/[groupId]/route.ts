@@ -13,7 +13,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
-    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline, isSpiritGroup, displayName, modifierTypes, allowOpenEntry, autoAdvance } = body
+    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline, isSpiritGroup, displayName, modifierTypes, allowOpenEntry, allowNone, nonePrintsToKitchen, autoAdvance } = body
 
     // Validate inputs
     if (name !== undefined && typeof name === 'string' && name.trim() === '') {
@@ -50,6 +50,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         displayName: displayName !== undefined ? (displayName || null) : undefined,
         modifierTypes: modifierTypes !== undefined ? modifierTypes : undefined,
         allowOpenEntry: allowOpenEntry !== undefined ? allowOpenEntry : undefined,
+        allowNone: allowNone !== undefined ? allowNone : undefined,
+        nonePrintsToKitchen: nonePrintsToKitchen !== undefined ? nonePrintsToKitchen : undefined,
         autoAdvance: autoAdvance !== undefined ? autoAdvance : undefined,
         showOnline: showOnline !== undefined ? showOnline : undefined,
       },
@@ -98,6 +100,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         modifierTypes: updated.modifierTypes,
         showOnline: updated.showOnline,
         allowOpenEntry: updated.allowOpenEntry,
+        allowNone: updated.allowNone,
+        nonePrintsToKitchen: updated.nonePrintsToKitchen,
         autoAdvance: updated.autoAdvance,
         modifiers: updated.modifiers.map((m: any) => ({
           id: m.id,
@@ -151,6 +155,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
             modifierTypes: m.childModifierGroup.modifierTypes,
             showOnline: m.childModifierGroup.showOnline,
             allowOpenEntry: m.childModifierGroup.allowOpenEntry,
+            allowNone: m.childModifierGroup.allowNone,
+            nonePrintsToKitchen: m.childModifierGroup.nonePrintsToKitchen,
             autoAdvance: m.childModifierGroup.autoAdvance,
             modifiers: m.childModifierGroup.modifiers.map((cm: any) => ({
               id: cm.id,

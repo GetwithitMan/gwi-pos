@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { resolveAllowedReasonIds } from '@/app/api/settings/reason-access/allowed/route'
+import { getRequestLocationId } from '@/lib/request-context'
 
 // GET ?employeeId=X → returns allowed voidReasons, compReasons, discountPresets for that employee
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -13,17 +14,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
     }
 
-    // Get employee to determine locationId
-    const employee = await adminDb.employee.findUnique({
-      where: { id: employeeId },
-      select: { locationId: true },
-    })
-
-    if (!employee) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+    // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
+    let locationId = getRequestLocationId()
+    if (!locationId) {
+      const employee = await adminDb.employee.findUnique({
+        where: { id: employeeId },
+        select: { locationId: true },
+      })
+      if (!employee) {
+        return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
+      }
+      locationId = employee.locationId
     }
-
-    const locationId = employee.locationId
 
     // Resolve all three reason types in parallel
     const [voidResult, compResult, discountResult] = await Promise.all([

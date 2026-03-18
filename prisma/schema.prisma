@@ -748,6 +748,7 @@ model Location {
   printers          Printer[]
   kdsScreens        KDSScreen[]
   kdsScreenStations KDSScreenStation[]
+  kdsScreenLinks    KDSScreenLink[]
   stations          Station[]
   terminals         Terminal[]
   printRules        PrintRule[]
@@ -1779,6 +1780,10 @@ model ModifierGroup {
 
   // Open Entry — allow freeform custom modifiers on POS
   allowOpenEntry Boolean @default(false)
+  // Allow None — show a "None" button on required groups so staff can skip selection
+  allowNone             Boolean @default(false)
+  // Whether "None" selection prints to kitchen tickets/KDS/receipts
+  nonePrintsToKitchen   Boolean @default(false)
   // Auto-advance — auto-dismiss single-select required group after selection
   autoAdvance    Boolean @default(false)
 
@@ -2625,8 +2630,11 @@ model OrderItem {
   kitchenSentAt DateTime? // When item was sent to kitchen (for speed-of-service tracking)
 
   // KDS completion tracking
-  isCompleted Boolean   @default(false)
-  completedAt DateTime?
+  isCompleted            Boolean   @default(false)
+  completedAt            DateTime?
+  completedBy            String?   // Who bumped this item (employee name or "system")
+  kdsForwardedToScreenId String?   // Screen this item was forwarded to (persists Expo visibility)
+  kdsFinalCompleted      Boolean   @default(false) // True only after final bump (no more send_to_next targets)
 
   // Resend tracking
   resendCount  Int       @default(0)
@@ -2718,6 +2726,7 @@ model OrderItem {
   @@index([pricingOptionId])
   @@index([menuItemId, pricingOptionId]) // PMIX/Sales: group by item + size variant
   @@index([locationId, status, updatedAt])
+  @@index([kdsForwardedToScreenId, kdsFinalCompleted]) // KDS Overhaul: Expo query index
 }
 
 model OrderItemModifier {
@@ -2765,6 +2774,9 @@ model OrderItemModifier {
   isCustomEntry    Boolean  @default(false)
   customEntryName  String?
   customEntryPrice Decimal?
+
+  // None Selection — explicit "None" chosen on a required modifier group
+  isNoneSelection  Boolean  @default(false)
 
   // Swap — substitution snapshot at time of order
   swapTargetName     String?
@@ -6192,9 +6204,17 @@ model KDSScreen {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  // Display & Behavior (KDS Overhaul)
+  displayMode      String  @default("tiled") // "tiled" | "classic" | "split" | "takeout"
+  transitionTimes  Json?   // Per-order-type { "dine_in": { caution: 8, late: 15 }, ... }
+  orderBehavior    Json?   // All behavior toggles (tap-to-start, merge, etc.)
+  orderTypeFilters Json?   // Per-type visibility { "dine_in": true, "takeout": false, ... }
+
   // Relations
-  stations   KDSScreenStation[]
-  printRules PrintRule[]
+  stations    KDSScreenStation[]
+  sourceLinks KDSScreenLink[] @relation("SourceLinks")
+  targetLinks KDSScreenLink[] @relation("TargetLinks")
+  printRules  PrintRule[]
 
   @@unique([locationId, name])
   @@unique([locationId, slug])
@@ -6223,6 +6243,34 @@ model KDSScreenStation {
   @@index([locationId])
   @@index([kdsScreenId])
   @@index([stationId])
+}
+
+// Screen-to-screen communication links (KDS Overhaul)
+model KDSScreenLink {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  sourceScreenId String
+  sourceScreen   KDSScreen @relation("SourceLinks", fields: [sourceScreenId], references: [id], onDelete: Cascade)
+  targetScreenId String
+  targetScreen   KDSScreen @relation("TargetLinks", fields: [targetScreenId], references: [id], onDelete: Cascade)
+
+  linkType  String  @default("send_to_next") // "send_to_next" | "multi_clear"
+  bumpAction String @default("bump")         // "bump" | "strike_through" | "no_action"
+  resetStrikethroughsOnSend Boolean @default(false)
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([sourceScreenId, targetScreenId, linkType])
+  @@index([locationId])
+  @@index([sourceScreenId])
+  @@index([targetScreenId])
 }
 
 // ============================================
