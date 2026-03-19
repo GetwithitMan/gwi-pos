@@ -335,6 +335,8 @@ const LOCAL_ONLY_TABLES = new Set([
   'DeliveryRun', 'DeliveryAddress', 'DeliveryProofOfDelivery', 'DeliveryTracking',
   'DeliveryAuditLog', 'DeliveryException', 'DeliveryNotification', 'DeliveryOrder',
   'DeliveryNotificationAttempt',
+  // Employee permission overrides (per-venue, no sync needed)
+  'EmployeePermissionOverride',
   // Cake/loyalty/portal
   'CakeCalendarBlock', 'CustomerPortalSession', 'LoyaltyReward', 'LoyaltyRedemption',
   // Membership

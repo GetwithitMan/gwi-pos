@@ -84,7 +84,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (featureGate) return featureGate
 
     const body = await request.json()
-    const { employeeId, startingBankCents } = body
+    const { employeeId } = body
+    let { startingBankCents } = body
 
     if (!employeeId || typeof employeeId !== 'string') {
       return NextResponse.json({ error: 'employeeId is required' }, { status: 400 })
