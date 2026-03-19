@@ -306,12 +306,24 @@ async function main() {
     )
 
     // Sync workers — only when sync is enabled, not backup, Neon URL present, and schema ready
-    const neonSchemaOk = bootstrapResult?.neonSchemaReady?.coreTablesExist ?? true
+    const neonReady = bootstrapResult?.neonSchemaReady
+    const neonSchemaOk = neonReady
+      ? (neonReady.coreTablesExist && neonReady.requiredEnumsExist && neonReady.schemaVersionMatch && neonReady.baseSeedPresent)
+      : true  // If no Neon configured or bootstrap didn't run, don't block (fail-open for local orders)
     const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl && neonSchemaOk
     if (config.syncEnabled && config.stationRole === 'backup') {
       logger.warn('STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
     } else if (config.syncEnabled && !config.neonDatabaseUrl) {
       logger.error('SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
+    }
+    if (config.syncEnabled && config.neonDatabaseUrl && !neonSchemaOk) {
+      logger.error({
+        coreTablesExist: neonReady?.coreTablesExist,
+        requiredEnumsExist: neonReady?.requiredEnumsExist,
+        schemaVersionMatch: neonReady?.schemaVersionMatch,
+        baseSeedPresent: neonReady?.baseSeedPresent,
+        schemaVersion: neonReady?.schemaVersion,
+      }, 'Sync workers NOT started — Neon schema readiness check failed. Fix schema and restart.')
     }
 
     if (syncReady) {
