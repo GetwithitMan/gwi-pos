@@ -1217,6 +1217,20 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         </div>
       </div>
 
+      {/* Pizza Builder redirect banner */}
+      {(item?.categoryType === 'pizza') && (
+        <div className="mx-4 mt-3 mb-1 flex items-center gap-3 rounded-lg bg-orange-50 border border-orange-200 p-3">
+          <span className="text-2xl">🍕</span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-orange-800">This is a pizza item</p>
+            <p className="text-xs text-orange-600">Full editing available in the Pizza Builder</p>
+          </div>
+          <a href="/pizza" className="px-3 py-1.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors">
+            Pizza Builder →
+          </a>
+        </div>
+      )}
+
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
         {loading ? (

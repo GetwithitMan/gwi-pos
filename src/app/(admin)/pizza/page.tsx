@@ -16,6 +16,7 @@ import {
   PizzaTopping,
   PizzaSpecialty,
   PizzaMenuItem,
+  PizzaCategory,
 } from './types'
 import {
   ConfigTab,
@@ -24,7 +25,7 @@ import {
   SaucesTab,
   CheesesTab,
   ToppingsTab,
-  SpecialtiesTab,
+  ItemsTab,
 } from './PizzaTabs'
 import {
   SizeModal,
@@ -35,13 +36,13 @@ import {
   SpecialtyModal,
 } from './PizzaModals'
 
-type TabType = 'config' | 'sizes' | 'crusts' | 'sauces' | 'cheeses' | 'toppings' | 'specialties'
+type TabType = 'items' | 'sizes' | 'crusts' | 'sauces' | 'cheeses' | 'toppings' | 'config'
 
 export default function PizzaAdminPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/pizza' })
   const locationId = useAuthStore(s => s.employee?.location?.id)
   const employeeId = useAuthStore(s => s.employee?.id)
-  const [activeTab, setActiveTab] = useState<TabType>('sizes')
+  const [activeTab, setActiveTab] = useState<TabType>('items')
   const [isLoading, setIsLoading] = useState(true)
   const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
 
@@ -55,6 +56,7 @@ export default function PizzaAdminPage() {
   const [printers, setPrinters] = useState<Printer[]>([])
   const [specialties, setSpecialties] = useState<PizzaSpecialty[]>([])
   const [pizzaMenuItems, setPizzaMenuItems] = useState<PizzaMenuItem[]>([])
+  const [pizzaCategories, setPizzaCategories] = useState<PizzaCategory[]>([])
 
   // Ingredient data (for topping inventory linking)
   const [ingredientsLibrary, setIngredientsLibrary] = useState<IngredientLibraryItem[]>([])
@@ -156,10 +158,11 @@ export default function PizzaAdminPage() {
   const loadAllData = async () => {
     setIsLoading(true)
     try {
-      const [pizzaRes, specialtiesRes, menuItemsRes] = await Promise.all([
+      const [pizzaRes, specialtiesRes, menuItemsRes, categoriesRes] = await Promise.all([
         fetch('/api/pizza'),
         fetch('/api/pizza/specialties'),
         fetch('/api/menu/items'),
+        fetch(`/api/menu/categories?locationId=${locationId}`),
       ])
 
       if (pizzaRes.ok) {
@@ -179,31 +182,55 @@ export default function PizzaAdminPage() {
         setSpecialties(Array.isArray(specialtiesData) ? specialtiesData : (specialtiesData.data || []))
       }
 
+      // Fetch pizza categories
+      if (categoriesRes.ok) {
+        const categoriesData = await categoriesRes.json()
+        const allCategories = categoriesData.data?.categories || categoriesData.categories || categoriesData || []
+        const pizzaCats = (Array.isArray(allCategories) ? allCategories : []).filter(
+          (c: any) => c.categoryType === 'pizza'
+        )
+        setPizzaCategories(pizzaCats.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          color: c.color || '#f97316',
+          categoryType: c.categoryType,
+          itemCount: c.itemCount || 0,
+        })))
+      }
+
       if (menuItemsRes.ok) {
         const menuData = await menuItemsRes.json()
         const allItems = menuData.data?.items || menuData.data || []
         // Filter to pizza items (API returns isPizza flag based on itemType or categoryType)
-        const pizzaItems: PizzaMenuItem[] = allItems
-          .filter((item: any) => item.isPizza)
-          .map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price || 0),
-            categoryName: item.categoryName || item.category?.name,
-          }))
+        const mapItem = (item: any): PizzaMenuItem => ({
+          id: item.id,
+          name: item.name,
+          price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price || 0),
+          description: item.description || '',
+          imageUrl: item.imageUrl || null,
+          isActive: item.isActive ?? true,
+          showOnPOS: item.showOnPOS ?? true,
+          showOnline: item.showOnline ?? false,
+          categoryId: item.categoryId,
+          categoryName: item.category?.name || item.categoryName || '',
+          commissionType: item.commissionType || null,
+          commissionValue: item.commissionValue != null ? Number(item.commissionValue) : null,
+          taxRate: item.taxRate != null ? Number(item.taxRate) : null,
+          isTaxExempt: item.isTaxExempt ?? false,
+          allergens: item.allergens || [],
+          prepStationId: item.prepStationId || null,
+          prepTime: item.prepTime || null,
+          sortOrder: item.sortOrder || 0,
+        })
+        const pizzaItems = allItems.filter((item: any) => item.isPizza).map(mapItem)
         // Fallback: include items from categories containing "pizza" in name
         if (pizzaItems.length === 0) {
-          const fallbackItems: PizzaMenuItem[] = allItems
+          const fallbackItems = allItems
             .filter((item: any) => {
               const catName = (item.categoryName || item.category?.name || '').toLowerCase()
               return catName.includes('pizza') || catName.includes('pie')
             })
-            .map((item: any) => ({
-              id: item.id,
-              name: item.name,
-              price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price || 0),
-              categoryName: item.categoryName || item.category?.name,
-            }))
+            .map(mapItem)
           setPizzaMenuItems(fallbackItems)
         } else {
           setPizzaMenuItems(pizzaItems)
@@ -449,6 +476,84 @@ export default function PizzaAdminPage() {
     })
   }
 
+  const handleUpdatePizzaItem = async (itemId: string, updates: Record<string, any>) => {
+    try {
+      await fetch(`/api/menu/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...updates, locationId, employeeId }),
+      })
+      await loadAllData()
+    } catch (err) {
+      console.error('Failed to update pizza item:', err)
+    }
+  }
+
+  const handleCreatePizzaItem = async (data: { name: string; price: number; categoryId: string }) => {
+    try {
+      await fetch('/api/menu/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...data,
+          locationId,
+          employeeId,
+          itemType: 'pizza',
+        }),
+      })
+      await loadAllData()
+    } catch (err) {
+      console.error('Failed to create pizza item:', err)
+    }
+  }
+
+  const handleDeletePizzaItem = (itemId: string) => {
+    setConfirmAction({
+      title: 'Delete Pizza Item',
+      message: 'This will remove the item from the menu. This cannot be undone.',
+      action: async () => {
+        await fetch(`/api/menu/items/${itemId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locationId, employeeId }),
+        })
+        await loadAllData()
+      },
+    })
+  }
+
+  const handleCreatePizzaCategory = async (name: string, color: string) => {
+    try {
+      await fetch('/api/menu/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, name, categoryType: 'pizza', color }),
+      })
+      await loadAllData()
+    } catch (err) {
+      console.error('Failed to create category:', err)
+    }
+  }
+
+  const handleDeletePizzaCategory = (categoryId: string) => {
+    const cat = pizzaCategories.find(c => c.id === categoryId)
+    const itemCount = pizzaMenuItems.filter(i => i.categoryId === categoryId).length
+    setConfirmAction({
+      title: `Delete "${cat?.name}" Category`,
+      message: itemCount > 0
+        ? `This category has ${itemCount} items. They will need to be reassigned. Continue?`
+        : 'This will remove the category.',
+      action: async () => {
+        await fetch(`/api/menu/categories/${categoryId}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ locationId, employeeId }),
+        })
+        await loadAllData()
+      },
+    })
+  }
+
   if (!hydrated) return null
 
   if (isLoading) {
@@ -473,13 +578,13 @@ export default function PizzaAdminPage() {
         {/* Tabs */}
         <div className="flex gap-2 mb-6 border-b border-gray-200 pb-4 overflow-x-auto">
           {[
-            { id: 'config', label: 'Settings', icon: '⚙️' },
+            { id: 'items', label: 'Items', icon: '🍕' },
             { id: 'sizes', label: 'Sizes', icon: '📐' },
             { id: 'crusts', label: 'Crusts', icon: '🍞' },
             { id: 'sauces', label: 'Sauces', icon: '🥫' },
             { id: 'cheeses', label: 'Cheeses', icon: '🧀' },
-            { id: 'toppings', label: 'Toppings', icon: '🍕' },
-            { id: 'specialties', label: 'Specialties', icon: '⭐' },
+            { id: 'toppings', label: 'Toppings', icon: '🫒' },
+            { id: 'config', label: 'Settings', icon: '⚙️' },
           ].map(tab => (
             <button
               key={tab.id}
@@ -552,13 +657,19 @@ export default function PizzaAdminPage() {
           />
         )}
 
-        {activeTab === 'specialties' && (
-          <SpecialtiesTab
+        {activeTab === 'items' && (
+          <ItemsTab
+            items={pizzaMenuItems}
+            categories={pizzaCategories}
             specialties={specialties}
-            pizzaMenuItems={pizzaMenuItems}
-            onAdd={() => { setEditingSpecialty(null); setShowSpecialtyModal(true) }}
-            onEdit={(specialty) => { setEditingSpecialty(specialty); setShowSpecialtyModal(true) }}
-            onDelete={handleDeleteSpecialty}
+            onUpdateItem={handleUpdatePizzaItem}
+            onCreateItem={handleCreatePizzaItem}
+            onDeleteItem={handleDeletePizzaItem}
+            onCreateCategory={handleCreatePizzaCategory}
+            onDeleteCategory={handleDeletePizzaCategory}
+            onEditSpecialty={(s) => { setEditingSpecialty(s); setShowSpecialtyModal(true) }}
+            onAddSpecialty={() => { setEditingSpecialty(null); setShowSpecialtyModal(true) }}
+            onDeleteSpecialty={handleDeleteSpecialty}
           />
         )}
 

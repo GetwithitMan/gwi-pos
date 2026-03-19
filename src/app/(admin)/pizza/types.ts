@@ -151,7 +151,29 @@ export interface PizzaMenuItem {
   id: string
   name: string
   price: number
+  description?: string
+  imageUrl?: string | null
+  isActive?: boolean
+  showOnPOS?: boolean
+  showOnline?: boolean
+  categoryId?: string
   categoryName?: string
+  commissionType?: string | null
+  commissionValue?: number | null
+  taxRate?: number | null
+  isTaxExempt?: boolean
+  allergens?: string[]
+  prepStationId?: string | null
+  prepTime?: number | null
+  sortOrder?: number
+}
+
+export interface PizzaCategory {
+  id: string
+  name: string
+  color: string
+  categoryType: string
+  itemCount: number
 }
 
 export const TOPPING_CATEGORIES = [

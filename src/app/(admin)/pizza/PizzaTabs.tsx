@@ -15,6 +15,8 @@ import {
   PizzaCheese,
   PizzaTopping,
   PizzaSpecialty,
+  PizzaMenuItem,
+  PizzaCategory,
   TOPPING_CATEGORIES,
 } from './types'
 
@@ -855,5 +857,366 @@ export function SpecialtiesTab({ specialties, pizzaMenuItems, onAdd, onEdit, onD
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// Items Tab — unified view of pizza menu items + categories + specialties
+export interface ItemsTabProps {
+  items: PizzaMenuItem[]
+  categories: PizzaCategory[]
+  specialties: PizzaSpecialty[]
+  onUpdateItem: (itemId: string, updates: Record<string, any>) => Promise<void>
+  onCreateItem: (data: { name: string; price: number; categoryId: string }) => Promise<void>
+  onDeleteItem: (itemId: string) => void
+  onCreateCategory: (name: string, color: string) => Promise<void>
+  onDeleteCategory: (categoryId: string) => void
+  onEditSpecialty: (specialty: PizzaSpecialty) => void
+  onAddSpecialty: () => void
+  onDeleteSpecialty: (id: string) => void
+}
+
+export function ItemsTab({
+  items,
+  categories,
+  specialties,
+  onUpdateItem,
+  onCreateItem,
+  onDeleteItem,
+  onCreateCategory,
+  onDeleteCategory,
+  onEditSpecialty,
+  onAddSpecialty,
+  onDeleteSpecialty,
+}: ItemsTabProps) {
+  const [filterCategory, setFilterCategory] = useState<string | null>(null)
+  const [showNewItem, setShowNewItem] = useState(false)
+  const [showNewCategory, setShowNewCategory] = useState(false)
+  const [newItemName, setNewItemName] = useState('')
+  const [newItemPrice, setNewItemPrice] = useState('')
+  const [newItemCategory, setNewItemCategory] = useState('')
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [newCategoryColor, setNewCategoryColor] = useState('#f97316')
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editPrice, setEditPrice] = useState('')
+
+  const specialtyMap = new Map(specialties.map(s => [s.menuItemId, s]))
+
+  const filteredItems = filterCategory
+    ? items.filter(i => i.categoryId === filterCategory)
+    : items
+
+  const handleCreateItem = async () => {
+    if (!newItemName.trim()) return
+    const price = parseFloat(newItemPrice) || 0
+    const categoryId = newItemCategory || categories[0]?.id || ''
+    await onCreateItem({ name: newItemName.trim(), price, categoryId })
+    setNewItemName('')
+    setNewItemPrice('')
+    setNewItemCategory('')
+    setShowNewItem(false)
+  }
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return
+    await onCreateCategory(newCategoryName.trim(), newCategoryColor)
+    setNewCategoryName('')
+    setNewCategoryColor('#f97316')
+    setShowNewCategory(false)
+  }
+
+  const startEditing = (item: PizzaMenuItem) => {
+    setEditingItemId(item.id)
+    setEditName(item.name)
+    setEditPrice(String(item.price))
+  }
+
+  const saveEditing = async () => {
+    if (!editingItemId) return
+    await onUpdateItem(editingItemId, { name: editName.trim(), price: parseFloat(editPrice) || 0 })
+    setEditingItemId(null)
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Categories row */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-base">Categories</CardTitle>
+          <Button variant="outline" size="sm" onClick={() => setShowNewCategory(!showNewCategory)}>
+            {showNewCategory ? 'Cancel' : '+ Category'}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {showNewCategory && (
+            <div className="flex items-center gap-2 mb-3 p-2 bg-gray-50 rounded-lg">
+              <input
+                type="color"
+                value={newCategoryColor}
+                onChange={e => setNewCategoryColor(e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer border-0"
+              />
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={e => setNewCategoryName(e.target.value)}
+                placeholder="Category name..."
+                className="flex-1 px-3 py-1.5 border rounded text-sm text-gray-900"
+                onKeyDown={e => e.key === 'Enter' && handleCreateCategory()}
+              />
+              <Button size="sm" onClick={handleCreateCategory}>Add</Button>
+            </div>
+          )}
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => setFilterCategory(null)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                !filterCategory ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All ({items.length})
+            </button>
+            {categories.map(cat => {
+              const count = items.filter(i => i.categoryId === cat.id).length
+              return (
+                <div key={cat.id} className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => setFilterCategory(filterCategory === cat.id ? null : cat.id)}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                      filterCategory === cat.id
+                        ? 'text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                    style={filterCategory === cat.id ? { backgroundColor: cat.color } : undefined}
+                  >
+                    <span
+                      className="inline-block w-2.5 h-2.5 rounded-full mr-1.5"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                    {cat.name} ({count})
+                  </button>
+                  {count === 0 && (
+                    <button
+                      onClick={() => onDeleteCategory(cat.id)}
+                      className="text-red-400 hover:text-red-600 text-xs px-1"
+                      title="Delete empty category"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Items list */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Pizza Items ({filteredItems.length})</CardTitle>
+          <Button onClick={() => setShowNewItem(!showNewItem)}>
+            {showNewItem ? 'Cancel' : '+ New Pizza'}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {showNewItem && (
+            <div className="flex items-center gap-2 mb-4 p-3 bg-orange-50 rounded-lg border border-orange-200">
+              <input
+                type="text"
+                value={newItemName}
+                onChange={e => setNewItemName(e.target.value)}
+                placeholder="Pizza name..."
+                className="flex-1 px-3 py-1.5 border rounded text-sm text-gray-900"
+              />
+              <input
+                type="number"
+                value={newItemPrice}
+                onChange={e => setNewItemPrice(e.target.value)}
+                placeholder="Price"
+                className="w-24 px-3 py-1.5 border rounded text-sm text-gray-900"
+                step="0.01"
+              />
+              {categories.length > 0 && (
+                <select
+                  value={newItemCategory}
+                  onChange={e => setNewItemCategory(e.target.value)}
+                  className="px-3 py-1.5 border rounded text-sm text-gray-900"
+                >
+                  <option value="">Category...</option>
+                  {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+              <Button onClick={handleCreateItem}>Create</Button>
+            </div>
+          )}
+
+          {filteredItems.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-3">🍕</div>
+              <p className="text-gray-900 mb-1">No pizza items{filterCategory ? ' in this category' : ''}</p>
+              <p className="text-sm text-gray-500">Click &quot;+ New Pizza&quot; to create one.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredItems.map(item => {
+                const specialty = specialtyMap.get(item.id)
+                const isEditing = editingItemId === item.id
+                const catObj = categories.find(c => c.id === item.categoryId)
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-3 rounded-lg border transition-shadow hover:shadow-sm ${
+                      item.isActive === false ? 'opacity-50 bg-gray-50' : 'bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Category color dot */}
+                      {catObj && (
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: catObj.color }}
+                          title={catObj.name}
+                        />
+                      )}
+
+                      {/* Name & price (inline edit or display) */}
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 flex-1">
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={e => setEditName(e.target.value)}
+                            className="flex-1 px-2 py-1 border rounded text-sm text-gray-900"
+                          />
+                          <input
+                            type="number"
+                            value={editPrice}
+                            onChange={e => setEditPrice(e.target.value)}
+                            className="w-24 px-2 py-1 border rounded text-sm text-gray-900"
+                            step="0.01"
+                          />
+                          <Button size="sm" onClick={saveEditing}>Save</Button>
+                          <Button variant="ghost" size="sm" onClick={() => setEditingItemId(null)}>Cancel</Button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex-1 min-w-0">
+                            <span className="font-semibold text-gray-900 truncate block">{item.name}</span>
+                            {item.description && (
+                              <span className="text-xs text-gray-500 truncate block">{item.description}</span>
+                            )}
+                          </div>
+                          <span className="text-sm font-semibold text-green-600 whitespace-nowrap">
+                            {formatCurrency(item.price)}
+                          </span>
+                        </>
+                      )}
+
+                      {/* Visibility badges */}
+                      {!isEditing && (
+                        <div className="flex gap-1">
+                          {item.showOnPOS !== false && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-600">POS</span>
+                          )}
+                          {item.showOnline && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600">Online</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Specialty badge */}
+                      {specialty && !isEditing && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                          Specialty
+                        </span>
+                      )}
+
+                      {/* Actions */}
+                      {!isEditing && (
+                        <div className="flex gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => startEditing(item)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => onUpdateItem(item.id, { isActive: !item.isActive })}
+                          >
+                            {item.isActive !== false ? '86' : 'Un-86'}
+                          </Button>
+                          {specialty ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-orange-600"
+                              onClick={() => onEditSpecialty(specialty)}
+                            >
+                              Specialty
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs text-orange-500"
+                              onClick={onAddSpecialty}
+                            >
+                              + Specialty
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs text-red-500"
+                            onClick={() => onDeleteItem(item.id)}
+                          >
+                            Del
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Specialty detail row */}
+                    {specialty && !isEditing && (
+                      <div className="mt-2 pt-2 border-t border-orange-100 flex flex-wrap gap-1">
+                        {specialty.defaultCrust && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] text-amber-800">
+                            🍞 {specialty.defaultCrust.name}
+                          </span>
+                        )}
+                        {specialty.defaultSauce && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-red-50 border border-red-200 text-[10px] text-red-800">
+                            🥫 {specialty.defaultSauce.name}
+                          </span>
+                        )}
+                        {specialty.defaultCheese && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-yellow-50 border border-yellow-200 text-[10px] text-yellow-800">
+                            🧀 {specialty.defaultCheese.name}
+                          </span>
+                        )}
+                        {specialty.toppings.length > 0 && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-[10px] text-orange-800">
+                            🍕 {specialty.toppings.length} topping{specialty.toppings.length !== 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
 }
