@@ -271,8 +271,44 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
           execSync('sudo systemctl restart pulse-pos', { timeout: 30_000 })
         } catch (err) {
           log.error({ err: err }, '[UpdateAgent] Restart failed:')
+          return
         }
       }
+
+      // Health gate: verify POS boots successfully after update
+      void (async () => {
+        let healthy = false
+        for (let i = 0; i < 6; i++) {
+          await new Promise(r => setTimeout(r, 10_000)) // 10s intervals, 60s total
+          try {
+            const res = await fetch('http://localhost:3005/api/health', {
+              signal: AbortSignal.timeout(5000),
+            })
+            if (res.ok) {
+              const data = await res.json() as { data?: { database?: string } }
+              if (data.data?.database === 'connected') {
+                healthy = true
+                break
+              }
+            }
+          } catch {
+            // Still booting, retry
+          }
+        }
+
+        if (!healthy) {
+          log.error('[UpdateAgent] POS failed health check after update — rolling back')
+          try {
+            execSync(`cd ${APP_DIR} && git reset --hard HEAD~1`, { timeout: 30_000 })
+            execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
+            log.info('[UpdateAgent] Rollback complete — reverted to previous version')
+          } catch (rollbackErr) {
+            log.error({ err: rollbackErr }, '[UpdateAgent] Rollback failed — manual intervention required')
+          }
+        } else {
+          log.info('[UpdateAgent] Health check passed — update verified')
+        }
+      })()
     }, 2000)
 
     return {

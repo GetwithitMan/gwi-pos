@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const workers = getWorkerHealth()
 
   return NextResponse.json({
-    ready: bootstrap?.ready ?? false,
+    localBootOk: bootstrap?.localBootOk ?? false,  // renamed from 'ready'
     syncContractReady: bootstrap?.syncContractReady ?? false,
     degradedReasons: bootstrap?.degradedReasons ?? [],
     bootstrap: bootstrap ?? null,

@@ -261,7 +261,7 @@ async function main() {
   let bootstrapResult: Awaited<ReturnType<typeof runBootstrap>> | null = null
   try {
     bootstrapResult = await runBootstrap()
-    if (!bootstrapResult.ready) {
+    if (!bootstrapResult.localBootOk) {
       logger.warn({ bootstrapResult }, 'Bootstrap completed with issues — some features may be degraded')
     }
   } catch (err) {

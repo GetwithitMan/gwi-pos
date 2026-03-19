@@ -43,7 +43,7 @@ export interface BootstrapResult {
   neonSchemaReady: SchemaReadiness | null
   neonRepaired: boolean
   seedDataPresent: boolean
-  ready: boolean
+  localBootOk: boolean  // local PG is up and basic Neon connectivity is ok — does NOT mean sync-safe
   syncContractReady: boolean  // matches POS sync-start gate exactly
   degradedReasons: string[]
 }
@@ -169,7 +169,7 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     neonSchemaReady: null,
     neonRepaired: false,
     seedDataPresent: false,
-    ready: false,
+    localBootOk: false,
     syncContractReady: false,
     degradedReasons: [],
   }
@@ -302,7 +302,7 @@ export async function runBootstrap(): Promise<BootstrapResult> {
 
     // 5. Determine overall readiness
     const neonOk = !neonUrl || (result.neonSchemaReady?.coreTablesExist ?? true)
-    result.ready = result.localDb && neonOk
+    result.localBootOk = result.localDb && neonOk
 
     // syncContractReady: matches the exact contract server.ts uses for sync workers
     // All four must be true: coreTablesExist, requiredEnumsExist, schemaVersionMatch, baseSeedPresent
@@ -317,7 +317,7 @@ export async function runBootstrap(): Promise<BootstrapResult> {
       neonRepaired: result.neonRepaired,
       neonSchemaVersion: result.neonSchemaReady?.schemaVersion ?? 'N/A',
       seedPresent: result.seedDataPresent,
-      ready: result.ready,
+      localBootOk: result.localBootOk,
     }, 'Bootstrap complete')
 
     cachedResult = result
