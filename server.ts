@@ -32,6 +32,7 @@ import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-rel
 import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
+import { runBootstrap, getBootstrapResult } from './src/lib/venue-bootstrap'
 
 const dev = config.nodeEnv !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -256,6 +257,17 @@ async function main() {
     // Dev: continue with warning
   }
 
+  // ── Venue Bootstrap (check schema state, conditional repair) ────────────
+  let bootstrapResult: Awaited<ReturnType<typeof runBootstrap>> | null = null
+  try {
+    bootstrapResult = await runBootstrap()
+    if (!bootstrapResult.ready) {
+      logger.warn({ bootstrapResult }, 'Bootstrap completed with issues — some features may be degraded')
+    }
+  } catch (err) {
+    logger.error({ err }, 'Bootstrap failed — continuing with degraded mode')
+  }
+
   httpServer.listen(port, async () => {
     logger.info({ hostname, port, mode: dev ? 'development' : 'production' }, 'GWI POS ready')
     logger.info({ socketUrl: `ws://${hostname}:${port}/api/socket` }, 'Socket.io endpoint')
@@ -293,8 +305,9 @@ async function main() {
       () => { /* no stop — interval-based, exits with process */ }
     )
 
-    // Sync workers — only when sync is enabled, not backup, and Neon URL present
-    const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl
+    // Sync workers — only when sync is enabled, not backup, Neon URL present, and schema ready
+    const neonSchemaOk = bootstrapResult?.neonSchemaReady?.coreTablesExist ?? true
+    const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl && neonSchemaOk
     if (config.syncEnabled && config.stationRole === 'backup') {
       logger.warn('STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
     } else if (config.syncEnabled && !config.neonDatabaseUrl) {

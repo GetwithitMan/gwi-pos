@@ -1,0 +1,324 @@
+/**
+ * Venue Bootstrap — check-first bootstrap + conditional repair.
+ *
+ * Runs once at server startup, before sync workers.
+ * Checks local PG, reads schema state, verifies Neon readiness.
+ */
+
+import { existsSync } from 'fs'
+import path from 'path'
+import { createChildLogger } from '@/lib/logger'
+import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, PROVISIONER_VERSION, APP_VERSION } from '@/lib/version-contract'
+import { ensureSchemaStateTable, readSchemaState, writeSchemaState, markRepair } from '@/lib/venue-schema-state'
+import { checkBaseSeedPresent } from '@/lib/base-seed-check'
+
+const log = createChildLogger('venue-bootstrap')
+
+// Core tables that must exist for a functional POS
+const CORE_TABLES = [
+  'Location', 'Role', 'Employee', 'Order', 'Category',
+  'MenuItem', 'OrderItem', 'ModifierGroup', 'Modifier',
+  'Terminal', 'Section', 'Table',
+]
+
+// Required enums
+const REQUIRED_ENUMS = ['TabStatus', 'OrderStatus', 'CategoryType', 'FulfillmentType']
+
+export interface SchemaReadiness {
+  schemaVersionMatch: boolean
+  schemaVersionBehind: boolean
+  schemaVersionAhead: boolean
+  coreTablesExist: boolean
+  requiredEnumsExist: boolean
+  baseSeedPresent: boolean
+  schemaVersion: string | null
+  seedVersion: string | null
+}
+
+export interface BootstrapResult {
+  localDb: boolean
+  localSchemaVersion: string | null
+  neonReachable: boolean
+  neonSchemaReady: SchemaReadiness | null
+  neonRepaired: boolean
+  seedDataPresent: boolean
+  ready: boolean
+}
+
+let cachedResult: BootstrapResult | null = null
+
+export function getBootstrapResult(): BootstrapResult | null {
+  return cachedResult
+}
+
+async function checkCoreTablesExist(
+  client: { $queryRawUnsafe: (sql: string) => Promise<unknown[]> }
+): Promise<boolean> {
+  for (const table of CORE_TABLES) {
+    const rows = await client.$queryRawUnsafe(`
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = '${table}'
+    `)
+    if (rows.length === 0) return false
+  }
+  return true
+}
+
+async function checkEnumsExist(
+  client: { $queryRawUnsafe: (sql: string) => Promise<unknown[]> }
+): Promise<boolean> {
+  for (const enumName of REQUIRED_ENUMS) {
+    const rows = await client.$queryRawUnsafe(`
+      SELECT 1 FROM pg_type WHERE typname = '${enumName}'
+    `)
+    if (rows.length === 0) return false
+  }
+  return true
+}
+
+async function countTables(
+  client: { $queryRawUnsafe: (sql: string) => Promise<unknown[]> }
+): Promise<number> {
+  const rows = await client.$queryRawUnsafe(`
+    SELECT COUNT(*)::int as count FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+  `) as Array<{ count: number }>
+  return rows[0]?.count ?? 0
+}
+
+async function buildReadiness(
+  client: { $queryRawUnsafe: (sql: string) => Promise<unknown[]> },
+  state: { schemaVersion: string; seedVersion: string } | null
+): Promise<SchemaReadiness> {
+  const schemaVersion = state?.schemaVersion ?? null
+  const seedVersion = state?.seedVersion ?? null
+  const coreTablesExist = await checkCoreTablesExist(client)
+  const requiredEnumsExist = await checkEnumsExist(client)
+  const seedResult = await checkBaseSeedPresent(client)
+
+  return {
+    schemaVersionMatch: schemaVersion === EXPECTED_SCHEMA_VERSION,
+    schemaVersionBehind: schemaVersion !== null && schemaVersion < EXPECTED_SCHEMA_VERSION,
+    schemaVersionAhead: schemaVersion !== null && schemaVersion > EXPECTED_SCHEMA_VERSION,
+    coreTablesExist,
+    requiredEnumsExist,
+    baseSeedPresent: seedResult.ok,
+    schemaVersion,
+    seedVersion,
+  }
+}
+
+/**
+ * Apply schema to an empty Neon DB.
+ *
+ * CANONICAL PATH: run numbered migrations from scripts/migrations/ via the
+ * same logic as nuc-pre-migrate.js (advisory lock, tracking table, ordered
+ * execution). This is the same path used by NUC boot and Vercel builds.
+ *
+ * FALLBACK (schema.sql): EXPLICITLY EXCEPTIONAL -- only used when:
+ *   1. Standalone build without migrations directory (e.g., production Docker image)
+ *   2. Target DB is completely empty (0 tables)
+ *   3. NEVER for upgrades (version behind -> version current)
+ *   4. NEVER for partial schema repair (some tables exist but not all)
+ * If you find yourself reaching for this fallback in a new context, STOP and
+ * create a proper migration instead.
+ */
+async function applySchemaToEmptyDb(
+  client: {
+    $executeRawUnsafe: (sql: string, ...params: unknown[]) => Promise<unknown>
+    $queryRawUnsafe: (sql: string) => Promise<unknown[]>
+  }
+): Promise<void> {
+  const migrationsDir = path.join(process.cwd(), 'scripts/migrations')
+  const hasMigrations = existsSync(migrationsDir)
+
+  if (hasMigrations) {
+    // CANONICAL PATH: run migrations in order, same logic as nuc-pre-migrate.js
+    log.info('Applying schema via migration runner (canonical path)')
+
+    const { readdirSync } = await import('fs')
+    const files = readdirSync(migrationsDir)
+      .filter((f: string) => f.endsWith('.js'))
+      .sort()
+
+    // Create tracking table
+    await client.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "_gwi_migrations" (
+        name TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `)
+
+    let applied = 0
+    for (const file of files) {
+      const name = path.basename(file, '.js')
+      const existing = await client.$queryRawUnsafe(
+        `SELECT name FROM "_gwi_migrations" WHERE name = $1`, name
+      )
+      if (existing.length > 0) continue
+
+      log.info({ migration: name }, 'Running migration')
+      const migration = await import(path.join(migrationsDir, file))
+      const up = migration.up || migration.default?.up
+      if (typeof up !== 'function') {
+        throw new Error(`Migration ${file} does not export an up() function`)
+      }
+      await up(client)
+      await client.$executeRawUnsafe(
+        `INSERT INTO "_gwi_migrations" (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, name
+      )
+      applied++
+    }
+
+    log.info({ applied, total: files.length }, 'Migrations complete')
+  } else {
+    // FALLBACK: schema.sql -- EXCEPTIONAL, see docstring above
+    const schemaPath = path.join(process.cwd(), 'prisma/schema.sql')
+    if (!existsSync(schemaPath)) {
+      throw new Error(
+        'Cannot repair empty DB: neither scripts/migrations/ nor prisma/schema.sql found. ' +
+        'This should never happen in a production build.'
+      )
+    }
+    log.warn(
+      'FALLBACK: Applying schema.sql to empty DB. ' +
+      'This path is for standalone builds without migrations only. ' +
+      'If you see this in a normal deployment, something is wrong.'
+    )
+    const { readFileSync } = await import('fs')
+    const sql = readFileSync(schemaPath, 'utf-8')
+    await client.$executeRawUnsafe(sql)
+  }
+}
+
+export async function runBootstrap(): Promise<BootstrapResult> {
+  const result: BootstrapResult = {
+    localDb: false,
+    localSchemaVersion: null,
+    neonReachable: false,
+    neonSchemaReady: null,
+    neonRepaired: false,
+    seedDataPresent: false,
+    ready: false,
+  }
+
+  try {
+    // 1. Check local PG
+    const { masterClient } = await import('@/lib/db')
+    try {
+      await masterClient.$queryRawUnsafe('SELECT 1')
+      result.localDb = true
+    } catch (err) {
+      log.error({ err }, 'Local PG check failed')
+      cachedResult = result
+      return result
+    }
+
+    // 2. Read local _venue_schema_state
+    const localState = await readSchemaState(masterClient)
+    result.localSchemaVersion = localState?.schemaVersion ?? null
+
+    // 3. Check Neon if configured
+    const neonUrl = process.env.NEON_DATABASE_URL
+    if (neonUrl) {
+      try {
+        // Use a direct import to create a one-off client for Neon read
+        const { PrismaClient } = await import('@/generated/prisma/client')
+        const directUrl = process.env.NEON_DIRECT_URL || neonUrl
+        const neonClient = new PrismaClient({
+          datasourceUrl: directUrl,
+        })
+
+        try {
+          await neonClient.$queryRawUnsafe('SELECT 1')
+          result.neonReachable = true
+
+          // Read Neon schema state
+          const neonState = await readSchemaState(neonClient)
+          const tableCount = await countTables(neonClient)
+
+          if (!neonState && tableCount === 0) {
+            // Truly empty DB -> auto-repair
+            log.info('Neon DB is empty — running auto-repair via canonical migration path')
+            try {
+              await applySchemaToEmptyDb(neonClient)
+              await ensureSchemaStateTable(neonClient)
+              await writeSchemaState(neonClient, {
+                schemaVersion: EXPECTED_SCHEMA_VERSION,
+                seedVersion: EXPECTED_SEED_VERSION,
+                provisionerVersion: PROVISIONER_VERSION,
+                provisionedAt: new Date(),
+                provisionedBy: 'nuc-bootstrap',
+                appVersion: APP_VERSION,
+              })
+              await markRepair(neonClient, 'nuc-bootstrap', 'bootstrap-empty-db')
+              result.neonRepaired = true
+              result.neonSchemaReady = await buildReadiness(neonClient, {
+                schemaVersion: EXPECTED_SCHEMA_VERSION,
+                seedVersion: EXPECTED_SEED_VERSION,
+              })
+            } catch (repairErr) {
+              log.error({ err: repairErr }, 'Auto-repair of empty Neon DB failed')
+              result.neonSchemaReady = await buildReadiness(neonClient, null)
+            }
+          } else if (!neonState && tableCount > 0) {
+            // Partial/unknown state -- DO NOT auto-repair
+            log.error(
+              { tableCount },
+              'Neon DB has tables but no _venue_schema_state — partial/unknown state. ' +
+              'NOT auto-repairing. Manual intervention required.'
+            )
+            result.neonSchemaReady = await buildReadiness(neonClient, null)
+          } else if (neonState) {
+            // State exists -- check versions
+            if (neonState.schemaVersion < EXPECTED_SCHEMA_VERSION) {
+              log.error(
+                { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
+                'Neon schema version behind — sync will be blocked. Deploy pipeline required.'
+              )
+            } else if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION) {
+              log.warn(
+                { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
+                'Neon schema version ahead of this POS build — safe to proceed'
+              )
+            }
+            result.neonSchemaReady = await buildReadiness(neonClient, neonState)
+          }
+        } finally {
+          await neonClient.$disconnect()
+        }
+      } catch (err) {
+        log.warn({ err: err instanceof Error ? err.message : err }, 'Neon unreachable — operating in local-only mode')
+        result.neonReachable = false
+      }
+    }
+
+    // 4. Check local seed
+    const seedResult = await checkBaseSeedPresent(masterClient)
+    result.seedDataPresent = seedResult.ok
+    if (!seedResult.ok) {
+      log.warn({ missing: seedResult.missing }, 'Base seed data incomplete')
+    }
+
+    // 5. Determine overall readiness
+    const neonOk = !neonUrl || (result.neonSchemaReady?.coreTablesExist ?? true)
+    result.ready = result.localDb && neonOk
+
+    log.info({
+      localDb: result.localDb,
+      localSchemaVersion: result.localSchemaVersion,
+      neonReachable: result.neonReachable,
+      neonRepaired: result.neonRepaired,
+      neonSchemaVersion: result.neonSchemaReady?.schemaVersion ?? 'N/A',
+      seedPresent: result.seedDataPresent,
+      ready: result.ready,
+    }, 'Bootstrap complete')
+
+    cachedResult = result
+    return result
+  } catch (err) {
+    log.error({ err }, 'Bootstrap failed with unexpected error')
+    cachedResult = result
+    return result
+  }
+}
