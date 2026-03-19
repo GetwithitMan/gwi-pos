@@ -205,6 +205,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           preModifier: m.preModifier ?? null,
           isCustomEntry: m.isCustomEntry ?? false,
           isNoneSelection: m.isNoneSelection ?? false,
+          noneShowOnReceipt: m.noneShowOnReceipt ?? false,
           customEntryName: m.customEntryName ?? null,
           swapTargetName: m.swapTargetName ?? null,
         })),

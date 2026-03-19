@@ -176,6 +176,7 @@ export interface ReceiptData {
       preModifier: string | null
       isCustomEntry?: boolean
       isNoneSelection?: boolean
+      noneShowOnReceipt?: boolean
       customEntryName?: string | null
       customEntryPrice?: number | null
       swapTargetName?: string | null

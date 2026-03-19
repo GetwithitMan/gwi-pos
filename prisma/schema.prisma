@@ -1801,8 +1801,10 @@ model ModifierGroup {
   allowOpenEntry Boolean @default(false)
   // Allow None — show a "None" button on required groups so staff can skip selection
   allowNone             Boolean @default(false)
-  // Whether "None" selection prints to kitchen tickets/KDS/receipts
+  // Whether "None" selection prints to kitchen tickets/KDS
   nonePrintsToKitchen   Boolean @default(false)
+  // Whether "None" selection shows on customer receipts
+  noneShowOnReceipt     Boolean @default(false)
   // Auto-advance — auto-dismiss single-select required group after selection
   autoAdvance    Boolean @default(false)
 
@@ -2795,7 +2797,8 @@ model OrderItemModifier {
   customEntryPrice Decimal?
 
   // None Selection — explicit "None" chosen on a required modifier group
-  isNoneSelection  Boolean  @default(false)
+  isNoneSelection    Boolean  @default(false)
+  noneShowOnReceipt  Boolean  @default(false)
 
   // Swap — substitution snapshot at time of order
   swapTargetName     String?

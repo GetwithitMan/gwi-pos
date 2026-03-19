@@ -1640,7 +1640,7 @@ export function FloorPlanHome({
   // Refresh menu after 86/un-86 from description modal
   const handleItemDescriptionUpdated = useCallback(() => {
     void loadCategories()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [])
 
   // Handle tapping an existing order item to edit modifiers

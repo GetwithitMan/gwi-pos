@@ -354,7 +354,7 @@ export const DELETE = withVenue(async function DELETE(
     const { id } = await params
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
-    let deleteLocationId = getRequestLocationId()
+    const deleteLocationId = getRequestLocationId()
     const group = deleteLocationId
       ? { locationId: deleteLocationId }
       : await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })

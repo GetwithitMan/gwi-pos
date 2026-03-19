@@ -33,7 +33,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromCookie, refreshSessionCookie } from './auth-session'
 import { verifyCellularToken, recordActivity } from './cellular-auth'
-import { verifyCloudToken, type CloudTokenPayload } from './cloud-auth'
+import { verifyCloudToken } from './cloud-auth'
 import { hasPermission } from './auth-utils'
 import { PERMISSIONS } from './auth-utils'
 import { createChildLogger } from '@/lib/logger'

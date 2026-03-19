@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { KDSOrderBehavior, KDSTransitionTimes, KDSOrderTypeFilters, KDSDisplayMode, KDSScreenLinkData } from '@/lib/kds/types'
-import { DEFAULT_ORDER_BEHAVIOR, mergeOrderBehavior } from '@/lib/kds/defaults'
+import { mergeOrderBehavior } from '@/lib/kds/defaults'
 
 // ── Screen Config Type ──
 

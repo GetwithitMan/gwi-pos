@@ -74,7 +74,7 @@ export default function CopyIngredientsPage() {
       })
       .catch(() => setError('Failed to load locations'))
       .finally(() => setLoadingLocations(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [locationId])
 
   // ── Fetch ingredients from selected source ────────────────────────

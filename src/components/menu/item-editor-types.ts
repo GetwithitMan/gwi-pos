@@ -121,6 +121,7 @@ export interface ModifierGroup {
   allowOpenEntry?: boolean
   allowNone?: boolean
   nonePrintsToKitchen?: boolean
+  noneShowOnReceipt?: boolean
   autoAdvance?: boolean
   isSpiritGroup?: boolean
 }

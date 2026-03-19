@@ -50,7 +50,7 @@ export function parseModifierKey(modifierBytesHex?: string | null): ParsedModifi
   }
 
   // Strip "0x" prefixes and spaces, uppercase
-  let cleaned = modifierBytesHex
+  const cleaned = modifierBytesHex
     .replace(/0x/gi, '')
     .replace(/\s+/g, '')
     .toUpperCase()

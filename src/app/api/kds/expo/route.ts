@@ -5,7 +5,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
-import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-links'
+import { processScreenLinks } from '@/lib/kds/screen-links'
 
 /**
  * Expo KDS API - Returns all items from all stations for expeditor view

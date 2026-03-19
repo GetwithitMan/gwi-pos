@@ -53,6 +53,15 @@ export async function processTipDistribution(
     }
   })
 
+  // Hard-block: validate that explicit role tip-out rules don't exceed 100% of gross tips
+  if (tipDistribution.grossTips > 0) {
+    const explicitTipOutTotal = tipDistribution.roleTipOuts.reduce((sum, t) => sum + t.amount, 0)
+    if (explicitTipOutTotal > tipDistribution.grossTips) {
+      log.error({ explicitTipOutTotal, grossTips: tipDistribution.grossTips, fromEmployeeId, locationId }, 'Tip-out total exceeds gross tips — blocking allocation')
+      throw new Error('Tip-out configuration error: total tip-out amount exceeds gross tips')
+    }
+  }
+
   // Process role-based tip-outs
   for (const tipOut of tipDistribution.roleTipOuts) {
     if (tipOut.amount <= 0) continue
@@ -291,6 +300,13 @@ export async function autoProcessTipDistribution(
 
   if (rules.length === 0) {
     return { totalTipOut: 0, distributed: false }
+  }
+
+  // Hard-block: total tip-out percentages must not exceed 100%
+  const totalTipOutPercent = rules.reduce((sum, rule) => sum + Number(rule.percentage || 0), 0)
+  if (totalTipOutPercent > 100) {
+    log.error({ totalTipOutPercent, rules, fromEmployeeId, locationId }, 'Tip-out percentages exceed 100% — blocking allocation')
+    throw new Error('Tip-out configuration error: total tip-out percentages exceed 100%')
   }
 
   // Build roleTipOuts from rules (server-side calculation)

@@ -190,6 +190,12 @@ export function buildDocumentNoCut(...parts: Buffer[]): Buffer {
   ])
 }
 
+/** Truncate text to fit printer width, adding ellipsis if needed */
+export function truncateForPrint(text: string, maxWidth: number): string {
+  if (text.length <= maxWidth) return text
+  return text.slice(0, maxWidth - 1) + '\u2026'
+}
+
 /**
  * Paper width configurations
  */

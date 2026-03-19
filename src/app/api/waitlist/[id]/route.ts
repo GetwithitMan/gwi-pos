@@ -5,7 +5,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
-import { sendSMS, formatPhoneE164, isTwilioConfigured } from '@/lib/twilio'
+import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 

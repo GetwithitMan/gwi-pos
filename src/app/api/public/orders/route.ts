@@ -267,7 +267,7 @@ export async function POST(request: NextRequest) {
     const employeeId = fallbackEmployee?.id || ''
 
     // Create order with items in a transaction
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const order = await venueDb.$transaction(async (tx: any) => {
       // TX-KEEP: CREATE — QR dine-in order with computed totals; no repo create method
       const newOrder = await tx.order.create({

@@ -11,9 +11,10 @@ import { Modal } from '@/components/ui/modal'
 import { toast } from '@/stores/toast-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
-import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { hasPermission, PERMISSIONS, PERMISSION_GROUPS } from '@/lib/auth-utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { formatCurrency } from '@/lib/utils'
+import { getPermissionMeta, getKeysByTab, type PermissionTab } from '@/lib/permission-registry'
 
 // --- Types ---
 
@@ -99,13 +100,36 @@ interface SevenShiftsUser {
   email: string
 }
 
+interface PermissionOverride {
+  id: string
+  permissionKey: string
+  allowed: boolean
+  reason: string | null
+  setBy: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+type OverrideState = 'inherit' | 'grant' | 'deny'
+
 // --- Color presets ---
 const COLOR_PRESETS = [
   '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6',
   '#EC4899', '#06B6D4', '#F97316', '#6366F1', '#14B8A6',
 ]
 
-const TABS = ['Profile', 'Pay & Tax', 'Time & Attendance', '7shifts'] as const
+const TABS = ['Profile', 'Permissions', 'Pay & Tax', 'Time & Attendance', '7shifts'] as const
+
+// All permission keys from PERMISSION_GROUPS
+const ALL_PERMISSION_KEYS = Object.values(PERMISSION_GROUPS)
+  .flatMap(g => g.permissions.map((p: { key: string }) => p.key))
+
+const PERMISSION_TABS: { key: PermissionTab; label: string }[] = [
+  { key: 'SHIFT_SERVICE', label: 'Shift & Service' },
+  { key: 'TEAM_TIME', label: 'Team & Time' },
+  { key: 'REPORTING', label: 'Reporting' },
+  { key: 'BUSINESS_SETUP', label: 'Business Setup' },
+]
 type Tab = typeof TABS[number]
 
 export default function EmployeeDetailPage() {
@@ -160,6 +184,14 @@ export default function EmployeeDetailPage() {
   const [sevenShiftsRoleId, setSevenShiftsRoleId] = useState('')
   const [sevenShiftsDeptId, setSevenShiftsDeptId] = useState('')
   const [isLinking, setIsLinking] = useState(false)
+
+  // Permission overrides state
+  const [overrides, setOverrides] = useState<PermissionOverride[]>([])
+  const [overridesLoaded, setOverridesLoaded] = useState(false)
+  const [permSearchQuery, setPermSearchQuery] = useState('')
+  const [activePermTab, setActivePermTab] = useState<PermissionTab>('SHIFT_SERVICE')
+  const [overrideSaving, setOverrideSaving] = useState<string | null>(null)
+  const [reasonInputs, setReasonInputs] = useState<Record<string, string>>({})
 
   const canEditWages = currentEmployee?.permissions
     ? hasPermission(currentEmployee.permissions as string[], PERMISSIONS.STAFF_EDIT_WAGES)
@@ -296,6 +328,89 @@ export default function EmployeeDetailPage() {
         setSevenShiftsUsers(raw.data?.users || [])
       }
     } catch { /* silent */ }
+  }
+
+  const loadOverrides = useCallback(async () => {
+    if (!employeeId || !currentEmployee?.location?.id) return
+    try {
+      const res = await fetch(
+        `/api/employees/${employeeId}/permission-overrides?locationId=${currentEmployee.location.id}&requestingEmployeeId=${currentEmployee.id}`
+      )
+      if (res.ok) {
+        const raw = await res.json()
+        setOverrides(raw.data || [])
+      }
+    } catch { /* silent */ }
+    setOverridesLoaded(true)
+  }, [employeeId, currentEmployee?.location?.id, currentEmployee?.id])
+
+  useEffect(() => {
+    if (activeTab === 'Permissions' && !overridesLoaded && currentEmployee?.location?.id) {
+      loadOverrides()
+    }
+  }, [activeTab, overridesLoaded, currentEmployee?.location?.id, loadOverrides])
+
+  const getOverrideState = (key: string): OverrideState => {
+    const ov = overrides.find(o => o.permissionKey === key)
+    if (!ov) return 'inherit'
+    return ov.allowed ? 'grant' : 'deny'
+  }
+
+  const handleOverrideChange = async (permissionKey: string, newState: OverrideState) => {
+    if (!currentEmployee?.location?.id) return
+    setOverrideSaving(permissionKey)
+
+    try {
+      if (newState === 'inherit') {
+        // DELETE the override
+        const res = await fetch(
+          `/api/employees/${employeeId}/permission-overrides?permissionKey=${permissionKey}&locationId=${currentEmployee.location.id}&requestingEmployeeId=${currentEmployee.id}`,
+          { method: 'DELETE' }
+        )
+        if (res.ok) {
+          setOverrides(prev => prev.filter(o => o.permissionKey !== permissionKey))
+          setReasonInputs(prev => { const next = { ...prev }; delete next[permissionKey]; return next })
+          toast.success('Override removed')
+        } else {
+          const err = await res.json()
+          toast.error(err.error || 'Failed to remove override')
+        }
+      } else {
+        // POST to create/update override
+        const reason = reasonInputs[permissionKey]?.trim() || null
+        const res = await fetch(`/api/employees/${employeeId}/permission-overrides`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            permissionKey,
+            allowed: newState === 'grant',
+            reason,
+            locationId: currentEmployee.location.id,
+            requestingEmployeeId: currentEmployee.id,
+          }),
+        })
+        if (res.ok) {
+          const raw = await res.json()
+          setOverrides(prev => {
+            const idx = prev.findIndex(o => o.permissionKey === permissionKey)
+            if (idx >= 0) {
+              const next = [...prev]
+              next[idx] = raw.data
+              return next
+            }
+            return [...prev, raw.data]
+          })
+          toast.success(newState === 'grant' ? 'Permission granted' : 'Permission denied')
+        } else {
+          const err = await res.json()
+          toast.error(err.error || 'Failed to set override')
+        }
+      }
+    } catch {
+      toast.error('Failed to update override')
+    } finally {
+      setOverrideSaving(null)
+    }
   }
 
   // --- Handlers ---
@@ -659,6 +774,234 @@ export default function EmployeeDetailPage() {
           </Button>
         </div>
       )}
+
+      {/* --- Permissions Tab --- */}
+      {activeTab === 'Permissions' && employee && (() => {
+        const canManageRoles = currentEmployee?.permissions
+          ? hasPermission(currentEmployee.permissions as string[], PERMISSIONS.STAFF_MANAGE_ROLES)
+          : false
+
+        if (!canManageRoles) {
+          return (
+            <div className="max-w-3xl">
+              <Card>
+                <CardContent className="py-8 text-center text-gray-500 text-sm">
+                  You need the Manage Roles permission to view and edit permission overrides.
+                </CardContent>
+              </Card>
+            </div>
+          )
+        }
+
+        const rolePermissions = employee.role.permissions || []
+        const overrideCount = overrides.length
+
+        // Get permissions for current tab, filtered by search
+        const tabKeys = getKeysByTab(activePermTab, ALL_PERMISSION_KEYS)
+        const filteredKeys = permSearchQuery.trim()
+          ? tabKeys.filter(key => {
+              const meta = getPermissionMeta(key)
+              const q = permSearchQuery.toLowerCase()
+              return (
+                meta.label.toLowerCase().includes(q) ||
+                meta.description.toLowerCase().includes(q) ||
+                key.toLowerCase().includes(q)
+              )
+            })
+          : tabKeys
+
+        return (
+          <div className="max-w-3xl space-y-4">
+            {/* Header with override count */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Permission Overrides</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Override individual permissions beyond what the <span className="font-medium text-blue-600">{employee.role.name}</span> role provides.
+                </p>
+              </div>
+              {overrideCount > 0 && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                  {overrideCount} override{overrideCount !== 1 ? 's' : ''} active
+                </span>
+              )}
+            </div>
+
+            {/* Search input */}
+            <div className="relative">
+              <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <Input
+                value={permSearchQuery}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPermSearchQuery(e.target.value)}
+                placeholder="Search permissions..."
+                className="pl-9"
+              />
+            </div>
+
+            {/* Permission category tabs */}
+            <div className="flex gap-1 border-b">
+              {PERMISSION_TABS.map(pt => {
+                const ptKeys = getKeysByTab(pt.key, ALL_PERMISSION_KEYS)
+                const ptOverrides = ptKeys.filter(k => overrides.some(o => o.permissionKey === k)).length
+                return (
+                  <button
+                    key={pt.key}
+                    onClick={() => setActivePermTab(pt.key)}
+                    className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      activePermTab === pt.key
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {pt.label}
+                    {ptOverrides > 0 && (
+                      <span className="ml-1.5 text-xs bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5">{ptOverrides}</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Permission list */}
+            <Card>
+              <CardContent className="p-0">
+                {filteredKeys.length === 0 ? (
+                  <div className="py-8 text-center text-sm text-gray-500">
+                    {permSearchQuery ? 'No permissions match your search.' : 'No permissions in this category.'}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {filteredKeys.map(key => {
+                      const meta = getPermissionMeta(key)
+                      const roleHas = rolePermissions.includes(key)
+                      const state = getOverrideState(key)
+                      const override = overrides.find(o => o.permissionKey === key)
+                      const isSavingThis = overrideSaving === key
+
+                      return (
+                        <div key={key} className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-4">
+                            {/* Permission info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-gray-900">{meta.label}</span>
+                                {roleHas && state === 'inherit' && (
+                                  <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Role</span>
+                                )}
+                                {state === 'grant' && (
+                                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Granted</span>
+                                )}
+                                {state === 'deny' && (
+                                  <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Denied</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{meta.description.split('.')[0]}.</p>
+                              {override?.reason && (
+                                <p className="text-xs text-gray-400 mt-0.5 italic">Reason: {override.reason}</p>
+                              )}
+                            </div>
+
+                            {/* 3-state toggle */}
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {isSavingThis ? (
+                                <span className="text-xs text-gray-400 w-[168px] text-center">Saving...</span>
+                              ) : (
+                                <div className="inline-flex rounded-lg border border-gray-200 overflow-hidden">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (state !== 'deny') handleOverrideChange(key, 'deny')
+                                    }}
+                                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                                      state === 'deny'
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-white text-gray-500 hover:bg-red-50 hover:text-red-600'
+                                    }`}
+                                    title="Deny this permission (blocked even if role has it)"
+                                  >
+                                    Deny
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (state !== 'inherit') handleOverrideChange(key, 'inherit')
+                                    }}
+                                    className={`px-3 py-1.5 text-xs font-medium border-x border-gray-200 transition-colors ${
+                                      state === 'inherit'
+                                        ? 'bg-gray-100 text-gray-900'
+                                        : 'bg-white text-gray-500 hover:bg-gray-50'
+                                    }`}
+                                    title="Inherit from role (no override)"
+                                  >
+                                    Inherit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (state !== 'grant') handleOverrideChange(key, 'grant')
+                                    }}
+                                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                                      state === 'grant'
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-white text-gray-500 hover:bg-green-50 hover:text-green-600'
+                                    }`}
+                                    title="Grant this permission (extra beyond role)"
+                                  >
+                                    Grant
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Reason input — shown when override is active */}
+                          {state !== 'inherit' && (
+                            <div className="mt-2 flex items-center gap-2">
+                              <Input
+                                value={reasonInputs[key] ?? override?.reason ?? ''}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                  setReasonInputs(prev => ({ ...prev, [key]: e.target.value }))
+                                }
+                                placeholder="Reason (optional)"
+                                className="text-xs h-7 flex-1"
+                              />
+                              {(reasonInputs[key] !== undefined && reasonInputs[key] !== (override?.reason ?? '')) && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-xs h-7 px-2"
+                                  disabled={!!overrideSaving}
+                                  onClick={() => handleOverrideChange(key, state)}
+                                >
+                                  Save reason
+                                </Button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Effective access indicator */}
+                          <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                            <span className="text-gray-400">Effective:</span>
+                            {(() => {
+                              const effective = state === 'grant' || (state === 'inherit' && roleHas)
+                              const denied = state === 'deny'
+                              if (denied) return <span className="text-red-500 font-medium">Blocked</span>
+                              if (effective) return <span className="text-green-600 font-medium">Allowed</span>
+                              return <span className="text-gray-400">Not allowed</span>
+                            })()}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )
+      })()}
 
       {/* --- Pay & Tax Tab --- */}
       {activeTab === 'Pay & Tax' && (

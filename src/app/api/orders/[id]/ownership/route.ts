@@ -321,7 +321,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
-    let deleteLocationId = getRequestLocationId()
+    const deleteLocationId = getRequestLocationId()
     let orderForDelete: { locationId: string } | null = deleteLocationId ? { locationId: deleteLocationId } : null
     if (!deleteLocationId) {
       const { db: database } = await import('@/lib/db')

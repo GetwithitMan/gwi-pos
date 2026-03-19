@@ -137,7 +137,7 @@ export function useReportAutoRefresh({
     }
     // events array identity: consumers should pass a stable array (const or useMemo).
     // We join to string for the dep check to avoid infinite re-renders from inline arrays.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [enabled, debounceMs, fallbackIntervalMs, events.join(','), startPolling, stopPolling])
 
   return { isSocketConnected }

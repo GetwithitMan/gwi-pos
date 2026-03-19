@@ -95,6 +95,7 @@ export const GET = withVenue(async function GET(
           allowOpenEntry: group.allowOpenEntry,
           allowNone: group.allowNone,
           nonePrintsToKitchen: group.nonePrintsToKitchen,
+          noneShowOnReceipt: group.noneShowOnReceipt,
           autoAdvance: group.autoAdvance,
           showOnline: true,
           spiritConfig: group.spiritConfig ? {

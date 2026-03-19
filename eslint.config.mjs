@@ -83,6 +83,7 @@ const eslintConfig = defineConfig([
       "src/lib/socket-server.ts",
       "src/lib/stock-status.ts",
       "src/lib/walkout-detector.ts",
+      "src/lib/print-template-factory.ts",
       "src/app/api/system/batch-status/route.ts",
       "src/app/api/orders/route.ts",
     ],

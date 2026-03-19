@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchOpenOrdersChanged, dispatchNewOrder } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { verifyCronSecret } from '@/lib/cron-auth'
 

@@ -29,7 +29,7 @@ import {
   dispatchOrderSummaryUpdated,
   buildOrderSummary,
 } from '@/lib/socket-dispatch'
-import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { emitOrderEvents } from '@/lib/order-events/emitter'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,

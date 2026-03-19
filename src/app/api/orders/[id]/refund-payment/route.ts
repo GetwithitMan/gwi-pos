@@ -122,6 +122,12 @@ export const POST = withVenue(async function POST(
     const { payment, totalAlreadyRefunded } = phase1Result
 
     // ── Phase 2: Call Datacap OUTSIDE the transaction ──────────────────────────
+    // Re-check payment status immediately before calling processor (concurrent void/refund guard)
+    const freshCheck = await db.payment.findUnique({ where: { id: paymentId }, select: { status: true } })
+    if (!freshCheck || freshCheck.status !== 'completed') {
+      return NextResponse.json({ error: 'Payment status changed — cannot refund' }, { status: 409 })
+    }
+
     let datacapRefNo: string | null = null
     const isCardPayment =
       payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'

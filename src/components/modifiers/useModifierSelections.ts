@@ -819,17 +819,18 @@ export function useModifierSelections(
         isCustomEntry: true,
       })
     }
-    // Include "None" selections for groups that print to kitchen
+    // Include "None" selections for groups that print to kitchen or show on receipt
     for (const groupId of noneGroups) {
       const group = modifierGroups.find(g => g.id === groupId)
         || Object.values(childGroups).find(g => g.id === groupId)
-      if (group?.nonePrintsToKitchen) {
+      if (group?.nonePrintsToKitchen || group?.noneShowOnReceipt) {
         result.push({
           id: `none_${groupId}`,
           name: `No ${group.displayName || group.name}`,
           price: 0,
           depth: 0,
           isNoneSelection: true,
+          noneShowOnReceipt: group?.noneShowOnReceipt ?? false,
         })
       }
     }

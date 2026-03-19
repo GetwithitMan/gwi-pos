@@ -85,6 +85,9 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     if (liteMultiplier !== undefined && liteMultiplier !== null && liteMultiplier < 0) {
       return NextResponse.json({ error: 'Lite multiplier cannot be negative' }, { status: 400 })
     }
+    if (liteMultiplier !== undefined && liteMultiplier === 0) {
+      return NextResponse.json({ error: 'Lite multiplier cannot be zero — use 0.5 for half portion' }, { status: 400 })
+    }
     if (extraMultiplier !== undefined && extraMultiplier !== null && extraMultiplier < 0) {
       return NextResponse.json({ error: 'Extra multiplier cannot be negative' }, { status: 400 })
     }
@@ -351,6 +354,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     }
     if (liteMultiplier !== undefined && liteMultiplier !== null && Number(liteMultiplier) < 0) {
       return NextResponse.json({ error: 'Lite multiplier cannot be negative' }, { status: 400 })
+    }
+    if (liteMultiplier !== undefined && liteMultiplier === 0) {
+      return NextResponse.json({ error: 'Lite multiplier cannot be zero — use 0.5 for half portion' }, { status: 400 })
     }
     if (extraMultiplier !== undefined && extraMultiplier !== null && Number(extraMultiplier) < 0) {
       return NextResponse.json({ error: 'Extra multiplier cannot be negative' }, { status: 400 })

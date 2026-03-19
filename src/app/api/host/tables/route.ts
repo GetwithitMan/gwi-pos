@@ -33,7 +33,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get current open orders for each occupied table (batch query)
     const tableIds = tables.filter(t => t.status === 'occupied').map(t => t.id)
 
-    let ordersByTable: Record<string, any> = {}
+    const ordersByTable: Record<string, any> = {}
     if (tableIds.length > 0) {
       const orders = await db.order.findMany({
         where: {

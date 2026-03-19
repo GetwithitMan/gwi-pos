@@ -104,6 +104,7 @@ export async function createSeatSplit(
             linkedBottleProductId: mod.linkedBottleProductId,
             isCustomEntry: mod.isCustomEntry,
             isNoneSelection: mod.isNoneSelection,
+            noneShowOnReceipt: mod.noneShowOnReceipt,
             customEntryName: mod.customEntryName,
             customEntryPrice: mod.customEntryPrice,
             swapTargetName: mod.swapTargetName,

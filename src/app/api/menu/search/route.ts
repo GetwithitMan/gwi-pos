@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { MenuItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 
 // Force dynamic rendering - never cache search results

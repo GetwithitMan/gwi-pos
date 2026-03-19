@@ -7,7 +7,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
-import { formatCurrency } from '@/lib/utils'
 
 interface FeedbackEntry {
   id: string

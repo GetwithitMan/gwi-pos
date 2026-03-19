@@ -76,7 +76,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Aggregate metrics
     let totalRevenue = 0
-    let totalEntries = rows.length
+    const totalEntries = rows.length
     let totalGuests = 0
     let compCount = 0
     let vipCount = 0

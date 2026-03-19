@@ -22,7 +22,6 @@ import type {
   PreAuthByRecordParams,
   AuthOnlyParams,
   KeyedSaleParams,
-  TranCode,
 } from './types'
 import { validateDatacapConfig } from './types'
 import { buildRequest, buildAdminRequest } from './xml-builder'

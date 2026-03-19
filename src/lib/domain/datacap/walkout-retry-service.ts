@@ -24,7 +24,6 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings, DEFAULT_WALKOUT_SETTINGS } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
-import { logger } from '@/lib/logger'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { emitOrderAndSocketEvents } from '@/lib/domain/emit-order-and-socket'
 

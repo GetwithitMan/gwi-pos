@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
+import { getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, DEFAULT_CATERING } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'

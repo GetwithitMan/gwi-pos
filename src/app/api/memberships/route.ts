@@ -4,7 +4,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { getPayApiClient, PayApiError } from '@/lib/datacap/payapi-client'
 import { buildIdempotencyKey } from '@/lib/membership/idempotency'
-import { calculateSignupProration, getNextBillingDate } from '@/lib/membership/proration'
+import { calculateSignupProration } from '@/lib/membership/proration'
 import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 

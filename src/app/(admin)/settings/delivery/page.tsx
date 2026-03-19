@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { Button } from '@/components/ui/button'
 import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settings'
 import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import { useRequireAuth } from '@/hooks/useRequireAuth'

@@ -139,7 +139,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       .filter(item => item.itemType === 'timed_rental')
       .map(item => item.id)
 
-    let waitlistCountMap = new Map<string, number>()
+    const waitlistCountMap = new Map<string, number>()
     if (entertainmentItemIds.length > 0) {
       const waitlistCounts = await db.$queryRaw<Array<{menuItemId: string, count: bigint}>>`
         SELECT fpe."linkedMenuItemId" as "menuItemId", COUNT(ew.id)::bigint as count

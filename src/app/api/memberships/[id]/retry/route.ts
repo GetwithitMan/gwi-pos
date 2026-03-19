@@ -5,7 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getPayApiClient, PayApiError } from '@/lib/datacap/payapi-client'
 import { buildIdempotencyKey } from '@/lib/membership/idempotency'
 import { classifyDecline } from '@/lib/membership/decline-rules'
-import { ChargeType, ChargeStatus, MembershipEventType } from '@/lib/membership/types'
+import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 import { randomUUID } from 'crypto'
 

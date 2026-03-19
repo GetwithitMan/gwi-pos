@@ -4,7 +4,6 @@ import { useCallback, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { useEntertainmentUiStore } from '@/stores/entertainment-ui-store'
 import { buildPizzaModifiers } from '@/lib/pizza-order-utils'
-import { formatCurrency } from '@/lib/utils'
 import { OfflineManager } from '@/lib/offline-manager'
 import { uuid } from '@/lib/uuid'
 import { toast } from '@/stores/toast-store'
@@ -1074,6 +1073,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
           // Open entry + swap fields
           isCustomEntry: mod.isCustomEntry ?? false,
           isNoneSelection: mod.isNoneSelection ?? false,
+          noneShowOnReceipt: mod.noneShowOnReceipt ?? false,
           swapTargetName: mod.swapTargetName ?? null,
           swapTargetItemId: mod.swapTargetItemId ?? null,
           swapPricingMode: mod.swapPricingMode ?? null,

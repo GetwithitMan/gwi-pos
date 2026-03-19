@@ -143,6 +143,25 @@ export const PUT = withVenue(async function PUT(
     // Clear permission cache — role permissions may have changed
     if (permissions !== undefined) {
       clearPermissionCache()
+
+      // Audit log: track permission changes
+      const oldPerms = new Set(getPermissionsArray(existing.permissions))
+      const newPerms = new Set(permissions)
+      const added = [...newPerms].filter(p => !oldPerms.has(p))
+      const removed = [...oldPerms].filter(p => !newPerms.has(p))
+
+      if (added.length > 0 || removed.length > 0) {
+        void db.auditLog.create({
+          data: {
+            locationId: role.locationId,
+            employeeId: requestingEmployeeId || 'unknown',
+            action: 'role_permissions_changed',
+            entityType: 'role',
+            entityId: role.id,
+            details: { roleName: role.name, added, removed },
+          },
+        }).catch(console.error)
+      }
     }
 
     // Emit employees:changed so all terminals refresh employee/permission data

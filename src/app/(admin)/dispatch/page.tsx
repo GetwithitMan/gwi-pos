@@ -2,17 +2,15 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { DriverCheckoutModal } from '@/components/delivery/DriverCheckoutModal'
 import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket } from '@/lib/shared-socket'
-import type { MapOrder, MapDriver, MapZone, MapRoute } from '@/components/delivery/DeliveryMap'
+import type { MapOrder, MapDriver, MapZone } from '@/components/delivery/DeliveryMap'
 
 // Dynamic import for Leaflet map (no SSR)
 const DeliveryMap = dynamic(() => import('@/components/delivery/DeliveryMap'), { ssr: false })

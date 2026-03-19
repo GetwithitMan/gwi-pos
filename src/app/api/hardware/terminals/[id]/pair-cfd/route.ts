@@ -33,7 +33,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Validate the register is not itself a CFD display
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     if ((existing as any).category === 'CFD_DISPLAY') {
       return NextResponse.json(
         { error: 'A CFD terminal cannot be paired to another CFD terminal' },
@@ -48,7 +48,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Update the register terminal with CFD pairing info
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const terminal = await (db.terminal.update as any)({
       where: { id },
       data: {
@@ -74,9 +74,9 @@ export const POST = withVenue(async function POST(
 
     // Best-effort: mark the CFD terminal's category as CFD_DISPLAY
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       if ((cfdExisting as any).category !== 'CFD_DISPLAY') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         await (db.terminal.update as any)({
           where: { id: cfdTerminalId },
           data: { category: 'CFD_DISPLAY' },
@@ -108,7 +108,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Clear CFD pairing fields
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     await (db.terminal.update as any)({
       where: { id },
       data: {

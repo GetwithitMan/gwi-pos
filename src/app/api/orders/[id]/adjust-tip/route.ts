@@ -179,6 +179,29 @@ export const PATCH = withVenue(async function PATCH(
 
     const { order, payment, updatedPayment, oldTipAmount, newTotalAmount, newOrderTipTotal, newOrderTotal } = txResult
 
+    // If this is a split child, also update parent's tipTotal
+    if (order.parentOrderId) {
+      try {
+        await db.$transaction(async (tx) => {
+          const parentPayments = await tx.payment.findMany({
+            where: {
+              order: { OR: [{ id: order.parentOrderId! }, { parentOrderId: order.parentOrderId! }] },
+              deletedAt: null,
+              status: 'completed',
+            },
+            select: { tipAmount: true },
+          })
+          const parentTipTotal = parentPayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
+          await tx.order.update({
+            where: { id: order.parentOrderId! },
+            data: { tipTotal: parentTipTotal },
+          })
+        })
+      } catch (err) {
+        console.error('[adjust-tip] Failed to update parent order tipTotal:', err)
+      }
+    }
+
     // Fire-and-forget socket dispatch for cross-terminal sync
     void dispatchOrderTotalsUpdate(order.locationId, orderId, {
       subtotal: Number(order.subtotal),

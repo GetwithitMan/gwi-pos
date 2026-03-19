@@ -15,7 +15,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
-    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline, isSpiritGroup, displayName, modifierTypes, allowOpenEntry, allowNone, nonePrintsToKitchen, autoAdvance } = body
+    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey, showOnline, isSpiritGroup, displayName, modifierTypes, allowOpenEntry, allowNone, nonePrintsToKitchen, noneShowOnReceipt, autoAdvance } = body
 
     // Validate inputs
     if (name !== undefined && typeof name === 'string' && name.trim() === '') {
@@ -28,7 +28,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       return NextResponse.json({ error: 'maxSelections must be at least 1' }, { status: 400 })
     }
 
-    // Verify group belongs to this item
+    // Verify group belongs to this item (needed for cross-field validation below)
     const group = await db.modifierGroup.findFirst({
       where: { id: groupId, menuItemId },
     })
@@ -42,6 +42,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     const auth = await requirePermission(actor.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+    // Cross-field validation
+    const effectiveMin = minSelections !== undefined ? minSelections : group.minSelections
+    const effectiveMax = maxSelections !== undefined ? maxSelections : group.maxSelections
+    if (effectiveMin > effectiveMax) {
+      return NextResponse.json({ error: 'minSelections cannot exceed maxSelections' }, { status: 400 })
+    }
+
     const updated = await db.modifierGroup.update({
       where: { id: groupId },
       data: {
@@ -52,13 +59,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         sortOrder: sortOrder !== undefined ? sortOrder : undefined,
         allowStacking: allowStacking !== undefined ? allowStacking : undefined,
         tieredPricingConfig: tieredPricingConfig !== undefined ? (tieredPricingConfig ?? Prisma.JsonNull) : undefined,
-        exclusionGroupKey: exclusionGroupKey !== undefined ? (exclusionGroupKey || null) : undefined,
+        exclusionGroupKey: exclusionGroupKey !== undefined ? (exclusionGroupKey?.trim() || null) : undefined,
         isSpiritGroup: isSpiritGroup !== undefined ? isSpiritGroup : undefined,
         displayName: displayName !== undefined ? (displayName || null) : undefined,
         modifierTypes: modifierTypes !== undefined ? modifierTypes : undefined,
         allowOpenEntry: allowOpenEntry !== undefined ? allowOpenEntry : undefined,
         allowNone: allowNone !== undefined ? allowNone : undefined,
         nonePrintsToKitchen: nonePrintsToKitchen !== undefined ? nonePrintsToKitchen : undefined,
+        noneShowOnReceipt: noneShowOnReceipt !== undefined ? noneShowOnReceipt : undefined,
         autoAdvance: autoAdvance !== undefined ? autoAdvance : undefined,
         showOnline: showOnline !== undefined ? showOnline : undefined,
       },
@@ -109,6 +117,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         allowOpenEntry: updated.allowOpenEntry,
         allowNone: updated.allowNone,
         nonePrintsToKitchen: updated.nonePrintsToKitchen,
+        noneShowOnReceipt: updated.noneShowOnReceipt,
         autoAdvance: updated.autoAdvance,
         modifiers: updated.modifiers.map((m: any) => ({
           id: m.id,
@@ -164,6 +173,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
             allowOpenEntry: m.childModifierGroup.allowOpenEntry,
             allowNone: m.childModifierGroup.allowNone,
             nonePrintsToKitchen: m.childModifierGroup.nonePrintsToKitchen,
+            noneShowOnReceipt: m.childModifierGroup.noneShowOnReceipt,
             autoAdvance: m.childModifierGroup.autoAdvance,
             modifiers: m.childModifierGroup.modifiers.map((cm: any) => ({
               id: cm.id,

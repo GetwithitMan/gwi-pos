@@ -182,7 +182,7 @@ export const POST = withVenue(async function POST(
       existingGratuity: initialGratuity,
       autoGratuitySettings: locSettings.autoGratuity,
     })
-    let gratuityAmount = autoGratResult.gratuityAmount
+    const gratuityAmount = autoGratResult.gratuityAmount
     const isAutoGratuity = autoGratResult.isAutoGratuity
 
     if (isAutoGratuity && !order.isBottleService && locSettings.autoGratuity) {

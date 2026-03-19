@@ -267,7 +267,7 @@ export default function AuditLogBrowserPage() {
     if (locationId && currentEmployee?.id && hasAccess) {
       fetchAuditLog(0)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [locationId, currentEmployee?.id, hasAccess])
 
   // ------------------------------------------

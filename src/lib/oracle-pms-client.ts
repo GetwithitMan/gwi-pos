@@ -82,7 +82,7 @@ function sanitizeForLog(status: number, body: string): string {
  * Some OPERA environments return HTTP 200 with an error JSON body.
  * Returns a sanitized reason string, or null if no error detected.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function detectOperaError(data: any): string | null {
   if (!data || typeof data !== 'object') return null
   if (typeof data.message === 'string' && data.message) return `OPERA: ${data.message.substring(0, 200)}`
@@ -106,7 +106,7 @@ function detectOperaError(data: any): string | null {
  * Intentionally lenient on format — both numeric and alphanumeric IDs are valid
  * (e.g. "TRX-123456" or "FOLIO-987" appear in some OPERA Cloud environments).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function extractTransactionId(data: any): string | null {
   const PLACEHOLDERS = new Set(['POSTED', 'OK', 'SUCCESS', 'PENDING', 'UNKNOWN', ''])
 
@@ -290,7 +290,7 @@ async function pmsPost(
 // ─── Parse OPERA reservation response ────────────────────────────────────────
 
 // OPERA Cloud returns deeply nested guest data — this normalises it.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 function parseReservations(data: any): PmsGuestInfo[] {
   const list: PmsGuestInfo[] = []
 

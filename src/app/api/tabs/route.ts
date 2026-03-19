@@ -10,7 +10,6 @@ import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import type { OrderStatus } from '@/generated/prisma/client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getRequestLocationId } from '@/lib/request-context'
 
 // GET - List open tabs with pagination

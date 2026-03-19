@@ -10,7 +10,7 @@ import { KDSClockModal } from '../components/KDSClockModal'
 import { ToastContainer } from '@/components/ui/ToastContainer'
 import DeliveryExpoRail from '@/components/delivery/DeliveryExpoRail'
 import { KDSOrderCard, ORDER_TYPE_LABELS } from '../components/KDSOrderCard'
-import type { KDSItem, KDSOrder } from '../components/KDSOrderCard'
+import type { KDSOrder } from '../components/KDSOrderCard'
 import { KDSHeader } from '../components/KDSHeader'
 import { KDSAllDayCounts } from '../components/KDSAllDayCounts'
 

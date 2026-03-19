@@ -73,6 +73,20 @@ const connectedTerminals = new Map<string, {
   clientVersion?: string
 }>()
 
+// Reverse index: socketId -> terminalId for O(1) disconnect lookup
+const socketToTerminal = new Map<string, string>()
+
+// Periodic cleanup of stale terminal entries (every 5 minutes)
+setInterval(() => {
+  for (const [terminalId, info] of connectedTerminals.entries()) {
+    const socket = globalForSocket.socketServer?.sockets.sockets.get(info.socketId)
+    if (!socket || !socket.connected) {
+      connectedTerminals.delete(terminalId)
+      socketToTerminal.delete(info.socketId)
+    }
+  }
+}, 5 * 60 * 1000)
+
 // ── Per-socket rate limiting ──────────────────────────────────────────────────
 const socketRateLimits = new Map<string, { count: number; resetAt: number }>()
 const MAX_EVENTS_PER_SECOND = 200
@@ -416,8 +430,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         if (channelName.startsWith('location:')) {
           const roomLocationId = channelName.slice('location:'.length)
           if (!socket.data.locationId) {
-            // First location subscription establishes the binding
-            socket.data.locationId = roomLocationId
+            log.warn(`Rejected subscribe: socket has no locationId, cannot join room ${channelName}`)
+            return  // Don't join, don't auto-adopt
           } else if (roomLocationId !== socket.data.locationId) {
             log.warn(`Rejected cross-location subscribe: socket bound to ${socket.data.locationId}, tried ${roomLocationId}`)
             return
@@ -484,32 +498,32 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         }
 
         // Clean up any previous entry for this socket (reconnection with new terminalId)
-        for (const [existingId, info] of connectedTerminals.entries()) {
-          if (info.socketId === socket.id) {
-            connectedTerminals.delete(existingId)
-            break
-          }
+        // O(1) via reverse index
+        const previousTerminalId = socketToTerminal.get(socket.id)
+        if (previousTerminalId) {
+          connectedTerminals.delete(previousTerminalId)
+          socketToTerminal.delete(socket.id)
         }
 
         // Clean up any existing entry with the same terminalId from a different socket
         // (stale socket that disconnected without cleanup, or duplicate connection)
-        for (const [key, value] of connectedTerminals.entries()) {
-          if (value.socketId !== socket.id && key === terminalId) {
-            connectedTerminals.delete(key)
-            break
-          }
+        const existing = connectedTerminals.get(terminalId)
+        if (existing && existing.socketId !== socket.id) {
+          socketToTerminal.delete(existing.socketId)
+          connectedTerminals.delete(terminalId)
         }
 
         // Store locationId on socket data for event handlers
         socket.data.locationId = locationId
 
-        // Track connection
+        // Track connection (both maps)
         connectedTerminals.set(terminalId, {
           socketId: socket.id,
           locationId,
           tags,
           connectedAt: new Date(),
         })
+        socketToTerminal.set(socket.id, terminalId)
 
         if (process.env.DEBUG_SOCKETS) log.debug({ terminalId, location: `location:${locationId}`, tags: tags.map(t => `tag:${locationId}:${t}`), station: stationId ? `station:${stationId}` : null }, 'Terminal joined rooms')
 
@@ -529,6 +543,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      */
     socket.on('leave_station', ({ terminalId }: { terminalId: string }) => {
       try {
+        const info = connectedTerminals.get(terminalId)
+        if (info) socketToTerminal.delete(info.socketId)
         connectedTerminals.delete(terminalId)
         // Socket.io automatically cleans up room memberships on disconnect
       } catch (err) {
@@ -544,11 +560,11 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      */
     socket.on('client:version', (data: { clientVersion?: string }) => {
       if (data?.clientVersion && typeof data.clientVersion === 'string') {
-        for (const [, info] of connectedTerminals) {
-          if (info.socketId === socket.id) {
-            info.clientVersion = data.clientVersion
-            break
-          }
+        // O(1) via reverse index
+        const tid = socketToTerminal.get(socket.id)
+        if (tid) {
+          const info = connectedTerminals.get(tid)
+          if (info) info.clientVersion = data.clientVersion
         }
       }
     })
@@ -975,16 +991,18 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     socket.on('disconnect', (reason: string) => {
       try {
-        // Path A: browser/KDS terminals registered via join_station
+        // Path A: browser/KDS terminals registered via join_station — O(1) via reverse index
         let handled = false
-        for (const [terminalId, info] of connectedTerminals.entries()) {
-          if (info.socketId === socket.id) {
-            connectedTerminals.delete(terminalId)
-            if (process.env.DEBUG_SOCKETS) log.debug(`Terminal ${terminalId} disconnected: ${reason}`)
+        const terminalId = socketToTerminal.get(socket.id)
+        if (terminalId) {
+          const info = connectedTerminals.get(terminalId)
+          connectedTerminals.delete(terminalId)
+          socketToTerminal.delete(socket.id)
+          if (process.env.DEBUG_SOCKETS) log.debug(`Terminal ${terminalId} disconnected: ${reason}`)
+          if (info) {
             void markTerminalOffline(terminalId, info.locationId, reason, socket.id)
-            handled = true
-            break
           }
+          handled = true
         }
         // Path B: Android native — auth middleware sets socket.data.terminalId
         if (!handled && socket.data.terminalId && socket.data.locationId) {
@@ -1024,6 +1042,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       const socket = socketServer.sockets.sockets.get(info.socketId)
       if (!socket || !socket.connected) {
         connectedTerminals.delete(terminalId)
+        socketToTerminal.delete(info.socketId)
         cleaned++
       }
     }
@@ -1061,6 +1080,15 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   // Store in global so API routes can emit events (survives HMR)
   setSocketServer(socketServer)
   if (process.env.DEBUG_SOCKETS) log.debug('Server initialized and stored in globalThis')
+
+  // Flush any unflushed socket events from a prior crash
+  try {
+    const { flushAllPendingOutbox } = await import('@/lib/socket-outbox')
+    await flushAllPendingOutbox()
+  } catch (err) {
+    log.warn({ err }, 'Failed to flush pending outbox on startup')
+  }
+
   return socketServer
 }
 
@@ -1183,7 +1211,12 @@ export async function emitCriticalToLocation(
     // Also record in event buffer for catch-up
     const eid = recordEvent(locationId, event, payload, room)
     const enriched = { ...payload, _eid: eid }
-    globalForSocket.socketServer.to(room).emit(event, enriched)
+    try {
+      globalForSocket.socketServer.to(room).emit(event, enriched)
+    } catch (err) {
+      log.error({ err, event, room }, 'Critical emit failed — leaving in ack queue for retry')
+      return  // Don't mark as sent — ack queue will retry
+    }
   } else {
     void emitViaIPC({ type: 'location', target: locationId, event, data: payload })
   }

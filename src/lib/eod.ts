@@ -13,7 +13,6 @@
 import { createChildLogger } from '@/lib/logger'
 import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
-import type { LocationSettings } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getDatacapClient, requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { detectPotentialWalkouts } from '@/lib/walkout-detector'

@@ -7,7 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
-import { canAssignDriver, canDispatchOrder, getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
+import { canAssignDriver, getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { evaluateEffectiveProofMode } from '@/lib/delivery/proof-resolver'
 import { dispatchRunEvent, dispatchDeliveryStatusChanged } from '@/lib/delivery/dispatch-events'
 
@@ -96,7 +96,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Fetch orders for each run
     const runIds = rows.map(r => r.id)
-    let ordersMap: Map<string, any[]> = new Map()
+    const ordersMap: Map<string, any[]> = new Map()
 
     if (runIds.length > 0) {
       const orderRows: any[] = await db.$queryRawUnsafe(`

@@ -76,7 +76,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       .map(d => d.orderId)
       .filter(Boolean)
 
-    let itemsByOrderId: Record<string, any[]> = {}
+    const itemsByOrderId: Record<string, any[]> = {}
     if (orderIds.length > 0) {
       const placeholders = orderIds.map((_, i) => `$${i + 1}`).join(', ')
       const items: any[] = await db.$queryRawUnsafe(`

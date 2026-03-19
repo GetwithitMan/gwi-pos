@@ -8,7 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 
 // POST - Open a bottle service tab (with tier selection + deposit pre-auth)

@@ -7,7 +7,7 @@
  * Routes import these instead of duplicating inline.
  */
 
-import type { OrderStatus, TransitionResult } from './types'
+import type { TransitionResult } from './types'
 
 // ─── Valid Transitions Map ───────────────────────────────────────────────────
 

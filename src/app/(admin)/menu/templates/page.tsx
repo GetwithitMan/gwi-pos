@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Search, Plus, Trash2, Copy, GripVertical } from 'lucide-react'
 
@@ -84,7 +83,7 @@ export default function ModifierTemplatesPage() {
       setEditAllowStacking(false)
       setEditModifiers(selectedTemplate.modifiers.map(m => ({ ...m })))
     }
-  }, [selectedId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedId])  
 
   const filteredTemplates = templates.filter(t =>
     t.name.toLowerCase().includes(search.toLowerCase())

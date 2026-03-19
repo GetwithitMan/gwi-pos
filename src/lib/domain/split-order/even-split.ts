@@ -7,7 +7,7 @@
 
 import { roundToCents } from '@/lib/pricing'
 import { createChildLogger } from '@/lib/logger'
-import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { ValidationError } from '@/lib/api-errors'
 import { distributeDiscountsForEvenSplit } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, EvenSplitResult } from './types'

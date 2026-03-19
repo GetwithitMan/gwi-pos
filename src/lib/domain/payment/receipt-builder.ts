@@ -50,6 +50,7 @@ interface ReceiptOrder {
       preModifier: string | null
       isCustomEntry?: boolean
       isNoneSelection?: boolean
+      noneShowOnReceipt?: boolean
       customEntryName?: string | null
       customEntryPrice?: unknown
       swapTargetName?: string | null
@@ -155,6 +156,7 @@ export function buildReceiptData(
         preModifier: mod.preModifier,
         isCustomEntry: mod.isCustomEntry ?? false,
         isNoneSelection: mod.isNoneSelection ?? false,
+        noneShowOnReceipt: mod.noneShowOnReceipt ?? false,
         customEntryName: mod.customEntryName ?? null,
         customEntryPrice: mod.customEntryPrice != null ? Number(mod.customEntryPrice) : null,
         swapTargetName: mod.swapTargetName ?? null,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { MenuItemRepository, OrderRepository } from '@/lib/repositories'
+import { MenuItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { validateBridgeHMAC, decryptBridgeSecret } from '@/lib/berg/hmac'
 import { resolvePlu } from '@/lib/berg/plu-resolver'

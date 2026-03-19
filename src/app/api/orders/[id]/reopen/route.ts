@@ -10,7 +10,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
+import { OrderRepository } from '@/lib/repositories'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,

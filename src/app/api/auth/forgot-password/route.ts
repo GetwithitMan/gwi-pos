@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { checkLoginRateLimit, recordLoginFailure } from '@/lib/auth-rate-limiter'
+import { checkLoginRateLimit } from '@/lib/auth-rate-limiter'
 
 /**
  * POST /api/auth/forgot-password

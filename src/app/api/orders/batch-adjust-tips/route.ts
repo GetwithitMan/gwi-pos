@@ -75,7 +75,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const datacapFailed = new Map<string, string>() // paymentId → error message
 
     // Pre-fetch all orders+payments for validation and Datacap calls
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const prefetched = new Map<string, { order: any; adj: TipAdjustment }>()
 
     // Pre-fetch all orders + payments in batch to avoid N+1

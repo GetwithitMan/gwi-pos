@@ -102,6 +102,18 @@ export const POST = withVenue(async function POST(
       },
     })
 
+    // Audit log: track permission override changes
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: resolvedActorId || 'unknown',
+        action: allowed ? 'permission_override_granted' : 'permission_override_denied',
+        entityType: 'employee',
+        entityId: employeeId,
+        details: { permissionKey, allowed, reason: reason || null },
+      },
+    }).catch(console.error)
+
     // Clear permission cache for this employee so override takes effect immediately
     clearPermissionCache(employeeId)
 
@@ -149,6 +161,18 @@ export const DELETE = withVenue(async function DELETE(
     } catch {
       // Record not found — treat as success (idempotent delete)
     }
+
+    // Audit log: track permission override removal
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: actor.employeeId || 'unknown',
+        action: 'permission_override_removed',
+        entityType: 'employee',
+        entityId: employeeId,
+        details: { permissionKey },
+      },
+    }).catch(console.error)
 
     // Clear permission cache for this employee
     clearPermissionCache(employeeId)

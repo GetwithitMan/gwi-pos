@@ -109,7 +109,7 @@ export function calculateCharge(
     ? Math.ceil(chargeableOverage / incrementMinutes)
     : 0
 
-  let baseCharge = minimumCharge + (extraIncrements * incrementCost)
+  const baseCharge = minimumCharge + (extraIncrements * incrementCost)
 
   // Calculate overtime if applicable
   const ot = pricing.overtime

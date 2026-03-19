@@ -26,6 +26,7 @@ export interface UiModifier {
   customEntryPrice?: number | null
   // None selection
   isNoneSelection?: boolean
+  noneShowOnReceipt?: boolean
   // Swap/substitution
   swapTargetName?: string | null
   swapTargetItemId?: string | null

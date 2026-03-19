@@ -10,6 +10,7 @@ import {
   divider,
   ESCPOS,
   PAPER_WIDTH,
+  truncateForPrint,
 } from '@/lib/escpos/commands'
 import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
@@ -668,6 +669,7 @@ function buildKitchenTicket(
       itemName = `${positionPrefix}${item.quantity}x ${item.name}`
     }
     if (allCapsItems) itemName = itemName.toUpperCase()
+    itemName = truncateForPrint(itemName, width)
     content.push(importantLine(itemName, itemNameSize, useRedItemNames, boldItems))
 
     // Pizza specialty label (e.g., "*** MEAT LOVERS ***")
@@ -702,13 +704,14 @@ function buildKitchenTicket(
         if (allCapsMods) {
           modLine = modLine.toUpperCase()
         }
+        const fullModLine = truncateForPrint(`${prefix}${modLine}`, width)
         // Apply red for modifiers if enabled
         if (hasRed && useRedModifiers) content.push(RED)
         content.push(toppingSizeCmd)
         if (boldMods && !isImpact) {
           content.push(ESCPOS.BOLD_ON)
         }
-        content.push(line(`${prefix}${modLine}`))
+        content.push(line(fullModLine))
         if (boldMods && !isImpact) {
           content.push(ESCPOS.BOLD_OFF)
         }

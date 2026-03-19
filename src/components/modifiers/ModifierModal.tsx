@@ -13,7 +13,6 @@ import {
   getPourSizeLabel,
   type IngredientModification,
   type PourSizeValue,
-  type CustomEntrySelection,
 } from './useModifierSelections'
 import { SwapPicker } from './SwapPicker'
 import { SwapPickerSheet } from './SwapPickerSheet'

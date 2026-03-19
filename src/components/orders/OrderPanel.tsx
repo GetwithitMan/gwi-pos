@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect, useMemo, useCallback, memo, type MutableRefObject } from 'react'
+import { useRef, useState, useEffect, useMemo, useCallback, memo } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
 import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
@@ -400,7 +400,7 @@ export const OrderPanel = memo(function OrderPanel({
   }, [orderId])
 
   // Handle customer selection from modal
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const handleSelectCustomer = useCallback((customer: any) => {
     const currentOrderId = orderIdRef.current
     if (!currentOrderId) return

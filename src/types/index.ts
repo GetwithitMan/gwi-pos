@@ -179,6 +179,8 @@ export interface ModifierGroup {
   allowNone?: boolean
   // Whether "None" selection prints to kitchen tickets/KDS
   nonePrintsToKitchen?: boolean
+  // Whether "None" selection shows on customer receipts
+  noneShowOnReceipt?: boolean
   // Spirit group fields (Liquor Builder)
   isSpiritGroup?: boolean
   spiritConfig?: {
@@ -208,6 +210,8 @@ export interface SelectedModifier {
   isCustomEntry?: boolean
   // None selection — explicit "None" chosen on a required modifier group
   isNoneSelection?: boolean
+  // Whether this None selection should show on customer receipts
+  noneShowOnReceipt?: boolean
   // Swap fields — when a modifier is swapped for an alternate item
   swapTargetName?: string
   swapTargetItemId?: string

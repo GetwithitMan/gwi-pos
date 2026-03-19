@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { getActivePricingRules, getPricingRuleEndTime, DEFAULT_SETTINGS } from '@/lib/settings'
+import { getActivePricingRules, getPricingRuleEndTime } from '@/lib/settings'
 import type { PricingRule } from '@/lib/settings'
 import { useSocket } from '@/hooks/useSocket'
 

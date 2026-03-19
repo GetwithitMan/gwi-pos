@@ -15,7 +15,6 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { OPEN_ORDER_STATUSES } from '@/lib/domain/order-status'
 import type { OrderStatus } from '@/generated/prisma/client'
-import * as OrderRepository from '@/lib/repositories/order-repository'
 
 interface BulkTransferPayload {
   toEmployeeId: string

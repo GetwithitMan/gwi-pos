@@ -115,7 +115,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     // For date grouping, get per-day sales
-    let dailySales: Record<string, number> = {}
+    const dailySales: Record<string, number> = {}
     if (groupBy === 'date') {
       const dailyOrders = await db.orderSnapshot.groupBy({
         by: ['businessDayDate'],

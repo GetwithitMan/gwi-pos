@@ -49,6 +49,7 @@ function formatModifierGroup(group: {
   allowOpenEntry: boolean
   allowNone: boolean
   nonePrintsToKitchen: boolean
+  noneShowOnReceipt: boolean
   autoAdvance: boolean
   modifiers: ModifierWithChild[]
 }, allGroups: Map<string, typeof group>, orphanedModifierIds?: string[]): object {
@@ -68,6 +69,7 @@ function formatModifierGroup(group: {
     allowOpenEntry: group.allowOpenEntry,
     allowNone: group.allowNone,
     nonePrintsToKitchen: group.nonePrintsToKitchen,
+    noneShowOnReceipt: group.noneShowOnReceipt,
     autoAdvance: group.autoAdvance,
     sortOrder: group.sortOrder,
     modifiers: group.modifiers.map(m => {
@@ -255,6 +257,11 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return NextResponse.json({ error: 'Modifier group name is required' }, { status: 400 })
     }
 
+    // Cross-field validation
+    if (minSelections > maxSelections) {
+      return NextResponse.json({ error: 'minSelections cannot exceed maxSelections' }, { status: 400 })
+    }
+
     const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(menuItemId, locationId, {
       id: true, locationId: true,
     })
@@ -337,6 +344,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
             allowOpenEntry: sourceGroup.allowOpenEntry,
             allowNone: sourceGroup.allowNone,
             nonePrintsToKitchen: sourceGroup.nonePrintsToKitchen,
+            noneShowOnReceipt: sourceGroup.noneShowOnReceipt,
             autoAdvance: sourceGroup.autoAdvance,
             exclusionGroupKey: null, // Don't copy exclusion key — user sets fresh
             sortOrder: (maxSort._max.sortOrder || 0) + 1,
@@ -366,6 +374,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
                 allowOpenEntry: mod.childModifierGroup.allowOpenEntry,
                 allowNone: mod.childModifierGroup.allowNone,
                 nonePrintsToKitchen: mod.childModifierGroup.nonePrintsToKitchen,
+                noneShowOnReceipt: mod.childModifierGroup.noneShowOnReceipt,
                 autoAdvance: mod.childModifierGroup.autoAdvance,
                 sortOrder: (maxSort._max.sortOrder || 0) + 2 + childSortOffset,
               },
@@ -507,6 +516,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         allowOpenEntry: group.allowOpenEntry,
         allowNone: group.allowNone,
         nonePrintsToKitchen: group.nonePrintsToKitchen,
+        noneShowOnReceipt: group.noneShowOnReceipt,
         autoAdvance: group.autoAdvance,
         sortOrder: group.sortOrder,
         modifiers: group.modifiers.map((m: any) => ({
@@ -678,6 +688,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         allowOpenEntry: group.allowOpenEntry,
         allowNone: group.allowNone,
         nonePrintsToKitchen: group.nonePrintsToKitchen,
+        noneShowOnReceipt: group.noneShowOnReceipt,
         autoAdvance: group.autoAdvance,
         sortOrder: group.sortOrder,
         modifiers: group.modifiers.map(m => ({

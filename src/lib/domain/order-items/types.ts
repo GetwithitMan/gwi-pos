@@ -28,6 +28,7 @@ export interface ModifierInput {
   customEntryPrice?: number
   // None selection
   isNoneSelection?: boolean
+  noneShowOnReceipt?: boolean
   // Swap/substitution
   swapTargetName?: string
   swapTargetItemId?: string

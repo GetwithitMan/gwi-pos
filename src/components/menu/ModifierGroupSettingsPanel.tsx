@@ -142,7 +142,10 @@ export function ModifierGroupSettingsPanel({
             checked={group.allowNone ?? false}
             onChange={(e) => {
               onUpdate('allowNone', e.target.checked)
-              if (!e.target.checked) onUpdate('nonePrintsToKitchen', false)
+              if (!e.target.checked) {
+                onUpdate('nonePrintsToKitchen', false)
+                onUpdate('noneShowOnReceipt', false)
+              }
             }}
             className="w-3.5 h-3.5 rounded"
           />
@@ -151,15 +154,26 @@ export function ModifierGroupSettingsPanel({
 
         {/* None Prints to Kitchen (only visible when allowNone is on) */}
         {(group.allowNone ?? false) && (
-          <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={group.nonePrintsToKitchen ?? false}
-              onChange={(e) => onUpdate('nonePrintsToKitchen', e.target.checked)}
-              className="w-3.5 h-3.5 rounded"
-            />
-            <span className="text-xs text-gray-700">Print None</span>
-          </label>
+          <>
+            <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={group.nonePrintsToKitchen ?? false}
+                onChange={(e) => onUpdate('nonePrintsToKitchen', e.target.checked)}
+                className="w-3.5 h-3.5 rounded"
+              />
+              <span className="text-xs text-gray-700">Print None</span>
+            </label>
+            <label className="flex items-center gap-1 cursor-pointer whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={group.noneShowOnReceipt ?? false}
+                onChange={(e) => onUpdate('noneShowOnReceipt', e.target.checked)}
+                className="w-3.5 h-3.5 rounded"
+              />
+              <span className="text-xs text-gray-700">Receipt None</span>
+            </label>
+          </>
         )}
 
         {/* autoAdvance */}
@@ -269,6 +283,9 @@ export function ModifierGroupSettingsPanel({
               min="1"
             />
           </div>
+          {group.minSelections > group.maxSelections && (
+            <p className="text-xs text-red-500 mt-1">Warning: Min selections exceeds max selections</p>
+          )}
           <label className="flex items-center gap-3 cursor-pointer">
             <input
               type="checkbox"
@@ -303,7 +320,10 @@ export function ModifierGroupSettingsPanel({
                 checked={group.allowNone ?? false}
                 onChange={(e) => {
                   onUpdate('allowNone', e.target.checked)
-                  if (!e.target.checked) onUpdate('nonePrintsToKitchen', false)
+                  if (!e.target.checked) {
+                    onUpdate('nonePrintsToKitchen', false)
+                    onUpdate('noneShowOnReceipt', false)
+                  }
                 }}
                 className="w-4 h-4 rounded"
               />
@@ -313,15 +333,26 @@ export function ModifierGroupSettingsPanel({
               Show a &quot;None&quot; button so staff can skip this required group
             </p>
             {(group.allowNone ?? false) && (
-              <label className="flex items-center gap-3 cursor-pointer ml-7 mt-1.5">
-                <input
-                  type="checkbox"
-                  checked={group.nonePrintsToKitchen ?? false}
-                  onChange={(e) => onUpdate('nonePrintsToKitchen', e.target.checked)}
-                  className="w-4 h-4 rounded"
-                />
-                <span className="text-sm text-gray-700">Print &quot;None&quot; to kitchen tickets</span>
-              </label>
+              <>
+                <label className="flex items-center gap-3 cursor-pointer ml-7 mt-1.5">
+                  <input
+                    type="checkbox"
+                    checked={group.nonePrintsToKitchen ?? false}
+                    onChange={(e) => onUpdate('nonePrintsToKitchen', e.target.checked)}
+                    className="w-4 h-4 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Print &quot;None&quot; to kitchen tickets</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer ml-7 mt-1.5">
+                  <input
+                    type="checkbox"
+                    checked={group.noneShowOnReceipt ?? false}
+                    onChange={(e) => onUpdate('noneShowOnReceipt', e.target.checked)}
+                    className="w-4 h-4 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Show &quot;None&quot; on customer receipts</span>
+                </label>
+              </>
             )}
           </div>
           <div>

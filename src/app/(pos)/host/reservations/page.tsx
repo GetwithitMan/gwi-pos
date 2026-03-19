@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/stores/auth-store'
 import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useSocket } from '@/hooks/useSocket'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'

@@ -440,7 +440,7 @@ export function ModifierDetailPanel({
     // Dirty + invalid — show prompt
     setPendingSwitch(modifier)
     setShowSwitchDialog(true)
-  }, [modifier.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [modifier.id])  
 
   // ── Staleness detection for swap targets ──────────────────────────────
   useEffect(() => {
@@ -460,7 +460,7 @@ export function ModifierDetailPanel({
         setStalePriceWarning(stale)
       })
       .catch(() => {})
-  }, [modifier.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [modifier.id])  
 
   // ── Patch helper ──────────────────────────────────────────────────────
   const patch = useCallback((updates: Partial<Modifier>) => {

@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { resolveSlackWebhookUrl } from '@/lib/alert-service'
+import { isTwilioConfiguredAsync, sendSMS, maskPhone, formatPhoneE164 } from '@/lib/twilio'
+import { db } from '@/lib/db'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const { service, employeeId, locationId: bodyLocationId } = await request.json()
@@ -20,10 +22,37 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
   try {
     if (service === 'twilio') {
-      const accountSid = process.env.TWILIO_ACCOUNT_SID
-      const authToken = process.env.TWILIO_AUTH_TOKEN
-      if (!accountSid || !authToken) throw new Error('Twilio credentials not configured')
-      return NextResponse.json({ data: { success: true, message: 'Twilio credentials verified' } })
+      // Check if Twilio is configured (DB settings or env vars)
+      const configured = await isTwilioConfiguredAsync()
+      if (!configured) throw new Error('Twilio credentials not configured')
+
+      // Look up the requesting employee's phone number
+      const employee = await db.employee.findUnique({
+        where: { id: employeeId },
+        select: { phone: true, firstName: true },
+      })
+      if (!employee?.phone) {
+        throw new Error('No phone number on your employee profile. Add one in Settings > Employees to receive a test SMS.')
+      }
+
+      // Send a real test SMS
+      const result = await sendSMS({
+        to: employee.phone,
+        body: '[GWI POS] Test message — your Twilio integration is working! This was triggered from your POS settings page.',
+      })
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to send test SMS')
+      }
+
+      const masked = maskPhone(formatPhoneE164(employee.phone))
+      return NextResponse.json({
+        data: {
+          success: true,
+          message: `Test SMS sent to ${masked}. Check your phone!`,
+          messageSid: result.messageSid,
+        },
+      })
     }
 
     if (service === 'resend') {

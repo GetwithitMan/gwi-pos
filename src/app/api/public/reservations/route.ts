@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { getLocationId, getLocationSettings } from '@/lib/location-cache'
+import { getLocationId } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_RESERVATION_SETTINGS, DEFAULT_DEPOSIT_RULES } from '@/lib/settings'
 import { createReservationWithRules } from '@/lib/reservations/create-reservation'
 import { createRateLimiter } from '@/lib/rate-limiter'
