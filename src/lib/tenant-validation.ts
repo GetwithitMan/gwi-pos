@@ -44,7 +44,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   // Orders & line items
   'Order', 'OrderItem', 'OrderItemModifier', 'OrderItemIngredient', 'OrderItemPizza',
   'OrderDiscount', 'OrderItemDiscount', 'OrderCard',
-  'OrderEvent', 'OrderSnapshot', 'OrderItemSnapshot',
+  'order_events', 'order_snapshots', 'order_item_snapshots',
   'OrderOwnership', 'OrderOwnershipEntry', 'OrderType',
 
   // Payments & financials
@@ -121,8 +121,8 @@ export const TENANT_SCOPED_MODELS = new Set([
   // Audit & logging
   'AuditLog', 'ErrorLog', 'HealthCheck',
 
-  // Cloud sync
-  'CloudEventQueue',
+  // Cloud sync (@@map table names)
+  'cloud_event_queue',
 
   // Waste
   'WasteLogEntry',
