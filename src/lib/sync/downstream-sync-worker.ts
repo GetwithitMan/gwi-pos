@@ -60,6 +60,15 @@ let cycleRunning = false
 /** Per-table-batch deduplication for open-orders socket dispatch (cleared in syncTableDown) */
 const notificationDispatchedLocations = new Set<string>()
 
+/**
+ * Catalog tables use soft-delete (quarantine) instead of hard-delete for
+ * business-key conflicts. Hard-deleting a Category/MenuItem/ModifierGroup/Modifier
+ * can leave orphaned child rows and partial catalog graphs during convergence.
+ * Soft-deleting (setting deletedAt = NOW()) preserves the data for operator review
+ * while still allowing the authoritative Neon row to be inserted.
+ */
+const CATALOG_QUARANTINE_TABLES = new Set(['Category', 'MenuItem', 'ModifierGroup', 'Modifier'])
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function serializeValue(val: unknown, isPgArray = false): unknown {
@@ -112,6 +121,31 @@ async function ensureSyncStateTable(): Promise<void> {
  */
 async function initHighWaterMarks(): Promise<void> {
   await ensureSyncStateTable()
+
+  // Check if venue was recently reprovisioned — if so, reset HWMs to epoch
+  // to ensure full re-sync after clone/reset/reprovision
+  try {
+    const schemaState = await masterClient.$queryRawUnsafe(`
+      SELECT "provisionedAt" FROM "_venue_schema_state" WHERE id = 1
+    `) as Array<{ provisionedAt: Date | null }>
+
+    if (schemaState.length > 0 && schemaState[0].provisionedAt) {
+      const provisionedAt = new Date(schemaState[0].provisionedAt)
+      // Check if provisionedAt is very recent (last 5 min) — if so, reset HWMs
+      // to force a full re-sync. This is a simple heuristic: if we were just
+      // reprovisioned, stale HWMs could prevent re-syncing data that changed
+      // during the reset.
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000)
+      if (provisionedAt > fiveMinAgo) {
+        log.info({ provisionedAt }, 'Recent reprovision detected — resetting downstream HWMs to epoch for full re-sync')
+        await masterClient.$executeRawUnsafe(
+          `DELETE FROM "_gwi_sync_state"`
+        )
+      }
+    }
+  } catch {
+    // _venue_schema_state may not exist yet — safe to ignore
+  }
 
   // Load persisted HWMs from _gwi_sync_state
   const persistedHwms = new Map<string, Date>()
@@ -341,11 +375,26 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
           row.id as string, ...bkValues
         )
         if (conflicting.length > 0) {
-          log.info({ table: tableName, localId: conflicting[0].id, neonId: row.id }, 'Resolving business-key conflict — local replaced by Neon')
-          await masterClient.$executeRawUnsafe(
-            `DELETE FROM "${tableName}" WHERE "id" = $1`,
-            conflicting[0].id
-          )
+          if (CATALOG_QUARANTINE_TABLES.has(tableName)) {
+            // Catalog tables: soft-delete (quarantine) the conflicting row instead of
+            // destroying it. This prevents partial catalog graphs (e.g., a MenuItem's
+            // Category disappearing mid-sync) while still allowing the Neon row to land.
+            await masterClient.$executeRawUnsafe(
+              `UPDATE "${tableName}" SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $1`,
+              conflicting[0].id
+            )
+            log.warn(
+              { table: tableName, localId: conflicting[0].id, neonId: row.id },
+              'Quarantined catalog row (soft-delete) for business-key conflict — local row preserved for review'
+            )
+          } else {
+            // Non-catalog tables: hard-delete the conflicting local row as before
+            log.info({ table: tableName, localId: conflicting[0].id, neonId: row.id }, 'Resolving business-key conflict — local replaced by Neon')
+            await masterClient.$executeRawUnsafe(
+              `DELETE FROM "${tableName}" WHERE "id" = $1`,
+              conflicting[0].id
+            )
+          }
         }
       }
 

@@ -10,6 +10,13 @@
  *   3. Runs the handler inside AsyncLocalStorage.run({ slug, prisma })
  *   4. db.ts Proxy reads from AsyncLocalStorage on every DB call
  *
+ * SECURITY NOTE: When no x-venue-slug header is present, requests run against
+ * the master/local DB (NUC mode). This is safe for NUC deployments where there
+ * is only one venue per server. On Vercel (multi-tenant), missing slug means
+ * the request hit the main domain — master DB context is intentional for
+ * public routes (online ordering, etc.). Tenant-bound admin routes should
+ * validate locationId explicitly, not rely solely on DB routing.
+ *
  * Usage:
  *   import { withVenue } from '@/lib/with-venue'
  *
@@ -121,6 +128,9 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       }
 
       // No slug (main domain, local dev via `next dev`) — use master client
+      if (process.env.NEON_DATABASE_URL && process.env.NODE_ENV === 'production') {
+        console.warn(`[with-venue] Request to ${request.nextUrl.pathname} has no x-venue-slug — running in master DB context. This is expected for NUC but suspicious on Vercel.`)
+      }
       return requestStore.run(
         { slug: '', prisma: masterClient },
         () => handler(request, context)

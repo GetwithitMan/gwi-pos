@@ -49,62 +49,68 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
   }
 
+  const mode = request.nextUrl.searchParams.get('mode') || 'full'
+
   const dbName = venueDbName(slug)
   const venueDbUrl = buildVenueDatabaseUrl(slug)
   const venueDirectUrl = buildVenueDirectUrl(slug)
 
   try {
-    // ── 1. Create database on Neon ─────────────────────────────────────
-    const existing = await db.$queryRawUnsafe<{ datname: string }[]>(
-      `SELECT datname FROM pg_database WHERE datname = $1`,
-      dbName
-    )
-
-    if (existing.length === 0) {
-      // CREATE DATABASE cannot use parameterized queries.
-      // SAFETY: slug is validated by /^[a-z0-9]+(-[a-z0-9]+)*$/ regex above,
-      // and venueDbName() only adds a safe prefix. No user-controlled characters
-      // can escape the double-quoted identifier.
-      await db.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`)
-      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Created database: ${dbName}`)
-    } else {
-      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Database already exists: ${dbName}`)
-    }
-
-    // ── 2. Push schema via direct SQL (no execSync needed) ─────────────
-    try {
-      const venueSQL = neon(venueDirectUrl)
-
-      // Check if tables already exist (idempotency)
-      const tableCheck = await venueSQL`
-        SELECT COUNT(*)::int as count
-        FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-      `
-
-      if (tableCheck[0].count > 0) {
-        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema already exists in ${dbName}, skipping push`)
-      } else {
-        // Read pre-generated schema SQL (built at deploy time by generate-schema-sql.mjs)
-        const schemaSql = readFileSync(
-          path.join(process.cwd(), 'prisma/schema.sql'),
-          'utf-8'
-        )
-        // Use Pool for raw multi-statement SQL (neon() tagged template can't accept raw strings)
-        const pool = new Pool({ connectionString: venueDirectUrl })
-        try {
-          await pool.query(schemaSql)
-        } finally {
-          await pool.end()
-        }
-        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema pushed to ${dbName}`)
-      }
-    } catch (pushErr) {
-      console.error('[Provision] Schema push failed:', pushErr)
-      return Response.json(
-        { error: 'Schema push failed. Database was created but tables were not.' },
-        { status: 500 }
+    if (mode !== 'seed-only') {
+      // ── 1. Create database on Neon ─────────────────────────────────────
+      const existing = await db.$queryRawUnsafe<{ datname: string }[]>(
+        `SELECT datname FROM pg_database WHERE datname = $1`,
+        dbName
       )
+
+      if (existing.length === 0) {
+        // CREATE DATABASE cannot use parameterized queries.
+        // SAFETY: slug is validated by /^[a-z0-9]+(-[a-z0-9]+)*$/ regex above,
+        // and venueDbName() only adds a safe prefix. No user-controlled characters
+        // can escape the double-quoted identifier.
+        await db.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`)
+        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Created database: ${dbName}`)
+      } else {
+        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Database already exists: ${dbName}`)
+      }
+
+      // ── 2. Push schema via direct SQL (no execSync needed) ─────────────
+      try {
+        const venueSQL = neon(venueDirectUrl)
+
+        // Check if tables already exist (idempotency)
+        const tableCheck = await venueSQL`
+          SELECT COUNT(*)::int as count
+          FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+        `
+
+        if (tableCheck[0].count > 0) {
+          if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema already exists in ${dbName}, skipping push`)
+        } else {
+          // Read pre-generated schema SQL (built at deploy time by generate-schema-sql.mjs)
+          const schemaSql = readFileSync(
+            path.join(process.cwd(), 'prisma/schema.sql'),
+            'utf-8'
+          )
+          // Use Pool for raw multi-statement SQL (neon() tagged template can't accept raw strings)
+          const pool = new Pool({ connectionString: venueDirectUrl })
+          try {
+            await pool.query(schemaSql)
+          } finally {
+            await pool.end()
+          }
+          if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema pushed to ${dbName}`)
+        }
+      } catch (pushErr) {
+        console.error('[Provision] Schema push failed:', pushErr)
+        return Response.json(
+          { error: 'Schema push failed. Database was created but tables were not.' },
+          { status: 500 }
+        )
+      }
+    } else {
+      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] mode=seed-only — skipping DB creation and schema push for ${slug}`)
     }
 
     // ── 3. Seed default data ───────────────────────────────────────────
