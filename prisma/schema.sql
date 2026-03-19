@@ -1,5 +1,3 @@
-[dotenv@17.2.3] injecting env (16) from .env.local -- tip: 🔄 add secrets lifecycle management: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  write to custom object with { processEnv: myObject }
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
@@ -76,7 +74,7 @@ CREATE TYPE "GiftCardStatus" AS ENUM ('active', 'depleted', 'expired', 'frozen')
 CREATE TYPE "HouseAccountStatus" AS ENUM ('pending', 'active', 'suspended', 'closed');
 
 -- CreateEnum
-CREATE TYPE "ReservationStatus" AS ENUM ('confirmed', 'seated', 'completed', 'cancelled', 'no_show');
+CREATE TYPE "ReservationStatus" AS ENUM ('pending', 'confirmed', 'checked_in', 'seated', 'completed', 'cancelled', 'no_show');
 
 -- CreateEnum
 CREATE TYPE "ScheduleStatus" AS ENUM ('draft', 'published', 'archived');
@@ -238,6 +236,12 @@ CREATE TYPE "BergPostProcessStatus" AS ENUM ('PENDING', 'DONE', 'FAILED');
 CREATE TYPE "FulfillmentType" AS ENUM ('SELF_FULFILL', 'KITCHEN_STATION', 'BAR_STATION', 'PREP_STATION', 'NO_ACTION');
 
 -- CreateEnum
+CREATE TYPE "OutageQueueStatus" AS ENUM ('PENDING', 'REPLAYED', 'CONFLICT', 'FAILED');
+
+-- CreateEnum
+CREATE TYPE "OutageOperation" AS ENUM ('INSERT', 'UPDATE', 'DELETE');
+
+-- CreateEnum
 CREATE TYPE "RegistrationTokenStatus" AS ENUM ('PENDING', 'USED', 'EXPIRED', 'REVOKED');
 
 -- CreateEnum
@@ -298,6 +302,9 @@ CREATE TABLE "Customer" (
     "lastVisit" TIMESTAMP(3),
     "marketingOptIn" BOOLEAN NOT NULL DEFAULT false,
     "birthday" TIMESTAMP(3),
+    "noShowCount" INTEGER NOT NULL DEFAULT 0,
+    "isBlacklisted" BOOLEAN NOT NULL DEFAULT false,
+    "blacklistOverrideUntil" DATE,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -647,6 +654,7 @@ CREATE TABLE "MenuItem" (
     "syncedAt" TIMESTAMP(3),
     "linkedBottleProductId" TEXT,
     "linkedPourSizeOz" DECIMAL(65,30),
+    "metadata" JSONB,
 
     CONSTRAINT "MenuItem_pkey" PRIMARY KEY ("id")
 );
@@ -663,16 +671,22 @@ CREATE TABLE "ModifierGroup" (
     "maxSelections" INTEGER NOT NULL DEFAULT 1,
     "isRequired" BOOLEAN NOT NULL DEFAULT false,
     "allowStacking" BOOLEAN NOT NULL DEFAULT false,
+    "stackDisplayMode" TEXT NOT NULL DEFAULT 'individual',
     "tieredPricingConfig" JSONB,
     "exclusionGroupKey" TEXT,
     "hasOnlineOverride" BOOLEAN NOT NULL DEFAULT false,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "showOnline" BOOLEAN NOT NULL DEFAULT true,
+    "allowOpenEntry" BOOLEAN NOT NULL DEFAULT false,
+    "allowNone" BOOLEAN NOT NULL DEFAULT false,
+    "nonePrintsToKitchen" BOOLEAN NOT NULL DEFAULT false,
+    "autoAdvance" BOOLEAN NOT NULL DEFAULT false,
     "isSpiritGroup" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "metadata" JSONB,
 
     CONSTRAINT "ModifierGroup_pkey" PRIMARY KEY ("id")
 );
@@ -714,10 +728,16 @@ CREATE TABLE "Modifier" (
     "isLabel" BOOLEAN NOT NULL DEFAULT false,
     "printerRouting" "ModifierPrinterRouting" NOT NULL DEFAULT 'follow',
     "printerIds" JSONB,
+    "swapEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "swapTargets" JSONB,
+    "customPreModifiers" JSONB,
+    "inventoryDeductionAmount" DECIMAL(65,30),
+    "inventoryDeductionUnit" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "metadata" JSONB,
 
     CONSTRAINT "Modifier_pkey" PRIMARY KEY ("id")
 );
@@ -844,6 +864,12 @@ CREATE TABLE "Table" (
     "defaultSectionId" TEXT,
     "isLocked" BOOLEAN NOT NULL DEFAULT false,
     "version" INTEGER NOT NULL DEFAULT 0,
+    "minCapacity" INTEGER NOT NULL DEFAULT 1,
+    "maxCapacity" INTEGER,
+    "isReservable" BOOLEAN NOT NULL DEFAULT true,
+    "combinableWithTableIds" JSONB NOT NULL DEFAULT '[]',
+    "turnTimeOverrideMinutes" INTEGER,
+    "priority" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -932,6 +958,7 @@ CREATE TABLE "OrderType" (
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "isSystem" BOOLEAN NOT NULL DEFAULT false,
+    "allowTips" BOOLEAN NOT NULL DEFAULT true,
     "requiredFields" JSONB,
     "optionalFields" JSONB,
     "fieldDefinitions" JSONB,
@@ -983,6 +1010,7 @@ CREATE TABLE "Order" (
     "taxTotal" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "taxFromInclusive" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "taxFromExclusive" DECIMAL(65,30) NOT NULL DEFAULT 0,
+    "inclusiveTaxRate" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "tipTotal" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "total" DECIMAL(65,30) NOT NULL DEFAULT 0,
     "primaryPaymentMethod" TEXT,
@@ -1025,6 +1053,7 @@ CREATE TABLE "Order" (
     "isTraining" BOOLEAN NOT NULL DEFAULT false,
     "lastMutatedBy" TEXT,
     "originTerminalId" TEXT,
+    "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -1060,6 +1089,9 @@ CREATE TABLE "OrderItem" (
     "kitchenSentAt" TIMESTAMP(3),
     "isCompleted" BOOLEAN NOT NULL DEFAULT false,
     "completedAt" TIMESTAMP(3),
+    "completedBy" TEXT,
+    "kdsForwardedToScreenId" TEXT,
+    "kdsFinalCompleted" BOOLEAN NOT NULL DEFAULT false,
     "resendCount" INTEGER NOT NULL DEFAULT 0,
     "lastResentAt" TIMESTAMP(3),
     "resendNote" TEXT,
@@ -1105,6 +1137,7 @@ CREATE TABLE "OrderItemModifier" (
     "price" DECIMAL(65,30) NOT NULL,
     "preModifier" TEXT,
     "depth" INTEGER NOT NULL DEFAULT 0,
+    "stackDisplayMode" TEXT NOT NULL DEFAULT 'individual',
     "quantity" INTEGER NOT NULL DEFAULT 1,
     "commissionAmount" DECIMAL(65,30),
     "linkedMenuItemId" TEXT,
@@ -1117,6 +1150,14 @@ CREATE TABLE "OrderItemModifier" (
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
     "lastMutatedBy" TEXT,
+    "isCustomEntry" BOOLEAN NOT NULL DEFAULT false,
+    "customEntryName" TEXT,
+    "customEntryPrice" DECIMAL(65,30),
+    "isNoneSelection" BOOLEAN NOT NULL DEFAULT false,
+    "swapTargetName" TEXT,
+    "swapTargetItemId" TEXT,
+    "swapPricingMode" TEXT,
+    "swapEffectivePrice" DECIMAL(65,30),
 
     CONSTRAINT "OrderItemModifier_pkey" PRIMARY KEY ("id")
 );
@@ -1285,6 +1326,29 @@ CREATE TABLE "Reservation" (
     "customerId" TEXT,
     "orderId" TEXT,
     "bottleServiceTierId" TEXT,
+    "occasion" TEXT,
+    "dietaryRestrictions" TEXT,
+    "source" TEXT DEFAULT 'staff',
+    "externalId" TEXT,
+    "sectionPreference" TEXT,
+    "confirmationSentAt" TIMESTAMP(3),
+    "reminder24hSentAt" TIMESTAMP(3),
+    "reminder2hSentAt" TIMESTAMP(3),
+    "thankYouSentAt" TIMESTAMP(3),
+    "confirmedAt" TIMESTAMP(3),
+    "checkedInAt" TIMESTAMP(3),
+    "manageToken" TEXT,
+    "tags" JSONB NOT NULL DEFAULT '[]',
+    "serviceDate" DATE,
+    "holdExpiresAt" TIMESTAMP(3),
+    "depositStatus" TEXT DEFAULT 'not_required',
+    "depositAmountCents" INTEGER,
+    "depositRulesSnapshot" JSONB,
+    "statusUpdatedAt" TIMESTAMP(3),
+    "sourceMetadata" JSONB,
+    "smsOptInSnapshot" BOOLEAN,
+    "depositRequired" BOOLEAN,
+    "depositAmount" DECIMAL(10,2),
     "createdBy" TEXT,
     "seatedAt" TIMESTAMP(3),
     "completedAt" TIMESTAMP(3),
@@ -2147,6 +2211,7 @@ CREATE TABLE "InventoryItem" (
     "reorderQty" DECIMAL(65,30),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "trackInventory" BOOLEAN NOT NULL DEFAULT true,
+    "version" INTEGER NOT NULL DEFAULT 0,
     "lastInvoiceCost" DECIMAL(10,4),
     "lastInvoiceDate" TIMESTAMP(3),
     "marginEdgeProductId" TEXT,
@@ -2995,6 +3060,10 @@ CREATE TABLE "KDSScreen" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "displayMode" TEXT NOT NULL DEFAULT 'tiled',
+    "transitionTimes" JSONB,
+    "orderBehavior" JSONB,
+    "orderTypeFilters" JSONB,
 
     CONSTRAINT "KDSScreen_pkey" PRIMARY KEY ("id")
 );
@@ -3012,6 +3081,24 @@ CREATE TABLE "KDSScreenStation" (
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "KDSScreenStation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "KDSScreenLink" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "sourceScreenId" TEXT NOT NULL,
+    "targetScreenId" TEXT NOT NULL,
+    "linkType" TEXT NOT NULL DEFAULT 'send_to_next',
+    "bumpAction" TEXT NOT NULL DEFAULT 'bump',
+    "resetStrikethroughsOnSend" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "KDSScreenLink_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -3094,11 +3181,14 @@ CREATE TABLE "Scale" (
     "locationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "scaleType" TEXT NOT NULL DEFAULT 'CAS_PD_II',
-    "portPath" TEXT NOT NULL,
+    "portPath" TEXT,
     "baudRate" INTEGER NOT NULL DEFAULT 9600,
     "dataBits" INTEGER NOT NULL DEFAULT 7,
     "parity" TEXT NOT NULL DEFAULT 'even',
     "stopBits" INTEGER NOT NULL DEFAULT 1,
+    "connectionType" TEXT NOT NULL DEFAULT 'serial',
+    "networkHost" TEXT,
+    "networkPort" INTEGER,
     "maxCapacity" DECIMAL(65,30),
     "weightUnit" TEXT NOT NULL DEFAULT 'lb',
     "precision" INTEGER NOT NULL DEFAULT 2,
@@ -4582,16 +4672,108 @@ CREATE TABLE "OutageQueueEntry" (
     "locationId" TEXT NOT NULL,
     "tableName" TEXT NOT NULL,
     "recordId" TEXT NOT NULL,
-    "operation" TEXT NOT NULL,
+    "operation" "OutageOperation" NOT NULL,
     "payload" JSONB NOT NULL,
     "localSeq" BIGINT NOT NULL,
     "idempotencyKey" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'pending',
+    "status" "OutageQueueStatus" NOT NULL DEFAULT 'PENDING',
+    "outageId" TEXT,
     "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "replayedAt" TIMESTAMP(3),
 
     CONSTRAINT "OutageQueueEntry_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ReservationBlock" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "reason" TEXT,
+    "blockDate" DATE NOT NULL,
+    "startTime" TEXT,
+    "endTime" TEXT,
+    "isAllDay" BOOLEAN NOT NULL DEFAULT false,
+    "reducedCapacityPercent" INTEGER,
+    "blockedTableIds" JSONB NOT NULL DEFAULT '[]',
+    "blockedSectionIds" JSONB NOT NULL DEFAULT '[]',
+    "createdBy" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ReservationBlock_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ReservationTable" (
+    "reservationId" TEXT NOT NULL,
+    "tableId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ReservationTable_pkey" PRIMARY KEY ("reservationId","tableId")
+);
+
+-- CreateTable
+CREATE TABLE "ReservationEvent" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "reservationId" TEXT,
+    "eventType" TEXT NOT NULL,
+    "actor" TEXT NOT NULL,
+    "actorId" TEXT,
+    "details" JSONB NOT NULL DEFAULT '{}',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ReservationEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ReservationIdempotencyKey" (
+    "key" TEXT NOT NULL,
+    "reservationId" TEXT NOT NULL,
+    "source" TEXT NOT NULL DEFAULT 'booking',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ReservationIdempotencyKey_pkey" PRIMARY KEY ("key")
+);
+
+-- CreateTable
+CREATE TABLE "ReservationDepositToken" (
+    "token" TEXT NOT NULL,
+    "reservationId" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "usedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ReservationDepositToken_pkey" PRIMARY KEY ("token")
+);
+
+-- CreateTable
+CREATE TABLE "ReservationDeposit" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "reservationId" TEXT NOT NULL,
+    "type" TEXT NOT NULL DEFAULT 'deposit',
+    "amount" DECIMAL(10,2) NOT NULL,
+    "paymentMethod" TEXT NOT NULL,
+    "cardLast4" TEXT,
+    "cardBrand" TEXT,
+    "datacapRecordNo" TEXT,
+    "datacapRefNumber" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'completed',
+    "refundedAmount" DECIMAL(10,2),
+    "refundedAt" TIMESTAMP(3),
+    "refundReason" TEXT,
+    "employeeId" TEXT,
+    "notes" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ReservationDeposit_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -4991,6 +5173,9 @@ CREATE INDEX "OrderItem_menuItemId_pricingOptionId_idx" ON "OrderItem"("menuItem
 CREATE INDEX "OrderItem_locationId_status_updatedAt_idx" ON "OrderItem"("locationId", "status", "updatedAt");
 
 -- CreateIndex
+CREATE INDEX "OrderItem_kdsForwardedToScreenId_kdsFinalCompleted_idx" ON "OrderItem"("kdsForwardedToScreenId", "kdsFinalCompleted");
+
+-- CreateIndex
 CREATE INDEX "OrderItemModifier_locationId_idx" ON "OrderItemModifier"("locationId");
 
 -- CreateIndex
@@ -5096,6 +5281,9 @@ CREATE INDEX "CouponRedemption_orderId_idx" ON "CouponRedemption"("orderId");
 CREATE INDEX "CouponRedemption_customerId_idx" ON "CouponRedemption"("customerId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Reservation_manageToken_key" ON "Reservation"("manageToken");
+
+-- CreateIndex
 CREATE INDEX "Reservation_reservationDate_idx" ON "Reservation"("reservationDate");
 
 -- CreateIndex
@@ -5112,6 +5300,18 @@ CREATE INDEX "Reservation_bottleServiceTierId_idx" ON "Reservation"("bottleServi
 
 -- CreateIndex
 CREATE INDEX "Reservation_locationId_reservationDate_status_idx" ON "Reservation"("locationId", "reservationDate", "status");
+
+-- CreateIndex
+CREATE INDEX "Reservation_source_idx" ON "Reservation"("source");
+
+-- CreateIndex
+CREATE INDEX "Reservation_locationId_serviceDate_idx" ON "Reservation"("locationId", "serviceDate");
+
+-- CreateIndex
+CREATE INDEX "Reservation_holdExpiresAt_idx" ON "Reservation"("holdExpiresAt");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Reservation_locationId_source_externalId_key" ON "Reservation"("locationId", "source", "externalId");
 
 -- CreateIndex
 CREATE INDEX "DiscountRule_locationId_idx" ON "DiscountRule"("locationId");
@@ -5984,6 +6184,18 @@ CREATE INDEX "KDSScreenStation_stationId_idx" ON "KDSScreenStation"("stationId")
 CREATE UNIQUE INDEX "KDSScreenStation_kdsScreenId_stationId_key" ON "KDSScreenStation"("kdsScreenId", "stationId");
 
 -- CreateIndex
+CREATE INDEX "KDSScreenLink_locationId_idx" ON "KDSScreenLink"("locationId");
+
+-- CreateIndex
+CREATE INDEX "KDSScreenLink_sourceScreenId_idx" ON "KDSScreenLink"("sourceScreenId");
+
+-- CreateIndex
+CREATE INDEX "KDSScreenLink_targetScreenId_idx" ON "KDSScreenLink"("targetScreenId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "KDSScreenLink_sourceScreenId_targetScreenId_linkType_key" ON "KDSScreenLink"("sourceScreenId", "targetScreenId", "linkType");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Terminal_deviceToken_key" ON "Terminal"("deviceToken");
 
 -- CreateIndex
@@ -6027,9 +6239,6 @@ CREATE INDEX "Scale_locationId_idx" ON "Scale"("locationId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Scale_locationId_name_key" ON "Scale"("locationId", "name");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Scale_locationId_portPath_key" ON "Scale"("locationId", "portPath");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PaymentReader_serialNumber_key" ON "PaymentReader"("serialNumber");
@@ -6750,6 +6959,36 @@ CREATE UNIQUE INDEX "OutageQueueEntry_idempotencyKey_key" ON "OutageQueueEntry"(
 
 -- CreateIndex
 CREATE INDEX "OutageQueueEntry_locationId_status_idx" ON "OutageQueueEntry"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "OutageQueueEntry_outageId_idx" ON "OutageQueueEntry"("outageId");
+
+-- CreateIndex
+CREATE INDEX "ReservationBlock_locationId_blockDate_idx" ON "ReservationBlock"("locationId", "blockDate");
+
+-- CreateIndex
+CREATE INDEX "ReservationEvent_reservationId_idx" ON "ReservationEvent"("reservationId");
+
+-- CreateIndex
+CREATE INDEX "ReservationEvent_locationId_createdAt_idx" ON "ReservationEvent"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "ReservationIdempotencyKey_reservationId_idx" ON "ReservationIdempotencyKey"("reservationId");
+
+-- CreateIndex
+CREATE INDEX "ReservationDepositToken_reservationId_idx" ON "ReservationDepositToken"("reservationId");
+
+-- CreateIndex
+CREATE INDEX "ReservationDepositToken_expiresAt_idx" ON "ReservationDepositToken"("expiresAt");
+
+-- CreateIndex
+CREATE INDEX "ReservationDeposit_locationId_idx" ON "ReservationDeposit"("locationId");
+
+-- CreateIndex
+CREATE INDEX "ReservationDeposit_reservationId_idx" ON "ReservationDeposit"("reservationId");
+
+-- CreateIndex
+CREATE INDEX "ReservationDeposit_locationId_createdAt_idx" ON "ReservationDeposit"("locationId", "createdAt");
 
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -7718,6 +7957,15 @@ ALTER TABLE "KDSScreenStation" ADD CONSTRAINT "KDSScreenStation_kdsScreenId_fkey
 ALTER TABLE "KDSScreenStation" ADD CONSTRAINT "KDSScreenStation_stationId_fkey" FOREIGN KEY ("stationId") REFERENCES "PrepStation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "KDSScreenLink" ADD CONSTRAINT "KDSScreenLink_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "KDSScreenLink" ADD CONSTRAINT "KDSScreenLink_sourceScreenId_fkey" FOREIGN KEY ("sourceScreenId") REFERENCES "KDSScreen"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "KDSScreenLink" ADD CONSTRAINT "KDSScreenLink_targetScreenId_fkey" FOREIGN KEY ("targetScreenId") REFERENCES "KDSScreen"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Terminal" ADD CONSTRAINT "Terminal_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -8181,4 +8429,28 @@ ALTER TABLE "BridgeCheckpoint" ADD CONSTRAINT "BridgeCheckpoint_locationId_fkey"
 
 -- AddForeignKey
 ALTER TABLE "OutageQueueEntry" ADD CONSTRAINT "OutageQueueEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationBlock" ADD CONSTRAINT "ReservationBlock_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationTable" ADD CONSTRAINT "ReservationTable_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationTable" ADD CONSTRAINT "ReservationTable_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationEvent" ADD CONSTRAINT "ReservationEvent_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationIdempotencyKey" ADD CONSTRAINT "ReservationIdempotencyKey_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationDepositToken" ADD CONSTRAINT "ReservationDepositToken_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationDeposit" ADD CONSTRAINT "ReservationDeposit_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ReservationDeposit" ADD CONSTRAINT "ReservationDeposit_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
