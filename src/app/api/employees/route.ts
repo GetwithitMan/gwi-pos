@@ -10,10 +10,13 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List employees for a location with pagination
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('STAFF_VIEW', async function GET(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const locationId = searchParams.get('locationId')
+    const locationId = searchParams.get('locationId') || ctx.auth.locationId
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
@@ -25,11 +28,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    // Auth check — require staff.view permission
-    const requestingEmployeeId = request.headers.get('x-employee-id') || searchParams.get('requestingEmployeeId')
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_VIEW)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const filterWhere = includeInactive ? {} : { isActive: true }
 
@@ -93,7 +91,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // POST - Create a new employee
 export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST(

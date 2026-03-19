@@ -2,6 +2,15 @@
 
 Bar/restaurant POS. Hybrid SaaS: local NUC servers + Neon cloud sync. Fewest-clicks philosophy.
 
+## Deployment Rule (MANDATORY)
+
+**NEVER run `git push` unless the user explicitly types "deploy" or "push".**
+- `git add` and `git commit` are fine at any time
+- `git push` triggers Vercel auto-deploy — this MUST be user-initiated
+- After committing, say "Committed. Ready to deploy when you say 'deploy'."
+- Do NOT push silently, do NOT push as part of a commit flow, do NOT assume deploy is wanted
+- This applies to ALL repos: gwi-pos, gwi-mission-control, gwi-android-register, gwi-pax-a6650
+
 ## Task Protocol
 
 ### Assess Every Turn
@@ -258,7 +267,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Entertainment | `docs/features/entertainment.md` | `docs/domains/ENTERTAINMENT-DOMAIN.md` | `src/app/(admin)/timed-rentals/` |
 | Liquor builder | `docs/features/liquor.md` | `docs/domains/LIQUOR-MANAGEMENT-DOMAIN.md` | `src/app/(admin)/liquor-builder/` |
 | Combos | `docs/features/combos.md` | — | `src/app/(admin)/combos/` |
-| Pizza builder | `docs/features/pizza-builder.md` | `docs/domains/PIZZA-BUILDER-DOMAIN.md` | `src/app/(admin)/pizza-builder/` |
+| Pizza builder | `docs/features/pizza-builder.md` | `docs/domains/PIZZA-BUILDER-DOMAIN.md` | `src/app/(admin)/pizza/` |
 | Tax rules | `docs/features/tax-rules.md` | — | `src/app/api/tax-rules/` |
 | Customers | `docs/features/customers.md` | `docs/domains/GUEST-DOMAIN.md` | `src/app/api/customers/` |
 | Offline sync | `docs/features/offline-sync.md` | `docs/domains/OFFLINE-SYNC-DOMAIN.md` | `src/lib/neon-client.ts`, `cloud-relay-client.ts` |
