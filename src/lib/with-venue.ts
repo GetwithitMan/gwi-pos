@@ -148,7 +148,10 @@ export function withVenue(handler: RouteHandler): RouteHandler {
 
       // No slug (main domain, local dev via `next dev`) — use master client
       const pathname = request.nextUrl.pathname
-      const isNucLocal = !process.env.NEON_DATABASE_URL  // NUC mode: single venue, no slug needed
+      // NUC mode: single venue, no slug needed. NUCs have NEON for sync but are still single-venue.
+      // Detect NUC by POS_LOCATION_ID or STATION_ROLE (set during installer registration).
+      // Only Vercel multi-tenant (no POS_LOCATION_ID, no STATION_ROLE) should enforce slug.
+      const isNucLocal = !!(process.env.POS_LOCATION_ID || process.env.STATION_ROLE || process.env.LOCATION_ID)
       const isAllowedSlugless = SLUGLESS_ALLOWED_PATTERNS.some(p => pathname.startsWith(p))
 
       if (!isNucLocal && !isAllowedSlugless && process.env.NODE_ENV === 'production') {
