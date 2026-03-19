@@ -14,10 +14,118 @@ const log = createChildLogger('tenant-validation')
 // by the current request's location.
 
 export const TENANT_SCOPED_MODELS = new Set([
-  'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'RecipeIngredient',
-  'SpiritUpsellEvent', 'BottleServiceTier', 'MenuItem', 'Category',
-  'Modifier', 'ModifierGroup', 'Order', 'OrderItem',
-  'InventoryItem', 'InventoryItemTransaction', 'Employee',
+  // Core menu & inventory
+  'MenuItem', 'Category', 'Modifier', 'ModifierGroup',
+  'ModifierGroupTemplate', 'ModifierTemplate', 'ModifierInventoryLink',
+  'InventoryItem', 'InventoryItemTransaction', 'InventoryCount',
+  'InventoryCountItem', 'InventoryItemStorage', 'InventorySettings', 'InventoryTransaction',
+  'ItemBarcode',
+
+  // Ingredients & recipes
+  'Ingredient', 'IngredientCategory', 'IngredientRecipe',
+  'IngredientStockAdjustment', 'IngredientSwapGroup',
+  'MenuItemIngredient', 'MenuItemRecipe', 'MenuItemRecipeIngredient',
+  'RecipeIngredient',
+
+  // Liquor / bottle service
+  'BottleProduct', 'BottleServiceTier',
+  'SpiritCategory', 'SpiritModifierGroup', 'SpiritUpsellEvent',
+
+  // Pizza builder
+  'PizzaCheese', 'PizzaConfig', 'PizzaCrust', 'PizzaSauce',
+  'PizzaSize', 'PizzaSpecialty', 'PizzaTopping',
+
+  // Combos
+  'ComboComponent', 'ComboComponentOption', 'ComboTemplate',
+
+  // Pricing options
+  'PricingOption', 'PricingOptionGroup', 'PricingOptionInventoryLink',
+
+  // Orders & line items
+  'Order', 'OrderItem', 'OrderItemModifier', 'OrderItemIngredient', 'OrderItemPizza',
+  'OrderDiscount', 'OrderItemDiscount', 'OrderCard',
+  'OrderEvent', 'OrderSnapshot', 'OrderItemSnapshot',
+  'OrderOwnership', 'OrderOwnershipEntry', 'OrderType',
+
+  // Payments & financials
+  'Payment', 'RefundLog', 'VoidLog', 'VoidReason',
+  'RemoteVoidApproval', 'WalkoutRetry',
+  'GiftCard', 'GiftCardTransaction',
+  'HouseAccount', 'HouseAccountTransaction',
+  'DigitalReceipt',
+
+  // Discounts & coupons
+  'DiscountRule', 'CompReason', 'Coupon', 'CouponRedemption',
+
+  // Employees & roles
+  'Employee', 'EmployeeRole', 'Role',
+
+  // Shifts & time clock
+  'Shift', 'ShiftSwapRequest', 'TimeClockEntry', 'Break',
+  'Schedule', 'ScheduledShift', 'SectionAssignment',
+
+  // Payroll
+  'PayrollPeriod', 'PayrollSettings', 'PayStub',
+
+  // Tips
+  'TipPool', 'TipOutRule', 'TipShare', 'TipLedger', 'TipLedgerEntry',
+  'TipAdjustment', 'TipDebt', 'TipTransaction',
+  'TipGroup', 'TipGroupMembership', 'TipGroupSegment', 'TipGroupTemplate',
+  'CashTipDeclaration',
+
+  // Floor plan & sections
+  'Section', 'Table', 'Seat', 'FloorPlanElement',
+
+  // Hardware & devices
+  'Printer', 'PrintJob', 'PrintRoute', 'PrintRule',
+  'Station', 'Terminal', 'Scale', 'PaymentReader', 'PaymentReaderLog',
+  'RegisteredDevice', 'ServerRegistrationToken',
+
+  // KDS
+  'KDSScreen', 'KDSScreenLink', 'KDSScreenStation',
+
+  // Kitchen prep
+  'PrepItem', 'PrepItemIngredient', 'PrepStation', 'PrepTrayConfig',
+  'CourseConfig',
+
+  // Daily prep counts
+  'DailyPrepCount', 'DailyPrepCountItem', 'DailyPrepCountTransaction',
+
+  // Entertainment & timed sessions
+  'EntertainmentWaitlist', 'TimedSession',
+  'Event', 'EventPricingTier', 'EventTableConfig', 'Ticket',
+
+  // Reservations
+  'Reservation', 'ReservationBlock', 'ReservationDeposit',
+
+  // Customers
+  'Customer', 'CardProfile', 'MobileSession',
+
+  // Cash & drawers
+  'Drawer', 'PaidInOut',
+
+  // Taxes
+  'TaxRule',
+
+  // Vendors & purchase orders
+  'Vendor', 'VendorOrder', 'VendorOrderLineItem',
+  'Invoice', 'InvoiceLineItem',
+  'StorageLocation', 'StockAlert',
+
+  // Settings & config
+  'CfdSettings',
+
+  // Chargebacks
+  'ChargebackCase',
+
+  // Audit & logging
+  'AuditLog', 'ErrorLog', 'HealthCheck',
+
+  // Cloud sync
+  'CloudEventQueue',
+
+  // Waste
+  'WasteLogEntry',
 ])
 
 // ── Models without soft-delete ───────────────────────────────────────────────
@@ -33,6 +141,8 @@ export const NO_SOFT_DELETE_MODELS = new Set([
   'PmsChargeAttempt', 'SevenShiftsDailySalesPush', 'WasteLog',
   'ReasonAccess',
   'OutageQueueEntry', 'FulfillmentEvent', 'BridgeCheckpoint',
+  // locationId but no deletedAt
+  'ReservationEvent', 'VenueLog',
 ])
 
 // ── Boot-time validation ─────────────────────────────────────────────────────

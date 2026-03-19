@@ -25,10 +25,10 @@ if (!globalForPrisma.venueClients) {
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_VENUE_CLIENTS = 50
+const MAX_VENUE_CLIENTS = parseInt(process.env.MAX_VENUE_CLIENTS || '', 10) || 50
 
-/** Idle venue clients are disconnected after 30 minutes of inactivity */
-const VENUE_CLIENT_TTL_MS = 30 * 60 * 1000
+/** Idle venue clients are disconnected after 30 minutes of inactivity (configurable via env) */
+const VENUE_CLIENT_TTL_MS = parseInt(process.env.VENUE_CLIENT_TTL_MS || '', 10) || 30 * 60 * 1000
 
 // ---------------------------------------------------------------------------
 // Periodic cleanup: disconnect idle venue clients every 5 minutes
