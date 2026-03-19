@@ -285,7 +285,8 @@ export function PizzaQuickBuilder({
       ? selectedSize.freeToppings
       : (data.config.freeToppingsEnabled ? data.config.freeToppingsCount : 0)
 
-    const sortedToppings = [...selectedToppings].sort((a, b) => b.basePrice - a.basePrice)
+    // Free toppings in ORDER PRESSED — first N added are free, not highest-priced
+    const sortedToppings = [...selectedToppings]
     let toppingsPrice = 0
     sortedToppings.forEach((topping, index) => {
       const isFree = data.config.freeToppingsEnabled && index < freeToppingsCount
