@@ -34,6 +34,25 @@ import { verifyTenantContext, type VerifyOptions } from './tenant-context-signer
 import { config } from './system-config'
 import { logger } from './logger'
 
+/**
+ * Routes explicitly allowed to run without a venue slug.
+ * These are public routes (online ordering, payment links), internal endpoints,
+ * and NUC-local routes where there's only one venue per server.
+ */
+const SLUGLESS_ALLOWED_PATTERNS = [
+  '/api/internal/',      // Internal provisioning/readiness endpoints
+  '/api/public/',        // Public-facing (online ordering, gift card balance)
+  '/api/auth/',          // Auth endpoints (login, session)
+  '/api/health',         // Health checks
+  '/api/session/',       // Session bootstrap
+  '/api/setup/',         // Initial setup
+  '/api/sync/',          // Sync endpoints (NUC-local)
+  '/api/order-events/',  // Order event batch (NUC-local)
+  '/api/fleet/',         // Fleet endpoints (NUC heartbeat)
+  '/pay/',               // Payment links
+  '/approve-void/',      // Void approval links
+]
+
 type RouteHandler = (request: any, context?: any) => Promise<Response> | Response
 
 export function withVenue(handler: RouteHandler): RouteHandler {
@@ -128,8 +147,17 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       }
 
       // No slug (main domain, local dev via `next dev`) — use master client
+      const pathname = request.nextUrl.pathname
+      const isNucLocal = !process.env.NEON_DATABASE_URL  // NUC mode: single venue, no slug needed
+      const isAllowedSlugless = SLUGLESS_ALLOWED_PATTERNS.some(p => pathname.startsWith(p))
+
+      if (!isNucLocal && !isAllowedSlugless && process.env.NODE_ENV === 'production') {
+        console.error(`[with-venue] BLOCKED: tenant-bound route ${pathname} hit without x-venue-slug in multi-tenant mode`)
+        return NextResponse.json({ error: 'Venue context required' }, { status: 400 })
+      }
+
       if (process.env.NEON_DATABASE_URL && process.env.NODE_ENV === 'production') {
-        console.warn(`[with-venue] Request to ${request.nextUrl.pathname} has no x-venue-slug — running in master DB context. This is expected for NUC but suspicious on Vercel.`)
+        console.warn(`[with-venue] Request to ${pathname} has no x-venue-slug — running in master DB context (allowed slugless route).`)
       }
       return requestStore.run(
         { slug: '', prisma: masterClient },

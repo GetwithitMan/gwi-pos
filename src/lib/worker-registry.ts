@@ -21,6 +21,10 @@ export interface WorkerEntry {
   start: () => void | Promise<void>
   stop: () => void | Promise<void>
   running: boolean
+  lastSuccessAt: Date | null
+  lastErrorAt: Date | null
+  errorCount: number
+  restartCount: number
 }
 
 const workers: WorkerEntry[] = []
@@ -41,6 +45,10 @@ export function registerWorker(
     start: startFn,
     stop: stopFn,
     running: false,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    errorCount: 0,
+    restartCount: 0,
   })
 }
 
@@ -94,12 +102,45 @@ export async function stopAllWorkers(): Promise<void> {
 }
 
 /**
+ * Report a successful work cycle for a worker.
+ */
+export function reportWorkerSuccess(name: string): void {
+  const worker = workers.find(w => w.name === name)
+  if (worker) {
+    worker.lastSuccessAt = new Date()
+  }
+}
+
+/**
+ * Report an error for a worker.
+ */
+export function reportWorkerError(name: string): void {
+  const worker = workers.find(w => w.name === name)
+  if (worker) {
+    worker.lastErrorAt = new Date()
+    worker.errorCount++
+  }
+}
+
+/**
  * Health summary for /healthz or monitoring endpoints.
  */
-export function getWorkerHealth(): Array<{ name: string; class: WorkerClass; running: boolean }> {
+export function getWorkerHealth(): Array<{
+  name: string
+  class: WorkerClass
+  running: boolean
+  lastSuccessAt: Date | null
+  lastErrorAt: Date | null
+  errorCount: number
+  restartCount: number
+}> {
   return workers.map(w => ({
     name: w.name,
     class: w.class,
     running: w.running,
+    lastSuccessAt: w.lastSuccessAt,
+    lastErrorAt: w.lastErrorAt,
+    errorCount: w.errorCount,
+    restartCount: w.restartCount,
   }))
 }
