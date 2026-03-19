@@ -205,16 +205,19 @@ export async function runBootstrap(): Promise<BootstrapResult> {
           await neonClient.$queryRawUnsafe('SELECT 1')
           result.neonReachable = true
 
-          // Read Neon schema state
+          // Backup/standby: read-only observation only — NEVER mutate Neon
+          if (config.stationRole === 'backup') {
+            log.info('Station is BACKUP — Neon observation only (no mutations)')
+            const neonState = await readSchemaState(neonClient)
+            result.neonSchemaReady = await buildReadiness(neonClient, neonState)
+            result.degradedReasons.push('backup-readonly-mode')
+            // Skip all mutation paths below
+          } else {
+          // Primary: full check + conditional repair
           const neonState = await readSchemaState(neonClient)
           const tableCount = await countTables(neonClient)
 
           if (!neonState && tableCount === 0) {
-            // Backup/standby must NEVER mutate Neon — read-only observation only
-            if (config.stationRole === 'backup') {
-              log.warn('Neon DB is empty but station is BACKUP — skipping auto-repair (read-only mode)')
-              result.neonSchemaReady = await buildReadiness(neonClient, null)
-            } else {
               // Primary: auto-repair via schema.sql
               log.info('Neon DB is empty — running auto-repair via canonical migration path')
               try {
@@ -268,7 +271,17 @@ export async function runBootstrap(): Promise<BootstrapResult> {
                 'Neon DB has been repaired 3+ times — marking as degraded')
               result.degradedReasons.push('repeated-schema-repair')
             }
+
+            // Schema ahead in production is fatal — prevents running old code against new schema
+            if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION && config.isProduction) {
+              log.fatal(
+                { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
+                'Neon schema ahead in production — aborting boot. Deploy a newer POS version.'
+              )
+              process.exit(1)
+            }
           }
+          } // close primary else block
         } finally {
           await neonClient.$disconnect()
         }
