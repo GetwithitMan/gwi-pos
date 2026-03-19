@@ -44,10 +44,11 @@ export async function processScreenLinks(
   const { orderId, itemIds, sourceScreenId, action, bumpedBy } = params
   const eventId = crypto.randomUUID()
 
-  // Query active links from source screen
+  // Query active links from source screen (locationId enforced for multi-tenancy)
   const links = await db.kDSScreenLink.findMany({
     where: {
       sourceScreenId,
+      locationId,
       isActive: true,
       deletedAt: null,
     },
@@ -258,6 +259,7 @@ export async function screenHasForwardTargets(
   const count = await db.kDSScreenLink.count({
     where: {
       sourceScreenId: screenId,
+      locationId,
       linkType: 'send_to_next',
       isActive: true,
       deletedAt: null,

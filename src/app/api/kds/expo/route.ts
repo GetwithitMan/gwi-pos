@@ -5,6 +5,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
+import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-links'
 
 /**
  * Expo KDS API - Returns all items from all stations for expeditor view
@@ -155,6 +156,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               kitchenStatus: item.kitchenStatus,
               isCompleted: item.isCompleted,
               completedAt: item.completedAt?.toISOString(),
+              completedBy: item.completedBy || null,
+              kdsForwardedToScreenId: item.kdsForwardedToScreenId || null,
+              kdsFinalCompleted: item.kdsFinalCompleted || false,
               specialNotes: item.specialNotes,
               categoryName: item.menuItem?.category?.name,
               prepStationId: stationId,
@@ -205,6 +209,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
     })
     const locationId = firstItem?.order?.locationId
+    const bumpedBy = body.employeeId || firstItem?.order?.employeeId || 'unknown'
+    const screenId = body.screenId as string | undefined
 
     if (action === 'serve' || status === 'served') {
       // Mark items as delivered/served
@@ -212,6 +218,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         kitchenStatus: 'delivered',
         isCompleted: true,
         completedAt: new Date(),
+        completedBy: bumpedBy,
       })
     } else if (action === 'update_status' && status) {
       // Update to specific status
@@ -242,7 +249,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
           kitchenStatus: 'delivered',
           isCompleted: true,
           completedAt: new Date(),
+          completedBy: bumpedBy,
         })
+      }
+
+      // KDS Overhaul: Process screen links for expo bumps
+      if (screenId && bumpOrderId && locationId) {
+        void processScreenLinks(locationId, {
+          orderId: bumpOrderId,
+          itemIds,
+          sourceScreenId: screenId,
+          action: 'bump_order',
+          bumpedBy,
+        }).catch(err => console.error('[Expo] Screen link processing failed:', err))
       }
     }
 
