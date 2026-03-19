@@ -11,7 +11,6 @@ import type { ReservationSettings, DepositRules } from '@/lib/settings'
 import { checkSlotAvailability, type OperatingHours } from './availability'
 import { evaluateDepositRequired } from './deposit-rules'
 import { calculateRefund } from './deposit-rules'
-import { parseTimeToMinutes } from './service-date'
 import { suggestTables } from './table-suggestion'
 
 // ─── Types ──────────────────────────────────────────────────────────────────

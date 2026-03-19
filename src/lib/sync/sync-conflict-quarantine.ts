@@ -15,7 +15,6 @@
 
 import { createChildLogger } from '@/lib/logger'
 import { masterClient } from '../db'
-import { parseBool } from '../env-parse'
 
 const log = createChildLogger('sync-quarantine')
 
