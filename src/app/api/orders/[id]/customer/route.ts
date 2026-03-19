@@ -21,8 +21,10 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { customerId } = body as { customerId: string | null }
 
-    // Resolve employeeId from body or session
-    const employeeId = (body as any).employeeId || (await getActorFromRequest(request)).employeeId
+    // Resolve employeeId from body, query param, or session
+    const employeeId = (body as any).employeeId
+      || request.nextUrl.searchParams.get('requestingEmployeeId')
+      || (await getActorFromRequest(request)).employeeId
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let postLocationId = getRequestLocationId()
@@ -152,8 +154,10 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    // Resolve employeeId from session
-    const { employeeId } = await getActorFromRequest(request)
+    // Resolve employeeId from query param or session
+    const requestingEmployeeId = request.nextUrl.searchParams.get('requestingEmployeeId')
+    const { employeeId: sessionEmployeeId } = await getActorFromRequest(request)
+    const employeeId = requestingEmployeeId || sessionEmployeeId
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let orderLocationId = getRequestLocationId()
