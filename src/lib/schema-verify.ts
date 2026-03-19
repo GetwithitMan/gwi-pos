@@ -79,8 +79,16 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
       }
     }
   } catch (err) {
-    log.error({ err: err instanceof Error ? err.message : err }, '[SchemaVerify] Failed to verify schema:')
-    return { passed: true, missing: [], checked: 0 } // Fail-open: don't block startup if check fails
+    log.error({ err: err instanceof Error ? err.message : err }, '[SchemaVerify] Failed to verify schema')
+    // In production, schema verification failure is a serious signal — do NOT silently pass.
+    // Return passed: false so callers can decide how to handle it.
+    // In dev, still fail-open to avoid blocking local development.
+    const isProduction = process.env.NODE_ENV === 'production'
+    if (isProduction) {
+      log.error('[SchemaVerify] Schema verification failed in production — returning NOT passed')
+      return { passed: false, missing: [{ table: '_VERIFICATION_ERROR' }], checked: 0 }
+    }
+    return { passed: true, missing: [], checked: 0 } // Dev: fail-open
   }
 
   const passed = missing.length === 0

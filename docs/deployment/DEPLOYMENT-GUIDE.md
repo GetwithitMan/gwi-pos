@@ -138,7 +138,7 @@ src/lib/db.ts provides:
   venueDbName(slug)     → Converts "joes-bar" → "gwi_pos_joes_bar"
 ```
 
-**Current state:** All API routes use `db` (master). Per-venue routing (`getDbForVenue`) is built but not yet wired to API routes (see T-068 in task board).
+**Current state:** All 413+ API routes flow through `withVenue()` which binds the correct `PrismaClient` via `requestStore`. On NUC (no slug header), requests use `masterClient` (the single local venue DB). On Vercel (multi-tenant), `x-venue-slug` header routes to the per-venue Neon DB via `getDbForVenue(slug)`. Per-venue routing is fully wired — T-068 is DONE.
 
 ---
 
@@ -493,7 +493,7 @@ npx prisma studio   # Same, for MC database
 
 | ID | Issue | Impact | Priority |
 |----|-------|--------|----------|
-| T-068 | Per-venue DB routing not wired | All API routes use master `db`, not `getDbForVenue(slug)` | Medium |
+| T-068 | ~~Per-venue DB routing not wired~~ | DONE — all routes use `withVenue()` + `requestStore` | ~~Medium~~ |
 | T-069 | 13 routes with hardcoded `DEFAULT_LOCATION_ID = 'loc-1'` | Will break for provisioned venues | High |
 | — | Socket.io on Vercel | Cloud admin has no realtime updates | Low (by design) |
 | — | `prisma db push --accept-data-loss` in build | Could drop columns on schema change | Medium |
