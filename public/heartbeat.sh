@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # GWI POS Heartbeat — sends system + sync status to Mission Control every 60s
 # Installed by installer.run as a cron job
+#
+# NOTE: There are two heartbeat paths:
+#   1. This shell script (legacy/external) — runs via cron, sends system metrics
+#   2. The Node update-agent inside the POS app — also hits /api/fleet/heartbeat, drives updates
+# Long-term plan: consolidate to a single Node heartbeat path. This shell script
+# will remain for initial registration and pre-boot metrics when the POS app isn't running.
 set -euo pipefail
 
 # Load env

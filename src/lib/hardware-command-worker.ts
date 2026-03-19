@@ -28,7 +28,8 @@ import { getDatacapClient } from './datacap/helpers'
 import type { PrinterSettings } from '@/types/print'
 
 const POLL_INTERVAL = 3000 // 3 seconds
-const CLEANUP_AGE = 5 * 60 * 1000 // 5 minutes
+// Retain completed hardware commands for debugging. Default 1 hour; configurable via env.
+const CLEANUP_AGE = parseInt(process.env.HW_COMMAND_RETAIN_MS || '', 10) || 60 * 60 * 1000
 
 export function startHardwareCommandWorker() {
   // Skip on Vercel — this worker only runs on the NUC

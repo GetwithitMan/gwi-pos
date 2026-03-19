@@ -569,6 +569,19 @@ enum FulfillmentType {
   NO_ACTION
 }
 
+enum OutageQueueStatus {
+  PENDING
+  REPLAYED
+  CONFLICT
+  FAILED
+}
+
+enum OutageOperation {
+  INSERT
+  UPDATE
+  DELETE
+}
+
 // ============================================
 // ORGANIZATION & LOCATIONS (Skill 53)
 // ============================================
@@ -8869,22 +8882,27 @@ model BridgeCheckpoint {
   @@unique([locationId, nodeId])
 }
 
+// outageId groups entries by connectivity window. Increment when connectivity
+// flips from "cloud reachable" to "unreachable" and back. This enables tooling
+// to reason about "one outage window" and batch-resolve conflicts per outage.
 model OutageQueueEntry {
-  id             String    @id @default(cuid())
+  id             String             @id @default(cuid())
   locationId     String
   tableName      String
   recordId       String
-  operation      String // INSERT, UPDATE, DELETE
+  operation      OutageOperation    // INSERT, UPDATE, DELETE
   payload        Json
-  localSeq       BigInt // monotonic local sequence
-  idempotencyKey String    @unique // {locationId}:{tableName}:{recordId}:{localSeq}
-  status         String    @default("pending") // pending, replayed, conflict, failed
+  localSeq       BigInt             // monotonic local sequence
+  idempotencyKey String             @unique // {locationId}:{tableName}:{recordId}:{localSeq}
+  status         OutageQueueStatus  @default(PENDING)
+  outageId       String?            // Groups entries by connectivity window (incremented on outage start)
   metadata       Json?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime           @default(now())
   replayedAt     DateTime?
-  location       Location  @relation(fields: [locationId], references: [id])
+  location       Location           @relation(fields: [locationId], references: [id])
 
   @@index([locationId, status])
+  @@index([outageId])
 }
 
 // ============================================
