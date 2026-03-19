@@ -399,8 +399,10 @@ export function PizzaQuickBuilder({
           {/* Size & Crust Row */}
           <div className="flex gap-4">
             {/* Size Selection */}
-            <div className="flex-1">
-              <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Size</h3>
+            <div className={`flex-1 ${specialty?.allowSizeChange === false ? 'opacity-50 pointer-events-none' : ''}`}>
+              <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">
+                Size {specialty?.allowSizeChange === false && <span className="text-red-400 normal-case font-normal">(locked)</span>}
+              </h3>
               <div className="flex gap-2">
                 {data.sizes.map(size => (
                   <button
@@ -422,8 +424,10 @@ export function PizzaQuickBuilder({
             </div>
 
             {/* Crust Selection */}
-            <div className="flex-1">
-              <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Crust</h3>
+            <div className={`flex-1 ${specialty?.allowCrustChange === false ? 'opacity-50 pointer-events-none' : ''}`}>
+              <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">
+                Crust {specialty?.allowCrustChange === false && <span className="text-red-400 normal-case font-normal">(locked)</span>}
+              </h3>
               <div className="flex gap-2 flex-wrap">
                 {data.crusts.map(crust => (
                   <button
@@ -448,7 +452,7 @@ export function PizzaQuickBuilder({
           </div>
 
           {/* Half & Half Toggle */}
-          <div className="flex items-center gap-4 py-2 border-y border-gray-200">
+          <div className={`flex items-center gap-4 py-2 border-y border-gray-200 ${specialty?.allowToppingMods === false ? 'opacity-50 pointer-events-none' : ''}`}>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -502,8 +506,10 @@ export function PizzaQuickBuilder({
           </div>
 
           {/* Toppings */}
-          <div className="flex-1 flex flex-col min-h-0">
-            <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Toppings</h3>
+          <div className={`flex-1 flex flex-col min-h-0 ${specialty?.allowToppingMods === false ? 'opacity-50 pointer-events-none' : ''}`}>
+            <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">
+              Toppings {specialty?.allowToppingMods === false && <span className="text-red-400 normal-case font-normal">(locked)</span>}
+            </h3>
 
             {/* Category Tabs */}
             <div className="flex gap-1 mb-3 overflow-x-auto pb-1">

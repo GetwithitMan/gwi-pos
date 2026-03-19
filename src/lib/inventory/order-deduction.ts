@@ -15,6 +15,7 @@ type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
 import { db, adminDb } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
+import { dispatchAlert } from '@/lib/alert-service'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
 import { getEffectiveCost, toNumber, getModifierMultiplier, isRemovalInstruction, explodePrepItem } from './helpers'
 import { convertUnits } from './unit-conversion'
@@ -251,7 +252,9 @@ export const ORDER_INVENTORY_INCLUDE = {
           toppingsData: true,
           sizeId: true,
           sauceId: true,
+          sauceAmount: true,
           cheeseId: true,
+          cheeseAmount: true,
           crustId: true,
         },
       },
@@ -689,6 +692,29 @@ export async function deductInventoryForOrder(
 
           addUsage(linkItem, linkQty)
           continue  // inventoryLink found — skip fallback
+        } else if (link && !linkItem) {
+          // inventoryLink record exists but the linked InventoryItem was deleted/missing
+          const modName = modRecord?.name || mod.modifierId || 'unknown'
+          const linkInvId = (link as any).inventoryItemId || 'unknown'
+          log.warn({
+            event: 'modifier_deduction_skipped',
+            reason: 'inventory_link_item_missing',
+            modifierName: modName,
+            expectedInventoryItemId: linkInvId,
+            orderId,
+            orderNumber: order.orderNumber,
+            orderItemId: orderItem.id,
+          }, `[DEDUCTION] Modifier "${modName}" has inventoryLink but linked InventoryItem is missing/deleted. Deduction skipped for order #${order.orderNumber}.`)
+
+          void dispatchAlert({
+            severity: 'MEDIUM',
+            errorType: 'BUSINESS_LOGIC',
+            category: 'inventory',
+            message: `Modifier "${modName}" could not deduct from inventory (deleted or missing). Order #${order.orderNumber}. Manual adjustment may be needed.`,
+            locationId: order.locationId,
+            orderId,
+            groupId: `inv-link-missing-${linkInvId}`,
+          }).catch(() => {})
         }
 
         // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
@@ -727,6 +753,31 @@ export async function deductInventoryForOrder(
               addUsage(exp.inventoryItem as InventoryItemWithStock, exp.quantity)
             }
           }
+        } else if (ingredient && !ingredient.inventoryItem && !ingredient.prepItem) {
+          // Ingredient record exists but its linked InventoryItem/PrepItem was deleted/missing
+          const modName = modRecord?.name || mod.modifierId || 'unknown'
+          const ingredientId = ingredient.id || 'unknown'
+          const expectedInvId = ingredient.inventoryItemId || 'unknown'
+          log.warn({
+            event: 'modifier_deduction_skipped',
+            reason: 'ingredient_item_missing',
+            modifierName: modName,
+            ingredientId,
+            expectedInventoryItemId: expectedInvId,
+            orderId,
+            orderNumber: order.orderNumber,
+            orderItemId: orderItem.id,
+          }, `[DEDUCTION] Modifier "${modName}" has ingredientId but linked InventoryItem is missing/deleted. Deduction skipped for order #${order.orderNumber}.`)
+
+          void dispatchAlert({
+            severity: 'MEDIUM',
+            errorType: 'BUSINESS_LOGIC',
+            category: 'inventory',
+            message: `Modifier "${modName}" could not deduct from ingredient (deleted or missing). Order #${order.orderNumber}. Manual adjustment may be needed.`,
+            locationId: order.locationId,
+            orderId,
+            groupId: `inv-ingredient-missing-${expectedInvId}`,
+          }).catch(() => {})
         }
       }
 
@@ -772,6 +823,18 @@ export async function deductInventoryForOrder(
             amount?: string
           }> = toppingsJson.toppings || []
 
+          // Fetch size multiplier once — shared by toppings, sauce, cheese, crust
+          let sizeInventoryMultiplier = 1.0
+          if (pizzaData.sizeId) {
+            const sizeRecord = await db.pizzaSize.findUnique({
+              where: { id: pizzaData.sizeId },
+              select: { inventoryMultiplier: true },
+            })
+            if (sizeRecord?.inventoryMultiplier) {
+              sizeInventoryMultiplier = toNumber(sizeRecord.inventoryMultiplier) || 1.0
+            }
+          }
+
           if (toppingEntries.length > 0) {
             // Fetch PizzaTopping records with inventory links
             const toppingIds = toppingEntries
@@ -803,18 +866,6 @@ export async function deductInventoryForOrder(
               })
 
               const toppingMap = new Map(pizzaToppings.map(t => [t.id, t]))
-
-              // Fetch size multiplier if available
-              let sizeInventoryMultiplier = 1.0
-              if (pizzaData.sizeId) {
-                const size = await db.pizzaSize.findUnique({
-                  where: { id: pizzaData.sizeId },
-                  select: { inventoryMultiplier: true },
-                })
-                if (size?.inventoryMultiplier) {
-                  sizeInventoryMultiplier = toNumber(size.inventoryMultiplier) || 1.0
-                }
-              }
 
               for (const entry of toppingEntries) {
                 if (!entry.toppingId) continue
@@ -856,11 +907,52 @@ export async function deductInventoryForOrder(
           }
 
           // Also deduct sauce/cheese/crust inventory if linked
-          // Sauce
-          if (pizzaData.sauceId) {
+          // Multi-sauce array from toppingsData (new format)
+          const sauceEntries: Array<{ sauceId?: string; sections?: number[]; amount?: string }> = toppingsJson.sauces || []
+          const cheeseEntries: Array<{ cheeseId?: string; sections?: number[]; amount?: string }> = toppingsJson.cheeses || []
+
+          // Sauce — multi-sauce array takes precedence over legacy single sauceId
+          if (sauceEntries.length > 0) {
+            const sauceIds = sauceEntries.map(s => s.sauceId).filter((id): id is string => !!id)
+            if (sauceIds.length > 0) {
+              const sauceRecords = await db.pizzaSauce.findMany({
+                where: { id: { in: sauceIds } },
+                select: {
+                  id: true, usageQuantity: true, usageUnit: true,
+                  inventoryItemId: true,
+                  inventoryItem: {
+                    select: {
+                      id: true, name: true, category: true, department: true,
+                      storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                    },
+                  },
+                },
+              })
+              const sauceMap = new Map(sauceRecords.map(s => [s.id, s]))
+              for (const entry of sauceEntries) {
+                if (!entry.sauceId) continue
+                const sauce = sauceMap.get(entry.sauceId)
+                if (!sauce?.inventoryItem) continue
+                const baseUsage = toNumber(sauce.usageQuantity) || 1.0
+                const amountMult = entry.amount === 'light' ? 0.5
+                  : entry.amount === 'extra' ? 2.0
+                  : entry.amount === 'none' ? 0 : 1.0
+                const sectionCount = entry.sections?.length || 24
+                const coverageFraction = sectionCount / 24.0
+                let finalUsage = baseUsage * amountMult * coverageFraction * sizeInventoryMultiplier * itemQty
+                if (sauce.usageUnit && sauce.inventoryItem.storageUnit) {
+                  const converted = convertUnits(finalUsage, sauce.usageUnit, sauce.inventoryItem.storageUnit)
+                  if (converted !== null) finalUsage = converted
+                }
+                if (finalUsage > 0) addUsage(sauce.inventoryItem, finalUsage)
+              }
+            }
+          } else if (pizzaData.sauceId) {
+            // Legacy single-sauce format
             const sauce = await db.pizzaSauce.findUnique({
               where: { id: pizzaData.sauceId },
               select: {
+                usageQuantity: true, usageUnit: true,
                 inventoryItemId: true,
                 inventoryItem: {
                   select: {
@@ -871,16 +963,63 @@ export async function deductInventoryForOrder(
               },
             })
             if (sauce?.inventoryItem) {
-              // Sauce covers whole pizza, 1x multiplier, scaled by size
-              addUsage(sauce.inventoryItem, 1.0 * itemQty)
+              const baseUsage = toNumber(sauce.usageQuantity) || 1.0
+              const sauceAmountMultiplier =
+                pizzaData.sauceAmount === 'light' ? 0.5 :
+                pizzaData.sauceAmount === 'extra' ? 2.0 :
+                pizzaData.sauceAmount === 'none' ? 0 :
+                1.0 // regular
+              let finalUsage = baseUsage * sauceAmountMultiplier * sizeInventoryMultiplier * itemQty
+              if (sauce.usageUnit && sauce.inventoryItem.storageUnit) {
+                const converted = convertUnits(finalUsage, sauce.usageUnit, sauce.inventoryItem.storageUnit)
+                if (converted !== null) finalUsage = converted
+              }
+              if (finalUsage > 0) addUsage(sauce.inventoryItem, finalUsage)
             }
           }
 
-          // Cheese
-          if (pizzaData.cheeseId) {
+          // Cheese — multi-cheese array takes precedence over legacy single cheeseId
+          if (cheeseEntries.length > 0) {
+            const cheeseIds = cheeseEntries.map(c => c.cheeseId).filter((id): id is string => !!id)
+            if (cheeseIds.length > 0) {
+              const cheeseRecords = await db.pizzaCheese.findMany({
+                where: { id: { in: cheeseIds } },
+                select: {
+                  id: true, usageQuantity: true, usageUnit: true,
+                  inventoryItemId: true,
+                  inventoryItem: {
+                    select: {
+                      id: true, name: true, category: true, department: true,
+                      storageUnit: true, costPerUnit: true, yieldCostPerUnit: true, currentStock: true,
+                    },
+                  },
+                },
+              })
+              const cheeseMap = new Map(cheeseRecords.map(c => [c.id, c]))
+              for (const entry of cheeseEntries) {
+                if (!entry.cheeseId) continue
+                const cheese = cheeseMap.get(entry.cheeseId)
+                if (!cheese?.inventoryItem) continue
+                const baseUsage = toNumber(cheese.usageQuantity) || 1.0
+                const amountMult = entry.amount === 'light' ? 0.5
+                  : entry.amount === 'extra' ? 2.0
+                  : entry.amount === 'none' ? 0 : 1.0
+                const sectionCount = entry.sections?.length || 24
+                const coverageFraction = sectionCount / 24.0
+                let finalUsage = baseUsage * amountMult * coverageFraction * sizeInventoryMultiplier * itemQty
+                if (cheese.usageUnit && cheese.inventoryItem.storageUnit) {
+                  const converted = convertUnits(finalUsage, cheese.usageUnit, cheese.inventoryItem.storageUnit)
+                  if (converted !== null) finalUsage = converted
+                }
+                if (finalUsage > 0) addUsage(cheese.inventoryItem, finalUsage)
+              }
+            }
+          } else if (pizzaData.cheeseId) {
+            // Legacy single-cheese format
             const cheese = await db.pizzaCheese.findUnique({
               where: { id: pizzaData.cheeseId },
               select: {
+                usageQuantity: true, usageUnit: true,
                 inventoryItemId: true,
                 inventoryItem: {
                   select: {
@@ -891,7 +1030,18 @@ export async function deductInventoryForOrder(
               },
             })
             if (cheese?.inventoryItem) {
-              addUsage(cheese.inventoryItem, 1.0 * itemQty)
+              const baseUsage = toNumber(cheese.usageQuantity) || 1.0
+              const cheeseAmountMultiplier =
+                pizzaData.cheeseAmount === 'light' ? 0.5 :
+                pizzaData.cheeseAmount === 'extra' ? 2.0 :
+                pizzaData.cheeseAmount === 'none' ? 0 :
+                1.0 // regular
+              let finalUsage = baseUsage * cheeseAmountMultiplier * sizeInventoryMultiplier * itemQty
+              if (cheese.usageUnit && cheese.inventoryItem.storageUnit) {
+                const converted = convertUnits(finalUsage, cheese.usageUnit, cheese.inventoryItem.storageUnit)
+                if (converted !== null) finalUsage = converted
+              }
+              if (finalUsage > 0) addUsage(cheese.inventoryItem, finalUsage)
             }
           }
 
@@ -900,6 +1050,7 @@ export async function deductInventoryForOrder(
             const crust = await db.pizzaCrust.findUnique({
               where: { id: pizzaData.crustId },
               select: {
+                usageQuantity: true, usageUnit: true,
                 inventoryItemId: true,
                 inventoryItem: {
                   select: {
@@ -910,7 +1061,13 @@ export async function deductInventoryForOrder(
               },
             })
             if (crust?.inventoryItem) {
-              addUsage(crust.inventoryItem, 1.0 * itemQty)
+              const baseUsage = toNumber(crust.usageQuantity) || 1.0
+              let finalUsage = baseUsage * sizeInventoryMultiplier * itemQty
+              if (crust.usageUnit && crust.inventoryItem.storageUnit) {
+                const converted = convertUnits(finalUsage, crust.usageUnit, crust.inventoryItem.storageUnit)
+                if (converted !== null) finalUsage = converted
+              }
+              addUsage(crust.inventoryItem, finalUsage)
             }
           }
         } catch (err) {

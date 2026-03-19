@@ -14,6 +14,7 @@ import {
   PizzaSauce,
   PizzaCheese,
   PizzaTopping,
+  PizzaSpecialty,
   TOPPING_CATEGORIES,
 } from './types'
 
@@ -698,6 +699,127 @@ export function ToppingsTab({ toppings, onAdd, onEdit, onDelete }: ToppingsTabPr
                         </div>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// Specialties Tab
+export interface SpecialtiesTabProps {
+  specialties: PizzaSpecialty[]
+  onAdd: () => void
+  onEdit: (specialty: PizzaSpecialty) => void
+  onDelete: (id: string) => void
+}
+
+export function SpecialtiesTab({ specialties, onAdd, onEdit, onDelete }: SpecialtiesTabProps) {
+  const modFlags = [
+    { key: 'allowSizeChange', label: 'Size', icon: '📐' },
+    { key: 'allowCrustChange', label: 'Crust', icon: '🍞' },
+    { key: 'allowSauceChange', label: 'Sauce', icon: '🥫' },
+    { key: 'allowCheeseChange', label: 'Cheese', icon: '🧀' },
+    { key: 'allowToppingMods', label: 'Toppings', icon: '🍕' },
+  ] as const
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Specialty Pizzas ({specialties.length})</CardTitle>
+        <Button onClick={onAdd}>+ Create Specialty</Button>
+      </CardHeader>
+      <CardContent>
+        {specialties.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-4xl mb-3">🍕</div>
+            <p className="text-gray-900 mb-1">No specialty pizzas configured.</p>
+            <p className="text-sm text-gray-500">Create pre-configured pizzas like Margherita, Pepperoni, or Supreme.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {specialties.map(specialty => {
+              const toppingCount = specialty.toppings?.length || 0
+              return (
+                <div
+                  key={specialty.id}
+                  className="p-4 bg-white rounded-lg border hover:shadow-md transition-shadow"
+                >
+                  {/* Header: Name + Price */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="text-lg font-bold text-gray-900">
+                        {specialty.menuItem.name}
+                      </div>
+                      <div className="text-sm font-medium text-green-600">
+                        {formatCurrency(specialty.menuItem.price)}
+                      </div>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => onEdit(specialty)}>Edit</Button>
+                      <Button variant="ghost" size="sm" className="text-red-500" onClick={() => onDelete(specialty.id)}>Delete</Button>
+                    </div>
+                  </div>
+
+                  {/* Defaults: Crust / Sauce / Cheese as pills */}
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {specialty.defaultCrust && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                        🍞 {specialty.defaultCrust.name}
+                      </span>
+                    )}
+                    {specialty.defaultSauce && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-xs text-red-800">
+                        🥫 {specialty.defaultSauce.name}
+                        {specialty.sauceAmount !== 'regular' && (
+                          <span className="text-red-500 font-medium capitalize">({specialty.sauceAmount})</span>
+                        )}
+                      </span>
+                    )}
+                    {specialty.defaultCheese && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-50 border border-yellow-200 text-xs text-yellow-800">
+                        🧀 {specialty.defaultCheese.name}
+                        {specialty.cheeseAmount !== 'regular' && (
+                          <span className="text-yellow-600 font-medium capitalize">({specialty.cheeseAmount})</span>
+                        )}
+                      </span>
+                    )}
+                    {toppingCount > 0 && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-xs text-orange-800">
+                        🍕 {toppingCount} topping{toppingCount !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Topping names */}
+                  {toppingCount > 0 && (
+                    <div className="text-xs text-gray-600 mb-3">
+                      {specialty.toppings.map(t => t.name).join(', ')}
+                    </div>
+                  )}
+
+                  {/* Modification flags */}
+                  <div className="flex gap-1.5 flex-wrap">
+                    {modFlags.map(flag => {
+                      const allowed = specialty[flag.key]
+                      return (
+                        <span
+                          key={flag.key}
+                          className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs font-medium ${
+                            allowed
+                              ? 'bg-green-50 text-green-700 border border-green-200'
+                              : 'bg-gray-50 text-gray-400 border border-gray-200 line-through'
+                          }`}
+                          title={`${flag.label}: ${allowed ? 'Customer can modify' : 'Locked'}`}
+                        >
+                          {flag.icon} {flag.label}
+                        </span>
+                      )
+                    })}
                   </div>
                 </div>
               )

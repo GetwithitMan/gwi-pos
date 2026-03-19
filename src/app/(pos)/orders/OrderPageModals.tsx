@@ -12,7 +12,7 @@ import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useEntertainmentUiStore } from '@/stores/entertainment-ui-store'
 import { useOrderStore } from '@/stores/order-store'
-import type { OrderItem, MenuItem, PizzaOrderConfig, SelectedModifier } from '@/types'
+import type { OrderItem, MenuItem, PizzaOrderConfig, PizzaSpecialty, SelectedModifier } from '@/types'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import type { ComboTemplate } from '@/hooks/useComboBuilder'
 
@@ -91,6 +91,8 @@ export interface OrderPageModalsProps {
   setShowPizzaModal: (v: boolean) => void
   selectedPizzaItem: MenuItem | null
   setSelectedPizzaItem: (v: MenuItem | null) => void
+  selectedPizzaSpecialty: PizzaSpecialty | null
+  setSelectedPizzaSpecialty: (v: PizzaSpecialty | null) => void
   editingPizzaItem: { id: string; pizzaConfig?: PizzaOrderConfig } | null
   setEditingPizzaItem: (v: { id: string; pizzaConfig?: PizzaOrderConfig } | null) => void
   inlinePizzaCallbackRef: React.MutableRefObject<((config: PizzaOrderConfig) => void) | null>
@@ -312,6 +314,8 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     setShowPizzaModal,
     selectedPizzaItem,
     setSelectedPizzaItem,
+    selectedPizzaSpecialty,
+    setSelectedPizzaSpecialty,
     editingPizzaItem,
     setEditingPizzaItem,
     inlinePizzaCallbackRef,
@@ -508,11 +512,13 @@ export function OrderPageModals(props: OrderPageModalsProps) {
         <Suspense fallback={null}>
           <PizzaBuilderModal
             item={selectedPizzaItem}
+            specialty={selectedPizzaSpecialty}
             editingItem={editingPizzaItem}
             onConfirm={onAddPizzaToOrder}
             onCancel={() => {
               setShowPizzaModal(false)
               setSelectedPizzaItem(null)
+              setSelectedPizzaSpecialty(null)
               setEditingPizzaItem(null)
               inlinePizzaCallbackRef.current = null
             }}

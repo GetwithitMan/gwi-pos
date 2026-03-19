@@ -115,6 +115,45 @@ export interface PizzaTopping {
   usageUnit: string | null
 }
 
+export interface SpecialtyToppingEntry {
+  toppingId: string
+  name: string
+  sections: number[]
+  amount: string // "regular" | "extra"
+}
+
+export interface PizzaSpecialty {
+  id: string
+  locationId: string
+  menuItemId: string
+  menuItem: {
+    id: string
+    name: string
+    price: number
+  }
+  defaultCrustId: string | null
+  defaultCrust: PizzaCrust | null
+  defaultSauceId: string | null
+  defaultSauce: PizzaSauce | null
+  defaultCheeseId: string | null
+  defaultCheese: PizzaCheese | null
+  sauceAmount: string
+  cheeseAmount: string
+  toppings: SpecialtyToppingEntry[]
+  allowSizeChange: boolean
+  allowCrustChange: boolean
+  allowSauceChange: boolean
+  allowCheeseChange: boolean
+  allowToppingMods: boolean
+}
+
+export interface PizzaMenuItem {
+  id: string
+  name: string
+  price: number
+  categoryName?: string
+}
+
 export const TOPPING_CATEGORIES = [
   { value: 'meat', label: 'Meats', color: '#ef4444' },
   { value: 'veggie', label: 'Vegetables', color: '#22c55e' },
@@ -124,3 +163,11 @@ export const TOPPING_CATEGORIES = [
   { value: 'seafood', label: 'Seafood', color: '#3b82f6' },
   { value: 'standard', label: 'Standard', color: '#6b7280' },
 ]
+
+export const AMOUNT_OPTIONS = [
+  { value: 'light', label: 'Light' },
+  { value: 'regular', label: 'Regular' },
+  { value: 'extra', label: 'Extra' },
+]
+
+export const ALL_SECTIONS = Array.from({ length: 24 }, (_, i) => i)

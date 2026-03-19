@@ -99,6 +99,27 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ data: { message: 'No items to print' } })
     }
 
+    // Pre-fetch PizzaSpecialty names for pizza items (keyed by menuItemId)
+    const pizzaMenuItemIds = itemsToPrint
+      .filter(item => item.pizzaData && item.menuItem?.id)
+      .map(item => item.menuItem!.id)
+    const specialtyMap = new Map<string, string>()
+    if (pizzaMenuItemIds.length > 0) {
+      const specialties = await db.pizzaSpecialty.findMany({
+        where: { menuItemId: { in: pizzaMenuItemIds } },
+        select: { menuItemId: true, menuItem: { select: { name: true } } },
+      })
+      for (const s of specialties) {
+        specialtyMap.set(s.menuItemId, s.menuItem.name)
+      }
+    }
+
+    // Attach specialtyName to pizza items for ticket rendering
+    const enrichedItems = itemsToPrint.map(item => ({
+      ...item,
+      _specialtyName: (item.menuItem?.id && specialtyMap.get(item.menuItem.id)) || null,
+    }))
+
     // Get all printers for the location
     const allPrinters = await db.printer.findMany({
       where: {
@@ -128,10 +149,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Group items by printer
     // Also track which PrintRoute corresponds to each printer group for failover
-    const itemsByPrinter: Map<string, typeof itemsToPrint> = new Map()
+    const itemsByPrinter: Map<string, typeof enrichedItems> = new Map()
     const routeForPrinterMap: Map<string, typeof printRoutes[0]> = new Map()
 
-    for (const item of itemsToPrint) {
+    for (const item of enrichedItems) {
       // Check if this is a pizza item
       if (item.pizzaData && pizzaPrinterIds.length > 0) {
         // Pizza items go to all configured pizza printers
@@ -232,7 +253,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           ...item,
           modifiers: [mod],
           _modifierOnlyFor: item.name,
-        } as typeof itemsToPrint[0] & { _modifierOnlyFor: string }
+        } as typeof enrichedItems[0] & { _modifierOnlyFor: string }
 
         for (const modPrinterId of modPrinterIds) {
           const existing = itemsByPrinter.get(modPrinterId) || []
@@ -460,6 +481,7 @@ function buildKitchenTicket(
       cheese: { name: string } | null
     } | null
     _modifierOnlyFor?: string
+    _specialtyName?: string | null
     pricingOptionLabel?: string | null
   }>,
   width: number,
@@ -647,6 +669,15 @@ function buildKitchenTicket(
     }
     if (allCapsItems) itemName = itemName.toUpperCase()
     content.push(importantLine(itemName, itemNameSize, useRedItemNames, boldItems))
+
+    // Pizza specialty label (e.g., "*** MEAT LOVERS ***")
+    if (item._specialtyName && item.pizzaData) {
+      content.push(TALL)
+      content.push(ESCPOS.BOLD_ON)
+      content.push(line(`*** ${item._specialtyName.toUpperCase()} ***`))
+      content.push(ESCPOS.BOLD_OFF)
+      content.push(NORMAL)
+    }
 
     // Pricing option label-only line (e.g., "** HOT **" for label-only pricing options)
     if (item.pricingOptionLabel && !item.name.includes(`(${item.pricingOptionLabel})`)) {

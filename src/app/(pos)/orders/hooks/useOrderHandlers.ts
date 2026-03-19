@@ -65,6 +65,7 @@ interface UseOrderHandlersOptions {
   setEditingOrderItem: (v: any) => void
   setShowPizzaModal: (v: boolean) => void
   setSelectedPizzaItem: (v: MenuItem | null) => void
+  setSelectedPizzaSpecialty: (v: any) => void
   setEditingPizzaItem: (v: any) => void
   setShowComboModal: (v: boolean) => void
   setSelectedComboItem: (v: MenuItem | null) => void
@@ -196,6 +197,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     setEditingOrderItem,
     setShowPizzaModal,
     setSelectedPizzaItem,
+    setSelectedPizzaSpecialty,
     setEditingPizzaItem,
     setShowComboModal,
     setSelectedComboItem,
@@ -945,7 +947,19 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     }
 
     if (selectedCategoryData?.categoryType === 'pizza') {
+      // Check if this pizza item has a specialty template
+      let specialty = null
+      try {
+        const res = await fetch(`/api/pizza/specialties?menuItemId=${item.id}`)
+        if (res.ok) {
+          const data = await res.json()
+          const specialties = Array.isArray(data) ? data : (data.data?.specialties || data.data || [])
+          specialty = Array.isArray(specialties) ? specialties.find((s: any) => s.menuItemId === item.id) : null
+        }
+      } catch (e) { /* specialty fetch failed — proceed without it */ }
+
       setSelectedPizzaItem(item)
+      setSelectedPizzaSpecialty(specialty)
       setShowPizzaModal(true)
       return
     }

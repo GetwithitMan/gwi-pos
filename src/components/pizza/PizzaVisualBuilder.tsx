@@ -743,8 +743,10 @@ export function PizzaVisualBuilder({
           {/* LEFT: Size, Crust, Sauce, Cheese */}
           <div className="w-48 flex flex-col gap-2 shrink-0">
             {/* Size */}
-            <div className="bg-gray-50 rounded-lg p-2">
-              <h3 className="text-xs font-bold text-gray-600 mb-1">SIZE</h3>
+            <div className={`bg-gray-50 rounded-lg p-2 ${specialty?.allowSizeChange === false ? 'opacity-50 pointer-events-none' : ''}`}>
+              <h3 className="text-xs font-bold text-gray-600 mb-1">
+                SIZE {specialty?.allowSizeChange === false && <span className="text-red-400 normal-case font-normal text-[10px]">(locked)</span>}
+              </h3>
               <div className="space-y-1">
                 {data.sizes.map(size => (
                   <button
@@ -764,8 +766,10 @@ export function PizzaVisualBuilder({
             </div>
 
             {/* Crust */}
-            <div className="bg-gray-50 rounded-lg p-2">
-              <h3 className="text-xs font-bold text-gray-600 mb-1">CRUST</h3>
+            <div className={`bg-gray-50 rounded-lg p-2 ${specialty?.allowCrustChange === false ? 'opacity-50 pointer-events-none' : ''}`}>
+              <h3 className="text-xs font-bold text-gray-600 mb-1">
+                CRUST {specialty?.allowCrustChange === false && <span className="text-red-400 normal-case font-normal text-[10px]">(locked)</span>}
+              </h3>
               <div className="space-y-1">
                 {data.crusts.map(crust => (
                   <button
@@ -785,8 +789,10 @@ export function PizzaVisualBuilder({
             </div>
 
             {/* Sauce - now with sectional support */}
-            <div className="bg-gray-50 rounded-lg p-2">
-              <h3 className="text-xs font-bold text-gray-600 mb-1">SAUCE</h3>
+            <div className={`bg-gray-50 rounded-lg p-2 ${specialty?.allowSauceChange === false ? 'opacity-50 pointer-events-none' : ''}`}>
+              <h3 className="text-xs font-bold text-gray-600 mb-1">
+                SAUCE {specialty?.allowSauceChange === false && <span className="text-red-400 normal-case font-normal text-[10px]">(locked)</span>}
+              </h3>
               <div className="space-y-1">
                 {data.sauces.map(sauce => {
                   const selected = selectedSauces.find(s => s.sauceId === sauce.id)
@@ -813,8 +819,10 @@ export function PizzaVisualBuilder({
             </div>
 
             {/* Cheese - now with sectional support */}
-            <div className="bg-gray-50 rounded-lg p-2">
-              <h3 className="text-xs font-bold text-gray-600 mb-1">CHEESE</h3>
+            <div className={`bg-gray-50 rounded-lg p-2 ${specialty?.allowCheeseChange === false ? 'opacity-50 pointer-events-none' : ''}`}>
+              <h3 className="text-xs font-bold text-gray-600 mb-1">
+                CHEESE {specialty?.allowCheeseChange === false && <span className="text-red-400 normal-case font-normal text-[10px]">(locked)</span>}
+              </h3>
               <div className="space-y-1">
                 {data.cheeses.map(cheese => {
                   const selected = selectedCheeses.find(c => c.cheeseId === cheese.id)
@@ -1063,8 +1071,10 @@ export function PizzaVisualBuilder({
           </div>
 
           {/* RIGHT: Toppings Grid - Compact */}
-          <div className="w-64 flex flex-col shrink-0">
-            <h3 className="text-xs font-bold text-gray-600 mb-1">TOPPINGS</h3>
+          <div className={`w-64 flex flex-col shrink-0 ${specialty?.allowToppingMods === false ? 'opacity-50 pointer-events-none' : ''}`}>
+            <h3 className="text-xs font-bold text-gray-600 mb-1">
+              TOPPINGS {specialty?.allowToppingMods === false && <span className="text-red-400 normal-case font-normal text-[10px]">(locked)</span>}
+            </h3>
             <div className="flex-1 overflow-y-auto space-y-2">
               {data.toppingCategories.map(cat => (
                 <div key={cat}>

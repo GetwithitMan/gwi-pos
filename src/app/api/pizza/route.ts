@@ -43,25 +43,25 @@ export const GET = withVenue(async function GET() {
       db.pizzaCrust.findMany({
         where: { locationId, isActive: true },
         orderBy: { sortOrder: 'asc' },
-        include: { inventoryItem: { select: { id: true, name: true } } },
+        include: { inventoryItem: { select: { id: true, name: true, currentStock: true, isActive: true, trackInventory: true } } },
       }),
       // Sauces
       db.pizzaSauce.findMany({
         where: { locationId, isActive: true },
         orderBy: { sortOrder: 'asc' },
-        include: { inventoryItem: { select: { id: true, name: true } } },
+        include: { inventoryItem: { select: { id: true, name: true, currentStock: true, isActive: true, trackInventory: true } } },
       }),
       // Cheeses
       db.pizzaCheese.findMany({
         where: { locationId, isActive: true },
         orderBy: { sortOrder: 'asc' },
-        include: { inventoryItem: { select: { id: true, name: true } } },
+        include: { inventoryItem: { select: { id: true, name: true, currentStock: true, isActive: true, trackInventory: true } } },
       }),
-      // Toppings (include inventory item name for admin display)
+      // Toppings (include inventory item for admin display + stock gating)
       db.pizzaTopping.findMany({
         where: { locationId, isActive: true },
         orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }],
-        include: { inventoryItem: { select: { id: true, name: true } } },
+        include: { inventoryItem: { select: { id: true, name: true, currentStock: true, isActive: true, trackInventory: true } } },
       }),
       // Printers (for admin UI)
       db.printer.findMany({
@@ -70,6 +70,14 @@ export const GET = withVenue(async function GET() {
         select: { id: true, name: true, printerRole: true }
       }),
     ])
+
+    // Helper: check if a pizza component is available based on linked inventory
+    const checkAvailable = (item: { inventoryItem?: { isActive: boolean; trackInventory: boolean; currentStock: unknown } | null }): boolean => {
+      if (!item.inventoryItem) return true // No inventory link = always available
+      if (!item.inventoryItem.isActive) return false // Deactivated inventory item
+      if (!item.inventoryItem.trackInventory) return true // Not tracking stock = always available
+      return Number(item.inventoryItem.currentStock) > 0
+    }
 
     // Group toppings by category
     const toppingsByCategory: Record<string, typeof toppings> = {}
@@ -111,6 +119,7 @@ export const GET = withVenue(async function GET() {
         usageQuantity: c.usageQuantity ? Number(c.usageQuantity) : null,
         usageUnit: c.usageUnit || null,
         inventoryItemName: c.inventoryItem?.name || null,
+        isAvailable: checkAvailable(c),
       })),
       sauces: sauces.map(s => ({
         ...s,
@@ -120,6 +129,7 @@ export const GET = withVenue(async function GET() {
         usageQuantity: s.usageQuantity ? Number(s.usageQuantity) : null,
         usageUnit: s.usageUnit || null,
         inventoryItemName: s.inventoryItem?.name || null,
+        isAvailable: checkAvailable(s),
       })),
       cheeses: cheeses.map(c => ({
         ...c,
@@ -129,6 +139,7 @@ export const GET = withVenue(async function GET() {
         usageQuantity: c.usageQuantity ? Number(c.usageQuantity) : null,
         usageUnit: c.usageUnit || null,
         inventoryItemName: c.inventoryItem?.name || null,
+        isAvailable: checkAvailable(c),
       })),
       toppings: toppings.map(t => ({
         ...t,
@@ -136,6 +147,7 @@ export const GET = withVenue(async function GET() {
         extraPrice: t.extraPrice ? Number(t.extraPrice) : null,
         usageQuantity: t.usageQuantity ? Number(t.usageQuantity) : null,
         inventoryItemName: t.inventoryItem?.name || null,
+        isAvailable: checkAvailable(t),
       })),
       toppingsByCategory: Object.fromEntries(
         Object.entries(toppingsByCategory).map(([cat, tops]) => [
@@ -146,6 +158,7 @@ export const GET = withVenue(async function GET() {
             extraPrice: t.extraPrice ? Number(t.extraPrice) : null,
             usageQuantity: t.usageQuantity ? Number(t.usageQuantity) : null,
             inventoryItemName: t.inventoryItem?.name || null,
+            isAvailable: checkAvailable(t),
           }))
         ])
       ),

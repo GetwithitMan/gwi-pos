@@ -114,7 +114,7 @@ export default function OrdersPage() {
     editingOrderItem, setEditingOrderItem } = useModifierModal()
 
   const { showPizzaModal, setShowPizzaModal, selectedPizzaItem, setSelectedPizzaItem,
-    editingPizzaItem, setEditingPizzaItem } = usePizzaBuilder()
+    selectedPizzaSpecialty, setSelectedPizzaSpecialty, editingPizzaItem, setEditingPizzaItem } = usePizzaBuilder()
 
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings,
     taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification, sendBehavior, barOperations } = useOrderSettings()
@@ -431,7 +431,7 @@ export default function OrdersPage() {
     setShowCompVoidModal, setCompVoidItem,
     setShowSplitTicketManager, setSplitManageMode,
     setShowModifierModal, setSelectedItem, setItemModifierGroups, setLoadingModifiers, setEditingOrderItem,
-    setShowPizzaModal, setSelectedPizzaItem, setEditingPizzaItem,
+    setShowPizzaModal, setSelectedPizzaItem, setSelectedPizzaSpecialty, setEditingPizzaItem,
     setShowComboModal, setSelectedComboItem, setComboTemplate, setComboSelections,
     setShowTimedRentalModal, setSelectedTimedItem, setSelectedRateType: setSelectedRateType as any, setLoadingSession,
     setShowEntertainmentStart, setEntertainmentItem: setEntertainmentItem as any,
@@ -1061,6 +1061,8 @@ export default function OrdersPage() {
         setShowPizzaModal={setShowPizzaModal}
         selectedPizzaItem={selectedPizzaItem}
         setSelectedPizzaItem={setSelectedPizzaItem}
+        selectedPizzaSpecialty={selectedPizzaSpecialty}
+        setSelectedPizzaSpecialty={setSelectedPizzaSpecialty}
         editingPizzaItem={editingPizzaItem}
         setEditingPizzaItem={setEditingPizzaItem}
         inlinePizzaCallbackRef={inlinePizzaCallbackRef}

@@ -14,6 +14,8 @@ import {
   PizzaSauce,
   PizzaCheese,
   PizzaTopping,
+  PizzaSpecialty,
+  PizzaMenuItem,
 } from './types'
 import {
   ConfigTab,
@@ -22,6 +24,7 @@ import {
   SaucesTab,
   CheesesTab,
   ToppingsTab,
+  SpecialtiesTab,
 } from './PizzaTabs'
 import {
   SizeModal,
@@ -29,9 +32,10 @@ import {
   SauceModal,
   CheeseModal,
   ToppingModal,
+  SpecialtyModal,
 } from './PizzaModals'
 
-type TabType = 'config' | 'sizes' | 'crusts' | 'sauces' | 'cheeses' | 'toppings'
+type TabType = 'config' | 'sizes' | 'crusts' | 'sauces' | 'cheeses' | 'toppings' | 'specialties'
 
 export default function PizzaAdminPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/pizza' })
@@ -49,6 +53,8 @@ export default function PizzaAdminPage() {
   const [cheeses, setCheeses] = useState<PizzaCheese[]>([])
   const [toppings, setToppings] = useState<PizzaTopping[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])
+  const [specialties, setSpecialties] = useState<PizzaSpecialty[]>([])
+  const [pizzaMenuItems, setPizzaMenuItems] = useState<PizzaMenuItem[]>([])
 
   // Ingredient data (for topping inventory linking)
   const [ingredientsLibrary, setIngredientsLibrary] = useState<IngredientLibraryItem[]>([])
@@ -62,6 +68,7 @@ export default function PizzaAdminPage() {
   const [showCheeseModal, setShowCheeseModal] = useState(false)
   const [showToppingModal, setShowToppingModal] = useState(false)
   const [showPrintSettingsModal, setShowPrintSettingsModal] = useState(false)
+  const [showSpecialtyModal, setShowSpecialtyModal] = useState(false)
 
   // Edit states
   const [editingSize, setEditingSize] = useState<PizzaSize | null>(null)
@@ -69,6 +76,7 @@ export default function PizzaAdminPage() {
   const [editingSauce, setEditingSauce] = useState<PizzaSauce | null>(null)
   const [editingCheese, setEditingCheese] = useState<PizzaCheese | null>(null)
   const [editingTopping, setEditingTopping] = useState<PizzaTopping | null>(null)
+  const [editingSpecialty, setEditingSpecialty] = useState<PizzaSpecialty | null>(null)
 
   const loadIngredientData = useCallback(async () => {
     if (!locationId) return
@@ -148,9 +156,14 @@ export default function PizzaAdminPage() {
   const loadAllData = async () => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/pizza')
-      if (response.ok) {
-        const data = await response.json()
+      const [pizzaRes, specialtiesRes, menuItemsRes] = await Promise.all([
+        fetch('/api/pizza'),
+        fetch('/api/pizza/specialties'),
+        fetch('/api/menu/items'),
+      ])
+
+      if (pizzaRes.ok) {
+        const data = await pizzaRes.json()
         setConfig(data.data.config)
         setSizes(data.data.sizes)
         setCrusts(data.data.crusts)
@@ -158,6 +171,43 @@ export default function PizzaAdminPage() {
         setCheeses(data.data.cheeses)
         setToppings(data.data.toppings)
         setPrinters(data.data.printers || [])
+      }
+
+      if (specialtiesRes.ok) {
+        const specialtiesData = await specialtiesRes.json()
+        // API returns array directly (not wrapped in { data: [] })
+        setSpecialties(Array.isArray(specialtiesData) ? specialtiesData : (specialtiesData.data || []))
+      }
+
+      if (menuItemsRes.ok) {
+        const menuData = await menuItemsRes.json()
+        const allItems = menuData.data?.items || menuData.data || []
+        // Filter to pizza items (API returns isPizza flag based on itemType or categoryType)
+        const pizzaItems: PizzaMenuItem[] = allItems
+          .filter((item: any) => item.isPizza)
+          .map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price || 0),
+            categoryName: item.categoryName || item.category?.name,
+          }))
+        // Fallback: include items from categories containing "pizza" in name
+        if (pizzaItems.length === 0) {
+          const fallbackItems: PizzaMenuItem[] = allItems
+            .filter((item: any) => {
+              const catName = (item.categoryName || item.category?.name || '').toLowerCase()
+              return catName.includes('pizza') || catName.includes('pie')
+            })
+            .map((item: any) => ({
+              id: item.id,
+              name: item.name,
+              price: typeof item.price === 'string' ? parseFloat(item.price) : (item.price || 0),
+              categoryName: item.categoryName || item.category?.name,
+            }))
+          setPizzaMenuItems(fallbackItems)
+        } else {
+          setPizzaMenuItems(pizzaItems)
+        }
       }
     } catch (error) {
       console.error('Failed to load pizza data:', error)
@@ -353,6 +403,52 @@ export default function PizzaAdminPage() {
     }
   }
 
+  // Specialty handlers
+  const handleSaveSpecialty = async (data: any) => {
+    try {
+      if (editingSpecialty) {
+        const response = await fetch(`/api/pizza/specialties/${editingSpecialty.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        })
+        if (response.ok) {
+          await loadAllData()
+          setShowSpecialtyModal(false)
+          setEditingSpecialty(null)
+        }
+      } else {
+        const response = await fetch('/api/pizza/specialties', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        })
+        if (response.ok) {
+          await loadAllData()
+          setShowSpecialtyModal(false)
+          setEditingSpecialty(null)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to save specialty:', error)
+    }
+  }
+
+  const handleDeleteSpecialty = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Specialty',
+      message: 'Delete this specialty pizza? The menu item itself will not be deleted.',
+      action: async () => {
+        try {
+          await fetch(`/api/pizza/specialties/${id}`, { method: 'DELETE' })
+          await loadAllData()
+        } catch (error) {
+          console.error('Failed to delete specialty:', error)
+        }
+      },
+    })
+  }
+
   if (!hydrated) return null
 
   if (isLoading) {
@@ -369,7 +465,7 @@ export default function PizzaAdminPage() {
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-6">
       <AdminPageHeader
         title="Pizza Builder Settings"
-        subtitle="Configure sizes, crusts, sauces, cheeses, and toppings"
+        subtitle="Configure sizes, crusts, sauces, cheeses, toppings, and specialty pizzas"
         breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
       />
       <div className="max-w-6xl mx-auto mt-6">
@@ -383,6 +479,7 @@ export default function PizzaAdminPage() {
             { id: 'sauces', label: 'Sauces', icon: '🥫' },
             { id: 'cheeses', label: 'Cheeses', icon: '🧀' },
             { id: 'toppings', label: 'Toppings', icon: '🍕' },
+            { id: 'specialties', label: 'Specialties', icon: '⭐' },
           ].map(tab => (
             <button
               key={tab.id}
@@ -455,6 +552,15 @@ export default function PizzaAdminPage() {
           />
         )}
 
+        {activeTab === 'specialties' && (
+          <SpecialtiesTab
+            specialties={specialties}
+            onAdd={() => { setEditingSpecialty(null); setShowSpecialtyModal(true) }}
+            onEdit={(specialty) => { setEditingSpecialty(specialty); setShowSpecialtyModal(true) }}
+            onDelete={handleDeleteSpecialty}
+          />
+        )}
+
         {/* Modals */}
         {showSizeModal && (
           <SizeModal
@@ -523,6 +629,20 @@ export default function PizzaAdminPage() {
             onIngredientCreated={handleIngredientCreated}
             onCategoryCreated={handleCategoryCreated}
             onIngredientDataRefresh={loadIngredientData}
+          />
+        )}
+
+        {showSpecialtyModal && (
+          <SpecialtyModal
+            specialty={editingSpecialty}
+            pizzaMenuItems={pizzaMenuItems}
+            existingSpecialtyMenuItemIds={specialties.map(s => s.menuItemId)}
+            crusts={crusts}
+            sauces={sauces}
+            cheeses={cheeses}
+            toppings={toppings}
+            onSave={handleSaveSpecialty}
+            onClose={() => { setShowSpecialtyModal(false); setEditingSpecialty(null) }}
           />
         )}
 

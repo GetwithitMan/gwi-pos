@@ -3,16 +3,22 @@ import { db, adminDb } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
-// GET /api/pizza/specialties - Get all specialty pizzas
-export const GET = withVenue(async function GET() {
+// GET /api/pizza/specialties - Get all specialty pizzas (supports ?menuItemId= filter)
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
+    const { searchParams } = new URL(request.url)
+    const menuItemId = searchParams.get('menuItemId')
+
     const specialties = await db.pizzaSpecialty.findMany({
-      where: { locationId },
+      where: {
+        locationId,
+        ...(menuItemId ? { menuItemId } : {}),
+      },
       include: {
         menuItem: true,
         defaultCrust: true,
