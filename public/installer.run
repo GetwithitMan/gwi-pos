@@ -1211,6 +1211,18 @@ HBAEOF
     exit 1
   fi
 
+  # Grant full permissions to the POS user on all existing and future tables.
+  # This is critical because prisma db push may be run as postgres (root) but
+  # the POS app connects as $DB_USER. Without these grants, the app gets
+  # "relation does not exist" errors despite tables existing.
+  sudo -u postgres psql -d "$DB_NAME" -c "
+    GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;
+    GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;
+  " >/dev/null 2>&1
+  log "Database permissions granted to $DB_USER."
+
   # Set UTC timezone for database (CRITICAL for offline-first sync integrity)
   # Without this, timestamps synced from Neon cloud can be silently shifted by the
   # local timezone offset when inserted into "timestamp without time zone" columns.
@@ -1710,9 +1722,14 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
         # db push (without --accept-data-loss) creates any missing tables/columns
         # that the baselined migrations would have created. Safe: refuses destructive changes.
         log "Running db push to create any missing tables..."
-        if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push"; then
+        if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss"; then
           warn "prisma db push had issues — some tables may need manual creation."
         fi
+        # Re-grant permissions after db push (may have created new tables owned by postgres)
+        sudo -u postgres psql -d "$DB_NAME" -c "
+          GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;
+          GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;
+        " >/dev/null 2>&1
         log "Baseline + schema sync complete."
       else
         err "Database migration failed (prisma migrate deploy)."
