@@ -75,7 +75,7 @@ const connectedTerminals = new Map<string, {
 
 // ── Per-socket rate limiting ──────────────────────────────────────────────────
 const socketRateLimits = new Map<string, { count: number; resetAt: number }>()
-const MAX_EVENTS_PER_SECOND = 50
+const MAX_EVENTS_PER_SECOND = 200
 
 function checkSocketRateLimit(socketId: string): boolean {
   const now = Date.now()

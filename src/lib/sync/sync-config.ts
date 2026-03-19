@@ -43,12 +43,12 @@ export interface SyncModelConfig {
  */
 export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   // ── Bidirectional (NUC ↔ Neon, filtered by lastMutatedBy) ─────────────
-  Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 50, conflictStrategy: 'quarantine' },
-  OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 50, conflictStrategy: 'quarantine' },
+  Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 200, conflictStrategy: 'quarantine' },
+  OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 200, conflictStrategy: 'quarantine' },
   OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100, conflictStrategy: 'quarantine' },
   OrderCard:              { direction: 'bidirectional', owner: 'both', priority: 24, batchSize: 100, conflictStrategy: 'quarantine' },
   OrderItemModifier:      { direction: 'bidirectional', owner: 'both', priority: 25, batchSize: 100, conflictStrategy: 'quarantine' },
-  Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 50, conflictStrategy: 'quarantine' },
+  Payment:                { direction: 'bidirectional', owner: 'both', priority: 30, batchSize: 200, conflictStrategy: 'quarantine' },
 
   // ── NUC-owned (upstream: NUC → Neon) ──────────────────────────────────
   OrderItemIngredient:    { direction: 'upstream', owner: 'nuc', priority: 26, batchSize: 100 },
@@ -89,10 +89,10 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   Role:                   { direction: 'downstream', owner: 'cloud', priority: 203, batchSize: 50 },
   EmployeeRole:           { direction: 'downstream', owner: 'cloud', priority: 204, batchSize: 50 },
   Employee:               { direction: 'downstream', owner: 'cloud', priority: 205, batchSize: 100 },
-  Category:               { direction: 'downstream', owner: 'cloud', priority: 206, batchSize: 100, businessKey: ['locationId', 'name'] },
-  MenuItem:               { direction: 'downstream', owner: 'cloud', priority: 207, batchSize: 100, businessKey: ['categoryId', 'name'] },
-  ModifierGroup:          { direction: 'downstream', owner: 'cloud', priority: 208, batchSize: 100, businessKey: ['locationId', 'name'] },
-  Modifier:               { direction: 'downstream', owner: 'cloud', priority: 209, batchSize: 100, businessKey: ['modifierGroupId', 'name'] },
+  Category:               { direction: 'downstream', owner: 'cloud', priority: 206, batchSize: 200, businessKey: ['locationId', 'name'] },
+  MenuItem:               { direction: 'downstream', owner: 'cloud', priority: 207, batchSize: 200, businessKey: ['categoryId', 'name'] },
+  ModifierGroup:          { direction: 'downstream', owner: 'cloud', priority: 208, batchSize: 200, businessKey: ['locationId', 'name'] },
+  Modifier:               { direction: 'downstream', owner: 'cloud', priority: 209, batchSize: 200, businessKey: ['modifierGroupId', 'name'] },
   Table:                  { direction: 'downstream', owner: 'cloud', priority: 210, batchSize: 100, businessKey: ['locationId', 'name'] },
   Section:                { direction: 'downstream', owner: 'cloud', priority: 211, batchSize: 50, businessKey: ['locationId', 'name'] },
   OrderType:              { direction: 'downstream', owner: 'cloud', priority: 212, batchSize: 50 },
@@ -304,7 +304,7 @@ export const UPSTREAM_INTERVAL_MS = parseInt(
 )
 
 export const DOWNSTREAM_INTERVAL_MS = parseInt(
-  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '2000',
+  process.env.SYNC_DOWNSTREAM_INTERVAL_MS || '1000',
   10
 )
 

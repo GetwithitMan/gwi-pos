@@ -20,7 +20,7 @@ let isConnected = false
 let lastPingAt: Date | null = null
 
 /** Default downstream fallback interval (restored after relay recovers) */
-const DEFAULT_FALLBACK_INTERVAL_MS = 5000
+const DEFAULT_FALLBACK_INTERVAL_MS = 2000
 /** Faster fallback when relay is consistently failing */
 const FAST_FALLBACK_INTERVAL_MS = 2000
 /** Consecutive failures before triggering fast fallback */
