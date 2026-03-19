@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateTotalWithTip, calculateOrderTotals } from '@/lib/order-calculations'
@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(
     // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
     // TODO: migrate to OrderRepository once a getOrderForSplitView() method exists
     if (view === 'split') {
-      const order = await adminDb.order.findFirst({
+      const order = await db.order.findFirst({
         where: { id, deletedAt: null },
         select: {
           id: true, orderNumber: true, status: true, orderType: true,
@@ -69,7 +69,7 @@ export const GET = withVenue(async function GET(
     // Lightweight panel view — items + modifiers only (no payments, pizzaData, ingredientModifications)
     // TODO: add repository method for panel view shape (getOrderForPanelView)
     if (view === 'panel') {
-      const order = await adminDb.order.findFirst({
+      const order = await db.order.findFirst({
         where: { id, deletedAt: null },
         select: {
           id: true,
@@ -208,7 +208,7 @@ export const GET = withVenue(async function GET(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let locationId = getRequestLocationId()
     if (!locationId) {
-      const getLocationCheck = await adminDb.order.findFirst({
+      const getLocationCheck = await db.order.findFirst({
         where: { id, deletedAt: null },
         select: { locationId: true },
       })
@@ -394,7 +394,7 @@ export const PUT = withVenue(async function PUT(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let resolvedLocationId = getRequestLocationId()
     if (!resolvedLocationId) {
-      const orderLocationCheck = await adminDb.order.findFirst({
+      const orderLocationCheck = await db.order.findFirst({
         where: { id },
         select: { locationId: true },
       })
@@ -634,19 +634,19 @@ export const PUT = withVenue(async function PUT(
       void (async () => {
         try {
           // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
-          const entertainmentItems = await adminDb.menuItem.findMany({
+          const entertainmentItems = await db.menuItem.findMany({
             where: { currentOrderId: id, itemType: 'timed_rental' },
             select: { id: true, name: true },
           })
 
           if (entertainmentItems.length > 0) {
             // Clear blockTimeStartedAt on order items so Android stops showing timers
-            await adminDb.orderItem.updateMany({
+            await db.orderItem.updateMany({
               where: { orderId: id, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
               data: { blockTimeStartedAt: null },
             })
 
-            await adminDb.menuItem.updateMany({
+            await db.menuItem.updateMany({
               where: { currentOrderId: id, itemType: 'timed_rental' },
               data: {
                 entertainmentStatus: 'available',
@@ -656,7 +656,7 @@ export const PUT = withVenue(async function PUT(
             })
 
             for (const item of entertainmentItems) {
-              await adminDb.floorPlanElement.updateMany({
+              await db.floorPlanElement.updateMany({
                 where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
                 data: {
                   status: 'available',
@@ -753,7 +753,7 @@ export const PATCH = withVenue(async function PATCH(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let patchLocationId = getRequestLocationId()
     if (!patchLocationId) {
-      const patchLocationCheck = await adminDb.order.findFirst({
+      const patchLocationCheck = await db.order.findFirst({
         where: { id },
         select: { locationId: true },
       })
@@ -946,18 +946,18 @@ export const PATCH = withVenue(async function PATCH(
       void (async () => {
         try {
           // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
-          const entertainmentItems = await adminDb.menuItem.findMany({
+          const entertainmentItems = await db.menuItem.findMany({
             where: { currentOrderId: id, itemType: 'timed_rental' },
             select: { id: true, name: true },
           })
 
           if (entertainmentItems.length > 0) {
-            await adminDb.orderItem.updateMany({
+            await db.orderItem.updateMany({
               where: { orderId: id, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
               data: { blockTimeStartedAt: null },
             })
 
-            await adminDb.menuItem.updateMany({
+            await db.menuItem.updateMany({
               where: { currentOrderId: id, itemType: 'timed_rental' },
               data: {
                 entertainmentStatus: 'available',
@@ -967,7 +967,7 @@ export const PATCH = withVenue(async function PATCH(
             })
 
             for (const item of entertainmentItems) {
-              await adminDb.floorPlanElement.updateMany({
+              await db.floorPlanElement.updateMany({
                 where: { linkedMenuItemId: item.id, deletedAt: null, status: 'in_use' },
                 data: {
                   status: 'available',

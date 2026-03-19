@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationDateRange, dateRangeToUTC, getHourInTimezone } from '@/lib/timezone'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -82,7 +82,7 @@ export const GET = withVenue(async (request: NextRequest) => {
     }
 
     // Fetch paid orders in range
-    const orders = await adminDb.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         locationId,
         deletedAt: null,

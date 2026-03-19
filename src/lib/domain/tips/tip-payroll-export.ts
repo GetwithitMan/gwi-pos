@@ -29,7 +29,7 @@
  * ═══════════════════════════════════════════════════════════════════════
  */
 
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -186,7 +186,7 @@ export async function aggregatePayrollData(params: {
   }
 
   // Fetch employee name + role data
-  const employees = await adminDb.employee.findMany({
+  const employees = await db.employee.findMany({
     where: {
       id: { in: Array.from(employeeIds) },
       deletedAt: null,

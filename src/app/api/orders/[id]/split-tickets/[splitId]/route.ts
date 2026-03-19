@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { OrderStatus } from '@/generated/prisma/client'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
@@ -23,7 +23,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // TODO: Initial split lookup uses raw db because locationId is unknown until fetch.
     // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
-    const splitOrder = await adminDb.order.findFirst({
+    const splitOrder = await db.order.findFirst({
       where: { id: splitId, deletedAt: null },
       select: {
         id: true,
@@ -87,7 +87,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Count remaining splits
     // TODO: Complex query with _count -- no repository method; uses raw db
-    const remainingSplits = await adminDb.order.findMany({
+    const remainingSplits = await db.order.findMany({
       where: { parentOrderId: id, locationId, deletedAt: null },
       select: {
         id: true,

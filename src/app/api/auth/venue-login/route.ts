@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomInt } from 'crypto'
 import { hash } from 'bcryptjs'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { withVenue } from '@/lib/with-venue'
 import { verifyPassword } from '@/lib/auth'
@@ -69,7 +69,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   // Find employee by email in this venue's database
-  const employee = await adminDb.employee.findFirst({
+  const employee = await db.employee.findFirst({
     where: {
       locationId: location.id,
       email: { equals: normalizedEmail, mode: 'insensitive' },
@@ -140,7 +140,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             const nameParts = ownerName.split(' ')
 
             // Find or create a real employee for this MC owner
-            let ownerEmployee = await adminDb.employee.findFirst({
+            let ownerEmployee = await db.employee.findFirst({
               where: { locationId: location.id, email: { equals: normalizedEmail, mode: 'insensitive' }, deletedAt: null },
               include: { role: true },
             })

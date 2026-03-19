@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 import { withVenue } from '@/lib/with-venue'
@@ -28,7 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
       let tabsLocationId = getRequestLocationId()
       if (!tabsLocationId) {
-        const actor = await adminDb.employee.findUnique({ where: { id: actorId, deletedAt: null }, select: { locationId: true } })
+        const actor = await db.employee.findUnique({ where: { id: actorId, deletedAt: null }, select: { locationId: true } })
         tabsLocationId = actor?.locationId
       }
       if (tabsLocationId) {
@@ -47,7 +47,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...(employeeId ? { employeeId } : {}),
     }
 
-    const tabs = await adminDb.order.findMany({
+    const tabs = await db.order.findMany({
       where,
       include: {
         employee: {
@@ -208,7 +208,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const employee = await adminDb.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId },
       include: { location: true },
     })

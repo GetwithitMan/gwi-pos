@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 import { withVenue } from '@/lib/with-venue'
 import { formatCurrency } from '@/lib/utils'
@@ -134,7 +134,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Fetch order with related data
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
         location: {

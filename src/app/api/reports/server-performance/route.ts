@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -42,7 +42,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Fetch all paid orders in the date range
-    const orders = await adminDb.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         locationId,
         status: { in: [...REVENUE_ORDER_STATUSES] },

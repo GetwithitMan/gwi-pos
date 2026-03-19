@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
@@ -94,7 +94,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Verify menu item exists and belongs to this location
-    const menuItem = await adminDb.menuItem.findFirst({
+    const menuItem = await db.menuItem.findFirst({
       where: { id: menuItemId, locationId, deletedAt: null },
       select: { id: true },
     })

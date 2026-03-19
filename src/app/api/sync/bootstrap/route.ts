@@ -59,7 +59,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: cachedData })
   }
 
-  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules, pizzaToppings] = await Promise.all([
+  const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules, pizzaToppings, discountRules, voidReasons, compReasons] = await Promise.all([
     db.category.findMany({
       where: { locationId, deletedAt: null },
       include: {
@@ -197,6 +197,37 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.pizzaTopping.findMany({
       where: { locationId, isActive: true, deletedAt: null },
       select: { name: true, category: true }
+    }),
+    // Discount rules: validation data for comp/void/discount operations on Android
+    db.discountRule.findMany({
+      where: { locationId, deletedAt: null, isActive: true },
+      select: {
+        id: true, name: true, displayText: true, description: true,
+        discountType: true, triggerConfig: true, discountConfig: true,
+        scheduleConfig: true, priority: true, isStackable: true,
+        requiresApproval: true, maxPerOrder: true, isActive: true,
+        isAutomatic: true, isEmployeeDiscount: true,
+      },
+    }),
+    // Void reasons: required for item void operations on Android
+    db.voidReason.findMany({
+      where: { locationId, deletedAt: null, isActive: true },
+      select: {
+        id: true, name: true, description: true,
+        deductInventory: true, requiresManager: true,
+        isActive: true, sortOrder: true,
+      },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    // Comp reasons: required for item comp operations on Android
+    db.compReason.findMany({
+      where: { locationId, deletedAt: null, isActive: true },
+      select: {
+        id: true, name: true, description: true,
+        deductInventory: true, requiresManager: true,
+        isActive: true, sortOrder: true,
+      },
+      orderBy: { sortOrder: 'asc' },
     }),
   ])
 
@@ -473,6 +504,27 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         idlePromoEnabled: cfdSettings.idlePromoEnabled,
         idleWelcomeText: cfdSettings.idleWelcomeText,
       } : null,
+      // Discount rules: validation data for comp/void/discount operations
+      discountRules: discountRules.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        displayText: r.displayText,
+        description: r.description,
+        discountType: r.discountType,
+        triggerConfig: r.triggerConfig,
+        discountConfig: r.discountConfig,
+        scheduleConfig: r.scheduleConfig,
+        priority: r.priority,
+        isStackable: r.isStackable,
+        requiresApproval: r.requiresApproval,
+        maxPerOrder: r.maxPerOrder,
+        isActive: r.isActive,
+        isAutomatic: r.isAutomatic,
+        isEmployeeDiscount: r.isEmployeeDiscount,
+      })),
+      // Void/comp reasons: required for item void/comp operations
+      voidReasons,
+      compReasons,
       // Open orders: allows device to rebuild state after mid-service reboot
       // without relying solely on socket catch-up (which may miss events).
       // Includes items, modifiers, ingredient mods, and payments.

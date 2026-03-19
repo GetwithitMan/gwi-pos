@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseSettings } from '@/lib/settings'
@@ -38,7 +38,7 @@ export const POST = withVenue(async function POST(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let locationId = getRequestLocationId()
     if (!locationId) {
-      const orderCheck = await adminDb.order.findFirst({
+      const orderCheck = await db.order.findFirst({
         where: { id: orderId, deletedAt: null },
         select: { id: true, locationId: true },
       })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       _lastExpiryCheck = Date.now()
       void (async () => {
         try {
-          const expiredItems = await adminDb.orderItem.findMany({
+          const expiredItems = await db.orderItem.findMany({
             where: {
               order: { locationId },
               blockTimeExpiresAt: { lte: new Date() },
@@ -113,7 +113,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get orders that have been sent to kitchen (including paid orders with incomplete items)
     // Cursor-based pagination: take 50 at a time for performance at 100+ open orders
-    const orders = await adminDb.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         locationId,
         // W2-K1: Paid orders only shown for 2 hours to prevent KDS clutter
@@ -376,7 +376,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const now = new Date()
 
     // Resolve locationId from the first item for tenant-scoped operations
-    const firstItemForDispatch = await adminDb.orderItem.findUnique({
+    const firstItemForDispatch = await db.orderItem.findUnique({
       where: { id: itemIds[0] },
       select: { orderId: true, order: { select: { locationId: true, employeeId: true, status: true } } },
     })
@@ -398,7 +398,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Double-bump guard: check if items are already completed (idempotency)
     let isDoubleBump = false
     if (action === 'complete' || action === 'bump_order') {
-      const alreadyCompleted = await adminDb.orderItem.count({
+      const alreadyCompleted = await db.orderItem.count({
         where: { id: { in: itemIds }, isCompleted: true },
       })
       if (alreadyCompleted === itemIds.length) {
@@ -700,7 +700,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             if (!behavior?.sendSmsOnReady) return
 
             // Look up order for customer phone
-            const order = await adminDb.order.findUnique({
+            const order = await db.order.findUnique({
               where: { id: orderId },
               select: {
                 orderNumber: true,

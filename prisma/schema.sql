@@ -4776,6 +4776,21 @@ CREATE TABLE "ReservationDeposit" (
     CONSTRAINT "ReservationDeposit_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "EmployeePermissionOverride" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "employeeId" TEXT NOT NULL,
+    "permissionKey" TEXT NOT NULL,
+    "allowed" BOOLEAN NOT NULL,
+    "reason" TEXT,
+    "setBy" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "EmployeePermissionOverride_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 
@@ -6990,6 +7005,15 @@ CREATE INDEX "ReservationDeposit_reservationId_idx" ON "ReservationDeposit"("res
 -- CreateIndex
 CREATE INDEX "ReservationDeposit_locationId_createdAt_idx" ON "ReservationDeposit"("locationId", "createdAt");
 
+-- CreateIndex
+CREATE INDEX "EmployeePermissionOverride_locationId_idx" ON "EmployeePermissionOverride"("locationId");
+
+-- CreateIndex
+CREATE INDEX "EmployeePermissionOverride_employeeId_idx" ON "EmployeePermissionOverride"("employeeId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "EmployeePermissionOverride_employeeId_permissionKey_key" ON "EmployeePermissionOverride"("employeeId", "permissionKey");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -8453,4 +8477,10 @@ ALTER TABLE "ReservationDeposit" ADD CONSTRAINT "ReservationDeposit_locationId_f
 
 -- AddForeignKey
 ALTER TABLE "ReservationDeposit" ADD CONSTRAINT "ReservationDeposit_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "Reservation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EmployeePermissionOverride" ADD CONSTRAINT "EmployeePermissionOverride_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EmployeePermissionOverride" ADD CONSTRAINT "EmployeePermissionOverride_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

@@ -386,8 +386,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
           // skip the conflict resolution to avoid silently destroying local data.
           // Only resolve if local row is cloud-origin, null-origin, or older than Neon.
           const localIsLocallyMutated = hasLastMutatedBy && local.lastMutatedBy === 'local'
-          const neonUpdatedAt = row.updatedAt ? new Date(row.updatedAt as string) : null
-          const localUpdatedAt = local.updatedAt ? new Date(local.updatedAt as string) : null
+          const neonUpdatedAt = row.updatedAt ? new Date(row.updatedAt as unknown as string) : null
+          const localUpdatedAt = local.updatedAt ? new Date(local.updatedAt as unknown as string) : null
           const localIsNewer = neonUpdatedAt && localUpdatedAt && localUpdatedAt > neonUpdatedAt
 
           if (localIsLocallyMutated && localIsNewer) {

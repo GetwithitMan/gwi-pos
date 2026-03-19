@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
@@ -21,6 +23,11 @@ export const PUT = withVenue(async function PUT(
     if (!locationId) {
       return NextResponse.json({ error: 'Location required' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Verify the category belongs to this location before updating
     const existing = await db.category.findFirst({
@@ -100,8 +107,13 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'Category not found' }, { status: 404 })
     }
 
+    // Auth check — require menu.edit_items permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, category.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+
     // Check if category has items
-    const itemCount = await adminDb.menuItem.count({
+    const itemCount = await db.menuItem.count({
       where: { categoryId: id, deletedAt: null }
     })
 

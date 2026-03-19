@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "080",
+  "schemaVersion": "081",
   "seedVersion": "v1",
   "provisionerVersion": "1",
-  "migrationCount": 82,
-  "schemaSha256": "d01880291030ccaea2bb58de8da2a812eb52be1a94e9fb635d18c5392dd606ca",
-  "generatedAt": "2026-03-19T17:45:37.856Z"
+  "migrationCount": 83,
+  "schemaSha256": "f9a83c95710bb9d022f50866eab550be775fc1cc3852ec6cd81e6a9830b91221",
+  "generatedAt": "2026-03-19T20:07:20.531Z"
 }

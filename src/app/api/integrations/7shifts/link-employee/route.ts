@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 
 interface LinkBody {
   employeeId: string
@@ -32,7 +32,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // Unlink: null clears all fields
   const isUnlink = body.sevenShiftsUserId === null
 
-  await adminDb.employee.update({
+  await db.employee.update({
     where: { id: body.employeeId },
     data: {
       sevenShiftsUserId: isUnlink ? null : (body.sevenShiftsUserId ?? null),

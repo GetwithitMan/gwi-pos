@@ -4,7 +4,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { lookupByRoom, lookupByName } from '@/lib/oracle-pms-client'
 import { createRoomChargeSelection } from '@/lib/room-charge-selections'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
@@ -83,7 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   // Prevents a malicious client from cycling through fake IDs to bypass per-employee limits.
   let trustedEmployeeId: string | null = null
   if (employeeId) {
-    const emp = await adminDb.employee.findFirst({
+    const emp = await db.employee.findFirst({
       where: { id: employeeId, locationId: location.id, deletedAt: null },
       select: { id: true },
     })

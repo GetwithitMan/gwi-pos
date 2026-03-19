@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 // TEMPORARY: Purge all orders for a location (dev/test use only)
@@ -93,7 +93,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     await safeExec('Order (children)', `DELETE FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NOT NULL`, [locationId])
     await safeExec('Order', `DELETE FROM "Order" WHERE "locationId" = $1`, [locationId])
 
-    const remaining = await adminDb.order.count({ where: { locationId } })
+    const remaining = await db.order.count({ where: { locationId } })
     results.push(`Remaining: ${remaining}`)
 
     return NextResponse.json({ data: { results, remaining } })

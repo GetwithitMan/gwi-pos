@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { computeIsOrderableOnline } from '@/lib/online-availability'
@@ -8,6 +8,8 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -272,6 +274,11 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     // Get old item to detect stock changes (fetch availability fields for computeIsOrderableOnline)
     const oldItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
         isAvailable: true,
@@ -291,7 +298,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // TODO: Migrate to MenuItemRepository.updateMenuItemAndReturn() once complex update shapes are supported
-    const item = await adminDb.menuItem.update({
+    const item = await db.menuItem.update({
       where: { id },
       data: {
         ...(categoryId !== undefined && categoryId !== null && { categoryId }),
@@ -473,6 +480,12 @@ export const DELETE = withVenue(async function DELETE(
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+
     const item = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {
       locationId: true,
     })
@@ -547,6 +560,11 @@ export const PATCH = withVenue(async function PATCH(
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actorPatch = await getActorFromRequest(request)
+    const authPatch = await requirePermission(actorPatch.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
 
     // Verify item belongs to this location, then update
     await MenuItemRepository.updateMenuItem(id, locationId, data as Prisma.MenuItemUpdateManyMutationInput)

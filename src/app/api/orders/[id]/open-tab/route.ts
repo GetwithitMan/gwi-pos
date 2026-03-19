@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader, normalizeCardholderName } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
@@ -40,7 +40,7 @@ export const POST = withVenue(async function POST(
 
     // Get the order -- use repository for tenant-safe access, then fetch location settings
     // TODO: Add OrderRepository.getOrderByIdWithInclude variant that supports nested location include
-    const order = await adminDb.order.findFirst({
+    const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: { location: { select: { id: true, settings: true } } },
     })
@@ -287,7 +287,7 @@ export const POST = withVenue(async function POST(
       const p = await params
       failedOrderId = p.id
       // Best-effort reset — locationId may not be available, use raw db as fallback
-      await adminDb.order.update({
+      await db.order.update({
         where: { id: failedOrderId },
         data: { tabStatus: 'open' },
       })

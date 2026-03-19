@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -28,7 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       end.setHours(23, 59, 59, 999)
     }
 
-    const payments = await adminDb.payment.findMany({
+    const payments = await db.payment.findMany({
       where: {
         order: { locationId },
         paymentMethod: { in: ['credit', 'debit'] },

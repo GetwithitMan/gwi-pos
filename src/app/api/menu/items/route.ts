@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
@@ -7,6 +7,8 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET /api/menu/items - Fetch menu items, optionally filtered by category
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -37,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // TODO: Migrate to MenuItemRepository once complex include+conditional shapes are supported
-    const items = await adminDb.menuItem.findMany({
+    const items = await db.menuItem.findMany({
       where,
       orderBy: { sortOrder: 'asc' },
       include: {
@@ -279,7 +281,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get the location from the category
-    const category = await adminDb.category.findUnique({
+    const category = await db.category.findUnique({
       where: { id: categoryId },
       select: { locationId: true }
     })
@@ -291,13 +293,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, category.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     // Get max sort order in category (scoped to location)
-    const maxSortOrder = await adminDb.menuItem.aggregate({
+    const maxSortOrder = await db.menuItem.aggregate({
       where: { categoryId, locationId: category.locationId },
       _max: { sortOrder: true }
     })
 
-    const item = await adminDb.menuItem.create({
+    const item = await db.menuItem.create({
       data: {
         locationId: category.locationId,
         categoryId,

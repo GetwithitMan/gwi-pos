@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -72,6 +74,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const existing = await db.modifierGroupTemplate.findFirst({
       where: { id, locationId, deletedAt: null },
@@ -157,6 +164,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
 
     const existing = await db.modifierGroupTemplate.findFirst({
       where: { id, locationId, deletedAt: null },

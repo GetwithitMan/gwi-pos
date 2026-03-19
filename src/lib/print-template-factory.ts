@@ -9,7 +9,7 @@
  * use the full /api/print/kitchen route directly.
  */
 
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { dispatchPrintJobFailed } from '@/lib/socket-dispatch'
 import { dispatchAlert } from '@/lib/alert-service'
@@ -56,7 +56,7 @@ export async function printKitchenTicketsForManifests(
   let resolvedLocationId = locationId || ''
   if (!resolvedLocationId) {
     try {
-      const dbOrder = await adminDb.order.findUnique({
+      const dbOrder = await db.order.findUnique({
         where: { id: order.orderId },
         select: { locationId: true },
       })

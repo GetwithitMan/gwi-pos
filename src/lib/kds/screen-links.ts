@@ -13,7 +13,7 @@
  */
 
 import crypto from 'crypto'
-import { adminDb, db } from '@/lib/db'
+import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import {
   dispatchOrderForwarded,
@@ -82,7 +82,7 @@ export async function processScreenLinks(
 
     // Persist forwarding state on OrderItems
     try {
-      await adminDb.orderItem.updateMany({
+      await db.orderItem.updateMany({
         where: { id: { in: itemIds } },
         data: {
           kdsForwardedToScreenId: target.id,
@@ -191,13 +191,13 @@ export async function processExpoFinalBump(
   const { orderId, itemIds, screenId, bumpedBy } = params
 
   // Mark these items as final-completed
-  await adminDb.orderItem.updateMany({
+  await db.orderItem.updateMany({
     where: { id: { in: itemIds } },
     data: { kdsFinalCompleted: true },
   })
 
   // Check: are ALL items forwarded to this screen now kdsFinalCompleted?
-  const remainingOnScreen = await adminDb.orderItem.count({
+  const remainingOnScreen = await db.orderItem.count({
     where: {
       orderId,
       kdsForwardedToScreenId: screenId,

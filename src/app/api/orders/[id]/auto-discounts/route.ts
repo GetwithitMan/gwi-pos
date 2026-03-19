@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import {
@@ -11,6 +11,8 @@ import {
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * POST /api/orders/[id]/auto-discounts
@@ -27,7 +29,7 @@ export const POST = withVenue(async function POST(
 
     // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
     // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
-    const order = await adminDb.order.findFirst({
+    const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       select: { id: true, locationId: true, status: true },
     })
@@ -40,6 +42,11 @@ export const POST = withVenue(async function POST(
     }
 
     const locationId = order.locationId
+
+    // Permission check: POS_ACCESS required to trigger auto-discount evaluation
+    const actor = await getActorFromRequest(request)
+    const autoDiscountAuth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!autoDiscountAuth.authorized) return NextResponse.json({ error: autoDiscountAuth.error }, { status: autoDiscountAuth.status })
 
     if (order.status !== 'open' && order.status !== 'draft' && order.status !== 'in_progress') {
       return NextResponse.json(
@@ -130,7 +137,7 @@ export const GET = withVenue(async function GET(
     if (!orderLocationId) {
       // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
       // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithSelect.
-      const order = await adminDb.order.findFirst({
+      const order = await db.order.findFirst({
         where: { id: orderId, deletedAt: null },
         select: { id: true, locationId: true },
       })

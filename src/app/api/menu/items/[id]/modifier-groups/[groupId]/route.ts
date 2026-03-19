@@ -3,6 +3,8 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface RouteParams {
   params: Promise<{ id: string; groupId: string }>
@@ -34,6 +36,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     if (!group) {
       return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const updated = await db.modifierGroup.update({
       where: { id: groupId },
@@ -242,6 +249,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     if (!group) {
       return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
 
     // Recursively collect all descendant groups and modifiers
     const groupIds = new Set<string>()

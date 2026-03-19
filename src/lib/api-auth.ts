@@ -24,7 +24,7 @@ const cloudSubToEmployeeId = new Map<string, string>()
 // Called 527 times across 221 route files — this eliminates ~500ms of DB queries
 // per high-volume request burst at a busy bar.
 const permissionCache = new Map<string, { employee: any; expiry: number }>()
-const PERMISSION_CACHE_TTL = 60_000 // 60 seconds
+const PERMISSION_CACHE_TTL = 15_000 // 15 seconds
 
 function getCachedEmployee(employeeId: string, locationId: string) {
   const cacheKey = `${employeeId}:${locationId}`
@@ -45,16 +45,74 @@ function setCachedEmployee(employeeId: string, locationId: string, employee: any
   }
 }
 
+// ─── Permission override cache ──────────────────────────────────────────
+// Caches per-employee permission overrides (same TTL as employee cache).
+// Map<"employeeId:locationId", { overrides: Map<permissionKey, allowed>, expiry }>
+const overrideCache = new Map<string, { overrides: Map<string, boolean>; expiry: number }>()
+
+function getCachedOverrides(employeeId: string, locationId: string): Map<string, boolean> | null {
+  const cacheKey = `${employeeId}:${locationId}`
+  const cached = overrideCache.get(cacheKey)
+  if (cached && Date.now() < cached.expiry) return cached.overrides
+  return null
+}
+
+function setCachedOverrides(employeeId: string, locationId: string, overrides: Map<string, boolean>) {
+  const cacheKey = `${employeeId}:${locationId}`
+  overrideCache.set(cacheKey, { overrides, expiry: Date.now() + PERMISSION_CACHE_TTL })
+  if (overrideCache.size > 500) {
+    const now = Date.now()
+    for (const [key, entry] of overrideCache) {
+      if (now >= entry.expiry) overrideCache.delete(key)
+    }
+  }
+}
+
+async function getOverrides(employeeId: string, locationId: string): Promise<Map<string, boolean>> {
+  let overrides = getCachedOverrides(employeeId, locationId)
+  if (overrides) return overrides
+
+  overrides = new Map<string, boolean>()
+  try {
+    const rows = await db.employeePermissionOverride.findMany({
+      where: { employeeId, locationId },
+      select: { permissionKey: true, allowed: true },
+    })
+    for (const row of rows) {
+      overrides.set(row.permissionKey, row.allowed)
+    }
+  } catch {
+    // Table may not exist yet on older DBs — treat as no overrides
+  }
+  setCachedOverrides(employeeId, locationId, overrides)
+  return overrides
+}
+
+/**
+ * Check a single permission against overrides.
+ * Returns true (granted), false (denied), or null (no override — fall through to role).
+ */
+function checkOverride(overrides: Map<string, boolean>, permission: string): boolean | null {
+  const exact = overrides.get(permission)
+  if (exact !== undefined) return exact
+  return null
+}
+
 /** Clear the permission cache — call when roles or employees are updated */
 export function clearPermissionCache(employeeId?: string, locationId?: string): void {
   if (employeeId && locationId) {
     permissionCache.delete(`${employeeId}:${locationId}`)
+    overrideCache.delete(`${employeeId}:${locationId}`)
   } else if (employeeId) {
     for (const key of permissionCache.keys()) {
       if (key.startsWith(`${employeeId}:`)) permissionCache.delete(key)
     }
+    for (const key of overrideCache.keys()) {
+      if (key.startsWith(`${employeeId}:`)) overrideCache.delete(key)
+    }
   } else {
     permissionCache.clear()
+    overrideCache.clear()
   }
 }
 
@@ -214,43 +272,16 @@ export async function requirePermission(
     } catch { /* no cloud cookie or invalid — fall through */ }
   }
 
-  // Location-admin fallback — if all cookie/body methods fail but we have a valid
-  // locationId, resolve to an admin employee at that location who has the required
-  // permission. This handles expired session cookies on admin settings pages where
-  // the user clearly authenticated (they navigated to the page, auth store has data).
-  // Security: locationIds are UUIDs (unguessable), NUCs are on private LANs, and
-  // the resolved employee must still pass the permission check below.
-  if (!employeeId && locationId) {
-    try {
-      const adminEmployee = await db.employee.findFirst({
-        where: {
-          locationId,
-          isActive: true,
-          deletedAt: null,
-        },
-        include: { role: true },
-        orderBy: { createdAt: 'asc' },
-      })
-      if (adminEmployee) {
-        const adminPerms = (adminEmployee.role.permissions as string[]) || []
-        if (hasPermission(adminPerms, permission)) {
-          log.warn(`[api-auth] Location-admin fallback: resolved employeeId=${adminEmployee.id} for locationId=${locationId}, permission=${permission}`)
-          employeeId = adminEmployee.id
-          setCachedEmployee(adminEmployee.id, locationId, adminEmployee)
-        }
-      }
-    } catch { /* DB error — fall through to 401 */ }
-  }
-
   if (!employeeId) {
+    log.warn(`[api-auth] Authentication required: no employeeId resolved for locationId=${locationId}, permission=${permission}`)
     return {
       authorized: false,
-      error: 'Employee ID is required',
+      error: 'Authentication required',
       status: 401,
     }
   }
 
-  // Check permission cache first (60s TTL — avoids DB hit on every API call)
+  // Check permission cache first (15s TTL — avoids DB hit on every API call)
   let employee = getCachedEmployee(employeeId, locationId)
   if (!employee) {
     employee = await EmployeeRepository.getEmployeeByIdWithInclude(
@@ -289,6 +320,36 @@ export async function requirePermission(
 
   const permissions = (employee.role.permissions as string[]) || []
 
+  // Check per-employee permission overrides (deny overrides role grant, grant overrides role lack)
+  const overrides = await getOverrides(employeeId, locationId)
+  const overrideResult = checkOverride(overrides, permission)
+
+  if (overrideResult === false) {
+    // Explicit deny — even if role has it
+    log.warn(`Permission denied by override: employee ${employeeId} denied ${permission}`)
+    return {
+      authorized: false,
+      error: 'You do not have permission to perform this action',
+      status: 403,
+    }
+  }
+
+  if (overrideResult === true) {
+    // Explicit grant — even if role doesn't have it
+    return {
+      authorized: true,
+      employee: {
+        id: employee.id,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        displayName: employee.displayName,
+        locationId: employee.locationId,
+        permissions: [...permissions, permission],
+      },
+    }
+  }
+
+  // No override — fall through to role-based check
   if (!hasPermission(permissions, permission)) {
     log.warn(`Permission denied: employee ${employeeId} lacks ${permission}`)
     return {
@@ -340,38 +401,16 @@ export async function requireAnyPermission(
     } catch { /* no cloud cookie or invalid — fall through */ }
   }
 
-  // Location-admin fallback — same as requirePermission (see comment there)
-  if (!employeeId && locationId) {
-    try {
-      const adminEmployee = await db.employee.findFirst({
-        where: {
-          locationId,
-          isActive: true,
-          deletedAt: null,
-        },
-        include: { role: true },
-        orderBy: { createdAt: 'asc' },
-      })
-      if (adminEmployee) {
-        const adminPerms = (adminEmployee.role.permissions as string[]) || []
-        const hasAnyPerm = permissions.some(p => hasPermission(adminPerms, p))
-        if (hasAnyPerm) {
-          employeeId = adminEmployee.id
-          setCachedEmployee(adminEmployee.id, locationId, adminEmployee)
-        }
-      }
-    } catch { /* DB error — fall through to 401 */ }
-  }
-
   if (!employeeId) {
+    log.warn(`[api-auth] Authentication required: no employeeId resolved for locationId=${locationId}, permissions=[${permissions.join(', ')}]`)
     return {
       authorized: false,
-      error: 'Employee ID is required',
+      error: 'Authentication required',
       status: 401,
     }
   }
 
-  // Check permission cache first (60s TTL)
+  // Check permission cache first (15s TTL)
   let employee = getCachedEmployee(employeeId, locationId)
   if (!employee) {
     employee = await EmployeeRepository.getEmployeeByIdWithInclude(
@@ -410,7 +449,30 @@ export async function requireAnyPermission(
 
   const employeePermissions = (employee.role.permissions as string[]) || []
 
-  const hasAny = permissions.some(p => hasPermission(employeePermissions, p))
+  // Check per-employee permission overrides
+  const overrides = await getOverrides(employeeId, locationId)
+
+  // Check each requested permission against overrides first, then role
+  const grantedPermissions = [...employeePermissions]
+  let hasAny = false
+
+  for (const p of permissions) {
+    const overrideResult = checkOverride(overrides, p)
+    if (overrideResult === true) {
+      hasAny = true
+      if (!grantedPermissions.includes(p)) grantedPermissions.push(p)
+      break
+    }
+    if (overrideResult === false) {
+      // Explicit deny — skip this permission even if role has it
+      continue
+    }
+    // No override — check role
+    if (hasPermission(employeePermissions, p)) {
+      hasAny = true
+      break
+    }
+  }
 
   if (!hasAny) {
     log.warn(`Permission denied: employee ${employeeId} lacks all of [${permissions.join(', ')}]`)
@@ -429,7 +491,7 @@ export async function requireAnyPermission(
       lastName: employee.lastName,
       displayName: employee.displayName,
       locationId: employee.locationId,
-      permissions: employeePermissions,
+      permissions: grantedPermissions,
     },
   }
 }

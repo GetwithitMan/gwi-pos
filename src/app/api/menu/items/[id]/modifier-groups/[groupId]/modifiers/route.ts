@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface RouteParams {
   params: Promise<{ id: string; groupId: string }>
@@ -59,6 +61,11 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
     }
 
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const authCheck = await requirePermission(actor.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+
     // Validate inputs
     if (!name || (typeof name === 'string' && name.trim() === '')) {
       return NextResponse.json({ error: 'Modifier name is required' }, { status: 400 })
@@ -66,8 +73,20 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     if (price !== undefined && (typeof price !== 'number' || !Number.isFinite(price))) {
       return NextResponse.json({ error: 'Price must be a valid number' }, { status: 400 })
     }
+    if (price !== undefined && price < 0) {
+      return NextResponse.json({ error: 'Modifier price cannot be negative' }, { status: 400 })
+    }
     if (extraPrice !== undefined && (typeof extraPrice !== 'number' || !Number.isFinite(extraPrice))) {
       return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
+    }
+    if (extraPrice !== undefined && extraPrice < 0) {
+      return NextResponse.json({ error: 'Extra price cannot be negative' }, { status: 400 })
+    }
+    if (liteMultiplier !== undefined && liteMultiplier !== null && liteMultiplier < 0) {
+      return NextResponse.json({ error: 'Lite multiplier cannot be negative' }, { status: 400 })
+    }
+    if (extraMultiplier !== undefined && extraMultiplier !== null && extraMultiplier < 0) {
+      return NextResponse.json({ error: 'Extra multiplier cannot be negative' }, { status: 400 })
     }
 
     // Validate swapTargets
@@ -306,6 +325,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
     }
 
+    // Auth check — require menu.edit_items permission
+    const actorPut = await getActorFromRequest(request)
+    const authPut = await requirePermission(actorPut.employeeId, modifier.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+
     // Validate inputs
     if (price !== undefined && typeof price !== 'number') {
       const parsed = Number(price)
@@ -313,11 +337,23 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         return NextResponse.json({ error: 'Price must be a valid number' }, { status: 400 })
       }
     }
+    if (price !== undefined && Number(price) < 0) {
+      return NextResponse.json({ error: 'Modifier price cannot be negative' }, { status: 400 })
+    }
     if (extraPrice !== undefined && typeof extraPrice !== 'number') {
       const parsed = Number(extraPrice)
       if (!Number.isFinite(parsed)) {
         return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
       }
+    }
+    if (extraPrice !== undefined && Number(extraPrice) < 0) {
+      return NextResponse.json({ error: 'Extra price cannot be negative' }, { status: 400 })
+    }
+    if (liteMultiplier !== undefined && liteMultiplier !== null && Number(liteMultiplier) < 0) {
+      return NextResponse.json({ error: 'Lite multiplier cannot be negative' }, { status: 400 })
+    }
+    if (extraMultiplier !== undefined && extraMultiplier !== null && Number(extraMultiplier) < 0) {
+      return NextResponse.json({ error: 'Extra multiplier cannot be negative' }, { status: 400 })
     }
 
     // Validate swapTargets — check existing DB targets when payload doesn't include new ones
@@ -537,6 +573,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     if (!modifier) {
       return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, modifier.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
 
     // Soft delete
     await db.modifier.update({

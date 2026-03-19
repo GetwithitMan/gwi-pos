@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 
 interface SAFForwardRequest {
@@ -54,7 +54,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       updateData.safError = response.textResponse || response.cmdStatus || 'SAF forward failed'
     }
 
-    const updated = await adminDb.payment.updateMany({
+    const updated = await db.payment.updateMany({
       where: {
         paymentReaderId: readerId,
         safStatus: 'APPROVED_SAF_PENDING_UPLOAD',

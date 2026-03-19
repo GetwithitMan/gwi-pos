@@ -453,75 +453,6 @@ function KDSContent() {
     return () => document.removeEventListener('visibilitychange', handler)
   }, [])
 
-  // Phase 10: Bump bar / keyboard shortcuts
-  // Arrow keys navigate between orders, Enter/Space bumps selected order
-  useEffect(() => {
-    if (authState !== 'authenticated' && authState !== 'employee_fallback') return
-
-    const handler = (e: KeyboardEvent) => {
-      // Don't capture when typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-
-      const orderCount = orders.length
-      if (orderCount === 0) return
-
-      switch (e.key) {
-        case 'ArrowRight':
-          e.preventDefault()
-          setSelectedOrderIndex(prev => Math.min(prev + 1, orderCount - 1))
-          break
-        case 'ArrowLeft':
-          e.preventDefault()
-          setSelectedOrderIndex(prev => Math.max(prev - 1, 0))
-          break
-        case 'ArrowDown': {
-          // Move down by columns count
-          e.preventDefault()
-          const cols = screenConfig?.columns ?? 4
-          setSelectedOrderIndex(prev => Math.min(prev + cols, orderCount - 1))
-          break
-        }
-        case 'ArrowUp': {
-          e.preventDefault()
-          const cols = screenConfig?.columns ?? 4
-          setSelectedOrderIndex(prev => Math.max(prev - cols, 0))
-          break
-        }
-        case 'Enter':
-        case ' ':
-          // Bump the selected order
-          e.preventDefault()
-          if (socketConnected && orders[selectedOrderIndex]) {
-            handleBumpOrder(orders[selectedOrderIndex])
-          }
-          break
-        case 'Home':
-          e.preventDefault()
-          setSelectedOrderIndex(0)
-          break
-        case 'End':
-          e.preventDefault()
-          setSelectedOrderIndex(Math.max(orderCount - 1, 0))
-          break
-        case 'r':
-        case 'R':
-          // Refresh
-          e.preventDefault()
-          loadOrders()
-          break
-        case 'f':
-        case 'F':
-          // Toggle fullscreen
-          e.preventDefault()
-          toggleFullscreen()
-          break
-      }
-    }
-
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [authState, orders, selectedOrderIndex, socketConnected, screenConfig?.columns, handleBumpOrder, loadOrders])
-
   // Reset selection when orders change
   useEffect(() => {
     setSelectedOrderIndex(prev => Math.min(prev, Math.max(orders.length - 1, 0)))
@@ -827,6 +758,75 @@ function KDSContent() {
       setIsFullscreen(false)
     }
   }
+
+  // Phase 10: Bump bar / keyboard shortcuts
+  // Arrow keys navigate between orders, Enter/Space bumps selected order
+  useEffect(() => {
+    if (authState !== 'authenticated' && authState !== 'employee_fallback') return
+
+    const handler = (e: KeyboardEvent) => {
+      // Don't capture when typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+
+      const orderCount = orders.length
+      if (orderCount === 0) return
+
+      switch (e.key) {
+        case 'ArrowRight':
+          e.preventDefault()
+          setSelectedOrderIndex(prev => Math.min(prev + 1, orderCount - 1))
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          setSelectedOrderIndex(prev => Math.max(prev - 1, 0))
+          break
+        case 'ArrowDown': {
+          // Move down by columns count
+          e.preventDefault()
+          const cols = screenConfig?.columns ?? 4
+          setSelectedOrderIndex(prev => Math.min(prev + cols, orderCount - 1))
+          break
+        }
+        case 'ArrowUp': {
+          e.preventDefault()
+          const cols = screenConfig?.columns ?? 4
+          setSelectedOrderIndex(prev => Math.max(prev - cols, 0))
+          break
+        }
+        case 'Enter':
+        case ' ':
+          // Bump the selected order
+          e.preventDefault()
+          if (socketConnected && orders[selectedOrderIndex]) {
+            handleBumpOrder(orders[selectedOrderIndex])
+          }
+          break
+        case 'Home':
+          e.preventDefault()
+          setSelectedOrderIndex(0)
+          break
+        case 'End':
+          e.preventDefault()
+          setSelectedOrderIndex(Math.max(orderCount - 1, 0))
+          break
+        case 'r':
+        case 'R':
+          // Refresh
+          e.preventDefault()
+          loadOrders()
+          break
+        case 'f':
+        case 'F':
+          // Toggle fullscreen
+          e.preventDefault()
+          toggleFullscreen()
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [authState, orders, selectedOrderIndex, socketConnected, screenConfig?.columns, handleBumpOrder, loadOrders])
 
   // Phase 3: Display mode and grid class computation
   const displayMode = screenConfig?.displayMode || 'tiled'

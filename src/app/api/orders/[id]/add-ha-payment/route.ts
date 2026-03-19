@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -29,7 +29,7 @@ export const POST = withVenue(async function POST(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let haLocationId = getRequestLocationId()
     if (!haLocationId) {
-      const orderForAuth = await adminDb.order.findFirst({
+      const orderForAuth = await db.order.findFirst({
         where: { id: orderId },
         select: { locationId: true },
       })
@@ -120,7 +120,7 @@ export const POST = withVenue(async function POST(
     // Find or create the "House Account Payment" system menu item
     // TODO: Add MenuItemRepository.findByNameAndCategory() once available
     // TODO: Add MenuItemRepository.findByNameAndCategory() once available
-    let systemMenuItem = await adminDb.menuItem.findFirst({
+    let systemMenuItem = await db.menuItem.findFirst({
       where: {
         locationId: order.locationId,
         name: 'House Account Payment',
@@ -131,7 +131,7 @@ export const POST = withVenue(async function POST(
     })
 
     if (!systemMenuItem) {
-      systemMenuItem = await adminDb.menuItem.create({
+      systemMenuItem = await db.menuItem.create({
         data: {
           locationId: order.locationId,
           categoryId: systemCategory.id,
@@ -145,7 +145,7 @@ export const POST = withVenue(async function POST(
     // Create the order item
     // TODO: Add OrderItemRepository.createItem() once that write method exists
     // TODO: Add OrderItemRepository.createItem() once that write method exists
-    const orderItem = await adminDb.orderItem.create({
+    const orderItem = await db.orderItem.create({
       data: {
         locationId: order.locationId,
         orderId,

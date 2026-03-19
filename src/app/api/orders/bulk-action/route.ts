@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
@@ -181,7 +181,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // TX-KEEP: BULK — batch transfer multiple orders to new employee by ID array; no batch repo method
-      const result = await adminDb.order.updateMany({
+      const result = await db.order.updateMany({
         where: {
           id: { in: orderIds },
           status: { in: ['open', 'sent', 'in_progress', 'split'] },

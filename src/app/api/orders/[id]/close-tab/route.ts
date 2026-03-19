@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTabUpdated, dispatchTabClosed, dispatchTabStatusUpdate, dispatchOrderClosed, dispatchEntertainmentStatusChanged, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
@@ -486,19 +486,19 @@ export const POST = withVenue(async function POST(
     // Clean up entertainment items after tab close
     try {
       // TODO: Add MenuItemRepository.findByCurrentOrder() and FloorPlanElementRepository once those repositories exist
-      const entertainmentItems = await adminDb.menuItem.findMany({
+      const entertainmentItems = await db.menuItem.findMany({
         where: { currentOrderId: orderId, itemType: 'timed_rental' },
         select: { id: true },
       })
 
       if (entertainmentItems.length > 0) {
         // Clear blockTimeStartedAt on order items so Android stops showing timers
-        await adminDb.orderItem.updateMany({
+        await db.orderItem.updateMany({
           where: { orderId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
           data: { blockTimeStartedAt: null },
         })
 
-        await adminDb.menuItem.updateMany({
+        await db.menuItem.updateMany({
           where: { currentOrderId: orderId, itemType: 'timed_rental' },
           data: {
             entertainmentStatus: 'available',

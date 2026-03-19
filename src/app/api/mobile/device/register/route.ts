@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
@@ -15,7 +15,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Find active employees scoped to this location
-    const employees = await adminDb.employee.findMany({
+    const employees = await db.employee.findMany({
       where: { locationId, isActive: true, deletedAt: null },
       select: {
         id: true,

@@ -51,7 +51,7 @@ export async function handleDataChanged(payload: DataChangedPayload): Promise<vo
     // The downstream sync worker will pick this up on its next cycle
     // Signal it via the cloud relay trigger if available
     try {
-      const { triggerImmediateDownstreamSync } = await import('@/lib/cloud-relay-client')
+      const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
       triggerImmediateDownstreamSync()
     } catch {
       // Cloud relay not available — downstream worker will catch up on next poll
@@ -63,27 +63,27 @@ export async function handleDataChanged(payload: DataChangedPayload): Promise<vo
 
 // Register default handlers for known domains
 registerDataChangedHandler('menu', async (payload) => {
-  const { triggerImmediateDownstreamSync } = await import('@/lib/cloud-relay-client')
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
   triggerImmediateDownstreamSync()
   log.info({ tables: payload.tables }, 'Menu change — triggered immediate downstream sync')
 })
 
 registerDataChangedHandler('employees', async () => {
-  const { triggerImmediateDownstreamSync } = await import('@/lib/cloud-relay-client')
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
   triggerImmediateDownstreamSync()
 })
 
 registerDataChangedHandler('settings', async () => {
-  const { triggerImmediateDownstreamSync } = await import('@/lib/cloud-relay-client')
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
   triggerImmediateDownstreamSync()
 })
 
 registerDataChangedHandler('floorplan', async () => {
-  const { triggerImmediateDownstreamSync } = await import('@/lib/cloud-relay-client')
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
   triggerImmediateDownstreamSync()
 })
 
 registerDataChangedHandler('order-types', async () => {
-  const { triggerImmediateDownstreamSync } = await import('@/lib/cloud-relay-client')
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
   triggerImmediateDownstreamSync()
 })

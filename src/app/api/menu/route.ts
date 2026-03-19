@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { getAllMenuItemsStockStatus } from '@/lib/stock-status'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
@@ -58,7 +58,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         }
       }),
 
-      adminDb.menuItem.findMany({
+      db.menuItem.findMany({
         where: {
           isActive: true,
           deletedAt: null,

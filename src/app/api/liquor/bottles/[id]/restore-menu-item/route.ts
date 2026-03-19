@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -28,7 +28,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Find the soft-deleted menu item for this bottle
-    const deletedMenuItem = await adminDb.menuItem.findFirst({
+    const deletedMenuItem = await db.menuItem.findFirst({
       where: {
         linkedBottleProductId: bottleId,
         locationId,
@@ -45,7 +45,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Restore the menu item
-    const restoredItem = await adminDb.menuItem.update({
+    const restoredItem = await db.menuItem.update({
       where: { id: deletedMenuItem.id },
       data: { deletedAt: null },
       include: {

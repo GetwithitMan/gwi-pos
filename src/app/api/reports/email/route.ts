@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
 import { formatCurrency } from '@/lib/utils'
@@ -141,7 +141,7 @@ export const POST = withVenue(async (request: NextRequest) => {
     const { startOfDay, endOfDay } = getLocationDateRange(timezone, reportDate)
 
     // Fetch key metrics
-    const orders = await adminDb.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         locationId,
         deletedAt: null,
@@ -166,7 +166,7 @@ export const POST = withVenue(async (request: NextRequest) => {
     const avgCheck = totalOrders > 0 ? netSales / totalOrders : 0
 
     // Void count
-    const voidCount = await adminDb.order.count({
+    const voidCount = await db.order.count({
       where: {
         locationId,
         status: 'voided',

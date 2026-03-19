@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
@@ -838,7 +838,7 @@ async function legacyReport(
     // Completed/paid orders
     // Exclude split parents to prevent double-counting when pay-all-splits
     // marks the parent as 'paid' alongside its children.
-    adminDb.order.findMany({
+    db.order.findMany({
       where: {
         locationId,
         deletedAt: null,
@@ -892,7 +892,7 @@ async function legacyReport(
       },
     }),
     // Voided orders
-    adminDb.order.findMany({
+    db.order.findMany({
       where: {
         locationId,
         deletedAt: null,

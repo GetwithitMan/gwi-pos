@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
@@ -13,6 +13,8 @@ import { dispatchFloorPlanUpdate, dispatchSplitCreated } from '@/lib/socket-disp
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // ============================================
 // Validation Schemas
@@ -52,7 +54,7 @@ export const GET = withVenue(async function GET(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let locationId = getRequestLocationId()
     if (!locationId) {
-      const orderCheck = await adminDb.order.findFirst({
+      const orderCheck = await db.order.findFirst({
         where: { id },
         select: { id: true, locationId: true },
       })
@@ -86,6 +88,7 @@ export const GET = withVenue(async function GET(
                   depth: true,
                   quantity: true,
                   isCustomEntry: true,
+                  isNoneSelection: true,
                   customEntryName: true,
                   customEntryPrice: true,
                   swapTargetName: true,
@@ -210,7 +213,7 @@ export const POST = withVenue(async function POST(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let postLocationId = getRequestLocationId()
     if (!postLocationId) {
-      const parentCheck = await adminDb.order.findFirst({
+      const parentCheck = await db.order.findFirst({
         where: { id },
         select: { id: true, locationId: true },
       })
@@ -219,6 +222,12 @@ export const POST = withVenue(async function POST(
       }
       postLocationId = parentCheck.locationId
     }
+
+    // Permission check: POS_SPLIT_CHECKS required to create split tickets
+    const actor = await getActorFromRequest(request)
+    const splitEmployeeId = (body as any).employeeId || actor.employeeId
+    const splitAuth = await requirePermission(splitEmployeeId, postLocationId, PERMISSIONS.POS_SPLIT_CHECKS)
+    if (!splitAuth.authorized) return NextResponse.json({ error: splitAuth.error }, { status: splitAuth.status })
 
     // Get the parent order with all items
     const parentOrder = await OrderRepository.getOrderByIdWithInclude(id, postLocationId, {
@@ -738,7 +747,7 @@ export const PATCH = withVenue(async function PATCH(
       // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
       let splitItemLocationId = getRequestLocationId()
       if (!splitItemLocationId) {
-        const splitItemCheck = await adminDb.order.findFirst({
+        const splitItemCheck = await db.order.findFirst({
           where: { id },
           select: { id: true, locationId: true },
         })
@@ -893,7 +902,7 @@ export const PATCH = withVenue(async function PATCH(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let moveLocationId = getRequestLocationId()
     if (!moveLocationId) {
-      const moveCheck = await adminDb.order.findFirst({
+      const moveCheck = await db.order.findFirst({
         where: { id },
         select: { id: true, locationId: true },
       })
@@ -1018,7 +1027,7 @@ export const DELETE = withVenue(async function DELETE(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let deleteLocationId = getRequestLocationId()
     if (!deleteLocationId) {
-      const deleteCheck = await adminDb.order.findFirst({
+      const deleteCheck = await db.order.findFirst({
         where: { id },
         select: { id: true, locationId: true },
       })
@@ -1085,6 +1094,22 @@ export const DELETE = withVenue(async function DELETE(
       // Restore soft-deleted parent items
       await OrderItemRepository.updateItemsWhere(id, parentOrder.locationId, { deletedAt: { not: null } }, { deletedAt: null }, tx)
 
+      // Restore soft-deleted discounts on the parent order
+      await tx.orderDiscount.updateMany({
+        where: { orderId: id, locationId: parentOrder.locationId, deletedAt: { not: null } },
+        data: { deletedAt: null },
+      })
+
+      // Recalculate discountTotal from the actual restored OrderDiscount records
+      // This is more accurate than childDiscountTotal when discounts were on the parent before split
+      const restoredDiscounts = await tx.orderDiscount.findMany({
+        where: { orderId: id, locationId: parentOrder.locationId, deletedAt: null },
+        select: { amount: true },
+      })
+      const restoredDiscountTotal = restoredDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
+      // Use restored records if available; fall back to child totals for discounts applied on splits
+      const effectiveDiscountTotal = restoredDiscountTotal > 0 ? restoredDiscountTotal : childDiscountTotal
+
       // Bug 11: Recalculate parent totals from restored items
       // TX-KEEP: COMPLEX — status-filtered findMany with modifiers include; no repo method for this combination
       const restoredItems = await tx.orderItem.findMany({
@@ -1114,22 +1139,22 @@ export const DELETE = withVenue(async function DELETE(
       }
       // Allocate discount proportionally between inclusive and exclusive
       let discOnIncl = 0, discOnExcl = 0
-      if (childDiscountTotal > 0 && parentSubtotal > 0) {
+      if (effectiveDiscountTotal > 0 && parentSubtotal > 0) {
         const inclShare = mergeInclSub / parentSubtotal
-        discOnIncl = Math.round(childDiscountTotal * inclShare * 100) / 100
-        discOnExcl = Math.round((childDiscountTotal - discOnIncl) * 100) / 100
+        discOnIncl = Math.round(effectiveDiscountTotal * inclShare * 100) / 100
+        discOnExcl = Math.round((effectiveDiscountTotal - discOnIncl) * 100) / 100
       }
       const postDiscInclusive = Math.max(0, mergeInclSub - discOnIncl)
       const postDiscExclusive = Math.max(0, mergeExclSub - discOnExcl)
       const mergeTax = calculateSplitTax(postDiscInclusive, postDiscExclusive, taxRate, mergeInclusiveRate)
-      const parentTotal = Math.round((mergeInclSub + mergeExclSub + mergeTax.taxFromExclusive - childDiscountTotal) * 100) / 100
+      const parentTotal = Math.round((mergeInclSub + mergeExclSub + mergeTax.taxFromExclusive - effectiveDiscountTotal) * 100) / 100
       const parentItemCount = restoredItems.reduce((sum, i) => sum + i.quantity, 0)
 
       // Restore parent order with recalculated totals
       await OrderRepository.updateOrder(id, parentOrder.locationId, {
         status: 'open',
         subtotal: parentSubtotal,
-        discountTotal: childDiscountTotal,
+        discountTotal: effectiveDiscountTotal,
         taxTotal: mergeTax.totalTax,
         taxFromInclusive: mergeTax.taxFromInclusive,
         taxFromExclusive: mergeTax.taxFromExclusive,

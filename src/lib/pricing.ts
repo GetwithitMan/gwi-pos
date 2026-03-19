@@ -31,7 +31,8 @@ export function roundToCents(value: number): number {
  * Example: Cash price $10, 4% fee → Card price $10.40
  */
 export function calculateCardPrice(cashPrice: number, discountPercent: number): number {
-  return roundToCents(cashPrice * (1 + discountPercent / 100))
+  const safePct = Math.min(Math.max(discountPercent, 0), 100) // Clamp 0-100
+  return roundToCents(cashPrice * (1 + safePct / 100))
 }
 
 /**

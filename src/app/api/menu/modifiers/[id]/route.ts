@@ -6,6 +6,8 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { getRequestLocationId } from '@/lib/request-context'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET single modifier group with modifiers
 export const GET = withVenue(async function GET(
@@ -124,6 +126,15 @@ export const PUT = withVenue(async function PUT(
     const { id } = await params
     const body = await request.json()
     const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, isSpiritGroup, modifiers } = body
+
+    // Auth check — require menu.edit_items permission
+    const existingGroup = await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
+    if (!existingGroup) {
+      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+    }
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, existingGroup.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Update modifier group
     const modifierGroup = await db.modifierGroup.update({
@@ -347,6 +358,15 @@ export const DELETE = withVenue(async function DELETE(
     const group = deleteLocationId
       ? { locationId: deleteLocationId }
       : await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
+
+    if (!group) {
+      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+    }
+
+    // Auth check — require menu.edit_items permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, group.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
 
     // Soft delete modifier group
     await db.modifierGroup.update({ where: { id }, data: { deletedAt: new Date() } })

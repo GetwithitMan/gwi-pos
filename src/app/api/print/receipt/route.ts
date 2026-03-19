@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { buildCustomerReceipt, type CustomerReceiptData } from '@/lib/escpos/customer-receipt'
 import { withVenue } from '@/lib/with-venue'
@@ -29,7 +29,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // ── Load order with all receipt-relevant includes ──
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
         employee: {

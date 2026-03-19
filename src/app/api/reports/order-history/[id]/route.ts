@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET(
     const employeeId = searchParams.get('employeeId')
 
     // Fetch order with employee and table
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       select: {
         id: true,
@@ -67,7 +67,7 @@ export const GET = withVenue(async function GET(
       removedItemLogs,
     ] = await Promise.all([
       // Items with modifiers and addedBy
-      adminDb.orderItem.findMany({
+      db.orderItem.findMany({
         where: { orderId, deletedAt: null },
         select: {
           id: true,
@@ -93,7 +93,7 @@ export const GET = withVenue(async function GET(
       }),
 
       // Payments with refunds
-      adminDb.payment.findMany({
+      db.payment.findMany({
         where: { orderId, deletedAt: null },
         select: {
           id: true,
@@ -135,7 +135,7 @@ export const GET = withVenue(async function GET(
       }),
 
       // Void logs
-      adminDb.voidLog.findMany({
+      db.voidLog.findMany({
         where: { orderId, deletedAt: null },
         include: {
           employee: { select: employeeSelect },
@@ -146,7 +146,7 @@ export const GET = withVenue(async function GET(
       }),
 
       // Order-level discounts
-      adminDb.orderDiscount.findMany({
+      db.orderDiscount.findMany({
         where: { orderId, deletedAt: null },
         select: {
           id: true,
@@ -160,7 +160,7 @@ export const GET = withVenue(async function GET(
       }),
 
       // Item-level discounts
-      adminDb.orderItemDiscount.findMany({
+      db.orderItemDiscount.findMany({
         where: { orderId, deletedAt: null },
         select: {
           id: true,
@@ -177,7 +177,7 @@ export const GET = withVenue(async function GET(
       }),
 
       // Tip transactions
-      adminDb.tipTransaction.findMany({
+      db.tipTransaction.findMany({
         where: { orderId, deletedAt: null },
         select: {
           id: true,
@@ -198,7 +198,7 @@ export const GET = withVenue(async function GET(
       }),
 
       // Closed-by employee from audit log
-      adminDb.auditLog.findFirst({
+      db.auditLog.findFirst({
         where: {
           entityType: 'order',
           entityId: orderId,
@@ -214,7 +214,7 @@ export const GET = withVenue(async function GET(
       }),
 
       // Removed/unsent items from audit log
-      adminDb.auditLog.findMany({
+      db.auditLog.findMany({
         where: {
           entityType: 'order',
           entityId: orderId,
@@ -238,7 +238,7 @@ export const GET = withVenue(async function GET(
       .map(d => d.appliedBy)
       .filter((id): id is string => id != null)
     const discountEmployees = discountEmployeeIds.length > 0
-      ? await adminDb.employee.findMany({
+      ? await db.employee.findMany({
           where: { id: { in: discountEmployeeIds } },
           select: employeeSelect,
         })

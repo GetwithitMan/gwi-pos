@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma, OrderStatus } from '@/generated/prisma/client'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
@@ -17,6 +17,7 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import type { AddItemInput } from '@/lib/domain/order-items/types'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { isTrainingEmployee } from '@/lib/training-mode'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
@@ -244,7 +245,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             }
             if (reservation?.bottleServiceTierId) {
               // TODO: migrate to OrderRepository — bottleServiceTierId is a relational FK not in OrderUpdateManyMutationInput
-              await adminDb.order.update({
+              await db.order.update({
                 where: { id: order.id },
                 data: {
                   isBottleService: true,
@@ -282,13 +283,20 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // === STANDARD PATH: Full order creation with items ===
 
+    // Validate items input (count, prices, quantities, weights, modifiers, pizza, lineItemId uniqueness)
+    const { validateAddItemsInput } = await import('@/lib/domain/order-items/validation')
+    const inputValidation = validateAddItemsInput(items as AddItemInput[])
+    if (!inputValidation.valid) {
+      return apiError.badRequest(inputValidation.error, ERROR_CODES.VALIDATION_ERROR)
+    }
+
     // Order number + table check handled atomically inside order creation transaction below
 
     // Fetch menu items to get commission settings
     // TODO: Add MenuItemRepository.getMenuItemsByIds() for batch ID lookups with custom select
     const menuItemIds = items.map(item => item.menuItemId)
     // TODO: Add MenuItemRepository.getMenuItemsByIds() for batch ID lookups with custom select
-    const menuItems = await adminDb.menuItem.findMany({
+    const menuItems = await db.menuItem.findMany({
       where: { id: { in: menuItemIds }, locationId },
       select: { id: true, commissionType: true, commissionValue: true, category: { select: { categoryType: true } }, tipExempt: true },
     })
@@ -658,7 +666,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           }
           if (reservation?.bottleServiceTierId) {
             // TODO: migrate to OrderRepository — bottleServiceTierId is a relational FK not in OrderUpdateManyMutationInput
-            await adminDb.order.update({
+            await db.order.update({
               where: { id: order.id },
               data: {
                 isBottleService: true,
@@ -840,7 +848,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // TODO: add repository method for filtered order listing (status + employee + date range + balance + includes)
-    const orders = await adminDb.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         locationId,
         ...(status ? { status: status as OrderStatus } : {}),

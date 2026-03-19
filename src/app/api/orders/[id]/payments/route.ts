@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List all payments for an order
@@ -10,7 +10,7 @@ export const GET = withVenue(async function GET(
   try {
     const { id: orderId } = await params
 
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
         payments: {

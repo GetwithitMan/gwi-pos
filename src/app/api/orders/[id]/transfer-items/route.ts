@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { parseSettings } from '@/lib/settings'
@@ -47,7 +47,7 @@ export const POST = withVenue(async function POST(
     let fromLocationId = getRequestLocationId()
     if (!fromLocationId) {
       // Bootstrap: lightweight fetch for locationId
-      const fromCheck = await adminDb.order.findFirst({
+      const fromCheck = await db.order.findFirst({
         where: { id: fromOrderId },
         select: { id: true, locationId: true },
       })
@@ -339,7 +339,7 @@ export const GET = withVenue(async function GET(
     }
 
     // Get open orders at this location (exclude current order)
-    const orders = await adminDb.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         locationId,
         id: { not: currentOrderId },

@@ -9,7 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -83,7 +83,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'orderId is required' }, { status: 400 })
   }
 
-  const order = await adminDb.order.findFirst({
+  const order = await db.order.findFirst({
     where: { id: orderId, tabStatus: 'pending_auth', deletedAt: null },
     select: { id: true, locationId: true, orderNumber: true, updatedAt: true },
   })
@@ -93,7 +93,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   // Reset to open
-  await adminDb.order.update({
+  await db.order.update({
     where: { id: orderId },
     data: { tabStatus: 'open', version: { increment: 1 } },
   })

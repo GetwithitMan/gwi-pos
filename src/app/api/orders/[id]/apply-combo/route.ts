@@ -11,6 +11,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import {
   calculateItemTotal,
   calculateOrderTotals,
@@ -39,6 +41,7 @@ export const POST = withVenue(async function POST(
     const { comboTemplateId, itemIds } = body as {
       comboTemplateId: string
       itemIds: string[]
+      employeeId?: string
     }
 
     if (!comboTemplateId || !itemIds?.length) {
@@ -47,6 +50,19 @@ export const POST = withVenue(async function POST(
         { status: 400 }
       )
     }
+
+    // Permission check: POS_ACCESS required to apply combos
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = body.employeeId || actor.employeeId
+    const orderCheck = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: { locationId: true },
+    })
+    if (!orderCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+    const auth = await requirePermission(resolvedEmployeeId, orderCheck.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const result = await db.$transaction(async (tx) => {
       // Lock the order row

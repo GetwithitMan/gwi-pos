@@ -35,7 +35,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'pos.access': {
     label: 'POS Access',
-    description: 'Lets this employee log in and use the register. Required for anything on the POS.',
+    description: 'Basic POS access — required for all front-of-house employees. Allows viewing the order screen, selecting tables, and navigating the POS interface. Does NOT include payment processing, discounts, or voids (those require separate permissions). Without this permission, the employee cannot log in to the register at all.',
     details: [
       'Without this permission, the employee cannot access the POS screen at all',
       'This is the most basic permission — nearly every role needs it',
@@ -48,7 +48,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.table_service': {
     label: 'Table Service',
-    description: 'Lets this employee create and manage dine-in orders at tables.',
+    description: 'Allows creating and managing dine-in orders at tables using the floor plan. Without this permission, the employee can only use Quick Order (bar tabs and counter orders) and cannot select a table for an order. Requires pos.access.',
     details: [
       'Required for full-service restaurants where guests sit at tables',
       'Works with the floor plan to assign orders to specific tables',
@@ -60,7 +60,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.quick_order': {
     label: 'Quick Order',
-    description: 'Lets this employee ring up bar tabs and quick counter orders without a table.',
+    description: 'Allows ringing up bar tabs, takeout, and counter orders without assigning a table. Without this permission, the employee can only create table-based orders using the floor plan. Ideal for bartenders and counter staff. Requires pos.access.',
     details: [
       'Used for bar service, takeout, and counter orders',
       'Does not require a table assignment',
@@ -72,7 +72,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.kds': {
     label: 'Kitchen Display',
-    description: 'Shows this employee the kitchen display screen to see incoming orders. For kitchen/BOH staff.',
+    description: 'Allows viewing the Kitchen Display System (KDS) to see and bump incoming orders. This is the primary permission for cooks and kitchen staff. Does NOT grant access to the POS register, payments, or front-of-house features. Without this permission, the employee cannot see the kitchen screen at all.',
     details: [
       'Provides access to the Kitchen Display System (KDS)',
       'Used by cooks and kitchen staff to view and manage incoming orders',
@@ -85,7 +85,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.cash_payments': {
     label: 'Cash Payments',
-    description: 'Lets this employee accept cash from customers.',
+    description: 'Allows accepting cash payments from customers and completing cash transactions at the register. Without this permission, the employee cannot close out an order with cash and must hand it off to someone who can. Works alongside the Cash Drawer permission for opening the drawer. Requires pos.access.',
     details: [
       'Required to process cash transactions at the register',
       'Works alongside pos.cash_drawer for opening the drawer',
@@ -97,7 +97,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.card_payments': {
     label: 'Card Payments',
-    description: 'Lets this employee run credit/debit card transactions.',
+    description: 'Allows running credit and debit card transactions through the card reader, including pre-authorizations for bar tabs. Without this permission, the employee cannot swipe, tap, or insert cards and must hand off to a coworker for card payments. Requires pos.access.',
     details: [
       'Required to process card payments via the Datacap terminal',
       'Includes pre-authorization for bar tabs',
@@ -109,7 +109,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.cash_drawer': {
     label: 'Cash Drawer',
-    description: 'Lets this employee open the cash drawer during a transaction.',
+    description: 'Allows opening the cash drawer automatically when processing a cash payment. The drawer opens as part of the transaction flow. For opening the drawer without a sale (to make change, etc.), the employee also needs the No Sale permission. Without this permission, the drawer stays locked during the transaction.',
     details: [
       'Drawer opens automatically when processing a cash payment',
       'Use pos.no_sale to allow opening without a transaction',
@@ -121,7 +121,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.no_sale': {
     label: 'No Sale',
-    description: 'Lets this employee open the cash drawer without processing a sale (e.g., to make change).',
+    description: 'Allows opening the cash drawer without processing a sale — for example, to make change for a customer or to add starting cash. Every no-sale drawer open is logged in the audit trail with the employee name and timestamp, so you can track who opened the drawer and when. Without this permission, the drawer only opens during an actual cash transaction.',
     details: [
       'Opens the drawer without any transaction',
       'All no-sale events are logged for audit purposes',
@@ -133,7 +133,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.split_checks': {
     label: 'Split Checks',
-    description: 'Lets this employee split a check between multiple people or payment methods.',
+    description: 'Allows splitting a check between multiple guests or payment methods. Supports splitting by seat, by item, or evenly among a group. Also allows split-tender payments (part cash, part card). Without this permission, the employee cannot split a check and must close out the full order with a single payment.',
     details: [
       'Supports splitting by seat, by item, or evenly',
       'Also allows split payment (part cash, part card)',
@@ -145,7 +145,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.change_table': {
     label: 'Change Table',
-    description: 'Lets this employee move an order to a different table.',
+    description: 'Allows moving an order from one table to another — for example, when guests relocate or tables are combined. The order stays assigned to the original server unless also transferred. Without this permission, the employee must ask a manager to move the order.',
     details: [
       'Useful when guests move or tables are combined',
       'The order stays with the original server unless also transferred',
@@ -156,7 +156,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.change_server': {
     label: 'Change Server',
-    description: 'Lets this employee reassign an order to a different employee.',
+    description: 'Allows reassigning an order to a different server or bartender — commonly used at shift change or when rotating sections. The receiving employee takes over responsibility and tip credit for the order. Without this permission, the employee cannot hand off their tables to someone else.',
     details: [
       'Transfers responsibility (and tips) for the order',
       'Commonly used at shift change or section rotations',
@@ -167,7 +167,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.view_others_orders': {
     label: "View Others' Orders",
-    description: "Lets this employee see other employees' open orders.",
+    description: "Allows viewing orders belonging to other servers and bartenders (read-only). Useful for managers checking the floor or support staff helping out. Without this permission, the employee can only see their own orders. Does NOT allow editing — that requires the Edit Others' Orders permission.",
     details: [
       'Read-only access to orders owned by other employees',
       'Useful for managers and support staff monitoring the floor',
@@ -178,7 +178,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'pos.edit_others_orders': {
     label: "Edit Others' Orders",
-    description: "Lets this employee add or remove items from another employee's open order.",
+    description: "Allows adding items to, removing items from, or modifying another employee's open order. All changes are logged with the editing employee's name so you always know who made the change. Without this permission, the employee can only modify their own orders. Requires the View Others' Orders permission.",
     details: [
       'Allows modifying orders that belong to someone else',
       'All changes are logged with the editing employee\'s identity',
@@ -193,7 +193,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'manager.discounts': {
     label: 'Apply Discounts',
-    description: 'Lets this employee apply a manual discount to an order. HIGH RISK: improper use reduces revenue.',
+    description: 'Allows applying percentage or fixed-dollar discounts to orders. Without this permission, the employee must request a manager override via PIN to apply any discount. Every discount is logged with the employee name, amount, and reason in the audit trail. Give only to managers and trusted leads — improper use directly reduces your revenue.',
     details: [
       'Covers both percentage and dollar amount discounts',
       'Does not require a manager override by default',
@@ -206,7 +206,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.void_items': {
     label: 'Void Items',
-    description: 'Lets this employee remove an item from an order after it was sent to the kitchen.',
+    description: 'Allows voiding (removing) items from orders, even after they have been sent to the kitchen. A void reason may be required depending on your settings. The kitchen is automatically notified when an item is voided. Without this permission, the employee sees the void button but must enter a manager PIN to proceed. All voids are logged for your Void Report.',
     details: [
       'Item is marked voided and removed from the bill',
       'Kitchen is notified',
@@ -219,7 +219,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.void_orders': {
     label: 'Void Orders',
-    description: 'Lets this employee cancel an entire order.',
+    description: 'Allows canceling an entire order and all its items at once. Does NOT reverse any payments already taken — use Void Payments to reverse a completed payment. Without this permission, the employee cannot cancel a full order and must void items one by one (if they have Void Items) or ask a manager. All order voids are logged in the audit trail.',
     details: [
       'Cancels all items on the order',
       'Does not reverse any payments already made',
@@ -232,7 +232,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.void_payments': {
     label: 'Void Payments',
-    description: 'Lets this employee reverse a completed payment on a closed order.',
+    description: 'Allows reversing a completed credit card or cash payment that has already been processed. This puts money back on the customer\'s card or removes it from the drawer. This is the highest-risk financial permission — only give it to managers or owners you trust completely. Without this permission, the employee cannot undo any completed payment. A full audit trail is created for every voided payment.',
     details: [
       'CRITICAL: affects completed financial transactions',
       'Creates a full audit trail',
@@ -245,7 +245,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.refunds': {
     label: 'Process Refunds',
-    description: "Lets this employee issue a refund to a customer's card or as cash back.",
+    description: "Allows issuing refunds to a customer's original payment method (card refund back to their card, or cash back from the drawer). Different from voiding a payment — refunds are used after the transaction has settled (typically the next day or later). Without this permission, the employee cannot process any refunds and must get a manager. All refunds appear in sales reports and the audit trail.",
     details: [
       'Card refunds go back to the original payment method',
       'Cash refunds come from the drawer',
@@ -258,7 +258,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.edit_sent_items': {
     label: 'Edit Sent Items',
-    description: 'Lets this employee change the price or modifiers on an item that was already sent to the kitchen.',
+    description: 'Allows modifying items that have already been sent to the kitchen — changing price, modifiers, or special instructions after the ticket has printed. Without this permission, once an item is sent, it is locked and cannot be changed (the employee would need to void it and re-ring it). All edits to sent items are logged in the audit trail.',
     details: [
       'Allows modifying items after they have been sent',
       'Changes are logged in the audit trail',
@@ -270,7 +270,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.transfer_checks': {
     label: 'Transfer Checks',
-    description: 'Lets this employee move a tab or check from one employee to another.',
+    description: 'Allows transferring a tab or check from one employee to another — for example, when a server leaves mid-shift and hands their tables to someone else. The receiving employee must have the Receive Transfers permission. Transfer history is logged so you can see who handed off what. Without this permission, the employee cannot give their orders to another person.',
     details: [
       'The receiving employee must have manager.receive_transfers permission',
       'Transfer history is logged for accountability',
@@ -282,7 +282,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.bulk_operations': {
     label: 'Bulk Operations',
-    description: 'Lets this employee void or close multiple checks at once (e.g., end-of-night cleanup).',
+    description: 'Allows voiding or closing out multiple checks at once — typically used for end-of-night cleanup when there are forgotten open tabs. Without this permission, the employee must close or void each order individually. Every individual operation within the batch is logged separately in the audit trail. Give only to closing managers.',
     details: [
       'Allows batch processing of open orders',
       'Useful for closing out forgotten tabs at end of day',
@@ -295,7 +295,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.tax_exempt': {
     label: 'Tax Exempt',
-    description: 'Lets this employee remove sales tax from an order (e.g., for non-profit customers).',
+    description: 'Allows removing sales tax from an order — used for tax-exempt customers like non-profits, government agencies, or resellers with a tax-exempt certificate. Tax-exempt orders are flagged in reports for compliance documentation. Without this permission, the employee cannot remove tax and must get a manager to apply the exemption.',
     details: [
       'Removes tax from the entire order',
       'Tax-exempt orders are flagged in reports',
@@ -308,7 +308,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.open_items': {
     label: 'Open Items',
-    description: 'Lets this employee ring up an item without a set price — they type the amount manually.',
+    description: 'Allows ringing up a custom item with a manually typed price instead of selecting from the menu. Used for special requests, catering add-ons, or items not yet on the menu. Open items are tracked separately in reports so you can spot abuse. Without this permission, the employee can only ring up items that are already on the menu with set prices. Give only to trusted staff — this can be used to undercharge.',
     details: [
       'Creates a custom-priced item on the order',
       'Open items are tracked separately in reports',
@@ -321,7 +321,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.receive_transfers': {
     label: 'Receive Transfers',
-    description: 'Lets this employee accept a tab that was transferred to them by another employee.',
+    description: 'Allows accepting a tab or check that another employee transfers to you. Required for the receiving end of a transfer — the person handing off needs Transfer Checks, and the person picking up needs this permission. Without this permission, tabs cannot be transferred to this employee. Recommended for all servers and bartenders so shift handoffs work smoothly.',
     details: [
       'Required for an employee to receive transferred checks',
       'Works together with manager.transfer_checks',
@@ -333,7 +333,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.keyed_entry': {
     label: 'Manual Card Entry',
-    description: 'Allows this employee to manually type in credit card numbers for payment (card not present).',
+    description: 'Allows manually typing in a credit card number instead of swiping, tapping, or inserting the card. Used for phone orders, damaged cards, or when the card reader fails. This carries higher fraud risk than card-present transactions because the card cannot be verified physically. Card data is sent directly to the processor and never stored. All keyed entries are logged with the employee name. Without this permission, the employee can only process card-present transactions.',
     details: [
       'Used for phone orders, damaged cards, or when the card reader fails',
       'Higher fraud risk than card-present transactions — restrict to trusted managers',
@@ -351,7 +351,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.cash_variance_override': {
     label: 'Cash Variance Override',
-    description: "Lets this employee close out the cash drawer even when the cash counted doesn't match what the system expects.",
+    description: "Allows closing out the cash drawer even when the counted cash does not match the expected total — overriding the variance. This can mask cash theft or accounting errors, so only give it to owners and your most trusted managers. Without this permission, the employee cannot close a drawer that is over or short. All variance overrides are logged with the employee name and the dollar amount of the discrepancy.",
     details: [
       'CRITICAL: can mask cash theft or accounting errors',
       'All overrides are logged',
@@ -368,7 +368,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'manager.edit_time_entries': {
     label: 'Edit Time Entries',
-    description: "Lets this employee edit another employee's clock-in or clock-out time.",
+    description: "Allows editing another employee's clock-in or clock-out times — for example, when someone forgot to punch in or punched at the wrong time. Changes directly affect payroll calculations and hours worked. The original time and the new time are both logged so you can see exactly what was changed. Without this permission, the employee cannot correct anyone's time entries.",
     details: [
       'Changes to time entries affect payroll calculations',
       'All edits are logged with the original and modified values',
@@ -381,7 +381,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.end_breaks_early': {
     label: 'End Breaks Early',
-    description: "Lets this employee end another employee's break before the timer runs out.",
+    description: "Allows ending another employee's break before the scheduled break time is up — for example, when the floor gets busy and you need them back sooner. The actual break duration is still recorded accurately for labor compliance. Without this permission, the employee cannot cut short anyone else's break.",
     details: [
       'Overrides the scheduled break duration',
       'Break time is still recorded accurately for labor compliance',
@@ -393,7 +393,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.force_clock_out': {
     label: 'Force Clock Out',
-    description: 'Lets this employee clock out another employee who forgot to clock out themselves.',
+    description: 'Allows clocking out another employee who forgot to punch out — the clock-out time can be set to when they actually left. Used to prevent employees from accumulating hours after leaving. Without this permission, forgotten clock-outs must wait until the employee returns or a manager handles it. The forced clock-out is logged with who did it and the time set.',
     details: [
       'Used when an employee leaves without clocking out',
       'The clock-out time can be set to a specific time',
@@ -405,7 +405,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.close_day': {
     label: 'Close Out Day',
-    description: "Lets this employee run the end-of-day closeout to finalize the day's sales and reset totals.",
+    description: "Allows running the end-of-day closeout, which finalizes all transactions, generates the daily sales report, and resets totals for the next business day. This cannot be undone once completed. Without this permission, the employee cannot close out the day — only a manager or owner can. Typically given only to the closing manager.",
     details: [
       'Finalizes all transactions for the business day',
       'Generates end-of-day reports',
@@ -418,7 +418,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.shift_review': {
     label: 'Shift Review',
-    description: 'Lets this employee view a summary of sales and activity during a shift.',
+    description: 'Allows viewing a shift summary showing sales totals, voids, discounts, comps, and payment breakdown for the current or previous shift. Useful during shift handoff so the incoming manager knows where things stand. Without this permission, the employee cannot see shift-level performance data.',
     details: [
       'Shows sales totals, voids, discounts, and payment breakdown',
       'Useful for shift handoff and accountability',
@@ -430,7 +430,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.cash_drawer_blind': {
     label: 'Cash Drawer (Blind Count)',
-    description: 'Lets this employee count the cash drawer without seeing the expected total (blind count).',
+    description: 'Allows counting the cash drawer at the end of a shift using a blind count — the employee enters what they count without seeing what the system expects. This is more secure than full count because the employee cannot adjust their count to match. Without this permission, the employee cannot count the drawer at all. If you want them to see the expected total, give them Full Count instead.',
     details: [
       'Employee enters their count without seeing what the system expects',
       'Prevents employees from adjusting their count to match',
@@ -443,7 +443,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.cash_drawer_full': {
     label: 'Cash Drawer (Full Count)',
-    description: 'Lets this employee see the expected drawer total when counting cash.',
+    description: 'Allows counting the cash drawer while seeing the expected total the system calculated. Less secure than blind count because the employee can see exactly what the system expects and adjust their count to match. Best for managers who need to reconcile. Without this permission, use Blind Count instead for a more secure drawer count.',
     details: [
       'Shows the system-expected amount alongside the employee count',
       'Less secure than blind count — employee can adjust to match',
@@ -455,7 +455,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'manager.pay_in_out': {
     label: 'Paid In/Out',
-    description: 'Lets this employee record cash going in or out of the drawer (e.g., dropping a safe deposit or getting change).',
+    description: 'Allows recording cash going into or out of the drawer for non-sale reasons — safe drops, bank change runs, petty cash withdrawals, or adding a starting bank. All movements are tracked separately from sales and appear in cash reports. Without this permission, the employee cannot record any cash movements and must ask a manager. Every paid in/out entry is logged with the employee name, amount, and reason.',
     details: [
       'Tracks cash movements separate from sales',
       'Used for safe drops, bank runs, and petty cash',
@@ -468,7 +468,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'staff.view': {
     label: 'View Staff',
-    description: 'Lets this employee see the list of employees.',
+    description: 'Allows viewing the employee directory — names, roles, and contact info. Does NOT include wage or payroll information (that requires Edit Wages). Without this permission, the employee list is hidden. This is read-only and does not allow making any changes to employee profiles.',
     details: [
       'Read-only view of the employee directory',
       'Does not include wage or payroll information',
@@ -479,7 +479,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'staff.edit_profile': {
     label: 'Edit Profiles',
-    description: 'Lets this employee add, edit, or deactivate employee profiles.',
+    description: 'Allows creating new employee profiles, editing names, PINs, contact info, and deactivating employees who leave. Does NOT include changing pay rates — that requires the Edit Wages permission separately. Without this permission, the employee can only view staff profiles (if they have View Staff). Requires View Staff.',
     details: [
       'Can create new employees and modify existing ones',
       'Includes changing names, PINs, and contact info',
@@ -491,7 +491,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'staff.edit_wages': {
     label: 'Edit Wages',
-    description: "Lets this employee change an employee's hourly rate or salary.",
+    description: "Allows changing an employee's hourly rate or salary. Changes directly affect payroll calculations going forward. An audit trail is kept for every wage change showing the old rate, new rate, and who made the change. Without this permission, the employee can edit profiles but cannot see or change pay rates. Give only to owners and payroll administrators.",
     details: [
       'FINANCIAL: changing wages affects payroll calculations',
       'Audit trail is kept for all wage changes',
@@ -502,7 +502,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'staff.manage_roles': {
     label: 'Manage Roles',
-    description: 'Lets this employee create and edit roles and their permissions.',
+    description: 'Allows creating new roles and editing which permissions each role has. This is one of the most powerful permissions in the system — anyone with it can grant themselves or others any permission, including admin access. Only give this to the business owner and senior administrators. Without this permission, the employee cannot create or modify roles. All role changes are logged.',
     details: [
       'CRITICAL: this employee can grant themselves or others any permission',
       'Only give to owners and senior admins',
@@ -514,7 +514,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'staff.assign_roles': {
     label: 'Assign Roles',
-    description: 'Lets this employee change which role is assigned to an employee.',
+    description: 'Allows changing which role is assigned to an employee — for example, promoting a server to a manager role. Combined with Manage Roles, this gives full control over the entire permission system. Without this permission, the employee cannot change anyone\'s role assignment. Give only to the owner and senior managers.',
     details: [
       'CRITICAL: combined with manage_roles, this grants full control over the permission system',
     ],
@@ -524,7 +524,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'staff.clock_others': {
     label: 'Clock Others',
-    description: 'Lets this employee clock other employees in or out.',
+    description: 'Allows clocking other employees in or out on their behalf — useful for managers handling clock-ins at the start of a busy shift. All buddy-punch events are logged with who did the punching and for whom. Without this permission, each employee must clock in and out using their own PIN.',
     details: [
       'Useful for managers handling clock-ins at the start of a shift',
       'All buddy-punch events are logged',
@@ -535,7 +535,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'staff.scheduling': {
     label: 'Scheduling',
-    description: 'Lets this employee view and manage the employee schedule.',
+    description: 'Allows viewing published schedules, shift assignments, and availability requests. This is read-level access to the scheduling system. To create and edit schedules, also grant Manage Schedule. Without this permission, the employee cannot see the schedule page at all.',
     details: [
       'Can view published schedules and shift assignments',
       'Includes availability requests and shift trades',
@@ -546,7 +546,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'scheduling.manage': {
     label: 'Manage Schedule',
-    description: 'Lets this employee create and edit the employee schedule.',
+    description: 'Allows creating, editing, and publishing employee schedules. Can assign shifts, modify availability, and approve shift trades for all employees. Without this permission, the employee can view schedules (if they have the Scheduling permission) but cannot make changes. Requires the Scheduling permission for access to the scheduling page.',
     details: [
       'Full access to shift scheduling and availability management',
       'Can publish and modify schedules for all employees',
@@ -557,7 +557,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'payroll.manage': {
     label: 'Manage Payroll',
-    description: 'Lets this employee process payroll, including exporting payroll data.',
+    description: 'Allows processing payroll runs and exporting payroll data for all employees. This grants access to every employee\'s wage rates, hours worked, tips, and tax information. Without this permission, payroll data is completely hidden. Only give this to the owner, bookkeeper, or payroll administrator.',
     details: [
       'CRITICAL: grants access to all employee wage and tax data',
       'Can initiate payroll processing',
@@ -572,7 +572,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'reports.view': {
     label: 'View Reports',
-    description: 'Lets this employee access the reports section.',
+    description: 'Allows accessing the reports dashboard. This is the gateway permission — without it, the Reports menu item is completely hidden. However, this alone only shows the reports landing page. Each specific report type (Sales, Labor, Timesheets, etc.) requires its own permission to actually view the data.',
     details: [
       'Required to see any reports',
       'Individual report types require their own permissions',
@@ -583,7 +583,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.sales': {
     label: 'Sales Reports',
-    description: 'Lets this employee view total sales numbers for the business.',
+    description: 'Allows viewing overall sales reports — total revenue, transaction counts, averages, and payment method breakdowns. Shows business-level numbers, not individual employee performance. Without this permission, the sales reports section is hidden. For per-employee sales breakdowns, also grant Sales by Employee. Requires View Reports.',
     details: [
       'Shows revenue, transaction counts, and averages',
       'Does not break down by individual employee',
@@ -594,7 +594,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.sales_by_employee': {
     label: 'Sales by Employee',
-    description: "Lets this employee see each employee's individual sales numbers.",
+    description: "Allows viewing per-employee sales breakdowns — how much each server, bartender, or cashier sold during a shift or date range. Can reveal performance differences between staff, so consider whether you want all managers to see this. Without this permission, sales data is only shown at the business level. Requires View Reports and Sales Reports.",
     details: [
       'Shows per-employee revenue breakdown',
       'Can reveal performance differences between staff',
@@ -605,7 +605,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.labor': {
     label: 'Labor Reports',
-    description: 'Lets this employee view labor costs and hours worked.',
+    description: 'Allows viewing labor cost reports — total hours worked, labor dollar amounts, and labor as a percentage of sales. May reveal individual wage rates through calculation (e.g., if someone worked 8 hours and the labor cost was $120, the rate is $15/hr). Without this permission, labor data is completely hidden. Requires View Reports.',
     details: [
       'Shows total labor hours, costs, and labor percentage',
       'May reveal individual wage rates through calculation',
@@ -616,7 +616,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.timesheet': {
     label: 'Timesheet Reports',
-    description: 'Lets this employee view detailed time clock records for all employees.',
+    description: 'Allows viewing detailed time clock records — individual clock-in/out times, break durations, and total hours for every employee. Contains sensitive attendance and scheduling data. Without this permission, time clock details are hidden and the employee can only see their own punches. Requires View Reports.',
     details: [
       'Shows individual clock-in/out times, breaks, and total hours',
       'Contains sensitive scheduling and attendance data',
@@ -627,7 +627,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.export': {
     label: 'Export Reports',
-    description: 'Lets this employee download report data as a file.',
+    description: 'Allows downloading report data as CSV or Excel files that can be shared, emailed, or imported into accounting software. Exported files may contain sensitive financial data, employee wages, and customer information — once exported, the data leaves the system and cannot be controlled. Without this permission, the employee can view reports on screen but cannot download or export anything.',
     details: [
       'CRITICAL: exported files may contain sensitive financial and employee data',
     ],
@@ -637,7 +637,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.commission': {
     label: 'Commission Reports',
-    description: 'Lets this employee view commission earnings by employee.',
+    description: 'Allows viewing commission earnings reports for all employees who earn commissions on items they sell. Shows per-employee commission totals and the items that earned them. Contains sensitive compensation data. Without this permission, commission reports are hidden. Requires View Reports.',
     details: [
       'Shows per-employee commission totals and rates',
       'Contains sensitive compensation data',
@@ -648,7 +648,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.product_mix': {
     label: 'Product Mix',
-    description: 'Lets this employee see how many of each item was sold.',
+    description: 'Allows viewing the product mix report — how many of each menu item were sold and the revenue each generated. Useful for menu engineering (what to keep, drop, or reprice) and purchasing decisions. Without this permission, product mix data is hidden. Requires View Reports.',
     details: [
       'Shows quantity sold and revenue per menu item',
       'Useful for menu engineering and purchasing decisions',
@@ -659,7 +659,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.inventory': {
     label: 'Inventory Reports',
-    description: 'Lets this employee view stock level and usage reports.',
+    description: 'Allows viewing inventory reports — current stock levels, usage rates, variance from par levels, and cost of goods. This is read-only and does not allow modifying inventory counts or settings. Without this permission, inventory reports are hidden. Requires View Reports.',
     details: [
       'Shows current stock, usage rates, and variance from par',
       'Read-only — cannot modify inventory from this view',
@@ -670,7 +670,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.tabs': {
     label: 'Tab Reports',
-    description: 'Lets this employee view open and closed tab history.',
+    description: 'Allows viewing tab reports — open tabs, closed tab history, pre-authorization holds, and final settled amounts. Includes customer names tied to tabs and payment details. Without this permission, tab reports are hidden. Requires View Reports.',
     details: [
       'Shows tab details including customer names and amounts',
       'Includes pre-auth holds and final settled amounts',
@@ -681,7 +681,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.paid_in_out': {
     label: 'Paid In/Out Reports',
-    description: 'Lets this employee view the history of cash paid in and out of drawers.',
+    description: 'Allows viewing the history of all cash paid in and out of drawers — safe drops, petty cash, bank runs, and starting banks. Shows who made each entry, the amount, and the reason. Reveals cash handling patterns and individual entries. Without this permission, paid in/out reports are hidden. Requires View Reports.',
     details: [
       'Shows all cash movements not tied to a sale (safe drops, petty cash)',
       'HIGH: reveals cash handling patterns and individual entries',
@@ -692,7 +692,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.customers': {
     label: 'Customer Reports',
-    description: 'Lets this employee view customer visit frequency and spending analytics.',
+    description: 'Allows viewing customer analytics — visit frequency, lifetime spend, average check size, and favorite items for individual customers. Contains personally identifiable information (names, phone numbers, email addresses). Without this permission, customer reports are hidden. Requires View Reports.',
     details: [
       'Shows visit counts, lifetime spend, and favorite items',
       'Contains personally identifiable customer information',
@@ -703,7 +703,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.voids': {
     label: 'Void Reports',
-    description: 'Lets this employee view the history of voided items, orders, and payments.',
+    description: 'Allows viewing the void report — a complete history of every voided item, voided order, and voided payment. Shows who voided what, when, and the reason given. This is your primary tool for detecting theft and fraud (high void rates for a specific employee are a red flag). Without this permission, void reports are hidden. Requires View Reports.',
     details: [
       'HIGH: void reports are a primary fraud indicator',
       'Shows who voided what and when — useful for theft investigation',
@@ -714,7 +714,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'reports.gift_cards': {
     label: 'Gift Card Reports',
-    description: 'Lets this employee view gift card issuance, redemption, and balance activity.',
+    description: 'Allows viewing gift card reports — every card issued, redeemed, reloaded, and voided, along with current balances. Gift cards carry real monetary value, so this report helps detect suspicious activity like frequent voids or unusual redemption patterns. Without this permission, gift card reports are hidden. Requires View Reports.',
     details: [
       'HIGH: gift cards carry real monetary value',
       'Shows all card activity including suspicious transactions',
@@ -725,7 +725,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.view_own': {
     label: 'View Own Tips',
-    description: 'Lets this employee see their own tip totals.',
+    description: 'Allows viewing their own tip earnings — total tips received, tip-out amounts owed, and net tips for the shift. Does NOT show any other employee\'s tips. Without this permission, the employee cannot see their tip summary at all. Recommended for all tipped positions (servers, bartenders, barbacks).',
     details: [
       'Shows personal tip earnings and tip-out amounts',
       'Does not show other employees\' tips',
@@ -737,7 +737,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.view_all': {
     label: 'View All Tips',
-    description: 'Lets this employee see tip totals for all employees.',
+    description: 'Allows viewing tip totals for every employee across the team — useful for managers monitoring tip distribution and ensuring fairness. Without this permission, the employee can only see their own tips (if they have View Own Tips). Does not allow editing tips. Requires View Reports for the reports section.',
     details: [
       'Shows tip earnings across the entire team',
       'Useful for managers monitoring tip distribution',
@@ -748,7 +748,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.view_ledger': {
     label: 'View Tip Ledger',
-    description: 'Lets this employee view the full tip transaction history for any employee.',
+    description: 'Allows viewing the detailed, line-by-line tip transaction history for any employee — every tip-in, tip-out, adjustment, and payout. This is the most granular view of tip data in the system. Without this permission, the employee can see tip totals (if they have View All Tips) but not the individual transactions behind them.',
     details: [
       'Detailed line-by-line tip transactions',
       'Shows tip-ins, tip-outs, adjustments, and payouts',
@@ -759,7 +759,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.share': {
     label: 'Share Tips',
-    description: 'Lets this employee share tips they earned with another employee.',
+    description: 'Allows sharing tips with another employee — for example, a server tipping out a barback or food runner at the end of a shift. This moves real money between employee tip pools. All tip shares are logged with the employee names, amount, and timestamp. Without this permission, the employee cannot manually share tips with coworkers.',
     details: [
       'HIGH: moves real money between employee tip pools',
       'All tip shares are logged with employee and timestamp',
@@ -771,7 +771,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.collect': {
     label: 'Collect Tips',
-    description: 'Lets this employee collect tips that have been shared to them.',
+    description: 'Allows collecting tips that have been shared or tipped out to this employee by another coworker. Without this permission, shared tips remain pending and cannot be collected. Typically enabled for all tipped staff — servers, bartenders, barbacks, food runners, and bussers.',
     details: [
       'HIGH: collecting tips changes the financial record',
       'Typically enabled for all tipped staff',
@@ -783,7 +783,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.manage_groups': {
     label: 'Manage Tip Groups',
-    description: 'Lets this employee start, stop, and modify tip-sharing groups.',
+    description: 'Allows creating, modifying, and ending tip-sharing groups — groups of employees who pool and split tips together. Affects tip distribution for all members of the group. Can add and remove members from active groups. Without this permission, the employee cannot manage tip pools. Typically given to floor managers who coordinate tip sharing.',
     details: [
       'HIGH: affects tip distribution for all members of the group',
       'Includes adding and removing members',
@@ -795,7 +795,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.override_splits': {
     label: 'Override Tip Splits',
-    description: 'Lets this employee change table ownership and tip split assignments.',
+    description: 'Allows overriding which employee earns tips from a specific table — changing table ownership and tip split percentages after the fact. Used to resolve server switch disputes or correct incorrect assignments. Directly controls who gets paid. Without this permission, tip splits are determined automatically based on who served the table.',
     details: [
       'HIGH: directly controls which employee earns tips from a table',
       'Use for resolving server switch disputes',
@@ -807,7 +807,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.perform_adjustments': {
     label: 'Perform Tip Adjustments',
-    description: 'Lets this employee make retroactive tip edits with automatic recalculation.',
+    description: 'Allows making retroactive changes to tip amounts that have already been recorded — for example, correcting a tip entered wrong or adjusting after a chargeback. Changes automatically recalculate tip-outs and may trigger payroll adjustments. Every adjustment is logged with the reason and employee who made it. Without this permission, recorded tips cannot be changed. Give only to the owner or payroll administrator.',
     details: [
       'CRITICAL: retroactively changes tip amounts already recorded',
       'Recalculates tip-outs and potentially triggers payroll changes',
@@ -820,7 +820,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'inventory.transactions': {
     label: 'View Inventory History',
-    description: 'Lets this employee see a log of all inventory changes — what was added, removed, or adjusted and when.',
+    description: 'Allows viewing the complete history of inventory changes — every item added, removed, adjusted, or wasted, along with who made the change and when. Read-only and cannot modify records. Useful for spotting unexplained stock losses. Pairs with Record Waste to give a full picture of where inventory went. Without this permission, inventory history is hidden.',
     details: [
       'Shows who made each inventory change and when',
       'Useful for spotting unexplained stock losses',
@@ -838,7 +838,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'tables.view': {
     label: 'View Tables',
-    description: 'Lets this employee see the table layout and floor plan.',
+    description: 'Allows viewing the table layout and floor plan, including table status (open, occupied, reserved) and section assignments. This is read-only — the employee can see the floor but cannot make changes. Without this permission, the floor plan view is hidden.',
     details: [
       'Read-only access to table status and section assignments',
       'Does not allow any changes',
@@ -849,7 +849,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tables.edit': {
     label: 'Edit Tables',
-    description: 'Lets this employee modify table names, capacities, and section assignments.',
+    description: 'Allows modifying table properties — names, seating capacities, and section assignments. Changes take effect immediately for all staff on the floor. Does NOT include dragging tables around the floor plan layout (that requires the Floor Plan permission). Without this permission, tables are read-only.',
     details: [
       'Changes take effect immediately for all users',
       'Does not include editing the floor plan layout',
@@ -860,7 +860,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tables.floor_plan': {
     label: 'Floor Plan',
-    description: 'Lets this employee edit the visual floor plan layout — table positions, sections, and room config.',
+    description: 'Allows editing the visual floor plan layout — dragging tables, creating sections, and configuring rooms. Changes affect how every employee navigates the POS to find tables. Without this permission, the employee can view the floor plan but cannot move or rearrange anything.',
     details: [
       'Full access to drag-and-drop floor plan editor',
       'Changes affect how staff navigate the POS',
@@ -871,7 +871,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tables.reservations': {
     label: 'Reservations',
-    description: 'Lets this employee create, modify, and cancel reservations.',
+    description: 'Allows creating, modifying, and canceling reservations. Includes access to the reservation calendar and guest details. Can hold tables for future guests and manage the waitlist. Without this permission, the employee cannot interact with the reservation system at all. Recommended for hosts and managers.',
     details: [
       'Access to the reservation calendar and guest details',
       'Can hold tables for future guests',
@@ -887,7 +887,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'menu.view': {
     label: 'View Menu',
-    description: 'Lets this employee view the menu setup.',
+    description: 'Allows viewing the menu configuration — categories, items, prices, and modifiers — in read-only mode. The employee can see how things are set up but cannot make any changes. Without this permission, the menu management pages are hidden. For making changes, also grant Edit Menu Items, Edit Prices, or Edit Modifiers as needed.',
     details: [
       'Read-only access to menu categories, items, and modifiers',
       'Does not allow any changes',
@@ -898,7 +898,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.edit_items': {
     label: 'Edit Menu Items',
-    description: 'Lets this employee add and edit menu items.',
+    description: 'Allows creating new menu items and editing names, descriptions, images, categories, and availability. Does NOT include changing prices (that requires Edit Prices separately) or modifying modifier groups (that requires Edit Modifiers). Without this permission, the employee can view the menu but cannot add or change items.',
     details: [
       'Can create new items, modify names, descriptions, and images',
       'Does not include price changes (requires menu.edit_prices)',
@@ -909,7 +909,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.edit_prices': {
     label: 'Edit Prices',
-    description: 'Lets this employee change the price of menu items.',
+    description: 'Allows changing the price of any menu item. Price changes take effect immediately on all future orders. This directly affects your revenue — an incorrect price change can result in undercharging or overcharging every customer. Without this permission, the employee can edit items but the price field is locked. Consider giving only to owners.',
     details: [
       'CRITICAL: affects all future transactions',
       'Price history is NOT automatically kept',
@@ -921,7 +921,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.edit_modifiers': {
     label: 'Edit Modifiers',
-    description: 'Lets this employee add and edit modifier groups (e.g., add-ons, substitutions).',
+    description: 'Allows creating and editing modifier groups — toppings, sides, cooking temperatures, add-ons, and substitutions. If modifiers have upcharges, changing them can affect item pricing. Without this permission, the employee cannot add or change modifiers on menu items.',
     details: [
       'Manage modifier groups like toppings, sides, and cooking temps',
       'Can affect item pricing if modifiers have upcharges',
@@ -932,7 +932,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.86_items': {
     label: '86 Items',
-    description: "Lets this employee mark an item as unavailable (86'd) so customers can't order it.",
+    description: "Allows marking a menu item as 86'd (unavailable) so it disappears from the ordering screen and cannot be ordered. Does not delete the item — it can be brought back anytime when restocked. Without this permission, the employee must ask a manager to 86 an item that ran out. Recommended for bartenders and kitchen managers who know when stock runs out.",
     details: [
       'Temporarily removes an item from the ordering screen',
       'Does not delete the item — it can be brought back anytime',
@@ -944,7 +944,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.inventory_qty': {
     label: 'Inventory Quantity',
-    description: 'Lets this employee update how many of an item are in stock.',
+    description: 'Allows updating stock counts for tracked menu items — for example, entering how many specials are left or adjusting the count after receiving a delivery. Does NOT grant full inventory management access (recipes, vendors, par levels). Without this permission, the employee cannot update any stock quantities.',
     details: [
       'Adjust stock counts for tracked menu items',
       'Does not grant full inventory management access',
@@ -955,7 +955,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.templates.create': {
     label: 'Create Modifier Templates',
-    description: 'Lets this employee create reusable modifier group templates.',
+    description: 'Allows creating reusable modifier group templates — pre-built sets of modifiers (like "Standard Toppings" or "Cooking Temps") that can be quickly applied when building new menu items. Without this permission, the employee must build modifier groups from scratch each time.',
     details: [
       'Create templates from scratch or from existing modifier groups',
       'Templates can be applied when building new modifier groups',
@@ -966,7 +966,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.templates.edit': {
     label: 'Edit Modifier Templates',
-    description: 'Lets this employee edit existing modifier group templates.',
+    description: 'Allows editing existing modifier group templates — changing names, settings, and the list of modifiers in the template. Changes to templates do NOT affect modifier groups already created from that template. Without this permission, existing templates cannot be modified.',
     details: [
       'Modify template name, settings, and modifier list',
       'Changes do not affect groups already created from the template',
@@ -977,7 +977,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.templates.delete': {
     label: 'Delete Modifier Templates',
-    description: 'Lets this employee delete modifier group templates.',
+    description: 'Allows deleting modifier group templates so they no longer appear in the template list. Deleted templates do NOT affect modifier groups already created from them. Without this permission, the employee can edit templates but cannot remove them.',
     details: [
       'Soft-deletes the template so it no longer appears in the list',
       'Does not affect groups already created from the template',
@@ -988,7 +988,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'menu.templates.apply': {
     label: 'Apply Modifier Templates',
-    description: 'Lets this employee apply a template when creating modifier groups on menu items.',
+    description: 'Allows using a saved template to quickly populate a new modifier group with pre-defined modifiers when setting up a menu item. Saves time versus building groups from scratch. Also requires Edit Modifiers to actually create the group on the item. Without this permission, the "Apply Template" option is hidden.',
     details: [
       'Use templates to quickly populate a new modifier group with pre-defined modifiers',
       'Requires menu.edit_modifiers to actually create the group on an item',
@@ -1003,7 +1003,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'inventory.manage': {
     label: 'Manage Inventory',
-    description: 'Lets this employee add and edit inventory items, not just count them.',
+    description: 'Allows full create and edit access to inventory items and recipes — setting up new items, configuring par levels, costs, and units of measure. This is full inventory management, not just counting. Without this permission, the employee can view inventory (if they have View Inventory) or do counts (if they have Daily Counts) but cannot add or configure items.',
     details: [
       'Full create/update access to inventory items and recipes',
       'Includes setting par levels, costs, and units of measure',
@@ -1014,7 +1014,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'inventory.vendors': {
     label: 'Manage Vendors',
-    description: 'Lets this employee manage vendor contacts and purchase orders.',
+    description: 'Allows creating and editing vendor contacts and managing purchase orders — placing orders with suppliers, receiving deliveries, and tracking costs. Without this permission, the employee cannot interact with vendors or create purchase orders. Typically given to kitchen managers and the owner.',
     details: [
       'Create and edit vendor information',
       'Create and manage purchase orders',
@@ -1025,7 +1025,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'inventory.view': {
     label: 'View Inventory',
-    description: 'Lets this employee see current inventory levels and item details.',
+    description: 'Allows viewing current stock levels, item configurations, par levels, and costs in read-only mode. The employee can see everything about inventory but cannot make any changes. Without this permission, inventory pages are hidden entirely. For making changes, also grant Manage Inventory.',
     details: [
       'Read-only access to stock levels and item configuration',
       'Does not allow making any changes',
@@ -1037,7 +1037,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'inventory.counts': {
     label: 'Daily Counts',
-    description: 'Lets this employee perform daily prep count entries.',
+    description: 'Allows submitting daily stock counts for tracked prep items — counting how much of each prep item is on hand at the start or end of the day. Affects stock levels and prep cost calculations. Without this permission, the employee cannot enter counts. Recommended for line cooks and kitchen managers who do morning prep checks.',
     details: [
       'Submit daily stock counts for tracked prep items',
       'Affects stock levels and prep cost calculations',
@@ -1049,7 +1049,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'inventory.adjust_prep_stock': {
     label: 'Adjust Prep Stock',
-    description: 'Lets this employee make mid-day stock adjustments to prep items.',
+    description: 'Allows making mid-day stock adjustments to prep items outside of a regular daily count — for example, when extra prep is done or stock is moved between stations. All adjustments are logged with the employee name and reason. Without this permission, the employee can only adjust stock during a formal daily count.',
     details: [
       'Can increase or decrease stock outside of a normal count',
       'All adjustments are logged with reason and employee',
@@ -1061,7 +1061,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'inventory.waste': {
     label: 'Record Waste',
-    description: 'Lets this employee log waste and spoilage for inventory items.',
+    description: 'Allows recording waste and spoilage — logging when inventory items are thrown away, dropped, or spoiled. Write-offs reduce stock counts and affect cost of goods calculations. Waste logs are visible in inventory reports. Without this permission, the employee cannot log waste and unexplained stock losses go untracked.',
     details: [
       'Records write-offs that reduce stock and affect cost of goods',
       'Waste logs are visible in inventory reports',
@@ -1077,7 +1077,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'customers.view': {
     label: 'View Customers',
-    description: 'Lets this employee see the customer list.',
+    description: 'Allows viewing the customer directory — names, contact info, visit history, and preferences. This is read-only and does not allow creating or editing customer profiles. Without this permission, the customer list is hidden entirely.',
     details: [
       'Read-only access to customer profiles',
       'Shows visit history and preferences',
@@ -1088,7 +1088,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'customers.edit': {
     label: 'Edit Customers',
-    description: 'Lets this employee add and edit customer profiles.',
+    description: 'Allows creating new customer profiles and editing existing ones — updating names, phone numbers, email, preferences, and notes. Without this permission, the employee can view customers (if they have View Customers) but cannot make changes. Requires View Customers.',
     details: [
       'Can create new customers and update their information',
       'Includes contact info, preferences, and notes',
@@ -1099,7 +1099,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'customers.gift_cards': {
     label: 'Gift Cards',
-    description: 'Lets this employee issue, reload, and void gift cards.',
+    description: 'Allows issuing new gift cards, reloading existing ones with additional value, and voiding gift cards. Gift cards carry real monetary value — issuing a $100 gift card is like handing someone $100 in cash. Improper use can result in direct financial loss. Without this permission, the employee cannot interact with gift cards at all. Only give to the owner and trusted managers.',
     details: [
       'CRITICAL: gift cards have real monetary value',
       'Improper use can result in financial loss',
@@ -1110,7 +1110,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'customers.house_accounts': {
     label: 'House Accounts',
-    description: 'Lets this employee manage house accounts (customers who pay on account).',
+    description: 'Allows managing house accounts — customers who are allowed to charge to an account and pay later (like running a tab without a card). Includes opening accounts, adding charges, and processing payments. This extends credit to customers on your behalf. Without this permission, the employee cannot use or manage house accounts. Only give to the owner and trusted managers.',
     details: [
       'CRITICAL: house accounts extend credit to customers',
       'Includes adding charges and processing payments',
@@ -1125,7 +1125,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'tips.manage_rules': {
     label: 'Manage Tip-Out Rules',
-    description: 'Lets this employee set up automatic tip-out rules.',
+    description: 'Allows setting up automatic tip-out rules that control how tips are shared — for example, servers tipping out 3% to the bar and 2% to bussers. These rules affect every tipped employee\'s income on every shift going forward. Without this permission, the employee cannot change how tips are automatically distributed. Only give to the owner.',
     details: [
       "CRITICAL: tip-out rules affect every tipped employee's income",
       'Changes apply to all future shifts',
@@ -1136,7 +1136,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.manage_bank': {
     label: 'Manage Tip Bank',
-    description: 'Lets this employee manage the tip bank, including holding and releasing tips.',
+    description: 'Allows managing the tip bank — holding tips pending review and releasing them to employees for payout. Controls when and how tips flow from the system to the employee. Can delay tip releases if there is a dispute or issue to investigate. Without this permission, the employee cannot hold or release tips. Only give to the owner and payroll administrator.',
     details: [
       'Controls when and how tips are released to employees',
       'Can hold tips pending review',
@@ -1147,7 +1147,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.manage_settings': {
     label: 'Manage Tip Settings',
-    description: 'Lets this employee change how tips are allocated across the business.',
+    description: 'Allows changing tip system settings — tip pooling percentages, tip calculation methods, split rules, and chargeback policies. Changes affect tip calculations for every tipped employee on every future shift. Without this permission, tip settings are read-only. Only give to the owner — incorrect settings can cause labor law compliance issues.',
     details: [
       'CRITICAL: affects tip calculation methods for all employees',
       'Includes tip pooling, percentage splits, and chargebacks',
@@ -1158,7 +1158,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'tips.process_payout': {
     label: 'Process Tip Payouts',
-    description: 'Lets this employee process tip payouts to employees.',
+    description: 'Allows processing tip payouts — releasing earned tips to employees as cash or adding them to the payroll batch. This initiates actual financial transactions. Without this permission, tips accumulate in the system but cannot be paid out. Only give to the owner and payroll administrator.',
     details: [
       'CRITICAL: initiates financial transactions to employees',
       'Includes cash payouts and payroll batch processing',
@@ -1173,7 +1173,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'settings.view': {
     label: 'View Settings',
-    description: 'Lets this employee view any settings page.',
+    description: 'Allows viewing all system settings pages in read-only mode — the employee can see how things are configured but cannot change anything. Without this permission, the Settings menu is hidden entirely. To make changes, the employee also needs Edit Settings or the specific settings permission for that area.',
     details: [
       'Read-only access to all system settings',
       'Does not allow making changes',
@@ -1184,7 +1184,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.edit': {
     label: 'Edit Settings',
-    description: 'Lets this employee change any system settings.',
+    description: 'Allows changing any system setting across the entire business. Changes take effect immediately for all employees and devices. This is a very broad permission — consider using the specific settings permissions (Tax, Payments, Hardware, etc.) instead for finer control. Without this permission, settings are read-only. Requires View Settings.',
     details: [
       'Full write access to system configuration',
       'Changes take effect immediately for all users',
@@ -1195,7 +1195,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.tax': {
     label: 'Tax Settings',
-    description: 'Lets this employee configure tax rates and rules. CRITICAL: affects every transaction.',
+    description: 'Allows configuring tax rates and tax rules for the business. Changes affect the tax charged on every future order. Incorrect tax settings can cause compliance issues with your state or local tax authority. Without this permission, tax settings are locked. Only give to the owner or accountant.',
     details: [
       'Changes tax rates applied to all future orders',
       'Incorrect tax settings can cause compliance issues',
@@ -1206,7 +1206,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.receipts': {
     label: 'Receipt Settings',
-    description: 'Lets this employee configure receipt templates and options.',
+    description: 'Allows configuring what appears on printed and digital receipts — header text, footer messages, logo, tip line options, and itemization format. Changes affect every receipt printed going forward. Without this permission, receipt settings are locked.',
     details: [
       'Controls what appears on printed and digital receipts',
       'Includes header, footer, and tip line configuration',
@@ -1217,7 +1217,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.payments': {
     label: 'Payment Settings',
-    description: 'Lets this employee configure payment types, tabs, and checkout policies.',
+    description: 'Allows configuring which payment methods are accepted (cash, card, gift card, house account), tab policies (pre-auth amounts, auto-close rules), and checkout behavior. Changes affect how every employee processes payments. Without this permission, payment settings are locked. Only give to the owner.',
     details: [
       'Controls which payment methods are accepted',
       'Configures tab policies and pre-auth settings',
@@ -1228,7 +1228,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.dual_pricing': {
     label: 'Dual Pricing',
-    description: 'Lets this employee toggle cash/card dual pricing. CRITICAL: changes prices shown to customers.',
+    description: 'Allows enabling or disabling cash/card dual pricing — showing separate (lower) cash prices and (higher) card prices to customers. When toggled, this changes the prices displayed on every menu item across the POS and customer-facing display. Without this permission, dual pricing settings are locked. Only give to the owner.',
     details: [
       'Enables or disables separate cash and card prices',
       'Affects all menu items when toggled',
@@ -1239,7 +1239,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.venue': {
     label: 'Venue Settings',
-    description: 'Lets this employee edit business name, address, hours, and order types.',
+    description: 'Allows editing core business information — venue name, address, phone number, operating hours, and which order types are available (dine-in, takeout, delivery). This information appears on receipts, reports, and customer-facing displays. Without this permission, venue settings are locked.',
     details: [
       'Core business information visible on receipts and reports',
       'Includes operating hours and order type configuration',
@@ -1250,7 +1250,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.menu': {
     label: 'Menu Settings',
-    description: 'Lets this employee access the full menu builder.',
+    description: 'Allows full access to the menu builder — creating and organizing categories, items, modifiers, combos, and all menu configuration. This is the broadest menu permission and includes everything. Without this permission, the menu builder is hidden. For more granular control, use the individual menu permissions (Edit Items, Edit Prices, Edit Modifiers) instead.',
     details: [
       'Full access to menu configuration and builder tools',
       'Includes categories, items, modifiers, and combos',
@@ -1261,7 +1261,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.inventory': {
     label: 'Inventory Settings',
-    description: 'Lets this employee configure inventory management settings.',
+    description: 'Allows configuring inventory management settings — tracking rules, par levels, low-stock alerts, and vendor/purchase order configuration. Changes affect how inventory is tracked and when alerts are triggered for all items. Without this permission, inventory settings are locked.',
     details: [
       'Controls inventory tracking rules and par levels',
       'Includes vendor and purchase order configuration',
@@ -1272,7 +1272,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.floor': {
     label: 'Floor Plan Settings',
-    description: 'Lets this employee edit the floor plan, tables, and reservation settings.',
+    description: 'Allows editing the floor plan layout, table configuration, section assignments, and reservation policies. Changes affect how every employee navigates the POS and how reservations are handled. Without this permission, floor plan settings are locked.',
     details: [
       'Full access to floor plan editor',
       'Controls table layout, sections, and reservation policies',
@@ -1283,7 +1283,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.entertainment': {
     label: 'Entertainment Settings',
-    description: 'Lets this employee manage entertainment items, live status, waitlists, and PitBoss screens.',
+    description: 'Allows managing entertainment items (bowling lanes, pool tables, axe throwing, etc.), configuring pricing and time blocks, viewing live session status, managing the entertainment waitlist, and controlling PitBoss display screens. Without this permission, entertainment settings are locked.',
     details: [
       'Controls entertainment item configuration and pricing',
       'Access to live status dashboard and session management',
@@ -1295,7 +1295,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.customers': {
     label: 'Customer Settings',
-    description: 'Lets this employee configure customer-facing features like gift cards and loyalty.',
+    description: 'Allows configuring customer-facing features — gift card policies, loyalty program settings, house account rules, and customer data management. Changes affect how customers interact with your business. Without this permission, customer settings are locked.',
     details: [
       'Controls gift card, loyalty, and house account configuration',
       'Affects customer-facing policies',
@@ -1306,7 +1306,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.team': {
     label: 'Team Settings',
-    description: 'Lets this employee access employee, role, scheduling, and payroll configuration.',
+    description: 'Allows accessing team management settings — employee roles, role templates, scheduling rules, break policies, and payroll configuration. Changes affect how employees are managed across the business. Without this permission, team settings are locked.',
     details: [
       'Controls team management settings',
       'Includes role templates, scheduling rules, and payroll config',
@@ -1317,7 +1317,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.tips': {
     label: 'Tip Settings',
-    description: 'Lets this employee configure the entire tip system.',
+    description: 'Allows configuring the entire tip system — tip pooling rules, tip-out percentages, payout schedules, and calculation methods. Changes affect how tips are distributed for every tipped employee on every shift. Without this permission, tip system settings are locked. Only give to the owner.',
     details: [
       'Controls tip pooling, tip-outs, and payout configuration',
       'Changes affect all tipped employees',
@@ -1328,7 +1328,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.reports': {
     label: 'Report Settings',
-    description: 'Lets this employee access all report configuration.',
+    description: 'Allows configuring report settings — which reports are available, scheduled report delivery, and report formatting options. Without this permission, report settings are locked. Does not control who can view reports (that is handled by the individual report permissions).',
     details: [
       'Controls which reports are available and their settings',
       'Includes scheduled report configuration',
@@ -1339,7 +1339,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.hardware': {
     label: 'Hardware Settings',
-    description: 'Lets this employee configure printers, KDS screens, terminals, and payment readers.',
+    description: 'Allows configuring hardware devices — receipt printers, kitchen printers, KDS screens, card readers, and print routing rules. Incorrect settings can disrupt kitchen ticket printing and block payments. Without this permission, hardware settings are locked. Only give to the owner or whoever manages your equipment setup.',
     details: [
       'Controls hardware connections and routing',
       'Incorrect settings can disrupt kitchen printing and payments',
@@ -1350,7 +1350,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.security': {
     label: 'Security Settings',
-    description: 'Lets this employee manage PIN policies, blocked cards, and fraud alerts.',
+    description: 'Allows managing security settings — PIN lockout policies, blocked card lists, fraud alert thresholds, and authentication rules. Incorrect changes can lock employees out or weaken security. Without this permission, security settings are locked. Only give to the owner.',
     details: [
       'Controls authentication and security policies',
       'Includes PIN lockout rules and suspicious activity alerts',
@@ -1361,7 +1361,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.integrations': {
     label: 'Integration Settings',
-    description: 'Lets this employee connect third-party services like SMS and email.',
+    description: 'Allows connecting and configuring third-party integrations — 7shifts, MarginEdge, Oracle PMS, SMS providers, email services, and other external systems. May involve entering credentials and keys. Without this permission, integration settings are locked. Only give to the owner or IT administrator.',
     details: [
       'Controls external service connections',
       'May involve API keys and credentials',
@@ -1372,7 +1372,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.automation': {
     label: 'Automation Settings',
-    description: 'Lets this employee configure automated processes like end-of-day batch jobs.',
+    description: 'Allows configuring automated processes — end-of-day batch processing schedules, automatic report delivery, and other scheduled tasks. Changes affect what runs automatically without human intervention. Without this permission, automation settings are locked.',
     details: [
       'Controls scheduled tasks and automated workflows',
       'Includes EOD batch processing and report scheduling',
@@ -1383,7 +1383,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'settings.monitoring': {
     label: 'Monitoring',
-    description: 'Lets this employee view system health and error logs.',
+    description: 'Allows viewing system health dashboards, connection status, error logs, and device diagnostics. Useful for troubleshooting when things are not working — printers offline, terminals disconnected, sync issues. Without this permission, the monitoring page is hidden.',
     details: [
       'Access to system diagnostics and error tracking',
       'Useful for troubleshooting technical issues',
@@ -1398,7 +1398,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'admin.manage_membership_plans': {
     label: 'Manage Membership Plans',
-    description: 'Create, edit, and delete membership plan templates.',
+    description: 'Allows creating, editing, and deleting membership plan templates — setting up plan pricing, billing cycles, trial periods, and benefits. Does NOT allow enrolling customers or processing charges (that requires Manage Memberships). Without this permission, the employee cannot set up or change membership plans.',
     details: ['Controls plan pricing, billing cycles, trial periods, and benefits', 'Does not grant ability to enroll customers or process charges'],
     tab: 'BUSINESS_SETUP',
     applicableTo: ['ADMIN'],
@@ -1407,7 +1407,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'admin.manage_memberships': {
     label: 'Manage Memberships',
-    description: 'Enroll customers, pause/resume/cancel subscriptions, and replace cards.',
+    description: 'Allows enrolling customers in membership plans, pausing or resuming subscriptions, canceling memberships, and replacing cards on file. Can view charge history and audit events. Cannot manually retry failed charges (that requires a separate permission). Without this permission, the employee cannot manage any customer memberships.',
     details: ['Can create new memberships and modify existing ones', 'Can view charge history and audit events', 'Cannot manually retry failed charges (requires separate permission)'],
     tab: 'BUSINESS_SETUP',
     applicableTo: ['ADMIN'],
@@ -1416,7 +1416,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'admin.retry_membership_charge': {
     label: 'Retry Membership Charge',
-    description: 'Manually retry a failed recurring membership charge.',
+    description: 'Allows manually retrying a failed recurring membership charge — triggering an immediate charge attempt against the customer\'s card on file. Use with caution: retrying too aggressively can cause customer disputes and chargebacks. Without this permission, failed charges wait for the next automatic retry cycle.',
     details: ['Triggers an immediate charge attempt against the customer card on file', 'Use with caution — retrying too aggressively can cause customer disputes'],
     tab: 'BUSINESS_SETUP',
     applicableTo: ['ADMIN'],
@@ -1425,7 +1425,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'admin.view_membership_reports': {
     label: 'View Membership Reports',
-    description: 'Access membership analytics, MRR, churn, and decline reports.',
+    description: 'Allows viewing membership analytics dashboards — monthly recurring revenue (MRR), churn rate, decline reports, and membership aging. This is read-only and does not allow managing memberships or processing charges. Without this permission, membership reports are hidden.',
     details: ['Read-only access to membership reporting dashboards', 'Includes revenue, aging, and decline analysis'],
     tab: 'REPORTING',
     applicableTo: ['ADMIN'],
@@ -1438,7 +1438,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'delivery.view': {
     label: 'View Deliveries',
-    description: 'Lets this employee see the delivery queue, active runs, and delivery status board.',
+    description: 'Allows viewing the delivery management screen — the delivery queue, active runs, driver assignments, and order status. This is read-only and does not allow dispatching, reassigning, or modifying deliveries. Without this permission, the delivery screen is hidden.',
     details: [
       'Read-only access to the delivery management screen',
       'Can see driver assignments, order status, and ETAs',
@@ -1451,7 +1451,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.create': {
     label: 'Create Delivery Orders',
-    description: 'Lets this employee create new delivery orders from the POS.',
+    description: 'Allows creating new delivery orders from the POS — entering the customer address, phone number, and delivery details. The order enters the delivery queue for dispatch. Does NOT allow assigning drivers or dispatching (that requires Dispatch Deliveries). Without this permission, the employee cannot take delivery orders.',
     details: [
       'Can enter customer address, phone, and delivery details',
       'Creates the order in the delivery queue for dispatch',
@@ -1464,7 +1464,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.manage': {
     label: 'Manage Deliveries',
-    description: 'Lets this employee edit delivery orders, update status, and reassign drivers.',
+    description: 'Allows editing delivery orders after they are created — updating addresses, estimated delivery times, special instructions, reassigning between drivers, and marking orders as delivered or returned. Without this permission, the employee can view deliveries but cannot modify them.',
     details: [
       'Can modify delivery addresses, ETAs, and special instructions',
       'Can reassign orders between drivers',
@@ -1477,7 +1477,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.dispatch': {
     label: 'Dispatch Deliveries',
-    description: 'Lets this employee assign drivers to orders and send them out for delivery.',
+    description: 'Allows assigning drivers to delivery orders and sending them out. Can build multi-order delivery runs and override dispatch policy warnings (like zone mismatches). Without this permission, the employee cannot assign a driver to an order — deliveries sit in the queue until someone with this permission dispatches them.',
     details: [
       'Can assign orders to available drivers',
       'Can build multi-order runs when enabled',
@@ -1490,7 +1490,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.settings': {
     label: 'Delivery Settings',
-    description: 'Lets this employee configure delivery fees, radius, dispatch policy, and all delivery system settings.',
+    description: 'Allows configuring all delivery system settings — delivery fees, free delivery thresholds, delivery radius, dispatch assignment strategy, driver pay rates, and SMS notification settings. Changes affect how all deliveries are priced and handled. Without this permission, delivery settings are locked.',
     details: [
       'Controls delivery fees, free delivery thresholds, and zone configuration',
       'Can modify dispatch assignment strategy and driver pay settings',
@@ -1503,7 +1503,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.zones.manage': {
     label: 'Manage Delivery Zones',
-    description: 'Lets this employee create, edit, and delete delivery zones and their fee schedules.',
+    description: 'Allows creating, editing, and deleting delivery zones — drawing zone boundaries on the map, setting per-zone delivery fees and minimum order amounts, and enabling or disabling zones. Without this permission, the employee cannot change which areas you deliver to or how much you charge per zone.',
     details: [
       'Can draw zone boundaries on the map',
       'Can set per-zone delivery fees and minimum order amounts',
@@ -1516,7 +1516,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.drivers.manage': {
     label: 'Manage Drivers',
-    description: 'Lets this employee manage driver profiles, vehicles, shifts, and starting banks.',
+    description: 'Allows managing delivery driver profiles — adding and removing drivers, setting pay rates, entering vehicle information, managing driver cash banks, and handling reconciliation. Without this permission, the employee cannot add, remove, or configure drivers.',
     details: [
       'Can add and remove drivers from the delivery roster',
       'Can set driver pay rates and vehicle information',
@@ -1529,7 +1529,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.reports': {
     label: 'Delivery Reports',
-    description: 'Lets this employee view delivery performance, driver efficiency, and revenue reports.',
+    description: 'Allows viewing delivery-specific reports — driver efficiency, delivery times, mileage, tips, zone performance, and delivery revenue. This is read-only and does not allow managing deliveries. Without this permission, delivery reports are hidden.',
     details: [
       'Access to delivery-specific analytics and KPIs',
       'Includes driver mileage, tip, and pay reports',
@@ -1542,7 +1542,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.audit': {
     label: 'Delivery Audit',
-    description: 'Lets this employee view the delivery audit trail including cash handling, proof of delivery, and exceptions.',
+    description: 'Allows viewing the delivery audit trail — cash handling records, proof-of-delivery photos and signatures, cash drop history, and shortage reports. This is read-only and used for investigating delivery issues after the fact. Without this permission, the audit trail is hidden.',
     details: [
       'Read-only access to delivery audit logs',
       'Can review proof-of-delivery photos and signatures',
@@ -1555,7 +1555,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.exceptions': {
     label: 'Delivery Exceptions',
-    description: 'Lets this employee handle delivery exceptions like late orders, refused deliveries, and customer complaints.',
+    description: 'Allows handling delivery problems — flagging late orders, processing refused deliveries, resolving customer complaints, approving refunds or credits for delivery failures, and suspending problem customers from future deliveries. Without this permission, the employee cannot resolve delivery issues and must escalate to a manager.',
     details: [
       'Can flag and resolve delivery issues',
       'Can approve refunds or credits for delivery failures',
@@ -1568,7 +1568,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.policy_override': {
     label: 'Delivery Policy Override',
-    description: 'Lets this employee override delivery dispatch policies such as zone restrictions, cash limits, and proof requirements.',
+    description: 'Allows overriding delivery dispatch policies — dispatching to addresses outside valid zones, bypassing cash-on-delivery limits, overriding prepayment requirements, and waiving proof-of-delivery for specific orders. All overrides are logged in the audit trail. Without this permission, the employee must follow all dispatch policies strictly. Give only to managers.',
     details: [
       'Can dispatch outside valid zones when blockDispatchWithoutValidZone is enabled',
       'Can override cash-on-delivery limits and prepayment requirements',
@@ -1582,7 +1582,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'delivery.self_assign': {
     label: 'Self-Assign Deliveries',
-    description: 'Lets this driver claim ready-for-pickup orders from the driver pickup screen.',
+    description: 'Allows drivers to claim ready-for-pickup orders themselves from the driver tablet screen, instead of waiting for a manager to assign them. The driver selects orders and creates their own delivery run. All dispatch policy rules still apply (max orders per run, zone validation, suspended customer checks). Only works when self-assign is enabled in delivery settings. Without this permission, drivers must wait for a manager to dispatch orders to them.',
     details: [
       'Driver can view READY orders on the /driver tablet screen',
       'Can select one or more orders and create a delivery run',
@@ -1600,7 +1600,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'cake.view': {
     label: 'View Cake Orders',
-    description: 'Lets this employee view custom cake orders, quotes, and their statuses.',
+    description: 'Allows viewing the custom cake orders list — order details, quotes, deposit status, and production notes. Required for any cake module access; other cake permissions depend on this one. Without this permission, the entire cake ordering section is hidden.',
     details: [
       'Can see the cake orders list and individual order details',
       'Can view quote amounts, deposit status, and production notes',
@@ -1612,7 +1612,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.create': {
     label: 'Create Cake Orders',
-    description: 'Lets this employee create new custom cake orders from the POS or walk-in intake.',
+    description: 'Allows creating new custom cake orders using the cake builder wizard — selecting sizes, flavors, decorations, and attaching customer info and pickup/delivery preferences. Created orders start in quote or draft status. Without this permission, the employee cannot start a new cake order. Requires View Cake Orders.',
     details: [
       'Can start a new cake order using the cake builder wizard',
       'Can attach customer information and delivery/pickup preferences',
@@ -1624,7 +1624,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.edit': {
     label: 'Edit Cake Order Details',
-    description: 'Lets this employee modify existing cake order details such as flavors, decorations, and dates.',
+    description: 'Allows modifying existing cake orders — changing flavors, decorations, sizes, custom instructions, and pickup or delivery dates. Cannot change pricing or approve quotes (those require separate permissions). Without this permission, the employee can view cake orders but cannot edit them.',
     details: [
       'Can change cake options, sizes, flavors, and custom instructions',
       'Can update pickup/delivery dates and customer contact info',
@@ -1636,7 +1636,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.quote': {
     label: 'Create & Manage Quotes',
-    description: 'Lets this employee generate price quotes for custom cake orders and send them to customers.',
+    description: 'Allows generating price quotes for custom cake orders and sending them to customers via SMS or email. Can re-quote if order details change before approval. Does NOT allow approving quotes (that requires Approve Quotes). Without this permission, the employee cannot provide pricing to customers.',
     details: [
       'Can calculate and generate quotes based on cake configuration',
       'Can send quotes to customers via SMS or email',
@@ -1648,7 +1648,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.quote_approve': {
     label: 'Approve Quotes',
-    description: 'Lets this employee approve cake order quotes, locking in the price and moving the order forward.',
+    description: 'Allows approving or rejecting pending cake order quotes. Approval locks in the quoted price and triggers a deposit request if required by your settings. This commits your business to a price — restrict to managers or the owner. Without this permission, quotes remain pending until someone with approval authority reviews them.',
     details: [
       'Can approve or reject pending quotes',
       'Approval locks the quoted price and triggers deposit request if required',
@@ -1660,7 +1660,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.payment': {
     label: 'Process Cake Payments',
-    description: 'Lets this employee collect deposits and final payments on cake orders.',
+    description: 'Allows collecting deposits and final payments on cake orders — processing card, cash, or text-to-pay transactions. All payments flow through the standard card processor. Without this permission, the employee cannot take payment on cake orders and must hand off to someone who can.',
     details: [
       'Can process deposit payments (card, cash, text-to-pay)',
       'Can collect remaining balance at pickup or delivery',
@@ -1672,7 +1672,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.payment_external': {
     label: 'Record External Payments',
-    description: 'Lets this employee record payments received outside the POS (checks, wire transfers, third-party apps).',
+    description: 'Allows recording cake order payments received outside the POS — checks, wire transfers, Venmo, Zelle, or other third-party payment methods. External payments are logged in the audit trail with the method and reference number. Large amounts may require additional manager approval based on your threshold settings. Without this permission, only POS-processed payments can be recorded.',
     details: [
       'Can mark deposits or balances as paid via external method',
       'External payments are logged in the audit trail with method and reference',
@@ -1684,7 +1684,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.cancel': {
     label: 'Cancel Cake Orders',
-    description: 'Lets this employee cancel cake orders and process deposit forfeitures according to policy.',
+    description: 'Allows canceling cake orders at any stage. Deposit forfeiture is calculated automatically based on your cancellation policy settings (how many days before the event and what percentage is forfeited). Cancellations are permanent and logged in the audit trail. Without this permission, the employee cannot cancel cake orders.',
     details: [
       'Can cancel orders at any stage of the workflow',
       'Deposit forfeiture is calculated based on forfeitDaysBefore and depositForfeitPercent settings',
@@ -1696,7 +1696,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'cake.settings': {
     label: 'Configure Cake Module',
-    description: 'Lets this employee configure the cake ordering module settings including pricing, lead times, and policies.',
+    description: 'Allows configuring the cake ordering module — enabling/disabling the module, setting deposit percentages, rush fees, delivery fees, capacity limits, lead time requirements, cancellation policies, and quote expiration rules. Changes affect all future cake orders. Without this permission, cake module settings are locked.',
     details: [
       'Can enable/disable the cake module and public ordering',
       'Can configure deposit percentages, rush fees, delivery fees, and capacity limits',
@@ -1712,7 +1712,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   // =========================================================================
   'admin': {
     label: 'Admin',
-    description: 'Grants full access to everything in the system. Same as checking every permission at once.',
+    description: 'Grants full, unrestricted access to every feature in the system — equivalent to checking every single permission box at once. The employee can do anything: void payments, change prices, edit wages, modify settings, export data, and more. Adding this makes all other permission checkboxes redundant. Only give to owners and trusted general managers.',
     details: [
       'Used for Owner and Admin roles',
       "The system treats 'admin' as equivalent to all permissions enabled",
@@ -1724,7 +1724,7 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
   'super_admin': {
     label: 'Super Admin',
-    description: 'Same as admin but reserved for the primary business owner account.',
+    description: 'The highest privilege level in the system — same as Admin but reserved for the primary business owner. Cannot be removed by other admins, ensuring the owner always retains full control. Only one account should have this permission.',
     details: [
       'Highest privilege level in the system',
       'Cannot be removed by other admins',

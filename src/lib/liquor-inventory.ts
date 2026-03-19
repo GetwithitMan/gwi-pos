@@ -1,4 +1,4 @@
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
@@ -54,7 +54,7 @@ export async function processLiquorInventory(
 
   try {
     // Get all order items with their modifiers
-    const orderItems = await adminDb.orderItem.findMany({
+    const orderItems = await db.orderItem.findMany({
       where: {
         orderId,
         status: 'active', // Only process active items (not voided/comped)

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Match a customer by saved card last4 (+ optional cardBrand)
 // Checks both SavedCard and CardProfile tables for maximum recognition coverage.
@@ -18,6 +20,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!last4 || !/^\d{4}$/.test(last4)) {
       return NextResponse.json({ error: 'last4 must be exactly 4 digits' }, { status: 400 })
     }
+
+    // Auth check — require customers.view permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? searchParams.get('employeeId')
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.CUSTOMERS_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Strategy 1: Check SavedCard table (explicit card-on-file)
     let query: string

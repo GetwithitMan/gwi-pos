@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -70,7 +70,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Batch cancel stale orders
     if (toCancelIds.length > 0) {
-      await adminDb.order.updateMany({
+      await db.order.updateMany({
         where: { id: { in: toCancelIds } },
         data: {
           status: 'cancelled',

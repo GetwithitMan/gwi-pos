@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { requireAnyPermission } from '@/lib/api-auth'
@@ -64,7 +64,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const card = savedCards[0]
 
     // Verify order exists and is open
-    const order = await adminDb.order.findFirst({
+    const order = await db.order.findFirst({
       where: { id: orderId, locationId, deletedAt: null },
       select: { id: true, orderNumber: true, status: true, total: true },
     })

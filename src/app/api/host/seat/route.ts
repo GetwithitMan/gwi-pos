@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
@@ -81,7 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // If still no server, try to find any active server/bartender
     if (!assignedServerId) {
-      const fallbackServer = await adminDb.employee.findFirst({
+      const fallbackServer = await db.employee.findFirst({
         where: {
           locationId,
           isActive: true,
@@ -179,7 +179,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       `, locationId, todayStart)
       const nextNum = maxOrder[0]?.next_num ?? 1
 
-      order = await adminDb.order.create({
+      order = await db.order.create({
         data: {
           locationId,
           employeeId: assignedServerId,

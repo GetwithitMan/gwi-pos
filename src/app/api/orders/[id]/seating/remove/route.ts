@@ -1,4 +1,4 @@
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { NextResponse } from 'next/server'
 import { dispatchOrderUpdated, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -13,7 +13,7 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
   // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
   let locationId = getRequestLocationId()
   if (!locationId) {
-    const orderCheck = await adminDb.order.findUnique({
+    const orderCheck = await db.order.findUnique({
       where: { id: orderId },
       select: { id: true, locationId: true },
     })

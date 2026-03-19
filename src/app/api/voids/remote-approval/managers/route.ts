@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { maskPhone } from '@/lib/twilio'
 import { withVenue } from '@/lib/with-venue'
@@ -21,7 +21,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Fetch all active employees with their roles
-    const employees = await adminDb.employee.findMany({
+    const employees = await db.employee.findMany({
       where: {
         locationId,
         isActive: true,

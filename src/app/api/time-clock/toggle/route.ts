@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { parseSettings, DEFAULT_BREAK_COMPLIANCE } from '@/lib/settings'
@@ -148,7 +148,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // ── requireTipsAdjusted check ──────────────────────────────────────
       if (!force && locSettings.clockOut?.requireTipsAdjusted) {
-        const unadjustedTips = await adminDb.payment.findMany({
+        const unadjustedTips = await db.payment.findMany({
           where: {
             order: { employeeId, locationId },
             paymentMethod: { in: ['credit', 'debit', 'card'] },

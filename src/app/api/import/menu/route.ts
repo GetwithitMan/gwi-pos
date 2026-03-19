@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { roundToCents } from '@/lib/pricing'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
@@ -139,7 +139,7 @@ export const POST = withVenue(withAuth('MENU_EDIT_ITEMS', async function POST(
     }
 
     // Load existing menu items for duplicate detection
-    const existingItems = await adminDb.menuItem.findMany({
+    const existingItems = await db.menuItem.findMany({
       where: { locationId, deletedAt: null },
       select: { name: true, categoryId: true },
     })
@@ -202,7 +202,7 @@ export const POST = withVenue(withAuth('MENU_EDIT_ITEMS', async function POST(
       const cost = costStr ? roundToCents(parseFloat(costStr)) : undefined
 
       // Create menu item
-      await adminDb.menuItem.create({
+      await db.menuItem.create({
         data: {
           locationId,
           categoryId: category.id,

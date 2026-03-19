@@ -7,11 +7,11 @@
  * splits, void/discount aggregates, and dashboard live metrics.
  *
  * All queries enforce locationId as the first parameter for tenant safety.
- * Uses adminDb (soft-delete filtering only, no tenant scoping overhead).
+ * Uses db (soft-delete filtering only, no tenant scoping overhead).
  */
 
 import { Prisma } from '@/generated/prisma/client'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
 // ─── SQL Row Types ────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ export async function getRevenueSummary(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<RevenueSummaryRow> {
-  const rows = await adminDb.$queryRaw<RevenueSummaryRow[]>(Prisma.sql`
+  const rows = await db.$queryRaw<RevenueSummaryRow[]>(Prisma.sql`
     SELECT
       COUNT(*)::int AS order_count,
       COALESCE(SUM(o.subtotal), 0)::float AS subtotal,
@@ -151,7 +151,7 @@ export async function getSalesByOrderType(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<OrderTypeSummaryRow[]> {
-  return adminDb.$queryRaw<OrderTypeSummaryRow[]>(Prisma.sql`
+  return db.$queryRaw<OrderTypeSummaryRow[]>(Prisma.sql`
     SELECT
       COALESCE(o."orderType", 'Unknown') AS order_type,
       COUNT(*)::int AS count,
@@ -180,7 +180,7 @@ export async function getCategorySales(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<CategorySalesRow[]> {
-  return adminDb.$queryRaw<CategorySalesRow[]>(Prisma.sql`
+  return db.$queryRaw<CategorySalesRow[]>(Prisma.sql`
     SELECT
       c.id AS category_id,
       c.name AS category_name,
@@ -232,7 +232,7 @@ export async function getCategoryVoids(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<CategoryVoidsRow[]> {
-  return adminDb.$queryRaw<CategoryVoidsRow[]>(Prisma.sql`
+  return db.$queryRaw<CategoryVoidsRow[]>(Prisma.sql`
     SELECT
       c.id AS category_id,
       COALESCE(SUM(oi.price * oi.quantity), 0)::float AS void_amount
@@ -262,7 +262,7 @@ export async function getPaymentSummary(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<PaymentSummaryRow[]> {
-  return adminDb.$queryRaw<PaymentSummaryRow[]>(Prisma.sql`
+  return db.$queryRaw<PaymentSummaryRow[]>(Prisma.sql`
     SELECT
       p."paymentMethod"::text AS payment_method,
       COALESCE(p."cardBrand", '') AS card_brand,
@@ -294,7 +294,7 @@ export async function getDiscountSummary(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<DiscountSummaryRow[]> {
-  return adminDb.$queryRaw<DiscountSummaryRow[]>(Prisma.sql`
+  return db.$queryRaw<DiscountSummaryRow[]>(Prisma.sql`
     SELECT
       COALESCE(dr.name, od.name, 'Unknown') AS discount_name,
       COUNT(*)::int AS count,
@@ -324,7 +324,7 @@ export async function getWeightBasedSales(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<WeightSummaryRow[]> {
-  return adminDb.$queryRaw<WeightSummaryRow[]>(Prisma.sql`
+  return db.$queryRaw<WeightSummaryRow[]>(Prisma.sql`
     SELECT
       COALESCE(oi."weightUnit", 'lb') AS weight_unit,
       COALESCE(SUM(oi."itemTotal"), 0)::float AS revenue,
@@ -356,7 +356,7 @@ export async function getEntertainmentSummary(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<EntertainmentSummaryRow> {
-  const rows = await adminDb.$queryRaw<EntertainmentSummaryRow[]>(Prisma.sql`
+  const rows = await db.$queryRaw<EntertainmentSummaryRow[]>(Prisma.sql`
     SELECT
       COUNT(*)::int AS session_count,
       COALESCE(SUM(oi."itemTotal"), 0)::float AS revenue,
@@ -408,7 +408,7 @@ export async function getSurchargeBase(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<number> {
-  const rows = await adminDb.$queryRaw<SurchargeOrderRow[]>(Prisma.sql`
+  const rows = await db.$queryRaw<SurchargeOrderRow[]>(Prisma.sql`
     SELECT
       COALESCE(SUM(
         CASE WHEN EXISTS (
@@ -452,7 +452,7 @@ export async function getTodayRevenueOrders(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<LiveDashboardOrders[]> {
-  return adminDb.order.findMany({
+  return db.order.findMany({
     where: {
       locationId,
       deletedAt: null,
@@ -479,7 +479,7 @@ export async function getTodayRevenueOrders(
 export async function getOpenOrders(
   locationId: string,
 ): Promise<{ id: string; total: unknown }[]> {
-  return adminDb.order.findMany({
+  return db.order.findMany({
     where: {
       locationId,
       deletedAt: null,
@@ -499,7 +499,7 @@ export async function getVoidedItemsAggregate(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<{ count: number; total: number }> {
-  const result = await adminDb.orderItem.aggregate({
+  const result = await db.orderItem.aggregate({
     where: {
       locationId,
       deletedAt: null,
@@ -523,7 +523,7 @@ export async function getCompedItemsAggregate(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<{ count: number; total: number }> {
-  const result = await adminDb.orderItem.aggregate({
+  const result = await db.orderItem.aggregate({
     where: {
       locationId,
       deletedAt: null,
@@ -547,7 +547,7 @@ export async function getDiscountTotalAggregate(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<number> {
-  const result = await adminDb.order.aggregate({
+  const result = await db.order.aggregate({
     where: {
       locationId,
       deletedAt: null,
@@ -574,7 +574,7 @@ export async function getVoidLogs(
   locationId: string,
   range: BusinessDayRange,
 ) {
-  return adminDb.voidLog.findMany({
+  return db.voidLog.findMany({
     where: {
       locationId,
       createdAt: { gte: range.start, lte: range.end },
@@ -599,7 +599,7 @@ export async function getVoidLogsDetailed(
   if (filters?.employeeId) where.employeeId = filters.employeeId
   if (filters?.voidType) where.voidType = filters.voidType as any
 
-  return adminDb.voidLog.findMany({
+  return db.voidLog.findMany({
     where,
     include: {
       order: {
@@ -630,7 +630,7 @@ export async function getOrderItemNames(
 ): Promise<Map<string, string>> {
   if (itemIds.length === 0) return new Map()
 
-  const items = await adminDb.orderItem.findMany({
+  const items = await db.orderItem.findMany({
     where: { id: { in: itemIds } },
     select: { id: true, name: true },
   })
@@ -647,7 +647,7 @@ export async function getPaidInOut(
   locationId: string,
   range: BusinessDayRange,
 ) {
-  return adminDb.paidInOut.findMany({
+  return db.paidInOut.findMany({
     where: {
       locationId,
       deletedAt: null,
@@ -690,7 +690,7 @@ export async function getGiftCardTransactions(
   locationId: string,
   range: BusinessDayRange,
 ) {
-  return adminDb.giftCardTransaction.findMany({
+  return db.giftCardTransaction.findMany({
     where: {
       locationId,
       createdAt: { gte: range.start, lte: range.end },
@@ -705,7 +705,7 @@ export async function getGiftCardTransactions(
  * Fetch all categories for a location (reference data for grouping).
  */
 export async function getCategories(locationId: string) {
-  return adminDb.category.findMany({
+  return db.category.findMany({
     where: { locationId, deletedAt: null },
     select: { id: true, name: true, categoryType: true },
   })
@@ -720,7 +720,7 @@ export async function getCCTipFees(
   locationId: string,
   range: BusinessDayRange,
 ): Promise<{ totalCents: number; transactionCount: number }> {
-  const result = await adminDb.tipTransaction.aggregate({
+  const result = await db.tipTransaction.aggregate({
     _sum: { ccFeeAmountCents: true },
     _count: true,
     where: {
@@ -746,7 +746,7 @@ export async function getFailedDeductionCount(
   locationId: string,
 ): Promise<number> {
   try {
-    return await adminDb.pendingDeduction.count({
+    return await db.pendingDeduction.count({
       where: {
         locationId,
         OR: [

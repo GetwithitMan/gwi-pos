@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -85,7 +85,7 @@ export const POST = withVenue(async function POST(
     }
 
     // ── Validate destination employee ───────────────────────────────────
-    const toEmployee = await adminDb.employee.findFirst({
+    const toEmployee = await db.employee.findFirst({
       where: {
         id: toEmployeeId,
         locationId: shift.locationId,

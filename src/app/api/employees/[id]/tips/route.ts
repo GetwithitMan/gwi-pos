@@ -2,7 +2,7 @@
 // TipBank model removed in Skill 284. TipShare remains for payout lifecycle.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { centsToDollars, getLedgerBalance } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -18,7 +18,7 @@ export const GET = withVenue(async function GET(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let locationId = getRequestLocationId()
     if (!locationId) {
-      const employee = await adminDb.employee.findUnique({
+      const employee = await db.employee.findUnique({
         where: { id: employeeId },
         select: { id: true, locationId: true },
       })

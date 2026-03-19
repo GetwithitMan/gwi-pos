@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -58,8 +58,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Run count + data in parallel
     const [totalCount, tabs] = await Promise.all([
-      adminDb.order.count({ where }),
-      adminDb.order.findMany({
+      db.order.count({ where }),
+      db.order.findMany({
         where,
         include: {
           employee: {

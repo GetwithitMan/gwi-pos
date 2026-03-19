@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -262,7 +262,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get employee names
     const employeeIds = Object.keys(upsellByEmployee)
-    const employees = await adminDb.employee.findMany({
+    const employees = await db.employee.findMany({
       where: { id: { in: employeeIds } },
       select: { id: true, displayName: true, firstName: true, lastName: true },
     })
@@ -271,7 +271,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
 
     // 5. Pour cost analysis - get cocktails with recipes
-    const cocktailsWithRecipes = await adminDb.menuItem.findMany({
+    const cocktailsWithRecipes = await db.menuItem.findMany({
       where: {
         locationId,
         category: { categoryType: 'liquor' },

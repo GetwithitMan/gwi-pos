@@ -71,7 +71,7 @@ export async function processGiftCardPayment(
   }
 
   const cardBalance = Number(giftCard.currentBalance)
-  const gcPaymentAmount = payment.amount + (payment.tipAmount || 0)
+  const gcPaymentAmount = payment.amount  // Tip handled separately at order level
 
   if (cardBalance < gcPaymentAmount) {
     return {

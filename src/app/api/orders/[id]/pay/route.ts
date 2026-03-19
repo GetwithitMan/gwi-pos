@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
@@ -69,6 +69,7 @@ export const POST = withVenue(withTiming(async function POST(
   let autoVoidRecords: Record<string, unknown>[] = []
   let autoVoidTerminalId: string | undefined
   let autoVoidLocationId: string | undefined
+  let pendingCaptureIdempotencyKey: string | undefined
   try {
     body = await request.json()
 
@@ -93,13 +94,13 @@ export const POST = withVenue(withTiming(async function POST(
     let preCheckOrder: { locationId: string; employeeId: string | null } | null = null
     if (payLocationId) {
       // We have locationId but still need employeeId for ownership check
-      const orderOwner = await adminDb.order.findFirst({
+      const orderOwner = await db.order.findFirst({
         where: { id: orderId },
         select: { employeeId: true },
       })
       preCheckOrder = orderOwner ? { locationId: payLocationId, employeeId: orderOwner.employeeId } : null
     } else {
-      preCheckOrder = await adminDb.order.findFirst({
+      preCheckOrder = await db.order.findFirst({
         where: { id: orderId },
         select: { locationId: true, employeeId: true },
       })
@@ -159,7 +160,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Lightweight query for settings — no FOR UPDATE, no lock
       // NOTE: Uses db directly because this runs before the main transaction and locationId
       // may not be available yet (preCheckOrder could be null if room_charge is the only payment type).
-      const locationForPms = await adminDb.order.findFirst({
+      const locationForPms = await db.order.findFirst({
         where: { id: orderId },
         select: {
           locationId: true,
@@ -459,6 +460,86 @@ export const POST = withVenue(withTiming(async function POST(
 
     // C18: Permission checks moved OUTSIDE the FOR UPDATE transaction (above)
     // to reduce lock contention. No duplicate check needed here.
+
+    // DOUBLE-CHARGE PREVENTION: Lock-and-check on _pending_captures table.
+    // The FOR UPDATE lock above serializes concurrent requests for the SAME order,
+    // but a client retry with the same idempotencyKey can slip through the in-memory
+    // idempotency check (line above) if the first request hasn't committed yet.
+    // This INSERT with a unique index on idempotencyKey acts as a durable lock:
+    //   - First request: INSERT succeeds → proceed to payment
+    //   - Concurrent retry: INSERT conflicts → return 409 (or cached result)
+    // Uses a savepoint so a missing table (pre-migration NUCs) doesn't abort the transaction.
+    let pendingCaptureInserted = false
+    try {
+      await tx.$executeRawUnsafe(`SAVEPOINT pending_capture_check`)
+      const existingPending = await tx.$queryRawUnsafe<Array<{ id: string; status: string; response_json: string | null }>>(
+        `SELECT id, status, response_json FROM "_pending_captures" WHERE "idempotencyKey" = $1 LIMIT 1`,
+        finalIdempotencyKey
+      )
+      if (Array.isArray(existingPending) && existingPending.length > 0) {
+        const pending = existingPending[0] as any
+        if (pending.status === 'processing') {
+          await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+          return { earlyReturn: NextResponse.json(
+            { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
+            { status: 409 }
+          )}
+        }
+        if (pending.status === 'completed' && pending.response_json) {
+          await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+          // Return cached result — idempotent response
+          return { earlyReturn: NextResponse.json(
+            { error: 'Payment already processed', code: 'DUPLICATE_PAYMENT', existingPayment: JSON.parse(pending.response_json) },
+            { status: 409 }
+          )}
+        }
+        // status is 'failed' or 'pending' without response — allow retry by updating status
+        await tx.$executeRawUnsafe(
+          `UPDATE "_pending_captures" SET "status" = 'processing', "errorMessage" = NULL WHERE "id" = $1`,
+          pending.id
+        )
+        pendingCaptureInserted = true
+      } else {
+        // No existing record — insert a new one with status='processing'
+        const captureId = crypto.randomUUID()
+        await tx.$executeRawUnsafe(
+          `INSERT INTO "_pending_captures" ("id", "orderId", "locationId", "cardRecordNo", "purchaseAmount", "totalAmount", "status", "idempotencyKey", "createdAt")
+           VALUES ($1, $2, $3, '', 0, 0, 'processing', $4, NOW())
+           ON CONFLICT ("idempotencyKey") WHERE "idempotencyKey" IS NOT NULL DO NOTHING`,
+          captureId,
+          orderId,
+          order.locationId,
+          finalIdempotencyKey
+        )
+        // Check if our insert won (ON CONFLICT DO NOTHING means 0 rows if conflict)
+        const verifyInsert = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+          `SELECT id FROM "_pending_captures" WHERE "idempotencyKey" = $1 AND "id" = $2 LIMIT 1`,
+          finalIdempotencyKey,
+          captureId
+        )
+        if (Array.isArray(verifyInsert) && verifyInsert.length > 0) {
+          pendingCaptureInserted = true
+        } else {
+          // Another concurrent request won the insert — this is a duplicate
+          await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+          return { earlyReturn: NextResponse.json(
+            { error: 'Payment is already being processed. Please wait.', code: 'PAYMENT_IN_PROGRESS' },
+            { status: 409 }
+          )}
+        }
+      }
+      await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
+    } catch (pcError) {
+      // Table may not exist on pre-migration NUCs — roll back savepoint and proceed without protection
+      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pending_capture_check`).catch(() => {})
+      console.warn('[PAY] _pending_captures check failed (table may not exist), proceeding without lock', {
+        orderId, error: pcError instanceof Error ? pcError.message : String(pcError),
+      })
+    }
+    // Expose to outer catch block for failure cleanup
+    if (pendingCaptureInserted) {
+      pendingCaptureIdempotencyKey = finalIdempotencyKey
+    }
 
     if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
       if (order.status === 'paid' || order.status === 'closed') {
@@ -768,7 +849,6 @@ export const POST = withVenue(withTiming(async function POST(
       'cash', // Resolve for cash (non-cash returns null anyway)
       employeeId || null,
       terminalId,
-      order.locationId,
     )
 
     // Training mode: if order is a training order and suppressPayments is enabled,
@@ -1138,6 +1218,29 @@ export const POST = withVenue(withTiming(async function POST(
     })
     timing.end('db-pay', 'Payment ingestion')
 
+    // DOUBLE-CHARGE PREVENTION: Mark pending capture as 'completed' now that payment is recorded.
+    // This runs inside the same transaction, so if the tx rolls back the capture stays 'processing'
+    // (which is correct — it will be retryable). Fire-and-forget with savepoint for safety.
+    if (pendingCaptureInserted) {
+      try {
+        await tx.$executeRawUnsafe(`SAVEPOINT pc_complete`)
+        const responseJson = JSON.stringify({
+          orderId,
+          paymentIds: allPendingPayments.map((r: any) => r.id).filter(Boolean),
+          amount: allPendingPayments.reduce((sum: number, r: any) => sum + toNumber(r.amount ?? 0), 0),
+        })
+        await tx.$executeRawUnsafe(
+          `UPDATE "_pending_captures" SET "status" = 'completed', "completedAt" = NOW(), "response_json" = $2
+           WHERE "idempotencyKey" = $1 AND "status" = 'processing'`,
+          finalIdempotencyKey,
+          responseJson
+        )
+        await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pc_complete`)
+      } catch {
+        await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pc_complete`).catch(() => {})
+      }
+    }
+
     if (ingestResult.alreadyPaid) {
       // TX-KEEP: COMPLEX — latest payment lookup after ingest race inside FOR UPDATE lock; no repo method
       const existingPayment = await tx.payment.findFirst({
@@ -1459,7 +1562,7 @@ export const POST = withVenue(withTiming(async function POST(
       // TODO: migrate to MenuItemRepository/FloorPlanElementRepository once those repos exist
       // (queries use currentOrderId filter + relation-filter menuItem.itemType, not supported by current repos)
       try {
-        const entertainmentItems = await adminDb.menuItem.findMany({
+        const entertainmentItems = await db.menuItem.findMany({
           where: { locationId: order.locationId, currentOrderId: orderId, itemType: 'timed_rental' },
           select: { id: true },
         })
@@ -1467,12 +1570,12 @@ export const POST = withVenue(withTiming(async function POST(
         if (entertainmentItems.length > 0) {
           // Clear blockTimeStartedAt on order items so Android stops showing timers
           // TODO: relation-filter (menuItem.itemType) not supported by OrderItemRepository.updateItemsWhere
-          await adminDb.orderItem.updateMany({
+          await db.orderItem.updateMany({
             where: { orderId, locationId: order.locationId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
             data: { blockTimeStartedAt: null },
           })
 
-          await adminDb.menuItem.updateMany({
+          await db.menuItem.updateMany({
             where: { locationId: order.locationId, currentOrderId: orderId, itemType: 'timed_rental' },
             data: {
               entertainmentStatus: 'available',
@@ -1557,7 +1660,7 @@ export const POST = withVenue(withTiming(async function POST(
       void (async () => {
         try {
           // TODO: Add getActiveItemsForOrderWithMenuItemCommission to OrderItemRepository
-          const activeItems = await adminDb.orderItem.findMany({
+          const activeItems = await db.orderItem.findMany({
             where: { orderId, locationId: order.locationId, status: 'active', deletedAt: null },
             include: {
               menuItem: { select: { commissionType: true, commissionValue: true } },
@@ -1696,7 +1799,7 @@ export const POST = withVenue(withTiming(async function POST(
         void (async () => {
           try {
             // TODO: Add countOpenOrdersForTableExcluding to OrderRepository
-            const otherOpenOrders = await adminDb.order.count({
+            const otherOpenOrders = await db.order.count({
               where: {
                 tableId: order.tableId!,
                 locationId: order.locationId,
@@ -1958,6 +2061,23 @@ export const POST = withVenue(withTiming(async function POST(
     } })
   } catch (error) {
     console.error('Failed to process payment:', error)
+
+    // DOUBLE-CHARGE PREVENTION: Mark pending capture as 'failed' so the idempotency key
+    // can be retried. Fire-and-forget — if this fails the record stays 'processing' which
+    // will block retries for safety (ops can manually reset via DB).
+    if (pendingCaptureIdempotencyKey) {
+      void db.$executeRawUnsafe(
+        `UPDATE "_pending_captures" SET "status" = 'failed', "errorMessage" = $2
+         WHERE "idempotencyKey" = $1 AND "status" = 'processing'`,
+        pendingCaptureIdempotencyKey,
+        (error instanceof Error ? error.message : String(error)).substring(0, 500)
+      ).catch((pcErr) => {
+        console.warn('[PAY] Failed to mark pending capture as failed', {
+          idempotencyKey: pendingCaptureIdempotencyKey,
+          error: pcErr instanceof Error ? pcErr.message : String(pcErr),
+        })
+      })
+    }
 
     if (autoVoidRecords.length > 0 && autoVoidTerminalId && autoVoidLocationId) {
       const locationId = autoVoidLocationId

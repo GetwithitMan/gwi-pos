@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 
@@ -26,7 +26,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body: PrintKitchenRequest = await request.json()
     const { orderId, itemIds } = body
     // Fetch order with items
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
         table: true,
@@ -408,7 +408,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Mark items as sent to kitchen
     if (results.some(r => r.success)) {
       const now = new Date()
-      await adminDb.orderItem.updateMany({
+      await db.orderItem.updateMany({
         where: { id: { in: itemsToPrint.map(i => i.id) } },
         data: { kitchenStatus: 'cooking', kitchenSentAt: now },
       })

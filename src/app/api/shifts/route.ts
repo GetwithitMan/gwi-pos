@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { ShiftStatus } from '@/generated/prisma/client'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET - List shifts with optional filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -101,6 +103,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require manager shift review permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_SHIFT_REVIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const mode = cashHandlingMode || 'drawer'
 

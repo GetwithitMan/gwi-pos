@@ -4,6 +4,8 @@ import { normalizeCoord } from '@/lib/table-geometry'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface TablePositionUpdate {
   id: string
@@ -41,6 +43,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require tables.floor_plan permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.TABLES_FLOOR_PLAN)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Normalize all positions to grid alignment before saving
     // This ensures DB values match what the editor displays (same grid snapping)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { dispatchInventoryAdjustment, dispatchStockLevelChange } from '@/lib/socket-dispatch'
@@ -323,7 +323,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get employee info for audit trail
-    const employee = await adminDb.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId },
       select: { id: true, firstName: true, lastName: true }
     })

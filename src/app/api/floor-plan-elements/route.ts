@@ -1,4 +1,4 @@
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { logger } from '@/lib/logger'
@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(req: Request) {
 
     // Verify linkedMenuItemId exists if provided (must not be soft-deleted)
     if (linkedMenuItemId) {
-      const menuItem = await adminDb.menuItem.findFirst({
+      const menuItem = await db.menuItem.findFirst({
         where: { id: linkedMenuItemId, deletedAt: null },
         select: { id: true },
       })

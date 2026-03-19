@@ -4,7 +4,7 @@ import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-disp
 import { withVenue } from '@/lib/with-venue'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
@@ -34,6 +34,12 @@ export const PUT = withVenue(async function PUT(
     if (!locationId) {
       return NextResponse.json({ error: 'Location not found' }, { status: 400 })
     }
+
+    // Permission check: POS_ACCESS required to edit order items
+    const putActor = await getActorFromRequest(request)
+    const putEmployeeId = requestingEmployeeId || putActor.employeeId
+    const putAuth = await requirePermission(putEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!putAuth.authorized) return NextResponse.json({ error: putAuth.error }, { status: putAuth.status })
 
     // Verify order exists (tenant-safe via OrderRepository)
     const order = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
@@ -356,11 +362,10 @@ export const DELETE = withVenue(async function DELETE(
       }
 
       // Permission check — require POS access to delete items
-      const employeeId = request.nextUrl.searchParams.get('employeeId') || null
-      if (employeeId) {
-        const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
-        if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
-      }
+      const deleteActor = await getActorFromRequest(request)
+      const employeeId = request.nextUrl.searchParams.get('employeeId') || deleteActor.employeeId
+      const deleteAuth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+      if (!deleteAuth.authorized) return NextResponse.json({ error: deleteAuth.error }, { status: deleteAuth.status })
 
       // W4-3: Audit log for item deletion before send (fire-and-forget)
       void tx.auditLog.create({

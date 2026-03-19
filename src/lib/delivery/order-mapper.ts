@@ -8,7 +8,7 @@
  * Platform tips do NOT enter tip banking — they're paid out by the platform, not the venue.
  */
 
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -97,7 +97,7 @@ export async function mapThirdPartyOrder(
   taxRate: number = 0,
 ): Promise<MappedOrder> {
   // Load local menu items for fuzzy matching
-  const menuItems = await adminDb.menuItem.findMany({
+  const menuItems = await db.menuItem.findMany({
     where: {
       category: { locationId },
       deletedAt: null,

@@ -15,7 +15,7 @@
  * TODO: Migrate db.station.* calls once a StationRepository is created.
  */
 
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import type {
   TemplateType,
   RoutedItem,
@@ -63,7 +63,7 @@ export class OrderRouter {
     if (preloadedOrder) {
       // Use pre-fetched order data — only fetch items with routing-specific includes
       orderData = preloadedOrder
-      items = await adminDb.orderItem.findMany({
+      items = await db.orderItem.findMany({
         where: {
           orderId,
           ...(itemIds ? { id: { in: itemIds } } : {}),
@@ -115,7 +115,7 @@ export class OrderRouter {
       })
     } else {
       // Full fetch — order + items in one query (original behavior)
-      const order = await adminDb.order.findUnique({
+      const order = await db.order.findUnique({
         where: { id: orderId },
         include: {
           table: {

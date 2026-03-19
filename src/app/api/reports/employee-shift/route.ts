@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
@@ -134,7 +134,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Fetch all shift data in parallel (all queries are independent)
     const [orders, voidedOrders, voidLogs, tipOutsReceived, tipOutsGiven, shiftTimeEntries] = await Promise.all([
       // Completed/paid orders for this employee
-      adminDb.order.findMany({
+      db.order.findMany({
         where: {
           locationId: locationIdToUse,
           employeeId: employee.id,
@@ -160,7 +160,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
       }),
       // Voided orders
-      adminDb.order.findMany({
+      db.order.findMany({
         where: {
           locationId: locationIdToUse,
           employeeId: employee.id,

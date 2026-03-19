@@ -1,4 +1,4 @@
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('liquor-validation')
@@ -69,7 +69,7 @@ export async function validatePourMultiplier(
 ): Promise<{ valid: boolean; multiplier: number }> {
   if (!pourSize) return { valid: true, multiplier: 1.0 }
 
-  const menuItem = await adminDb.menuItem.findUnique({
+  const menuItem = await db.menuItem.findUnique({
     where: { id: menuItemId },
     select: { pourSizes: true }
   })

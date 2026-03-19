@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get a single table
 export const GET = withVenue(async function GET(
@@ -126,6 +128,12 @@ export const PUT = withVenue(async function PUT(
         { status: 400 }
       )
     }
+
+    // Auth check — require tables.edit permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const authPut = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.TABLES_EDIT)
+    if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
 
     // Verify table belongs to this location
     const existing = await db.table.findFirst({
@@ -263,6 +271,12 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
+    // Auth check — require tables.edit permission
+    const actorDel = await getActorFromRequest(request)
+    const resolvedEmployeeIdDel = actorDel.employeeId ?? searchParams.get('employeeId')
+    const authDel = await requirePermission(resolvedEmployeeIdDel, locationId, PERMISSIONS.TABLES_EDIT)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
+
     // Verify table belongs to this location
     const existing = await db.table.findFirst({
       where: { id, locationId, deletedAt: null },
@@ -274,7 +288,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Check for active orders (all active statuses, not just open)
-    const openOrders = await adminDb.order.count({
+    const openOrders = await db.order.count({
       where: { tableId: id, locationId, status: { in: ['draft', 'open', 'sent', 'in_progress', 'split', 'pending'] } },
     })
 

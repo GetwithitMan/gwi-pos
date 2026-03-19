@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { MenuItemRepository, OrderRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 import { validateBridgeHMAC, decryptBridgeSecret } from '@/lib/berg/hmac'
@@ -54,7 +54,7 @@ async function findOpenOrderForTerminal(
   if (!terminal) return { order: null, multipleOpen: false }
 
   // Orders track terminal via offlineTerminalId (Terminal.id) or tableId
-  const openOrders = await adminDb.order.findMany({
+  const openOrders = await db.order.findMany({
     where: {
       locationId,
       offlineTerminalId: terminal.id,
@@ -302,7 +302,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 category: { select: { categoryType: true } },
               })
               if (menuItem) {
-                const oi = await adminDb.orderItem.create({
+                const oi = await db.orderItem.create({
                   data: {
                     locationId: device.locationId,
                     orderId: result.order.id,
@@ -386,7 +386,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           category: { select: { categoryType: true } },
         })
         if (menuItem) {
-          const oi = await adminDb.orderItem.create({
+          const oi = await db.orderItem.create({
             data: {
               locationId: device.locationId,
               orderId: result.order.id,

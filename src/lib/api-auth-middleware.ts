@@ -22,8 +22,9 @@
  *
  * Auth sources (checked in order):
  *   1. POS session cookie (pos-session) — HMAC-SHA256 signed JWT
- *   2. Cellular Bearer token (Authorization: Bearer <token>)
- *   3. Internal API key (x-api-key header) — only if allowInternal is set
+ *   2. Cloud session cookie (pos-cloud-session) — Mission Control admin JWT
+ *   3. Cellular Bearer token (Authorization: Bearer <token>)
+ *   4. Internal API key (x-api-key header) — only if allowInternal is set
  *
  * The middleware injects `ctx.auth` with the verified identity. Routes should
  * NEVER read employeeId/locationId from the request body for auth purposes.
@@ -32,9 +33,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromCookie, refreshSessionCookie } from './auth-session'
 import { verifyCellularToken, recordActivity } from './cellular-auth'
+import { verifyCloudToken, type CloudTokenPayload } from './cloud-auth'
 import { hasPermission } from './auth-utils'
 import { PERMISSIONS } from './auth-utils'
 import { createChildLogger } from '@/lib/logger'
+import { cookies } from 'next/headers'
+import { db } from './db'
 
 const log = createChildLogger('api-auth-middleware')
 
@@ -52,7 +56,7 @@ export interface AuthContext {
   /** Role name from session. Null for cellular/internal. */
   roleName: string | null
   /** Which auth source was used. */
-  source: 'session' | 'cellular' | 'internal'
+  source: 'session' | 'cloud' | 'cellular' | 'internal'
   /** For cellular auth: the terminal ID. */
   terminalId?: string
 }
@@ -68,7 +72,7 @@ type AuthenticatedHandler = (
   ctx: AuthenticatedContext
 ) => Promise<Response> | Response
 
-interface WithAuthOptions {
+export interface WithAuthOptions {
   /** Permission key string (e.g., 'settings.edit') or PERMISSIONS constant key (e.g., 'SETTINGS_EDIT'). */
   permission?: string
   /** Allow x-api-key internal auth (for MC->POS routes). Default: false. */
@@ -184,7 +188,156 @@ export function withAuth(
       // Cookie read failed — fall through to other auth methods
     }
 
-    // ── 2. Try cellular Bearer token ─────────────────────────────────
+    // ── 2. Try cloud session cookie (Mission Control admin) ────────
+    try {
+      const secret = process.env.PROVISION_API_KEY
+      if (secret) {
+        const cookieStore = await cookies()
+        const cloudToken = cookieStore.get('pos-cloud-session')?.value
+        if (cloudToken) {
+          const payload = await verifyCloudToken(cloudToken, secret)
+          if (payload) {
+            // Resolve location from venue DB
+            let locationId: string | null = null
+            if (payload.posLocationId) {
+              const loc = await db.location.findUnique({
+                where: { id: payload.posLocationId },
+                select: { id: true },
+              })
+              locationId = loc?.id ?? null
+            }
+            if (!locationId) {
+              const loc = await db.location.findFirst({
+                select: { id: true },
+                orderBy: { id: 'asc' },
+              })
+              locationId = loc?.id ?? null
+            }
+
+            if (locationId) {
+              // Find or provision the cloud admin employee
+              const sub = payload.sub
+              const isCloudSub = sub.startsWith('cloud-') || sub.startsWith('mc-owner-')
+
+              let employee: { id: string; roleId: string; role: { permissions: unknown; name: string } | null } | null = null
+
+              if (!isCloudSub) {
+                // Real employee ID in sub
+                employee = await db.employee.findFirst({
+                  where: { id: sub, locationId, deletedAt: null, isActive: true },
+                  select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
+                })
+              } else if (payload.email) {
+                // Look up by email
+                employee = await db.employee.findFirst({
+                  where: { locationId, email: { equals: payload.email, mode: 'insensitive' }, deletedAt: null, isActive: true },
+                  select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
+                })
+              }
+
+              // MC role mapping: cloud role → local MC employee type
+              const MC_ROLE_MAP: Record<string, string> = {
+                super_admin: 'MC Admin',
+                sub_admin: 'MC Admin',
+                enterprise_admin: 'MC Enterprise',
+                org_admin: 'MC Manager',
+                agent: 'MC Agent',
+                dealer: 'MC Dealer',
+                tech_support: 'MC Tech Support',
+              }
+              const isStaff = payload.role === 'super_admin' || payload.role === 'sub_admin'
+              const mcRoleName = MC_ROLE_MAP[payload.role] || 'MC Access'
+
+              // Auto-provision a trackable MC employee if none exists
+              if (!employee && (isCloudSub || !employee)) {
+                try {
+                  // Find or create an MC admin role with full permissions
+                  let mcRole = await db.role.findFirst({
+                    where: { locationId, name: mcRoleName, deletedAt: null },
+                    select: { id: true, permissions: true, name: true },
+                  })
+                  if (!mcRole) {
+                    mcRole = await db.role.create({
+                      data: {
+                        locationId,
+                        name: mcRoleName,
+                        permissions: ['all'],
+                        roleType: 'ADMIN',
+                        accessLevel: 'OWNER_ADMIN',
+                      },
+                      select: { id: true, permissions: true, name: true },
+                    }) as any
+                  }
+
+                  if (mcRole) {
+                    const nameParts = (payload.name || 'MC Admin').split(' ')
+                    const { hash } = await import('bcryptjs')
+                    const { randomInt } = await import('crypto')
+                    const rawPin = String(randomInt(100000, 1000000))
+                    const hashedPin = await hash(rawPin, 10)
+
+                    const created = await db.employee.create({
+                      data: {
+                        locationId,
+                        firstName: nameParts[0] || 'MC',
+                        lastName: nameParts.slice(1).join(' ') || 'Admin',
+                        displayName: payload.name || mcRoleName,
+                        email: payload.email || null,
+                        pin: hashedPin,
+                        roleId: mcRole.id,
+                        isActive: true,
+                      },
+                      select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
+                    })
+                    employee = created
+                    log.info(`[withAuth] Auto-provisioned ${mcRoleName} employee: ${created.id} (${payload.email || payload.name})`)
+                  }
+                } catch (provisionErr) {
+                  log.error('[withAuth] Failed to auto-provision MC employee:', provisionErr)
+                }
+              }
+
+              if (employee) {
+                const perms = (employee.role?.permissions as string[]) || []
+                const effectivePerms = isStaff ? ['all', ...perms] : perms
+
+                if (resolvedPermission && !hasPermission(effectivePerms, resolvedPermission)) {
+                  return NextResponse.json(
+                    { error: 'You do not have permission to perform this action' },
+                    { status: 403 }
+                  )
+                }
+
+                const authCtx: AuthContext = {
+                  employeeId: employee.id,
+                  locationId,
+                  permissions: effectivePerms,
+                  roleId: employee.roleId,
+                  roleName: employee.role?.name || null,
+                  source: 'cloud',
+                }
+                return handler(request, { auth: authCtx, params: context?.params })
+              } else if (isStaff) {
+                // Last resort: MC staff without provisioned employee — grant access
+                const authCtx: AuthContext = {
+                  employeeId: null,
+                  locationId,
+                  permissions: ['all'],
+                  roleId: null,
+                  roleName: mcRoleName,
+                  source: 'cloud',
+                }
+                return handler(request, { auth: authCtx, params: context?.params })
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Cloud session check failed — fall through
+    }
+
+    // ── 3. Try cellular Bearer token ─────────────────────────────────
     if (allowCellular) {
       const authHeader = request.headers.get('authorization')
       if (authHeader?.startsWith('Bearer ')) {
@@ -224,7 +377,7 @@ export function withAuth(
       }
     }
 
-    // ── 3. Try internal API key ──────────────────────────────────────
+    // ── 4. Try internal API key ──────────────────────────────────────
     if (allowInternal) {
       const validKey = validateInternalApiKey(request)
       if (validKey) {

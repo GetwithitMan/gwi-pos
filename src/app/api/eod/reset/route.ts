@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -8,7 +8,7 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { executeEodReset } from '@/lib/eod'
 
 // TODO: Migrate db.location, db.table, db.orderSnapshot, db.entertainmentWaitlist,
-// and adminDb.order.count calls to repositories once Location/Table/OrderSnapshot repositories exist.
+// and db.order.count calls to repositories once Location/Table/OrderSnapshot repositories exist.
 // All queries already include locationId in WHERE clauses.
 
 /**
@@ -84,7 +84,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       const eodSettings = locSettings.eod
       let openTabCount = 0
       if (eodSettings?.autoCaptureTabs) {
-        openTabCount = await adminDb.order.count({
+        openTabCount = await db.order.count({
           where: {
             locationId,
             orderType: 'bar_tab',
@@ -235,7 +235,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let openTabCount = 0
     const eodSettings = parsedSettings.eod
     if (eodSettings?.autoCaptureTabs) {
-      openTabCount = await adminDb.order.count({
+      openTabCount = await db.order.count({
         where: {
           locationId,
           orderType: 'bar_tab',
@@ -248,7 +248,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Count active entertainment sessions and waiting waitlist entries
     const [activeEntertainment, waitingWaitlist] = await Promise.all([
-      adminDb.menuItem.count({
+      db.menuItem.count({
         where: {
           locationId,
           itemType: 'timed_rental',

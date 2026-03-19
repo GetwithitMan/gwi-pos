@@ -878,6 +878,9 @@ model Location {
   reservationBlocks   ReservationBlock[]
   reservationDeposits ReservationDeposit[]
 
+  // Per-employee permission overrides
+  employeePermissionOverrides EmployeePermissionOverride[]
+
   @@index([organizationId])
 }
 
@@ -1179,6 +1182,9 @@ model Employee {
   sevenShiftsRoleId       String? // for accurate punch reporting
   sevenShiftsDepartmentId String? // for accurate punch reporting
   sevenShiftsLocationId   String? // for accurate punch reporting
+
+  // Per-employee permission overrides (grant/deny without new roles)
+  permissionOverrides EmployeePermissionOverride[]
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -9004,4 +9010,27 @@ model ReservationDeposit {
   @@index([locationId])
   @@index([reservationId])
   @@index([locationId, createdAt])
+}
+
+// ============================================
+// EMPLOYEE PERMISSION OVERRIDES
+// Per-employee permission grants/denials without creating new roles
+// ============================================
+
+model EmployeePermissionOverride {
+  id            String   @id @default(cuid())
+  locationId    String
+  location      Location @relation(fields: [locationId], references: [id])
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  permissionKey String   // e.g., "manager.void_items"
+  allowed       Boolean  // true = grant extra, false = deny from role
+  reason        String?  // Why this override was set
+  setBy         String?  // Employee ID of who set this override
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([employeeId, permissionKey])
+  @@index([locationId])
+  @@index([employeeId])
 }

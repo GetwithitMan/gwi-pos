@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchPaymentProcessed, dispatchOrderClosed, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 // deductInventoryForOrder replaced by PendingDeduction outbox pattern (see pay/route.ts)
@@ -11,6 +11,8 @@ import { parseSettings } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 const PayAllSplitsSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit']),
@@ -48,11 +50,28 @@ export const POST = withVenue(async function POST(
 
     const { method, employeeId, terminalId, idempotencyKey, cardBrand, cardLast4, authCode, datacapRecordNo, datacapRefNumber, datacapSequenceNo, entryMethod, amountAuthorized } = validation.data
 
+    // Permission check: require POS_CASH_PAYMENTS or POS_CARD_PAYMENTS based on payment method
+    const paymentPermissions = method === 'cash'
+      ? [PERMISSIONS.POS_CASH_PAYMENTS]
+      : [PERMISSIONS.POS_CARD_PAYMENTS]
+    const actor = await getActorFromRequest(request)
+    const payAllEmployeeId = employeeId || actor.employeeId
+    // Lightweight order fetch for locationId
+    const payAllOrderCheck = await db.order.findFirst({
+      where: { id: parentOrderId, deletedAt: null },
+      select: { locationId: true },
+    })
+    if (!payAllOrderCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+    const payAllAuth = await requireAnyPermission(payAllEmployeeId, payAllOrderCheck.locationId, paymentPermissions)
+    if (!payAllAuth.authorized) return NextResponse.json({ error: payAllAuth.error }, { status: payAllAuth.status })
+
     // W2-P1: Generate server-side idempotency key if client didn't provide one
     const effectiveIdempotencyKey = idempotencyKey || crypto.randomUUID()
 
     // Fetch parent order with its split children
-    const parentOrder = await adminDb.order.findUnique({
+    const parentOrder = await db.order.findUnique({
       where: { id: parentOrderId },
       include: {
         location: true,

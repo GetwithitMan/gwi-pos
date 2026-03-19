@@ -7,7 +7,7 @@
 
 import type { TxClient, AddItemInput, ItemPrepData } from './types'
 import { isValidModifierId, calculateItemCardPrice, type ModifierPricingData } from './item-calculations'
-import { calculateItemTotal } from '@/lib/order-calculations'
+import { calculateItemTotal, calculateItemCommission } from '@/lib/order-calculations'
 import { getBestPricingRuleForItem } from '@/lib/settings'
 import type { PricingRule, PricingAdjustment } from '@/lib/settings'
 import { validateSpiritTier, validatePourMultiplier } from '@/lib/liquor-validation'
@@ -51,11 +51,12 @@ export async function createOrderItem(
     idempotencyKey,
     pricingRules,
   } = params
-  const { item, effectivePrice, fullItemTotal: preRuleItemTotal, itemCommission, menuItem, catType, itemTaxInclusive } = prepData
+  const { item, effectivePrice, fullItemTotal: preRuleItemTotal, itemCommission: preRuleCommission, menuItem, catType, itemTaxInclusive } = prepData
 
   // Apply pricing rule (catalog-priced items only, skip manual/open price overrides)
   let finalPrice = effectivePrice
   let finalItemTotal = preRuleItemTotal
+  let itemCommission = preRuleCommission
   let pricingRuleApplied: PricingAdjustment | null = null
   const isManualPrice = item.pricingOptionId || item.soldByWeight || item.blockTimeMinutes || item.pizzaConfig
   if (!isManualPrice && pricingRules?.length) {
@@ -67,6 +68,13 @@ export async function createOrderItem(
       finalPrice = pricingRuleApplied.adjustedPrice
       // Recalculate itemTotal with the adjusted price so order totals stay correct
       finalItemTotal = calculateItemTotal({ ...item, price: finalPrice })
+      // Recalculate commission from the FINAL price (not pre-rule price)
+      itemCommission = calculateItemCommission(
+        finalItemTotal,
+        item.quantity,
+        menuItem?.commissionType || null,
+        menuItem?.commissionValue ? Number(menuItem.commissionValue) : null
+      )
     }
   }
 

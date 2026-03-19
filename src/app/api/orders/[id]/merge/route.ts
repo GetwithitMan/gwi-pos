@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
@@ -38,7 +38,7 @@ export const POST = withVenue(async function POST(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let locationId = getRequestLocationId()
     if (!locationId) {
-      const targetOrderCheck = await adminDb.order.findUnique({
+      const targetOrderCheck = await db.order.findUnique({
         where: { id: targetOrderId },
         select: { id: true, locationId: true },
       })

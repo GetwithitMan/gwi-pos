@@ -163,7 +163,7 @@ export async function flushSocketOutbox(
           ? { ...row.data as Record<string, unknown>, _eid: eid }
           : row.data
 
-        if (CRITICAL_EMIT_EVENTS.has(row.event)) {
+        if ((CRITICAL_EMIT_EVENTS as Set<string>).has(row.event)) {
           // QoS 1 events — acknowledged delivery with retry
           await emitCriticalToLocation(locationId, row.event, enriched)
         } else {

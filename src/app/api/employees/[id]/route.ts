@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
-import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest, clearPermissionCache } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
@@ -60,20 +60,20 @@ export const GET = withVenue(async function GET(
     // Get summary stats
     // TODO: Add EmployeeRepository.getEmployeeStats() for tenant-safe aggregate queries
     const [orderCount, totalSales, totalCommission] = await Promise.all([
-      adminDb.order.count({
+      db.order.count({
         where: {
           employeeId: id,
           status: { in: ['paid', 'closed'] },
         },
       }),
-      adminDb.order.aggregate({
+      db.order.aggregate({
         where: {
           employeeId: id,
           status: { in: ['paid', 'closed'] },
         },
         _sum: { total: true },
       }),
-      adminDb.order.aggregate({
+      db.order.aggregate({
         where: {
           employeeId: id,
           status: { in: ['paid', 'closed'] },
@@ -245,6 +245,11 @@ export const PUT = withVenue(async function PUT(
 
     await EmployeeRepository.updateEmployee(id, locationId, updateData as any)
 
+    // Clear permission cache if role changed — takes effect immediately
+    if (roleId) {
+      clearPermissionCache(id)
+    }
+
     const employee = await EmployeeRepository.getEmployeeByIdWithInclude(id, locationId, {
       role: {
         select: {
@@ -358,7 +363,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Check for open orders (all active statuses, not just open/pending)
     // TODO: Add OrderRepository.countOpenOrdersForEmployee() for tenant-safe count
-    const openOrders = await adminDb.order.count({
+    const openOrders = await db.order.count({
       where: {
         employeeId: id,
         status: { in: ['draft', 'open', 'sent', 'in_progress', 'split', 'pending'] },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { verifyOwnerToken } from '@/lib/cloud-auth'
 import { signVenueToken } from '@/lib/cloud-auth'
@@ -30,7 +30,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const location = await db.location.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true, name: true } })
   if (!location) return NextResponse.json({ error: 'Venue not configured' }, { status: 404 })
 
-  const employee = await adminDb.employee.findFirst({
+  const employee = await db.employee.findFirst({
     where: {
       locationId: location.id,
       email: { equals: payload.email, mode: 'insensitive' },

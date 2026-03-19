@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
@@ -8,6 +8,8 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // POST - Open a bottle service tab (with tier selection + deposit pre-auth)
 export const POST = withVenue(async function POST(
@@ -23,11 +25,27 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required fields: readerId, employeeId, tierId' }, { status: 400 })
     }
 
+    // Permission check: POS_ACCESS required to open bottle service tabs
+    // Resolve locationId first for permission check
+    let bottleCheckLocationId = getRequestLocationId()
+    if (!bottleCheckLocationId) {
+      const bottleOrderCheck = await db.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { locationId: true },
+      })
+      if (!bottleOrderCheck) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      bottleCheckLocationId = bottleOrderCheck.locationId
+    }
+    const bottleAuth = await requirePermission(employeeId, bottleCheckLocationId, PERMISSIONS.POS_ACCESS)
+    if (!bottleAuth.authorized) return NextResponse.json({ error: bottleAuth.error }, { status: bottleAuth.status })
+
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let orderLocationId = getRequestLocationId()
     if (!orderLocationId) {
       // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-      const orderCheck = await adminDb.order.findFirst({
+      const orderCheck = await db.order.findFirst({
         where: { id: orderId, deletedAt: null },
         select: { id: true, locationId: true },
       })
@@ -226,7 +244,7 @@ export const GET = withVenue(async function GET(
     let getLocationId = getRequestLocationId()
     if (!getLocationId) {
       // Bootstrap: lightweight fetch for locationId + bottle service check
-      const getCheck = await adminDb.order.findFirst({
+      const getCheck = await db.order.findFirst({
         where: { id: orderId, deletedAt: null, isBottleService: true },
         select: { id: true, locationId: true },
       })

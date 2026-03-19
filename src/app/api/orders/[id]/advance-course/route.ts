@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { OrderRouter } from '@/lib/order-router'
@@ -31,7 +31,7 @@ export const POST = withVenue(async function POST(
     let locationId = getRequestLocationId()
     if (!locationId) {
       // Bootstrap: lightweight fetch for locationId, then tenant-safe fetch with include
-      const orderCheck = await adminDb.order.findFirst({
+      const orderCheck = await db.order.findFirst({
         where: { id: orderId },
         select: { id: true, locationId: true },
       })
@@ -93,7 +93,7 @@ export const POST = withVenue(async function POST(
 
     // Mark current course items as served (if requested)
     if (markServed && currentCourseItems.length > 0) {
-      await adminDb.orderItem.updateMany({
+      await db.orderItem.updateMany({
         where: {
           orderId,
           courseNumber: currentCourse,

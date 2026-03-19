@@ -5,7 +5,7 @@
  * and /api/session/bootstrap can call it without duplication.
  */
 
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getSnapshotCache, setSnapshotCache } from '@/lib/snapshot-cache'
 
@@ -235,7 +235,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
     }),
 
     // Open orders count — current business day only, exclude child splits
-    adminDb.order.count({
+    db.order.count({
       where: { locationId, status: { in: ['open', 'sent', 'in_progress', 'split'] }, deletedAt: null, parentOrderId: null, OR: [{ businessDayDate: { gte: businessDayStart } }, { businessDayDate: null, createdAt: { gte: businessDayStart } }] },
     }),
 

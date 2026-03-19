@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // POST - Manager approves a shift request (swap, cover, or drop)
 // For swaps: reassigns shift to target employee
@@ -28,6 +30,12 @@ export const POST = withVenue(async function POST(
     if (!approvedByEmployeeId) {
       return NextResponse.json({ error: 'approvedByEmployeeId is required' }, { status: 400 })
     }
+
+    // Auth check — require staff scheduling permission to approve shift requests
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? approvedByEmployeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.STAFF_SCHEDULING)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const swapRequest = await db.shiftSwapRequest.findUnique({
       where: { id: requestId },

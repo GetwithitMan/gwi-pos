@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { withVenue } from '@/lib/with-venue'
 import { hashPassword, hashPin } from '@/lib/auth'
@@ -51,7 +51,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const passwordHash = await hashPassword(newPassword)
 
   // Check for existing employee with this email (includes locationId for tenant-scoped update)
-  const existing = await adminDb.employee.findFirst({
+  const existing = await db.employee.findFirst({
     where: { email: { equals: normalizedEmail, mode: 'insensitive' }, deletedAt: null },
     select: { id: true, firstName: true, lastName: true, locationId: true },
   })

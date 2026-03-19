@@ -11,7 +11,7 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLocationId } from '@/lib/location-cache'
@@ -86,7 +86,7 @@ export const POST = withVenue(async (
     }
 
     // Fetch order
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       select: {
         id: true,

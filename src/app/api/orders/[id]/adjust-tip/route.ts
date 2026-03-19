@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { withVenue } from '@/lib/with-venue'
@@ -45,7 +45,7 @@ export const PATCH = withVenue(async function PATCH(
       // Lightweight order check for locationId (needed by auth)
       // NOTE: First fetch uses db directly because we don't have locationId yet.
       // Once we have locationId from this order, all subsequent queries use repositories.
-      const orderCheck = await adminDb.order.findUnique({
+      const orderCheck = await db.order.findUnique({
         where: { id: orderId },
         select: { id: true, locationId: true },
       })
@@ -83,6 +83,14 @@ export const PATCH = withVenue(async function PATCH(
       // Status guard: block tip adjustments on voided/cancelled orders
       if (order.status === 'voided' || order.status === 'cancelled') {
         return { error: `Cannot adjust tip on ${order.status} order`, status: 400 } as const
+      }
+
+      // Time guard: block tip adjustments more than 24 hours after order close
+      if (order.closedAt) {
+        const hoursSinceClose = (Date.now() - new Date(order.closedAt).getTime()) / (1000 * 60 * 60)
+        if (hoursSinceClose > 24) {
+          return { error: 'Cannot adjust tip more than 24 hours after order close', status: 400 } as const
+        }
       }
 
       const payment = order.payments[0]

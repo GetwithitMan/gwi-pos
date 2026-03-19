@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templates'
@@ -109,6 +109,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require pos.access permission (any employee can clock in)
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Check if employee is already clocked in
     const existing = await db.timeClockEntry.findFirst({
@@ -412,7 +416,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
         // ── requireTipsAdjusted check ──────────────────────────────────────
         if (!force && locSettings.clockOut?.requireTipsAdjusted) {
-          const unadjustedTips = await adminDb.payment.findMany({
+          const unadjustedTips = await db.payment.findMany({
             where: {
               order: { employeeId: entry.employeeId, locationId: entry.locationId },
               paymentMethod: { in: ['credit', 'debit', 'card'] },

@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(
       const newOrderSequence = orderSequence.map((entry: any) => ({
         orderId: entry.orderId,
         sequence: entry.sequence,
-        estimatedArrivalAt: null, // Will be recalculated below
+        estimatedArrivalAt: null as string | null, // Will be recalculated below
       }))
 
       // Recalculate ETAs: simple additive model (zone estimatedMinutes per remaining stop)

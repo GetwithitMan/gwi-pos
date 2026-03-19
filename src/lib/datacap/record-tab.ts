@@ -12,7 +12,7 @@
  *   - record-card-auth/route.ts (after Android SDK completes card auth)
  */
 
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
@@ -148,7 +148,7 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
         refNo,
       },
     }),
-    adminDb.order.update({
+    db.order.update({
       where: { id: orderId },
       data: {
         tabStatus: 'open',

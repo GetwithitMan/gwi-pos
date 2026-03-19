@@ -59,10 +59,10 @@ export async function checkIngredientStock(
   cakeOrderId: string,
 ): Promise<IngredientWarning[]> {
   // 1. Fetch the cake order's cakeConfig
-  const orderRows = await db.$queryRawUnsafe<Array<{ cakeConfig: unknown; locationId: string }>>(
+  const orderRows = (await db.$queryRawUnsafe(
     `SELECT "cakeConfig", "locationId" FROM "CakeOrder" WHERE "id" = $1 LIMIT 1`,
     cakeOrderId,
-  )
+  )) as Array<{ cakeConfig: unknown; locationId: string }>
 
   if (!orderRows || orderRows.length === 0) {
     return []
@@ -91,13 +91,11 @@ export async function checkIngredientStock(
 
   // 3. Fetch modifier metadata for all modifier IDs
   const placeholders = allModifierIds.map((_, i) => `$${i + 1}`).join(', ')
-  const modifierRows = await db.$queryRawUnsafe<
-    Array<{ id: string; metadata: unknown }>
-  >(
+  const modifierRows = (await db.$queryRawUnsafe(
     `SELECT "id", "metadata" FROM "Modifier"
      WHERE "id" IN (${placeholders}) AND "deletedAt" IS NULL`,
     ...allModifierIds,
-  )
+  )) as Array<{ id: string; metadata: unknown }>
 
   // Build map: modifierId -> requiredIngredients from metadata
   const modifierIngredients = new Map<string, RequiredIngredient[]>()
@@ -128,16 +126,14 @@ export async function checkIngredientStock(
   // 4. Fallback: fetch ModifierInventoryLink for modifiers without metadata
   if (modifiersMissingMetadata.length > 0) {
     const fallbackPlaceholders = modifiersMissingMetadata.map((_, i) => `$${i + 1}`).join(', ')
-    const linkRows = await db.$queryRawUnsafe<
-      Array<{ modifierId: string } & ModifierInventoryLinkRow>
-    >(
+    const linkRows = (await db.$queryRawUnsafe(
       `SELECT "modifierId", "inventoryItemId", "usageQuantity", "usageUnit"
        FROM "ModifierInventoryLink"
        WHERE "modifierId" IN (${fallbackPlaceholders})
          AND "inventoryItemId" IS NOT NULL
          AND "deletedAt" IS NULL`,
       ...modifiersMissingMetadata,
-    )
+    )) as Array<{ modifierId: string } & ModifierInventoryLinkRow>
 
     for (const link of linkRows) {
       if (link.inventoryItemId) {
@@ -181,9 +177,7 @@ export async function checkIngredientStock(
   // 6. Check current stock for all aggregated inventory items
   const inventoryIds = Array.from(aggregated.keys())
   const invPlaceholders = inventoryIds.map((_, i) => `$${i + 1}`).join(', ')
-  const inventoryRows = await db.$queryRawUnsafe<
-    Array<{ id: string; name: string; currentStock: string | number; storageUnit: string }>
-  >(
+  const inventoryRows = (await db.$queryRawUnsafe(
     `SELECT "id", "name", "currentStock", "storageUnit"
      FROM "InventoryItem"
      WHERE "id" IN (${invPlaceholders})
@@ -191,7 +185,7 @@ export async function checkIngredientStock(
        AND "deletedAt" IS NULL`,
     ...inventoryIds,
     locationId,
-  )
+  )) as Array<{ id: string; name: string; currentStock: string | number; storageUnit: string }>
 
   // Build stock map
   const stockMap = new Map<string, { name: string; currentStock: number; unit: string }>()

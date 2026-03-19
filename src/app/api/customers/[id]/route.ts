@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { normalizePhone } from '@/lib/utils'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get customer details with order history
 export const GET = withVenue(async function GET(
@@ -88,7 +90,7 @@ export const GET = withVenue(async function GET(
     })
 
     // Get favorite items (most ordered)
-    const favoriteItems = await adminDb.orderItem.groupBy({
+    const favoriteItems = await db.orderItem.groupBy({
       by: ['menuItemId', 'name'],
       where: {
         locationId,
@@ -275,6 +277,12 @@ export const PUT = withVenue(async function PUT(
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
+
+    // Auth check — require customers.edit permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.CUSTOMERS_EDIT)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const customer = await db.customer.findFirst({
       where: { id, locationId },

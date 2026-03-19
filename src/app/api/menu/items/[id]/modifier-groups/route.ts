@@ -5,6 +5,8 @@ import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -229,6 +231,12 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const authCheck = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authCheck.authorized) return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+
     const body = await request.json()
     const {
       name,
@@ -722,6 +730,15 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
 export const PATCH = withVenue(async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
+
+    // Auth check — require menu.edit_items permission
+    const patchLocationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (patchLocationId) {
+      const actorPatch = await getActorFromRequest(request)
+      const authPatch = await requirePermission(actorPatch.employeeId, patchLocationId, PERMISSIONS.MENU_EDIT_ITEMS)
+      if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
+    }
+
     const body = await request.json()
     const { sortOrders } = body // Array of { id: string, sortOrder: number }
 
@@ -769,6 +786,15 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest, { para
 export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
+
+    // Auth check — require menu.edit_items permission
+    const putLocationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (putLocationId) {
+      const actorPut = await getActorFromRequest(request)
+      const authPut = await requirePermission(actorPut.employeeId, putLocationId, PERMISSIONS.MENU_EDIT_ITEMS)
+      if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+    }
+
     const body = await request.json()
     const { groupId, targetParentModifierId } = body
     // targetParentModifierId: null = promote to top-level, string = demote to child of this modifier

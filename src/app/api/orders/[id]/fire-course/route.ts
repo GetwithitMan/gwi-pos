@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
@@ -7,6 +7,8 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // POST /api/orders/[id]/fire-course - Fire items for a specific course
 // Used by coursing system to send delayed courses to kitchen
@@ -31,6 +33,12 @@ export const POST = withVenue(async function POST(
     if (!locationId) {
       return NextResponse.json({ error: 'Location not found' }, { status: 400 })
     }
+
+    // Permission check: POS_ACCESS required to fire courses
+    const actor = await getActorFromRequest(request)
+    const fireCourseEmployeeId = employeeId || actor.employeeId
+    const fireCourseAuth = await requirePermission(fireCourseEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!fireCourseAuth.authorized) return NextResponse.json({ error: fireCourseAuth.error }, { status: fireCourseAuth.status })
 
     // Validate course ordering: prior courses should be fired first (tenant-safe)
     if (courseNumber > 1 && !body.force) {
@@ -124,7 +132,7 @@ export const POST = withVenue(async function POST(
             blockTimeExpiresAt: expiresAt,
           }),
           // TODO: [Phase 2] Migrate menuItem and floorPlanElement updates to their own repositories
-          adminDb.menuItem.update({
+          db.menuItem.update({
             where: { id: item.menuItem!.id },
             data: {
               entertainmentStatus: 'in_use',

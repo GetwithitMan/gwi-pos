@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -94,7 +94,7 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Section not found' }, { status: 404 })
     }
 
-    const employee = await adminDb.employee.findFirst({
+    const employee = await db.employee.findFirst({
       where: { id: employeeId, locationId, isActive: true, deletedAt: null },
       select: {
         id: true,

@@ -27,7 +27,20 @@ export function validateAddItemsInput(items: AddItemInput[]): ValidationResult {
     return { valid: false, error: 'Too many items in a single request (max 500)', status: 400 }
   }
 
+  // Validate lineItemId uniqueness across all items in this request
+  const lineItemIds = items.map(i => i.lineItemId).filter(Boolean)
+  if (lineItemIds.length !== new Set(lineItemIds).size) {
+    return { valid: false, error: 'Duplicate lineItemIds in request', status: 400 }
+  }
+
   for (const item of items) {
+    if (!Number.isFinite(item.price)) {
+      return {
+        valid: false,
+        error: `Invalid price for item "${item.name || item.menuItemId}": must be a finite number`,
+        status: 400,
+      }
+    }
     if (item.price < 0) {
       return {
         valid: false,

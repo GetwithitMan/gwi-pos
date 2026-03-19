@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(
@@ -160,7 +160,7 @@ export const PUT = withVenue(async function PUT(
     if (categoryId !== undefined) updateData.categoryId = categoryId
     if (isActive !== undefined) updateData.isActive = isActive
 
-    const menuItem = await adminDb.menuItem.update({
+    const menuItem = await db.menuItem.update({
       where: { id },
       data: updateData,
     })
@@ -270,7 +270,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Soft delete the menu item
-    await adminDb.menuItem.update({
+    await db.menuItem.update({
       where: { id },
       data: { deletedAt: new Date() },
     })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -17,7 +17,7 @@ export const POST = withVenue(async function POST(
     const { id } = await params
 
     // Get parent order
-    const parentOrder = await adminDb.order.findUnique({
+    const parentOrder = await db.order.findUnique({
       where: { id },
       select: {
         id: true,
@@ -63,7 +63,7 @@ export const POST = withVenue(async function POST(
     const nextIndex = maxIndex + 1
     const displayNumber = `${parentOrder.orderNumber}-${nextIndex}`
 
-    const newOrder = await adminDb.order.create({
+    const newOrder = await db.order.create({
       data: {
         parentOrderId: id,
         splitIndex: nextIndex,

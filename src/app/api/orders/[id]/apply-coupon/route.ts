@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 interface ApplyCouponRequest {
   code: string
@@ -29,8 +31,19 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Permission check: MGR_DISCOUNTS required to apply coupons
+    const couponOrderCheck = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      select: { locationId: true },
+    })
+    if (!couponOrderCheck) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+    const auth = await requirePermission(employeeId, couponOrderCheck.locationId, PERMISSIONS.MGR_DISCOUNTS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     // Get the order with current totals and discounts
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
         location: true,

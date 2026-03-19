@@ -49,6 +49,7 @@ interface ReceiptOrder {
       price: unknown
       preModifier: string | null
       isCustomEntry?: boolean
+      isNoneSelection?: boolean
       customEntryName?: string | null
       customEntryPrice?: unknown
       swapTargetName?: string | null

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/kds/all-day-counts?locationId=X&resetHour=4
@@ -88,7 +88,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const sinceUtc = new Date(sinceLocal.getTime() + offsetMs)
 
     // Query OrderItem counts grouped by item name
-    const results = await adminDb.orderItem.groupBy({
+    const results = await db.orderItem.groupBy({
       by: ['name'],
       where: {
         locationId,

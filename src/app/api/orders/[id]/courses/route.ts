@@ -5,6 +5,8 @@ import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // Default course names for display
 const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
@@ -171,6 +173,12 @@ export const POST = withVenue(async function POST(
     if (!postLocationId) {
       return NextResponse.json({ error: 'Location not found' }, { status: 400 })
     }
+
+    // Permission check: POS_ACCESS required for course operations
+    const actor = await getActorFromRequest(request)
+    const courseEmployeeId = (body as any).employeeId || actor.employeeId
+    const courseAuth = await requirePermission(courseEmployeeId, postLocationId, PERMISSIONS.POS_ACCESS)
+    if (!courseAuth.authorized) return NextResponse.json({ error: courseAuth.error }, { status: courseAuth.status })
 
     // Tenant-safe order fetch via OrderRepository
     const order = await OrderRepository.getOrderById(orderId, postLocationId)

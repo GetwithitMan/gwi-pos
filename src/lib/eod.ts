@@ -11,7 +11,7 @@
  */
 
 import { createChildLogger } from '@/lib/logger'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
 import type { LocationSettings } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -126,7 +126,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
     const autoGratuityPct = eodSettings.autoGratuityPercent ?? 20
 
     // Find all open bar tabs with authorized cards
-    const openTabs = await adminDb.order.findMany({
+    const openTabs = await db.order.findMany({
       where: {
         locationId,
         orderType: 'bar_tab',
@@ -364,7 +364,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
   const staleOpenOrders = await db.orderSnapshot.findMany({
     where: {
       locationId,
-      status: 'open',
+      status: { in: ['open', 'sent'] },
       OR: [
         { businessDayDate: { lt: businessDay.start } },
         { businessDayDate: null, createdAt: { lt: businessDay.start } },
@@ -461,7 +461,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
   if (!dryRun) {
     // 6a. Stop all active entertainment sessions and calculate final charges
-    const staleEntertainment = await adminDb.menuItem.findMany({
+    const staleEntertainment = await db.menuItem.findMany({
       where: {
         locationId,
         itemType: 'timed_rental',
@@ -488,7 +488,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       for (const item of staleEntertainment) {
         if (item.currentOrderItemId) {
           try {
-            const orderItem = await adminDb.orderItem.findUnique({
+            const orderItem = await db.orderItem.findUnique({
               where: { id: item.currentOrderItemId },
               select: {
                 id: true,
@@ -502,12 +502,12 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
             if (orderItem?.blockTimeStartedAt) {
               // Calculate actual minutes used up to now
-              const actualMinutes = Math.ceil(
+              const actualMinutes = Math.round(
                 (now.getTime() - orderItem.blockTimeStartedAt.getTime()) / (1000 * 60)
               )
 
               // Update the order item to reflect final session end time
-              await adminDb.orderItem.update({
+              await db.orderItem.update({
                 where: { id: orderItem.id },
                 data: {
                   blockTimeExpiresAt: now,
@@ -524,7 +524,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       }
 
       // Reset all entertainment menu items to available
-      await adminDb.menuItem.updateMany({
+      await db.menuItem.updateMany({
         where: { id: { in: staleEntertainment.map(i => i.id) } },
         data: {
           entertainmentStatus: 'available',

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Get all order items in the date range
-    const orderItems = await adminDb.orderItem.findMany({
+    const orderItems = await db.orderItem.findMany({
       where: {
         order: {
           locationId,
@@ -93,7 +93,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     // W2-R1: Voided/comped items for waste tracking
-    const wasteItems = await adminDb.orderItem.findMany({
+    const wasteItems = await db.orderItem.findMany({
       where: {
         order: {
           locationId,

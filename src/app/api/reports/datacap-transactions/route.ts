@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -58,7 +58,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       : new Date(new Date().setHours(23, 59, 59, 999))
 
     // 1. Local card payments from venue DB
-    const localPayments = await adminDb.payment.findMany({
+    const localPayments = await db.payment.findMany({
       where: {
         locationId,
         processedAt: { gte: start, lte: end },

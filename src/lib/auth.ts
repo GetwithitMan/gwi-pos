@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { adminDb } from './db'
+import { db } from './db'
 
 // Re-export client-safe utilities for backward compatibility
 export {
@@ -31,7 +31,7 @@ export async function verifyPassword(password: string, hashedPassword: string): 
 
 export async function authenticateEmployee(locationId: string, pin: string) {
   // Find employee by location (PIN is unique per location)
-  const employees = await adminDb.employee.findMany({
+  const employees = await db.employee.findMany({
     where: {
       locationId,
       isActive: true,

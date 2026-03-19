@@ -19,6 +19,7 @@ export interface TerminalIdentity {
   receiptPrinterId?: string | null
   kitchenPrinterId?: string | null
   barPrinterId?: string | null
+  scaleId?: string | null
 }
 
 type AuthSuccess = { terminal: TerminalIdentity; error?: never }
@@ -45,6 +46,7 @@ export async function authenticateTerminal(
       receiptPrinterId: true,
       kitchenPrinterId: true,
       barPrinterId: true,
+      scaleId: true,
     },
   })
   if (terminal) return { terminal }

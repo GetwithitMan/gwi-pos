@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { MenuItemRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
 
@@ -27,7 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // SKU lookup — exact match, bypasses name/spirit/ingredient search
     // TODO: Add MenuItemRepository.getMenuItemBySku() for tenant-safe SKU lookup
     if (sku) {
-      const skuItem = await adminDb.menuItem.findFirst({
+      const skuItem = await db.menuItem.findFirst({
         where: { locationId, sku: sku.trim(), deletedAt: null, isActive: true },
         select: {
           id: true,
@@ -66,7 +66,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // 1. Direct menu item name search
     // TODO: Migrate to MenuItemRepository.getMenuItems() once text-search where filters are supported
-    const directMatches = await adminDb.menuItem.findMany({
+    const directMatches = await db.menuItem.findMany({
       where: {
         locationId,
         deletedAt: null,

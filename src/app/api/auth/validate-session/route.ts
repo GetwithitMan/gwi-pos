@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   // Cloud users (JWT-backed, not DB records) have IDs like "cloud-user_..."
   // They're authenticated via the cloud-session endpoint, not the employee table.
   if (!employeeId.startsWith('cloud-')) {
-    const employee = await adminDb.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId },
       select: { id: true, isActive: true },
     })

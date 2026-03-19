@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
@@ -35,7 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     let ordersByTable: Record<string, any> = {}
     if (tableIds.length > 0) {
-      const orders = await adminDb.order.findMany({
+      const orders = await db.order.findMany({
         where: {
           locationId,
           tableId: { in: tableIds },
@@ -272,7 +272,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // If changing from occupied to available/dirty, decrement server table count
     if (table.status === 'occupied' && (status === 'available' || status === 'dirty')) {
       // Find the server for this table's order and decrement
-      const activeOrder = await adminDb.order.findFirst({
+      const activeOrder = await db.order.findFirst({
         where: {
           locationId,
           tableId,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   }
 
   // Find the most recent completed order for this table
-  const lastOrder = await adminDb.order.findFirst({
+  const lastOrder = await db.order.findFirst({
     where: {
       tableId,
       status: { in: ['paid', 'closed'] },

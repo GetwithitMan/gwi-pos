@@ -21,7 +21,7 @@ import type { WeightReading } from '@/lib/scale/scale-protocol'
 import { emitToLocation, emitToTags, emitToRoom, emitToTerminal, emitCriticalToLocation } from '@/lib/socket-server'
 import { CFD_EVENTS, MOBILE_EVENTS } from '@/types/multi-surface'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('socket-dispatch')
@@ -711,7 +711,7 @@ export async function dispatchEntertainmentStatusChanged(
 
     // Fetch MenuItem + category + linked FloorPlanElement in parallel
     const [menuItem, floorPlanElement, waitlistCount] = await Promise.all([
-      adminDb.menuItem.findUnique({
+      db.menuItem.findUnique({
         where: { id: payload.itemId },
         select: {
           id: true,
@@ -1511,7 +1511,7 @@ export function buildOrderSummary(order: BuildOrderSummaryInput): OrderSummaryPa
     tipTotalCents: Math.round(Number(order.tipTotal) * 100),
     totalCents: Math.round(Number(order.total) * 100),
     itemCount: order.itemCount ?? 0,
-    updatedAt: (order.updatedAt ?? new Date()).toISOString?.() ?? new Date().toISOString(),
+    updatedAt: typeof order.updatedAt === 'string' ? order.updatedAt : (order.updatedAt ?? new Date()).toISOString(),
     locationId: order.locationId,
   }
 }

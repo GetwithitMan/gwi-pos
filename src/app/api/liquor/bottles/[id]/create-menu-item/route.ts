@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { dispatchMenuUpdate, dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
@@ -121,7 +121,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Create the menu item
-    const menuItem = await adminDb.menuItem.create({
+    const menuItem = await db.menuItem.create({
       data: {
         locationId: bottle.locationId,
         categoryId: targetCategoryId,

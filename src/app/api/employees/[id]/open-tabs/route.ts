@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { EmployeeRepository } from '@/lib/repositories'
@@ -102,7 +102,7 @@ export const POST = withVenue(async function POST(
     // Query affected orders first (updateMany doesn't return IDs)
     // TODO: OrderRepository.getOrdersByEmployee returns full objects; only need IDs.
     // Consider adding a lightweight select variant.
-    const affectedOrdersFull = await adminDb.order.findMany({
+    const affectedOrdersFull = await db.order.findMany({
       where: {
         employeeId,
         locationId,
@@ -114,7 +114,7 @@ export const POST = withVenue(async function POST(
 
     // Transfer all open orders to target employee
     // TODO: Batch order update by employeeId -- no single repository method; raw db with locationId guard
-    const result = await adminDb.order.updateMany({
+    const result = await db.order.updateMany({
       where: {
         employeeId,
         locationId,

@@ -13,7 +13,7 @@
 import { Prisma } from '@/generated/prisma/client'
 type Decimal = Prisma.Decimal
 const Decimal = Prisma.Decimal
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { createChildLogger } from '@/lib/logger'
 import { dispatchAlert } from '@/lib/alert-service'
 import type { InventoryDeductionResult, MultiplierSettings, PrepItemWithIngredients } from './types'
@@ -294,7 +294,7 @@ export async function deductInventoryForOrder(
     }
 
     // Fetch the order with full recipe tree
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: orderId },
       include: ORDER_INVENTORY_INCLUDE,
     })
@@ -370,7 +370,7 @@ export async function deductInventoryForOrder(
       )
 
       if (componentMenuItemIds.length > 0) {
-        const componentMenuItems = await adminDb.menuItem.findMany({
+        const componentMenuItems = await db.menuItem.findMany({
           where: { id: { in: componentMenuItemIds }, deletedAt: null },
           include: {
             recipe: {

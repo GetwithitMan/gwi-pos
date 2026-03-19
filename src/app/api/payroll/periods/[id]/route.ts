@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { calculateTaxes, TaxCalculationInput } from '@/lib/payroll/tax-calculator'
 import { withVenue } from '@/lib/with-venue'
 
@@ -112,7 +112,7 @@ export const PUT = withVenue(async function PUT(
 
     if (action === 'process') {
       // Generate pay stubs for all employees
-      const employees = await adminDb.employee.findMany({
+      const employees = await db.employee.findMany({
         where: { locationId: period.locationId, isActive: true },
         include: { role: true },
       })
@@ -158,7 +158,7 @@ export const PUT = withVenue(async function PUT(
             ],
           },
         }),
-        adminDb.order.findMany({
+        db.order.findMany({
           where: {
             employeeId: { in: employeeIds },
             status: { in: ['completed', 'paid'] },
@@ -404,7 +404,7 @@ export const PUT = withVenue(async function PUT(
       // One update per employee (not per stub)
       await Promise.all(
         Array.from(ytdByEmployee.entries()).map(([employeeId, agg]) =>
-          adminDb.employee.update({
+          db.employee.update({
             where: { id: employeeId },
             data: {
               ytdGrossWages: { increment: agg.grossPay },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
@@ -26,7 +26,7 @@ export const POST = withVenue(async function POST(
 
     // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
     // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
-    const order = await adminDb.order.findFirst({
+    const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: {
         cards: {
@@ -103,7 +103,7 @@ export const POST = withVenue(async function POST(
     if (allVoided) {
       try {
         // Find all timed_rental MenuItems currently linked to this order
-        const entertainmentItems = await adminDb.menuItem.findMany({
+        const entertainmentItems = await db.menuItem.findMany({
           where: {
             currentOrderId: orderId,
             locationId,
@@ -114,13 +114,13 @@ export const POST = withVenue(async function POST(
 
         // Clear blockTimeStartedAt on order items
         // TODO: Complex relation filter (menuItem.itemType) -- raw db with locationId guard
-        await adminDb.orderItem.updateMany({
+        await db.orderItem.updateMany({
           where: { orderId, locationId, menuItem: { itemType: 'timed_rental' }, blockTimeStartedAt: { not: null } },
           data: { blockTimeStartedAt: null },
         })
 
         for (const item of entertainmentItems) {
-          await adminDb.menuItem.update({
+          await db.menuItem.update({
             where: { id: item.id },
             data: {
               entertainmentStatus: 'available',

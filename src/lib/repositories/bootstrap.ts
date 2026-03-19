@@ -4,14 +4,14 @@
  * Lightweight lookups to resolve locationId from an entity ID.
  * Used at the top of route handlers before repository methods can be called.
  *
- * These use adminDb (no tenant scoping) because locationId is unknown at this point.
+ * These use db (no tenant scoping) because locationId is unknown at this point.
  * The result is used to scope all subsequent repository calls.
  *
- * adminDb has soft-delete filtering (deletedAt: null is auto-injected) but
+ * db has soft-delete filtering (deletedAt: null is auto-injected) but
  * we include it explicitly in each query for clarity and defensive coding.
  */
 
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 
 // ── Order ──────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ import { adminDb } from '@/lib/db'
  * Returns null if order doesn't exist or is soft-deleted.
  */
 export async function resolveOrderLocationId(orderId: string): Promise<string | null> {
-  const row = await adminDb.order.findFirst({
+  const row = await db.order.findFirst({
     where: { id: orderId, deletedAt: null },
     select: { locationId: true },
   })
@@ -43,7 +43,7 @@ export async function resolveOrderLocationIdOrThrow(orderId: string): Promise<st
  * Returns null if employee doesn't exist or is soft-deleted.
  */
 export async function resolveEmployeeLocationId(employeeId: string): Promise<string | null> {
-  const row = await adminDb.employee.findFirst({
+  const row = await db.employee.findFirst({
     where: { id: employeeId, deletedAt: null },
     select: { locationId: true },
   })
@@ -66,7 +66,7 @@ export async function resolveEmployeeLocationIdOrThrow(employeeId: string): Prom
  * Returns null if menu item doesn't exist or is soft-deleted.
  */
 export async function resolveMenuItemLocationId(menuItemId: string): Promise<string | null> {
-  const row = await adminDb.menuItem.findFirst({
+  const row = await db.menuItem.findFirst({
     where: { id: menuItemId, deletedAt: null },
     select: { locationId: true },
   })
@@ -89,7 +89,7 @@ export async function resolveMenuItemLocationIdOrThrow(menuItemId: string): Prom
  * Returns null if payment doesn't exist or is soft-deleted.
  */
 export async function resolvePaymentLocationId(paymentId: string): Promise<string | null> {
-  const row = await adminDb.payment.findFirst({
+  const row = await db.payment.findFirst({
     where: { id: paymentId, deletedAt: null },
     select: { locationId: true },
   })
@@ -112,7 +112,7 @@ export async function resolvePaymentLocationIdOrThrow(paymentId: string): Promis
  * Returns null if order item doesn't exist or is soft-deleted.
  */
 export async function resolveOrderItemLocationId(orderItemId: string): Promise<string | null> {
-  const row = await adminDb.orderItem.findFirst({
+  const row = await db.orderItem.findFirst({
     where: { id: orderItemId, deletedAt: null },
     select: { locationId: true },
   })

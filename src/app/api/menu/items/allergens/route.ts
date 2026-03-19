@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
@@ -27,7 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Fetch all distinct allergens currently in use across menu items
-    const items = await adminDb.menuItem.findMany({
+    const items = await db.menuItem.findMany({
       where: { locationId, deletedAt: null, isActive: true },
       select: { allergens: true },
     })

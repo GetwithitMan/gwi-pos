@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET - Get employee's preferences including room order
 export const GET = withVenue(async function GET(
@@ -65,6 +67,15 @@ export const PUT = withVenue(async function PUT(
     const locationId = await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'Location required' }, { status: 400 })
+    }
+
+    // Auth check — require POS access and verify employee is editing their own record
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? id
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (auth.employee.id !== id) {
+      return NextResponse.json({ error: 'You can only edit your own preferences' }, { status: 403 })
     }
 
     // Verify employee exists (tenant-scoped)

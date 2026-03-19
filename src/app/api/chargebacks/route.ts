@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
@@ -36,7 +36,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let matchedOrderId: string | null = null
     let matchedPaymentId: string | null = null
 
-    const matchingPayments = await adminDb.payment.findMany({
+    const matchingPayments = await db.payment.findMany({
       where: {
         locationId,
         cardLast4,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -214,12 +214,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
-    // Validate dual pricing: cashDiscountPercent must be 0-10%
+    // Validate dual pricing: cashDiscountPercent must be a finite number 0-100
     if (settings.dualPricing?.cashDiscountPercent !== undefined) {
       const pct = settings.dualPricing.cashDiscountPercent
-      if (pct < 0 || pct > 10) {
+      if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 100) {
         return NextResponse.json(
-          { error: 'cashDiscountPercent must be between 0 and 10' },
+          { error: 'Cash discount percent must be between 0 and 100' },
           { status: 400 }
         )
       }
@@ -328,12 +328,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const dualNowEnabled = finalSettings.dualPricing?.enabled === true
     if (dualNowEnabled && newPct > 0 && newPct !== oldPct) {
       const multiplier = 1 + newPct / 100
-      const items = await adminDb.menuItem.findMany({
+      const items = await db.menuItem.findMany({
         where: { locationId: location.id, deletedAt: null, price: { gt: 0 } },
         select: { id: true, price: true },
       })
       await Promise.all(items.map(item =>
-        adminDb.menuItem.update({
+        db.menuItem.update({
           where: { id: item.id },
           data: { priceCC: Math.round(Number(item.price) * multiplier * 100) / 100 },
         })

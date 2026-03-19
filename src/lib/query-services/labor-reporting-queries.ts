@@ -8,10 +8,10 @@
  * - Shift metadata for the payroll report
  *
  * All queries enforce locationId as the first parameter for tenant safety.
- * Uses adminDb (soft-delete filtering only, no tenant scoping overhead).
+ * Uses db (soft-delete filtering only, no tenant scoping overhead).
  */
 
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import type { BusinessDayRange } from './order-reporting-queries'
 
@@ -36,7 +36,7 @@ export async function getTimeClockEntries(
   if (opts?.employeeId) where.employeeId = opts.employeeId
   if (opts?.completedOnly) where.clockOut = { not: null }
 
-  return adminDb.timeClockEntry.findMany({
+  return db.timeClockEntry.findMany({
     where,
     include: {
       employee: {
@@ -64,7 +64,7 @@ export async function getOverlappingTimeClockEntries(
   startTime: Date,
   endTime: Date,
 ) {
-  return adminDb.timeClockEntry.findMany({
+  return db.timeClockEntry.findMany({
     where: {
       locationId,
       clockIn: { lte: endTime },
@@ -91,7 +91,7 @@ export async function getActiveEmployees(
   locationId: string,
   employeeId?: string | null,
 ) {
-  return adminDb.employee.findMany({
+  return db.employee.findMany({
     where: {
       locationId,
       isActive: true,
@@ -115,7 +115,7 @@ export async function getActiveEmployeesWithRoles(
   locationId: string,
   employeeId?: string | null,
 ) {
-  return adminDb.employee.findMany({
+  return db.employee.findMany({
     where: {
       locationId,
       isActive: true,
@@ -138,7 +138,7 @@ export async function getClosedShifts(
   endTime: Date,
   employeeId?: string | null,
 ) {
-  return adminDb.shift.findMany({
+  return db.shift.findMany({
     where: {
       locationId,
       status: 'closed',
@@ -161,7 +161,7 @@ export async function getShiftOrders(
   startTime: Date,
   endTime: Date,
 ) {
-  return adminDb.order.findMany({
+  return db.order.findMany({
     where: {
       employeeId,
       locationId,
@@ -187,7 +187,7 @@ export async function getOrderItemsByCategoryType(
 ) {
   if (orderIds.length === 0) return []
 
-  return adminDb.orderItem.findMany({
+  return db.orderItem.findMany({
     where: {
       orderId: { in: orderIds },
       status: { notIn: ['voided', 'comped'] },
@@ -209,7 +209,7 @@ export async function countVoidedItemsForShift(
   startTime: Date,
   endTime: Date,
 ): Promise<number> {
-  return adminDb.orderItem.count({
+  return db.orderItem.count({
     where: {
       order: {
         employeeId,
@@ -230,7 +230,7 @@ export async function countCompedItemsForShift(
   startTime: Date,
   endTime: Date,
 ): Promise<number> {
-  return adminDb.orderItem.count({
+  return db.orderItem.count({
     where: {
       order: {
         employeeId,
@@ -257,7 +257,7 @@ export async function getShiftPaidInOut(
     ? { drawerId: opts.drawerId }
     : { employeeId: opts.employeeId }
 
-  return adminDb.paidInOut.findMany({
+  return db.paidInOut.findMany({
     where: {
       locationId,
       createdAt: { gte: startTime, lte: endTime },
@@ -295,7 +295,7 @@ export async function getSalesTotalForPeriod(
       ]
     }
 
-    const salesAgg = await adminDb.orderSnapshot.aggregate({
+    const salesAgg = await db.orderSnapshot.aggregate({
       where: salesFilter,
       _sum: { subtotalCents: true },
     })
@@ -319,7 +319,7 @@ export async function getCommissionOrders(
   endTime: Date,
   employeeId?: string | null,
 ) {
-  return adminDb.orderSnapshot.findMany({
+  return db.orderSnapshot.findMany({
     where: {
       locationId,
       deletedAt: null,
@@ -345,7 +345,7 @@ export async function getPayrollTimeEntries(
   endTime: Date,
   employeeId?: string | null,
 ) {
-  return adminDb.timeClockEntry.findMany({
+  return db.timeClockEntry.findMany({
     where: {
       locationId,
       clockIn: { gte: startTime, lte: endTime },

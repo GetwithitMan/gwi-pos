@@ -465,6 +465,12 @@ export function reduce(state: OrderState, event: OrderEventPayload): OrderState 
     case 'COMP_VOID_APPLIED':
       return guardClosed(state, () => handleCompVoidApplied(state, event.payload))
 
+    case 'ITEM_MODIFIER_REMOVED':
+    case 'TAB_CAPTURE_DECLINED':
+    case 'WALKOUT_MARKED':
+      // These events are recorded for audit trail but don't change OrderState
+      return state
+
     default: {
       // Exhaustive check — TypeScript will error if a case is missing
       const _exhaustive: never = event

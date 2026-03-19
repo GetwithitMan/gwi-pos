@@ -14,7 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { recalculateBalance } from '@/lib/domain/tips/tip-ledger'
 import { withVenue } from '@/lib/with-venue'
 
@@ -152,7 +152,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
 
       // Sum all tip amounts from Payments
-      const paymentTips = await adminDb.payment.aggregate({
+      const paymentTips = await db.payment.aggregate({
         where: {
           order: { locationId },
           deletedAt: null,
@@ -186,7 +186,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const differenceCents = Math.abs(tipIncomeCents - paymentTipsCents)
 
       // Allow 1 cent tolerance per payment (rounding)
-      const paymentCount = await adminDb.payment.count({
+      const paymentCount = await db.payment.count({
         where: {
           order: { locationId },
           deletedAt: null,

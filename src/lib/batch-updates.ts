@@ -10,7 +10,7 @@
  * it supports non-tenant-scoped batch updates (entertainment uses menuItemId only).
  */
 
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { createChildLogger } from '@/lib/logger'
 
@@ -41,7 +41,7 @@ export async function batchUpdateOrderItemStatus(
     data.kitchenSentAt = firedAt || new Date()
   }
 
-  await adminDb.orderItem.updateMany({
+  await db.orderItem.updateMany({
     where: { id: { in: itemIds } },
     data,
   })
@@ -49,7 +49,7 @@ export async function batchUpdateOrderItemStatus(
   // Fire-and-forget: emit ITEM_UPDATED for each affected item
   void (async () => {
     try {
-      const items = await adminDb.orderItem.findMany({
+      const items = await db.orderItem.findMany({
         where: { id: { in: itemIds } },
         select: { id: true, orderId: true, order: { select: { locationId: true } } },
       })
@@ -82,9 +82,9 @@ export async function batchUpdateEntertainmentStatus(
     currentOrderItemId?: string | null
   }>
 ): Promise<void> {
-  await adminDb.$transaction(
+  await db.$transaction(
     updates.map(({ menuItemId, status, currentOrderId, currentOrderItemId }) =>
-      adminDb.menuItem.update({
+      db.menuItem.update({
         where: { id: menuItemId },
         data: {
           entertainmentStatus: status,
@@ -110,9 +110,9 @@ export async function batchUpdateFloorPlanElements(
     sessionExpiresAt?: Date | null
   }>
 ): Promise<void> {
-  await adminDb.$transaction(
+  await db.$transaction(
     updates.map(({ linkedMenuItemId, ...data }) =>
-      adminDb.floorPlanElement.updateMany({
+      db.floorPlanElement.updateMany({
         where: {
           linkedMenuItemId,
           deletedAt: null,
@@ -144,8 +144,8 @@ export async function startEntertainmentSession(
   sessionStart: Date,
   sessionEnd: Date
 ): Promise<void> {
-  await adminDb.$transaction([
-    adminDb.menuItem.update({
+  await db.$transaction([
+    db.menuItem.update({
       where: { id: menuItemId },
       data: {
         entertainmentStatus: 'in_use',
@@ -153,7 +153,7 @@ export async function startEntertainmentSession(
         currentOrderItemId: orderItemId,
       },
     }),
-    adminDb.floorPlanElement.updateMany({
+    db.floorPlanElement.updateMany({
       where: {
         linkedMenuItemId: menuItemId,
         deletedAt: null,

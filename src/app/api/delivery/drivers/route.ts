@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -135,7 +135,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Validate employee exists and belongs to location
-    const employee = await adminDb.employee.findFirst({
+    const employee = await db.employee.findFirst({
       where: { id: employeeId, locationId, deletedAt: null },
       select: { id: true, firstName: true, lastName: true },
     })

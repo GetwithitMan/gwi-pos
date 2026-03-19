@@ -58,8 +58,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Permission check — requester must have void items permission
-    const auth = await requirePermission(requestedById, locationId, PERMISSIONS.MGR_VOID_ITEMS)
+    // Permission check — any POS employee can REQUEST remote approval.
+    // The actual void is gated by the manager approving via SMS.
+    const auth = await requirePermission(requestedById, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

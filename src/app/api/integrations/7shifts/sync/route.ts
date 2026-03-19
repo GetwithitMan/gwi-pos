@@ -5,7 +5,7 @@ import { parseSettings } from '@/lib/settings'
 import { createReceipt, createTimePunch, listShifts } from '@/lib/7shifts-client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { getBusinessDate, getDateRange, updateSyncStatus } from '../_helpers'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -44,7 +44,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (existing?.status === 'pushed') {
         results.sales = { skipped: true }
       } else {
-        const orders = await adminDb.order.findMany({
+        const orders = await db.order.findMany({
           where: { locationId: location.id, status: 'closed', closedAt: { gte: start, lt: end }, deletedAt: null },
           select: { id: true, total: true },
         })
@@ -53,7 +53,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         let tipsAmountCents = 0
         if (orderIds.length > 0) {
-          const tipAgg = await adminDb.payment.aggregate({
+          const tipAgg = await db.payment.aggregate({
             where: { orderId: { in: orderIds }, deletedAt: null },
             _sum: { tipAmount: true },
           })
@@ -174,7 +174,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         results.schedule = { error: 'No schedule exists', skipped: shifts.length }
       } else {
         for (const shift of shifts) {
-          const employee = await adminDb.employee.findFirst({
+          const employee = await db.employee.findFirst({
             where: { locationId: location.id, sevenShiftsUserId: String(shift.user_id), deletedAt: null },
             select: { id: true },
           })

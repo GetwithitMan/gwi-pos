@@ -458,6 +458,17 @@ export function useModifierSelections(
           }
         }
       })
+
+      // Restore None selections from editing item
+      const restoredNoneGroups = new Set<string>()
+      for (const mod of editingItem.modifiers) {
+        if ((mod as any).isNoneSelection) {
+          // Extract groupId from the synthetic ID "none_groupId"
+          const noneGroupId = mod.id?.startsWith('none_') ? mod.id.slice(5) : null
+          if (noneGroupId) restoredNoneGroups.add(noneGroupId)
+        }
+      }
+      if (restoredNoneGroups.size > 0) setNoneGroups(restoredNoneGroups)
     } else {
       modifierGroups.forEach(group => {
         const defaults = group.modifiers
@@ -544,8 +555,10 @@ export function useModifierSelections(
   const getGroupDepth = (groupId: string): number => {
     let depth = 0
     let currentId: string | undefined = groupId
-    // Walk up the parent chain
+    const seen = new Set<string>()
     while (currentId && childToParentGroupId[currentId]) {
+      if (seen.has(currentId) || depth > 10) break  // Cycle or unreasonable depth
+      seen.add(currentId)
       depth += 1
       currentId = childToParentGroupId[currentId]
     }
@@ -668,7 +681,13 @@ export function useModifierSelections(
               const removed = current[indexToRemove]
               newSelections[group.id] = current.filter((_, i) => i !== indexToRemove)
               if (removed.childModifierGroupId) {
-                delete newSelections[removed.childModifierGroupId]
+                // Only delete child selections if no other instances of this modifier remain
+                const remainingWithChild = newSelections[group.id]?.filter(
+                  s => s.id === removed.id && s.childModifierGroupId === removed.childModifierGroupId
+                )
+                if (!remainingWithChild || remainingWithChild.length === 0) {
+                  delete newSelections[removed.childModifierGroupId]
+                }
               }
             }
             setSelections(newSelections)

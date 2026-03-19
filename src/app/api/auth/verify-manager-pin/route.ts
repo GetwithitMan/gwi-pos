@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 import { hasPermission } from '@/lib/auth-utils'
@@ -140,7 +140,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── Find employees at this location ───────────────────────────────────
     // O(N) scan necessary because we don't know which employee is entering
     // their PIN. bcrypt compare prevents timing attacks.
-    const employees = await adminDb.employee.findMany({
+    const employees = await db.employee.findMany({
       where: {
         locationId,
         isActive: true,

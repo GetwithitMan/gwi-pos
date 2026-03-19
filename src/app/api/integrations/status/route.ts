@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationSettings } from '@/lib/location-cache'
-import { parseSettings, type VenueSettings } from '@/lib/settings'
+import { parseSettings, type LocationSettings } from '@/lib/settings'
 import { db } from '@/lib/db'
 
 export const GET = withVenue(async function GET() {
@@ -10,7 +10,7 @@ export const GET = withVenue(async function GET() {
   let sevenShiftsConfigured = false
   let marginEdgeConfigured = false
   let slackConfigured = !!process.env.SLACK_WEBHOOK_URL
-  let settings: VenueSettings | null = null
+  let settings: LocationSettings | null = null
   try {
     const location = await db.location.findFirst({ select: { id: true } })
     if (location) {

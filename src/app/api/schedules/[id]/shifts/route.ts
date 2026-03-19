@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 /**
  * Check for overlapping shifts for the same employee on the same date.
@@ -82,6 +84,12 @@ export const POST = withVenue(async function POST(
     if (!schedule) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
     }
+
+    // Auth check — require staff scheduling permission
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const auth = await requirePermission(resolvedEmployeeId, schedule.locationId, PERMISSIONS.STAFF_SCHEDULING)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Check for time-based overlapping shifts (not just same-day same-schedule)
     const overlap = await findOverlappingShift(
@@ -173,6 +181,11 @@ export const PUT = withVenue(async function PUT(
     if (!schedule) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 })
     }
+
+    // Auth check — require staff scheduling permission
+    const putActor = await getActorFromRequest(request)
+    const putAuth = await requirePermission(putActor.employeeId, schedule.locationId, PERMISSIONS.STAFF_SCHEDULING)
+    if (!putAuth.authorized) return NextResponse.json({ error: putAuth.error }, { status: putAuth.status })
 
     // Delete existing shifts not in the update
     const existingIds = shifts.filter(s => s.id).map(s => s.id!)

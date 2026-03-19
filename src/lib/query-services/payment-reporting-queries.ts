@@ -8,11 +8,11 @@
  * - Shift-level payment breakdowns
  *
  * All queries enforce locationId as the first parameter for tenant safety.
- * Uses adminDb (soft-delete filtering only, no tenant scoping overhead).
+ * Uses db (soft-delete filtering only, no tenant scoping overhead).
  */
 
 import { Prisma } from '@/generated/prisma/client'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import type { BusinessDayRange } from './order-reporting-queries'
 
 // ─── Tip Ledger Queries ───────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ export async function getTipOutEntries(
   }
   if (employeeId) where.employeeId = employeeId
 
-  return adminDb.tipLedgerEntry.findMany({
+  return db.tipLedgerEntry.findMany({
     where,
     include: { employee: { select: EMPLOYEE_SELECT } },
     orderBy: { createdAt: 'desc' },
@@ -73,7 +73,7 @@ export async function getBankedTipEntries(
   }
   if (employeeId) where.employeeId = employeeId
 
-  return adminDb.tipLedgerEntry.findMany({
+  return db.tipLedgerEntry.findMany({
     where,
     include: { employee: { select: EMPLOYEE_SELECT } },
     orderBy: { createdAt: 'desc' },
@@ -93,7 +93,7 @@ export async function getTipLedgerBalances(
   }
   if (employeeId) where.employeeId = employeeId
 
-  return adminDb.tipLedger.findMany({
+  return db.tipLedger.findMany({
     where,
     select: { employeeId: true, currentBalanceCents: true },
   })
@@ -110,7 +110,7 @@ export async function getTipOutCounterparts(
 ) {
   if (sourceIds.length === 0) return []
 
-  return adminDb.tipLedgerEntry.findMany({
+  return db.tipLedgerEntry.findMany({
     where: {
       locationId,
       sourceType: 'ROLE_TIPOUT',
@@ -138,7 +138,7 @@ export async function getShiftsWithTips(
   if (dateFilter?.endedAt) where.endedAt = dateFilter.endedAt
   if (employeeId) where.employeeId = employeeId
 
-  return adminDb.shift.findMany({
+  return db.shift.findMany({
     where,
     include: { employee: { select: EMPLOYEE_SELECT } },
     orderBy: { endedAt: 'desc' },
@@ -155,7 +155,7 @@ export async function getTipsBankedInRange(
   locationId: string,
   range: BusinessDayRange,
 ) {
-  return adminDb.tipLedgerEntry.findMany({
+  return db.tipLedgerEntry.findMany({
     where: {
       locationId,
       type: 'CREDIT',
@@ -176,7 +176,7 @@ export async function getTipsCollectedInRange(
   locationId: string,
   range: BusinessDayRange,
 ) {
-  return adminDb.tipLedgerEntry.findMany({
+  return db.tipLedgerEntry.findMany({
     where: {
       locationId,
       type: 'DEBIT',
@@ -197,7 +197,7 @@ export async function getTipSharesDistributedInRange(
   locationId: string,
   range: BusinessDayRange,
 ) {
-  return adminDb.tipLedgerEntry.findMany({
+  return db.tipLedgerEntry.findMany({
     where: {
       locationId,
       sourceType: 'ROLE_TIPOUT',
@@ -221,7 +221,7 @@ export async function getShiftPayments(
   startTime: Date,
   endTime: Date,
 ) {
-  return adminDb.payment.findMany({
+  return db.payment.findMany({
     where: {
       employeeId,
       status: 'completed',
@@ -245,7 +245,7 @@ export async function getDrawerCashPayments(
   startTime: Date,
   endTime: Date,
 ) {
-  return adminDb.payment.findMany({
+  return db.payment.findMany({
     where: {
       drawerId,
       paymentMethod: 'cash',
@@ -269,7 +269,7 @@ export async function getSAFPendingPayments(
   startTime: Date,
   endTime: Date,
 ) {
-  return adminDb.payment.findMany({
+  return db.payment.findMany({
     where: {
       employeeId,
       safStatus: 'APPROVED_SAF_PENDING_UPLOAD',
@@ -289,7 +289,7 @@ export async function getSAFFailedPayments(
   startTime: Date,
   endTime: Date,
 ) {
-  return adminDb.payment.findMany({
+  return db.payment.findMany({
     where: {
       employeeId,
       safStatus: { in: ['UPLOAD_FAILED', 'NEEDS_ATTENTION'] },
@@ -326,7 +326,7 @@ export async function getTipLedgerEntries(
   }
   if (opts.employeeId) where.employeeId = opts.employeeId
 
-  return adminDb.tipLedgerEntry.findMany({ where })
+  return db.tipLedgerEntry.findMany({ where })
 }
 
 // ─── House Account Queries ────────────────────────────────────────────────────
@@ -338,7 +338,7 @@ export async function getHouseAccountsWithCharges(
   locationId: string,
   statusFilter: string,
 ) {
-  return adminDb.houseAccount.findMany({
+  return db.houseAccount.findMany({
     where: {
       locationId,
       deletedAt: null,
@@ -363,7 +363,7 @@ export async function getLastHouseAccountPayments(
 ) {
   if (accountIds.length === 0) return []
 
-  return adminDb.houseAccountTransaction.findMany({
+  return db.houseAccountTransaction.findMany({
     where: {
       locationId,
       deletedAt: null,

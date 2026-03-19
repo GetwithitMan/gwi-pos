@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET — returns employee's quick bar items and location defaults
 export const GET = withVenue(async function GET(
@@ -14,7 +16,7 @@ export const GET = withVenue(async function GET(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let qbLocationId = getRequestLocationId()
     if (!qbLocationId) {
-      const employee = await adminDb.employee.findUnique({
+      const employee = await db.employee.findUnique({
         where: { id: employeeId },
         select: { locationId: true },
       })
@@ -58,7 +60,7 @@ export const PUT = withVenue(async function PUT(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let putLocationId = getRequestLocationId()
     if (!putLocationId) {
-      const employee = await adminDb.employee.findUnique({
+      const employee = await db.employee.findUnique({
         where: { id: employeeId },
         select: { locationId: true },
       })
@@ -66,6 +68,15 @@ export const PUT = withVenue(async function PUT(
         return NextResponse.json({ error: 'Employee not found' }, { status: 404 })
       }
       putLocationId = employee.locationId
+    }
+
+    // Auth check — require POS access and verify employee is editing their own record
+    const actor = await getActorFromRequest(request)
+    const resolvedActorId = actor.employeeId ?? employeeId
+    const auth = await requirePermission(resolvedActorId, putLocationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    if (auth.employee.id !== employeeId) {
+      return NextResponse.json({ error: 'You can only edit your own quick bar' }, { status: 403 })
     }
 
     await db.quickBarPreference.upsert({

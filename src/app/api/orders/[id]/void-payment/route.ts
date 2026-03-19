@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -57,7 +57,7 @@ export const POST = withVenue(async function POST(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let voidLocationId = getRequestLocationId()
     if (!voidLocationId) {
-      const orderCheck = await adminDb.order.findUnique({
+      const orderCheck = await db.order.findUnique({
         where: { id: orderId },
         select: { id: true, locationId: true },
       })
@@ -369,7 +369,7 @@ export const POST = withVenue(async function POST(
         if (voidAmount < locSettings.alerts.largeVoidThreshold) return
 
         // Resolve manager name for the alert message
-        const manager = await adminDb.employee.findUnique({
+        const manager = await db.employee.findUnique({
           where: { id: managerId },
           select: { firstName: true, lastName: true, displayName: true },
         })

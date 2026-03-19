@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
@@ -51,7 +51,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // TODO: Phase 1 - Cannot use PaymentRepository.getPaymentByOfflineIntentId() here
     // because locationId is not yet known (resolved from order below).
     if (intentId) {
-      const existingPayment = await adminDb.payment.findFirst({
+      const existingPayment = await db.payment.findFirst({
         where: {
           offlineIntentId: intentId,
         },
@@ -76,7 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // TODO: Phase 1 - Cannot use OrderRepository.getOrderByOfflineId() here
     // because locationId is not yet known (resolved from order below).
     if (!resolvedOrderId && localOrderId) {
-      const syncedOrder = await adminDb.order.findFirst({
+      const syncedOrder = await db.order.findFirst({
         where: {
           offlineLocalId: localOrderId,
         },
@@ -96,7 +96,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Verify the order exists — selective fetch (only needed fields)
     // TODO: Phase 1 - Cannot use OrderRepository.getOrderByIdWithSelect() here
     // because locationId is not yet known — it's resolved FROM this query.
-    const order = await adminDb.order.findUnique({
+    const order = await db.order.findUnique({
       where: { id: resolvedOrderId },
       select: { id: true, locationId: true, total: true, status: true, paidAt: true },
     })
@@ -248,7 +248,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // TODO: Phase 1 - PaymentRepository has getPaymentsNeedingReconciliation() but it
     // doesn't support isOfflineCapture filter, date range, or order include.
     // Needs a dedicated repository method for offline payment queries.
-    const payments = await adminDb.payment.findMany({
+    const payments = await db.payment.findMany({
       where: {
         locationId,
         isOfflineCapture: true,
@@ -306,7 +306,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     }
 
     // TX-KEEP: BULK — batch reconcile payments by ID array without locationId; no batch repo method
-    const result = await adminDb.payment.updateMany({
+    const result = await db.payment.updateMany({
       where: {
         id: { in: paymentIds },
       },

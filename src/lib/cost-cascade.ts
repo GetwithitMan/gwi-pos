@@ -2,7 +2,7 @@
 // When an inventory item's cost changes (via invoice, manual edit, or MarginEdge),
 // cascade the update through all recipes that use it, recalculating food cost %.
 
-import { db, adminDb } from './db'
+import { db } from './db'
 
 export interface CostUpdateResult {
   inventoryItemId: string
@@ -160,7 +160,7 @@ export async function cascadeCostUpdate(
       })
     ),
     ...menuItemUpdates.map(m => () =>
-      adminDb.menuItem.update({
+      db.menuItem.update({
         where: { id: m.id },
         data: { cost: m.cost },
       })

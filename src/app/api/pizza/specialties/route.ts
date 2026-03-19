@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
@@ -90,7 +90,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Verify menu item exists and is a pizza
-    const menuItem = await adminDb.menuItem.findFirst({
+    const menuItem = await db.menuItem.findFirst({
       where: { id: menuItemId, locationId },
       include: { category: true }
     })

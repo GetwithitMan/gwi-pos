@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { OrderItemRepository } from '@/lib/repositories'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Get all open orders with full item data
     // Cursor-based pagination: take 50 at a time for performance at 100+ open orders
-    const orders = await adminDb.order.findMany({
+    const orders = await db.order.findMany({
       where: {
         locationId,
         // W2-K1: Paid orders only shown for 2 hours to prevent KDS clutter
@@ -204,7 +204,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     // Resolve locationId from the first item for tenant-scoped operations
-    const firstItem = await adminDb.orderItem.findUnique({
+    const firstItem = await db.orderItem.findUnique({
       where: { id: itemIds[0] },
       select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
     })

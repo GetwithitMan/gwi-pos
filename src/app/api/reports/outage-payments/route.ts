@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const hasDateFilter = Object.keys(dateFilter).length > 0
 
     // Query payments needing reconciliation (outage or offline captures)
-    const payments = await adminDb.payment.findMany({
+    const payments = await db.payment.findMany({
       where: {
         locationId,
         deletedAt: null,

@@ -403,7 +403,10 @@ export const POST = withVenue(async function POST(
       }
 
       if (discountAmount > maxAllowedDiscount) {
-        discountAmount = maxAllowedDiscount
+        return NextResponse.json(
+          { error: `Discount amount $${discountAmount.toFixed(2)} exceeds remaining discountable balance of $${maxAllowedDiscount.toFixed(2)}. Reduce the discount or remove existing discounts first.` },
+          { status: 400 }
+        )
       }
 
       if (discountAmount <= 0) {

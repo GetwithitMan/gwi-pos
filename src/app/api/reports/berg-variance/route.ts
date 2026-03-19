@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
@@ -83,7 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
         if (mapping.menuItemId) {
           // FIX 6: Include open orders in POS count
-          const orderItems = await adminDb.orderItem.findMany({
+          const orderItems = await db.orderItem.findMany({
             where: {
               locationId,
               menuItemId: mapping.menuItemId,

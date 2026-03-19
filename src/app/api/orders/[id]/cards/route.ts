@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
@@ -55,7 +55,7 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required fields: readerId, employeeId' }, { status: 400 })
     }
 
-    const order = await adminDb.order.findFirst({
+    const order = await db.order.findFirst({
       where: { id: orderId, deletedAt: null },
       include: { location: { select: { id: true, settings: true } } },
     })

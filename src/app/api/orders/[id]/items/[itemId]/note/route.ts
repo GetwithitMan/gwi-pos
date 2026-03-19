@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
+import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
@@ -23,7 +23,7 @@ export const POST = withVenue(async function POST(
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let locationId = getRequestLocationId()
     if (!locationId) {
-      const order = await adminDb.order.findFirst({
+      const order = await db.order.findFirst({
         where: { id: orderId, deletedAt: null },
         select: { id: true, locationId: true },
       })
@@ -52,7 +52,7 @@ export const POST = withVenue(async function POST(
     void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId }).catch(console.error)
 
     // If item has already been sent to kitchen, notify KDS so it refetches
-    if (updated.kitchenStatus && updated.kitchenStatus !== 'pending') {
+    if (updated && updated.kitchenStatus && updated.kitchenStatus !== 'pending') {
       void dispatchItemStatus(locationId, {
         orderId,
         itemId,
