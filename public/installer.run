@@ -229,16 +229,17 @@ if [[ -f "$ENV_FILE" ]]; then
            log "Removed old RSA keypair (new keys will be generated)"
            # Wipe local database for clean venue — old venue data must not leak
            # into the new venue. The new venue's data will come via provisioning + sync.
+           # DB_NAME/DB_USER are hardcoded here because they aren't set yet at this
+           # point in the installer (they're set later in the .env canonicalization).
            if command -v psql >/dev/null 2>&1; then
              log "Wiping local database for clean re-registration..."
-             sudo -u postgres psql -c "DROP DATABASE IF EXISTS $DB_NAME;" 2>/dev/null || true
-             sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" 2>/dev/null || true
-             # Re-grant permissions
-             sudo -u postgres psql -d "$DB_NAME" -c "
-               GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;
-               GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;
-               ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
-               ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;
+             sudo -u postgres psql -c "DROP DATABASE IF EXISTS thepasspos;" 2>/dev/null || true
+             sudo -u postgres psql -c "CREATE DATABASE thepasspos OWNER thepasspos;" 2>/dev/null || true
+             sudo -u postgres psql -d "thepasspos" -c "
+               GRANT ALL ON ALL TABLES IN SCHEMA public TO thepasspos;
+               GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO thepasspos;
+               ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO thepasspos;
+               ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO thepasspos;
              " 2>/dev/null || true
              log "Local database wiped and recreated for new venue."
            fi
