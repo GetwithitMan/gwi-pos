@@ -194,12 +194,12 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     const neonUrl = process.env.NEON_DATABASE_URL
     if (neonUrl) {
       try {
-        // Use a direct import to create a one-off client for Neon read
+        // Use PrismaPg adapter (Prisma 7 doesn't support datasourceUrl in constructor)
         const { PrismaClient } = await import('@/generated/prisma/client')
+        const { PrismaPg } = await import('@prisma/adapter-pg')
         const directUrl = process.env.NEON_DIRECT_URL || neonUrl
-        const neonClient = new PrismaClient({
-          datasourceUrl: directUrl,
-        })
+        const neonAdapter = new PrismaPg({ connectionString: directUrl, max: 2 })
+        const neonClient = new PrismaClient({ adapter: neonAdapter })
 
         try {
           await neonClient.$queryRawUnsafe('SELECT 1')
