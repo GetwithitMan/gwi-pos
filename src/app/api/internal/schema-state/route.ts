@@ -29,13 +29,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     seedVersion?: string
     provisionerVersion?: string
     provisionedBy?: string
+    mode?: 'pipeline' | 'repair'
   }
 
-  // Use provided values, or fall back to POS's own version contract
+  const mode = body.mode || 'pipeline'
+
+  if (mode === 'pipeline') {
+    // Strict: all fields required — hides caller bugs if omitted
+    if (!body.schemaVersion || !body.seedVersion || !body.provisionerVersion || !body.provisionedBy) {
+      return NextResponse.json(
+        { error: 'Pipeline mode requires schemaVersion, seedVersion, provisionerVersion, and provisionedBy' },
+        { status: 400 }
+      )
+    }
+  }
+
+  // Use provided values, or fall back to POS's own version contract (repair mode only)
   const schemaVersion = body.schemaVersion || EXPECTED_SCHEMA_VERSION
   const seedVersion = body.seedVersion || EXPECTED_SEED_VERSION
   const provisionerVersion = body.provisionerVersion || '1'
-  const provisionedBy = body.provisionedBy || 'mc-pipeline'
+  const provisionedBy = body.provisionedBy || 'repair'
 
   try {
     const { db } = await import('@/lib/db')

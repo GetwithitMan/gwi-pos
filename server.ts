@@ -307,9 +307,11 @@ async function main() {
 
     // Sync workers — only when sync is enabled, not backup, Neon URL present, and schema ready
     const neonReady = bootstrapResult?.neonSchemaReady
-    const neonSchemaOk = neonReady
+    // Fail-CLOSED for sync: if bootstrap didn't run or Neon readiness is unknown, block sync.
+    // Local orders still work (POS boots regardless), but sync must not start without verified schema.
+    const neonSchemaOk = (neonReady != null)
       ? (neonReady.coreTablesExist && neonReady.requiredEnumsExist && neonReady.schemaVersionMatch && neonReady.baseSeedPresent)
-      : true  // If no Neon configured or bootstrap didn't run, don't block (fail-open for local orders)
+      : !config.neonDatabaseUrl  // Only true if Neon isn't configured (local-only mode)
     const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl && neonSchemaOk
     if (config.syncEnabled && config.stationRole === 'backup') {
       logger.warn('STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
@@ -317,13 +319,17 @@ async function main() {
       logger.error('SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
     }
     if (config.syncEnabled && config.neonDatabaseUrl && !neonSchemaOk) {
-      logger.error({
-        coreTablesExist: neonReady?.coreTablesExist,
-        requiredEnumsExist: neonReady?.requiredEnumsExist,
-        schemaVersionMatch: neonReady?.schemaVersionMatch,
-        baseSeedPresent: neonReady?.baseSeedPresent,
-        schemaVersion: neonReady?.schemaVersion,
-      }, 'Sync workers NOT started — Neon schema readiness check failed. Fix schema and restart.')
+      if (!neonReady) {
+        logger.error('Sync workers NOT started — bootstrap did not produce Neon readiness. Fix bootstrap and restart.')
+      } else {
+        logger.error({
+          coreTablesExist: neonReady.coreTablesExist,
+          requiredEnumsExist: neonReady.requiredEnumsExist,
+          schemaVersionMatch: neonReady.schemaVersionMatch,
+          baseSeedPresent: neonReady.baseSeedPresent,
+          schemaVersion: neonReady.schemaVersion,
+        }, 'Sync workers NOT started — Neon schema readiness check failed. Fix schema and restart.')
+      }
     }
 
     if (syncReady) {

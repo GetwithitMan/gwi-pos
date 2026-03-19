@@ -36,37 +36,16 @@ if [ -n "$SYNC_JSON" ] && echo "$SYNC_JSON" | python3 -m json.tool >/dev/null 2>
   SYNC_STATUS="$SYNC_JSON"
 fi
 
-# Get NUC readiness from local POS bootstrap (for provisioning status advancement)
+# Get NUC readiness from dedicated endpoint (pre-normalized for heartbeat)
 NUC_READINESS=""
 PROVISION_KEY="${PROVISION_API_KEY:-}"
 if [ -n "$PROVISION_KEY" ]; then
-  READINESS_JSON=$(curl -s --max-time 3 \
+  NUC_READINESS=$(curl -s --max-time 3 \
     -H "x-api-key: $PROVISION_KEY" \
-    http://localhost:3005/api/internal/readiness 2>/dev/null || echo "")
-  if [ -n "$READINESS_JSON" ] && echo "$READINESS_JSON" | python3 -m json.tool >/dev/null 2>&1; then
-    NUC_READINESS=$(python3 -c "
-import sys, json
-try:
-    data = json.loads('''$READINESS_JSON''')
-    b = data.get('bootstrap') or {}
-    nr = b.get('neonSchemaReady') or {}
-    workers = data.get('workers') or []
-    # Check if any sync workers are running
-    sync_running = any(w.get('running', False) for w in workers if 'sync' in w.get('name', '').lower())
-    result = {
-        'localDb': bool(b.get('localDb', False)),
-        'neonReachable': bool(b.get('neonReachable', False)),
-        'neonSchemaVersion': nr.get('schemaVersion'),
-        'seedVersion': nr.get('seedVersion'),
-        'baseSeedPresent': bool(b.get('seedDataPresent', False)),
-        'schemaBehind': bool(nr.get('schemaVersionBehind', False)),
-        'schemaAhead': bool(nr.get('schemaVersionAhead', False)),
-        'syncWorkers': sync_running,
-    }
-    print(json.dumps(result))
-except Exception:
-    pass
-" 2>/dev/null || echo "")
+    http://localhost:3005/api/internal/nuc-readiness 2>/dev/null || echo "")
+  # Validate JSON — drop if malformed (never invent healthy state)
+  if [ -n "$NUC_READINESS" ]; then
+    echo "$NUC_READINESS" | jq empty 2>/dev/null || NUC_READINESS=""
   fi
 fi
 

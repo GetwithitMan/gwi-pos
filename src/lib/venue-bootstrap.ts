@@ -8,6 +8,7 @@
 import { existsSync } from 'fs'
 import path from 'path'
 import { createChildLogger } from '@/lib/logger'
+import { config } from '@/lib/system-config'
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, PROVISIONER_VERSION, APP_VERSION } from '@/lib/version-contract'
 import { ensureSchemaStateTable, readSchemaState, writeSchemaState, markRepair } from '@/lib/venue-schema-state'
 import { checkBaseSeedPresent } from '@/lib/base-seed-check'
@@ -43,6 +44,8 @@ export interface BootstrapResult {
   neonRepaired: boolean
   seedDataPresent: boolean
   ready: boolean
+  syncContractReady: boolean  // matches POS sync-start gate exactly
+  degradedReasons: string[]
 }
 
 let cachedResult: BootstrapResult | null = null
@@ -167,6 +170,8 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     neonRepaired: false,
     seedDataPresent: false,
     ready: false,
+    syncContractReady: false,
+    degradedReasons: [],
   }
 
   try {
@@ -205,28 +210,34 @@ export async function runBootstrap(): Promise<BootstrapResult> {
           const tableCount = await countTables(neonClient)
 
           if (!neonState && tableCount === 0) {
-            // Truly empty DB -> auto-repair
-            log.info('Neon DB is empty — running auto-repair via canonical migration path')
-            try {
-              await applySchemaToEmptyDb(neonClient)
-              await ensureSchemaStateTable(neonClient)
-              await writeSchemaState(neonClient, {
-                schemaVersion: EXPECTED_SCHEMA_VERSION,
-                seedVersion: EXPECTED_SEED_VERSION,
-                provisionerVersion: PROVISIONER_VERSION,
-                provisionedAt: new Date(),
-                provisionedBy: 'nuc-bootstrap',
-                appVersion: APP_VERSION,
-              })
-              await markRepair(neonClient, 'nuc-bootstrap', 'bootstrap-empty-db')
-              result.neonRepaired = true
-              result.neonSchemaReady = await buildReadiness(neonClient, {
-                schemaVersion: EXPECTED_SCHEMA_VERSION,
-                seedVersion: EXPECTED_SEED_VERSION,
-              })
-            } catch (repairErr) {
-              log.error({ err: repairErr }, 'Auto-repair of empty Neon DB failed')
+            // Backup/standby must NEVER mutate Neon — read-only observation only
+            if (config.stationRole === 'backup') {
+              log.warn('Neon DB is empty but station is BACKUP — skipping auto-repair (read-only mode)')
               result.neonSchemaReady = await buildReadiness(neonClient, null)
+            } else {
+              // Primary: auto-repair via schema.sql
+              log.info('Neon DB is empty — running auto-repair via canonical migration path')
+              try {
+                await applySchemaToEmptyDb(neonClient)
+                await ensureSchemaStateTable(neonClient)
+                await writeSchemaState(neonClient, {
+                  schemaVersion: EXPECTED_SCHEMA_VERSION,
+                  seedVersion: EXPECTED_SEED_VERSION,
+                  provisionerVersion: PROVISIONER_VERSION,
+                  provisionedAt: new Date(),
+                  provisionedBy: 'nuc-bootstrap',
+                  appVersion: APP_VERSION,
+                })
+                await markRepair(neonClient, 'nuc-bootstrap', 'bootstrap-empty-db')
+                result.neonRepaired = true
+                result.neonSchemaReady = await buildReadiness(neonClient, {
+                  schemaVersion: EXPECTED_SCHEMA_VERSION,
+                  seedVersion: EXPECTED_SEED_VERSION,
+                })
+              } catch (repairErr) {
+                log.error({ err: repairErr }, 'Auto-repair of empty Neon DB failed')
+                result.neonSchemaReady = await buildReadiness(neonClient, null)
+              }
             }
           } else if (!neonState && tableCount > 0) {
             // Partial/unknown state -- DO NOT auto-repair
@@ -250,6 +261,13 @@ export async function runBootstrap(): Promise<BootstrapResult> {
               )
             }
             result.neonSchemaReady = await buildReadiness(neonClient, neonState)
+
+            // Flag degraded if too many repairs
+            if (neonState.repairCount >= 3) {
+              log.warn({ repairCount: neonState.repairCount, lastReason: neonState.lastRepairReason },
+                'Neon DB has been repaired 3+ times — marking as degraded')
+              result.degradedReasons.push('repeated-schema-repair')
+            }
           }
         } finally {
           await neonClient.$disconnect()
@@ -257,6 +275,7 @@ export async function runBootstrap(): Promise<BootstrapResult> {
       } catch (err) {
         log.warn({ err: err instanceof Error ? err.message : err }, 'Neon unreachable — operating in local-only mode')
         result.neonReachable = false
+        result.degradedReasons.push('neon-unreachable')
       }
     }
 
@@ -265,11 +284,18 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     result.seedDataPresent = seedResult.ok
     if (!seedResult.ok) {
       log.warn({ missing: seedResult.missing }, 'Base seed data incomplete')
+      result.degradedReasons.push('seed-data-missing')
     }
 
     // 5. Determine overall readiness
     const neonOk = !neonUrl || (result.neonSchemaReady?.coreTablesExist ?? true)
     result.ready = result.localDb && neonOk
+
+    // syncContractReady: matches the exact contract server.ts uses for sync workers
+    // All four must be true: coreTablesExist, requiredEnumsExist, schemaVersionMatch, baseSeedPresent
+    const nsr = result.neonSchemaReady
+    result.syncContractReady = result.localDb && !!neonUrl && result.neonReachable && !!nsr &&
+      nsr.coreTablesExist && nsr.requiredEnumsExist && nsr.schemaVersionMatch && nsr.baseSeedPresent
 
     log.info({
       localDb: result.localDb,

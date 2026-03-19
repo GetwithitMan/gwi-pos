@@ -16,6 +16,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ready: bootstrap?.ready ?? false,
+    syncContractReady: bootstrap?.syncContractReady ?? false,
+    degradedReasons: bootstrap?.degradedReasons ?? [],
     bootstrap: bootstrap ?? null,
     versions: {
       expected: {
