@@ -1237,7 +1237,17 @@ HBAEOF
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $DB_USER;
     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $DB_USER;
   " >/dev/null 2>&1
-  log "Database permissions granted to $DB_USER."
+  # Disable RLS on all tables — prisma db push enables it as part of the schema,
+  # but the POS app user doesn't have the right RLS policies configured.
+  # RLS blocks downstream sync, menu queries, and login. Must be disabled.
+  sudo -u postgres psql -d "$DB_NAME" -c "
+    DO \$\$ DECLARE r RECORD; BEGIN
+      FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true LOOP
+        EXECUTE 'ALTER TABLE public.\"' || r.tablename || '\" DISABLE ROW LEVEL SECURITY';
+      END LOOP;
+    END \$\$;
+  " >/dev/null 2>&1
+  log "Database permissions granted + RLS disabled for $DB_USER."
 
   # Set UTC timezone for database (CRITICAL for offline-first sync integrity)
   # Without this, timestamps synced from Neon cloud can be silently shifted by the
@@ -1741,12 +1751,17 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
         if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss"; then
           warn "prisma db push had issues — some tables may need manual creation."
         fi
-        # Re-grant permissions after db push (may have created new tables owned by postgres)
+        # Re-grant permissions + disable RLS after db push
         sudo -u postgres psql -d "$DB_NAME" -c "
           GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;
           GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;
+          DO \$\$ DECLARE r RECORD; BEGIN
+            FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true LOOP
+              EXECUTE 'ALTER TABLE public.\"' || r.tablename || '\" DISABLE ROW LEVEL SECURITY';
+            END LOOP;
+          END \$\$;
         " >/dev/null 2>&1
-        log "Baseline + schema sync complete."
+        log "Baseline + schema sync complete (permissions + RLS fixed)."
       else
         err "Database migration failed (prisma migrate deploy)."
         echo "$MIGRATE_OUTPUT" >&2
