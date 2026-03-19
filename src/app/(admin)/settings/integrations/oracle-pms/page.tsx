@@ -10,6 +10,7 @@ import { ToggleRow } from '@/components/admin/settings/ToggleRow'
 import type { HotelPmsSettings } from '@/lib/settings'
 import { DEFAULT_HOTEL_PMS_SETTINGS } from '@/lib/settings'
 import { useAuthStore } from '@/stores/auth-store'
+import Link from 'next/link'
 
 interface OracleStatus {
   configured: boolean
@@ -358,9 +359,9 @@ export default function OraclePmsIntegrationPage() {
               <li>
                 Once confirmed, switch to <strong>Production</strong>, enable the integration,
                 and enable <strong>Bill to Room</strong> under{' '}
-                <a href="/settings/payments" className="text-blue-600 hover:underline">
+                <Link href="/settings/payments" className="text-blue-600 hover:underline">
                   Settings → Payments
-                </a>.
+                </Link>.
               </li>
             </ol>
             <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">

@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { BergMappingCoverageResponse } from '@/lib/berg/report-types'
+import Link from 'next/link'
 
 function fmtMoney(n: number) {
   return '$' + n.toFixed(2)
@@ -169,12 +170,12 @@ export default function BergMappingCoveragePage() {
                         </td>
                         <td className="py-2 px-3 text-right">
                           {!row.isMapped && (
-                            <a
+                            <Link
                               href="/settings/integrations/berg"
                               className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                             >
                               Map This PLU
-                            </a>
+                            </Link>
                           )}
                         </td>
                       </tr>

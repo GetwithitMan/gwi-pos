@@ -80,17 +80,17 @@ export function canEndDriverShift(
   return { allowed: true }
 }
 
-export function canMarkDelivered(
+export async function canMarkDelivered(
   policy: DispatchPolicy,
   proofMode: string,
   uploadedProofs: { type: 'photo' | 'signature' }[],
-): PolicyCheckResult {
+): Promise<PolicyCheckResult> {
   if (!policy.cannotMarkDeliveredWithoutRequiredProof) {
     return { allowed: true }
   }
 
   // Import proof validation inline to avoid circular deps
-  const { validateProofSatisfied } = require('./proof-resolver')
+  const { validateProofSatisfied } = await import('./proof-resolver')
   const { satisfied, missing } = validateProofSatisfied(proofMode as any, uploadedProofs)
 
   if (!satisfied) {

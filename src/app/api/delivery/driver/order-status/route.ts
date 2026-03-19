@@ -96,7 +96,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
           WHERE "deliveryOrderId" = $1
         `, deliveryOrderId)
 
-        const policyCheck = canMarkDelivered(
+        const policyCheck = await canMarkDelivered(
           dispatchPolicy,
           deliveryOrder.proofMode,
           proofs.map(p => ({ type: p.type })),

@@ -78,7 +78,7 @@ function wrapLevelFor(instance: pino.Logger, fn: pino.LogFn): (...args: unknown[
       return
     }
     // Standard pino call: (msg), (obj, msg), (obj, msg, ...args)
-    ;(fn as Function).apply(instance, args)
+    ;(fn as (...args: unknown[]) => unknown).apply(instance, args)
   }
 }
 

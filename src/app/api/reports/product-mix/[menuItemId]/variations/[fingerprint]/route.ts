@@ -16,8 +16,6 @@ import { dateRangeToUTC } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import {
   computeVariationFingerprint,
-  type VariationModifier,
-  type VariationIngredientMod,
   type TransformedOrderItem,
 } from '@/lib/domain/reports/variation-fingerprint'
 

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast-store'
 import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
+import Link from 'next/link'
 
 // ============================================================================
 // TYPES
@@ -694,7 +695,7 @@ export default function ManagerDashboardPage() {
         <div className="flex items-center gap-3 px-4 py-3 mb-4 rounded-lg bg-red-50 border border-red-300 text-red-800 text-sm">
           <span className="text-red-500 text-lg">&#9888;</span>
           <span className="font-medium flex-1">
-            {liveMetrics.pendingDeductionsFailed} inventory deduction{liveMetrics.pendingDeductionsFailed !== 1 ? 's' : ''} failed &mdash; <a href="/inventory/deductions-queue" className="underline font-semibold hover:text-red-900">View Queue &rarr;</a>
+            {liveMetrics.pendingDeductionsFailed} inventory deduction{liveMetrics.pendingDeductionsFailed !== 1 ? 's' : ''} failed &mdash; <Link href="/inventory/deductions-queue" className="underline font-semibold hover:text-red-900">View Queue &rarr;</Link>
           </span>
           <button
             onClick={() => setDeductionBannerDismissed(true)}
@@ -957,12 +958,12 @@ export default function ManagerDashboardPage() {
                 {reservationData.upcoming.length} in next 2 hours
               </span>
             </div>
-            <a
+            <Link
               href="/reservations"
               className="text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
             >
               View All &rarr;
-            </a>
+            </Link>
           </div>
 
           {/* Today summary chips */}

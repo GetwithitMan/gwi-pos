@@ -421,7 +421,7 @@ export function KDSSettingsSidebar({ screenConfig, onSave, saving }: KDSSettings
         </FieldGroup>
 
         <div className="mt-4 space-y-3">
-          <p className="text-xs text-gray-500">Per-order-type overrides (uncheck "Use Global" to customize).</p>
+          <p className="text-xs text-gray-500">Per-order-type overrides (uncheck &quot;Use Global&quot; to customize).</p>
           {ORDER_TYPES.map(ot => (
             <div key={ot.key} className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
               <div className="flex items-center justify-between mb-2">

@@ -129,7 +129,7 @@ export default function GuestCheckInPage() {
       {state === 'not_found' && (
         <div className="text-center space-y-6">
           <h1 className="text-3xl font-bold text-white">Reservation Not Found</h1>
-          <p className="text-lg text-gray-400">We couldn't find your reservation. Please see the host.</p>
+          <p className="text-lg text-gray-400">We couldn&apos;t find your reservation. Please see the host.</p>
           <button onClick={handleClear} className="mt-8 px-8 py-3 bg-gray-800 text-gray-300 rounded-xl text-lg hover:bg-gray-700 transition-colors">
             Try Again
           </button>

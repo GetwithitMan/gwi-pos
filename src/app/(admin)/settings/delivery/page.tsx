@@ -10,6 +10,7 @@ import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from
 import { toast } from '@/stores/toast-store'
 import type { DeliverySettings } from '@/lib/settings'
 import { DEFAULT_DELIVERY } from '@/lib/settings'
+import Link from 'next/link'
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
@@ -254,7 +255,7 @@ export default function DeliverySettingsPage() {
             {delivery.feeMode === 'zone_based' && (
               <div className="text-xs text-blue-600 bg-blue-50 rounded-lg p-2.5">
                 Zone-based fees are configured per zone. Go to{' '}
-                <a href="/settings/delivery/zones" className="underline font-medium">Zone Management</a>{' '}
+                <Link href="/settings/delivery/zones" className="underline font-medium">Zone Management</Link>{' '}
                 to set zone-specific fees.
               </div>
             )}
@@ -602,30 +603,30 @@ export default function DeliverySettingsPage() {
         <section className="rounded-xl bg-gray-50 p-6 border border-gray-200">
           <h2 className="text-base font-semibold text-gray-900 mb-3">More Delivery Settings</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <a
+            <Link
               href="/settings/delivery/zones"
               className="block bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all"
             >
               <div className="text-lg mb-1">📍</div>
               <div className="text-sm font-medium text-gray-900">Zone Management</div>
               <div className="text-xs text-gray-500">Create and manage delivery zones</div>
-            </a>
-            <a
+            </Link>
+            <Link
               href="/settings/delivery/drivers"
               className="block bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all"
             >
               <div className="text-lg mb-1">🚗</div>
               <div className="text-sm font-medium text-gray-900">Driver Management</div>
               <div className="text-xs text-gray-500">Add, edit, and manage drivers</div>
-            </a>
-            <a
+            </Link>
+            <Link
               href="/settings/delivery/dispatch-policy"
               className="block bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all"
             >
               <div className="text-lg mb-1">📋</div>
               <div className="text-sm font-medium text-gray-900">Dispatch Policy</div>
               <div className="text-xs text-gray-500">Assignment, cash, and enforcement rules</div>
-            </a>
+            </Link>
           </div>
         </section>
 

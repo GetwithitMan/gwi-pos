@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { BergUnmatchedReportResponse } from '@/lib/berg/report-types'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import Link from 'next/link'
 
 const TYPE_COLORS: Record<string, string> = {
   NO_ORDER_ACKED: 'bg-orange-100 text-orange-800',
@@ -169,12 +170,12 @@ export default function BergUnmatchedReportPage() {
                         </td>
                         <td className="py-2 px-3">
                           {(ev.unmatchedType === 'UNKNOWN_PLU_ACKED' || ev.unmatchedType === 'UNKNOWN_PLU_NAKED') && (
-                            <a
+                            <Link
                               href="/settings/integrations/berg"
                               className="text-blue-600 hover:underline text-xs font-medium"
                             >
                               Map PLU
-                            </a>
+                            </Link>
                           )}
                         </td>
                       </tr>

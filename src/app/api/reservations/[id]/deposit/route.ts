@@ -187,8 +187,8 @@ export const POST = withVenue(async function POST(
     }
 
     // Create deposit record (use crypto UUID instead of predictable ID)
-    const crypto = require('crypto')
-    const depositId = crypto.randomUUID()
+    const { randomUUID } = await import('crypto')
+    const depositId = randomUUID()
     await db.$executeRawUnsafe(
       `INSERT INTO "ReservationDeposit" (id, "locationId", "reservationId", type, amount, "paymentMethod",
         "cardLast4", "cardBrand", "datacapRecordNo", "datacapRefNumber", status, "employeeId", notes)

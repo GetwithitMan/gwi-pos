@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { BergHealthReportResponse } from '@/lib/berg/report-types'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import Link from 'next/link'
 
 function today() {
   return new Date().toISOString().split('T')[0]
@@ -91,9 +92,9 @@ export default function BergHealthPage() {
           <Button onClick={runReport} disabled={loading}>
             {loading ? 'Loading...' : 'Refresh'}
           </Button>
-          <a href="/settings/integrations/berg" className="text-sm text-blue-600 hover:underline">
+          <Link href="/settings/integrations/berg" className="text-sm text-blue-600 hover:underline">
             Berg Settings
-          </a>
+          </Link>
         </div>
       </div>
 

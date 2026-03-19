@@ -13,6 +13,7 @@ import { useIngredientOperations } from './useIngredientOperations'
 import { useModifierGroupManager } from './useModifierGroupManager'
 import { useModifierEditor } from './useModifierEditor'
 import { useIngredientCreation } from './useIngredientCreation'
+import Link from 'next/link'
 import { ModifierGroupSettingsPanel } from './ModifierGroupSettingsPanel'
 import { ChevronUp, ChevronDown, Zap, Star, BookmarkPlus } from 'lucide-react'
 import { TemplatePickerModal } from './TemplatePickerModal'
@@ -1225,9 +1226,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             <p className="text-sm font-medium text-orange-800">This is a pizza item</p>
             <p className="text-xs text-orange-600">Full editing available in the Pizza Builder</p>
           </div>
-          <a href="/pizza" className="px-3 py-1.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors">
+          <Link href="/pizza" className="px-3 py-1.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition-colors">
             Pizza Builder →
-          </a>
+          </Link>
         </div>
       )}
 
