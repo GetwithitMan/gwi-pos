@@ -17,6 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const specialties = await db.pizzaSpecialty.findMany({
       where: {
         locationId,
+        deletedAt: null,
         ...(menuItemId ? { menuItemId } : {}),
       },
       include: {
@@ -97,6 +98,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (!menuItem) {
       return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
+    }
+
+    if (menuItem.itemType !== 'pizza' && menuItem.category?.categoryType !== 'pizza') {
+      return NextResponse.json({ error: 'Menu item must be a pizza type' }, { status: 400 })
     }
 
     // Check if specialty already exists for this menu item

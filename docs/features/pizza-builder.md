@@ -20,11 +20,31 @@ Specialized pizza ordering UI with two builder modes (Quick and Visual), half-an
 
 ---
 
+## Admin UI
+
+### Admin Page (7 Tabs)
+
+The pizza admin page at `/pizza` is the **single source of truth** for all pizza management:
+
+| Tab | Purpose |
+|-----|---------|
+| **Items** | All pizza menu items — inline edit name/price, active/86 toggle, commission, tax, category management, specialty config |
+| **Sizes** | Pizza sizes (Small/Medium/Large/XL) with base price + multipliers |
+| **Crusts** | Crust options with upcharge pricing |
+| **Sauces** | Sauce options with light/extra + inventory links |
+| **Cheeses** | Cheese options (same as sauces) |
+| **Toppings** | Topping library by category with inventory links |
+| **Settings** | Printer routing, kitchen ticket design, section config, free topping rules |
+
+The Items tab is the primary hub. Pizza items are created and managed here — the Menu page shows pizza items as read-only with a "Edit in Pizza Builder →" banner.
+
+---
+
 ## UI Entry Points
 
 | Interface | Path / Screen | Who Accesses |
 |-----------|--------------|--------------|
-| Admin | `/pizza` (6-tab builder: sizes, crusts, sauces, cheeses, toppings, specialties) | Managers |
+| Admin | `/pizza` (7-tab builder: items, sizes, crusts, sauces, cheeses, toppings, settings) | Managers |
 | Admin | `/settings/pizza` (config) | Managers |
 | POS Web | PizzaBuilderModal (opens when tapping pizza item) | All staff |
 

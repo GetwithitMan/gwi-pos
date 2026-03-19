@@ -834,6 +834,10 @@ export async function deductInventoryForOrder(
               sizeInventoryMultiplier = toNumber(sizeRecord.inventoryMultiplier) || 1.0
             }
           }
+          if (sizeInventoryMultiplier <= 0) {
+            console.warn('[inventory] PizzaSize has inventoryMultiplier <= 0, defaulting to 1.0')
+            sizeInventoryMultiplier = 1.0
+          }
 
           if (toppingEntries.length > 0) {
             // Fetch PizzaTopping records with inventory links
@@ -877,12 +881,13 @@ export async function deductInventoryForOrder(
 
                 // Coverage fraction: sections array length / 24 (micro-section grid)
                 // Default to whole pizza (24/24 = 1.0) if no sections specified
-                const sectionCount = entry.sections?.length || 24
+                const sectionCount = Math.min(entry.sections?.length || 24, 24)  // Cap at 24
                 const coverageFraction = sectionCount / 24.0
 
-                // Amount multiplier: light=0.5, regular=1.0, extra=2.0
+                // Amount multiplier: none=0, light=0.5, regular=1.0, extra=2.0
                 const amountMultiplier = entry.amount === 'light' ? 0.5
                   : entry.amount === 'extra' ? 2.0
+                  : entry.amount === 'none' ? 0
                   : 1.0
 
                 const totalUsage = baseUsage * coverageFraction * amountMultiplier
@@ -937,7 +942,7 @@ export async function deductInventoryForOrder(
                 const amountMult = entry.amount === 'light' ? 0.5
                   : entry.amount === 'extra' ? 2.0
                   : entry.amount === 'none' ? 0 : 1.0
-                const sectionCount = entry.sections?.length || 24
+                const sectionCount = Math.min(entry.sections?.length || 24, 24)  // Cap at 24
                 const coverageFraction = sectionCount / 24.0
                 let finalUsage = baseUsage * amountMult * coverageFraction * sizeInventoryMultiplier * itemQty
                 if (sauce.usageUnit && sauce.inventoryItem.storageUnit) {
@@ -1004,7 +1009,7 @@ export async function deductInventoryForOrder(
                 const amountMult = entry.amount === 'light' ? 0.5
                   : entry.amount === 'extra' ? 2.0
                   : entry.amount === 'none' ? 0 : 1.0
-                const sectionCount = entry.sections?.length || 24
+                const sectionCount = Math.min(entry.sections?.length || 24, 24)  // Cap at 24
                 const coverageFraction = sectionCount / 24.0
                 let finalUsage = baseUsage * amountMult * coverageFraction * sizeInventoryMultiplier * itemQty
                 if (cheese.usageUnit && cheese.inventoryItem.storageUnit) {

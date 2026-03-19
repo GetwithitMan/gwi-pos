@@ -118,6 +118,32 @@ export async function createTableSplit(
             swapEffectivePrice: mod.swapEffectivePrice,
           })),
         },
+        // Clone pizzaData if it exists
+        ...(item.pizzaData ? {
+          pizzaData: {
+            create: {
+              locationId: order.locationId,
+              sizeId: item.pizzaData.sizeId,
+              crustId: item.pizzaData.crustId,
+              sauceId: item.pizzaData.sauceId,
+              cheeseId: item.pizzaData.cheeseId,
+              sauceAmount: item.pizzaData.sauceAmount,
+              cheeseAmount: item.pizzaData.cheeseAmount,
+              sauceSections: item.pizzaData.sauceSections as any,
+              cheeseSections: item.pizzaData.cheeseSections as any,
+              toppingsData: item.pizzaData.toppingsData as any,
+              cookingInstructions: item.pizzaData.cookingInstructions,
+              cutStyle: item.pizzaData.cutStyle,
+              sizePrice: item.pizzaData.sizePrice,
+              crustPrice: item.pizzaData.crustPrice,
+              saucePrice: item.pizzaData.saucePrice,
+              cheesePrice: item.pizzaData.cheesePrice,
+              toppingsPrice: item.pizzaData.toppingsPrice,
+              totalPrice: item.pizzaData.totalPrice,
+              freeToppingsUsed: item.pizzaData.freeToppingsUsed,
+            },
+          },
+        } : {}),
       }
     })
 

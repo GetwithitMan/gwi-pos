@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // PATCH /api/pizza/sauces/[id] - Update pizza sauce
@@ -11,8 +12,13 @@ export const PATCH = withVenue(async function PATCH(
     const { id } = await params
     const body = await request.json()
 
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const existing = await db.pizzaSauce.findUnique({ where: { id } })
-    if (!existing) {
+    if (!existing || existing.locationId !== locationId) {
       return NextResponse.json({ error: 'Sauce not found' }, { status: 404 })
     }
 
@@ -60,6 +66,16 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
+    const existing = await db.pizzaSauce.findUnique({ where: { id } })
+    if (!existing || existing.locationId !== locationId) {
+      return NextResponse.json({ error: 'Sauce not found' }, { status: 404 })
+    }
 
     await db.pizzaSauce.update({
       where: { id },

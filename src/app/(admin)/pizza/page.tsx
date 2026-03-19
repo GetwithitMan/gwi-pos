@@ -544,12 +544,22 @@ export default function PizzaAdminPage() {
         ? `This category has ${itemCount} items. They will need to be reassigned. Continue?`
         : 'This will remove the category.',
       action: async () => {
-        await fetch(`/api/menu/categories/${categoryId}`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locationId, employeeId }),
-        })
-        await loadAllData()
+        try {
+          const res = await fetch(`/api/menu/categories/${categoryId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ locationId, employeeId }),
+          })
+          if (!res.ok) {
+            const err = await res.json()
+            alert(err.error || 'Failed to delete category')
+            return
+          }
+          await loadAllData()
+        } catch (err) {
+          console.error('Failed to delete category:', err)
+          alert('Failed to delete category')
+        }
       },
     })
   }

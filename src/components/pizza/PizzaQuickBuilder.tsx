@@ -192,7 +192,7 @@ export function PizzaQuickBuilder({
       else priceMultiplier = data.config.hybridPricing.eighth
     }
 
-    const amountMultiplier = amount === 'extra' ? 1.5 : 1.0
+    const amountMultiplier = amount === 'extra' ? 2.0 : amount === 'light' ? 0.5 : 1.0
     return basePrice * priceMultiplier * sizeMultiplier * amountMultiplier
   }, [data, selectedSize])
 

@@ -52,6 +52,7 @@ export const POST = withVenue(async function POST(
             modifiers: true,
             menuItem: { select: { id: true, itemType: true } },
             itemDiscounts: { where: { deletedAt: null } },
+            pizzaData: true,
           },
         },
         discounts: {

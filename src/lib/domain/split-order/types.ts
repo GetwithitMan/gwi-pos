@@ -81,6 +81,29 @@ export interface SplitOrderItem {
   modifiers: SplitOrderItemModifier[]
   menuItem?: { id: string; itemType: string | null } | null
   itemDiscounts?: SplitItemDiscount[]
+  pizzaData?: {
+    id: string
+    locationId: string
+    sizeId: string
+    crustId: string
+    sauceId: string | null
+    cheeseId: string | null
+    sauceAmount: string
+    cheeseAmount: string
+    sauceSections: unknown | null
+    cheeseSections: unknown | null
+    toppingsData: unknown
+    cookingInstructions: string | null
+    cutStyle: string | null
+    sizePrice: any
+    crustPrice: any
+    saucePrice: any
+    cheesePrice: any
+    toppingsPrice: any
+    totalPrice: any
+    freeToppingsUsed: number
+    deletedAt: Date | null
+  } | null
 }
 
 /** Order discount (from Prisma include) */

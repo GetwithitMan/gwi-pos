@@ -380,6 +380,12 @@ export async function softDeleteOrderItem(
     data: { deletedAt: now, status: 'removed' },
   })
 
+  // Clean up orphaned OrderItemPizza if exists
+  await tx.orderItemPizza.updateMany({
+    where: { orderItemId: itemId },
+    data: { deletedAt: now },
+  })
+
   // Phase 2 server hardening: emit events alongside the direct writes.
   // Fire-and-forget — do NOT block the request on event persistence.
   if (itemForEvent) {
