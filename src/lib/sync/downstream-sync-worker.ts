@@ -333,7 +333,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
               // checkQuarantine returned 'apply' — still run the existing
               // detectBidirectionalConflict for lastMutatedBy / NTP guard logic
               // so local-wins rows are not overwritten.
-              const conflictResult = await detectBidirectionalConflict(tableName, row, strategy, columns)
+              // Pass the pre-fetched localRow to avoid a redundant SELECT query.
+              const conflictResult = await detectBidirectionalConflict(tableName, row, strategy, columns, localRow)
               if (conflictResult === 'skip') {
                 if (incomingUpdatedAt > maxSyncedAt) {
                   maxSyncedAt = incomingUpdatedAt
@@ -370,29 +371,45 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
       if (bk && row.id) {
         const bkWhere = bk.map((col, i) => `"${col}" = $${i + 2}`).join(' AND ')
         const bkValues = bk.map((col) => serializeValue(row[col], false))
-        const conflicting = await masterClient.$queryRawUnsafe<{ id: string }[]>(
-          `SELECT id FROM "${tableName}" WHERE ${bkWhere} AND "id" != $1 AND "deletedAt" IS NULL LIMIT 1`,
+        const hasLastMutatedBy = columns.includes('lastMutatedBy')
+        const conflicting = await masterClient.$queryRawUnsafe<{ id: string; lastMutatedBy?: string | null; updatedAt?: Date | null }[]>(
+          `SELECT id${hasLastMutatedBy ? ', "lastMutatedBy"' : ''}${columns.includes('updatedAt') ? ', "updatedAt"' : ''} FROM "${tableName}" WHERE ${bkWhere} AND "id" != $1 AND "deletedAt" IS NULL LIMIT 1`,
           row.id as string, ...bkValues
         )
         if (conflicting.length > 0) {
-          if (CATALOG_QUARANTINE_TABLES.has(tableName)) {
+          const local = conflicting[0]
+          // Guard: if the local row was recently mutated locally (not by cloud),
+          // skip the conflict resolution to avoid silently destroying local data.
+          // Only resolve if local row is cloud-origin, null-origin, or older than Neon.
+          const localIsLocallyMutated = hasLastMutatedBy && local.lastMutatedBy === 'local'
+          const neonUpdatedAt = row.updatedAt ? new Date(row.updatedAt as string) : null
+          const localUpdatedAt = local.updatedAt ? new Date(local.updatedAt as string) : null
+          const localIsNewer = neonUpdatedAt && localUpdatedAt && localUpdatedAt > neonUpdatedAt
+
+          if (localIsLocallyMutated && localIsNewer) {
+            // Local row was mutated locally AND is newer — skip, local wins
+            log.warn(
+              { table: tableName, localId: local.id, neonId: row.id },
+              'Business-key conflict: local row is locally-mutated and newer — skipping (local wins)'
+            )
+          } else if (CATALOG_QUARANTINE_TABLES.has(tableName)) {
             // Catalog tables: soft-delete (quarantine) the conflicting row instead of
             // destroying it. This prevents partial catalog graphs (e.g., a MenuItem's
             // Category disappearing mid-sync) while still allowing the Neon row to land.
             await masterClient.$executeRawUnsafe(
               `UPDATE "${tableName}" SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $1`,
-              conflicting[0].id
+              local.id
             )
             log.warn(
-              { table: tableName, localId: conflicting[0].id, neonId: row.id },
+              { table: tableName, localId: local.id, neonId: row.id },
               'Quarantined catalog row (soft-delete) for business-key conflict — local row preserved for review'
             )
           } else {
-            // Non-catalog tables: hard-delete the conflicting local row as before
-            log.info({ table: tableName, localId: conflicting[0].id, neonId: row.id }, 'Resolving business-key conflict — local replaced by Neon')
+            // Non-catalog tables: hard-delete the conflicting local row
+            log.info({ table: tableName, localId: local.id, neonId: row.id }, 'Resolving business-key conflict — local replaced by Neon')
             await masterClient.$executeRawUnsafe(
               `DELETE FROM "${tableName}" WHERE "id" = $1`,
-              conflicting[0].id
+              local.id
             )
           }
         }
@@ -751,24 +768,34 @@ async function detectBidirectionalConflict(
   neonRow: Record<string, unknown>,
   strategy: ConflictStrategy,
   columns: string[],
+  prefetchedLocalRow?: Record<string, unknown> | null,
 ): Promise<'apply' | 'skip'> {
   const hasLastMutatedBy = columns.includes('lastMutatedBy')
   const hasUpdatedAt = columns.includes('updatedAt')
   if (!hasUpdatedAt || !hasLastMutatedBy) return 'apply'
 
   try {
-    const localRows = await masterClient.$queryRawUnsafe<Array<{
-      updatedAt: Date
-      lastMutatedBy: string | null
-    }>>(
-      `SELECT "updatedAt", "lastMutatedBy" FROM "${tableName}" WHERE id = $1 LIMIT 1`,
-      neonRow.id as string,
-    )
-
-    // Row doesn't exist locally yet — always apply
-    if (localRows.length === 0) return 'apply'
-
-    const local = localRows[0]
+    // Reuse pre-fetched local row if available (avoids double query in quarantine path)
+    let local: { updatedAt: Date; lastMutatedBy: string | null }
+    if (prefetchedLocalRow !== undefined) {
+      if (prefetchedLocalRow === null) return 'apply' // Row doesn't exist locally
+      local = {
+        updatedAt: prefetchedLocalRow.updatedAt instanceof Date
+          ? prefetchedLocalRow.updatedAt
+          : new Date(prefetchedLocalRow.updatedAt as string),
+        lastMutatedBy: (prefetchedLocalRow.lastMutatedBy as string | null) ?? null,
+      }
+    } else {
+      const localRows = await masterClient.$queryRawUnsafe<Array<{
+        updatedAt: Date
+        lastMutatedBy: string | null
+      }>>(
+        `SELECT "updatedAt", "lastMutatedBy" FROM "${tableName}" WHERE id = $1 LIMIT 1`,
+        neonRow.id as string,
+      )
+      if (localRows.length === 0) return 'apply'
+      local = localRows[0]
+    }
     const neonUpdatedAt = neonRow.updatedAt instanceof Date
       ? neonRow.updatedAt
       : new Date(neonRow.updatedAt as string)
@@ -852,7 +879,7 @@ async function syncCellularDenyList(): Promise<void> {
       terminalId: string
       updatedAt: Date
     }>>(
-      `SELECT "terminalId", "updatedAt" FROM "CellularDevice" WHERE status IN ('revoked', 'quarantined') AND "terminalId" IS NOT NULL`
+      `SELECT "terminalId", "updatedAt" FROM "CellularDevice" WHERE status IN ('REVOKED', 'QUARANTINED') AND "terminalId" IS NOT NULL`
     )
 
     if (revoked.length > 0) {
