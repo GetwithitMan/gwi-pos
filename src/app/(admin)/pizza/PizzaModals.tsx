@@ -760,12 +760,14 @@ export interface SpecialtyModalProps {
   toppings: PizzaTopping[]
   onSave: (data: any) => void
   onClose: () => void
+  locationId?: string
+  onMenuItemCreated?: () => void
 }
 
 export function SpecialtyModal({
   specialty, pizzaMenuItems, existingSpecialtyMenuItemIds,
   crusts, sauces, cheeses, toppings,
-  onSave, onClose,
+  onSave, onClose, locationId, onMenuItemCreated,
 }: SpecialtyModalProps) {
   const isEdit = !!specialty
   const [menuItemId, setMenuItemId] = useState(specialty?.menuItemId || '')
@@ -781,6 +783,12 @@ export function SpecialtyModal({
   const [allowCheeseChange, setAllowCheeseChange] = useState(specialty?.allowCheeseChange ?? true)
   const [allowToppingMods, setAllowToppingMods] = useState(specialty?.allowToppingMods ?? true)
   const [toppingCategoryTab, setToppingCategoryTab] = useState('all')
+
+  // Inline "Create New Pizza" state
+  const [showCreateNew, setShowCreateNew] = useState(false)
+  const [newPizzaName, setNewPizzaName] = useState('')
+  const [newPizzaPrice, setNewPizzaPrice] = useState('')
+  const [creatingNew, setCreatingNew] = useState(false)
 
   // Available menu items (exclude those already linked to a specialty, unless editing this one)
   const availableMenuItems = pizzaMenuItems.filter(
@@ -863,31 +871,127 @@ export function SpecialtyModal({
     <Modal isOpen={true} onClose={onClose} title={isEdit ? 'Edit Specialty Pizza' : 'Create Specialty Pizza'} size="3xl">
       <div className="space-y-6">
 
-        {/* Step 1: Menu Item Selection */}
+        {/* Step 1: Pizza Name & Price */}
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">Pizza Menu Item *</label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Pizza *</label>
           {isEdit ? (
             <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
               <div className="text-lg font-bold">{specialty?.menuItem.name}</div>
               <div className="text-sm text-green-600 font-medium">{formatCurrency(specialty?.menuItem.price || 0)}</div>
               <span className="text-xs text-gray-400 ml-auto">Cannot change after creation</span>
             </div>
+          ) : showCreateNew ? (
+            /* Inline create new pizza */
+            <div className="space-y-2">
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={newPizzaName}
+                  onChange={(e) => setNewPizzaName(e.target.value)}
+                  placeholder="Pizza name (e.g., BBQ Chicken)"
+                  className="flex-1 p-2.5 border rounded-lg text-sm"
+                  autoFocus
+                />
+                <input
+                  type="number"
+                  value={newPizzaPrice}
+                  onChange={(e) => setNewPizzaPrice(e.target.value)}
+                  placeholder="Price"
+                  step="0.01"
+                  min="0"
+                  className="w-28 p-2.5 border rounded-lg text-sm"
+                />
+                <button
+                  onClick={async () => {
+                    if (!newPizzaName.trim() || !newPizzaPrice || !locationId) return
+                    setCreatingNew(true)
+                    try {
+                      // Find or create a pizza category
+                      const catRes = await fetch(`/api/menu/categories?locationId=${locationId}`)
+                      const catData = await catRes.json()
+                      const cats = catData.data?.categories || catData.categories || catData || []
+                      let pizzaCat = (Array.isArray(cats) ? cats : []).find(
+                        (c: any) => c.categoryType === 'pizza' || c.name?.toLowerCase().includes('pizza')
+                      )
+                      if (!pizzaCat) {
+                        // Create a pizza category
+                        const newCatRes = await fetch('/api/menu/categories', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ locationId, name: 'Pizza', categoryType: 'pizza' }),
+                        })
+                        const newCatData = await newCatRes.json()
+                        pizzaCat = newCatData.data?.category || newCatData
+                      }
+                      // Create the menu item
+                      const itemRes = await fetch('/api/menu/items', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          locationId,
+                          name: newPizzaName.trim(),
+                          price: parseFloat(newPizzaPrice),
+                          categoryId: pizzaCat.id,
+                          itemType: 'pizza',
+                        }),
+                      })
+                      const itemData = await itemRes.json()
+                      const newItem = itemData.data?.item || itemData
+                      if (newItem?.id) {
+                        setMenuItemId(newItem.id)
+                        setShowCreateNew(false)
+                        setNewPizzaName('')
+                        setNewPizzaPrice('')
+                        onMenuItemCreated?.()
+                      }
+                    } catch (err) {
+                      console.error('Failed to create pizza:', err)
+                    } finally {
+                      setCreatingNew(false)
+                    }
+                  }}
+                  disabled={!newPizzaName.trim() || !newPizzaPrice || creatingNew}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                >
+                  {creatingNew ? '...' : 'Create'}
+                </button>
+              </div>
+              <button
+                onClick={() => setShowCreateNew(false)}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                ← Pick an existing pizza instead
+              </button>
+            </div>
           ) : (
-            <select
-              value={menuItemId}
-              onChange={(e) => setMenuItemId(e.target.value)}
-              className="w-full p-2.5 border rounded-lg text-sm"
-            >
-              <option value="">Select a pizza menu item...</option>
-              {availableMenuItems.map(item => (
-                <option key={item.id} value={item.id}>
-                  {item.name} - {formatCurrency(item.price)}
-                  {item.categoryName ? ` (${item.categoryName})` : ''}
-                </option>
-              ))}
-            </select>
+            /* Select existing or create new */
+            <div className="space-y-2">
+              {availableMenuItems.length > 0 ? (
+                <select
+                  value={menuItemId}
+                  onChange={(e) => setMenuItemId(e.target.value)}
+                  className="w-full p-2.5 border rounded-lg text-sm"
+                >
+                  <option value="">Select an existing pizza...</option>
+                  {availableMenuItems.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} - {formatCurrency(item.price)}
+                      {item.categoryName ? ` (${item.categoryName})` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-500 italic">No pizza menu items available.</p>
+              )}
+              <button
+                onClick={() => setShowCreateNew(true)}
+                className="text-sm text-blue-600 hover:underline font-medium"
+              >
+                + Create a new pizza
+              </button>
+            </div>
           )}
-          {!isEdit && selectedMenuItem && (
+          {!isEdit && selectedMenuItem && !showCreateNew && (
             <div className="mt-1.5 text-sm text-green-600 font-medium">
               Selected: {selectedMenuItem.name} - {formatCurrency(selectedMenuItem.price)}
             </div>

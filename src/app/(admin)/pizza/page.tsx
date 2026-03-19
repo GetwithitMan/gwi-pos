@@ -643,6 +643,8 @@ export default function PizzaAdminPage() {
             toppings={toppings}
             onSave={handleSaveSpecialty}
             onClose={() => { setShowSpecialtyModal(false); setEditingSpecialty(null) }}
+            locationId={locationId}
+            onMenuItemCreated={() => loadAllData()}
           />
         )}
 
