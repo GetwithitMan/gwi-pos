@@ -760,15 +760,19 @@ export function SpecialtiesTab({ specialties, pizzaMenuItems, onAdd, onEdit, onD
                 >
                   {/* Row 1: Name, Price, Actions — all on one line */}
                   <div className="flex items-center gap-3">
-                    {/* Pizza name — inline editable */}
+                    {/* Pizza name */}
                     <div className="flex-1 min-w-0">
                       <span className="text-lg font-bold text-gray-900 truncate block">{item.name}</span>
                     </div>
 
-                    {/* Price */}
-                    <span className="text-base font-semibold text-green-600 whitespace-nowrap">
-                      {formatCurrency(item.price)}
-                    </span>
+                    {/* Price — clickable to edit via menu page */}
+                    <a
+                      href={`/settings/menu?item=${item.id}`}
+                      className="text-base font-semibold text-green-600 whitespace-nowrap hover:underline cursor-pointer"
+                      title="Edit price, commission, and item settings"
+                    >
+                      {formatCurrency(item.price)} ✎
+                    </a>
 
                     {/* Status badge */}
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -782,16 +786,12 @@ export function SpecialtiesTab({ specialties, pizzaMenuItems, onAdd, onEdit, onD
                     {/* Actions */}
                     {hasSpecialty ? (
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => onEdit(specialty!)}>Edit Config</Button>
-                        <Button variant="ghost" size="sm" className="text-red-500" onClick={() => onDelete(specialty!.id)}>Remove Config</Button>
+                        <Button variant="ghost" size="sm" onClick={() => onEdit(specialty!)}>Edit</Button>
+                        <Button variant="ghost" size="sm" className="text-red-500" onClick={() => onDelete(specialty!.id)}>Remove</Button>
                       </div>
                     ) : (
-                      <Button variant="outline" size="sm" onClick={() => {
-                        // Open the specialty modal pre-selecting this menu item
-                        // We pass the item ID through the onAdd callback by temporarily setting it
-                        onAdd()
-                      }}>
-                        Configure as Specialty
+                      <Button variant="outline" size="sm" onClick={onAdd}>
+                        Configure
                       </Button>
                     )}
                   </div>
