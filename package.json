@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3006 --webpack",
     "dev:server": "NODE_OPTIONS='--max-old-space-size=8192' dotenv -e .env.local -- tsx -r ./preload.js server.ts",
-    "build": "rm -rf node_modules/.prisma && prisma generate && node scripts/generate-schema-sql.mjs && cp prisma/schema.sql public/schema.sql && node scripts/generate-version-contract.mjs && next build && node scripts/build-server.mjs",
+    "build": "rm -rf node_modules/.prisma && prisma generate && node scripts/generate-schema-sql.mjs && cp prisma/schema.sql public/schema.sql && node scripts/generate-version-contract.mjs && cp src/generated/version-contract.json public/version-contract.json && next build && node scripts/build-server.mjs",
     "schema:sql": "prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script > prisma/schema.sql",
     "start": "NODE_ENV=production node -r ./preload.js server.js",
     "start:next": "next start",
