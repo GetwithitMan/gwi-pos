@@ -213,11 +213,11 @@ export async function runBootstrap(): Promise<BootstrapResult> {
             result.degradedReasons.push('backup-readonly-mode')
             // Skip all mutation paths below
           } else {
-          // Primary: full check + conditional repair
-          const neonState = await readSchemaState(neonClient)
-          const tableCount = await countTables(neonClient)
+            // Primary: full check + conditional repair
+            const neonState = await readSchemaState(neonClient)
+            const tableCount = await countTables(neonClient)
 
-          if (!neonState && tableCount === 0) {
+            if (!neonState && tableCount === 0) {
               // Primary: auto-repair via schema.sql
               log.info('Neon DB is empty — running auto-repair via canonical migration path')
               try {
@@ -241,8 +241,7 @@ export async function runBootstrap(): Promise<BootstrapResult> {
                 log.error({ err: repairErr }, 'Auto-repair of empty Neon DB failed')
                 result.neonSchemaReady = await buildReadiness(neonClient, null)
               }
-            }
-          } else if (!neonState && tableCount > 0) {
+            } else if (!neonState && tableCount > 0) {
             // Partial/unknown state -- DO NOT auto-repair
             log.error(
               { tableCount },
@@ -250,37 +249,37 @@ export async function runBootstrap(): Promise<BootstrapResult> {
               'NOT auto-repairing. Manual intervention required.'
             )
             result.neonSchemaReady = await buildReadiness(neonClient, null)
-          } else if (neonState) {
-            // State exists -- check versions
-            if (neonState.schemaVersion < EXPECTED_SCHEMA_VERSION) {
-              log.error(
-                { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
-                'Neon schema version behind — sync will be blocked. Deploy pipeline required.'
-              )
-            } else if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION) {
-              log.warn(
-                { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
-                'Neon schema version ahead of this POS build — safe to proceed'
-              )
-            }
-            result.neonSchemaReady = await buildReadiness(neonClient, neonState)
+            } else if (neonState) {
+              // State exists -- check versions
+              if (neonState.schemaVersion < EXPECTED_SCHEMA_VERSION) {
+                log.error(
+                  { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
+                  'Neon schema version behind — sync will be blocked. Deploy pipeline required.'
+                )
+              } else if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION) {
+                log.warn(
+                  { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
+                  'Neon schema version ahead of this POS build — safe to proceed'
+                )
+              }
+              result.neonSchemaReady = await buildReadiness(neonClient, neonState)
 
-            // Flag degraded if too many repairs
-            if (neonState.repairCount >= 3) {
-              log.warn({ repairCount: neonState.repairCount, lastReason: neonState.lastRepairReason },
-                'Neon DB has been repaired 3+ times — marking as degraded')
-              result.degradedReasons.push('repeated-schema-repair')
-            }
+              // Flag degraded if too many repairs
+              if (neonState.repairCount >= 3) {
+                log.warn({ repairCount: neonState.repairCount, lastReason: neonState.lastRepairReason },
+                  'Neon DB has been repaired 3+ times — marking as degraded')
+                result.degradedReasons.push('repeated-schema-repair')
+              }
 
-            // Schema ahead in production is fatal — prevents running old code against new schema
-            if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION && config.isProduction) {
-              log.fatal(
-                { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
-                'Neon schema ahead in production — aborting boot. Deploy a newer POS version.'
-              )
-              process.exit(1)
+              // Schema ahead in production is fatal — prevents running old code against new schema
+              if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION && config.isProduction) {
+                log.fatal(
+                  { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
+                  'Neon schema ahead in production — aborting boot. Deploy a newer POS version.'
+                )
+                process.exit(1)
+              }
             }
-          }
           } // close primary else block
         } finally {
           await neonClient.$disconnect()
