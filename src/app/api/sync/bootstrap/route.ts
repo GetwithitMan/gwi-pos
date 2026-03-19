@@ -145,6 +145,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 price: true,
                 depth: true,
                 preModifier: true,
+                isNoneSelection: true,
               },
             },
             ingredientModifications: {
@@ -532,6 +533,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             price: Number(mod.price),
             depth: mod.depth || 0,
             preModifier: mod.preModifier || null,
+            isNoneSelection: mod.isNoneSelection ?? false,
           })),
           ingredientModifications: item.ingredientModifications?.map((ing: any) => ({
             id: ing.id,

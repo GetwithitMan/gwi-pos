@@ -95,6 +95,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
+    // KDS Overhaul: Apply order-type filters from screen config
+    let orderTypeFilter: string[] | undefined
+    if (screenId) {
+      const screen = await db.kDSScreen.findUnique({
+        where: { id: screenId },
+        select: { orderTypeFilters: true },
+      })
+      const filters = screen?.orderTypeFilters as Record<string, boolean> | null
+      if (filters) {
+        const hiddenTypes = Object.entries(filters).filter(([, v]) => v === false).map(([k]) => k)
+        if (hiddenTypes.length > 0) {
+          orderTypeFilter = hiddenTypes
+        }
+      }
+    }
+
     // Get orders that have been sent to kitchen (including paid orders with incomplete items)
     // Cursor-based pagination: take 50 at a time for performance at 100+ open orders
     const orders = await adminDb.order.findMany({
@@ -107,6 +123,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ],
         // Only orders with items (sent to kitchen)
         items: { some: {} },
+        // KDS Overhaul: Server-side order-type filter
+        ...(orderTypeFilter ? { orderType: { notIn: orderTypeFilter } } : {}),
       },
       take: 50,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -169,6 +187,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                 preModifier: true,
                 depth: true,
                 isCustomEntry: true,
+                isNoneSelection: true,
                 customEntryName: true,
                 swapTargetName: true,
               },
@@ -287,10 +306,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               ? `${mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ')} ${mod.name}`
               : mod.name,
             depth: mod.depth || 0,
-            isCustomEntry: (mod as any).isCustomEntry ?? false,
-            isNoneSelection: (mod as any).isNoneSelection ?? false,
-            customEntryName: (mod as any).customEntryName ?? null,
-            swapTargetName: (mod as any).swapTargetName ?? null,
+            isCustomEntry: mod.isCustomEntry ?? false,
+            isNoneSelection: mod.isNoneSelection ?? false,
+            customEntryName: mod.customEntryName ?? null,
+            swapTargetName: mod.swapTargetName ?? null,
           })),
           ingredientModifications: item.ingredientModifications.map(ing => ({
             id: ing.id,
@@ -359,13 +378,33 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Resolve locationId from the first item for tenant-scoped operations
     const firstItemForDispatch = await adminDb.orderItem.findUnique({
       where: { id: itemIds[0] },
-      select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
+      select: { orderId: true, order: { select: { locationId: true, employeeId: true, status: true } } },
     })
     const locationId = firstItemForDispatch?.order?.locationId
+
+    // Guard: reject bumps on voided/cancelled orders
+    const orderStatus = firstItemForDispatch?.order?.status
+    if (orderStatus === 'voided' || orderStatus === 'cancelled') {
+      return NextResponse.json(
+        { error: `Cannot modify items on a ${orderStatus} order` },
+        { status: 400 }
+      )
+    }
 
     // Resolve bumpedBy for completedBy field
     const bumpedBy = body.employeeId || firstItemForDispatch?.order?.employeeId || 'unknown'
     const screenId = body.screenId as string | undefined
+
+    // Double-bump guard: check if items are already completed (idempotency)
+    let isDoubleBump = false
+    if (action === 'complete' || action === 'bump_order') {
+      const alreadyCompleted = await adminDb.orderItem.count({
+        where: { id: { in: itemIds }, isCompleted: true },
+      })
+      if (alreadyCompleted === itemIds.length) {
+        isDoubleBump = true // All items already done — skip side effects but return success
+      }
+    }
 
     if (action === 'complete') {
       await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
@@ -432,7 +471,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
 
       // KDS Overhaul: Fire-and-forget screen link processing after bump commits
-      if (screenId && (action === 'complete' || action === 'bump_order')) {
+      // Skip all side effects on double-bump (items already completed)
+      if (screenId && (action === 'complete' || action === 'bump_order') && !isDoubleBump) {
         void processScreenLinks(locationId, {
           orderId,
           itemIds,
@@ -627,7 +667,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
 
       // Phase 9: Print on bump — fire-and-forget print when configured and this is a final bump
-      if ((action === 'complete' || action === 'bump_order') && !isIntermediateBump && screenId) {
+      if ((action === 'complete' || action === 'bump_order') && !isIntermediateBump && !isDoubleBump && screenId) {
         void (async () => {
           try {
             const screen = await db.kDSScreen.findUnique({
@@ -649,7 +689,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
 
       // Phase 8: SMS on ready — send SMS when order is fully bumped (final) and configured
-      if ((action === 'bump_order') && !isIntermediateBump && screenId && isTwilioConfigured()) {
+      if ((action === 'bump_order') && !isIntermediateBump && !isDoubleBump && screenId && isTwilioConfigured()) {
         void (async () => {
           try {
             const screen = await db.kDSScreen.findUnique({

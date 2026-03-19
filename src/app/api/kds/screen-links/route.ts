@@ -81,6 +81,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Source and target screen must be different' }, { status: 400 })
     }
 
+    // Cycle detection: prevent reverse send_to_next links (Kitchen→Expo AND Expo→Kitchen = infinite loop)
+    if (linkType === 'send_to_next') {
+      const reverseLink = await db.kDSScreenLink.findFirst({
+        where: {
+          sourceScreenId: targetScreenId,
+          targetScreenId: sourceScreenId,
+          linkType: 'send_to_next',
+          deletedAt: null,
+        },
+      })
+      if (reverseLink) {
+        return NextResponse.json({ error: 'Cannot create reverse send_to_next link — would cause an infinite forwarding loop' }, { status: 400 })
+      }
+    }
+
     // Verify both screens exist at the same location
     const [source, target] = await Promise.all([
       db.kDSScreen.findUnique({ where: { id: sourceScreenId }, select: { id: true, locationId: true } }),

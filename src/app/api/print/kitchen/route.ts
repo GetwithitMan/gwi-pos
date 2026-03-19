@@ -438,6 +438,7 @@ function buildKitchenTicket(
       preModifier: string | null
       depth: number
       isCustomEntry?: boolean
+      isNoneSelection?: boolean
       customEntryName?: string | null
       swapTargetName?: string | null
     }>
@@ -664,7 +665,7 @@ function buildKitchenTicket(
         const preLabel = mod.preModifier
           ? mod.preModifier.split(',').map(t => t.trim()).filter(Boolean).map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' ') + ' '
           : ''
-        const customPrefix = mod.isCustomEntry ? 'CUSTOM: ' : ''
+        const customPrefix = mod.isNoneSelection ? '' : mod.isCustomEntry ? 'CUSTOM: ' : ''
         const swapSuffix = mod.swapTargetName ? ` → ${mod.swapTargetName}` : ''
         let modLine = `${customPrefix}${preLabel}${mod.name}${swapSuffix}`
         if (allCapsMods) {

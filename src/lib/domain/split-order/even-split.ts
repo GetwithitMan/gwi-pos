@@ -8,6 +8,7 @@
 import { roundToCents } from '@/lib/pricing'
 import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { ValidationError } from '@/lib/api-errors'
 import { distributeDiscountsForEvenSplit } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, EvenSplitResult } from './types'
 
@@ -23,6 +24,12 @@ export async function createEvenSplit(
   numWays: number,
 ): Promise<EvenSplitResult> {
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+
+  // Re-check status inside FOR UPDATE lock to prevent race with concurrent payment/close
+  const lockedParent = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } })
+  if (!lockedParent || !['open', 'sent', 'in_progress'].includes(lockedParent.status)) {
+    throw new ValidationError('Order status changed — cannot split')
+  }
 
   const orderTotal = Number(order.total)
   const perSplit = Math.floor((orderTotal / numWays) * 100) / 100

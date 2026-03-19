@@ -440,17 +440,21 @@ export const POST = withVenue(withTiming(async function POST(
       } }) }
     }
 
-    // RecordNo-based idempotency check
-    const recordNoDup = checkIdempotencyByRecordNo(payments[0]?.datacapRecordNo, order.payments as any)
-    if (recordNoDup) {
-      return { earlyReturn: NextResponse.json(
-        {
-          error: 'Payment with this recordNo already exists for this order',
-          code: 'DUPLICATE_RECORD_NO',
-          existingPaymentId: recordNoDup.existingPaymentId,
-        },
-        { status: 409 }
-      ) }
+    // RecordNo-based idempotency check — check ALL payments, not just the first
+    for (const payment of payments) {
+      if (payment.datacapRecordNo) {
+        const recordNoDup = checkIdempotencyByRecordNo(payment.datacapRecordNo, order.payments as any)
+        if (recordNoDup) {
+          return { earlyReturn: NextResponse.json(
+            {
+              error: 'Payment with this recordNo already exists for this order',
+              code: 'DUPLICATE_RECORD_NO',
+              existingPaymentId: recordNoDup.existingPaymentId,
+            },
+            { status: 409 }
+          ) }
+        }
+      }
     }
 
     // C18: Permission checks moved OUTSIDE the FOR UPDATE transaction (above)

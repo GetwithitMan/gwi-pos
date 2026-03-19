@@ -94,6 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       modifiers: item.modifiers.map(mod => ({
         ...mod,
         price: Number(mod.price ?? 0),
+        isNoneSelection: mod.isNoneSelection ?? false,
       })),
       itemDiscounts: (item.itemDiscounts ?? []).map(d => ({
         ...d,

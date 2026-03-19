@@ -644,9 +644,12 @@ export function useModifierSelections(
           if (group.allowStacking && current.length < group.maxSelections) {
             // Stacking enabled and room for more - add another instance
             // Use extraPrice for stacked instances (adding multiples = ordering extras)
-            const stackedPrice = modifier.extraPrice && modifier.extraPrice > 0
-              ? modifier.extraPrice
-              : modifier.price
+            // When tiered pricing is enabled, use the tiered price for the new index
+            const stackedPrice = group.tieredPricingConfig?.enabled
+              ? getTieredPrice(group, modifier, current.length)
+              : modifier.extraPrice && modifier.extraPrice > 0
+                ? modifier.extraPrice
+                : modifier.price
             const newMod: SelectedModifier = {
               id: modifier.id,
               name: modifier.displayName || modifier.name,

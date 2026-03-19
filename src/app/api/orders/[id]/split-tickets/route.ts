@@ -478,6 +478,13 @@ export const POST = withVenue(async function POST(
 
     // Create split orders in a transaction
     const createdSplits = await db.$transaction(async (tx) => {
+      // Lock the parent row and re-check status inside the transaction
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`
+      const lockedParent = await tx.order.findUnique({ where: { id }, select: { status: true } })
+      if (!lockedParent || !['open', 'sent', 'in_progress'].includes(lockedParent.status)) {
+        throw new ValidationError('Order status changed — cannot split')
+      }
+
       const splits = []
 
       for (const ticketData of ticketDataList) {
@@ -499,6 +506,7 @@ export const POST = withVenue(async function POST(
             courseNumber: item.courseNumber,
             courseStatus: item.courseStatus,
             kitchenStatus: item.kitchenStatus,
+            pricingRuleApplied: item.pricingRuleApplied ?? undefined,
             modifiers: {
               create: item.modifiers.map(mod => ({
                 locationId: parentOrder.locationId,
@@ -550,6 +558,7 @@ export const POST = withVenue(async function POST(
               courseNumber: fe.originalItem.courseNumber,
               courseStatus: fe.originalItem.courseStatus,
               kitchenStatus: fe.originalItem.kitchenStatus,
+              pricingRuleApplied: fe.originalItem.pricingRuleApplied ?? undefined,
               modifiers: {
                 create: fe.originalItem.modifiers.map((mod, i) => ({
                   locationId: parentOrder.locationId,

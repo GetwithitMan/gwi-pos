@@ -316,7 +316,7 @@ export const POST = withVenue(async function POST(
             _sum: { refundAmount: true },
           })
           const totalRefunded = Number(cumulativeRefunds._sum.refundAmount ?? 0)
-          if (totalRefunded > paymentOriginalAmount) {
+          if (totalRefunded >= paymentOriginalAmount) {
             return null // Over-refund guard
           }
 
