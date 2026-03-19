@@ -163,6 +163,21 @@ log "Network: OK"
 
 header "Station Configuration"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Role Reference:
+#   Server:   Owns local PostgreSQL, runs POS app + sync workers + heartbeat.
+#             Registered with MC. Has NEON_DATABASE_URL for cloud sync.
+#   Backup:   Streaming PG replica + keepalived VIP failover. Does NOT sync
+#             to Neon. Promotes to primary via promote.sh on failover.
+#   Terminal: Kiosk-only. No local DB. Connects to a server's URL.
+#
+# Role Transitions:
+#   Server → Terminal: removes DB credentials, MC identity, sync config.
+#   Backup → Terminal: removes HA config, PG standby, keepalived.
+#   Terminal → Server: requires fresh registration, PG setup, MC identity.
+#   Any role switch re-runs registration if needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
 # 1. Role
 echo "What role is this station?"
 echo "  1) Server  — Runs POS app + database + kiosk"
