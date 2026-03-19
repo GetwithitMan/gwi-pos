@@ -1721,12 +1721,13 @@ export const POST = withVenue(withTiming(async function POST(
         void triggerCashDrawer(order.locationId, terminalId || undefined).catch(() => {})
 
         // Part 3: Audit log when a manager processes a payment on another employee's drawer
-        if (drawerAttribution.drawerId && employeeId) {
+        const localDrawer = await resolveDrawerForPayment('cash', employeeId || null, terminalId)
+        if (localDrawer.drawerId && employeeId) {
           void (async () => {
             try {
               const ownerShift = await db.shift.findFirst({
                 where: {
-                  drawerId: drawerAttribution.drawerId!,
+                  drawerId: localDrawer.drawerId!,
                   status: 'open',
                   deletedAt: null,
                 },
@@ -1739,7 +1740,7 @@ export const POST = withVenue(withTiming(async function POST(
                     employeeId,
                     action: 'manager_drawer_access',
                     entityType: 'drawer',
-                    entityId: drawerAttribution.drawerId!,
+                    entityId: localDrawer.drawerId!,
                     details: {
                       shiftOwnerEmployeeId: ownerShift.employeeId,
                       shiftId: ownerShift.id,

@@ -58,6 +58,8 @@ const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   bottleServiceAutoGratuityPercent: 20,
   bottleServiceReAuthAlertEnabled: true,
   bottleServiceMinSpendEnforced: false,
+  // Customer Split
+  allowCustomerSplit: true,
   // Digital Receipts
   digitalReceiptRetentionDays: 90,
 }
