@@ -555,6 +555,7 @@ export default function PizzaAdminPage() {
         {activeTab === 'specialties' && (
           <SpecialtiesTab
             specialties={specialties}
+            pizzaMenuItems={pizzaMenuItems}
             onAdd={() => { setEditingSpecialty(null); setShowSpecialtyModal(true) }}
             onEdit={(specialty) => { setEditingSpecialty(specialty); setShowSpecialtyModal(true) }}
             onDelete={handleDeleteSpecialty}
