@@ -263,11 +263,15 @@ export async function requirePermission(
   }
 
   // Cloud session fallback — pos-cloud-session cookie (email/password or MC redirect)
+  // MC admins get immediate full access without employee lookup
   if (!employeeId) {
     try {
       const cloud = await getCloudSessionEmployee()
       if (cloud?.employeeId) {
         employeeId = cloud.employeeId
+        // MC cloud session employees may be in a different locationId context.
+        // Override locationId to match the cloud session so the lookup succeeds.
+        locationId = cloud.locationId
       }
     } catch { /* no cloud cookie or invalid — fall through */ }
   }
@@ -284,13 +288,21 @@ export async function requirePermission(
   // Check permission cache first (15s TTL — avoids DB hit on every API call)
   let employee = getCachedEmployee(employeeId, locationId)
   if (!employee) {
+    // Try with the provided locationId first
     employee = await EmployeeRepository.getEmployeeByIdWithInclude(
       employeeId,
       locationId,
       { role: true },
     )
+    // If not found, try without locationId constraint (MC employees may have different locationId)
+    if (!employee) {
+      employee = await db.employee.findFirst({
+        where: { id: employeeId, deletedAt: null, isActive: true },
+        include: { role: true },
+      }) as typeof employee
+    }
     if (employee) {
-      setCachedEmployee(employeeId, locationId, employee)
+      setCachedEmployee(employeeId, employee.locationId, employee)
     }
   }
 

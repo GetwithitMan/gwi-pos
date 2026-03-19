@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { createEmployeeSchema, validateRequest } from '@/lib/validations'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
@@ -95,15 +96,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create a new employee
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST(
+  request: NextRequest,
+  ctx: AuthenticatedContext
+) {
   try {
     const body = await request.json()
-
-    // Auth check — require staff.edit_profile permission
-    const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? body.requestingEmployeeId
-    const auth = await requirePermission(resolvedEmployeeId, body.locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
-    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Validate request body
     const validation = validateRequest(createEmployeeSchema, body)
@@ -213,4 +211,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
