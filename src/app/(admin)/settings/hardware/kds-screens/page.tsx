@@ -63,6 +63,35 @@ interface PairingModal {
   error: string | null
 }
 
+interface OrderBehaviorData {
+  tapToStart: boolean
+  mergeCards: boolean
+  mergeWindowMinutes: number
+  newCardPerSend: boolean
+  moveCompletedToBottom: boolean
+  strikeThroughModifiers: boolean
+  resetTimerOnRecall: boolean
+  intelligentSort: boolean
+  showAllDayCounts: boolean
+  allDayCountResetHour: number
+  orderTrackerEnabled: boolean
+  sendSmsOnReady: boolean
+  printOnBump: boolean
+  printerId: string
+}
+
+interface TransitionTimeEntry {
+  cautionMinutes: number
+  lateMinutes: number
+}
+
+interface TransitionTimesData {
+  dine_in: TransitionTimeEntry
+  takeout: TransitionTimeEntry
+  delivery: TransitionTimeEntry
+  bar_tab: TransitionTimeEntry
+}
+
 interface FormData {
   name: string
   screenType: 'kds' | 'entertainment'
@@ -76,6 +105,32 @@ interface FormData {
   stationIds: string[]
   staticIp: string
   enforceStaticIp: boolean
+  orderBehavior: OrderBehaviorData
+  transitionTimes: TransitionTimesData
+}
+
+const DEFAULT_ORDER_BEHAVIOR: OrderBehaviorData = {
+  tapToStart: false,
+  mergeCards: false,
+  mergeWindowMinutes: 5,
+  newCardPerSend: false,
+  moveCompletedToBottom: false,
+  strikeThroughModifiers: false,
+  resetTimerOnRecall: false,
+  intelligentSort: false,
+  showAllDayCounts: false,
+  allDayCountResetHour: 4,
+  orderTrackerEnabled: false,
+  sendSmsOnReady: false,
+  printOnBump: false,
+  printerId: '',
+}
+
+const DEFAULT_TRANSITION_TIMES: TransitionTimesData = {
+  dine_in: { cautionMinutes: 8, lateMinutes: 15 },
+  takeout: { cautionMinutes: 6, lateMinutes: 12 },
+  delivery: { cautionMinutes: 10, lateMinutes: 20 },
+  bar_tab: { cautionMinutes: 5, lateMinutes: 10 },
 }
 
 const DEFAULT_FORM_DATA: FormData = {
@@ -91,6 +146,8 @@ const DEFAULT_FORM_DATA: FormData = {
   stationIds: [],
   staticIp: '',
   enforceStaticIp: false,
+  orderBehavior: { ...DEFAULT_ORDER_BEHAVIOR },
+  transitionTimes: { ...DEFAULT_TRANSITION_TIMES },
 }
 
 export default function KDSScreensPage() {
@@ -150,6 +207,8 @@ export default function KDSScreensPage() {
 
   const handleEdit = (screen: KDSScreen) => {
     setEditingScreen(screen)
+    const ob = (screen as any).orderBehavior || {}
+    const tt = (screen as any).transitionTimes || {}
     setFormData({
       name: screen.name,
       screenType: screen.screenType,
@@ -163,6 +222,28 @@ export default function KDSScreensPage() {
       stationIds: screen.stations.map((s) => s.stationId),
       staticIp: screen.staticIp || '',
       enforceStaticIp: screen.enforceStaticIp,
+      orderBehavior: {
+        tapToStart: ob.tapToStart ?? DEFAULT_ORDER_BEHAVIOR.tapToStart,
+        mergeCards: ob.mergeCards ?? DEFAULT_ORDER_BEHAVIOR.mergeCards,
+        mergeWindowMinutes: ob.mergeWindowMinutes ?? DEFAULT_ORDER_BEHAVIOR.mergeWindowMinutes,
+        newCardPerSend: ob.newCardPerSend ?? DEFAULT_ORDER_BEHAVIOR.newCardPerSend,
+        moveCompletedToBottom: ob.moveCompletedToBottom ?? DEFAULT_ORDER_BEHAVIOR.moveCompletedToBottom,
+        strikeThroughModifiers: ob.strikeThroughModifiers ?? DEFAULT_ORDER_BEHAVIOR.strikeThroughModifiers,
+        resetTimerOnRecall: ob.resetTimerOnRecall ?? DEFAULT_ORDER_BEHAVIOR.resetTimerOnRecall,
+        intelligentSort: ob.intelligentSort ?? DEFAULT_ORDER_BEHAVIOR.intelligentSort,
+        showAllDayCounts: ob.showAllDayCounts ?? DEFAULT_ORDER_BEHAVIOR.showAllDayCounts,
+        allDayCountResetHour: ob.allDayCountResetHour ?? DEFAULT_ORDER_BEHAVIOR.allDayCountResetHour,
+        orderTrackerEnabled: ob.orderTrackerEnabled ?? DEFAULT_ORDER_BEHAVIOR.orderTrackerEnabled,
+        sendSmsOnReady: ob.sendSmsOnReady ?? DEFAULT_ORDER_BEHAVIOR.sendSmsOnReady,
+        printOnBump: ob.printOnBump ?? DEFAULT_ORDER_BEHAVIOR.printOnBump,
+        printerId: ob.printerId ?? DEFAULT_ORDER_BEHAVIOR.printerId,
+      },
+      transitionTimes: {
+        dine_in: { cautionMinutes: tt.dine_in?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.dine_in.cautionMinutes, lateMinutes: tt.dine_in?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.dine_in.lateMinutes },
+        takeout: { cautionMinutes: tt.takeout?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.takeout.cautionMinutes, lateMinutes: tt.takeout?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.takeout.lateMinutes },
+        delivery: { cautionMinutes: tt.delivery?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.delivery.cautionMinutes, lateMinutes: tt.delivery?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.delivery.lateMinutes },
+        bar_tab: { cautionMinutes: tt.bar_tab?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.bar_tab.cautionMinutes, lateMinutes: tt.bar_tab?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.bar_tab.lateMinutes },
+      },
     })
     setLinkTargetScreenId('')
     setLinkType('send_to_next')
@@ -191,6 +272,8 @@ export default function KDSScreensPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          orderBehavior: formData.orderBehavior,
+          transitionTimes: formData.transitionTimes,
           locationId,
           employeeId: employee?.id,
         }),
@@ -924,6 +1007,257 @@ export default function KDSScreensPage() {
                   </p>
                 </div>
               )}
+
+              {/* Order Behavior */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="font-medium text-gray-900">Order Behavior</span>
+                </div>
+
+                <div className="space-y-3">
+                  {/* tapToStart */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.tapToStart}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, tapToStart: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Tap to Start</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Tap an item to start its prep timer manually</p>
+
+                  {/* mergeCards */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.mergeCards}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, mergeCards: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Merge Cards</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Combine items from the same order into one card</p>
+
+                  {/* mergeWindowMinutes - conditional */}
+                  {formData.orderBehavior.mergeCards && (
+                    <div className="ml-6">
+                      <label className="mb-1 block text-sm font-medium text-gray-900">Merge Window (minutes)</label>
+                      <input
+                        type="number"
+                        value={formData.orderBehavior.mergeWindowMinutes}
+                        onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, mergeWindowMinutes: Math.max(0, Math.min(60, parseInt(e.target.value) || 0)) } })}
+                        className="w-24 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                        min={0}
+                        max={60}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Items sent within this window are merged into the same card</p>
+                    </div>
+                  )}
+
+                  {/* newCardPerSend */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.newCardPerSend}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, newCardPerSend: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">New Card Per Send</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Create a new card each time an order is sent to the kitchen</p>
+
+                  {/* moveCompletedToBottom */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.moveCompletedToBottom}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, moveCompletedToBottom: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Move Completed to Bottom</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Move completed items to the bottom of the display</p>
+
+                  {/* strikeThroughModifiers */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.strikeThroughModifiers}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, strikeThroughModifiers: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Strike Through Modifiers</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Show strikethrough on completed modifier items</p>
+
+                  {/* resetTimerOnRecall */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.resetTimerOnRecall}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, resetTimerOnRecall: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Reset Timer on Recall</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Reset the order timer when a bumped order is recalled</p>
+
+                  {/* intelligentSort */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.intelligentSort}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, intelligentSort: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Intelligent Sort</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Sort orders by priority and prep complexity</p>
+
+                  {/* showAllDayCounts */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.showAllDayCounts}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, showAllDayCounts: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Show All-Day Counts</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Display running totals of each item prepared today</p>
+
+                  {/* allDayCountResetHour - conditional */}
+                  {formData.orderBehavior.showAllDayCounts && (
+                    <div className="ml-6">
+                      <label className="mb-1 block text-sm font-medium text-gray-900">All-Day Count Reset Hour</label>
+                      <select
+                        value={formData.orderBehavior.allDayCountResetHour}
+                        onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, allDayCountResetHour: parseInt(e.target.value) } })}
+                        className="w-32 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                      >
+                        {Array.from({ length: 24 }, (_, i) => (
+                          <option key={i} value={i}>{i === 0 ? '12:00 AM' : i < 12 ? `${i}:00 AM` : i === 12 ? '12:00 PM' : `${i - 12}:00 PM`}</option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">Hour of the day when all-day counts reset to zero</p>
+                    </div>
+                  )}
+
+                  {/* orderTrackerEnabled */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.orderTrackerEnabled}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, orderTrackerEnabled: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Order Tracker Enabled</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Enable the customer-facing order tracker display</p>
+
+                  {/* sendSmsOnReady */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.sendSmsOnReady}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, sendSmsOnReady: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Send SMS on Ready</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Send an SMS notification to the customer when their order is ready</p>
+
+                  {/* printOnBump */}
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.orderBehavior.printOnBump}
+                      onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, printOnBump: e.target.checked } })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-900">Print on Bump</span>
+                  </label>
+                  <p className="ml-6 text-xs text-gray-500 -mt-2">Automatically print a receipt when an order is bumped</p>
+
+                  {/* printerId - conditional */}
+                  {formData.orderBehavior.printOnBump && (
+                    <div className="ml-6">
+                      <label className="mb-1 block text-sm font-medium text-gray-900">Printer ID</label>
+                      <input
+                        type="text"
+                        value={formData.orderBehavior.printerId}
+                        onChange={(e) => setFormData({ ...formData, orderBehavior: { ...formData.orderBehavior, printerId: e.target.value } })}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none"
+                        placeholder="Printer ID for bump printing"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">The ID of the printer to use when orders are bumped</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Per-Order-Type Timing */}
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 mt-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="font-medium text-amber-900">Per-Order-Type Timing</span>
+                </div>
+                <p className="text-xs text-amber-700 mb-3">
+                  Override the default caution (yellow) and late (red) thresholds per order type. These override the global timing settings above.
+                </p>
+
+                <div className="space-y-3">
+                  {([
+                    { key: 'dine_in' as const, label: 'Dine In' },
+                    { key: 'takeout' as const, label: 'Takeout' },
+                    { key: 'delivery' as const, label: 'Delivery' },
+                    { key: 'bar_tab' as const, label: 'Bar Tab' },
+                  ]).map(({ key, label }) => (
+                    <div key={key} className="grid grid-cols-[120px_1fr_1fr] gap-2 items-center">
+                      <span className="text-sm font-medium text-gray-900">{label}</span>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Caution (min)</label>
+                        <input
+                          type="number"
+                          value={formData.transitionTimes[key].cautionMinutes}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            transitionTimes: {
+                              ...formData.transitionTimes,
+                              [key]: { ...formData.transitionTimes[key], cautionMinutes: Math.max(1, parseInt(e.target.value) || 1) },
+                            },
+                          })}
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
+                          min={1}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Late (min)</label>
+                        <input
+                          type="number"
+                          value={formData.transitionTimes[key].lateMinutes}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            transitionTimes: {
+                              ...formData.transitionTimes,
+                              [key]: { ...formData.transitionTimes[key], lateMinutes: Math.max(1, parseInt(e.target.value) || 1) },
+                            },
+                          })}
+                          className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
+                          min={1}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
             {/* Actions */}
             <div className="mt-6 flex justify-end gap-3">
