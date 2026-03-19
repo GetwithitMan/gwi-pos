@@ -249,48 +249,62 @@ export function withAuth(
               const mcRoleName = MC_ROLE_MAP[payload.role] || 'MC Access'
 
               // Auto-provision a trackable MC employee if none exists
-              if (!employee && (isCloudSub || !employee)) {
+              if (!employee && isCloudSub) {
                 try {
-                  // Find or create an MC admin role with full permissions
-                  let mcRole = await db.role.findFirst({
-                    where: { locationId, name: mcRoleName, deletedAt: null },
-                    select: { id: true, permissions: true, name: true },
-                  })
-                  if (!mcRole) {
-                    mcRole = await db.role.create({
-                      data: {
-                        locationId,
-                        name: mcRoleName,
-                        permissions: ['all'],
-                        roleType: 'ADMIN',
-                        accessLevel: 'OWNER_ADMIN',
-                      },
-                      select: { id: true, permissions: true, name: true },
-                    }) as any
-                  }
-
-                  if (mcRole) {
-                    const nameParts = (payload.name || 'MC Admin').split(' ')
-                    const { hash } = await import('bcryptjs')
-                    const { randomInt } = await import('crypto')
-                    const rawPin = String(randomInt(100000, 1000000))
-                    const hashedPin = await hash(rawPin, 10)
-
-                    const created = await db.employee.create({
-                      data: {
-                        locationId,
-                        firstName: nameParts[0] || 'MC',
-                        lastName: nameParts.slice(1).join(' ') || 'Admin',
-                        displayName: payload.name || mcRoleName,
-                        email: payload.email || null,
-                        pin: hashedPin,
-                        roleId: mcRole.id,
-                        isActive: true,
-                      },
+                  // FIRST: check for existing MC employee by email (prevents duplicates on cold starts)
+                  if (payload.email) {
+                    employee = await db.employee.findFirst({
+                      where: { locationId, email: { equals: payload.email, mode: 'insensitive' }, deletedAt: null },
                       select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
                     })
-                    employee = created
-                    log.info(`[withAuth] Auto-provisioned ${mcRoleName} employee: ${created.id} (${payload.email || payload.name})`)
+                    if (employee) {
+                      log.info(`[withAuth] Found existing MC employee by email: ${employee.id} (${payload.email})`)
+                    }
+                  }
+
+                  // Only create if truly no employee found
+                  if (!employee) {
+                    // Find or create an MC admin role with full permissions
+                    let mcRole = await db.role.findFirst({
+                      where: { locationId, name: mcRoleName, deletedAt: null },
+                      select: { id: true, permissions: true, name: true },
+                    })
+                    if (!mcRole) {
+                      mcRole = await db.role.create({
+                        data: {
+                          locationId,
+                          name: mcRoleName,
+                          permissions: ['all'],
+                          roleType: 'ADMIN',
+                          accessLevel: 'OWNER_ADMIN',
+                        },
+                        select: { id: true, permissions: true, name: true },
+                      }) as any
+                    }
+
+                    if (mcRole) {
+                      const nameParts = (payload.name || 'MC Admin').split(' ')
+                      const { hash } = await import('bcryptjs')
+                      const { randomInt } = await import('crypto')
+                      const rawPin = String(randomInt(100000, 1000000))
+                      const hashedPin = await hash(rawPin, 10)
+
+                      const created = await db.employee.create({
+                        data: {
+                          locationId,
+                          firstName: nameParts[0] || 'MC',
+                          lastName: nameParts.slice(1).join(' ') || 'Admin',
+                          displayName: payload.name || mcRoleName,
+                          email: payload.email || null,
+                          pin: hashedPin,
+                          roleId: mcRole.id,
+                          isActive: true,
+                        },
+                        select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
+                      })
+                      employee = created
+                      log.info(`[withAuth] Auto-provisioned ${mcRoleName} employee: ${created.id} (${payload.email || payload.name})`)
+                    }
                   }
                 } catch (provisionErr) {
                   log.error('[withAuth] Failed to auto-provision MC employee:', provisionErr)
