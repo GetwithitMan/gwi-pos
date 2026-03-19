@@ -176,8 +176,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
       // ── End requireTipsAdjusted check ──────────────────────────────────
 
-      const regularHours = Math.min(workedHours, 8)
-      const overtimeHours = Math.max(0, workedHours - 8)
+      const otThreshold = breakConfig.overtimeThresholdHours ?? 8
+      const regularHours = Math.min(workedHours, otThreshold)
+      const overtimeHours = Math.max(0, workedHours - otThreshold)
 
       const updateData: Record<string, unknown> = {
         clockOut: now,

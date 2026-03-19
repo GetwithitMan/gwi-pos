@@ -1716,8 +1716,44 @@ export const POST = withVenue(withTiming(async function POST(
 
       // Kick cash drawer on cash payments (Skill 56) — fire-and-forget
       // Failure must never fail the payment response
+      // Pass terminalId so the drawer kicks on THIS terminal's printer, not the location default
       if (hasCash) {
-        void triggerCashDrawer(order.locationId).catch(() => {})
+        void triggerCashDrawer(order.locationId, terminalId || undefined).catch(() => {})
+
+        // Part 3: Audit log when a manager processes a payment on another employee's drawer
+        if (drawerAttribution.drawerId && employeeId) {
+          void (async () => {
+            try {
+              const ownerShift = await db.shift.findFirst({
+                where: {
+                  drawerId: drawerAttribution.drawerId!,
+                  status: 'open',
+                  deletedAt: null,
+                },
+                select: { id: true, employeeId: true },
+              })
+              if (ownerShift && ownerShift.employeeId !== employeeId) {
+                void db.auditLog.create({
+                  data: {
+                    locationId: order.locationId,
+                    employeeId,
+                    action: 'manager_drawer_access',
+                    entityType: 'drawer',
+                    entityId: drawerAttribution.drawerId!,
+                    details: {
+                      shiftOwnerEmployeeId: ownerShift.employeeId,
+                      shiftId: ownerShift.id,
+                      orderId,
+                      reason: 'Payment processed by different employee',
+                    },
+                  },
+                }).catch(console.error)
+              }
+            } catch (err) {
+              console.error('[Pay] Manager drawer access audit failed:', err)
+            }
+          })()
+        }
       }
 
       // Allocate tips via the tip bank pipeline (Skill 269)

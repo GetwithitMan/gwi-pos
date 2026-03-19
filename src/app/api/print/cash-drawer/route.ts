@@ -15,8 +15,9 @@ import { getLocationSettings } from '@/lib/location-cache'
  * Sends an ESC/POS drawer-kick command to the receipt printer for a location.
  * This route is the "No Sale" cash drawer open (not triggered by payment).
  *
- * Body: { locationId?: string, employeeId?: string, reason?: string }
+ * Body: { locationId?: string, employeeId?: string, reason?: string, terminalId?: string }
  * If locationId is omitted, it is resolved from the venue context (first active location).
+ * If terminalId is provided, kicks the terminal's assigned receipt printer instead of location default.
  *
  * Always returns 200. On missing printer returns { success: false, reason }.
  * On send failure returns { success: false, error }.
@@ -28,6 +29,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       locationId?: string
       employeeId?: string
       reason?: string
+      terminalId?: string
     }
 
     // Resolve locationId — body takes precedence; fall back to the venue's only location
@@ -53,16 +55,45 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Find the active receipt printer for this location
-    const printer = await db.printer.findFirst({
-      where: {
-        locationId,
-        printerRole: 'receipt',
-        isActive: true,
-        deletedAt: null,
-      },
-      select: { id: true, ipAddress: true, port: true },
-    })
+    // Find receipt printer: terminal-specific first, then location default
+    let printer: { id: string; ipAddress: string; port: number } | null = null
+
+    // Also check x-terminal-id header (Android devices send it there)
+    const terminalId = body.terminalId || request.headers.get('x-terminal-id') || null
+
+    if (terminalId) {
+      const terminal = await db.terminal.findUnique({
+        where: { id: terminalId },
+        select: {
+          id: true,
+          name: true,
+          receiptPrinterId: true,
+          receiptPrinter: {
+            select: { id: true, ipAddress: true, port: true, isActive: true, deletedAt: true },
+          },
+        },
+      })
+      if (terminal?.receiptPrinter && terminal.receiptPrinter.isActive && !terminal.receiptPrinter.deletedAt) {
+        printer = {
+          id: terminal.receiptPrinter.id,
+          ipAddress: terminal.receiptPrinter.ipAddress,
+          port: terminal.receiptPrinter.port,
+        }
+      }
+    }
+
+    // Fall back to location default receipt printer
+    if (!printer) {
+      printer = await db.printer.findFirst({
+        where: {
+          locationId,
+          printerRole: 'receipt',
+          isActive: true,
+          deletedAt: null,
+        },
+        select: { id: true, ipAddress: true, port: true },
+      })
+    }
 
     if (!printer) {
       // W1-PR3: Return 404 when no printer configured

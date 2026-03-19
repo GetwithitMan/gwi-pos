@@ -80,16 +80,43 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // ── Find receipt printer for this location ───────────────────────
-    const printer = await db.printer.findFirst({
-      where: {
-        locationId: drawer.locationId,
-        printerRole: 'receipt',
-        isActive: true,
-        deletedAt: null,
-      },
-      select: { id: true, ipAddress: true, port: true },
-    })
+    // ── Find receipt printer: terminal-specific first, then location default
+    let printer: { id: string; ipAddress: string; port: number } | null = null
+
+    // If the drawer is assigned to a terminal, use that terminal's receipt printer
+    if (drawer.deviceId) {
+      const terminal = await db.terminal.findUnique({
+        where: { id: drawer.deviceId },
+        select: {
+          id: true,
+          name: true,
+          receiptPrinterId: true,
+          receiptPrinter: {
+            select: { id: true, ipAddress: true, port: true, isActive: true, deletedAt: true },
+          },
+        },
+      })
+      if (terminal?.receiptPrinter && terminal.receiptPrinter.isActive && !terminal.receiptPrinter.deletedAt) {
+        printer = {
+          id: terminal.receiptPrinter.id,
+          ipAddress: terminal.receiptPrinter.ipAddress,
+          port: terminal.receiptPrinter.port,
+        }
+      }
+    }
+
+    // Fall back to location default receipt printer
+    if (!printer) {
+      printer = await db.printer.findFirst({
+        where: {
+          locationId: drawer.locationId,
+          printerRole: 'receipt',
+          isActive: true,
+          deletedAt: null,
+        },
+        select: { id: true, ipAddress: true, port: true },
+      })
+    }
 
     if (!printer) {
       return NextResponse.json(
@@ -123,6 +150,35 @@ export const POST = withVenue(async function POST(
         },
       },
     }).catch(console.error)
+
+    // ── Manager drawer access audit (fire-and-forget) ──────────────
+    // If the employee opening this drawer is different from the shift owner, log it
+    void (async () => {
+      try {
+        const ownerShift = await db.shift.findFirst({
+          where: { drawerId, status: 'open', deletedAt: null },
+          select: { id: true, employeeId: true },
+        })
+        if (ownerShift && ownerShift.employeeId !== body.employeeId) {
+          void db.auditLog.create({
+            data: {
+              locationId: drawer.locationId,
+              employeeId: body.employeeId,
+              action: 'manager_drawer_access',
+              entityType: 'drawer',
+              entityId: drawerId,
+              details: {
+                shiftOwnerEmployeeId: ownerShift.employeeId,
+                shiftId: ownerShift.id,
+                reason: 'No-sale drawer open by different employee',
+              },
+            },
+          }).catch(console.error)
+        }
+      } catch (err) {
+        console.error('[drawer/open] Manager drawer access audit failed:', err)
+      }
+    })()
 
     // ── Socket event (fire-and-forget) ───────────────────────────────
     void emitToLocation(drawer.locationId, 'drawer:no-sale-open', {

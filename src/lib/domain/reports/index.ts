@@ -34,6 +34,21 @@ export {
   // to avoid duplicate export. Consumers import roundMoney from this barrel.
 } from './aggregations'
 
+// ─── Variation Fingerprint (PMix Drilldown) ─────────────────────────────────
+
+export {
+  computeVariationFingerprint,
+  groupByVariation,
+} from './variation-fingerprint'
+
+export type {
+  VariationModifier,
+  VariationIngredientMod,
+  VariationModifierPrice,
+  TransformedOrderItem,
+  VariationGroup,
+} from './variation-fingerprint'
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type {

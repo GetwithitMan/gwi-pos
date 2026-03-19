@@ -330,13 +330,36 @@ export async function allocateTipsForOrder(params: {
   const activeGroup = await findActiveGroupForEmployee(primaryEmployeeId)
 
   if (!activeGroup) {
+    // ── Tip Attribution: tab_owner vs tab_closer ──────────────────────────
+    // When tipAttribution is 'tab_owner' and the closer is NOT in a tip group,
+    // credit the original tab owner instead of whoever processed the payment.
+    let tipRecipientId = primaryEmployeeId  // Default: closer gets the tip
+    const locationSettings = await getLocationSettings(locationId)
+    const parsedForAttribution = locationSettings ? parseSettings(locationSettings) : null
+    const attribution = parsedForAttribution?.tipBank?.tipAttribution ?? 'tab_closer'
+
+    if (attribution === 'tab_owner') {
+      const order = await OrderRepository.getOrderByIdWithSelect(
+        orderId,
+        locationId,
+        { employeeId: true },
+      )
+      if (order?.employeeId && order.employeeId !== primaryEmployeeId) {
+        // Check if the owner is in a tip group — if yes, don't override (group handles it)
+        const ownerGroup = await findActiveGroupForEmployee(order.employeeId)
+        if (!ownerGroup) {
+          tipRecipientId = order.employeeId  // Credit to tab owner
+        }
+      }
+    }
+
     // ── Individual Mode ──────────────────────────────────────────────────
     return allocateIndividual({
       locationId,
       orderId,
       paymentId,
       tipAmountCents,
-      primaryEmployeeId,
+      primaryEmployeeId: tipRecipientId,
       sourceType,
       collectedAt,
       ccFeeAmountCents,

@@ -7,7 +7,8 @@ import { ToggleRow, SettingsSaveBar } from '@/components/admin/settings'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { ClockOutSettings, BusinessDaySettings } from '@/lib/settings'
+import type { ClockOutSettings, BusinessDaySettings, BreakComplianceSettings } from '@/lib/settings'
+import { DEFAULT_BREAK_COMPLIANCE } from '@/lib/settings'
 
 export default function StaffShiftsPage() {
   const { employee } = useRequireAuth()
@@ -18,6 +19,7 @@ export default function StaffShiftsPage() {
 
   const [clockOut, setClockOut] = useState<ClockOutSettings | null>(null)
   const [businessDay, setBusinessDay] = useState<BusinessDaySettings | null>(null)
+  const [breaks, setBreaks] = useState<BreakComplianceSettings>(DEFAULT_BREAK_COMPLIANCE)
 
   useUnsavedWarning(isDirty)
 
@@ -29,6 +31,7 @@ export default function StaffShiftsPage() {
         const data = await loadSettingsApi(controller.signal)
         setClockOut(data.settings.clockOut)
         setBusinessDay(data.settings.businessDay)
+        setBreaks(data.settings.breaks ?? DEFAULT_BREAK_COMPLIANCE)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load settings')
@@ -49,9 +52,10 @@ export default function StaffShiftsPage() {
     if (!clockOut || !businessDay) return
     try {
       setIsSaving(true)
-      const data = await saveSettingsApi({ clockOut, businessDay }, employee?.id)
+      const data = await saveSettingsApi({ clockOut, businessDay, breaks }, employee?.id)
       setClockOut(data.settings.clockOut)
       setBusinessDay(data.settings.businessDay)
+      setBreaks(data.settings.breaks ?? DEFAULT_BREAK_COMPLIANCE)
       setIsDirty(false)
       toast.success('Staff & Shifts settings saved')
     } catch (err) {
@@ -68,6 +72,11 @@ export default function StaffShiftsPage() {
 
   const updateBusinessDay = <K extends keyof BusinessDaySettings>(key: K, value: BusinessDaySettings[K]) => {
     setBusinessDay(prev => prev ? { ...prev, [key]: value } : prev)
+    setIsDirty(true)
+  }
+
+  const updateBreaks = <K extends keyof BreakComplianceSettings>(key: K, value: BreakComplianceSettings[K]) => {
+    setBreaks(prev => ({ ...prev, [key]: value }))
     setIsDirty(true)
   }
 
@@ -153,7 +162,93 @@ export default function StaffShiftsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
-            Card 2: Business Day Boundary
+            Card 2: Break Compliance & Overtime
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Break Compliance & Overtime</h2>
+          <p className="text-sm text-gray-600 mb-5">Configure break enforcement rules and overtime thresholds for labor compliance.</p>
+
+          {/* Compliance Mode */}
+          <div className="flex items-center justify-between py-3 border-b border-gray-100">
+            <div>
+              <div className="text-sm text-gray-900">Break Compliance Mode</div>
+              <div className="text-xs text-gray-600">
+                <strong>Off</strong> = no enforcement. <strong>Warn</strong> = allow clock-out but show a warning if no break was taken. <strong>Enforce</strong> = block clock-out until a break is taken.
+              </div>
+            </div>
+            <select
+              value={breaks.complianceMode}
+              onChange={e => updateBreaks('complianceMode', e.target.value as 'off' | 'warn' | 'enforce')}
+              aria-label="Break compliance mode"
+              className="w-36 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="off">Off</option>
+              <option value="warn">Warn</option>
+              <option value="enforce">Enforce</option>
+            </select>
+          </div>
+
+          {/* Min Shift for Break */}
+          <div className="flex items-center justify-between py-3 border-b border-gray-100">
+            <div>
+              <div className="text-sm text-gray-900">Minimum Shift for Break (hours)</div>
+              <div className="text-xs text-gray-600">Shifts longer than this many hours require a break. Most states use 5 or 6 hours.</div>
+            </div>
+            <input
+              type="number"
+              min="1"
+              max="12"
+              step="0.5"
+              value={breaks.minShiftForBreak}
+              onChange={e => updateBreaks('minShiftForBreak', parseFloat(e.target.value) || 5)}
+              aria-label="Minimum shift hours for break"
+              className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+
+          {/* Break Duration */}
+          <div className="flex items-center justify-between py-3 border-b border-gray-100">
+            <div>
+              <div className="text-sm text-gray-900">Minimum Break Duration (minutes)</div>
+              <div className="text-xs text-gray-600">The minimum number of minutes a break must last to satisfy compliance. Most states require 30 minutes.</div>
+            </div>
+            <input
+              type="number"
+              min="5"
+              max="60"
+              step="5"
+              value={breaks.breakDurationMinutes}
+              onChange={e => updateBreaks('breakDurationMinutes', parseInt(e.target.value) || 30)}
+              aria-label="Minimum break duration minutes"
+              className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+
+          {/* Overtime Threshold */}
+          <div className="flex items-center justify-between py-3">
+            <div>
+              <div className="text-sm text-gray-900">Overtime Threshold (hours)</div>
+              <div className="text-xs text-gray-600">Hours worked beyond this threshold count as overtime. Federal default is 8 hours; some states use different thresholds.</div>
+            </div>
+            <input
+              type="number"
+              min="4"
+              max="24"
+              step="0.5"
+              value={breaks.overtimeThresholdHours ?? 8}
+              onChange={e => updateBreaks('overtimeThresholdHours', parseFloat(e.target.value) || 8)}
+              aria-label="Overtime threshold hours"
+              className="w-24 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-gray-900 text-sm text-right focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+
+          <p className="mt-4 text-xs text-gray-600 border-t border-gray-100 pt-4">
+            Break compliance rules are checked at clock-out time. Overtime threshold affects how regular vs. overtime hours are calculated on each shift.
+          </p>
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 3: Business Day Boundary
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">End-of-Day Automatic Rules</h2>

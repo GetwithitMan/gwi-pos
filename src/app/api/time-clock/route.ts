@@ -444,9 +444,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }
         // ── End requireTipsAdjusted check ──────────────────────────────────
 
-        // Calculate regular vs overtime (over 8 hours)
-        const regularHours = Math.min(workedHours, 8)
-        const overtimeHours = Math.max(0, workedHours - 8)
+        // Calculate regular vs overtime (configurable threshold, default 8 hours)
+        const otThreshold = breakConfig.overtimeThresholdHours ?? 8
+        const regularHours = Math.min(workedHours, otThreshold)
+        const overtimeHours = Math.max(0, workedHours - otThreshold)
 
         updateData = {
           clockOut: now,
@@ -676,8 +677,11 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       const totalMinutes = (effectiveClockOut.getTime() - effectiveClockIn.getTime()) / (1000 * 60)
       const effectiveBreak = breakMinutes !== undefined ? breakMinutes : (original.breakMinutes || 0)
       const workedHours = (totalMinutes - effectiveBreak) / 60
-      updateData.regularHours = Math.round(Math.min(workedHours, 8) * 100) / 100
-      updateData.overtimeHours = Math.round(Math.max(0, workedHours - 8) * 100) / 100
+      const patchLocSettings = parseSettings(await getLocationSettings(original.locationId))
+      const patchBreakConfig = patchLocSettings.breaks ?? DEFAULT_BREAK_COMPLIANCE
+      const patchOtThreshold = patchBreakConfig.overtimeThresholdHours ?? 8
+      updateData.regularHours = Math.round(Math.min(workedHours, patchOtThreshold) * 100) / 100
+      updateData.overtimeHours = Math.round(Math.max(0, workedHours - patchOtThreshold) * 100) / 100
     }
 
     const updated = await db.timeClockEntry.update({

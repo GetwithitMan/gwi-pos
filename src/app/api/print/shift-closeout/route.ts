@@ -86,6 +86,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
+    // Fetch paid-in/out transactions during this shift's time range and drawer
+    const paidInOuts = shift.drawerId
+      ? await db.paidInOut.findMany({
+          where: {
+            locationId,
+            drawerId: shift.drawerId,
+            createdAt: { gte: shift.startedAt, lte: endTime },
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'asc' },
+        })
+      : []
+
     // Build employee display name
     const employeeName = shift.employee.displayName
       || `${shift.employee.firstName} ${shift.employee.lastName || ''}`.trim()
@@ -138,6 +151,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       payoutAmount: netTips,
       safeDrop,
       employeeTakeHome,
+      paidInOuts: paidInOuts.map(pio => ({
+        type: pio.type as 'in' | 'out',
+        reason: pio.reason,
+        amount: Number(pio.amount),
+      })),
     }
 
     const buffer = buildShiftCloseoutReceipt(receiptData)

@@ -172,6 +172,11 @@ export interface TipBankSettings {
 
   // No Tip Quick Button — show a "$0 Tip" button on the tip prompt screen
   noTipQuickButton: boolean  // If true, a "$0 Tip" button appears on the tip prompt (default: false)
+
+  // Tip Attribution (non-group) — who gets the tip when no tip group is active
+  // tab_closer = whoever processes the payment gets the tip (default, current behavior)
+  // tab_owner = the employee who originally opened the tab gets the tip
+  tipAttribution: 'tab_owner' | 'tab_closer'
 }
 
 export interface AutoGratuitySettings {
@@ -218,15 +223,17 @@ export interface BusinessDaySettings {
 // ─── Break Compliance Settings ──────────────────────────────────────────────
 
 export interface BreakComplianceSettings {
-  complianceMode: 'off' | 'warn' | 'enforce'   // How to handle missing breaks (default: 'warn')
+  complianceMode: 'off' | 'warn' | 'enforce'   // How to handle missing breaks (default: 'off')
   minShiftForBreak: number                       // Hours — shifts longer than this require a break (default: 5)
   breakDurationMinutes: number                   // Minimum break duration in minutes (default: 30)
+  overtimeThresholdHours?: number                // Hours before overtime kicks in (default: 8), configurable for state rules
 }
 
 export const DEFAULT_BREAK_COMPLIANCE: BreakComplianceSettings = {
-  complianceMode: 'warn',
+  complianceMode: 'off',
   minShiftForBreak: 5,
   breakDurationMinutes: 30,
+  overtimeThresholdHours: 8,
 }
 
 export const DEFAULT_AUTO_GRATUITY: AutoGratuitySettings = {
@@ -304,6 +311,9 @@ export interface PaymentSettings {
   walkoutRetryFrequencyDays: number          // Days between retry attempts (default: 3)
   walkoutMaxRetryDays: number                // Stop retrying after this many days (default: 30)
   walkoutAutoDetectMinutes: number           // Auto-detect walkout if tab idle for N minutes (default: 120)
+
+  // Payment Terminal / Customer Split
+  allowCustomerSplit: boolean                // Show customer split options on PAX payment terminal (default: true)
 
   // Card Recognition (Phase 8)
   cardRecognitionEnabled: boolean            // Enable repeat customer tracking by card (default: true)
@@ -1465,6 +1475,7 @@ export interface CashManagementSettings {
   requireWitnessForDrops: boolean     // Require a second employee to witness safe drops (default: false)
   requireReasonForNoSale: boolean     // Require a reason code when opening drawer without a sale (default: true)
   maxDropAmount: number               // Maximum single safe drop amount in dollars (default: 500.00)
+  paidOutApprovalThreshold: number    // Dollar amount — paid-out over this requires manager approval (default: 100.00)
 }
 
 export const DEFAULT_CASH_MANAGEMENT: CashManagementSettings = {
@@ -1473,6 +1484,7 @@ export const DEFAULT_CASH_MANAGEMENT: CashManagementSettings = {
   requireWitnessForDrops: false,
   requireReasonForNoSale: true,
   maxDropAmount: 500.00,
+  paidOutApprovalThreshold: 100.00,
 }
 
 // ─── Login Message Settings ──────────────────────────────────────────────────
@@ -1820,6 +1832,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     allowStandaloneServers: true,            // Allow "No Group" option at clock-in
     allowEmployeeCreatedGroups: true,        // Allow ad-hoc group creation (legacy behavior)
     noTipQuickButton: false,                 // Off by default to encourage tipping
+    tipAttribution: 'tab_closer',            // Default: whoever processes the payment gets the tip
   },
   receipts: {
     headerText: 'Thank you for your visit!',
@@ -1860,6 +1873,8 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     walkoutRetryFrequencyDays: 3,
     walkoutMaxRetryDays: 30,
     walkoutAutoDetectMinutes: 120,
+    // Payment Terminal / Customer Split
+    allowCustomerSplit: true,
     // Card Recognition
     cardRecognitionEnabled: true,
     cardRecognitionToastEnabled: true,

@@ -173,27 +173,30 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Manager approval required for paid-out over $100
+    // Manager approval required for paid-out over threshold
+    // TODO: Make threshold configurable via cashManagement settings (e.g. cashManagement.paidOutApprovalThreshold)
+    const PAID_OUT_APPROVAL_THRESHOLD = 100
     const managerId = body.managerId as string | undefined
-    if (type === 'paid_out' && Number(amount) > 100) {
-      if (!managerId) {
+    if (type === 'paid_out' && Number(amount) > PAID_OUT_APPROVAL_THRESHOLD) {
+      if (!managerId && !approvedBy) {
         return NextResponse.json(
-          { error: 'Manager approval required for paid-out over $100' },
-          { status: 400 }
+          { error: 'Paid-out transactions over $100 require manager approval. Please enter a manager PIN.' },
+          { status: 403 }
         )
       }
-      // Verify manager exists and has manager permissions
-      const manager = await db.employee.findFirst({
-        where: { id: managerId, locationId, isActive: true, deletedAt: null },
-        include: { role: true },
-      })
-      if (!manager) {
+      // Verify the approver has the right permission
+      const approverAuth = await requirePermission(
+        managerId || approvedBy,
+        locationId,
+        PERMISSIONS.MGR_PAY_IN_OUT
+      )
+      if (!approverAuth.authorized) {
         return NextResponse.json(
-          { error: 'Invalid manager ID' },
-          { status: 400 }
+          { error: 'Approver does not have paid-in/out permission' },
+          { status: 403 }
         )
       }
-      console.log(`[AUDIT] PAID_OUT approved by manager ${managerId} (${manager.firstName} ${manager.lastName})`)
+      console.log(`[AUDIT] PAID_OUT over $${PAID_OUT_APPROVAL_THRESHOLD} approved by ${managerId || approvedBy}`)
     }
 
     // Resolve drawer — use provided drawerId or find first active drawer

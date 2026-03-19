@@ -607,6 +607,42 @@ export default function TipSettingsPage() {
               border
             />
           </div>
+
+          {/* Tip Attribution (non-group) */}
+          <div className="pt-4 mt-4 border-t border-gray-100">
+            <label className="block text-sm font-medium text-gray-900 mb-1">Tip Attribution (when not using tip groups)</label>
+            <p className="text-xs text-gray-600 mb-3">When an employee is NOT in a tip group, who receives the tip credit on a tab?</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => updateTipBank('tipAttribution', 'tab_closer')}
+                className={`text-left p-3 rounded-xl border transition-all ${
+                  (tipBank.tipAttribution ?? 'tab_closer') === 'tab_closer'
+                    ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                    : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                }`}
+              >
+                <div className={`text-sm font-medium ${(tipBank.tipAttribution ?? 'tab_closer') === 'tab_closer' ? 'text-indigo-600' : 'text-gray-900'}`}>
+                  Tab Closer
+                </div>
+                <div className="text-xs text-gray-600 mt-0.5">Tips go to whoever closes/processes the payment</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => updateTipBank('tipAttribution', 'tab_owner')}
+                className={`text-left p-3 rounded-xl border transition-all ${
+                  (tipBank.tipAttribution ?? 'tab_closer') === 'tab_owner'
+                    ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                    : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                }`}
+              >
+                <div className={`text-sm font-medium ${(tipBank.tipAttribution ?? 'tab_closer') === 'tab_owner' ? 'text-indigo-600' : 'text-gray-900'}`}>
+                  Tab Owner
+                </div>
+                <div className="text-xs text-gray-600 mt-0.5">Tips go to the server who originally opened the tab</div>
+              </button>
+            </div>
+          </div>
         </section>
 
         {/* ═══════════════════════════════════════════

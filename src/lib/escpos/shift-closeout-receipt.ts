@@ -38,6 +38,8 @@ export interface ShiftCloseoutData {
   // Safe drop
   safeDrop: number
   employeeTakeHome: number
+  // Paid in/out
+  paidInOuts: Array<{ type: 'in' | 'out'; reason: string; amount: number }>
 }
 
 export function buildShiftCloseoutReceipt(data: ShiftCloseoutData): Buffer {
@@ -87,6 +89,27 @@ export function buildShiftCloseoutReceipt(data: ShiftCloseoutData): Buffer {
   parts.push(twoColumnLine('Expected', formatDollars(data.expectedCash), W))
   parts.push(twoColumnLine('Counted', formatDollars(data.countedCash), W))
   parts.push(twoColumnLine('Variance', formatDollars(data.variance), W))
+
+  // Paid In/Out
+  if (data.paidInOuts.length > 0) {
+    parts.push(divider(W))
+    parts.push(ESCPOS.ALIGN_CENTER)
+    parts.push(boldLine('PAID IN/OUT'))
+    parts.push(ESCPOS.ALIGN_LEFT)
+
+    let netPaidInOut = 0
+    for (const pio of data.paidInOuts) {
+      const sign = pio.type === 'in' ? '+' : '-'
+      const displayAmount = `${sign}${formatDollars(pio.amount)}`
+      netPaidInOut += pio.type === 'in' ? pio.amount : -pio.amount
+      parts.push(twoColumnLine(`  ${pio.reason}`, displayAmount, W))
+    }
+
+    parts.push(divider(W))
+    const netSign = netPaidInOut < 0 ? '-' : netPaidInOut > 0 ? '+' : ''
+    parts.push(twoColumnLine('  Net Paid In/Out:', `${netSign}${formatDollars(Math.abs(netPaidInOut))}`, W))
+    parts.push(divider(W))
+  }
 
   // Tips
   parts.push(divider(W))

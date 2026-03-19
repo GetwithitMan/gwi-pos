@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dateRangeToUTC } from '@/lib/timezone'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { computeVariationFingerprint } from '@/lib/domain/reports/variation-fingerprint'
 
 // GET - Product mix report
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -14,6 +15,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const categoryId = searchParams.get('categoryId')
+    const orderType = searchParams.get('orderType')
     const groupBy = searchParams.get('groupBy') || 'item' // item, category, hour, day
     const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
@@ -61,6 +63,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           status: { in: [...REVENUE_ORDER_STATUSES] },
           parentOrderId: null,
           paidAt: dateFilter,
+          ...(orderType ? { orderType } : {}),
         },
         status: 'active',
         ...(categoryId ? { menuItem: { categoryId } } : {}),
@@ -82,6 +85,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               select: {
                 id: true,
                 name: true,
+                categoryType: true,
               },
             },
             price: true,
@@ -89,6 +93,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
         },
         modifiers: true,
+        ingredientModifications: {
+          select: { ingredientName: true, modificationType: true, swappedToModifierName: true },
+        },
       },
     })
 
@@ -163,6 +170,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let totalCost = 0
     let totalQuantity = 0
 
+    // Track raw order items per grouping key for variation fingerprinting
+    const itemOrderItemsMap = new Map<string, typeof orderItems>()
+
     // Group by item
     const itemMap = new Map<string, {
       menuItemId: string
@@ -170,6 +180,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       pricingOptionLabel: string | null
       categoryId: string
       categoryName: string
+      categoryType: string
       quantity: number
       revenue: number
       cost: number
@@ -178,6 +189,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       soldByWeight: boolean
       totalWeight: number
       weightUnit: string | null
+      totalOuncesPoured: number
       orderTypes: Record<string, number>
       hourlyDistribution: Record<number, number>
     }>()
@@ -191,6 +203,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ? `${menuItem.name} (${item.pricingOptionLabel})`
         : menuItem.name
 
+      // Collect raw order items for variation fingerprinting
+      if (!itemOrderItemsMap.has(key)) itemOrderItemsMap.set(key, [])
+      itemOrderItemsMap.get(key)!.push(item)
+
       const itemTotal = Number(item.itemTotal)
       const unitCost = item.costAtSale != null ? Number(item.costAtSale) : (menuItem.cost ? Number(menuItem.cost) : 0)
       const itemCost = unitCost * item.quantity
@@ -201,10 +217,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       totalQuantity += item.quantity
 
       const hour = item.order.paidAt ? new Date(item.order.paidAt).getHours() : 0
-      const orderType = item.order.orderType || 'dine_in'
+      const itemOrderType = item.order.orderType || 'dine_in'
 
       const isByWeight = item.soldByWeight === true
       const itemWeight = isByWeight && item.weight ? Number(item.weight) * item.quantity : 0
+
+      // Ounces poured for liquor/drinks items
+      const categoryType = menuItem.category.categoryType || ''
+      const isLiquorOrDrinks = categoryType === 'liquor' || categoryType === 'drinks'
+      const basePourOz = 1.5
+      const multiplier = Number(item.pourMultiplier) || 1.0
+      const itemOunces = isLiquorOrDrinks ? basePourOz * multiplier * item.quantity : 0
 
       if (itemMap.has(key)) {
         const existing = itemMap.get(key)!
@@ -214,7 +237,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         existing.profit += (itemTotal - itemCost)
         existing.modifierRevenue += modifierTotal
         if (isByWeight) existing.totalWeight += itemWeight
-        existing.orderTypes[orderType] = (existing.orderTypes[orderType] || 0) + item.quantity
+        existing.totalOuncesPoured += itemOunces
+        existing.orderTypes[itemOrderType] = (existing.orderTypes[itemOrderType] || 0) + item.quantity
         existing.hourlyDistribution[hour] = (existing.hourlyDistribution[hour] || 0) + item.quantity
       } else {
         itemMap.set(key, {
@@ -223,6 +247,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           pricingOptionLabel: item.pricingOptionLabel || null,
           categoryId: menuItem.categoryId,
           categoryName: menuItem.category.name,
+          categoryType,
           quantity: item.quantity,
           revenue: itemTotal,
           cost: itemCost,
@@ -231,20 +256,63 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           soldByWeight: isByWeight,
           totalWeight: itemWeight,
           weightUnit: isByWeight ? (item.weightUnit || 'lb') : null,
-          orderTypes: { [orderType]: item.quantity },
+          totalOuncesPoured: itemOunces,
+          orderTypes: { [itemOrderType]: item.quantity },
           hourlyDistribution: { [hour]: item.quantity },
         })
       }
     }
 
-    // Convert to array and calculate percentages
-    const items = Array.from(itemMap.values()).map(item => ({
-      ...item,
-      revenuePercent: totalRevenue > 0 ? (item.revenue / totalRevenue) * 100 : 0,
-      quantityPercent: totalQuantity > 0 ? (item.quantity / totalQuantity) * 100 : 0,
-      profitMargin: item.revenue > 0 ? ((item.revenue - item.cost) / item.revenue) * 100 : 0,
-      avgPrice: item.quantity > 0 ? item.revenue / item.quantity : 0,
-    }))
+    // Convert to array and calculate percentages + variation fingerprints
+    const items = Array.from(itemMap.entries()).map(([key, item]) => {
+      const itemOrderItems = itemOrderItemsMap.get(key) || []
+
+      // Compute distinct variation fingerprints
+      const fingerprints = new Set<string>()
+      for (const oi of itemOrderItems) {
+        const fingerprint = computeVariationFingerprint({
+          quantity: oi.quantity,
+          itemTotal: Number(oi.itemTotal),
+          costAtSale: oi.costAtSale != null ? Number(oi.costAtSale) : null,
+          pourSize: oi.pourSize,
+          modifiers: (oi.modifiers || []).map(m => ({
+            name: m.name,
+            preModifier: m.preModifier,
+            spiritTier: m.spiritTier,
+            isNoneSelection: m.isNoneSelection ?? false,
+            isCustomEntry: m.isCustomEntry ?? false,
+            customEntryName: m.customEntryName,
+            swapTargetName: m.swapTargetName,
+            quantity: m.quantity || 1,
+          })),
+          ingredientModifications: (oi.ingredientModifications || []).map(im => ({
+            ingredientName: im.ingredientName,
+            modificationType: im.modificationType,
+            swappedToModifierName: im.swappedToModifierName,
+          })),
+          modifierPrices: (oi.modifiers || []).map(m => ({
+            name: m.name,
+            price: Number(m.price),
+            preModifier: m.preModifier,
+            spiritTier: m.spiritTier,
+          })),
+        })
+        fingerprints.add(fingerprint)
+      }
+
+      return {
+        ...item,
+        revenuePercent: totalRevenue > 0 ? (item.revenue / totalRevenue) * 100 : 0,
+        quantityPercent: totalQuantity > 0 ? (item.quantity / totalQuantity) * 100 : 0,
+        profitMargin: item.revenue > 0 ? ((item.revenue - item.cost) / item.revenue) * 100 : 0,
+        avgPrice: item.quantity > 0 ? item.revenue / item.quantity : 0,
+        totalOuncesPoured: item.totalOuncesPoured > 0 ? Math.round(item.totalOuncesPoured * 100) / 100 : null,
+        variationCount: fingerprints.size,
+        hasLiquorModifiers: itemOrderItems.some(oi =>
+          oi.modifiers?.some(m => m.spiritTier != null)
+        ),
+      }
+    })
 
     // Sort by revenue descending
     items.sort((a, b) => b.revenue - a.revenue)
