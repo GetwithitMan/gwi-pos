@@ -36,7 +36,7 @@ const POLL_INTERVAL_MS = 15_000
 export function startOnlineOrderDispatchWorker(port: number): void {
   if (workerInterval) return
 
-  const locationId = process.env.POS_LOCATION_ID
+  const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
   if (!locationId) {
     // Cloud/Vercel mode — no local Socket.io dispatch possible, skip
     return

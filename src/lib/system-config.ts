@@ -72,7 +72,7 @@ function buildConfig(): SystemConfig {
   if (!tenantSigningKey) {
     // On NUC (STATION_ROLE set), this key is critical for proxy JWT signing.
     // On Vercel (serverless), tenant context uses different mechanisms — key is optional.
-    const isNuc = !!process.env.STATION_ROLE || !!process.env.POS_LOCATION_ID
+    const isNuc = !!process.env.STATION_ROLE || !!process.env.POS_LOCATION_ID || !!process.env.LOCATION_ID
     if (requireProdKeys && isNuc) {
       throw new Error(
         'FATAL: TENANT_SIGNING_KEY is not configured. ' +
@@ -115,7 +115,7 @@ function buildConfig(): SystemConfig {
     nodeEnv,
     isProduction,
     syncEnabled: parseBool(process.env.SYNC_ENABLED, false),
-    posLocationId: process.env.POS_LOCATION_ID || undefined,
+    posLocationId: process.env.POS_LOCATION_ID || process.env.LOCATION_ID || undefined,
     stationRole: parseStationRole(process.env.STATION_ROLE),
     tenantJwtEnabled: parseBool(process.env.TENANT_JWT_ENABLED, !!(process.env.VERCEL && process.env.TENANT_SIGNING_KEY)),
     tenantSigningKey,

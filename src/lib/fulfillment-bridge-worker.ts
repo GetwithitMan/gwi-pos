@@ -25,7 +25,7 @@ const log = createChildLogger('fulfillment-bridge')
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const NODE_ID = process.env.NUC_NODE_ID || 'primary'
-const LOCATION_ID = process.env.POS_LOCATION_ID
+const LOCATION_ID = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
 const POLL_INTERVAL = 2_000 // 2s
 const MAX_RETRIES = 3
 const CLAIM_TIMEOUT = 300_000 // 5 min — reclaim if processing takes too long (large print jobs need time)

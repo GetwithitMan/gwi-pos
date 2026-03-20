@@ -24,7 +24,7 @@ const log = createChildLogger('bridge-checkpoint')
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const NODE_ID = process.env.NUC_NODE_ID || 'primary'
-const LOCATION_ID = process.env.POS_LOCATION_ID
+const LOCATION_ID = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
 const LEASE_DURATION = 90_000 // 90s
 const HEARTBEAT_INTERVAL = 30_000 // 30s
 

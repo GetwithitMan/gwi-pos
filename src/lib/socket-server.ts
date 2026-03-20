@@ -344,8 +344,8 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       }
 
       // Path 3: NUC local network — trust LAN connections but track identity
-      if (process.env.POS_LOCATION_ID) {
-        const lanLocationId = process.env.POS_LOCATION_ID
+      if (process.env.POS_LOCATION_ID || process.env.LOCATION_ID) {
+        const lanLocationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || ''
         socket.data.locationId = lanLocationId
         socket.data.authenticated = true
         // Track identity from handshake auth if provided
@@ -404,7 +404,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
     // Auto-join location room from handshake query (used by SocketEventProvider)
     const queryLocationId = socket.handshake.query?.locationId as string | undefined
-    const serverLocationId = process.env.POS_LOCATION_ID
+    const serverLocationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
     if (queryLocationId && typeof queryLocationId === 'string' && queryLocationId.length > 0) {
       if (serverLocationId && queryLocationId !== serverLocationId) {
         log.warn(`Rejected location join: client sent ${queryLocationId}, server expects ${serverLocationId}`)
