@@ -156,6 +156,12 @@ Only after Steps 1–5:
 - Soft deletes only: `deletedAt: new Date()`
 - **Full rules:** `docs/guides/ARCHITECTURE-RULES.md`
 
+### Database Connections (DO NOT CHANGE)
+- **Vercel:** `PrismaNeon` + `@neondatabase/serverless` + `ws` polyfill. NEVER use PrismaPg on Vercel (TCP cold starts cause timeouts).
+- **NUC:** `PrismaPg` + `@prisma/adapter-pg`. NEVER use PrismaNeon on NUC.
+- `ws`, `@neondatabase/serverless`, `@prisma/adapter-neon` MUST be in `serverExternalPackages` (Turbopack breaks ws if bundled).
+- **Full rules:** `docs/guides/DATABASE-CONNECTION-RULES.md`
+
 ### Migrations (dual-script unified)
 - Add new migrations to `scripts/migrations/NNN-*.js` ONLY. Use `prisma.$executeRawUnsafe()`. Include `columnExists`/`tableExists` guards. NEVER add SQL to `vercel-build.js` or `nuc-pre-migrate.js` directly — they are orchestrators only.
 
@@ -335,6 +341,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Working On | Read First | Key Files |
 |------------|-----------|-----------|
 | Any API route | `docs/guides/CODING-STANDARDS.md` | `src/lib/with-venue.ts` |
+| Database connections | `docs/guides/DATABASE-CONNECTION-RULES.md` | `src/lib/db.ts`, `next.config.ts` |
 | Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts`, `socket-event-buffer.ts` |
 | Socket / cloud relay | `docs/guides/SOCKET-REALTIME.md` | `src/lib/cloud-relay-client.ts`, `socket-event-buffer.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
