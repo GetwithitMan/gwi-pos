@@ -1,5 +1,8 @@
 import { PrismaClient } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless'
+import { PrismaNeon } from '@prisma/adapter-neon'
+import ws from 'ws'
 import { orderWriteGuardExtension } from './order-write-guard'
 import { getRequestPrisma, getRequestLocationId } from './request-context'
 import { applySoftDeleteFilter } from './db-soft-delete'
@@ -14,6 +17,13 @@ import {
 } from './db-venue-cache'
 
 const isVercel = !!process.env.VERCEL
+
+// Neon serverless requires WebSocket in Node.js — must set before any Pool creation.
+// ws, @neondatabase/serverless, and @prisma/adapter-neon are in serverExternalPackages
+// so Turbopack doesn't bundle them (bundling breaks the ws WebSocket constructor).
+if (isVercel) {
+  neonConfig.webSocketConstructor = ws
+}
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required')
@@ -30,17 +40,20 @@ const globalForPrisma = globalThis as unknown as {
 export function createPrismaClient(url?: string) {
   const connectionString = url || process.env.DATABASE_URL || ''
 
-  // PrismaPg for all environments.
-  // Vercel: small pool + long timeout for Neon cold starts (compute wake = 3-10s).
-  // NUC: large pool + short timeout for local PostgreSQL.
-  const poolSize = isVercel ? 1 : 25
-  const timeoutMs = isVercel ? 60000 : 10000
-  const adapter: any = new PrismaPg({
-    connectionString,
-    max: poolSize,
-    connectionTimeoutMillis: timeoutMs,
-    idleTimeoutMillis: isVercel ? 0 : 30000,
-  })
+  // On Vercel: Neon serverless (HTTP/WebSocket — instant, no TCP cold start)
+  // On NUC: PrismaPg (TCP to local PostgreSQL — fast, reliable)
+  let adapter: any
+  if (isVercel) {
+    const pool = new NeonPool({ connectionString })
+    adapter = new PrismaNeon(pool)
+  } else {
+    adapter = new PrismaPg({
+      connectionString,
+      max: 25,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+    })
+  }
 
   const client = new PrismaClient({
     adapter,
@@ -205,8 +218,13 @@ export const db: PrismaClient = new Proxy(masterClient, {
 
 function createAdminClient(url?: string): PrismaClient {
   const connectionString = url || process.env.DATABASE_URL || ''
-  const adminPoolSize = isVercel ? 1 : 5
-  const adapter: any = new PrismaPg({ connectionString, max: adminPoolSize, connectionTimeoutMillis: isVercel ? 60000 : 10000 })
+  let adapter: any
+  if (isVercel) {
+    const pool = new NeonPool({ connectionString })
+    adapter = new PrismaNeon(pool)
+  } else {
+    adapter = new PrismaPg({ connectionString, max: 5, connectionTimeoutMillis: 10000 })
+  }
   const client = new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],

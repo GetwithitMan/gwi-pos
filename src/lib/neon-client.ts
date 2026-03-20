@@ -11,8 +11,12 @@
 
 import { PrismaClient } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless'
+import { PrismaNeon } from '@prisma/adapter-neon'
+import ws from 'ws'
 
 const isVercel = !!process.env.VERCEL
+if (isVercel) { neonConfig.webSocketConstructor = ws }
 
 const globalForNeon = globalThis as unknown as {
   neonPrisma: PrismaClient | undefined
@@ -24,11 +28,8 @@ function createNeonClient(): PrismaClient | null {
 
   let adapter: any
   if (isVercel) {
-    adapter = new PrismaPg({
-      connectionString: neonUrl,
-      max: 1,
-      connectionTimeoutMillis: 60000,
-    })
+    const pool = new NeonPool({ connectionString: neonUrl })
+    adapter = new PrismaNeon(pool)
   } else {
     const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || '10', 10)
     const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 10 : rawPoolSize
