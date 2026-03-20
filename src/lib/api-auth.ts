@@ -227,7 +227,8 @@ export async function resolveOrProvisionEmployee(
             updatedAt: new Date(),
           },
         })
-      } catch {
+      } catch (roleErr) {
+        console.error('[auth] mc-admin-role creation failed:', roleErr instanceof Error ? roleErr.message : roleErr)
         // Race condition: another request may have created it — fetch again
         adminRole = await (prismaResolve as any).role.findFirst({
           where: { id: 'mc-admin-role', locationId, deletedAt: null },

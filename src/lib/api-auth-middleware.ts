@@ -263,8 +263,9 @@ export function withAuth(
           }
         }
       }
-    } catch {
-      // Cloud session check failed — fall through
+    } catch (cloudErr) {
+      // Cloud session check failed — log the actual error, don't swallow silently
+      console.error('[auth-middleware] Cloud session auth failed:', cloudErr instanceof Error ? cloudErr.message : cloudErr)
     }
 
     // ── 3. Try cellular Bearer token ─────────────────────────────────
