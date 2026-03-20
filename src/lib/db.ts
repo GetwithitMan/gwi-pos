@@ -13,6 +13,8 @@ import {
   venueDbName,
 } from './db-venue-cache'
 
+const isVercel = !!process.env.VERCEL
+
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required')
 }
@@ -27,19 +29,23 @@ const globalForPrisma = globalThis as unknown as {
 
 export function createPrismaClient(url?: string) {
   const connectionString = url || process.env.DATABASE_URL || ''
-  // On Vercel serverless: small pool (2 connections), longer timeout (30s) for Neon cold starts
-  // On NUC: larger pool (25 connections), shorter timeout (10s) since DB is local
-  const isVercel = !!process.env.VERCEL
-  const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '', 10)
-  const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? (isVercel ? 2 : 25) : rawPoolSize
-  const rawPoolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '', 10)
-  const poolTimeout = Number.isNaN(rawPoolTimeout) || rawPoolTimeout < 1 ? (isVercel ? 30 : 10) : rawPoolTimeout
 
-  const adapter = new PrismaPg({
-    connectionString,
-    max: poolSize,
-    connectionTimeoutMillis: poolTimeout * 1000,
-  })
+  // On Vercel: use Neon serverless adapter (HTTP/WebSocket — instant, no TCP cold start)
+  // On NUC: use PrismaPg (TCP to local PostgreSQL — fast, reliable)
+  let adapter: any
+  if (isVercel) {
+    // Lazy-load to avoid bundling neon serverless on NUC
+    const { PrismaNeon } = require('@prisma/adapter-neon')
+    adapter = new PrismaNeon({ connectionString })
+  } else {
+    const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '', 10)
+    const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 25 : rawPoolSize
+    adapter = new PrismaPg({
+      connectionString,
+      max: poolSize,
+      connectionTimeoutMillis: 10000,
+    })
+  }
 
   const client = new PrismaClient({
     adapter,
@@ -204,7 +210,13 @@ export const db: PrismaClient = new Proxy(masterClient, {
 
 function createAdminClient(url?: string): PrismaClient {
   const connectionString = url || process.env.DATABASE_URL || ''
-  const adapter = new PrismaPg({ connectionString, max: 5 })
+  let adapter: any
+  if (isVercel) {
+    const { PrismaNeon } = require('@prisma/adapter-neon')
+    adapter = new PrismaNeon({ connectionString })
+  } else {
+    adapter = new PrismaPg({ connectionString, max: 5 })
+  }
   const client = new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],

@@ -161,7 +161,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // ── 3. Seed default data (full + seed-only) ──────────────────────
     if (mode === 'full' || mode === 'seed-only') {
-      const venueAdapter = new PrismaPg({ connectionString: venueDbUrl })
+      let venueAdapter: any
+      if (process.env.VERCEL) {
+        const { PrismaNeon } = require('@prisma/adapter-neon')
+        venueAdapter = new PrismaNeon({ connectionString: venueDbUrl })
+      } else {
+        venueAdapter = new PrismaPg({ connectionString: venueDbUrl })
+      }
       const venueDb = new PrismaClient({ adapter: venueAdapter })
 
       let seedResult: { locationId: string; ownerPin: string }

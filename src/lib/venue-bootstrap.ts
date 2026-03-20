@@ -197,11 +197,17 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     const neonUrl = process.env.NEON_DATABASE_URL
     if (neonUrl) {
       try {
-        // Use PrismaPg adapter (Prisma 7 doesn't support datasourceUrl in constructor)
+        // Use Neon serverless adapter on Vercel (HTTP — instant), PrismaPg on NUC (TCP — reliable)
         const { PrismaClient } = await import('@/generated/prisma/client')
-        const { PrismaPg } = await import('@prisma/adapter-pg')
         const directUrl = process.env.NEON_DIRECT_URL || neonUrl
-        const neonAdapter = new PrismaPg({ connectionString: directUrl, max: 2 })
+        let neonAdapter: any
+        if (process.env.VERCEL) {
+          const { PrismaNeon } = await import('@prisma/adapter-neon')
+          neonAdapter = new PrismaNeon({ connectionString: directUrl })
+        } else {
+          const { PrismaPg } = await import('@prisma/adapter-pg')
+          neonAdapter = new PrismaPg({ connectionString: directUrl, max: 2 })
+        }
         const neonClient = new PrismaClient({ adapter: neonAdapter })
 
         try {
