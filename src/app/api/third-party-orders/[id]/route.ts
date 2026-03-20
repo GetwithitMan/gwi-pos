@@ -18,6 +18,8 @@ import { createPosOrderFromDelivery, dispatchDeliveryEvent } from '@/lib/deliver
 import type { DeliveryPlatform, PlatformItem } from '@/lib/delivery/order-mapper'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
+import type { DeliveryPlatformId } from '@/lib/delivery/clients/types'
 
 function toNum(val: unknown): number {
   if (typeof val === 'object' && val && 'toNumber' in val) {
@@ -160,6 +162,15 @@ export const PUT = withVenue(async function PUT(
           )
         }
 
+        // Confirm with platform (best-effort, don't block response)
+        const acceptSettings = parseSettings(await getLocationSettings(locationId))
+        const acceptClient = getPlatformClient(platform as DeliveryPlatformId, acceptSettings)
+        const prepTime = acceptSettings.thirdPartyDelivery?.[platform as 'doordash' | 'ubereats' | 'grubhub']?.prepTimeMinutes ?? 20
+        if (acceptClient) {
+          void acceptClient.confirmOrder(externalOrderId, prepTime)
+            .catch(err => console.error(`[third-party-orders] Failed to confirm ${platform} order:`, err))
+        }
+
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {
           thirdPartyOrderId: id,
           platform,
@@ -180,10 +191,13 @@ export const PUT = withVenue(async function PUT(
           id,
         )
 
-        // TODO: Call platform cancel/reject API when credentials are available
-        // For DoorDash: PATCH /drive/v2/deliveries/{external_delivery_id}/cancel
-        // For UberEats: POST /v1/eats/orders/{order_id}/deny
-        // For Grubhub: POST /restaurant/v1/orders/{order_id}/reject
+        // Notify platform of rejection (best-effort, don't block response)
+        const rejectSettings = parseSettings(await getLocationSettings(locationId))
+        const rejectClient = getPlatformClient(platform as DeliveryPlatformId, rejectSettings)
+        if (rejectClient) {
+          void rejectClient.rejectOrder(externalOrderId, body.reason || 'Rejected by restaurant')
+            .catch(err => console.error(`[third-party-orders] Failed to notify ${platform} of rejection:`, err))
+        }
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {
           thirdPartyOrderId: id,
@@ -204,10 +218,13 @@ export const PUT = withVenue(async function PUT(
           id,
         )
 
-        // TODO: Notify platform that order is ready for pickup
-        // For DoorDash: POST /drive/v2/deliveries/{external_delivery_id}/confirm
-        // For UberEats: POST /v1/eats/orders/{order_id}/accept_pos_order
-        // For Grubhub: POST /restaurant/v1/orders/{order_id}/ready
+        // Notify platform that order is ready for pickup (best-effort)
+        const readySettings = parseSettings(await getLocationSettings(locationId))
+        const readyClient = getPlatformClient(platform as DeliveryPlatformId, readySettings)
+        if (readyClient) {
+          void readyClient.markReady(externalOrderId)
+            .catch(err => console.error(`[third-party-orders] Failed to notify ${platform} of ready:`, err))
+        }
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {
           thirdPartyOrderId: id,
