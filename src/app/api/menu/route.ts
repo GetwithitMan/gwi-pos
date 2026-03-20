@@ -74,36 +74,13 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           category: {
             select: { categoryType: true }
           },
+          // Slim includes for Vercel — deep nesting causes Neon query timeout.
+          // Modifier details, recipes, and ingredients are loaded on-demand
+          // when a user clicks into an item (not needed for the menu grid).
           ownedModifierGroups: {
             where: { deletedAt: null },
+            select: { id: true, name: true, isSpiritGroup: true, showOnline: true, sortOrder: true },
             orderBy: { sortOrder: 'asc' },
-            include: {
-              modifiers: {
-                where: { deletedAt: null, isActive: true },
-                select: {
-                  id: true,
-                  name: true,
-                  price: true,
-                  spiritTier: true,
-                  linkedBottleProductId: true,
-                },
-                orderBy: { sortOrder: 'asc' }
-              }
-            }
-          },
-          recipeIngredients: {
-            include: {
-              bottleProduct: {
-                select: {
-                  id: true,
-                  name: true,
-                  pourCost: true
-                }
-              }
-            }
-          },
-          linkedBottleProduct: {
-            select: { id: true, name: true, tier: true, pourCost: true, pourSizeOz: true, unitCost: true, bottleSizeMl: true, spiritCategory: { select: { name: true } } }
           },
           pricingOptionGroups: {
             where: { deletedAt: null },
@@ -116,19 +93,6 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
               },
             },
           },
-          // Include ingredients to check 86 status
-          ingredients: {
-            where: { deletedAt: null },
-            include: {
-              ingredient: {
-                select: {
-                  id: true,
-                  name: true,
-                  is86d: true
-                }
-              }
-            }
-          }
         }
       }),
 
@@ -168,71 +132,24 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       return true
     })
 
-    // Calculate pour cost for items with recipes and check 86 status
+    // Map items with lightweight computed fields (no deep joins needed)
     const itemsWithPourCost = seasonallyAvailable.map(item => {
-      let totalPourCost = 0
-      let hasRecipe = false
-
-      if (item.recipeIngredients && item.recipeIngredients.length > 0) {
-        hasRecipe = true
-        totalPourCost = item.recipeIngredients.reduce((sum, ing) => {
-          const pourCost = ing.bottleProduct?.pourCost ? Number(ing.bottleProduct.pourCost) : 0
-          return sum + (pourCost * Number(ing.pourCount))
-        }, 0)
-      }
-
-      const sellPrice = Number(item.price)
-      const profitMargin = hasRecipe && sellPrice > 0
-        ? ((sellPrice - totalPourCost) / sellPrice) * 100
-        : null
-
-      // Check if any ingredient is 86'd
-      const ingredients86d = item.ingredients
-        ?.filter(mi => mi.ingredient?.is86d)
-        .map(mi => mi.ingredient?.name) || []
-      const is86d = ingredients86d.length > 0
-
-      // Get prep stock status
       const stockStatus = stockStatusMap.get(item.id)
-
-      // Check for spirit upgrade group
-      const spiritGroup = item.ownedModifierGroups.find(mg => mg.isSpiritGroup)
-      const spiritModifiers = spiritGroup?.modifiers || []
-
-      // Group spirit modifiers by tier
-      const spiritTiers = spiritModifiers.length > 0 ? {
-        well: spiritModifiers.filter(m => m.spiritTier === 'well').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'well' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
-        })),
-        call: spiritModifiers.filter(m => m.spiritTier === 'call').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'call' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
-        })),
-        premium: spiritModifiers.filter(m => m.spiritTier === 'premium').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'premium' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
-        })),
-        top_shelf: spiritModifiers.filter(m => m.spiritTier === 'top_shelf').map(m => ({
-          id: m.id, name: m.name, price: Number(m.price), spiritTier: 'top_shelf' as const, linkedBottleProductId: m.linkedBottleProductId ?? null,
-        })),
-      } : null
 
       return {
         ...item,
-        hasRecipe,
-        recipeIngredientCount: item.recipeIngredients?.length || 0,
-        totalPourCost: hasRecipe ? Math.round(totalPourCost * 100) / 100 : null,
-        profitMargin: profitMargin !== null ? Math.round(profitMargin * 10) / 10 : null,
+        hasRecipe: false, // Recipe details loaded on-demand via /api/menu/items/[id]
+        recipeIngredientCount: 0,
+        totalPourCost: null as number | null,
+        profitMargin: null as number | null,
         isLiquorItem: item.category?.categoryType === 'liquor',
-        // 86 status from ingredients
-        is86d,
-        reasons86d: ingredients86d,
-        // Prep stock status
+        is86d: false, // 86 status loaded on-demand
+        reasons86d: [] as string[],
         stockStatus: stockStatus?.status || 'ok',
         stockCount: stockStatus?.lowestCount || null,
         stockIngredientName: stockStatus?.lowestIngredientName || null,
-        // Spirit tier data for quick selection
-        spiritTiers,
-        // Has non-spirit modifier groups
-        hasOtherModifiers: item.ownedModifierGroups.filter(mg => !mg.isSpiritGroup).length > 0,
+        spiritTiers: null, // Spirit tiers loaded on-demand via modifier endpoint
+        hasOtherModifiers: item.ownedModifierGroups.filter((mg: any) => !mg.isSpiritGroup).length > 0,
       }
     })
 
@@ -342,15 +259,15 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           availableUntilDate: item.availableUntilDate?.toISOString() ?? null,
           showOnline: item.showOnline,
           onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
-          // Liquor Builder recipe/cost data
+          // Liquor Builder recipe/cost data (loaded on-demand via item detail endpoint)
           recipeIngredientCount: item.recipeIngredientCount,
-          linkedBottleProductName: item.linkedBottleProduct?.name || null,
-          linkedBottleTier: item.linkedBottleProduct?.tier || null,
-          linkedBottlePourCost: item.linkedBottleProduct?.pourCost ? Number(item.linkedBottleProduct.pourCost) : null,
-          linkedBottlePourSizeOz: item.linkedBottleProduct?.pourSizeOz ? Number(item.linkedBottleProduct.pourSizeOz) : null,
-          linkedBottleUnitCost: item.linkedBottleProduct?.unitCost ? Number(item.linkedBottleProduct.unitCost) : null,
-          linkedBottleSizeMl: item.linkedBottleProduct?.bottleSizeMl || null,
-          linkedBottleSpiritCategory: item.linkedBottleProduct?.spiritCategory?.name || null,
+          linkedBottleProductName: null,
+          linkedBottleTier: null,
+          linkedBottlePourCost: null,
+          linkedBottlePourSizeOz: null,
+          linkedBottleUnitCost: null,
+          linkedBottleSizeMl: null,
+          linkedBottleSpiritCategory: null,
           linkedPourSizeOz: item.linkedPourSizeOz ? Number(item.linkedPourSizeOz) : null,
           totalPourCost: item.totalPourCost,
           profitMargin: item.profitMargin,
