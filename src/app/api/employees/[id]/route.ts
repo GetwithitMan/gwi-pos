@@ -412,6 +412,23 @@ export const DELETE = withVenue(async function DELETE(
     // Force logout deactivated employee on all terminals
     void emitToLocation(employee.locationId, 'employee:deactivated', { employeeId: id }).catch(console.error)
 
+    // Remove deactivated employee from any active tip groups so tips stop allocating to them
+    try {
+      const activeMemberships = await db.tipGroupMembership.findMany({
+        where: { employeeId: id, status: 'active', group: { status: 'active' } },
+        select: { groupId: true },
+      })
+      for (const mem of activeMemberships) {
+        try {
+          await removeMemberFromGroup({ groupId: mem.groupId, employeeId: id })
+        } catch (e) {
+          console.error(`[employee] Failed to remove from tip group ${mem.groupId}:`, e)
+        }
+      }
+    } catch (e) {
+      console.error('[employee] Failed to query tip group memberships:', e)
+    }
+
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to deactivate employee:', error)
