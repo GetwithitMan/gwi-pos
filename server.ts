@@ -341,8 +341,13 @@ async function main() {
     const neonReady = bootstrapResult?.neonSchemaReady
     // Fail-CLOSED for sync: if bootstrap didn't run or Neon readiness is unknown, block sync.
     // Local orders still work (POS boots regardless), but sync must not start without verified schema.
+    // Schema version: match OR ahead is OK (Neon may have a newer schema from Vercel deploy).
+    // Only "behind" blocks sync. This matches venue-bootstrap.ts syncContractReady logic.
+    const neonSchemaVersionOk = neonReady
+      ? (neonReady.schemaVersionMatch || neonReady.schemaVersionAhead)
+      : false
     const neonSchemaOk = (neonReady != null)
-      ? (neonReady.coreTablesExist && neonReady.requiredEnumsExist && neonReady.schemaVersionMatch && neonReady.baseSeedPresent)
+      ? (neonReady.coreTablesExist && neonReady.requiredEnumsExist && neonSchemaVersionOk && neonReady.baseSeedPresent)
       : !config.neonDatabaseUrl  // Only true if Neon isn't configured (local-only mode)
     // Local schema must also be verified — prevents sync with missing tables/columns
     const localSchemaOk = schemaResult.passed

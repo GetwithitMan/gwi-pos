@@ -55,6 +55,15 @@ const CRITICAL_SCHEMA: Record<string, string[]> = {
   Shift: ['id', 'locationId', 'employeeId'],
   FulfillmentEvent: ['id', 'locationId', 'orderId', 'status'],
   OutageQueueEntry: ['id', 'tableName', 'recordId', 'status'],
+}
+
+/**
+ * Tables created by raw migrations (not Prisma-managed).
+ * Missing = warn, but do NOT block sync. The migration runner will create them.
+ * If these are in CRITICAL_SCHEMA, a fresh venue with pending migrations
+ * will have sync permanently blocked.
+ */
+const ADVISORY_SCHEMA: Record<string, string[]> = {
   SocketEventLog: ['id', 'locationId', 'event', 'data', 'room'],
 }
 
@@ -92,6 +101,24 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
         checked++
         if (!columnSet.has(col)) {
           missing.push({ table: tableName, column: col })
+        }
+      }
+    }
+
+    // Advisory check — warn but don't fail
+    for (const [tableName, requiredColumns] of Object.entries(ADVISORY_SCHEMA)) {
+      if (!tableSet.has(tableName)) {
+        log.warn(`[SchemaVerify] Advisory: table "${tableName}" missing (created by migration, not Prisma). Sync will proceed; migration runner will create it.`)
+        continue
+      }
+      const columns = await masterClient.$queryRawUnsafe<Array<{ column_name: string }>>(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+        tableName
+      )
+      const columnSet = new Set(columns.map(c => c.column_name))
+      for (const col of requiredColumns) {
+        if (!columnSet.has(col)) {
+          log.warn(`[SchemaVerify] Advisory: column "${tableName}.${col}" missing. Migration runner should add it.`)
         }
       }
     }
