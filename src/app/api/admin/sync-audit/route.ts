@@ -133,9 +133,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    // Auth check — require API key or admin permission
+    // Auth check — require valid API key or admin permission
     const apiKey = request.headers.get('x-api-key')
-    const hasApiKey = apiKey && apiKey === process.env.PROVISION_API_KEY
 
     const body = await request.json()
     const {
@@ -153,8 +152,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       cardLast4,
     } = body
 
-    // Auth check — require API key or admin permission
-    if (!hasApiKey) {
+    // Auth check — require valid API key or admin permission
+    if (apiKey) {
+      if (apiKey !== process.env.PROVISION_API_KEY) {
+        return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
+      }
+      // Valid key — skip permission check
+    } else {
+      // No key — require employee permission
       const auth = await requirePermission(employeeId, locationId, PERMISSIONS.ADMIN)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

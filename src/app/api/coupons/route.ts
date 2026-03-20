@@ -136,8 +136,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Auth check — require manager.discounts permission for coupon management
     const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? createdBy
-    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.MGR_DISCOUNTS)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MGR_DISCOUNTS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Check if code already exists
@@ -174,7 +176,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         singleUse: singleUse || false,
         validFrom: validFrom ? new Date(validFrom) : null,
         validUntil: validUntil ? new Date(validUntil) : null,
-        createdBy,
+        createdBy: actor.employeeId,
       },
     })
 

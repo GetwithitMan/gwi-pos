@@ -189,72 +189,81 @@ export const PUT = withVenue(async function PUT(
       paramIdx++
     }
 
-    // Update the order
-    updateParams.push(id)
-    await db.$executeRawUnsafe(
-      `UPDATE "CateringOrder" SET ${setClauses.join(', ')} WHERE "id" = $${paramIdx}`,
-      ...updateParams,
-    )
-
-    // Update items if provided (only if before confirmation)
-    if (items && ['inquiry', 'quoted'].includes(currentStatus)) {
-      // Soft-delete existing items
-      await db.$executeRawUnsafe(
-        `UPDATE "CateringOrderItem" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "cateringOrderId" = $1 AND "deletedAt" IS NULL`,
+    // Wrap order update + item replacement + financial recalculation in a transaction
+    await db.$transaction(async (tx) => {
+      // Pessimistic lock: prevent concurrent updates from colliding
+      await tx.$queryRawUnsafe(
+        'SELECT id FROM "CateringOrder" WHERE "id" = $1 FOR UPDATE',
         id,
       )
 
-      // Insert new items and recalculate totals
-      let subtotal = 0
-      let totalVolumeDiscount = 0
+      // Update the order
+      updateParams.push(id)
+      await tx.$executeRawUnsafe(
+        `UPDATE "CateringOrder" SET ${setClauses.join(', ')} WHERE "id" = $${paramIdx}`,
+        ...updateParams,
+      )
 
-      for (const item of items) {
-        const lineTotal = item.unitPrice * item.quantity
-        const discountPct = item.quantity >= 50 ? 20 : item.quantity >= 25 ? 15 : item.quantity >= 10 ? 10 : 0
-        const discountAmount = Math.round(lineTotal * discountPct) / 100
-        const discountedLineTotal = Math.round((lineTotal - discountAmount) * 100) / 100
+      // Update items if provided (only if before confirmation)
+      if (items && ['inquiry', 'quoted'].includes(currentStatus)) {
+        // Soft-delete existing items
+        await tx.$executeRawUnsafe(
+          `UPDATE "CateringOrderItem" SET "deletedAt" = CURRENT_TIMESTAMP WHERE "cateringOrderId" = $1 AND "deletedAt" IS NULL`,
+          id,
+        )
 
-        subtotal += lineTotal
-        totalVolumeDiscount += discountAmount
+        // Insert new items and recalculate totals
+        let subtotal = 0
+        let totalVolumeDiscount = 0
 
-        await db.$executeRawUnsafe(
-          `INSERT INTO "CateringOrderItem" (
-            "id", "cateringOrderId", "menuItemId", "name", "quantity", "unitPrice",
-            "lineTotal", "volumeDiscountPct", "discountedLineTotal", "specialInstructions",
-            "createdAt", "updatedAt"
-          ) VALUES (
-            gen_random_uuid()::text, $1, $2, $3, $4, $5,
-            $6, $7, $8, $9,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-          )`,
-          id, item.menuItemId || null, item.name, item.quantity, item.unitPrice,
-          lineTotal, discountPct, discountedLineTotal, item.specialInstructions || null,
+        for (const item of items) {
+          const lineTotal = item.unitPrice * item.quantity
+          const discountPct = item.quantity >= 50 ? 20 : item.quantity >= 25 ? 15 : item.quantity >= 10 ? 10 : 0
+          const discountAmount = Math.round(lineTotal * discountPct) / 100
+          const discountedLineTotal = Math.round((lineTotal - discountAmount) * 100) / 100
+
+          subtotal += lineTotal
+          totalVolumeDiscount += discountAmount
+
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "CateringOrderItem" (
+              "id", "cateringOrderId", "menuItemId", "name", "quantity", "unitPrice",
+              "lineTotal", "volumeDiscountPct", "discountedLineTotal", "specialInstructions",
+              "createdAt", "updatedAt"
+            ) VALUES (
+              gen_random_uuid()::text, $1, $2, $3, $4, $5,
+              $6, $7, $8, $9,
+              CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )`,
+            id, item.menuItemId || null, item.name, item.quantity, item.unitPrice,
+            lineTotal, discountPct, discountedLineTotal, item.specialInstructions || null,
+          )
+        }
+
+        // Recalculate financials
+        const discountedSubtotal = subtotal - totalVolumeDiscount
+        const serviceFeeRate = Number(currentOrder.serviceFee) > 0
+          ? Number(currentOrder.serviceFee) / (Number(currentOrder.subtotal) || 1)
+          : 0.18
+        const serviceFee = Math.round(discountedSubtotal * serviceFeeRate * 100) / 100
+        const deliveryFee = Number(currentOrder.deliveryFee) || 0
+        const taxRules = await tx.taxRule.findMany({
+          where: { locationId: currentOrder.locationId as string, isActive: true, isInclusive: false, deletedAt: null },
+          select: { rate: true },
+        })
+        const taxRate = taxRules.reduce((sum, r) => sum + Number(r.rate), 0)
+        const taxTotal = Math.round(discountedSubtotal * taxRate * 100) / 100
+        const total = Math.round((discountedSubtotal + serviceFee + deliveryFee + taxTotal) * 100) / 100
+
+        await tx.$executeRawUnsafe(
+          `UPDATE "CateringOrder" SET
+            "subtotal" = $1, "volumeDiscount" = $2, "serviceFee" = $3,
+            "taxTotal" = $4, "total" = $5, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = $6`,
+          discountedSubtotal, totalVolumeDiscount, serviceFee, taxTotal, total, id,
         )
       }
-
-      // Recalculate financials
-      const discountedSubtotal = subtotal - totalVolumeDiscount
-      const serviceFeeRate = Number(currentOrder.serviceFee) > 0
-        ? Number(currentOrder.serviceFee) / (Number(currentOrder.subtotal) || 1)
-        : 0.18
-      const serviceFee = Math.round(discountedSubtotal * serviceFeeRate * 100) / 100
-      const deliveryFee = Number(currentOrder.deliveryFee) || 0
-      const taxRules = await db.taxRule.findMany({
-        where: { locationId: currentOrder.locationId as string, isActive: true, isInclusive: false, deletedAt: null },
-        select: { rate: true },
-      })
-      const taxRate = taxRules.reduce((sum, r) => sum + Number(r.rate), 0)
-      const taxTotal = Math.round(discountedSubtotal * taxRate * 100) / 100
-      const total = Math.round((discountedSubtotal + serviceFee + deliveryFee + taxTotal) * 100) / 100
-
-      await db.$executeRawUnsafe(
-        `UPDATE "CateringOrder" SET
-          "subtotal" = $1, "volumeDiscount" = $2, "serviceFee" = $3,
-          "taxTotal" = $4, "total" = $5, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $6`,
-        discountedSubtotal, totalVolumeDiscount, serviceFee, taxTotal, total, id,
-      )
-    }
+    })
 
     // Audit log (fire-and-forget)
     void db.auditLog.create({

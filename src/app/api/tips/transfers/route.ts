@@ -123,6 +123,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const transferId = crypto.randomUUID()
 
     const result = await db.$transaction(async (tx) => {
+      // Pessimistic lock: prevent concurrent transfers from double-spending
+      await tx.$queryRawUnsafe(
+        'SELECT id FROM "TipLedger" WHERE "employeeId" = $1 AND "locationId" = $2 FOR UPDATE',
+        fromEmployeeId, locationId
+      )
+
       // Check balance under transaction lock (prevents race condition)
       const fromLedger = await tx.tipLedger.findFirst({
         where: { employeeId: fromEmployeeId },

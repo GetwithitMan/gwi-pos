@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
+import { getLocationId } from '@/lib/location-cache'
 
 /**
  * POST /api/payments/sync
@@ -32,6 +33,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       employeeId,
     } = body
 
+    // Resolve locationId from request context for tenant isolation
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+    }
+
     // Validate required fields
     if (!orderId && !localOrderId) {
       return NextResponse.json(
@@ -48,12 +55,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Check for duplicate sync (idempotency via intentId)
-    // TODO: Phase 1 - Cannot use PaymentRepository.getPaymentByOfflineIntentId() here
-    // because locationId is not yet known (resolved from order below).
     if (intentId) {
       const existingPayment = await db.payment.findFirst({
         where: {
           offlineIntentId: intentId,
+          locationId,
         },
       })
 
@@ -73,12 +79,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let resolvedOrderId = orderId
 
     // If we only have localOrderId, find the synced order — read from Order (where sync creates records)
-    // TODO: Phase 1 - Cannot use OrderRepository.getOrderByOfflineId() here
-    // because locationId is not yet known (resolved from order below).
     if (!resolvedOrderId && localOrderId) {
       const syncedOrder = await db.order.findFirst({
         where: {
           offlineLocalId: localOrderId,
+          locationId,
         },
         select: { id: true },
       })
@@ -93,11 +98,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       resolvedOrderId = syncedOrder.id
     }
 
-    // Verify the order exists — selective fetch (only needed fields)
-    // TODO: Phase 1 - Cannot use OrderRepository.getOrderByIdWithSelect() here
-    // because locationId is not yet known — it's resolved FROM this query.
-    const order = await db.order.findUnique({
-      where: { id: resolvedOrderId },
+    // Verify the order exists and belongs to this tenant
+    const order = await db.order.findFirst({
+      where: { id: resolvedOrderId, locationId },
       select: { id: true, locationId: true, total: true, status: true, paidAt: true },
     })
 
@@ -298,6 +301,12 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     const body = await request.json()
     const { paymentIds, reconciledBy } = body
 
+    // Resolve locationId from request context for tenant isolation
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
+    }
+
     if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
       return NextResponse.json(
         { error: 'Payment IDs are required' },
@@ -305,10 +314,11 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    // TX-KEEP: BULK — batch reconcile payments by ID array without locationId; no batch repo method
+    // TX-KEEP: BULK — batch reconcile payments by ID array with locationId tenant filter
     const result = await db.payment.updateMany({
       where: {
         id: { in: paymentIds },
+        locationId,
       },
       data: {
         needsReconciliation: false,

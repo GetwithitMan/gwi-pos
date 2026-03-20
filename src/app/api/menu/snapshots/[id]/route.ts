@@ -33,6 +33,13 @@ export const GET = withVenue(async function GET(
     }
 
     const snapshot = rows[0]
+
+    // Size guard: reject snapshots > 10MB to prevent OOM
+    const dataStr = typeof snapshot.data === 'string' ? snapshot.data : JSON.stringify(snapshot.data)
+    if (dataStr.length > 10_000_000) {
+      return NextResponse.json({ error: 'Snapshot too large. Contact support.' }, { status: 413 })
+    }
+
     const snapshotData = typeof snapshot.data === 'string' ? JSON.parse(snapshot.data) : snapshot.data
 
     // Calculate diff from current menu

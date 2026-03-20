@@ -42,211 +42,174 @@ export const POST = withVenue(async function POST(
     const auth = await requirePermission(employeeId, couponOrderCheck.locationId, PERMISSIONS.MGR_DISCOUNTS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Get the order with current totals and discounts
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      include: {
-        location: true,
-        discounts: { where: { deletedAt: null } },
-        items: {
-          where: { status: { not: 'voided' }, deletedAt: null },
-          include: { modifiers: true },
-        },
-      },
-    })
-
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
+    // --- All validation + application in a single transaction with FOR UPDATE lock ---
+    const result = await db.$transaction(async (tx) => {
+      // Pessimistic lock: prevent concurrent coupon applications from racing
+      await tx.$queryRawUnsafe(
+        'SELECT id FROM "Order" WHERE "id" = $1 FOR UPDATE',
+        orderId
       )
-    }
 
-    if (order.status !== 'open' && order.status !== 'in_progress') {
-      return NextResponse.json(
-        { error: 'Cannot apply coupon to a closed order' },
-        { status: 400 }
-      )
-    }
-
-    // Look up coupon by code + locationId
-    const coupon = await db.coupon.findFirst({
-      where: {
-        locationId: order.locationId,
-        code: code.toUpperCase(),
-      },
-    })
-
-    if (!coupon) {
-      return NextResponse.json(
-        { error: 'Invalid coupon code' },
-        { status: 404 }
-      )
-    }
-
-    // --- Validation ---
-
-    // 1. Active check
-    if (!coupon.isActive) {
-      return NextResponse.json(
-        { error: 'This coupon is no longer active' },
-        { status: 400 }
-      )
-    }
-
-    // 2. Date range
-    const now = new Date()
-    if (coupon.validFrom && now < coupon.validFrom) {
-      return NextResponse.json(
-        { error: 'This coupon is not yet valid' },
-        { status: 400 }
-      )
-    }
-    if (coupon.validUntil && now > coupon.validUntil) {
-      return NextResponse.json(
-        { error: 'This coupon has expired' },
-        { status: 400 }
-      )
-    }
-
-    // 3. Usage limit
-    if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
-      return NextResponse.json(
-        { error: 'This coupon has reached its usage limit' },
-        { status: 400 }
-      )
-    }
-
-    // 4. Per-customer limit (if order has a customer)
-    const customerId = (order as any).customerId as string | null
-    if (customerId && coupon.perCustomerLimit) {
-      const customerRedemptions = await db.couponRedemption.count({
-        where: {
-          couponId: coupon.id,
-          customerId,
+      // Get the order with current totals and discounts (under lock)
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        include: {
+          location: true,
+          discounts: { where: { deletedAt: null } },
+          items: {
+            where: { status: { not: 'voided' }, deletedAt: null },
+            include: { modifiers: true },
+          },
         },
       })
-      if (customerRedemptions >= coupon.perCustomerLimit) {
-        return NextResponse.json(
-          { error: 'You have exceeded the usage limit for this coupon' },
-          { status: 400 }
-        )
-      }
-    }
 
-    // 5. Single-use check
-    if (customerId && coupon.singleUse) {
-      const previousUse = await db.couponRedemption.findFirst({
+      if (!order) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 })
+      }
+
+      if (order.status !== 'open' && order.status !== 'in_progress') {
+        throw Object.assign(new Error('Cannot apply coupon to a closed order'), { statusCode: 400 })
+      }
+
+      // Look up coupon by code + locationId
+      const coupon = await tx.coupon.findFirst({
         where: {
-          couponId: coupon.id,
-          customerId,
+          locationId: order.locationId,
+          code: code.toUpperCase(),
         },
       })
-      if (previousUse) {
-        return NextResponse.json(
-          { error: 'This coupon can only be used once' },
-          { status: 400 }
-        )
+
+      if (!coupon) {
+        throw Object.assign(new Error('Invalid coupon code'), { statusCode: 404 })
       }
-    }
 
-    // 6. Check if this coupon was already applied to this order
-    const alreadyApplied = order.discounts.find(
-      (d: any) => d.couponId === coupon.id
-    )
-    if (alreadyApplied) {
-      return NextResponse.json(
-        { error: 'This coupon has already been applied to this order' },
-        { status: 400 }
+      // --- Validation ---
+
+      // 1. Active check
+      if (!coupon.isActive) {
+        throw Object.assign(new Error('This coupon is no longer active'), { statusCode: 400 })
+      }
+
+      // 2. Date range
+      const now = new Date()
+      if (coupon.validFrom && now < coupon.validFrom) {
+        throw Object.assign(new Error('This coupon is not yet valid'), { statusCode: 400 })
+      }
+      if (coupon.validUntil && now > coupon.validUntil) {
+        throw Object.assign(new Error('This coupon has expired'), { statusCode: 400 })
+      }
+
+      // 3. Usage limit
+      if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
+        throw Object.assign(new Error('This coupon has reached its usage limit'), { statusCode: 400 })
+      }
+
+      // 4. Per-customer limit (if order has a customer)
+      const customerId = (order as any).customerId as string | null
+      if (customerId && coupon.perCustomerLimit) {
+        const customerRedemptions = await tx.couponRedemption.count({
+          where: {
+            couponId: coupon.id,
+            customerId,
+          },
+        })
+        if (customerRedemptions >= coupon.perCustomerLimit) {
+          throw Object.assign(new Error('You have exceeded the usage limit for this coupon'), { statusCode: 400 })
+        }
+      }
+
+      // 5. Single-use check
+      if (customerId && coupon.singleUse) {
+        const previousUse = await tx.couponRedemption.findFirst({
+          where: {
+            couponId: coupon.id,
+            customerId,
+          },
+        })
+        if (previousUse) {
+          throw Object.assign(new Error('This coupon can only be used once'), { statusCode: 400 })
+        }
+      }
+
+      // 6. Check if this coupon was already applied to this order
+      const alreadyApplied = order.discounts.find(
+        (d: any) => d.couponId === coupon.id
       )
-    }
+      if (alreadyApplied) {
+        throw Object.assign(new Error('This coupon has already been applied to this order'), { statusCode: 400 })
+      }
 
-    // 7. Minimum order amount
-    const subtotal = Number(order.subtotal)
-    if (!isFinite(subtotal) || subtotal < 0) {
-      return NextResponse.json({ error: 'Invalid order subtotal' }, { status: 400 })
-    }
-    if (coupon.minimumOrder && subtotal < Number(coupon.minimumOrder)) {
-      return NextResponse.json(
-        { error: `Minimum order of $${Number(coupon.minimumOrder).toFixed(2)} required for this coupon` },
-        { status: 400 }
-      )
-    }
+      // 7. Minimum order amount
+      const subtotal = Number(order.subtotal)
+      if (!isFinite(subtotal) || subtotal < 0) {
+        throw Object.assign(new Error('Invalid order subtotal'), { statusCode: 400 })
+      }
+      if (coupon.minimumOrder && subtotal < Number(coupon.minimumOrder)) {
+        throw Object.assign(new Error(`Minimum order of $${Number(coupon.minimumOrder).toFixed(2)} required for this coupon`), { statusCode: 400 })
+      }
 
-    // 8. Stacking check: if coupon is NOT stackable, order must have no existing discounts
-    if (!coupon.isStackable && order.discounts.length > 0) {
-      return NextResponse.json(
-        { error: 'Cannot apply coupon — order already has a discount. This coupon cannot be combined with other discounts.' },
-        { status: 400 }
-      )
-    }
+      // 8. Stacking check: if coupon is NOT stackable, order must have no existing discounts
+      if (!coupon.isStackable && order.discounts.length > 0) {
+        throw Object.assign(new Error('Cannot apply coupon — order already has a discount. This coupon cannot be combined with other discounts.'), { statusCode: 400 })
+      }
 
-    // If coupon IS stackable but existing discounts came from a non-stackable source,
-    // also check the reverse: existing non-stackable discounts block new coupons
-    if (order.discounts.length > 0) {
-      // Check if any existing discount is from a non-stackable discount rule
-      for (const d of order.discounts) {
-        if ((d as any).discountRuleId) {
-          const existingRule = await db.discountRule.findUnique({
-            where: { id: (d as any).discountRuleId },
-            select: { isStackable: true },
-          })
-          if (existingRule && !existingRule.isStackable) {
-            return NextResponse.json(
-              { error: 'Cannot apply coupon — order has a non-stackable discount' },
-              { status: 400 }
-            )
+      // If coupon IS stackable but existing discounts came from a non-stackable source,
+      // also check the reverse: existing non-stackable discounts block new coupons
+      if (order.discounts.length > 0) {
+        // Check if any existing discount is from a non-stackable discount rule
+        for (const d of order.discounts) {
+          if ((d as any).discountRuleId) {
+            const existingRule = await tx.discountRule.findUnique({
+              where: { id: (d as any).discountRuleId },
+              select: { isStackable: true },
+            })
+            if (existingRule && !existingRule.isStackable) {
+              throw Object.assign(new Error('Cannot apply coupon — order has a non-stackable discount'), { statusCode: 400 })
+            }
           }
         }
       }
-    }
 
-    // --- Calculate discount amount ---
-    const discountType = coupon.discountType // 'percent' | 'fixed' | 'free_item'
-    const discountValue = Number(coupon.discountValue)
-    let discountAmount: number
-    let discountPercent: number | null = null
-    let discountName: string
+      // --- Calculate discount amount ---
+      const discountType = coupon.discountType // 'percent' | 'fixed' | 'free_item'
+      const discountValue = Number(coupon.discountValue)
+      let discountAmount: number
+      let discountPercent: number | null = null
+      let discountName: string
 
-    if (discountType === 'percent') {
-      discountPercent = discountValue
-      discountAmount = Math.round(subtotal * (discountValue / 100) * 100) / 100
-      discountName = `Coupon: ${coupon.code} (${discountValue}% off)`
-    } else if (discountType === 'fixed') {
-      discountAmount = discountValue
-      discountName = `Coupon: ${coupon.code} ($${discountValue.toFixed(2)} off)`
-    } else {
-      // free_item — not supported in this endpoint (requires adding item to order)
-      return NextResponse.json(
-        { error: 'Free item coupons must be applied at the menu level' },
-        { status: 400 }
+      if (discountType === 'percent') {
+        discountPercent = discountValue
+        discountAmount = Math.round(subtotal * (discountValue / 100) * 100) / 100
+        discountName = `Coupon: ${coupon.code} (${discountValue}% off)`
+      } else if (discountType === 'fixed') {
+        discountAmount = discountValue
+        discountName = `Coupon: ${coupon.code} ($${discountValue.toFixed(2)} off)`
+      } else {
+        // free_item — not supported in this endpoint (requires adding item to order)
+        throw Object.assign(new Error('Free item coupons must be applied at the menu level'), { statusCode: 400 })
+      }
+
+      // Apply maximum discount cap
+      if (coupon.maximumDiscount && discountAmount > Number(coupon.maximumDiscount)) {
+        discountAmount = Number(coupon.maximumDiscount)
+      }
+
+      // Ensure discount doesn't exceed remaining subtotal
+      const currentDiscountTotal = order.discounts.reduce(
+        (sum: number, d: any) => sum + Number(d.amount),
+        0
       )
-    }
+      const maxAllowedDiscount = subtotal - currentDiscountTotal
+      if (discountAmount > maxAllowedDiscount) {
+        discountAmount = maxAllowedDiscount
+      }
 
-    // Apply maximum discount cap
-    if (coupon.maximumDiscount && discountAmount > Number(coupon.maximumDiscount)) {
-      discountAmount = Number(coupon.maximumDiscount)
-    }
+      if (discountAmount <= 0) {
+        throw Object.assign(new Error('No discount amount to apply (order may already be fully discounted)'), { statusCode: 400 })
+      }
 
-    // Ensure discount doesn't exceed remaining subtotal
-    const currentDiscountTotal = order.discounts.reduce(
-      (sum: number, d: any) => sum + Number(d.amount),
-      0
-    )
-    const maxAllowedDiscount = subtotal - currentDiscountTotal
-    if (discountAmount > maxAllowedDiscount) {
-      discountAmount = maxAllowedDiscount
-    }
+      // --- Apply: create OrderDiscount + CouponRedemption + increment usageCount ---
 
-    if (discountAmount <= 0) {
-      return NextResponse.json(
-        { error: 'No discount amount to apply (order may already be fully discounted)' },
-        { status: 400 }
-      )
-    }
-
-    // --- Apply in a transaction: create OrderDiscount + CouponRedemption + increment usageCount ---
-    const result = await db.$transaction(async (tx) => {
       // Create OrderDiscount record (goes through standard discount reporting)
       const discount = await tx.orderDiscount.create({
         data: {
@@ -303,8 +266,10 @@ export const POST = withVenue(async function POST(
         version: { increment: 1 },
       }, tx)
 
-      return { discount, totals }
+      return { order, coupon, discount, totals, customerId, discountAmount, discountPercent }
     })
+
+    const { order, coupon, discountPercent, discountAmount } = result
 
     // Emit order event for discount applied (fire-and-forget)
     void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_APPLIED', {
@@ -366,7 +331,11 @@ export const POST = withVenue(async function POST(
         total: result.totals.total,
       },
     } })
-  } catch (error) {
+  } catch (error: any) {
+    // Handle validation errors thrown from inside the transaction
+    if (error?.statusCode) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode })
+    }
     console.error('Failed to apply coupon:', error)
     return NextResponse.json(
       { error: 'Failed to apply coupon' },
