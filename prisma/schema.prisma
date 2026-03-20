@@ -9037,3 +9037,12 @@ model EmployeePermissionOverride {
   @@index([locationId])
   @@index([employeeId])
 }
+
+/// Migration tracking table — managed by scripts/nuc-pre-migrate.js
+/// Prisma must know about it so db push does not drop it.
+model GwiMigrations {
+  name      String   @id
+  appliedAt DateTime @default(now()) @map("applied_at")
+
+  @@map("_gwi_migrations")
+}
