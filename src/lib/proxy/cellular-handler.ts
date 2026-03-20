@@ -15,9 +15,12 @@ import {
   matchesRouteList,
 } from './route-policies'
 import { signAndAttachTenantJwt } from './tenant-signing'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('cellular-handler')
 
 function logCellularBlock(terminalId: string, locationId: string, pathname: string, reason: string): void {
-  console.error(JSON.stringify({
+  log.warn({
     event: 'cellular_request_blocked',
     terminalId,
     locationId,
@@ -66,16 +69,15 @@ export async function handleCellularAuth(
             gracePayload.payload.employeeId,
             gracePayload.payload.employeeName,
           )
-          console.warn(JSON.stringify({
+          log.info({
             event: 'cellular_grace_token_issued',
             terminalId: gracePayload.payload.terminalId,
             locationId: gracePayload.payload.locationId,
             pathname,
             tokenExpiredAt: new Date(gracePayload.payload.exp * 1000).toISOString(),
-            timestamp: new Date().toISOString(),
-          }))
+          })
         } catch (issueErr) {
-          console.error('[proxy] Failed to issue grace token:', issueErr)
+          log.error({ err: issueErr }, 'Failed to issue grace token')
         }
       }
     }
@@ -147,7 +149,7 @@ export async function handleCellularAuth(
     }
     // Route to the correct venue database — venueSlug is mandatory
     if (!payload.venueSlug) {
-      console.error(`[proxy] cellular token missing venueSlug — cannot resolve venue DB. terminalId=${payload.terminalId} locationId=${payload.locationId}`)
+      log.error({ terminalId: payload.terminalId, locationId: payload.locationId }, 'Cellular token missing venueSlug — cannot resolve venue DB')
       return NextResponse.json({ error: 'Cellular token missing venueSlug; cannot resolve venue DB. Re-pair the device.' }, { status: 400 })
     }
     headers.set('x-venue-slug', payload.venueSlug)
