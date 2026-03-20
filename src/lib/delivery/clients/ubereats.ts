@@ -21,7 +21,6 @@ import type {
   OrderConfirmation,
   OrderRejection,
   MenuSyncItem,
-  MenuSyncModifierGroup,
   MenuSyncResult,
 } from './types'
 
@@ -42,9 +41,11 @@ function log() {
 // Constants
 // ---------------------------------------------------------------------------
 
-const TOKEN_URL = 'https://auth.uber.com/oauth/v2/token'
-const API_BASE = 'https://api.uber.com'
-const TOKEN_SCOPE = 'eats.store eats.store.orders.read eats.store.orders.write eats.deliveries'
+const TOKEN_URL_PRODUCTION = 'https://auth.uber.com/oauth/v2/token'
+const TOKEN_URL_SANDBOX = 'https://sandbox-login.uber.com/oauth/v2/token'
+const API_BASE_PRODUCTION = 'https://api.uber.com'
+const API_BASE_SANDBOX = 'https://test-api.uber.com'
+const TOKEN_SCOPE = 'eats.store eats.order eats.store.orders.restaurantdelivery.status eats.deliveries'
 
 // Refresh 5 minutes before actual expiry to avoid clock-skew races
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1_000
@@ -63,8 +64,8 @@ type UberDenyReasonCode =
   | 'SPECIAL_INSTRUCTIONS'
   | 'OTHER'
   | 'POS_NOT_READY'
-  | 'CANNOT_COMPLETE'
-  | 'STORE_UNDER_REVIEW'
+  | 'MISSING_ITEM'
+  | 'MISSING_INFO'
 
 // ---------------------------------------------------------------------------
 // Uber Direct status → unified DeliveryStatus mapping
@@ -88,77 +89,64 @@ function mapUberDirectStatus(uberStatus: string): DeliveryStatus {
 // UberEats menu format converters
 // ---------------------------------------------------------------------------
 
-interface UberMenuModifierOption {
+interface UberMenuItemPayload {
   id: string
-  title: string
+  title: { translations: { en: string } }
+  description: { translations: { en: string } }
+  image_url?: string
   price_info: { price: number; overrides: unknown[] }
-  quantity_info: { quantity: { max_permitted: number; charge_above: number } }
+  quantity_info: { quantity: { max_permitted: number } }
   tax_info: { tax_rate: number }
-  available: boolean
+  external_data?: string
 }
 
-interface UberMenuModifierGroup {
+interface UberMenuModifierOptionRef {
   id: string
-  title: string
+  type: 'ITEM'
+  price_info: { price: number; overrides: unknown[] }
+}
+
+interface UberMenuModifierGroupPayload {
+  id: string
+  title: { translations: { en: string } }
   quantity_info: {
     quantity: {
       min_permitted: number
       max_permitted: number
     }
   }
-  modifier_options: UberMenuModifierOption[]
+  modifier_options: UberMenuModifierOptionRef[]
 }
 
-interface UberMenuItem {
+interface UberMenuCategoryPayload {
   id: string
-  title: string
-  description: string
-  image_url?: string
-  price_info: { price: number; overrides: unknown[] }
-  quantity_info: { quantity: { max_permitted: number } }
-  tax_info: { tax_rate: number }
-  modifier_groups?: UberMenuModifierGroup[]
-  available: boolean
-}
-
-interface UberMenuCategory {
-  id: string
-  title: string
+  title: { translations: { en: string } }
   entities: Array<{ id: string; type: 'ITEM' }>
 }
 
-interface UberMenuSection {
+interface UberMenuEntryPayload {
   id: string
-  title: string
-  categories: UberMenuCategory[]
-  items: UberMenuItem[]
-  modifier_groups: UberMenuModifierGroup[]
+  title: { translations: { en: string } }
+  service_availability: Array<{
+    day_of_week: string
+    time_periods: Array<{ start_time: string; end_time: string }>
+  }>
+  category_ids: string[]
 }
 
 interface UberMenuPayload {
-  menus: UberMenuSection[]
+  items: UberMenuItemPayload[]
+  categories: UberMenuCategoryPayload[]
+  menus: UberMenuEntryPayload[]
+  modifier_groups: UberMenuModifierGroupPayload[]
 }
 
-function buildModifierGroup(group: MenuSyncModifierGroup): UberMenuModifierGroup {
-  return {
-    id: group.externalId,
-    title: group.name,
-    quantity_info: {
-      quantity: {
-        min_permitted: group.minSelections,
-        max_permitted: group.maxSelections,
-      },
-    },
-    modifier_options: group.options.map(opt => ({
-      id: opt.externalId,
-      title: opt.name,
-      price_info: { price: opt.price, overrides: [] },
-      quantity_info: { quantity: { max_permitted: 1, charge_above: 0 } },
-      tax_info: { tax_rate: 0 },
-      available: opt.available,
-    })),
-  }
-}
+const ALL_DAYS_AVAILABILITY = [
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+].map(day => ({
+  day_of_week: day,
+  time_periods: [{ start_time: '00:00', end_time: '23:59' }],
+}))
 
 function buildUberMenuPayload(items: MenuSyncItem[]): UberMenuPayload {
   // Group items by category
@@ -176,64 +164,92 @@ function buildUberMenuPayload(items: MenuSyncItem[]): UberMenuPayload {
     }
   }
 
-  // Collect all modifier groups (deduplicated by externalId)
-  const allModGroups = new Map<string, UberMenuModifierGroup>()
-  const allMenuItems: UberMenuItem[] = []
-  const categories: UberMenuCategory[] = []
+  // Flat top-level arrays (Uber Eats requires this structure)
+  const allModGroups = new Map<string, UberMenuModifierGroupPayload>()
+  const allItems: UberMenuItemPayload[] = []
+  const categories: UberMenuCategoryPayload[] = []
+  // Track modifier option items that need to be in the top-level items array
+  const modifierItemIds = new Set<string>()
 
   for (const [, cat] of Array.from(catMap)) {
     const entityRefs: Array<{ id: string; type: 'ITEM' }> = []
 
     for (const item of cat.items) {
-      const modGroupIds: string[] = []
       if (item.modifierGroups) {
         for (const mg of item.modifierGroups) {
           if (!allModGroups.has(mg.externalId)) {
-            allModGroups.set(mg.externalId, buildModifierGroup(mg))
+            const modOptionRefs: UberMenuModifierOptionRef[] = []
+            for (const opt of mg.options) {
+              modOptionRefs.push({
+                id: opt.externalId,
+                type: 'ITEM',
+                price_info: { price: opt.price, overrides: [] },
+              })
+              // Add modifier option as a top-level item if not already present
+              if (!modifierItemIds.has(opt.externalId)) {
+                modifierItemIds.add(opt.externalId)
+                allItems.push({
+                  id: opt.externalId,
+                  title: { translations: { en: opt.name } },
+                  description: { translations: { en: '' } },
+                  price_info: { price: opt.price, overrides: [] },
+                  quantity_info: { quantity: { max_permitted: 99 } },
+                  tax_info: { tax_rate: 0 },
+                  external_data: opt.externalId,
+                })
+              }
+            }
+            allModGroups.set(mg.externalId, {
+              id: mg.externalId,
+              title: { translations: { en: mg.name } },
+              quantity_info: {
+                quantity: {
+                  min_permitted: mg.minSelections,
+                  max_permitted: mg.maxSelections,
+                },
+              },
+              modifier_options: modOptionRefs,
+            })
           }
-          modGroupIds.push(mg.externalId)
         }
       }
 
-      const menuItem: UberMenuItem = {
+      const menuItem: UberMenuItemPayload = {
         id: item.externalId,
-        title: item.name,
-        description: item.description || '',
+        title: { translations: { en: item.name } },
+        description: { translations: { en: item.description || '' } },
         price_info: { price: item.price, overrides: [] },
         quantity_info: { quantity: { max_permitted: 99 } },
         tax_info: { tax_rate: 0 },
-        available: item.available,
+        external_data: item.externalId,
       }
       if (item.imageUrl) {
         menuItem.image_url = item.imageUrl
       }
-      if (modGroupIds.length > 0) {
-        menuItem.modifier_groups = modGroupIds
-          .map(id => allModGroups.get(id))
-          .filter((g): g is UberMenuModifierGroup => !!g)
-      }
 
-      allMenuItems.push(menuItem)
+      allItems.push(menuItem)
       entityRefs.push({ id: item.externalId, type: 'ITEM' })
     }
 
     categories.push({
       id: cat.categoryExternalId,
-      title: cat.categoryName,
+      title: { translations: { en: cat.categoryName } },
       entities: entityRefs,
     })
   }
 
   return {
+    items: allItems,
+    categories,
     menus: [
       {
         id: 'main-menu',
-        title: 'Main Menu',
-        categories,
-        items: allMenuItems,
-        modifier_groups: Array.from(allModGroups.values()),
+        title: { translations: { en: 'Full Menu' } },
+        service_availability: ALL_DAYS_AVAILABILITY,
+        category_ids: categories.map(c => c.id),
       },
     ],
+    modifier_groups: Array.from(allModGroups.values()),
   }
 }
 
@@ -246,16 +262,27 @@ export class UberEatsClient implements IPlatformClient {
 
   private credentials: UberEatsCredentials
   private storeId: string
+  private sandbox: boolean
   private onTokenRefresh?: (token: string, expiresAt: number) => void
+
+  private get tokenUrl(): string {
+    return this.sandbox ? TOKEN_URL_SANDBOX : TOKEN_URL_PRODUCTION
+  }
+
+  private get apiBase(): string {
+    return this.sandbox ? API_BASE_SANDBOX : API_BASE_PRODUCTION
+  }
 
   constructor(
     credentials: UberEatsCredentials,
     storeId: string,
     onTokenRefresh?: (token: string, expiresAt: number) => void,
+    sandbox = false,
   ) {
     this.credentials = { ...credentials }
     this.storeId = storeId
     this.onTokenRefresh = onTokenRefresh
+    this.sandbox = sandbox
   }
 
   // -------------------------------------------------------------------------
@@ -279,7 +306,7 @@ export class UberEatsClient implements IPlatformClient {
       scope: TOKEN_SCOPE,
     })
 
-    const response = await fetch(TOKEN_URL, {
+    const response = await fetch(this.tokenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
@@ -330,7 +357,7 @@ export class UberEatsClient implements IPlatformClient {
     const headers = await this.authHeaders()
     const { data } = await platformFetch('ubereats', {
       method: 'GET',
-      url: `${API_BASE}${path}`,
+      url: `${this.apiBase}${path}`,
       headers,
     })
     return data
@@ -340,7 +367,7 @@ export class UberEatsClient implements IPlatformClient {
     const headers = await this.authHeaders()
     const { data } = await platformFetch('ubereats', {
       method: 'POST',
-      url: `${API_BASE}${path}`,
+      url: `${this.apiBase}${path}`,
       headers,
       body,
     })
@@ -351,7 +378,7 @@ export class UberEatsClient implements IPlatformClient {
     const headers = await this.authHeaders()
     const { data } = await platformFetch('ubereats', {
       method: 'PUT',
-      url: `${API_BASE}${path}`,
+      url: `${this.apiBase}${path}`,
       headers,
       body,
     })
@@ -365,6 +392,7 @@ export class UberEatsClient implements IPlatformClient {
   async confirmOrder(
     externalOrderId: string,
     prepTimeMinutes?: number,
+    posOrderId?: string,
   ): Promise<OrderConfirmation> {
     return withRetry(
       async () => {
@@ -372,10 +400,15 @@ export class UberEatsClient implements IPlatformClient {
           ? Math.floor(Date.now() / 1_000) + prepTimeMinutes * 60
           : Math.floor(Date.now() / 1_000) + 20 * 60 // default 20 min
 
-        await this.apiPost(`/v1/eats/orders/${externalOrderId}/accept_pos_order`, {
-          reason: { explanation: 'Order accepted by POS' },
+        const body: Record<string, unknown> = {
+          reason: 'Order accepted by POS',
           pickup_time: pickupTime,
-        })
+        }
+        if (posOrderId) {
+          body.external_reference_id = posOrderId
+        }
+
+        await this.apiPost(`/v1/eats/orders/${externalOrderId}/accept_pos_order`, body)
 
         log().info({ orderId: externalOrderId, prepTimeMinutes }, 'UberEats order accepted')
         return {
@@ -436,9 +469,9 @@ export class UberEatsClient implements IPlatformClient {
   ): Promise<{ success: boolean; error?: string }> {
     return withRetry(
       async () => {
-        // Use deny endpoint with CANNOT_COMPLETE for post-accept cancellation
-        await this.apiPost(`/v1/eats/orders/${externalOrderId}/deny_pos_order`, {
-          reason: { code: 'CANNOT_COMPLETE' as UberDenyReasonCode, explanation: reason },
+        // Use the cancel endpoint for post-accept cancellation
+        await this.apiPost(`/v1/eats/orders/${externalOrderId}/cancel`, {
+          reason: { code: 'OTHER', explanation: reason },
         })
 
         log().info({ orderId: externalOrderId, reason }, 'UberEats order cancelled')
@@ -516,8 +549,8 @@ export class UberEatsClient implements IPlatformClient {
     return withRetry(
       async () => {
         const body = available
-          ? { suspension_info: { suspend_until: 0, reason: '' } }
-          : { suspension_info: { suspend_until: 0, reason: 'OUT_OF_STOCK' } }
+          ? { suspension_info: { suspension: { suspend_until: 0 } } }
+          : { suspension_info: { suspension: { suspend_until: 8640000000, reason: 'OUT_OF_STOCK' } } }
 
         await this.apiPost(
           `/v2/eats/stores/${this.storeId}/menus/items/${externalItemId}`,
@@ -574,9 +607,9 @@ export class UberEatsClient implements IPlatformClient {
           id: string
           fee: number
           currency: string
-          estimated_pickup_time_minutes?: number
-          estimated_delivery_time_minutes?: number
-          expires_at?: string
+          pickup_duration?: number
+          duration?: number
+          expires?: string
         }
 
         log().info(
@@ -589,9 +622,9 @@ export class UberEatsClient implements IPlatformClient {
           quoteId: data.id,
           feeAmountCents: data.fee,
           currency: data.currency || 'USD',
-          estimatedPickupMinutes: data.estimated_pickup_time_minutes ?? 15,
-          estimatedDeliveryMinutes: data.estimated_delivery_time_minutes ?? 30,
-          expiresAt: data.expires_at || new Date(Date.now() + 30 * 60_000).toISOString(),
+          estimatedPickupMinutes: data.pickup_duration ?? 15,
+          estimatedDeliveryMinutes: data.duration ?? 30,
+          expiresAt: data.expires || new Date(Date.now() + 30 * 60_000).toISOString(),
           rawResponse: data as unknown as Record<string, unknown>,
         }
       },
@@ -601,6 +634,7 @@ export class UberEatsClient implements IPlatformClient {
 
   async createDelivery(
     quoteId: string,
+    request?: CreateDeliveryRequest,
   ): Promise<{ externalDeliveryId: string; trackingUrl?: string }> {
     if (!this.credentials.directEnabled) {
       throw new Error('Uber Direct is not enabled for this location')
@@ -610,9 +644,29 @@ export class UberEatsClient implements IPlatformClient {
       async () => {
         const customerId = this.directCustomerId
 
+        const body: Record<string, unknown> = { quote_id: quoteId }
+
+        if (request) {
+          body.pickup = {
+            address: request.pickupAddress,
+            name: request.pickupBusinessName,
+            phone_number: request.pickupPhoneNumber,
+          }
+          body.dropoff = {
+            address: request.dropoffAddress,
+            name: request.dropoffContactFirstName + (request.dropoffContactLastName ? ` ${request.dropoffContactLastName}` : ''),
+            phone_number: request.dropoffPhoneNumber,
+            notes: request.dropoffInstructions || '',
+          }
+          body.manifest_items = (request.items || []).map(item => ({
+            name: item.name,
+            quantity: item.quantity,
+          }))
+        }
+
         const data = (await this.apiPost(
           `/v1/customers/${customerId}/deliveries`,
-          { quote_id: quoteId },
+          body,
         )) as {
           id: string
           tracking_url?: string
@@ -737,9 +791,10 @@ function mapReasonToDenyCode(reason: string): UberDenyReasonCode {
   if (r.includes('address'))                               return 'ADDRESS'
   if (r.includes('price') || r.includes('pricing'))        return 'PRICING'
   if (r.includes('instruction'))                           return 'SPECIAL_INSTRUCTIONS'
-  if (r.includes('review'))                                return 'STORE_UNDER_REVIEW'
   if (r.includes('not ready'))                             return 'POS_NOT_READY'
-  if (r.includes('cannot') || r.includes('can\'t'))        return 'CANNOT_COMPLETE'
+  if (r.includes('missing item'))                          return 'MISSING_ITEM'
+  if (r.includes('missing info') || r.includes('missing information'))
+                                                           return 'MISSING_INFO'
   return 'OTHER'
 }
 
@@ -751,6 +806,7 @@ export function createUberEatsClient(
   credentials: UberEatsCredentials,
   storeId: string,
   onTokenRefresh?: (token: string, expiresAt: number) => void,
+  sandbox = false,
 ): UberEatsClient {
-  return new UberEatsClient(credentials, storeId, onTokenRefresh)
+  return new UberEatsClient(credentials, storeId, onTokenRefresh, sandbox)
 }

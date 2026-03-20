@@ -63,13 +63,14 @@ interface MacComponents {
  *
  * Format: MAC id="<clientId>",nonce="<ts:random>",bodyhash="<base64(SHA256(body))>",mac="<base64(HMAC-SHA256(normalized,key))>"
  *
- * Normalized string:
+ * Normalized string (7 elements):
  *   nonce\n
  *   METHOD\n
  *   path\n
  *   host\n
  *   port\n
  *   bodyhash\n
+ *   ext\n          (empty — no extensions)
  */
 function buildMacHeader(opts: MacComponents): string {
   const { clientId, secretKey, method, url, body } = opts
@@ -89,7 +90,7 @@ function buildMacHeader(opts: MacComponents): string {
   const bodyhash = createHash('sha256').update(body || '').digest('base64')
 
   // Normalized string
-  const normalized = `${nonce}\n${method.toUpperCase()}\n${path}\n${host}\n${port}\n${bodyhash}\n`
+  const normalized = `${nonce}\n${method.toUpperCase()}\n${path}\n${host}\n${port}\n${bodyhash}\n\n`
 
   // MAC: base64(HMAC-SHA256(normalized, base64decode(secretKey)))
   const keyBuffer = Buffer.from(secretKey, 'base64')
@@ -102,16 +103,16 @@ function buildMacHeader(opts: MacComponents): string {
 // Grubhub rejection reason codes
 // ---------------------------------------------------------------------------
 
-type GrubhubRejectReason = 'CAPACITY' | 'HOURS' | 'MENU' | 'OTHER'
+type GrubhubRejectReason = 'RESTAURANT_OFFLINE' | 'MENU_ITEM_NOT_FOUND' | 'PRICE_MISMATCH' | 'OTHER'
 
 /**
  * Map a free-text rejection reason to a Grubhub reason code.
  */
 function mapRejectReason(reason: string): GrubhubRejectReason {
   const lower = reason.toLowerCase()
-  if (lower.includes('capacity') || lower.includes('busy') || lower.includes('volume')) return 'CAPACITY'
-  if (lower.includes('hours') || lower.includes('closed')) return 'HOURS'
-  if (lower.includes('menu') || lower.includes('item') || lower.includes('unavailable')) return 'MENU'
+  if (lower.includes('offline') || lower.includes('closed') || lower.includes('hours') || lower.includes('capacity')) return 'RESTAURANT_OFFLINE'
+  if (lower.includes('item') || lower.includes('unavailable') || lower.includes('menu') || lower.includes('not found') || lower.includes('86')) return 'MENU_ITEM_NOT_FOUND'
+  if (lower.includes('price') || lower.includes('mismatch') || lower.includes('cost')) return 'PRICE_MISMATCH'
   return 'OTHER'
 }
 
@@ -272,23 +273,60 @@ export class GrubhubClient implements IPlatformClient {
     )
   }
 
+  async markOutForDelivery(
+    externalOrderId: string,
+  ): Promise<{ success: boolean }> {
+    return withRetry(
+      async () => {
+        await this.request(
+          'PUT',
+          `/pos/v1/merchant/${this.merchantId}/orders/${externalOrderId}/status`,
+          { status: 'OUT_FOR_DELIVERY' },
+        )
+
+        log().info({ orderId: externalOrderId }, `[grubhub] Order marked out for delivery`)
+        return { success: true }
+      },
+      { platform: PLATFORM, operation: 'markOutForDelivery' },
+    )
+  }
+
+  async markFulfilled(
+    externalOrderId: string,
+  ): Promise<{ success: boolean }> {
+    return withRetry(
+      async () => {
+        await this.request(
+          'PUT',
+          `/pos/v1/merchant/${this.merchantId}/orders/${externalOrderId}/status`,
+          { status: 'FULFILLED' },
+        )
+
+        log().info({ orderId: externalOrderId }, `[grubhub] Order marked fulfilled`)
+        return { success: true }
+      },
+      { platform: PLATFORM, operation: 'markFulfilled' },
+    )
+  }
+
   async cancelOrder(
     externalOrderId: string,
     reason: string,
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Grubhub uses the same status endpoint for cancellation
+      // Grubhub cancellation of a confirmed order uses change requests endpoint.
+      // Note: Cancellations require approval from a Grubhub Care Agent and are not immediate.
       await this.request(
-        'PUT',
-        `/pos/v1/merchant/${this.merchantId}/orders/${externalOrderId}/status`,
+        'POST',
+        `/pos/v1/merchant/${this.merchantId}/orders/${externalOrderId}/changerequests`,
         {
-          status: 'REJECTED',
+          change_action: 'cancel.action',
+          reason: reason,
           reason_code: 'OTHER',
-          message: reason,
         },
       )
 
-      log().info({ orderId: externalOrderId, reason }, `[grubhub] Order cancelled`)
+      log().info({ orderId: externalOrderId, reason }, `[grubhub] Order cancellation requested`)
       return { success: true }
     } catch (error) {
       const msg = error instanceof PlatformApiError
@@ -355,6 +393,7 @@ export class GrubhubClient implements IPlatformClient {
 
   // ─── Delivery as a Service — Grubhub Connect (DaaS) ─────────────────────
 
+  // TODO: Verify Connect endpoint paths against authenticated Grubhub developer portal
   async getDeliveryQuote(request: CreateDeliveryRequest): Promise<DeliveryQuote> {
     return withRetry(
       async () => {
@@ -408,6 +447,7 @@ export class GrubhubClient implements IPlatformClient {
     )
   }
 
+  // TODO: Verify Connect endpoint paths against authenticated Grubhub developer portal
   async createDelivery(
     quoteId: string,
   ): Promise<{ externalDeliveryId: string; trackingUrl?: string }> {
@@ -436,6 +476,7 @@ export class GrubhubClient implements IPlatformClient {
     )
   }
 
+  // TODO: Verify Connect endpoint paths against authenticated Grubhub developer portal
   async cancelDelivery(
     externalDeliveryId: string,
     reason: string,
@@ -460,6 +501,7 @@ export class GrubhubClient implements IPlatformClient {
     }
   }
 
+  // TODO: Verify Connect endpoint paths against authenticated Grubhub developer portal
   async getDeliveryStatus(externalDeliveryId: string): Promise<DeliveryTracking> {
     return withRetry(
       async () => {
@@ -500,40 +542,41 @@ export class GrubhubClient implements IPlatformClient {
   // ─── Private: Menu payload builder ───────────────────────────────────────
 
   /**
-   * Build the Grubhub full-menu ingestion payload from POS MenuSyncItems.
-   * Groups items by category and maps modifiers to Grubhub modifier groups.
-   * All prices converted from cents to dollars (Grubhub uses dollars).
+   * Build the Grubhub Normalized Menu ingestion payload from POS MenuSyncItems.
+   * Uses the normalized_menu format with separate top-level arrays for
+   * menu_schedules, menu_sections, menu_items, and modifier_groups.
+   * All prices in { amount (cents), currency } format.
    */
   private buildMenuPayload(items: MenuSyncItem[]): Record<string, unknown> {
-    // Group items by category
+    // Group items by category for sections
     const categories = new Map<string, {
       id: string
       name: string
-      items: MenuSyncItem[]
+      itemIds: string[]
     }>()
+
+    const menuItems: Record<string, unknown>[] = []
+    const modifierGroups: Record<string, unknown>[] = []
+    const seenModGroups = new Set<string>()
 
     for (const item of items) {
       let cat = categories.get(item.categoryExternalId)
       if (!cat) {
-        cat = { id: item.categoryExternalId, name: item.categoryName, items: [] }
+        cat = { id: item.categoryExternalId, name: item.categoryName, itemIds: [] }
         categories.set(item.categoryExternalId, cat)
       }
-      cat.items.push(item)
-    }
+      cat.itemIds.push(item.externalId)
 
-    return {
-      restaurant_id: this.merchantId,
-      categories: Array.from(categories.values()).map(cat => ({
-        external_id: cat.id,
-        name: cat.name,
-        items: cat.items.map(item => ({
-          external_id: item.externalId,
-          name: item.name,
-          description: item.description || '',
-          price: item.price / 100, // cents → dollars
-          image_url: item.imageUrl,
-          available: item.available,
-          modifier_groups: (item.modifierGroups || []).map(mg => ({
+      // Collect modifier group IDs for this item
+      const itemModGroupIds: string[] = []
+
+      for (const mg of item.modifierGroups || []) {
+        itemModGroupIds.push(mg.externalId)
+
+        // Deduplicate modifier groups (same group may appear on multiple items)
+        if (!seenModGroups.has(mg.externalId)) {
+          seenModGroups.add(mg.externalId)
+          modifierGroups.push({
             external_id: mg.externalId,
             name: mg.name,
             min_selections: mg.minSelections,
@@ -541,12 +584,46 @@ export class GrubhubClient implements IPlatformClient {
             options: mg.options.map(opt => ({
               external_id: opt.externalId,
               name: opt.name,
-              price: opt.price / 100, // cents → dollars
-              available: opt.available,
+              price: { amount: opt.price, currency: 'USD' },
+              active: opt.available,
             })),
-          })),
-        })),
+          })
+        }
+      }
+
+      menuItems.push({
+        external_id: item.externalId,
+        name: item.name,
+        description: item.description || '',
+        price: { amount: item.price, currency: 'USD' },
+        active: item.available,
+        modifier_groups: itemModGroupIds,
+      })
+    }
+
+    const sectionIds = Array.from(categories.keys()).map(id => `section-${id}`)
+
+    return {
+      merchant_ids: [this.merchantId],
+      normalized_menu: true,
+      menu_schedules: [
+        {
+          external_id: 'schedule-all-day',
+          name: 'All Day',
+          availability: {
+            days_of_week: ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'],
+            time_ranges: [{ start: '00:00', end: '23:59' }],
+          },
+          sections: sectionIds,
+        },
+      ],
+      menu_sections: Array.from(categories.values()).map(cat => ({
+        external_id: `section-${cat.id}`,
+        name: cat.name,
+        items: cat.itemIds,
       })),
+      menu_items: menuItems,
+      modifier_groups: modifierGroups,
     }
   }
 }

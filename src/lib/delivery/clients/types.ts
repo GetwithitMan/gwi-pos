@@ -120,6 +120,7 @@ export interface CreateDeliveryRequest {
     name: string
     quantity: number
     price: number // cents
+    externalId?: string // POS menu item ID
   }>
 }
 
@@ -189,7 +190,7 @@ export interface IPlatformClient {
   readonly platform: DeliveryPlatformId
 
   // Order management
-  confirmOrder(externalOrderId: string, prepTimeMinutes?: number): Promise<OrderConfirmation>
+  confirmOrder(externalOrderId: string, prepTimeMinutes?: number, posOrderId?: string): Promise<OrderConfirmation>
   rejectOrder(externalOrderId: string, reason: string): Promise<OrderRejection>
   markReady(externalOrderId: string): Promise<{ success: boolean; error?: string }>
   cancelOrder(externalOrderId: string, reason: string): Promise<{ success: boolean; error?: string }>
@@ -200,7 +201,7 @@ export interface IPlatformClient {
 
   // Delivery as a Service (DaaS) -- optional, only Drive / Direct / Connect
   getDeliveryQuote?(request: CreateDeliveryRequest): Promise<DeliveryQuote>
-  createDelivery?(quoteId: string): Promise<{ externalDeliveryId: string; trackingUrl?: string }>
+  createDelivery?(quoteId: string, request?: CreateDeliveryRequest): Promise<{ externalDeliveryId: string; trackingUrl?: string }>
   cancelDelivery?(externalDeliveryId: string, reason: string): Promise<{ success: boolean }>
   getDeliveryStatus?(externalDeliveryId: string): Promise<DeliveryTracking>
 }

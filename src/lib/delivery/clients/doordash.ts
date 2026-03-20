@@ -112,6 +112,17 @@ function mapDriveStatus(ddStatus: string): DeliveryStatus {
   return DRIVE_STATUS_MAP[ddStatus] ?? 'created'
 }
 
+/**
+ * Map a free-text cancel reason to DoorDash's expected enum values.
+ */
+function mapCancelReason(reason: string): string {
+  const lower = reason.toLowerCase()
+  if (lower.includes('out of stock') || lower.includes('86')) return 'ITEM_OUT_OF_STOCK'
+  if (lower.includes('closed')) return 'STORE_CLOSED'
+  if (lower.includes('busy') || lower.includes('backed up')) return 'KITCHEN_BUSY'
+  return 'OTHER'
+}
+
 // ---------------------------------------------------------------------------
 // DoorDash Client
 // ---------------------------------------------------------------------------
@@ -347,10 +358,7 @@ export class DoorDashClient implements IPlatformClient {
             method: 'PUT',
             url: `${BASE_URL}/api/v1/stores/${this.storeId}/items/status`,
             headers: this.authHeaders(),
-            body: {
-              item_ids: [externalItemId],
-              active: available,
-            },
+            body: [{ merchant_supplied_id: externalItemId, is_active: available }],
           }),
         {
           platform: 'doordash',
@@ -398,7 +406,7 @@ export class DoorDashClient implements IPlatformClient {
       items: (request.items ?? []).map(item => ({
         name: item.name,
         quantity: item.quantity,
-        price: item.price, // cents
+        external_id: item.externalId ?? '',
       })),
     }
 
@@ -475,16 +483,21 @@ export class DoorDashClient implements IPlatformClient {
 
     const resp = data as Record<string, unknown>
     const dasher = resp.dasher as Record<string, unknown> | undefined
-    const dasherLocation = dasher?.location as Record<string, unknown> | undefined
+    const dasherLocation = (resp.dasher_location ?? dasher?.location) as Record<string, unknown> | undefined
+
+    // DoorDash may return dasher info as top-level fields OR nested under `dasher`
+    const driverName = (resp.dasher_name as string | undefined)
+      ?? (dasher
+        ? `${dasher.first_name ?? ''} ${dasher.last_name ?? ''}`.trim() || undefined
+        : undefined)
+    const driverPhone = (resp.dasher_dropoff_phone_number ?? dasher?.phone_number ?? undefined) as string | undefined
 
     return {
       platform: 'doordash',
       externalDeliveryId,
       status: mapDriveStatus((resp.delivery_status ?? 'created') as string),
-      driverName: dasher
-        ? `${dasher.first_name ?? ''} ${dasher.last_name ?? ''}`.trim() || undefined
-        : undefined,
-      driverPhone: (dasher?.phone_number ?? undefined) as string | undefined,
+      driverName,
+      driverPhone,
       driverLatitude: (dasherLocation?.lat ?? undefined) as number | undefined,
       driverLongitude: (dasherLocation?.lng ?? undefined) as number | undefined,
       estimatedPickupAt: (resp.pickup_time_estimated ?? undefined) as string | undefined,
@@ -526,32 +539,33 @@ export class DoorDashClient implements IPlatformClient {
 // ---------------------------------------------------------------------------
 // Menu payload builder
 //
-// DoorDash menu format:
-//   Menu → store_id, categories[]
-//   Category → id, title, items[]
-//   Item → id, title, description, price, extras[]
-//   Extra (modifier group) → id, title, min_num_options, max_num_options, options[]
-//   Option (modifier) → id, title, price, active
+// DoorDash menu format (v2):
+//   store → merchant_supplied_id, provider_type
+//   menu → name, categories[]
+//   Category → merchant_supplied_id, name, active, items[]
+//   Item → merchant_supplied_id, name, description, price, active, extras[]
+//   Extra (modifier group) → merchant_supplied_id, name, min_num_options, max_num_options, options[]
+//   Option (modifier) → merchant_supplied_id, name, price, active
 // ---------------------------------------------------------------------------
 
 interface DDMenuOption {
-  id: string
-  title: string
+  merchant_supplied_id: string
+  name: string
   price: number // cents
   active: boolean
 }
 
 interface DDMenuExtra {
-  id: string
-  title: string
+  merchant_supplied_id: string
+  name: string
   min_num_options: number
   max_num_options: number
   options: DDMenuOption[]
 }
 
 interface DDMenuItem {
-  id: string
-  title: string
+  merchant_supplied_id: string
+  name: string
   description: string
   price: number // cents
   active: boolean
@@ -560,14 +574,23 @@ interface DDMenuItem {
 }
 
 interface DDMenuCategory {
-  id: string
-  title: string
+  merchant_supplied_id: string
+  name: string
+  active: boolean
   items: DDMenuItem[]
 }
 
 interface DDMenuPayload {
-  store_id: string
-  categories: DDMenuCategory[]
+  store: {
+    merchant_supplied_id: string
+    provider_type: string
+  }
+  open_hours: unknown[]
+  special_hours: unknown[]
+  menu: {
+    name: string
+    categories: DDMenuCategory[]
+  }
 }
 
 function buildDoorDashMenuPayload(
@@ -591,21 +614,21 @@ function buildDoorDashMenuPayload(
   for (const cat of Array.from(categoryMap.values())) {
     const ddItems: DDMenuItem[] = cat.items.map(item => {
       const extras: DDMenuExtra[] = (item.modifierGroups ?? []).map(group => ({
-        id: group.externalId,
-        title: group.name,
+        merchant_supplied_id: group.externalId,
+        name: group.name,
         min_num_options: group.minSelections,
         max_num_options: group.maxSelections,
         options: group.options.map(opt => ({
-          id: opt.externalId,
-          title: opt.name,
+          merchant_supplied_id: opt.externalId,
+          name: opt.name,
           price: opt.price, // cents
           active: opt.available,
         })),
       }))
 
       return {
-        id: item.externalId,
-        title: item.name,
+        merchant_supplied_id: item.externalId,
+        name: item.name,
         description: item.description ?? '',
         price: item.price, // cents
         active: item.available,
@@ -615,13 +638,25 @@ function buildDoorDashMenuPayload(
     })
 
     categories.push({
-      id: cat.id,
-      title: cat.name,
+      merchant_supplied_id: cat.id,
+      name: cat.name,
+      active: true,
       items: ddItems,
     })
   }
 
-  return { store_id: storeId, categories }
+  return {
+    store: {
+      merchant_supplied_id: storeId,
+      provider_type: 'doordash',
+    },
+    open_hours: [],
+    special_hours: [],
+    menu: {
+      name: 'Full Menu',
+      categories,
+    },
+  }
 }
 
 // ---------------------------------------------------------------------------
