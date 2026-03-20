@@ -1734,7 +1734,7 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     NEON_SCHEMA_VERSION=""
     if [[ -n "$NEON_DIRECT_URL" ]]; then
       log "Reading schema version from Neon (source of record)..."
-      NEON_SCHEMA_VERSION=$(PGPASSWORD="" psql "$NEON_DIRECT_URL" -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null | tr -d '[:space:]' || echo "")
+      NEON_SCHEMA_VERSION=$(PGPASSWORD="" psql "$NEON_DIRECT_URL" --connect-timeout=10 -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null | tr -d '[:space:]' || echo "")
       if [[ -n "$NEON_SCHEMA_VERSION" ]]; then
         log "Neon schema version: $NEON_SCHEMA_VERSION"
       else
@@ -1892,8 +1892,13 @@ PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
 # Disable RLS on all tables after schema push.
 # prisma db push may (re-)enable RLS via the Prisma schema, but the POS app
 # user doesn't have RLS policies configured. RLS blocks sync, queries, login.
-echo "[pre-start] Disabling RLS on all tables..."
-psql "$DATABASE_URL" -c "
+# NOTE: ALTER TABLE DISABLE ROW LEVEL SECURITY requires superuser.
+# The POS app user ($POSUSER) is NOT a superuser, so we must run as postgres.
+# Extract DB name from DATABASE_URL (format: postgresql://user:pass@host:port/dbname)
+_DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|.*://[^/]*/\([^?]*\).*|\1|p')
+_DB_NAME="${_DB_NAME:-thepasspos}"
+echo "[pre-start] Disabling RLS on all tables (db=$_DB_NAME)..."
+sudo -u postgres psql -d "$_DB_NAME" -c "
   DO $$ DECLARE r RECORD;
   BEGIN
     FOR r IN SELECT relname FROM pg_class WHERE relrowsecurity = true AND relkind = 'r'
@@ -2221,6 +2226,7 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart postgresql
+$POSUSER ALL=(postgres) NOPASSWD: /usr/bin/psql
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
 

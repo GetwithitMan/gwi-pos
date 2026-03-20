@@ -316,7 +316,7 @@ async function handleForceUpdate(payload) {
         })
         // db push creates any missing tables the baselined migrations would have created
         log('  Running db push to create missing tables...')
-        run('npx prisma db push --accept-data-loss', APP_DIR, 180)
+        run('npx prisma db push', APP_DIR, 180)
         migrateOk = true
         steps.push('prisma migrate (baselined + db push) OK')
       } catch (baseErr) {

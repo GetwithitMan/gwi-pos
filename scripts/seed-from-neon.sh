@@ -22,7 +22,7 @@ if [ -z "${DATABASE_URL:-}" ]; then
 fi
 
 echo "[seed] Dumping from Neon cloud..."
-pg_dump "$NEON_DATABASE_URL" --no-owner --no-acl -Fc -f /tmp/neon-seed.pgdump
+PGCONNECT_TIMEOUT=10 pg_dump "$NEON_DATABASE_URL" --no-owner --no-acl -Fc -f /tmp/neon-seed.pgdump
 
 echo "[seed] Restoring to local PostgreSQL..."
 pg_restore -d "$DATABASE_URL" --no-owner --no-acl --clean --if-exists /tmp/neon-seed.pgdump || true
@@ -31,7 +31,7 @@ echo "[seed] Running pre-migrations..."
 node scripts/nuc-pre-migrate.js || true
 
 echo "[seed] Pushing schema..."
-npx prisma db push --accept-data-loss || true
+npx prisma db push || true
 
 echo "[seed] Stamping syncedAt on all rows..."
 psql "$DATABASE_URL" -c "
