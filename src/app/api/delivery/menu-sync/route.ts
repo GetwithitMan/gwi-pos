@@ -22,15 +22,21 @@ import type { DeliveryPlatformId, MenuSyncItem, MenuSyncModifierGroup, MenuSyncR
 // ─── Delivery markup helpers ────────────────────────────────────────────────
 
 function applyMarkup(priceInDollars: number, markupPercent: number, roundingRule: string): number {
-  if (markupPercent <= 0) return priceInDollars
+  if (markupPercent <= 0 || priceInDollars <= 0) return priceInDollars
   const marked = priceInDollars * (1 + markupPercent / 100)
   return applyRounding(marked, roundingRule)
 }
 
 function applyRounding(price: number, rule: string): number {
+  if (price <= 0) return Math.max(0, price)
   switch (rule) {
     case 'nearest_99': return Math.ceil(price) - 0.01
-    case 'nearest_49': return Math.floor(price) + 0.49
+    case 'nearest_49': {
+      // Round to nearest X.49 at or above the marked-up price
+      const floored = Math.floor(price)
+      const candidate = floored + 0.49
+      return candidate >= price ? candidate : candidate + 1
+    }
     case 'nearest_quarter': return Math.ceil(price * 4) / 4
     case 'round_up': return Math.ceil(price)
     default: return Math.round(price * 100) / 100

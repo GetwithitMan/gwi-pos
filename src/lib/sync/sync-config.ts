@@ -341,6 +341,7 @@ export const LOCAL_ONLY_TABLES = new Set([
   'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog',
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
   'SyncConflict', 'SyncWatermark', // quarantine infrastructure
+  'LocalSchemaState', 'LocalInstallState', // NUC-owned infrastructure (never synced)
   // Reservation ephemeral tokens
   'ReservationIdempotencyKey', 'ReservationDepositToken',
   // Delivery infrastructure

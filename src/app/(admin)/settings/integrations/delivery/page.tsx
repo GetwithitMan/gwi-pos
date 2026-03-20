@@ -185,12 +185,17 @@ const ROUNDING_OPTIONS: { value: DeliveryMarkupSettings['roundingRule']; label: 
 ]
 
 function previewMarkup(base: number, pct: number, rule: DeliveryMarkupSettings['roundingRule']): { marked: number; final: number } {
-  if (pct <= 0) return { marked: base, final: base }
+  if (pct <= 0 || base <= 0) return { marked: base, final: base }
   const marked = base * (1 + pct / 100)
   let final: number
   switch (rule) {
     case 'nearest_99': final = Math.ceil(marked) - 0.01; break
-    case 'nearest_49': final = Math.floor(marked) + 0.49; break
+    case 'nearest_49': {
+      const floored = Math.floor(marked)
+      const candidate = floored + 0.49
+      final = candidate >= marked ? candidate : candidate + 1
+      break
+    }
     case 'nearest_quarter': final = Math.ceil(marked * 4) / 4; break
     case 'round_up': final = Math.ceil(marked); break
     default: final = Math.round(marked * 100) / 100

@@ -298,6 +298,19 @@ Use idempotent checks (e.g., `DO $$ IF NOT EXISTS ... $$`) in all pre-flight SQL
 
 ---
 
+## Deploy Pipeline Rules
+
+The NUC deploy pipeline is orchestrated by MC via fleet commands and executed by the sync agent. These rules are absolute.
+
+1. **Deploy pipeline must never hardcode schema, URLs, or secrets.** The sync agent reads from the git repo (`prisma/schema.prisma`) and `.env` symlink (`/opt/gwi-pos/.env`). If a value is not in git or `.env`, it does not exist in the pipeline.
+2. **All infrastructure tables must be in `prisma/schema.prisma`.** Tables created via raw SQL (e.g., `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state`) MUST also have a corresponding Prisma model. Otherwise `prisma db push` will attempt to drop them or block with a drift error.
+3. **Sync agent must `await` async handlers before ACKing.** The command ACK (`POST /fleet/commands/{id}/ack`) must not fire until the deploy operation (git pull → build → restart) has fully completed or failed. A missing `await` causes MC to see false SUCCESS.
+4. **Terminal pairing fields use `skipFields` in sync config.** Models like `Terminal` have NUC-local operational state (e.g., `lastSeenAt`, `isOnline`) that must not be overwritten by downstream sync. The sync config `skipFields` array prevents this.
+5. **Pre-start script is the safety gate.** Before the NUC server starts, the pre-start script: (a) verifies `.env.local` symlink, (b) runs `nuc-pre-migrate.js` for pending migrations, (c) runs `prisma db push` for schema alignment. If any step fails, the service does not start.
+6. **`--accept-data-loss` is banned.** Neither the pre-start script, the sync agent, nor any deploy step may use this flag. Schema must only move forward.
+
+---
+
 ## Android-First Design Rule
 
 The Android native app is the **PRIMARY** POS interface. Web/browser is secondary.

@@ -179,6 +179,30 @@ A persistent outbound WebSocket from each NUC to the cloud relay enables real-ti
 
 **Key file (NUC side):** `src/lib/cloud-relay-client.ts`
 
+### Release & Deploy Pipeline
+
+MC orchestrates the full deploy lifecycle for the NUC fleet:
+
+**Release Flow:**
+1. Admin creates a release in MC (assigns `targetVersion` to a release channel: dev → canary → production)
+2. MC creates `FleetCommand` (type: `DEPLOY_UPDATE`) for each target NUC
+3. Command delivered via SSE stream (`GET /fleet/commands/stream`)
+4. Sync agent on NUC receives command → executes: `git pull → npm install → prisma generate → nuc-pre-migrate.js → prisma db push → npm run build → restart`
+5. Sync agent sends ACK (`POST /fleet/commands/{id}/ack`) with SUCCESS or FAILED + error details
+6. MC tracks fleet-wide rollout progress; can abort unhealthy rollouts
+
+**ACK Status Reporting:**
+- The sync agent must `await` all async deploy steps before sending the ACK. A missing `await` (discovered and fixed 2026-03-20) caused false SUCCESS reports — MC believed deploys succeeded while the build was still running.
+- ACK payload includes: status (SUCCESS/FAILED), duration, error message (if failed), new version hash
+- MC uses ACK data for the fleet rollout dashboard (per-venue deploy status, health-gated progression)
+
+**Fleet Command Delivery:**
+- Commands delivered via Server-Sent Events (SSE) at `GET /fleet/commands/stream`
+- Supports `Last-Event-ID` header for reconnection (no missed commands)
+- Priority levels: NORMAL, HIGH, CRITICAL
+- Max 5 delivery retries before command expires
+- Sync agent maintains persistent SSE connection with auto-reconnect
+
 ### Edge Cases & Business Rules
 - HMAC-SHA256 for ALL fleet API calls (6-header auth model)
 - AES-256-GCM for sensitive config (payment keys) — NEVER store in plain text

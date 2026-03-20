@@ -264,6 +264,45 @@ All orders carry device origin metadata for debugging and accountability:
 
 ---
 
+## 8. Deploy Pipeline (MC → NUC)
+
+The deploy pipeline is **pointer-only** — the sync agent reads everything from the git repo and `.env` symlink. Nothing is hardcoded.
+
+### Release Flow
+
+```
+MC creates release (targetVersion + release channel)
+  → FleetCommand (DEPLOY_UPDATE) sent via SSE stream
+    → Sync agent on NUC receives command
+      → git pull
+      → npm install
+      → npx prisma generate
+      → node scripts/nuc-pre-migrate.js   (numbered migrations)
+      → npx prisma db push --accept-data-loss=NEVER
+      → npm run build
+      → systemctl restart gwi-pos
+      → POST /fleet/commands/{id}/ack (SUCCESS or FAILED + error details)
+```
+
+### Key Invariants
+
+1. **Sync agent must `await` all async handlers before ACKing.** A missing `await` causes the ACK to fire before the deploy completes, reporting false success to MC.
+2. **Pre-start script verifies symlinks** — confirms `.env.local` → `/opt/gwi-pos/.env` exists and is valid before proceeding. If broken, the service fails to start with a clear error.
+3. **Pre-start script runs migrations** — `nuc-pre-migrate.js` applies any pending numbered migrations from `scripts/migrations/`. Migration tracking lives in the `_gwi_migrations` table.
+4. **Pre-start script checks schema** — `prisma db push` ensures the local PG schema matches `prisma/schema.prisma`. This catches drift without destructive reshaping.
+5. **All infrastructure tables must be in Prisma schema** — `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state` are all defined in `prisma/schema.prisma`. If an operational table exists only as raw SQL, `prisma db push` will attempt to drop it.
+6. **Readiness gate prevents traffic** — the NUC does not accept POS traffic until the deploy completes and the Order-Ready Gate (Section 5) is satisfied.
+7. **ACK status reporting** — the sync agent reports deploy outcome (SUCCESS/FAILED) back to MC via the command ACK endpoint. MC uses this to track fleet-wide rollout progress and abort unhealthy rollouts.
+
+### What the Pipeline Never Does
+
+- Never hardcodes schema DDL, database URLs, or secrets
+- Never uses `--accept-data-loss`
+- Never writes `_venue_schema_state` (MC-only)
+- Never skips `prisma generate` (generated client must match schema)
+
+---
+
 ## Appendix: Decision Record
 
 | Decision | Rationale |
@@ -279,3 +318,6 @@ All orders carry device origin metadata for debugging and accountability:
 | Cellular ownership gating on locally-owned orders | Prevents split-brain when LAN terminal is actively working an order |
 | Payment exempt from ownership gating | Card processing must work regardless of originating terminal type |
 | `originDeviceType` in order metadata | Debugging and accountability for dual-ingress order creation |
+| Deploy pipeline is pointer-only | Sync agent reads from git + .env symlink — no hardcoded schema or secrets in the pipeline |
+| Sync agent awaits before ACK | Prevents false success reports to MC when deploy is still in progress |
+| Infrastructure tables in Prisma schema | Prevents `prisma db push` from blocking or dropping operational tables |

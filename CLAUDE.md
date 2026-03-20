@@ -117,6 +117,8 @@ Only after Steps 1–5:
 - **Dual-ingress model:** Neon receives writes from TWO paths: (1) NUC upstream sync (LAN devices → NUC → Neon), and (2) cellular terminals writing directly through Vercel → Neon. Downstream sync (5s) delivers cellular-originated data to the NUC for fulfillment (kitchen prints, KDS).
 - **Authority boundaries:** MC owns schema version, provisioning, `_venue_schema_state`, and rollout. NUC owns local runtime during internet outage. NUC NEVER mutates Neon schema in production — observe and report only.
 - **Installer is pointer-only:** Registration gives the NUC its venue identity + Neon URL. `.env.local` is a symlink to `/opt/gwi-pos/.env` (never a copy). Installer never writes `_venue_schema_state` (MC-only), never uses `--accept-data-loss`, never hardcodes URLs. Schema updates follow MC rollout → Neon → NUC downstream sync.
+- **Deploy pipeline is pointer-only:** MC creates a release → fleet command → sync agent on NUC pulls from git, runs `prisma generate` → `nuc-pre-migrate.js` → `prisma db push` → `npm run build` → restart → ACKs back to MC. No hardcoded schema, URLs, or secrets in the pipeline.
+- **All infrastructure tables in Prisma schema:** `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state`, and similar operational tables MUST be defined in `prisma/schema.prisma` so that `prisma db push` never blocks or drops them.
 - **Universal outage queue:** ALL upstream model writes MUST use outage queue protection (`OutageQueueEntry`). No upstream write may silently fail during an internet outage.
 - **Canonical authority doc:** `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` (Phases 6-8)
 - **Full rules:** `docs/guides/ARCHITECTURE-RULES.md`

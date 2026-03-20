@@ -367,6 +367,29 @@ All client-created entities MUST use a client-generated UUID as their primary ke
 
 ---
 
+## Schema & Sync Hygiene
+
+### Raw-SQL Tables Must Be in Prisma Schema
+
+Any table created via raw SQL (`$executeRawUnsafe`, migration scripts, etc.) **MUST** also be defined as a model in `prisma/schema.prisma`. This ensures `prisma db push` and `prisma generate` are aware of the table and will not block deploys or attempt to drop it.
+
+Examples of infrastructure tables that must be in the schema: `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state`.
+
+### skipFields for NUC-Local State
+
+Models like `Terminal` contain fields that are written locally on the NUC (e.g., `lastSeenAt`, `isOnline`, `ipAddress`) but also synced downstream from Neon for config fields. Use `skipFields` in `sync-config.ts` to prevent downstream sync from overwriting NUC-local operational state.
+
+```typescript
+// In sync-config.ts
+{ model: 'Terminal', skipFields: ['lastSeenAt', 'isOnline', 'ipAddress'] }
+```
+
+### Bidirectional Model Ownership
+
+For bidirectional models (Employee, MenuItem, Category, etc.), MC owns **config** (name, permissions, menu structure) and NUC owns **operational state** (clock entries, order counts, last-active timestamps). Every NUC mutation to a bidirectional model MUST set `lastMutatedBy: 'local'` so upstream sync picks it up. See `docs/architecture/AUTHORITY-MODEL.md` Section 3 for conflict resolution rules.
+
+---
+
 ## Sentry / Error Monitoring
 
 | Rule | Detail |
