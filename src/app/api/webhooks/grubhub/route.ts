@@ -17,8 +17,22 @@ import {
   createPosOrderFromDelivery,
   updateThirdPartyOrderStatus,
   dispatchDeliveryEvent,
+  confirmWithPlatform,
+  voidLinkedPosOrder,
 } from '@/lib/delivery/webhook-helpers'
 import { normalizeGrubhubItems } from '@/lib/delivery/order-mapper'
+
+// ── Fix 10: Comprehensive delivery status mapping ──
+const GRUBHUB_DELIVERY_STATUS_MAP: Record<string, string> = {
+  'driver_assigned': 'driver_assigned',
+  'driver_at_restaurant': 'driver_arrived_pickup',
+  'picked_up': 'picked_up',
+  'driver_picked_up': 'picked_up',
+  'en_route_to_customer': 'driver_en_route_dropoff',
+  'approaching_customer': 'driver_arrived_dropoff',
+  'delivered': 'delivered',
+  'cancelled': 'cancelled',
+}
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -40,11 +54,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
-  // Validate HMAC signature
+  // ── Fix 8: Fail closed on missing secret ──
   const signature = request.headers.get('x-grubhub-signature')
     || request.headers.get('x-signature')
   if (!location.webhookSecret) {
-    console.error('[grubhub/webhook] CRITICAL: HMAC validation SKIPPED — webhookSecret not configured. Configure immediately.', location.locationId)
+    console.error('[grubhub/webhook] CRITICAL: No webhookSecret configured — rejecting request.', location.locationId)
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 401 })
   } else if (!validateHmacSignature(rawBody, signature, location.webhookSecret)) {
     console.error('[grubhub/webhook] HMAC validation failed')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
@@ -66,7 +81,13 @@ export async function POST(request: NextRequest) {
         const subtotal = Number(orderData.subtotal || 0) / 100
         const tax = Number(orderData.tax || 0) / 100
         const deliveryFee = Number(orderData.delivery_fee || 0) / 100
-        const tip = Number(orderData.tip || orderData.driver_tip || 0) / 100
+
+        // Fix 9: Use ?? instead of || so that a tip value of 0 isn't skipped
+        // Grubhub may send separate restaurant tip and driver tip
+        const restaurantTip = Number(orderData.tip ?? 0) / 100
+        const driverTip = Number(orderData.driver_tip ?? 0) / 100
+        const tip = restaurantTip + driverTip  // Store combined tip
+
         const total = Number(orderData.total || 0) / 100
 
         const specialInstructions = String(orderData.special_instructions || orderData.notes || '')
@@ -105,6 +126,9 @@ export async function POST(request: NextRequest) {
             locationId,
             location.defaultTaxRate,
           )
+
+          // Fix 6: Confirm with Grubhub after auto-accept creates POS order
+          void confirmWithPlatform('grubhub', externalOrderId, locationId).catch(console.error)
         }
 
         dispatchDeliveryEvent(locationId, 'delivery:new-order', {
@@ -122,9 +146,12 @@ export async function POST(request: NextRequest) {
       case 'order.cancelled':
       case 'ORDER_CANCELLED': {
         const cancelOrderId = String(payload.order_id || '')
-        await updateThirdPartyOrderStatus(locationId, 'grubhub', cancelOrderId, 'cancelled')
+        const statusResult = await updateThirdPartyOrderStatus(locationId, 'grubhub', cancelOrderId, 'cancelled')
 
-        // TODO: Void linked POS order if exists (requires void API integration)
+        // Fix 7: Void linked POS order when platform cancels
+        if (statusResult) {
+          void voidLinkedPosOrder(statusResult.id, locationId, 'grubhub').catch(console.error)
+        }
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {
           platform: 'grubhub',
@@ -137,19 +164,13 @@ export async function POST(request: NextRequest) {
       case 'order.delivery_status':
       case 'DELIVERY_STATUS': {
         const statusOrderId = String(payload.order_id || '')
-        const deliveryStatus = String(payload.delivery_status || payload.status || '')
+        const rawStatus = String(payload.delivery_status || payload.status || '')
 
-        let mappedStatus = deliveryStatus
-        if (deliveryStatus === 'driver_assigned' || deliveryStatus === 'driver_at_restaurant') {
-          mappedStatus = 'preparing'
-        } else if (deliveryStatus === 'picked_up' || deliveryStatus === 'driver_picked_up') {
-          mappedStatus = 'picked_up'
-        } else if (deliveryStatus === 'delivered') {
-          mappedStatus = 'delivered'
-        }
+        // Fix 10: Use comprehensive status map instead of if/else chain
+        const mappedStatus = GRUBHUB_DELIVERY_STATUS_MAP[rawStatus] || rawStatus
 
         await updateThirdPartyOrderStatus(locationId, 'grubhub', statusOrderId, mappedStatus, {
-          actualPickupAt: (deliveryStatus === 'picked_up' || deliveryStatus === 'driver_picked_up')
+          actualPickupAt: (rawStatus === 'picked_up' || rawStatus === 'driver_picked_up')
             ? new Date() : undefined,
         })
 

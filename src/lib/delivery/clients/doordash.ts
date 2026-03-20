@@ -142,7 +142,10 @@ export class DoorDashClient implements IPlatformClient {
 
   private authHeaders(): Record<string, string> {
     const token = createJwt(this.credentials)
-    return { Authorization: `Bearer ${token}` }
+    return {
+      Authorization: `Bearer ${token}`,
+      'auth-version': 'v2',
+    }
   }
 
   // ── Marketplace: confirm order ──────────────────────────────────────────

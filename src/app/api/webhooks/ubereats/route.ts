@@ -6,7 +6,14 @@
  * Receives UberEats webhook events. Validates HMAC signature.
  * Event types: orders.notification, orders.cancel
  *
- * No auth (public endpoint) — validated by HMAC signature from webhookSecret.
+ * IMPORTANT: The `orders.notification` webhook is a THIN notification — it does NOT
+ * contain the full order object. We must fetch the full order via GET /v2/eats/order/{id}.
+ *
+ * HMAC: UberEats uses the OAuth `client_secret` as the HMAC signing key, not a separate
+ * webhook secret. The admin UI should instruct users to put their `client_secret` in the
+ * webhookSecret field, OR we fall back to `uberEatsCredentials.clientSecret`.
+ *
+ * No auth (public endpoint) — validated by HMAC signature.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -17,8 +24,13 @@ import {
   createPosOrderFromDelivery,
   updateThirdPartyOrderStatus,
   dispatchDeliveryEvent,
+  confirmWithPlatform,
+  voidLinkedPosOrder,
 } from '@/lib/delivery/webhook-helpers'
 import { normalizeUberEatsItems } from '@/lib/delivery/order-mapper'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
+import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -41,12 +53,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   }
 
-  // Validate HMAC signature
+  // ── Fix 4 + 5: Fail closed on missing secret; use clientSecret as HMAC fallback ──
+  // UberEats uses the OAuth client_secret as the HMAC key, not a separate webhook secret.
+  // Check webhookSecret first, fall back to uberEatsCredentials.clientSecret.
+  const locationSettings = parseSettings(await getLocationSettings(location.locationId))
+  const uberEatsCredentials = locationSettings?.thirdPartyDelivery?.uberEatsCredentials
+  const hmacKey = location.webhookSecret || uberEatsCredentials?.clientSecret || ''
+
   const signature = request.headers.get('x-uber-signature')
     || request.headers.get('x-signature')
-  if (!location.webhookSecret) {
-    console.error('[ubereats/webhook] CRITICAL: HMAC validation SKIPPED — webhookSecret not configured. Configure immediately.', location.locationId)
-  } else if (!validateHmacSignature(rawBody, signature, location.webhookSecret)) {
+
+  if (!hmacKey) {
+    // Fix 4: Fail closed — reject when no secret is configured
+    console.error('[ubereats/webhook] CRITICAL: No webhookSecret or clientSecret configured — rejecting request.', location.locationId)
+    return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 401 })
+  } else if (!validateHmacSignature(rawBody, signature, hmacKey)) {
     console.error('[ubereats/webhook] HMAC validation failed')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
@@ -57,14 +78,44 @@ export async function POST(request: NextRequest) {
     switch (eventType) {
       case 'orders.notification':
       case 'order.created': {
-        const orderData = (payload.order || payload) as Record<string, unknown>
-        const customer = (orderData.eater || orderData.customer || {}) as Record<string, unknown>
-        const customerName = String(customer.first_name || '') +
-          (customer.last_name ? ` ${customer.last_name}` : '')
-        const customerPhone = String(customer.phone || '')
+        // ── Fix 1: UberEats `orders.notification` is a thin notification ──
+        // The webhook payload does NOT contain the order object — only metadata.
+        // We must extract the order ID and GET the full order from UberEats API.
+        const orderId = String(meta.resource_id || meta.order_id || payload.order_id || '')
+        if (!orderId) {
+          console.warn('[ubereats/webhook] orders.notification with no resource_id — ignoring')
+          return NextResponse.json({ received: true })
+        }
 
+        // Fetch the full order from UberEats API
+        let orderData: Record<string, unknown>
+        const client = getPlatformClient('ubereats', locationSettings)
+        if (client && 'getOrder' in client) {
+          try {
+            orderData = await (client as { getOrder: (id: string) => Promise<Record<string, unknown>> }).getOrder(orderId)
+          } catch (fetchErr) {
+            console.error('[ubereats/webhook] Failed to fetch full order from UberEats API:', fetchErr)
+            // Fall back to webhook payload (will have limited data)
+            orderData = (payload.order || payload) as Record<string, unknown>
+          }
+        } else {
+          console.warn('[ubereats/webhook] No UberEats client available to fetch full order, using webhook payload')
+          orderData = (payload.order || payload) as Record<string, unknown>
+        }
+
+        // Parse customer from the full order response
+        // Full response has: eater.first_name, eater.last_name, eater.phone.number
+        const eater = (orderData.eater || orderData.customer || {}) as Record<string, unknown>
+        const customerName = String(eater.first_name || '') +
+          (eater.last_name ? ` ${eater.last_name}` : '')
+        const phoneObj = eater.phone as Record<string, unknown> | undefined
+        const customerPhone = String(phoneObj?.number || eater.phone || '')
+
+        // Parse items from the full order (cart.items[])
         const items = normalizeUberEatsItems(orderData)
 
+        // Parse pricing from the full order response
+        // Full response has: payment.charges.{total,sub_total,tax,delivery_fee,tip}.amount (cents)
         const payment = (orderData.payment || {}) as Record<string, unknown>
         const charges = (payment.charges || orderData.charges || {}) as Record<string, unknown>
         const subTotalObj = (charges.sub_total || {}) as Record<string, unknown>
@@ -86,7 +137,7 @@ export async function POST(request: NextRequest) {
         const result = await createThirdPartyOrder({
           locationId,
           platform: 'ubereats',
-          externalOrderId,
+          externalOrderId: orderId,
           externalCustomerName: customerName.trim(),
           externalCustomerPhone: customerPhone,
           items,
@@ -97,7 +148,7 @@ export async function POST(request: NextRequest) {
           total,
           specialInstructions,
           estimatedPickupAt: estimatedPickup,
-          rawPayload: payload,
+          rawPayload: orderData,
         })
 
         if (result.isDuplicate) {
@@ -114,6 +165,9 @@ export async function POST(request: NextRequest) {
             locationId,
             location.defaultTaxRate,
           )
+
+          // Fix 2: Confirm with UberEats after auto-accept creates POS order
+          void confirmWithPlatform('ubereats', orderId, locationId).catch(console.error)
         }
 
         dispatchDeliveryEvent(locationId, 'delivery:new-order', {
@@ -131,9 +185,12 @@ export async function POST(request: NextRequest) {
       case 'orders.cancel':
       case 'order.cancelled': {
         const cancelOrderId = String(payload.order_id || meta.resource_id || '')
-        await updateThirdPartyOrderStatus(locationId, 'ubereats', cancelOrderId, 'cancelled')
+        const statusResult = await updateThirdPartyOrderStatus(locationId, 'ubereats', cancelOrderId, 'cancelled')
 
-        // TODO: Void linked POS order if exists (requires void API integration)
+        // Fix 3: Void linked POS order when platform cancels
+        if (statusResult) {
+          void voidLinkedPosOrder(statusResult.id, locationId, 'ubereats').catch(console.error)
+        }
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {
           platform: 'ubereats',

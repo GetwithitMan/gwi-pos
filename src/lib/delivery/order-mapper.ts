@@ -20,6 +20,7 @@ export interface PlatformItem {
   price: number            // Unit price from platform
   modifiers?: string[]     // Modifier names from platform
   specialInstructions?: string
+  externalId?: string      // Platform-specific item ID
 }
 
 export interface MappedOrderItem {
@@ -172,17 +173,55 @@ export async function mapThirdPartyOrder(
 
 /**
  * Normalize DoorDash order items from webhook payload.
+ *
+ * DoorDash nests items inside categories:
+ *   { categories: [{ name, items: [{ name, price, quantity, extras: [{ name, options: [{ name, price }] }] }] }] }
+ *
+ * Accepts the full webhook payload OR just the order object.
+ * Flatmaps categories[].items[] and extras[].options[] for modifiers.
+ * Prices arrive in cents — converted to dollars here.
  */
 export function normalizeDoorDashItems(payload: Record<string, unknown>): PlatformItem[] {
-  const items = (payload.order_items || payload.items || []) as Array<Record<string, unknown>>
-  return items.map(item => ({
-    name: String(item.name || item.title || ''),
-    quantity: Number(item.quantity || 1),
-    price: Number(item.price || item.unit_price || 0) / 100,  // DoorDash sends cents
-    modifiers: ((item.extra_options || item.modifiers || []) as Array<Record<string, unknown>>)
-      .map(m => String(m.name || m.title || '')),
-    specialInstructions: String(item.special_instructions || ''),
-  }))
+  const order = (payload.order || payload) as Record<string, unknown>
+  const categories = (order.categories || []) as Array<Record<string, unknown>>
+
+  // Fallback: if no categories, try the old flat items path for backward compat
+  if (categories.length === 0) {
+    const flatItems = (order.order_items || order.items || []) as Array<Record<string, unknown>>
+    return flatItems.map(item => ({
+      name: String(item.name || item.title || ''),
+      quantity: Number(item.quantity || 1),
+      price: Number(item.price || item.unit_price || 0) / 100,
+      modifiers: ((item.extra_options || item.modifiers || []) as Array<Record<string, unknown>>)
+        .map(m => String(m.name || m.title || '')),
+      specialInstructions: String(item.special_instructions || ''),
+      externalId: String(item.merchant_supplied_id || item.id || ''),
+    }))
+  }
+
+  const items: PlatformItem[] = []
+  for (const cat of categories) {
+    const catItems = (cat.items || []) as Array<Record<string, unknown>>
+    for (const item of catItems) {
+      const extras = (item.extras || []) as Array<Record<string, unknown>>
+      const modifiers: string[] = []
+      for (const extra of extras) {
+        const options = (extra.options || []) as Array<Record<string, unknown>>
+        for (const opt of options) {
+          modifiers.push(String(opt.name || ''))
+        }
+      }
+
+      items.push({
+        name: String(item.name || ''),
+        quantity: Number(item.quantity || 1),
+        price: Number(item.price || 0) / 100, // cents to dollars
+        modifiers,
+        externalId: String(item.merchant_supplied_id || item.id || ''),
+      })
+    }
+  }
+  return items
 }
 
 /**

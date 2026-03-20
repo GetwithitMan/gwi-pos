@@ -8,7 +8,6 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
-import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 import type { DeliveryPlatform, PlatformItem } from './order-mapper'
 import { mapThirdPartyOrder } from './order-mapper'
@@ -43,6 +42,32 @@ export function validateHmacSignature(
   }
 }
 
+/**
+ * Fail-closed webhook auth: rejects when secret is missing or signature is absent/invalid.
+ * Use this instead of validateHmacSignature to ensure misconfigured webhooks never slip through.
+ */
+export function validateWebhookAuth(
+  platform: string,
+  signature: string | null,
+  rawBody: string,
+  secret: string,
+): { valid: boolean; error?: string } {
+  if (!secret) {
+    return { valid: false, error: `${platform} webhook secret not configured — rejecting request` }
+  }
+  if (!signature) {
+    return { valid: false, error: `${platform} webhook missing signature header` }
+  }
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex')
+  const sigBuffer = Buffer.from(signature, 'hex')
+  const expectedBuffer = Buffer.from(expected, 'hex')
+  if (sigBuffer.length !== expectedBuffer.length) {
+    return { valid: false, error: `${platform} webhook signature length mismatch` }
+  }
+  const valid = timingSafeEqual(sigBuffer, expectedBuffer)
+  return valid ? { valid: true } : { valid: false, error: `${platform} webhook signature invalid` }
+}
+
 // ─── Location Resolution ────────────────────────────────────────────────────
 
 interface ResolvedLocation {
@@ -67,8 +92,6 @@ export async function resolveLocationForWebhook(
     where: { deletedAt: null },
     select: { id: true, settings: true },
   })
-
-  const storeIdField = platform === 'grubhub' ? 'storeId' : 'storeId'
 
   for (const loc of locations) {
     const settings = parseSettings(loc.settings)
@@ -232,10 +255,11 @@ export async function createPosOrderFromDelivery(
 
     // Create OrderItems for each mapped item
     for (const item of mapped.items) {
-      await db.$executeRawUnsafe(
+      const itemRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
         `INSERT INTO "OrderItem" (
           "orderId", "menuItemId", "name", "quantity", "price", "locationId"
-        ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING "id"`,
         orderId,
         item.menuItemId,
         item.name,
@@ -243,12 +267,119 @@ export async function createPosOrderFromDelivery(
         item.price,
         locationId,
       )
+
+      // Store modifiers on the OrderItem
+      const orderItemId = itemRows[0]?.id
+      if (orderItemId && item.modifiers && item.modifiers.length > 0) {
+        for (const modName of item.modifiers) {
+          await db.$executeRawUnsafe(
+            `INSERT INTO "OrderItemModifier" ("id", "orderItemId", "name", "price", "quantity", "locationId", "createdAt", "updatedAt")
+             VALUES (gen_random_uuid(), $1, $2, 0, 1, $3, NOW(), NOW())`,
+            orderItemId, modName, locationId,
+          )
+        }
+      }
+    }
+
+    // Emit order events so KDS, kitchen tickets, and cross-terminal sync work
+    try {
+      const { emitOrderEvent } = require('@/lib/order-events/emitter')
+      await emitOrderEvent(locationId, orderId, 'ORDER_CREATED', {
+        orderType: `delivery_${platform}`,
+        source: `delivery_${platform}`,
+      })
+      await emitOrderEvent(locationId, orderId, 'ORDER_SENT', {
+        source: `delivery_${platform}`,
+      })
+    } catch (err) {
+      console.error('[webhook-helpers] Failed to emit order events:', err)
+    }
+
+    // Emit socket events for POS terminals
+    try {
+      const { emitToLocation } = require('@/lib/socket-server')
+      emitToLocation(locationId, 'orders:list-changed', { source: `delivery_${platform}` })
+      emitToLocation(locationId, 'order:summary-updated', { orderId })
+    } catch (err) {
+      console.error('[webhook-helpers] Failed to emit socket events:', err)
     }
 
     return orderId
   } catch (error) {
     log.error({ err: error }, `[delivery] Failed to create POS order from ${platform} delivery:`)
     return null
+  }
+}
+
+// ─── Platform Confirmation (auto-accept path) ──────────────────────────────
+
+/**
+ * Confirm an order back to the delivery platform after auto-accept.
+ * Fire-and-forget safe — errors are logged but never thrown.
+ */
+export async function confirmWithPlatform(
+  platform: string,
+  externalOrderId: string,
+  locationId: string,
+  prepTimeMinutes?: number,
+): Promise<void> {
+  try {
+    const { getPlatformClient } = require('@/lib/delivery/clients/platform-registry')
+    const { parseSettings } = require('@/lib/settings')
+    const { getLocationSettings } = require('@/lib/location-cache')
+    const settings = parseSettings(await getLocationSettings(locationId))
+    const client = getPlatformClient(platform, settings)
+    if (!client) return
+    const prepTime = prepTimeMinutes ?? settings.thirdPartyDelivery?.[platform as 'doordash' | 'ubereats' | 'grubhub']?.prepTimeMinutes ?? 20
+    await client.confirmOrder(externalOrderId, prepTime)
+  } catch (err) {
+    console.error(`[webhook-helpers] Failed to confirm ${platform} order ${externalOrderId}:`, err)
+  }
+}
+
+// ─── Cancel / Void Linked POS Order ─────────────────────────────────────────
+
+/**
+ * When a delivery platform cancels an order, void the linked POS order so it
+ * doesn't stay open in the kitchen or on reports.
+ */
+export async function voidLinkedPosOrder(
+  thirdPartyOrderId: string,
+  locationId: string,
+  platform: string,
+): Promise<void> {
+  try {
+    // Find the linked POS order
+    const rows = await db.$queryRawUnsafe<Array<{ orderId: string | null }>>(
+      `SELECT "orderId" FROM "ThirdPartyOrder" WHERE "id" = $1 AND "locationId" = $2 LIMIT 1`,
+      thirdPartyOrderId, locationId,
+    )
+    const orderId = rows[0]?.orderId
+    if (!orderId) return
+
+    // Void the POS order
+    await db.$executeRawUnsafe(
+      `UPDATE "Order" SET "status" = 'voided', "updatedAt" = NOW() WHERE "id" = $1 AND "locationId" = $2`,
+      orderId, locationId,
+    )
+
+    // Void all items
+    await db.$executeRawUnsafe(
+      `UPDATE "OrderItem" SET "status" = 'voided', "updatedAt" = NOW() WHERE "orderId" = $1`,
+      orderId,
+    )
+
+    // Emit events
+    try {
+      const { emitToLocation } = require('@/lib/socket-server')
+      emitToLocation(locationId, 'orders:list-changed', { source: `cancel_${platform}` })
+      emitToLocation(locationId, 'order:summary-updated', { orderId })
+      emitToLocation(locationId, 'kds:order-bumped', { orderId })
+    } catch { /* socket failure is non-fatal */ }
+
+    log.info(`Voided POS order ${orderId} for cancelled ${platform} order ${thirdPartyOrderId}`)
+  } catch (err) {
+    log.error({ err }, `Failed to void POS order for ${platform} cancel`)
   }
 }
 
@@ -292,5 +423,10 @@ export function dispatchDeliveryEvent(
   event: 'delivery:new-order' | 'delivery:status-update',
   payload: Record<string, unknown>,
 ): void {
-  void emitToLocation(locationId, event, payload).catch((err) => log.error({ err }, 'emitToLocation failed'))
+  try {
+    const { emitToLocation } = require('@/lib/socket-server')
+    void emitToLocation(locationId, event, payload).catch((err: unknown) => log.error({ err }, 'emitToLocation failed'))
+  } catch (err) {
+    log.error({ err }, 'Failed to load socket-server for delivery event dispatch')
+  }
 }
