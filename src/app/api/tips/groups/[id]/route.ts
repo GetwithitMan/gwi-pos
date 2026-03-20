@@ -67,7 +67,60 @@ export const GET = withVenue(async function GET(
       }
     }
 
-    return NextResponse.json({ group })
+    // ── Load all segments with per-member earnings ─────────────────────
+    const includeEarnings = request.nextUrl.searchParams.get('includeEarnings') !== 'false'
+
+    let segments: Array<{
+      id: string
+      startedAt: string
+      endedAt: string | null
+      memberCount: number
+      splitJson: Record<string, number>
+      earnings: Array<{ employeeId: string; totalCents: number }>
+    }> = []
+
+    if (includeEarnings) {
+      const allSegments = await db.tipGroupSegment.findMany({
+        where: { groupId: id, deletedAt: null },
+        orderBy: { startedAt: 'asc' },
+      })
+
+      segments = await Promise.all(allSegments.map(async (seg) => {
+        // Aggregate TipLedgerEntry records for this segment's time window
+        const segEnd = seg.endedAt || new Date()
+        const memberIds = Object.keys((seg.splitJson as Record<string, number>) || {})
+
+        let earnings: Array<{ employeeId: string; totalCents: number }> = []
+        if (memberIds.length > 0) {
+          const grouped = await db.tipLedgerEntry.groupBy({
+            by: ['employeeId'],
+            where: {
+              sourceType: 'TIP_GROUP',
+              employeeId: { in: memberIds },
+              createdAt: { gte: seg.startedAt, lt: segEnd },
+              deletedAt: null,
+            },
+            _sum: { amountCents: true },
+          })
+
+          earnings = grouped.map(g => ({
+            employeeId: g.employeeId,
+            totalCents: Number(g._sum.amountCents) || 0,
+          }))
+        }
+
+        return {
+          id: seg.id,
+          startedAt: seg.startedAt.toISOString(),
+          endedAt: seg.endedAt?.toISOString() || null,
+          memberCount: seg.memberCount,
+          splitJson: seg.splitJson as Record<string, number>,
+          earnings,
+        }
+      }))
+    }
+
+    return NextResponse.json({ group, segments })
   } catch (error) {
     console.error('Failed to get tip group:', error)
     return NextResponse.json(

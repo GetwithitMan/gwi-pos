@@ -261,9 +261,10 @@ async function createSegment(
  */
 async function closeCurrentSegment(
   groupId: string,
-  tx: TxClient
+  tx: TxClient,
+  overrideEndedAt?: Date
 ): Promise<string | null> {
-  const now = new Date()
+  const now = overrideEndedAt ?? new Date()
 
   const openSegment = await tx.tipGroupSegment.findFirst({
     where: {
@@ -538,9 +539,10 @@ export async function addMemberToGroup(params: {
 export async function removeMemberFromGroup(params: {
   groupId: string
   employeeId: string
+  overrideLeftAt?: Date
 }): Promise<TipGroupInfo | null> {
-  const { groupId, employeeId } = params
-  const now = new Date()
+  const { groupId, employeeId, overrideLeftAt } = params
+  const now = overrideLeftAt ?? new Date()
 
   const groupClosed = await db.$transaction(async (tx) => {
     // Validate group is active
@@ -570,8 +572,8 @@ export async function removeMemberFromGroup(params: {
       data: { status: 'left', leftAt: now },
     })
 
-    // Close current segment
-    await closeCurrentSegment(groupId, tx)
+    // Close current segment (use override time if provided)
+    await closeCurrentSegment(groupId, tx, overrideLeftAt)
 
     // Count remaining active members
     const remainingMembers = await tx.tipGroupMembership.findMany({

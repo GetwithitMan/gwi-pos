@@ -309,12 +309,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { entryId, action, notes, force } = body as {
+    const { entryId, action, notes, force, overrideClockOut: overrideClockOutRaw } = body as {
       entryId: string
       action: 'clockOut' | 'startBreak' | 'endBreak'
       notes?: string
       force?: boolean    // manager override for last-member block
+      overrideClockOut?: string // ISO timestamp for retroactive clock-out (manager only)
     }
+    const overrideClockOut = overrideClockOutRaw ? new Date(overrideClockOutRaw) : null
 
     if (!entryId || !action) {
       return NextResponse.json(
@@ -378,9 +380,55 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }
         // ── End last-member guard ─────────────────────────────────────────────
 
+        // ── Retroactive clock-out override (manager only) ───────────────────
+        let effectiveClockOutTime = now
+        if (overrideClockOut) {
+          // Require STAFF_EDIT_WAGES permission for retroactive clock-out
+          const requestingEmployeeId = request.headers.get('x-employee-id')
+          const overrideAuth = await requirePermission(requestingEmployeeId, entry.locationId, PERMISSIONS.STAFF_EDIT_WAGES)
+          if (!overrideAuth.authorized) {
+            return NextResponse.json({ error: overrideAuth.error }, { status: overrideAuth.status })
+          }
+
+          // Validate: must be in the past
+          if (overrideClockOut.getTime() > Date.now()) {
+            return NextResponse.json(
+              { error: 'Override clock-out time must be in the past' },
+              { status: 400 }
+            )
+          }
+
+          // Validate: must be after clock-in
+          if (overrideClockOut.getTime() <= entry.clockIn.getTime()) {
+            return NextResponse.json(
+              { error: 'Override clock-out time must be after clock-in time' },
+              { status: 400 }
+            )
+          }
+
+          effectiveClockOutTime = overrideClockOut
+
+          // Audit log for retroactive override (fire-and-forget)
+          void db.auditLog.create({
+            data: {
+              locationId: entry.locationId,
+              employeeId: requestingEmployeeId || entry.employeeId,
+              action: 'clock_out_retroactive_override',
+              entityType: 'time_clock',
+              entityId: entryId,
+              details: {
+                originalClockOut: now.toISOString(),
+                overrideClockOut: overrideClockOut.toISOString(),
+                targetEmployeeId: entry.employeeId,
+              },
+            },
+          }).catch(console.error)
+        }
+        // ── End retroactive clock-out override ──────────────────────────────
+
         // Calculate hours worked
         const clockInTime = entry.clockIn.getTime()
-        const totalMinutes = (now.getTime() - clockInTime) / (1000 * 60)
+        const totalMinutes = (effectiveClockOutTime.getTime() - clockInTime) / (1000 * 60)
         const workedMinutes = totalMinutes - (entry.breakMinutes || 0)
         const workedHours = workedMinutes / 60
 
@@ -454,7 +502,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         const overtimeHours = Math.max(0, workedHours - otThreshold)
 
         updateData = {
-          clockOut: now,
+          clockOut: effectiveClockOutTime,
           regularHours: Math.round(regularHours * 100) / 100,
           overtimeHours: Math.round(overtimeHours * 100) / 100,
           notes: notes || entry.notes,
@@ -462,8 +510,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
         // End break if on break
         if (entry.breakStart && !entry.breakEnd) {
-          const breakMinutes = Math.round((now.getTime() - entry.breakStart.getTime()) / (1000 * 60))
-          updateData.breakEnd = now
+          const breakMinutes = Math.round((effectiveClockOutTime.getTime() - entry.breakStart.getTime()) / (1000 * 60))
+          updateData.breakEnd = effectiveClockOutTime
           updateData.breakMinutes = (entry.breakMinutes || 0) + breakMinutes
         }
         break

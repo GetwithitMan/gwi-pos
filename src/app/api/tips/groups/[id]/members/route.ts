@@ -274,6 +274,7 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id: groupId } = await params
     const employeeId = request.nextUrl.searchParams.get('employeeId')
+    const leftAtParam = request.nextUrl.searchParams.get('leftAt')
 
     // ── Validate required fields ──────────────────────────────────────────
     if (!employeeId) {
@@ -281,6 +282,25 @@ export const DELETE = withVenue(async function DELETE(
         { error: 'employeeId query parameter is required' },
         { status: 400 }
       )
+    }
+
+    // ── Parse and validate optional leftAt override ─────────────────────
+    let overrideLeftAt: Date | undefined
+    if (leftAtParam) {
+      const parsed = new Date(leftAtParam)
+      if (isNaN(parsed.getTime())) {
+        return NextResponse.json(
+          { error: 'leftAt must be a valid ISO 8601 timestamp' },
+          { status: 400 }
+        )
+      }
+      if (parsed.getTime() > Date.now()) {
+        return NextResponse.json(
+          { error: 'leftAt must be in the past' },
+          { status: 400 }
+        )
+      }
+      overrideLeftAt = parsed
     }
 
     const requestingEmployeeId = request.headers.get('x-employee-id')
@@ -314,7 +334,25 @@ export const DELETE = withVenue(async function DELETE(
       }
     }
 
-    const group = await removeMemberFromGroup({ groupId, employeeId })
+    // ── Override leftAt requires TIPS_MANAGE_GROUPS (even for self-leave) ──
+    if (overrideLeftAt && isSelf) {
+      const groupInfo = await getGroupInfo(groupId)
+      if (groupInfo) {
+        const auth = await requireAnyPermission(
+          requestingEmployeeId,
+          groupInfo.locationId,
+          [PERMISSIONS.TIPS_MANAGE_GROUPS]
+        )
+        if (!auth.authorized) {
+          return NextResponse.json(
+            { error: 'Retroactive leave time requires tip management permission' },
+            { status: 403 }
+          )
+        }
+      }
+    }
+
+    const group = await removeMemberFromGroup({ groupId, employeeId, overrideLeftAt })
     const groupClosed = group === null
 
     // Fetch locationId for socket dispatch
