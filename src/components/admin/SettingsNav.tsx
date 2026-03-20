@@ -238,6 +238,7 @@ const settingsSections: SettingsSection[] = [
     icon: '🔗',
     permission: PERMISSIONS.SETTINGS_INTEGRATIONS,
     items: [
+      { name: 'Delivery Platforms', href: '/settings/integrations/delivery' },
       { name: 'Oracle Hotel PMS', href: '/settings/integrations/oracle-pms' },
       { name: '7shifts', href: '/settings/integrations/7shifts' },
       { name: 'MarginEdge', href: '/settings/integrations/marginedge' },

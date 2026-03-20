@@ -10,6 +10,7 @@ import { ToggleRow } from '@/components/admin/settings/ToggleRow'
 import type { ThirdPartyDeliverySettings, ThirdPartyDeliveryPlatformSettings, ThirdPartyDeliveryUberEatsSettings } from '@/lib/settings'
 import { DEFAULT_THIRD_PARTY_DELIVERY } from '@/lib/settings'
 import { useAuthStore } from '@/stores/auth-store'
+import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import type { DoorDashCredentials, UberEatsCredentials, GrubhubCredentials } from '@/lib/delivery/clients/types'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -190,6 +191,9 @@ export default function DeliveryIntegrationSettingsPage() {
     ubereats: 'untested',
     grubhub: 'untested',
   })
+
+  // MC feature gate
+  const isDeliveryEnabled = useDeliveryFeature()
 
   // Menu sync state
   const [syncingMenu, setSyncingMenu] = useState(false)
@@ -431,11 +435,28 @@ export default function DeliveryIntegrationSettingsPage() {
     )
   }
 
+  if (!isDeliveryEnabled) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <h1 className="text-2xl font-bold mb-4">Delivery Integrations</h1>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
+          <div className="text-2xl mb-2">🚚</div>
+          <h2 className="text-lg font-semibold text-yellow-800 mb-2">Delivery Module Not Enabled</h2>
+          <p className="text-sm text-yellow-700 mb-4">
+            Third-party delivery integrations (DoorDash, UberEats, Grubhub) require the Delivery module
+            to be enabled for your venue. Contact your administrator or enable it from Mission Control.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-1">Delivery Integrations</h1>
       <p className="text-sm text-gray-900 mb-6">
         Connect DoorDash, UberEats, and Grubhub to receive delivery orders directly in the POS.
+        Enter your API credentials below — each platform can be enabled independently.
       </p>
 
       {/* ── Global Settings ──────────────────────────────────────────── */}
