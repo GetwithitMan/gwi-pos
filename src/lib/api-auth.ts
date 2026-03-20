@@ -224,6 +224,7 @@ export async function resolveOrProvisionEmployee(
             permissions: ['all'],
             isTipped: false,
             cashHandlingMode: 'none',
+            updatedAt: new Date(),
           },
         })
       } catch {
