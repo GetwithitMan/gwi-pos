@@ -40,16 +40,24 @@ export async function resolveTenantLocationId(): Promise<string | undefined> {
   const cached = getRequestLocationId()
   if (cached) return cached
 
-  // Slow path: async lookup (DB-backed, but cached per venue slug)
-  // Lazy import to avoid circular dependency (location-cache.ts imports db.ts)
+  // Slow path: raw SQL query that bypasses Prisma extensions entirely.
+  // MUST NOT call getLocationId() here — that triggers the tenant extension
+  // again, and the inflight promise coalescing returns the same promise
+  // that's currently executing, causing a deadlock (Promise waits for itself).
   if (store) {
     store._resolvingLocationId = true
   } else {
     _globalResolving = true
   }
   try {
-    const { getLocationId } = await import('./location-cache')
-    const id = await getLocationId()
+    const { getRequestPrisma } = await import('./request-context')
+    const prisma = getRequestPrisma()
+    if (!prisma) return undefined
+    // Raw SQL bypasses all extensions (soft-delete, tenant scope, write guard)
+    const rows = await (prisma as any).$queryRawUnsafe(
+      'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
+    ) as Array<{ id: string }>
+    const id = rows[0]?.id
     if (id) {
       setRequestLocationId(id)
       return id
