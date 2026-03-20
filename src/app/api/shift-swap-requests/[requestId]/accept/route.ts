@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // POST - Employee accepts a shift request (moves to 'accepted' status)
 // For swaps: target employee accepts the swap offer
@@ -59,6 +60,16 @@ export const POST = withVenue(async function POST(
       where: { id: requestId },
       data: updateData,
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('ShiftSwapRequest', locationId, requestId, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // Socket event
     void dispatchShiftRequestUpdate(locationId, {

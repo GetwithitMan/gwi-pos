@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // GET - Get a single seat
 export const GET = withVenue(async function GET(
@@ -105,6 +106,16 @@ export const PUT = withVenue(async function PUT(
       data: updateData,
     })
 
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('Seat', existingSeat.table.locationId, seatId, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
+
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
     return NextResponse.json({ data: {
@@ -199,6 +210,16 @@ export const DELETE = withVenue(async function DELETE(
         },
       })
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('Seat', existingSeat.table.locationId, seatId, 'DELETE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 

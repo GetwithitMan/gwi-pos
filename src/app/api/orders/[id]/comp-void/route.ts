@@ -16,6 +16,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isClosed } from '@/lib/domain/order-status'
@@ -232,7 +233,7 @@ export const POST = withVenue(async function POST(
     const newStatus = action === 'comp' ? 'comped' : 'voided'
 
     // Wrap all critical writes in a single transaction
-    const { activeItemCount, totals, shouldAutoClose, parentTotals, cardPayments } = await db.$transaction(async (tx) => {
+    const { activeItemCount, totals, shouldAutoClose, parentTotals, cardPayments, voidLogId } = await db.$transaction(async (tx) => {
       return applyCompVoid(tx, {
         orderId,
         itemId,
@@ -250,6 +251,16 @@ export const POST = withVenue(async function POST(
         isBottleService: order.isBottleService,
       }, order.location.settings as { tax?: { defaultRate?: number } })
     })
+
+    // ── Outage queue protection for VoidLog ────────────────────────────────
+    try {
+      await queueIfOutageOrFail('VoidLog', order.locationId, voidLogId, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // W1-P1: Attempt Datacap reversal for card payments (outside transaction)
     let cardReversalWarning: string | null = null

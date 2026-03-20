@@ -10,6 +10,7 @@ import { db } from '@/lib/db'
 import { dispatchAlert } from '@/lib/alert-service'
 import { withVenue } from '@/lib/with-venue'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 
 // 30 requests per minute per IP to prevent log flooding
 const errorLogLimiter = createRateLimiter({ maxAttempts: 30, windowMs: 60 * 1000 })
@@ -147,6 +148,11 @@ export const POST = withVenue(async function POST(req: NextRequest) {
         alertSent: false,
       },
     })
+
+    // ── Outage queue protection (fire-and-forget) ─────────────────────────
+    if (body.locationId) {
+      queueIfOutage('ErrorLog', body.locationId, errorLog.id, 'INSERT')
+    }
 
     // Dispatch alerts based on severity (Phase 4)
     // Fire-and-forget - don't block the response

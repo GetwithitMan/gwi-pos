@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // POST - Manager approves a shift request (swap, cover, or drop)
 // For swaps: reassigns shift to target employee
@@ -113,6 +114,16 @@ export const POST = withVenue(async function POST(
         data: { status: 'cancelled' },
       })
 
+      // ── Outage queue protection ────────────────────────────────────────────
+      try {
+        await queueIfOutageOrFail('ShiftSwapRequest', locationId, requestId, 'UPDATE')
+      } catch (err) {
+        if (err instanceof OutageQueueFullError) {
+          return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        }
+        throw err
+      }
+
       // Socket event
       void dispatchShiftRequestUpdate(locationId, {
         action: 'approved',
@@ -157,6 +168,16 @@ export const POST = withVenue(async function POST(
       },
       data: { status: 'cancelled' },
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('ShiftSwapRequest', locationId, requestId, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // Socket event
     void dispatchShiftRequestUpdate(locationId, {

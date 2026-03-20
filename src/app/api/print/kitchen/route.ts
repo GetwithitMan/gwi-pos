@@ -15,6 +15,7 @@ import {
 import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 
 interface PrintKitchenRequest {
   orderId: string
@@ -362,7 +363,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         // Log the print job — queue for retry if both primary and backup failed
         if (result.success) {
-          await db.printJob.create({
+          const pj = await db.printJob.create({
             data: {
               locationId: order.locationId,
               jobType: 'kitchen',
@@ -372,9 +373,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               sentAt: new Date(),
             },
           })
+          queueIfOutage('PrintJob', order.locationId, pj.id, 'INSERT')
         } else {
           // Both primary and backup failed — queue for retry with stored content
-          await db.printJob.create({
+          const pj = await db.printJob.create({
             data: {
               locationId: order.locationId,
               jobType: 'kitchen',
@@ -386,6 +388,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               content: document.toString('base64'), // Store ESC/POS buffer for retry
             },
           })
+          queueIfOutage('PrintJob', order.locationId, pj.id, 'INSERT')
           console.warn(`[Kitchen Print] Queued for retry — order ${order.orderNumber}, printer ${printer.name}`)
         }
 

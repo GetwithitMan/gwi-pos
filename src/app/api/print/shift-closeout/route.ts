@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { buildShiftCloseoutReceipt } from '@/lib/escpos/shift-closeout-receipt'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -169,7 +170,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Log the print job
-    await db.printJob.create({
+    const printJob = await db.printJob.create({
       data: {
         locationId,
         jobType: 'shift_closeout',
@@ -178,6 +179,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sentAt: new Date(),
       },
     })
+
+    // Outage queue protection (fire-and-forget)
+    queueIfOutage('PrintJob', locationId, printJob.id, 'INSERT')
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

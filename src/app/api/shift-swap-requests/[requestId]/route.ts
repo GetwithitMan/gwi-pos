@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // DELETE - Employee cancels their own pending request (soft delete)
 export const DELETE = withVenue(async function DELETE(
@@ -47,6 +48,16 @@ export const DELETE = withVenue(async function DELETE(
       where: { id: requestId },
       data: { deletedAt: new Date(), status: 'cancelled' },
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('ShiftSwapRequest', locationId, requestId, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // Socket event
     void dispatchShiftRequestUpdate(locationId, {

@@ -13,6 +13,7 @@ import {
 } from '@/lib/escpos/commands'
 import { PrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 
 // POST print test page
 export const POST = withVenue(async function POST(
@@ -175,7 +176,7 @@ export const POST = withVenue(async function POST(
 
     if (result.success) {
       // Create a print job record
-      await db.printJob.create({
+      const pj = await db.printJob.create({
         data: {
           locationId: printer.locationId,
           jobType: 'receipt',
@@ -184,6 +185,7 @@ export const POST = withVenue(async function POST(
           sentAt: new Date(),
         },
       })
+      queueIfOutage('PrintJob', printer.locationId, pj.id, 'INSERT')
     }
 
     return NextResponse.json({ data: {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // GET - List all seats for a table
 export const GET = withVenue(async function GET(
@@ -136,6 +137,16 @@ export const POST = withVenue(async function POST(
         seatType: seatType ?? 'standard',
       },
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('Seat', table.locationId, seat.id, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // Fetch all seats for UI update
     const allSeats = await db.seat.findMany({
