@@ -196,11 +196,14 @@ export function withAuth(
     try {
       const { config } = await import('./system-config')
       const secret = config.cloudJwtSecret
+      console.log('[auth-middleware] Cloud auth: secret=' + (secret ? 'SET' : 'MISSING'))
       if (secret) {
         const cookieStore = await cookies()
         const cloudToken = cookieStore.get('pos-cloud-session')?.value
+        console.log('[auth-middleware] Cloud auth: cookie=' + (cloudToken ? 'PRESENT(' + cloudToken.substring(0, 20) + '...)' : 'MISSING'))
         if (cloudToken) {
           const payload = await verifyCloudToken(cloudToken, secret)
+          console.log('[auth-middleware] Cloud auth: payload=' + (payload ? JSON.stringify({ slug: payload.slug, role: payload.role, posLocationId: payload.posLocationId }) : 'INVALID'))
           if (payload) {
             // Use raw PrismaClient to avoid deadlock with tenant-scoped db proxy
             const prisma = getRequestPrisma() || db
@@ -221,10 +224,12 @@ export function withAuth(
               })
               locationId = loc?.id ?? null
             }
+            console.log('[auth-middleware] Cloud auth: locationId=' + (locationId || 'NULL'))
 
             if (locationId) {
               // Delegate to shared provisioning — same path as api-auth.ts
               const employeeId = await resolveOrProvisionEmployee(payload, locationId)
+              console.log('[auth-middleware] Cloud auth: employeeId=' + (employeeId || 'NULL'))
 
               if (employeeId) {
                 // Look up the employee to get role/permissions
