@@ -28,7 +28,7 @@ function logCellularBlock(terminalId: string, locationId: string, pathname: stri
     reason,
     authDecisionSource: 'proxy',
     timestamp: new Date().toISOString(),
-  }))
+  })
 }
 
 /**
