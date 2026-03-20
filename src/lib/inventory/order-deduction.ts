@@ -1081,6 +1081,25 @@ export async function deductInventoryForOrder(
       }
     }
 
+    // Warn if any paid items had zero inventory deductions (no recipe, no bottle link)
+    const exemptCategories = new Set(['retail', 'gift_card', 'gift_cards', 'misc', 'fee', 'fees'])
+    const zeroDeductionItems: string[] = []
+    for (const orderItem of order.items) {
+      if ((orderItem.menuItem as any)?.itemType === 'combo') continue
+      const category = ((orderItem.menuItem as any)?.category || '').toLowerCase()
+      const itemType = ((orderItem.menuItem as any)?.itemType || '').toLowerCase()
+      if (exemptCategories.has(category) || exemptCategories.has(itemType)) continue
+      const hasRecipe = !!orderItem.menuItem?.recipe?.ingredients?.length
+      const hasBottleLink = !!(orderItem.menuItem as any)?.linkedBottleProduct?.inventoryItem
+      const hasRecipeIngredients = !!((orderItem.menuItem as any)?.recipeIngredients?.length)
+      if (!hasRecipe && !hasBottleLink && !hasRecipeIngredients) {
+        zeroDeductionItems.push(orderItem.name || (orderItem.menuItem as any)?.name || orderItem.id)
+      }
+    }
+    if (zeroDeductionItems.length > 0) {
+      log.warn({ orderId, itemNames: zeroDeductionItems }, '[inventory] Paid items with no recipe — zero inventory deducted')
+    }
+
     // Now perform the actual deductions in a transaction
     const usageItems = Array.from(usageMap.values())
 
@@ -1095,14 +1114,16 @@ export async function deductInventoryForOrder(
     await db.$transaction(async (tx) => {
       for (const item of usageItems) {
         // Skip items with inventory tracking disabled
+        // Also read currentStock before decrement for accurate quantityBefore snapshot
         const invCheck = await tx.inventoryItem.findUnique({
           where: { id: item.inventoryItemId },
-          select: { trackInventory: true, version: true },
+          select: { trackInventory: true, version: true, currentStock: true },
         })
         if (invCheck?.trackInventory === false) continue
 
         const totalCost = item.quantity * item.costPerUnit
         const currentVersion = invCheck?.version ?? 0
+        const quantityBefore = toNumber(invCheck?.currentStock ?? 0)
 
         // Optimistic concurrency: decrement with version check, retry once on conflict
         let updated: { currentStock: Decimal }[] | null = null
@@ -1144,7 +1165,7 @@ export async function deductInventoryForOrder(
 
         // Post-decrement stock is the authoritative "after" value
         const quantityAfter = toNumber(updated[0].currentStock)
-        const quantityBefore = quantityAfter + item.quantity
+        // quantityBefore was read before the decrement (see invCheck above)
 
         // Track items that hit zero for auto-86
         if (quantityAfter <= 0 && quantityBefore > 0) {

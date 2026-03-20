@@ -150,6 +150,10 @@ export async function evaluateAutoDiscounts(
 
     const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
 
+    // Extract location timezone from settings for timezone-aware schedule evaluation
+    const locationSettings = order.location.settings as Record<string, any> | null
+    const locationTimezone: string | undefined = locationSettings?.timezone || undefined
+
     // 3. Evaluate each rule
     const matchedRules: Array<{
       rule: typeof rules[number]
@@ -163,7 +167,7 @@ export async function evaluateAutoDiscounts(
       const scheduleConfig = (rule.scheduleConfig || null) as unknown as ScheduleConfig | null
 
       // Check schedule first (applies to all rule types)
-      if (scheduleConfig && !isWithinSchedule(scheduleConfig)) {
+      if (scheduleConfig && !isWithinSchedule(scheduleConfig, locationTimezone)) {
         continue
       }
 
@@ -447,15 +451,54 @@ function evaluateMixMatch(
 // ============================================================================
 
 /**
- * Check if the current moment falls within the schedule window.
+ * Extract local time components in the given IANA timezone using Intl.DateTimeFormat.
+ * Falls back to the Date object's local methods when no timezone is provided.
  */
-function isWithinSchedule(schedule: ScheduleConfig): boolean {
+function getLocalTimeParts(date: Date, timezone?: string): {
+  dayOfWeek: number
+  hour: number
+  minute: number
+} {
+  if (!timezone) {
+    return {
+      dayOfWeek: date.getDay(),
+      hour: date.getHours(),
+      minute: date.getMinutes(),
+    }
+  }
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+    weekday: 'short',
+  }).formatToParts(date)
+
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? ''
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  }
+
+  return {
+    dayOfWeek: weekdayMap[get('weekday')] ?? date.getDay(),
+    hour: parseInt(get('hour'), 10) || 0,
+    minute: parseInt(get('minute'), 10) || 0,
+  }
+}
+
+/**
+ * Check if the current moment falls within the schedule window.
+ * @param timezone Optional IANA timezone (e.g. 'America/New_York') for
+ *   location-aware schedule evaluation. Defaults to server local time.
+ */
+function isWithinSchedule(schedule: ScheduleConfig, timezone?: string): boolean {
   const now = new Date()
+  const local = getLocalTimeParts(now, timezone)
 
   // Check day of week
   if (schedule.days && schedule.days.length > 0) {
-    const currentDay = now.getDay()
-    if (!schedule.days.includes(currentDay)) return false
+    if (!schedule.days.includes(local.dayOfWeek)) return false
   }
 
   // Check date range
@@ -472,7 +515,7 @@ function isWithinSchedule(schedule: ScheduleConfig): boolean {
 
   // Check time range (HH:mm format)
   if (schedule.startTime && schedule.endTime) {
-    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+    const currentMinutes = local.hour * 60 + local.minute
     const [startH, startM] = schedule.startTime.split(':').map(Number)
     const [endH, endM] = schedule.endTime.split(':').map(Number)
     const startMinutes = startH * 60 + startM
@@ -662,7 +705,9 @@ function getQualifyingQuantity(
 
 /**
  * Get items that match the trigger config's category/item filters.
- * If no filters specified, all items qualify.
+ * If no filters are specified (both categoryIds and itemIds are empty/null),
+ * returns an empty array — a rule with no filters should match nothing,
+ * not everything.
  */
 function getQualifyingItems(
   items: OrderItemWithCategory[],
@@ -671,9 +716,9 @@ function getQualifyingItems(
   const categoryIds = config.categoryIds
   const itemIds = config.itemIds || config.menuItemIds
 
-  // No filters = all items qualify
+  // No filters = no qualifying items (prevent accidental match-all)
   if ((!categoryIds || categoryIds.length === 0) && (!itemIds || itemIds.length === 0)) {
-    return items
+    return []
   }
 
   return items.filter(item => {

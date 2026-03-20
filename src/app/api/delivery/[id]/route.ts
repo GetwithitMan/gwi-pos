@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { getLocationId } from '@/lib/location-cache'
+import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDeliveryStatus, writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
+import { dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -203,6 +206,48 @@ export const PUT = withVenue(async function PUT(
 
     const current = existing[0]
 
+    // ── Driver capacity check (FOR UPDATE lock + maxOrdersPerDriver) ──
+    if (driverId && driverId !== current.driverId) {
+      const rawSettings = await getLocationSettings(locationId)
+      const settings = mergeWithDefaults(rawSettings as any)
+      const deliveryConfig = settings.delivery ?? DEFAULT_DELIVERY
+      const policy = deliveryConfig.dispatchPolicy
+
+      const loc = await db.$queryRawUnsafe<{ timezone: string }[]>(
+        'SELECT "timezone" FROM "Location" WHERE "id" = $1',
+        locationId,
+      )
+      const timezone = loc[0]?.timezone ?? 'America/New_York'
+      const maxPerDriver = getMaxOrdersPerDriver(policy, deliveryConfig.peakHours ?? [], timezone)
+
+      // Lock the driver row and count active deliveries
+      const driverRows: any[] = await db.$queryRawUnsafe(
+        `SELECT * FROM "DeliveryDriver" WHERE "id" = $1 AND "locationId" = $2 FOR UPDATE`,
+        driverId,
+        locationId,
+      )
+      if (!driverRows.length) {
+        return NextResponse.json({ error: 'Driver not found' }, { status: 404 })
+      }
+
+      const activeCount: any[] = await db.$queryRawUnsafe(
+        `SELECT COUNT(*)::int as count FROM "DeliveryOrder"
+         WHERE "driverId" = $1 AND "locationId" = $2
+           AND status NOT IN ('delivered', 'cancelled_before_dispatch', 'cancelled_after_dispatch', 'failed_delivery', 'returned_to_store')
+           AND id != $3`,
+        driverId,
+        locationId,
+        id,
+      )
+      const currentDriverOrders = activeCount[0]?.count ?? 0
+      if (currentDriverOrders >= maxPerDriver) {
+        return NextResponse.json(
+          { error: `Driver at capacity (${currentDriverOrders}/${maxPerDriver} active orders)` },
+          { status: 409 }
+        )
+      }
+    }
+
     const updates: string[] = ['"updatedAt" = CURRENT_TIMESTAMP']
     const updateParams: any[] = []
     let paramIdx = 1
@@ -272,6 +317,16 @@ export const PUT = withVenue(async function PUT(
       status: delivery.status,
       driverId: delivery.driverId,
     }).catch(console.error)
+
+    // Emit driver_assigned event when driver changes
+    if (driverId && driverId !== previousValues.driverId) {
+      void dispatchDeliveryStatusChanged(locationId, delivery).catch(console.error)
+      void dispatchDriverAssigned(locationId, {
+        deliveryOrderId: id,
+        orderId: delivery.orderId,
+        driverId: delivery.driverId,
+      }).catch(console.error)
+    }
 
     return NextResponse.json({
       data: {

@@ -551,8 +551,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
 
       setShowPaymentModal(true)
     } finally {
-      // Release lock after a short delay to prevent rapid re-taps
-      setTimeout(() => { paymentLockRef.current = false }, 300)
+      paymentLockRef.current = false
     }
   }, [savedOrderId, employeeId, ensureOrderInDB])
 

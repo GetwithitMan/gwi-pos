@@ -7,6 +7,9 @@
  * Events emitted:
  *   delivery:status_changed  — structured status change (new)
  *   delivery:updated         — legacy backward-compat event
+ *   delivery:driver_assigned — driver assigned to a delivery order
+ *   delivery:order_reassigned — run reassigned to a different driver
+ *   delivery:tip_reallocated — tip moved between drivers/holding
  *   delivery:run_created     — run dispatched / in_progress
  *   delivery:run_completed   — run reached terminal state
  *   driver:status_changed    — driver session state change
@@ -41,6 +44,47 @@ export async function dispatchDeliveryStatusChanged(
     orderId: deliveryOrder.orderId,
     status: deliveryOrder.status,
   })
+}
+
+// ── Driver Assignment Events ────────────────────────────────────────────────
+
+export async function dispatchDriverAssigned(
+  locationId: string,
+  data: {
+    deliveryOrderId: string
+    orderId?: string | null
+    driverId: string
+    driverName?: string | null
+  },
+): Promise<void> {
+  await emitToLocation(locationId, 'delivery:driver_assigned', data)
+}
+
+export async function dispatchOrderReassigned(
+  locationId: string,
+  data: {
+    runId: string
+    oldDriverId: string
+    newDriverId: string
+    oldDriverName?: string | null
+    newDriverName?: string | null
+    reason?: string
+  },
+): Promise<void> {
+  await emitToLocation(locationId, 'delivery:order_reassigned', data)
+}
+
+export async function dispatchTipReallocated(
+  locationId: string,
+  data: {
+    deliveryOrderId: string
+    orderId: string
+    fromEmployeeId: string
+    toEmployeeId: string
+    amountCents: number
+  },
+): Promise<void> {
+  await emitToLocation(locationId, 'delivery:tip_reallocated', data)
 }
 
 // ── Run Events ──────────────────────────────────────────────────────────────

@@ -196,6 +196,16 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
+    // Clean up orphaned screen links where this screen is source or target
+    await db.kDSScreenLink.deleteMany({
+      where: {
+        OR: [
+          { sourceScreenId: id },
+          { targetScreenId: id },
+        ],
+      },
+    })
+
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete KDS screen:', error)

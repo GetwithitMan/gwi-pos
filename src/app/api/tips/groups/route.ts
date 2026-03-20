@@ -172,6 +172,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     return NextResponse.json({ group }, { status: 201 })
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    if (message === 'EMPLOYEE_IN_ANOTHER_GROUP') {
+      return NextResponse.json(
+        { error: 'One or more employees are already in an active tip group. They must leave that group first.' },
+        { status: 409 }
+      )
+    }
     console.error('Failed to create tip group:', error)
     return NextResponse.json(
       { error: 'Failed to create tip group' },

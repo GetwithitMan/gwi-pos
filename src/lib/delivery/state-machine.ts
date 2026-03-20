@@ -84,7 +84,7 @@ const VALID_DELIVERY_TRANSITIONS: Record<DeliveryOrderStatus, DeliveryOrderStatu
   attempted: ['delivered', 'returned_to_store', 'redelivery_pending'],
   failed_delivery: ['returned_to_store', 'redelivery_pending'],
   returned_to_store: ['redelivery_pending', 'cancelled_after_dispatch'],
-  redelivery_pending: ['assigned'],
+  redelivery_pending: ['assigned', 'failed_delivery'],
   delivered: [],
   cancelled_before_dispatch: [],
   cancelled_after_dispatch: [],
@@ -208,6 +208,28 @@ export async function advanceDeliveryStatus(
       return {
         success: false,
         error: `Invalid transition: ${currentStatus} → ${newStatus}. Valid: ${validNextStates?.join(', ') || 'none (terminal state)'}`,
+      }
+    }
+
+    // 1b. Max redelivery attempts check (default 3)
+    if (currentStatus === 'redelivery_pending' && newStatus === 'assigned') {
+      const MAX_REDELIVERY_ATTEMPTS = 3
+      const redeliveryCount = await db.$queryRawUnsafe<{ count: number }[]>(
+        `SELECT COUNT(*)::int as count FROM "DeliveryAuditLog"
+         WHERE "deliveryOrderId" = $1
+           AND "action" = 'status_change'
+           AND "newValue"::jsonb ->> 'status' = 'redelivery_pending'`,
+        deliveryOrderId,
+      )
+      const attempts = redeliveryCount[0]?.count ?? 0
+      if (attempts >= MAX_REDELIVERY_ATTEMPTS) {
+        // Exceeded max retries — force transition to failed_delivery instead
+        log.warn(`[advanceDeliveryStatus] Order ${deliveryOrderId} exceeded max redelivery attempts (${attempts}/${MAX_REDELIVERY_ATTEMPTS}), forcing failed_delivery`)
+        return advanceDeliveryStatus({
+          ...params,
+          newStatus: 'failed_delivery',
+          reason: `Max redelivery attempts exceeded (${attempts}/${MAX_REDELIVERY_ATTEMPTS})`,
+        })
       }
     }
 

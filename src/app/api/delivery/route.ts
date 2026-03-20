@@ -146,6 +146,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       driverId,
       employeeId,
       orderId,
+      zoneId,
     } = body
 
     // Validate required fields
@@ -176,8 +177,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Calculate delivery fee
+    // Calculate delivery fee — zone fee takes priority over flat config fee
     let deliveryFee = deliveryConfig.deliveryFee
+    let resolvedZoneId = zoneId || null
+
+    if (resolvedZoneId) {
+      // Look up zone-specific delivery fee
+      const zoneRows: any[] = await db.$queryRawUnsafe(
+        `SELECT "deliveryFee", "estimatedMinutes" FROM "DeliveryZone"
+         WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL AND "isActive" = true
+         LIMIT 1`,
+        resolvedZoneId,
+        locationId,
+      )
+      if (zoneRows.length) {
+        const zoneFee = Number(zoneRows[0].deliveryFee)
+        if (!isNaN(zoneFee)) {
+          deliveryFee = zoneFee
+        }
+      }
+    }
 
     // If there's an associated order, check if it qualifies for free delivery
     if (orderId && deliveryConfig.freeDeliveryMinimum > 0) {
@@ -195,12 +214,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Create delivery order
     const inserted: any[] = await db.$queryRawUnsafe(`
       INSERT INTO "DeliveryOrder" (
-        "locationId", "orderId", "employeeId", "driverId",
+        "locationId", "orderId", "employeeId", "driverId", "zoneId",
         "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode",
         "notes", "status", "deliveryFee", "estimatedMinutes", "scheduledFor",
         "trackingToken"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', $13, $14, $15,
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+        $13, 'pending', $14, $15, $16,
         gen_random_uuid()::text)
       RETURNING *
     `,
@@ -208,6 +228,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       orderId || null,
       employeeId || null,
       driverId || null,
+      resolvedZoneId,
       customerName.trim(),
       phone?.trim() || null,
       address?.trim() || null,

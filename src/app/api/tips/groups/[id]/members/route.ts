@@ -139,6 +139,12 @@ export const POST = withVenue(async function POST(
         { status: 409 }
       )
     }
+    if (message === 'EMPLOYEE_IN_ANOTHER_GROUP') {
+      return NextResponse.json(
+        { error: 'Employee is already in another active tip group. They must leave that group first.' },
+        { status: 409 }
+      )
+    }
 
     console.error('Failed to add member to tip group:', error)
     return NextResponse.json(
@@ -220,6 +226,12 @@ export const PUT = withVenue(async function PUT(
     if (message === 'TIP_GROUP_NOT_ACTIVE') {
       return NextResponse.json(
         { error: 'Tip group is not active' },
+        { status: 409 }
+      )
+    }
+    if (message === 'EMPLOYEE_IN_ANOTHER_GROUP') {
+      return NextResponse.json(
+        { error: 'Employee is already in another active tip group. They must leave that group first.' },
         { status: 409 }
       )
     }

@@ -415,9 +415,10 @@ export const POST = withVenue(async function POST(
     }
 
     // Deduct inventory for voids where food was made
-    const normalizedReason = reason.toLowerCase().replace(/\s+/g, '_')
+    const normalizedReason = reason.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
+    const normalizedWasteReasons = WASTE_VOID_REASONS.map(r => r.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_'))
     const shouldDeductInventory = action === 'comp'
-      || (wasMade !== undefined ? wasMade : WASTE_VOID_REASONS.includes(normalizedReason))
+      || (wasMade !== undefined ? wasMade : normalizedWasteReasons.includes(normalizedReason))
 
     if (shouldDeductInventory) {
       const deductionType = action === 'comp' ? 'comp' as const : 'waste' as const

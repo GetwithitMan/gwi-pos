@@ -345,12 +345,23 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
       // Path 3: NUC local network — trust LAN connections but track identity
       if (process.env.POS_LOCATION_ID) {
-        socket.data.locationId = process.env.POS_LOCATION_ID
+        const lanLocationId = process.env.POS_LOCATION_ID
+        socket.data.locationId = lanLocationId
         socket.data.authenticated = true
         // Track identity from handshake auth if provided
         const authTerminalId = socket.handshake.auth?.terminalId as string | undefined
         const authEmployeeId = socket.handshake.auth?.employeeId as string | undefined
-        if (authTerminalId) socket.data.terminalId = authTerminalId
+        if (authTerminalId) {
+          // Validate that the claimed terminalId exists for this location
+          const terminal = await db.terminal.findFirst({
+            where: { id: authTerminalId, locationId: lanLocationId, deletedAt: null },
+            select: { id: true },
+          })
+          if (!terminal) {
+            return next(new Error('Unknown terminal'))
+          }
+          socket.data.terminalId = authTerminalId
+        }
         if (authEmployeeId) socket.data.employeeId = authEmployeeId
         if (!authTerminalId && !authEmployeeId) {
           log.warn(`Path 3 LAN connection without identity (no terminalId/employeeId) from ${socket.handshake.address} — allowing but untracked`)
@@ -416,6 +427,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     // Handle channel subscribe/unsubscribe from SocketEventProvider
     socket.on('subscribe', (channelName: string) => {
       try {
+        if (!checkSocketRateLimit(socket.id)) {
+          socket.emit('rate_limited', { message: 'Too many events per second', event: 'subscribe' })
+          return
+        }
         if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
           log.warn(`Rejected subscribe to invalid room: ${channelName}`)
           return
@@ -477,6 +492,17 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         if (socket.data.locationId && locationId !== socket.data.locationId) {
           log.warn(`Rejected join_station: socket bound to ${socket.data.locationId}, payload says ${locationId}`)
           ack({ success: false, error: 'Location mismatch' })
+          return
+        }
+
+        // Validate that the terminal belongs to this location
+        const validTerminal = await db.terminal.findFirst({
+          where: { id: terminalId, locationId: socket.data.locationId || locationId, deletedAt: null },
+          select: { id: true },
+        })
+        if (!validTerminal) {
+          log.warn(`Rejected join_station: terminal ${terminalId} not found in location ${socket.data.locationId || locationId}`)
+          ack({ success: false, error: 'Terminal not found in this location' })
           return
         }
 
@@ -578,6 +604,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      */
     socket.on('catch-up', async ({ lastEventId, locationId: catchUpLocationId }: { lastEventId: number; locationId: string }) => {
       try {
+        if (!checkSocketRateLimit(socket.id)) {
+          socket.emit('rate_limited', { message: 'Too many events per second', event: 'catch-up' })
+          return
+        }
         if (typeof lastEventId !== 'number' || lastEventId < 0) return
         if (typeof catchUpLocationId !== 'string' || !catchUpLocationId) return
 

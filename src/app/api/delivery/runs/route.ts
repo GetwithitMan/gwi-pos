@@ -9,7 +9,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canAssignDriver, getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { evaluateEffectiveProofMode } from '@/lib/delivery/proof-resolver'
-import { dispatchRunEvent, dispatchDeliveryStatusChanged } from '@/lib/delivery/dispatch-events'
+import { dispatchRunEvent, dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -454,6 +454,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(console.error)
     for (const order of result.orders) {
       void dispatchDeliveryStatusChanged(locationId, order).catch(console.error)
+      void dispatchDriverAssigned(locationId, {
+        deliveryOrderId: order.id,
+        orderId: order.orderId,
+        driverId: driverId,
+      }).catch(console.error)
     }
 
     return NextResponse.json(

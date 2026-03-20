@@ -271,6 +271,9 @@ interface OrderState {
   // Optimistic rollback
   saveSnapshot: () => void
   revertLastChange: (errorMessage: string) => void
+  // Revert reason — UI can subscribe to show a toast when a rollback occurs
+  lastRevertReason: string | null
+  clearRevertReason: () => void
   // Coursing
   setCoursingEnabled: (enabled: boolean) => void
   setCourseDelay: (courseNumber: number, delayMinutes: number) => void
@@ -376,6 +379,7 @@ function computeTotals(order: Order, taxRate: number): { subtotal: number; taxTo
 export const useOrderStore = create<OrderState>((set, get) => ({
   currentOrder: null,
   _previousOrder: null,
+  lastRevertReason: null,
   estimatedTaxRate: 0.08,
 
   startOrder: (orderType, options = {}) => {
@@ -925,9 +929,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   revertLastChange: (errorMessage) => {
     const { _previousOrder } = get()
     if (_previousOrder) {
-      set({ currentOrder: { ..._previousOrder, items: [..._previousOrder.items] }, _previousOrder: null })
+      set({ currentOrder: { ..._previousOrder, items: [..._previousOrder.items] }, _previousOrder: null, lastRevertReason: errorMessage })
       toast.error(errorMessage)
     }
+  },
+
+  clearRevertReason: () => {
+    set({ lastRevertReason: null })
   },
 
   // Set estimated tax rate from location settings (for client-side UX before server sync)

@@ -727,8 +727,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       const payload = data as { orderId?: string; trigger?: string }
       if (payload.orderId !== orderId) return
 
-      // Skip events triggered by our own mutations (within 2000ms for slow networks)
-      if (Date.now() - lastMutationRef.current < 2000) return
+      // Skip events triggered by our own mutations (within 5000ms for slow networks / 4G)
+      if (Date.now() - lastMutationRef.current < 5000) return
 
       // If the order was paid or voided, clear it from the panel — don't reload
       if (payload.trigger === 'paid' || payload.trigger === 'voided') {
@@ -1008,19 +1008,20 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     // Ref-based guard: prevents duplicate sends when button is tapped rapidly
     // (React state `isSending` only updates after re-render — too slow for multi-tap)
     if (sendInProgressRef.current) return
+    sendInProgressRef.current = true
 
     if (!currentOrder) {
+      sendInProgressRef.current = false
       toast.error('No active order to send')
       return
     }
 
     // Must have at least one item
     if (currentOrder.items.length === 0) {
+      sendInProgressRef.current = false
       toast.error('Add items before sending')
       return
     }
-
-    sendInProgressRef.current = true
     setIsSending(true)
     lastMutationRef.current = Date.now() // Bug 8: stamp to skip own socket events
 

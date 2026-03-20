@@ -8,7 +8,7 @@ import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canAssignDriver } from '@/lib/delivery/dispatch-policy'
-import { dispatchRunEvent, dispatchDriverStatusChanged } from '@/lib/delivery/dispatch-events'
+import { dispatchRunEvent, dispatchDriverStatusChanged, dispatchOrderReassigned } from '@/lib/delivery/dispatch-events'
 
 export const dynamic = 'force-dynamic'
 
@@ -203,6 +203,14 @@ export const POST = withVenue(async function POST(
 
     // Fire socket events
     void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(console.error)
+    void dispatchOrderReassigned(locationId, {
+      runId: id,
+      oldDriverId: result.oldDriverId,
+      newDriverId: newDriverId,
+      oldDriverName: result.oldDriverName,
+      newDriverName: result.newDriverName,
+      reason: reason.trim(),
+    }).catch(console.error)
 
     return NextResponse.json({
       run: result.run,

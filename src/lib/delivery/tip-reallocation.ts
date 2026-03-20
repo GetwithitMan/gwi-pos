@@ -26,6 +26,7 @@ import { postToTipLedger } from '@/lib/domain/tips/tip-ledger'
 import type { TxClient } from '@/lib/domain/tips/tip-ledger'
 import { createChildLogger } from '@/lib/logger'
 import { writeDeliveryAuditLog } from './state-machine'
+import { dispatchTipReallocated } from './dispatch-events'
 
 const log = createChildLogger('delivery')
 
@@ -158,6 +159,15 @@ export async function reallocateTipToDriver(
       newValue: { driverEmployeeId, amountCents: totalCents },
       idempotencyKey,
     })
+
+    // Fire-and-forget socket event
+    void dispatchTipReallocated(locationId, {
+      deliveryOrderId,
+      orderId,
+      fromEmployeeId: holdingId,
+      toEmployeeId: driverEmployeeId,
+      amountCents: totalCents,
+    }).catch(err => log.error({ err }, '[reallocateTipToDriver] dispatchTipReallocated failed'))
   } catch (error) {
     log.error({ err: error }, '[reallocateTipToDriver] Error:')
     // Don't throw — tip reallocation failure should not block dispatch
@@ -250,6 +260,15 @@ export async function reassignDriverTip(
       newValue: { driverEmployeeId: newDriverEmployeeId, amountCents: totalCents },
       idempotencyKey,
     })
+
+    // Fire-and-forget socket event
+    void dispatchTipReallocated(locationId, {
+      deliveryOrderId,
+      orderId,
+      fromEmployeeId: oldDriverEmployeeId,
+      toEmployeeId: newDriverEmployeeId,
+      amountCents: totalCents,
+    }).catch(err => log.error({ err }, '[reassignDriverTip] dispatchTipReallocated failed'))
   } catch (error) {
     log.error({ err: error }, '[reassignDriverTip] Error:')
     // Don't throw — tip reassignment failure should not block dispatch

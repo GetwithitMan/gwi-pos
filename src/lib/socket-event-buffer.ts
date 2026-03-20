@@ -23,9 +23,9 @@ export interface BufferedEvent {
   timestamp: number
 }
 
-const MAX_BUFFER_SIZE = 1000
-const MAX_BUFFER_AGE_MS = 5 * 60 * 1000 // 5 minutes
-const SOCKET_EVENT_TTL_MINUTES = 30
+const MAX_BUFFER_SIZE = 10_000
+const MAX_BUFFER_AGE_MS = 60 * 60 * 1000 // 1 hour
+const SOCKET_EVENT_TTL_MINUTES = 60
 const SOCKET_EVENT_CLEANUP_INTERVAL_MS = 300_000 // 5 minutes
 
 /** Lazy DB reference to avoid circular imports */

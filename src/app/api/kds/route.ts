@@ -11,10 +11,6 @@ import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-links'
 import { sendSMS, isTwilioConfigured, formatPhoneE164 } from '@/lib/twilio'
 
-// Throttle entertainment expiry scan — once per 30s, not every KDS poll
-let _lastExpiryCheck = 0
-const _EXPIRY_INTERVAL = 30_000
-
 // GET - Get orders for KDS display
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -32,56 +28,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
-    // W2-K3: Lazy expiry for entertainment sessions — fire-and-forget
-    // Throttled to every 30s. Runs in background to avoid blocking KDS response.
-    const shouldRunExpiry = Date.now() - _lastExpiryCheck > _EXPIRY_INTERVAL
-    if (shouldRunExpiry) {
-      _lastExpiryCheck = Date.now()
-      void (async () => {
-        try {
-          const expiredItems = await db.orderItem.findMany({
-            where: {
-              order: { locationId },
-              blockTimeExpiresAt: { lte: new Date() },
-              kitchenStatus: { not: 'delivered' },
-              isCompleted: false,
-              deletedAt: null,
-            },
-            select: { id: true, orderId: true },
-          })
-          if (expiredItems.length > 0) {
-            await OrderItemRepository.updateItemsByIds(
-              expiredItems.map(i => i.id),
-              locationId!,
-              { kitchenStatus: 'delivered', isCompleted: true, completedAt: new Date() },
-            )
-            // Group expired items by orderId for batched event emission
-            const expiredByOrder = new Map<string, string[]>()
-            for (const item of expiredItems) {
-              dispatchItemStatus(locationId!, {
-                orderId: item.orderId,
-                itemId: item.id,
-                status: 'completed',
-                stationId: '',
-                updatedBy: 'system',
-              }, { async: true }).catch(console.error)
-              const list = expiredByOrder.get(item.orderId) || []
-              list.push(item.id)
-              expiredByOrder.set(item.orderId, list)
-            }
-            // Event sourcing: emit ITEM_UPDATED for expired entertainment items
-            for (const [oid, ids] of expiredByOrder) {
-              void emitOrderEvents(locationId!, oid, ids.map(id => ({
-                type: 'ITEM_UPDATED' as const,
-                payload: { lineItemId: id, kitchenStatus: 'delivered', isCompleted: true },
-              }))).catch(err => console.error('[order-events] KDS entertainment expiry emit failed:', err))
-            }
-          }
-        } catch (err) {
-          console.error('[KDS] Entertainment expiry check failed:', err)
-        }
-      })()
-    }
+    // Entertainment expiry is handled by the cron job (single source of truth).
+    // Previously duplicated here with throttle — removed to avoid dual-write issues.
 
     // Get the station info if specified
     let station = null
@@ -406,6 +354,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
+    // KDS Overhaul: Determine if this screen has forward targets (intermediate vs final bump)
+    // IMPORTANT: Check BEFORE item update to avoid race condition — if a screen link is
+    // deleted between the update and this check, the intermediate flag would be wrong.
+    let isIntermediateBump = false
+    if (screenId && (action === 'complete' || action === 'bump_order')) {
+      try {
+        isIntermediateBump = await screenHasForwardTargets(screenId, locationId!)
+      } catch (err) {
+        console.error('[KDS] Failed to check forward targets:', err)
+        // Fail open: treat as final bump if check fails
+      }
+    }
+
     if (action === 'complete') {
       await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
         isCompleted: true,
@@ -454,21 +415,6 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     if (firstItemForDispatch?.order) {
       const locationId = firstItemForDispatch.order.locationId
       const orderId = firstItemForDispatch.orderId
-
-      // KDS Overhaul: Determine if this screen has forward targets (intermediate vs final bump)
-      // If screenId is provided and screen has active send_to_next links, this is an INTERMEDIATE bump:
-      // - Do NOT emit terminal "Made" events
-      // - Do NOT mark as final completion
-      // - Process screen links instead (forward to next screen)
-      let isIntermediateBump = false
-      if (screenId && (action === 'complete' || action === 'bump_order')) {
-        try {
-          isIntermediateBump = await screenHasForwardTargets(screenId, locationId)
-        } catch (err) {
-          console.error('[KDS] Failed to check forward targets:', err)
-          // Fail open: treat as final bump if check fails
-        }
-      }
 
       // KDS Overhaul: Fire-and-forget screen link processing after bump commits
       // Skip all side effects on double-bump (items already completed)

@@ -329,6 +329,22 @@ export async function startTipGroup(params: {
   const allMemberIds = Array.from(new Set([createdBy, ...initialMemberIds]))
 
   const group = await db.$transaction(async (tx) => {
+    // Validate no initial member is already in an active group
+    if (allMemberIds.length > 0) {
+      const existingActiveMemberships = await tx.tipGroupMembership.findMany({
+        where: {
+          employeeId: { in: allMemberIds },
+          status: 'active',
+          deletedAt: null,
+          group: { status: 'active', deletedAt: null },
+        },
+        select: { employeeId: true },
+      })
+      if (existingActiveMemberships.length > 0) {
+        throw new Error('EMPLOYEE_IN_ANOTHER_GROUP')
+      }
+    }
+
     // 1. Create the group
     const tipGroup = await tx.tipGroup.create({
       data: {
@@ -393,7 +409,7 @@ export async function addMemberToGroup(params: {
       throw new Error('TIP_GROUP_NOT_ACTIVE')
     }
 
-    // Validate employee is not already an active member
+    // Validate employee is not already an active member of THIS group
     const existingMembership = await tx.tipGroupMembership.findFirst({
       where: {
         groupId,
@@ -404,6 +420,20 @@ export async function addMemberToGroup(params: {
     })
     if (existingMembership) {
       throw new Error('EMPLOYEE_ALREADY_MEMBER')
+    }
+
+    // Validate employee is not in ANY other active group
+    const otherActiveMembership = await tx.tipGroupMembership.findFirst({
+      where: {
+        employeeId,
+        status: 'active',
+        deletedAt: null,
+        group: { status: 'active', deletedAt: null },
+        groupId: { not: groupId },
+      },
+    })
+    if (otherActiveMembership) {
+      throw new Error('EMPLOYEE_IN_ANOTHER_GROUP')
     }
 
     // Close current segment
@@ -597,6 +627,20 @@ export async function approveJoinRequest(params: {
     })
     if (!group) {
       throw new Error('TIP_GROUP_NOT_ACTIVE')
+    }
+
+    // Validate employee is not in another active group
+    const otherActiveMembership = await tx.tipGroupMembership.findFirst({
+      where: {
+        employeeId,
+        status: 'active',
+        deletedAt: null,
+        group: { status: 'active', deletedAt: null },
+        groupId: { not: groupId },
+      },
+    })
+    if (otherActiveMembership) {
+      throw new Error('EMPLOYEE_IN_ANOTHER_GROUP')
     }
 
     // Activate the membership

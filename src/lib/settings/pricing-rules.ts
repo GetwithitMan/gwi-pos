@@ -151,27 +151,82 @@ function parseTimeToMinutes(time: string): number {
 }
 
 /**
+ * Extract local time components (day-of-week, hour, minute, date parts) in
+ * the given IANA timezone using Intl.DateTimeFormat. Falls back to the
+ * Date object's local methods when no timezone is provided.
+ */
+function getLocalTimeParts(date: Date, timezone?: string): {
+  dayOfWeek: number    // 0-6, Sunday-Saturday
+  hour: number
+  minute: number
+  year: number
+  month: number        // 1-12
+  day: number          // 1-31
+} {
+  if (!timezone) {
+    return {
+      dayOfWeek: date.getDay(),
+      hour: date.getHours(),
+      minute: date.getMinutes(),
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+      day: date.getDate(),
+    }
+  }
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? ''
+
+  // Map weekday short name to 0-6 (Sun-Sat)
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  }
+
+  return {
+    dayOfWeek: weekdayMap[get('weekday')] ?? date.getDay(),
+    hour: parseInt(get('hour'), 10) || 0,
+    minute: parseInt(get('minute'), 10) || 0,
+    year: parseInt(get('year'), 10) || date.getFullYear(),
+    month: parseInt(get('month'), 10) || (date.getMonth() + 1),
+    day: parseInt(get('day'), 10) || date.getDate(),
+  }
+}
+
+/**
  * Check if a pricing rule is currently active.
  * Idempotent per order creation: same inputs yield same result.
+ * @param timezone Optional IANA timezone (e.g. 'America/New_York') for
+ *   location-aware schedule evaluation. Defaults to server local time.
  */
-export function isPricingRuleActive(rule: PricingRule, now?: Date): boolean {
+export function isPricingRuleActive(rule: PricingRule, now?: Date, timezone?: string): boolean {
   if (!rule.enabled) return false
   const _now = now ?? new Date()
 
   if (rule.type === 'recurring') {
-    return isRecurringRuleActive(rule, _now)
+    return isRecurringRuleActive(rule, _now, timezone)
   } else if (rule.type === 'one-time') {
-    return isOneTimeRuleActive(rule, _now)
+    return isOneTimeRuleActive(rule, _now, timezone)
   } else if (rule.type === 'yearly-recurring') {
-    return isYearlyRecurringRuleActive(rule, _now)
+    return isYearlyRecurringRuleActive(rule, _now, timezone)
   }
   return false
 }
 
-function isRecurringRuleActive(rule: PricingRule, now: Date): boolean {
+function isRecurringRuleActive(rule: PricingRule, now: Date, timezone?: string): boolean {
   if (!Array.isArray(rule.schedules)) return false
-  const currentDay = now.getDay()
-  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const local = getLocalTimeParts(now, timezone)
+  const currentDay = local.dayOfWeek
+  const currentMinutes = local.hour * 60 + local.minute
 
   for (const schedule of rule.schedules) {
     const startMin = parseTimeToMinutes(schedule.startTime)
@@ -203,7 +258,7 @@ function isRecurringRuleActive(rule: PricingRule, now: Date): boolean {
   return false
 }
 
-function isOneTimeRuleActive(rule: PricingRule, now: Date): boolean {
+function isOneTimeRuleActive(rule: PricingRule, now: Date, timezone?: string): boolean {
   if (!rule.startDate || !rule.endDate || !rule.startTime || !rule.endTime) return false
 
   const startMin = parseTimeToMinutes(rule.startTime)
@@ -211,8 +266,9 @@ function isOneTimeRuleActive(rule: PricingRule, now: Date): boolean {
   if (startMin === endMin) return false
 
   // Build date boundaries (YYYY-MM-DD format)
-  const todayStr = formatLocalDate(now)
-  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const local = getLocalTimeParts(now, timezone)
+  const todayStr = formatLocalDateFromParts(local.year, local.month, local.day)
+  const currentMinutes = local.hour * 60 + local.minute
 
   const isCrossMidnight = endMin < startMin
 
@@ -222,9 +278,9 @@ function isOneTimeRuleActive(rule: PricingRule, now: Date): boolean {
       return true
     }
     // Could be in the after-midnight portion (yesterday was a valid day, time < end)
-    const yesterday = new Date(now)
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayStr = formatLocalDate(yesterday)
+    const yesterday = new Date(now.getTime() - 86400000)
+    const yLocal = getLocalTimeParts(yesterday, timezone)
+    const yesterdayStr = formatLocalDateFromParts(yLocal.year, yLocal.month, yLocal.day)
     if (yesterdayStr >= rule.startDate && yesterdayStr <= rule.endDate && currentMinutes < endMin) {
       return true
     }
@@ -238,7 +294,7 @@ function isOneTimeRuleActive(rule: PricingRule, now: Date): boolean {
   return false
 }
 
-function isYearlyRecurringRuleActive(rule: PricingRule, now: Date): boolean {
+function isYearlyRecurringRuleActive(rule: PricingRule, now: Date, timezone?: string): boolean {
   if (!rule.startDate || !rule.endDate || !rule.startTime || !rule.endTime) return false
 
   const startMin = parseTimeToMinutes(rule.startTime)
@@ -246,13 +302,14 @@ function isYearlyRecurringRuleActive(rule: PricingRule, now: Date): boolean {
   if (startMin === endMin) return false
 
   // MM-DD format
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
+  const local = getLocalTimeParts(now, timezone)
+  const month = String(local.month).padStart(2, '0')
+  const day = String(local.day).padStart(2, '0')
   const todayMD = `${month}-${day}`
-  const currentMinutes = now.getHours() * 60 + now.getMinutes()
+  const currentMinutes = local.hour * 60 + local.minute
 
   // Feb 29 leap-year check: if rule references 02-29 and this isn't a leap year, skip
-  if ((rule.startDate === '02-29' || rule.endDate === '02-29') && !isLeapYear(now.getFullYear())) {
+  if ((rule.startDate === '02-29' || rule.endDate === '02-29') && !isLeapYear(local.year)) {
     return false
   }
 
@@ -271,10 +328,10 @@ function isYearlyRecurringRuleActive(rule: PricingRule, now: Date): boolean {
     // Before-midnight portion: today in range, time >= start
     if (inDateRange && currentMinutes >= startMin) return true
     // After-midnight portion: yesterday in range, time < end
-    const yesterday = new Date(now)
-    yesterday.setDate(yesterday.getDate() - 1)
-    const yMonth = String(yesterday.getMonth() + 1).padStart(2, '0')
-    const yDay = String(yesterday.getDate()).padStart(2, '0')
+    const yesterday = new Date(now.getTime() - 86400000)
+    const yLocal = getLocalTimeParts(yesterday, timezone)
+    const yMonth = String(yLocal.month).padStart(2, '0')
+    const yDay = String(yLocal.day).padStart(2, '0')
     const yesterdayMD = `${yMonth}-${yDay}`
     let yesterdayInRange: boolean
     if (isYearWrap) {
@@ -300,6 +357,10 @@ function formatLocalDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+function formatLocalDateFromParts(year: number, month: number, day: number): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
 function isLeapYear(year: number): boolean {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
 }
@@ -308,14 +369,14 @@ function isLeapYear(year: number): boolean {
  * Get all currently active pricing rules, sorted by canonical priority.
  * Sort: priority DESC → scope specificity DESC (items > categories > all) → lexical id ASC
  */
-export function getActivePricingRules(rules: PricingRule[], now?: Date): PricingRule[] {
+export function getActivePricingRules(rules: PricingRule[], now?: Date, timezone?: string): PricingRule[] {
   if (!Array.isArray(rules)) {
     log.warn('[PricingRules] getActivePricingRules called with non-array, returning []')
     return []
   }
   const _now = now ?? new Date()
   return rules
-    .filter(r => r.enabled && isPricingRuleActive(r, _now))
+    .filter(r => r.enabled && isPricingRuleActive(r, _now, timezone))
     .sort((a, b) => {
       // Priority DESC
       if (b.priority !== a.priority) return b.priority - a.priority
@@ -366,9 +427,10 @@ export function getBestPricingRuleForItem(
   itemId: string,
   categoryId: string,
   originalPrice: number,
-  now?: Date
+  now?: Date,
+  timezone?: string
 ): PricingAdjustment | null {
-  const active = getActivePricingRules(rules, now)
+  const active = getActivePricingRules(rules, now, timezone)
 
   // Filter to rules that match this item's scope
   // Guard: empty/null IDs and null arrays never match — prevents scope bypass
@@ -416,11 +478,12 @@ export function getBestPricingRuleForItem(
  * Get the end time of a currently active pricing rule (for banner countdown).
  * Returns null if not active.
  */
-export function getPricingRuleEndTime(rule: PricingRule, now?: Date): Date | null {
+export function getPricingRuleEndTime(rule: PricingRule, now?: Date, timezone?: string): Date | null {
   const _now = now ?? new Date()
-  if (!isPricingRuleActive(rule, _now)) return null
+  if (!isPricingRuleActive(rule, _now, timezone)) return null
 
-  const currentMinutes = _now.getHours() * 60 + _now.getMinutes()
+  const local = getLocalTimeParts(_now, timezone)
+  const currentMinutes = local.hour * 60 + local.minute
 
   if (rule.type === 'recurring') {
     if (!Array.isArray(rule.schedules)) return null
@@ -431,7 +494,7 @@ export function getPricingRuleEndTime(rule: PricingRule, now?: Date): Date | nul
       const isCrossMidnight = endMin < startMin
 
       if (isCrossMidnight) {
-        const currentDay = _now.getDay()
+        const currentDay = local.dayOfWeek
         const previousDay = (currentDay + 6) % 7
         // Before-midnight portion
         if (schedule.dayOfWeek.includes(currentDay) && currentMinutes >= startMin) {
@@ -447,7 +510,7 @@ export function getPricingRuleEndTime(rule: PricingRule, now?: Date): Date | nul
           return endDate
         }
       } else {
-        if (schedule.dayOfWeek.includes(_now.getDay()) && currentMinutes >= startMin && currentMinutes < endMin) {
+        if (schedule.dayOfWeek.includes(local.dayOfWeek) && currentMinutes >= startMin && currentMinutes < endMin) {
           const endDate = new Date(_now)
           endDate.setHours(Math.floor(endMin / 60), endMin % 60, 0, 0)
           return endDate

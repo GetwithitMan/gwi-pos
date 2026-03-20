@@ -29,6 +29,19 @@ export async function restoreInventoryForRestoredItem(
   locationId: string,
 ): Promise<{ success: boolean; itemsRestored: number }> {
   try {
+    // Idempotency: check if a reversal already exists for this order item
+    const existingReversal = await db.inventoryItemTransaction.findFirst({
+      where: {
+        referenceType: 'void_reversal',
+        referenceId: orderItemId,
+      },
+      select: { id: true },
+    })
+    if (existingReversal) {
+      log.info(`[Inventory] Skipping restore for item ${orderItemId} — void_reversal already exists`)
+      return { success: true, itemsRestored: 0 }
+    }
+
     // Find all waste transactions that were created for this voided item
     const wasteTransactions = await db.inventoryItemTransaction.findMany({
       where: {
@@ -250,11 +263,12 @@ export async function deductInventoryForVoidedItem(
   deductionType: 'waste' | 'comp' = 'waste'
 ): Promise<InventoryDeductionResult> {
   try {
-    // Normalize the void reason
-    const normalizedReason = voidReason.toLowerCase().replace(/\s+/g, '_')
+    // Normalize the void reason and compare against normalized allowed reasons
+    const normalizedReason = voidReason.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
+    const normalizedWasteReasons = WASTE_VOID_REASONS.map(r => r.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_'))
 
     // Check if this is a waste-type void (food was made)
-    if (!WASTE_VOID_REASONS.includes(normalizedReason)) {
+    if (!normalizedWasteReasons.includes(normalizedReason)) {
       // Not a waste void - no inventory deduction needed
       return { success: true, itemsDeducted: 0, totalCost: 0 }
     }
