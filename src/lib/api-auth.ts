@@ -575,7 +575,14 @@ export async function getActorFromRequest(
   try {
     const cloud = await getCloudSessionEmployee()
     if (cloud) {
-      return { employeeId: cloud.employeeId, locationId: cloud.locationId, fromSession: true }
+      // Shadow MC admins have null employeeId — use sentinel so callers'
+      // early gates (if !employeeId return 401) pass through to requirePermission(),
+      // which has the full shadow admin bypass with ['all'] permissions.
+      return {
+        employeeId: cloud.employeeId || 'shadow-mc-admin',
+        locationId: cloud.locationId,
+        fromSession: true,
+      }
     }
   } catch { /* no cloud cookie or invalid */ }
 
