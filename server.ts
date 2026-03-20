@@ -25,7 +25,7 @@ import { startOnlineOrderDispatchWorker, stopOnlineOrderDispatchWorker } from '.
 import { startHardwareCommandWorker } from './src/lib/hardware-command-worker'
 import { scaleService } from './src/lib/scale/scale-service'
 import { startUpstreamSyncWorker, stopUpstreamSyncWorker } from './src/lib/sync/upstream-sync-worker'
-import { startDownstreamSyncWorker, stopDownstreamSyncWorker } from './src/lib/sync/downstream-sync-worker'
+import { startDownstreamSyncWorker, stopDownstreamSyncWorker, initialSyncComplete } from './src/lib/sync/downstream-sync-worker'
 import { startOutageReplayWorker, stopOutageReplayWorker } from './src/lib/sync/outage-replay-worker'
 import { startFulfillmentBridge, stopFulfillmentBridge } from './src/lib/fulfillment-bridge-worker'
 import { startBridgeCheckpoint, stopBridgeCheckpoint } from './src/lib/bridge-checkpoint'
@@ -421,6 +421,16 @@ async function main() {
     }
     if (syncReady) {
       logger.info('Bidirectional sync workers started (NUC <-> Neon)')
+
+      // Wait up to 15s for the first downstream sync cycle to complete.
+      // This ensures menu items, employees, settings, etc. are available
+      // before API routes start serving requests to terminals.
+      logger.info('Waiting for initial downstream sync cycle (max 15s)...')
+      await Promise.race([
+        initialSyncComplete,
+        new Promise(resolve => setTimeout(resolve, 15_000))
+      ])
+      logger.info('Initial downstream sync gate passed — server fully ready')
     }
   })
 

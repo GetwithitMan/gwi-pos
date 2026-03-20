@@ -17,6 +17,7 @@ import { masterClient } from '../db'
 import { getUpstreamModels, getBidirectionalModelNames, UPSTREAM_INTERVAL_MS } from './sync-config'
 import { QUARANTINE_PROTECTED_MODELS } from './sync-conflict-quarantine'
 import { dispatchOutageStatus } from '../socket-dispatch'
+import { notifyDataChanged } from '../cloud-notify'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -77,7 +78,17 @@ export async function queueOutageWrite(
       `SELECT COUNT(*)::int as count FROM "OutageQueueEntry" WHERE status = 'pending'`
     )
     if (count >= MAX_OUTAGE_QUEUE_SIZE) {
-      log.error({ count, max: MAX_OUTAGE_QUEUE_SIZE }, 'Outage queue at capacity — dropping write to prevent disk exhaustion')
+      log.error({
+        tableName, recordId, operation, locationId,
+        queueSize: count,
+        maxSize: MAX_OUTAGE_QUEUE_SIZE,
+      }, 'CRITICAL: Outage queue full — write NOT queued. Manual reconciliation required.')
+      void notifyDataChanged({
+        locationId,
+        domain: 'sync',
+        action: 'queue_overflow',
+        entityId: recordId,
+      })
       return
     }
   } catch {
@@ -87,8 +98,8 @@ export async function queueOutageWrite(
   try {
     // Monotonic localSeq — simple counter, resets on restart (new outage = new sequence)
     const localSeq = ++outageSeqCounter
-    // C1: idempotencyKey = locationId:tableName:recordId:localSeq
-    const idempotencyKey = `${locationId}:${tableName}:${recordId}:${localSeq}`
+    // C1: idempotencyKey uses timestamp so it survives server restarts (localSeq resets to 0)
+    const idempotencyKey = `${locationId}:${tableName}:${recordId}:${Date.now()}`
 
     await masterClient.$executeRawUnsafe(
       `INSERT INTO "OutageQueueEntry" (id, "tableName", "recordId", operation, payload, "locationId", status, "localSeq", "idempotencyKey", "createdAt")
@@ -118,10 +129,19 @@ let cycleRunning = false
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Serialize a JS/Prisma value for parameterized SQL */
-function serializeValue(val: unknown): unknown {
+function serializeValue(val: unknown, isPgArray = false): unknown {
   if (val === null || val === undefined) return null
   if (val instanceof Date) return val.toISOString()
   if (typeof val === 'bigint') return val.toString()
+  // PG ARRAY columns (e.g., TEXT[]) → PG array literal: {"a","b"}
+  // JSON/JSONB columns with array values stay as JSON: ["a","b"]
+  if (Array.isArray(val)) {
+    if (isPgArray) {
+      if (val.length === 0) return '{}'
+      return `{${val.map((v) => `"${String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`
+    }
+    return JSON.stringify(val)
+  }
   if (typeof val === 'object') {
     // Decimal.js (Prisma Decimal) — has d (digits), s (sign), e (exponent)
     const v = val as Record<string, unknown>
@@ -157,7 +177,12 @@ async function loadColumnMetadata(): Promise<void> {
 
 /** Build PG type cast from column metadata */
 function buildCast(dataType: string, udtName: string): string {
-  if (dataType.includes('timestamp')) return '::timestamptz'
+  // CRITICAL: Use ::timestamp (not ::timestamptz) for "timestamp without time zone"
+  // columns. Using ::timestamptz causes PostgreSQL to convert from UTC to the session
+  // timezone (e.g., America/Denver = -7h) before storing, which silently shifts all
+  // timestamps by the timezone offset when Prisma reads them back as UTC.
+  if (dataType === 'timestamp with time zone') return '::timestamptz'
+  if (dataType.includes('timestamp')) return '::timestamp'
   if (dataType === 'jsonb') return '::jsonb'
   if (dataType === 'json') return '::json'
   if (dataType === 'boolean') return '::boolean'
@@ -243,7 +268,7 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
     try {
       await neonClient!.$transaction(async (neonTx) => {
         for (const row of chunk) {
-          const values = upsertCols.map((col) => serializeValue(row[col]))
+          const values = upsertCols.map((col) => serializeValue(row[col], types?.get(col)?.endsWith('[]') ?? false))
           await neonTx.$executeRawUnsafe(sql, ...values)
         }
       })
@@ -269,7 +294,7 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
       // so a single bad row doesn't block the rest
       for (const row of chunk) {
         try {
-          const values = upsertCols.map((col) => serializeValue(row[col]))
+          const values = upsertCols.map((col) => serializeValue(row[col], types?.get(col)?.endsWith('[]') ?? false))
           await neonClient!.$executeRawUnsafe(sql, ...values)
 
           await masterClient.$executeRawUnsafe(

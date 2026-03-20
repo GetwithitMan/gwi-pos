@@ -1726,12 +1726,13 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
 
   log "App code ready at $APP_DIR"
 
-  # Copy env files into app directory (always — ensures .env.local stays in sync)
-  # Remove existing symlinks/files first to avoid "same file" error on re-install
+  # Symlink env files into app directory — ensures app always reads canonical /opt/gwi-pos/.env.
+  # Symlinks survive .env updates from fleet commands, re-registration, and manual edits
+  # without requiring a full deploy cycle.
   rm -f "$APP_DIR/.env" "$APP_DIR/.env.local"
-  cp "$ENV_FILE" "$APP_DIR/.env"
-  cp "$ENV_FILE" "$APP_DIR/.env.local"
-  chown "$POSUSER":"$POSUSER" "$APP_DIR/.env" "$APP_DIR/.env.local"
+  ln -sf "$ENV_FILE" "$APP_DIR/.env"
+  ln -sf "$ENV_FILE" "$APP_DIR/.env.local"
+  chown -h "$POSUSER":"$POSUSER" "$APP_DIR/.env" "$APP_DIR/.env.local"
 
   # Build the application (each step checked explicitly)
   # Clean stale build artifacts first (prevents mixed old+new state)
@@ -1884,6 +1885,19 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
 set -euo pipefail
 APP_DIR="/opt/gwi-pos/app"
 cd "$APP_DIR"
+
+# Ensure app env files are symlinked to canonical /opt/gwi-pos/.env
+# (repairs broken symlinks or copies left by older installers)
+_CANONICAL_ENV="/opt/gwi-pos/.env"
+if [[ -f "$_CANONICAL_ENV" ]]; then
+  for _ef in .env .env.local; do
+    if [[ ! -L "$_ef" ]] || [[ "$(readlink -f "$_ef" 2>/dev/null)" != "$(readlink -f "$_CANONICAL_ENV")" ]]; then
+      rm -f "$_ef"
+      ln -sf "$_CANONICAL_ENV" "$_ef"
+      echo "[pre-start] Re-linked $_ef → $_CANONICAL_ENV"
+    fi
+  done
+fi
 
 echo "[pre-start] Cleaning stale Prisma cache..."
 rm -rf node_modules/.prisma 2>/dev/null || true

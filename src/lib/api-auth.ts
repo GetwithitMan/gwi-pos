@@ -116,10 +116,11 @@ export function clearPermissionCache(employeeId?: string, locationId?: string): 
 }
 
 /**
- * Read the pos-cloud-session cookie, verify it, and resolve to a real Employee ID.
- * If the token sub is a prefixed cloud/MC owner ID, auto-provisions a real Employee record.
+ * Read the pos-cloud-session cookie and resolve identity.
+ * Returns employeeId (real employee for venue-login) or null (shadow MC admin).
+ * locationId and cloudRole are always returned when the cookie is valid.
  */
-async function getCloudSessionEmployee(): Promise<{ employeeId: string; locationId: string; cloudRole?: string } | null> {
+async function getCloudSessionEmployee(): Promise<{ employeeId: string | null; locationId: string; cloudRole?: string } | null> {
   try {
     const { config } = await import('./system-config')
     const secret = config.cloudJwtSecret
@@ -152,9 +153,9 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
       if (!locationId) return null
     }
     const employeeId = await resolveOrProvisionEmployee(payload, locationId)
-    log.info({ employeeId }, '[cloud-auth] Resolved employeeId')
-    if (!employeeId) return null
+    log.info({ employeeId: employeeId || '(shadow admin)' }, '[cloud-auth] Resolved identity')
 
+    // employeeId is null for shadow MC admins — still return locationId + cloudRole
     return { employeeId, locationId, cloudRole: payload.role }
   } catch (err) {
     log.error({ err }, '[cloud-auth] Error')
@@ -176,12 +177,21 @@ export async function resolveOrProvisionEmployee(
 ): Promise<string | null> {
   const sub = payload.sub
 
-  // Real employee ID — no prefix.
-  // Cloud/MC identifiers start with 'cloud-', 'mc-owner-', or 'user_' (Clerk user IDs).
-  // Anything else (cuid, uuid) is a real POS employee ID from venue-login.
+  // Real employee ID — no prefix (cuid/uuid from venue-login).
+  // Anything else is a cloud/MC identity that operates in shadow mode.
   if (!sub.startsWith('cloud-') && !sub.startsWith('mc-owner-') && !sub.startsWith('user_')) {
     return sub
   }
+
+  // ── Shadow MC Admin Mode ──────────────────────────────────────────────
+  // MC/cloud users (Clerk user_*, cloud-*, mc-owner-*) do NOT get a real
+  // Employee record. They operate as invisible shadow admins — full access,
+  // zero footprint in staff lists, time clock, tips, shifts, reports.
+  // Return null to tell the middleware to use the JWT-only bypass path.
+  return null
+
+  // ── Legacy provisioning code below (unreachable — kept for reference) ──
+  // TODO: Remove after confirming shadow mode works in production.
 
   // Check in-memory cache first
   const cacheKey = `${sub}:${locationId}`
@@ -316,15 +326,28 @@ export async function requirePermission(
   let cloudRole: string | undefined
   try {
     const cloud = await getCloudSessionEmployee()
-    if (cloud?.employeeId) {
-      if (!employeeId) {
-        employeeId = cloud.employeeId
-      }
-      // ALWAYS override locationId from cloud session — this is the locationId
-      // the MC employee was provisioned in. Without this, 156 routes fail with
-      // "Employee not found" when accessed from Mission Control.
+    if (cloud) {
+      // Override locationId from cloud session (prevents "Employee not found")
       locationId = cloud.locationId
       cloudRole = cloud.cloudRole
+
+      if (cloud.employeeId) {
+        if (!employeeId) employeeId = cloud.employeeId
+      } else {
+        // Shadow MC admin — no local Employee record, full god-mode access
+        log.info(`[api-auth] Shadow MC admin bypass: cloudRole=${cloudRole}, permission=${permission}, locationId=${locationId}`)
+        return {
+          authorized: true,
+          employee: {
+            id: 'shadow-mc-admin',
+            firstName: 'MC',
+            lastName: 'Admin',
+            displayName: 'MC Shadow Admin',
+            locationId,
+            permissions: ['all'],
+          },
+        }
+      }
     }
   } catch { /* no cloud cookie or invalid — fall through */ }
 
@@ -473,20 +496,31 @@ export async function requireAnyPermission(
   }
 
   // Cloud session — pos-cloud-session cookie (email/password or MC redirect)
-  // Always check cloud session to override locationId, even when employeeId
-  // was already resolved by getActorFromRequest(). This matches requirePermission().
+  // Always check cloud session to override locationId. Matches requirePermission().
   let cloudRoleAny: string | undefined
   try {
     const cloud = await getCloudSessionEmployee()
-    if (cloud?.employeeId) {
-      if (!employeeId) {
-        employeeId = cloud.employeeId
-      }
-      // ALWAYS override locationId from cloud session — this is the locationId
-      // the MC employee was provisioned in. Without this, routes fail with
-      // "Employee not found" when accessed from Mission Control.
+    if (cloud) {
       locationId = cloud.locationId
       cloudRoleAny = cloud.cloudRole
+
+      if (cloud.employeeId) {
+        if (!employeeId) employeeId = cloud.employeeId
+      } else {
+        // Shadow MC admin — no local Employee record, full god-mode access
+        log.info(`[api-auth] Shadow MC admin bypass: cloudRole=${cloudRoleAny}, permissions=[${permissions.join(', ')}], locationId=${locationId}`)
+        return {
+          authorized: true,
+          employee: {
+            id: 'shadow-mc-admin',
+            firstName: 'MC',
+            lastName: 'Admin',
+            displayName: 'MC Shadow Admin',
+            locationId,
+            permissions: ['all'],
+          },
+        }
+      }
     }
   } catch { /* no cloud cookie or invalid — fall through */ }
 

@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto'
 import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
 import { createChildLogger } from '@/lib/logger'
+import { notifyDataChanged } from '../cloud-notify'
 
 const log = createChildLogger('outage-replay')
 
@@ -238,6 +239,38 @@ async function processOutageQueue(): Promise<void> {
     const totalDeadLettered = (deadLettered || 0) + (agedOut || 0)
     if (totalDeadLettered > 0) {
       log.error({ cycleId, totalDeadLettered, maxRetry: deadLettered || 0, agedOut: agedOut || 0 }, 'CRITICAL: entries dead-lettered — orders may be lost. Check OutageQueueEntry table.')
+
+      // Immediately notify MC via cloud-notify for real-time alerting
+      const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || ''
+      if (locId) {
+        // Fetch dead-lettered entry IDs for per-entry notifications
+        const recentDead = await masterClient.$queryRawUnsafe<Array<{
+          id: string
+          tableName: string
+          recordId: string
+          retryCount: number
+        }>>(
+          `SELECT id, "tableName", "recordId", COALESCE(("metadata"->>'retryCount')::int, 0) as "retryCount"
+           FROM "OutageQueueEntry"
+           WHERE status = 'dead_letter'
+           ORDER BY "createdAt" DESC
+           LIMIT 20`
+        )
+        for (const entry of recentDead) {
+          void notifyDataChanged({
+            locationId: locId,
+            domain: 'sync',
+            action: 'dead_letter',
+            entityId: entry.id,
+          })
+          log.error({
+            entryId: entry.id,
+            tableName: entry.tableName,
+            recordId: entry.recordId,
+            attempts: entry.retryCount,
+          }, 'Outage queue entry moved to dead letter — data may be lost')
+        }
+      }
 
       // Emit cloud event for MC alerting
       void (async () => {

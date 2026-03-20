@@ -27,6 +27,19 @@ import { syncDenyList } from '../cellular-auth'
 import { checkQuarantine, QUARANTINE_PROTECTED_MODELS, loadWatermarks, updateDownstreamWatermark } from './sync-conflict-quarantine'
 import { registerDownstreamHandler, dispatchDownstreamNotifications } from './downstream-notification-pipeline'
 
+// ── Initial sync completion tracking ──────────────────────────────────────────
+
+let initialSyncResolve: (() => void) | null = null
+let initialSyncDone = false
+export const initialSyncComplete = new Promise<void>((resolve) => {
+  initialSyncResolve = resolve
+})
+
+// ── Column metadata cache TTL ────────────────────────────────────────────────
+
+const COLUMN_CACHE_TTL = 60 * 60 * 1000 // 1 hour
+let columnCacheTimestamp = 0
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface DownstreamMetrics {
@@ -971,6 +984,13 @@ async function runDownstreamCycle(): Promise<void> {
   const cycleId = randomUUID().slice(0, 8)
 
   try {
+    // Refresh column metadata if cache TTL has expired (picks up schema changes)
+    if (Date.now() - columnCacheTimestamp > COLUMN_CACHE_TTL) {
+      await loadColumnMetadata()
+      columnCacheTimestamp = Date.now()
+      log.info('Column metadata cache refreshed (TTL expired)')
+    }
+
     const models = getDownstreamModels()
     let totalSynced = 0
 
@@ -994,6 +1014,13 @@ async function runDownstreamCycle(): Promise<void> {
 
     metrics.lastSyncAt = new Date()
     metrics.rowsSyncedTotal += totalSynced
+
+    // Signal that the first downstream sync cycle has completed
+    if (!initialSyncDone && initialSyncResolve) {
+      initialSyncDone = true
+      initialSyncResolve()
+      log.info({ cycleId, rows: totalSynced }, 'Initial sync cycle complete — server ready')
+    }
 
     if (totalSynced > 0) {
       log.info({ cycleId, rows: totalSynced }, 'Cycle complete')
@@ -1089,6 +1116,7 @@ export function startDownstreamSyncWorker(): void {
   initDownstreamNotifications()
 
   void Promise.all([initHighWaterMarks(), loadColumnMetadata(), loadWatermarks()]).then(() => {
+    columnCacheTimestamp = Date.now()
     void runDownstreamCycle()
     timer = setInterval(() => void runDownstreamCycle(), DOWNSTREAM_INTERVAL_MS)
     timer.unref()

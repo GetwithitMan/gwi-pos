@@ -47,20 +47,22 @@ const log = createChildLogger('api-auth-middleware')
 // ─── Types ───────────────────────────────────────────────────────────────
 
 export interface AuthContext {
-  /** Verified employee ID from session cookie. Null for cellular/internal auth. */
+  /** Verified employee ID from session cookie. Null for cellular/internal/cloud-shadow auth. */
   employeeId: string | null
   /** Verified location ID from session or cellular token. */
   locationId: string
   /** Permission keys from the session. Empty for cellular/internal. */
   permissions: string[]
-  /** Role ID from session. Null for cellular/internal. */
+  /** Role ID from session. Null for cellular/internal/cloud-shadow. */
   roleId: string | null
-  /** Role name from session. Null for cellular/internal. */
+  /** Role name from session. Null for cellular/internal/cloud-shadow. */
   roleName: string | null
   /** Which auth source was used. */
   source: 'session' | 'cloud' | 'cellular' | 'internal'
   /** For cellular auth: the terminal ID. */
   terminalId?: string
+  /** True when caller is an MC/cloud admin operating in shadow mode (no local Employee record). */
+  isCloudAdmin?: boolean
 }
 
 export interface AuthenticatedContext {
@@ -227,12 +229,12 @@ export function withAuth(
             console.log('[auth-middleware] Cloud auth: locationId=' + (locationId || 'NULL'))
 
             if (locationId) {
-              // Delegate to shared provisioning — same path as api-auth.ts
+              // Delegate to shared resolution — returns real employee ID or null (shadow admin)
               const employeeId = await resolveOrProvisionEmployee(payload, locationId)
-              console.log('[auth-middleware] Cloud auth: employeeId=' + (employeeId || 'NULL'))
+              console.log('[auth-middleware] Cloud auth: employeeId=' + (employeeId || 'NULL (shadow)'))
 
               if (employeeId) {
-                // Look up the employee to get role/permissions
+                // Real employee (venue-login path) — look up role/permissions
                 const employee = await (prisma as any).employee.findFirst({
                   where: { id: employeeId, deletedAt: null, isActive: true },
                   select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
@@ -262,8 +264,32 @@ export function withAuth(
                   return handler(request, { auth: authCtx, params: context?.params })
                 }
               }
-              // If provisioning failed, fall through to other auth methods
-              // (no employeeId: null fallback — every cloud user must have a real employee)
+
+              // ── Shadow MC Admin Mode ──────────────────────────────────────
+              // MC/cloud users (Clerk user_*, cloud-*, mc-owner-*) get full
+              // god-mode access WITHOUT a local Employee record. They are
+              // invisible to staff lists, time clock, tips, shifts, reports.
+              const isMcUser = payload.sub.startsWith('user_') || payload.sub.startsWith('cloud-') || payload.sub.startsWith('mc-owner-')
+              if (isMcUser) {
+                // 'all' passes every permission check
+                if (resolvedPermission && !hasPermission(['all'], resolvedPermission)) {
+                  return NextResponse.json(
+                    { error: 'You do not have permission to perform this action' },
+                    { status: 403 }
+                  )
+                }
+
+                const authCtx: AuthContext = {
+                  employeeId: null,
+                  locationId,
+                  permissions: ['all'],
+                  roleId: null,
+                  roleName: 'MC Shadow Admin',
+                  source: 'cloud',
+                  isCloudAdmin: true,
+                }
+                return handler(request, { auth: authCtx, params: context?.params })
+              }
             }
           }
         }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 
 // GET - List inventory transactions with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -142,6 +143,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         reason,
       },
     })
+
+    // Queue for Neon replay if in outage mode (fire-and-forget)
+    queueIfOutage('InventoryItemTransaction', locationId, transaction.id, 'INSERT', transaction as unknown as Record<string, unknown>)
 
     // Update inventory stock
     await db.inventoryItem.update({

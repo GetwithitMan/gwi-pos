@@ -11,12 +11,12 @@ const log = createChildLogger('cloud-notify')
  * handles local updates directly).
  */
 
-type NotifyDomain = 'menu' | 'floorplan' | 'settings' | 'employees' | 'order-types'
+type NotifyDomain = 'menu' | 'floorplan' | 'settings' | 'employees' | 'order-types' | 'sync'
 
 interface NotifyParams {
   locationId: string
   domain: NotifyDomain
-  action?: 'created' | 'updated' | 'deleted'
+  action?: 'created' | 'updated' | 'deleted' | 'dead_letter' | 'queue_overflow'
   entityId?: string
 }
 
