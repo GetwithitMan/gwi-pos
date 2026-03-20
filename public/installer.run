@@ -666,6 +666,7 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "
   INTERNAL_SECRET=$(openssl rand -hex 32)
   CELLULAR_SECRET=$(openssl rand -hex 32)
   SESSION_SECRET=$(openssl rand -hex 32)
+  TENANT_SIGNING_KEY=$(openssl rand -hex 32)
 
   # Build HA section for .env (server or backup)
   HA_ENV_SECTION=""
@@ -715,6 +716,7 @@ PORT=3005
 INTERNAL_API_SECRET=${INTERNAL_SECRET}
 CELLULAR_TOKEN_SECRET=${CELLULAR_SECRET}
 SESSION_SECRET=${SESSION_SECRET}
+TENANT_SIGNING_KEY=${TENANT_SIGNING_KEY}
 SERVER_URL=${SERVER_URL}${HA_ENV_SECTION}
 ENVEOF
 
@@ -790,6 +792,12 @@ else
   if ! grep -q "^SESSION_SECRET=" "$ENV_FILE" 2>/dev/null; then
     echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
     log "Added SESSION_SECRET to existing .env"
+  fi
+
+  # Ensure tenant signing key is present (for proxy JWT signing)
+  if ! grep -q "^TENANT_SIGNING_KEY=" "$ENV_FILE" 2>/dev/null; then
+    echo "TENANT_SIGNING_KEY=$(openssl rand -hex 32)" >> "$ENV_FILE"
+    log "Added TENANT_SIGNING_KEY to existing .env"
   fi
 
   # Ensure SERVER_URL is persisted (added in later installer versions)
@@ -1089,6 +1097,17 @@ HTTP_CODE=$(curl -sS --max-time 15 -o "$RESP_FILE" -w "%{http_code}" -X POST \
 # Log result — include response body on failures for debugging
 if [[ "$HTTP_CODE" == "200" ]] || [[ "$HTTP_CODE" == "201" ]]; then
   echo "OK $HTTP_CODE $(date -u +%H:%M:%S)" >> "$LOG"
+
+  # Self-heal: backfill POS_VENUE_SLUG from heartbeat response if missing from .env
+  if ! grep -q "^POS_VENUE_SLUG=" "$ENV_FILE" 2>/dev/null; then
+    HB_SLUG=$(jq -r '.data.venueSlug // empty' "$RESP_FILE" 2>/dev/null || true)
+    if [[ -n "$HB_SLUG" ]] && [[ "$HB_SLUG" != "null" ]]; then
+      echo "" >> "$ENV_FILE"
+      echo "# Venue identity (backfilled from heartbeat)" >> "$ENV_FILE"
+      echo "POS_VENUE_SLUG=${HB_SLUG}" >> "$ENV_FILE"
+      echo "HEAL POS_VENUE_SLUG=${HB_SLUG} $(date -u +%H:%M:%S)" >> "$LOG"
+    fi
+  fi
 else
   RESP_BODY=$(cat "$RESP_FILE" 2>/dev/null | head -c 200 || echo "")
   echo "FAIL $HTTP_CODE $(date -u +%H:%M:%S) $RESP_BODY" >> "$LOG"
