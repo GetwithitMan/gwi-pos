@@ -5,12 +5,36 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { hash } from 'bcryptjs'
 import { randomInt } from 'crypto'
 import { Pool } from '@neondatabase/serverless'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 import { withVenue } from '@/lib/with-venue'
 
 // Allow up to 60s for seed (schema push via direct SQL is fast)
 export const maxDuration = 60
+
+/**
+ * Load schema SQL from the best available source.
+ * Priority:
+ *   1. public/schema.sql (static file, always matches deployed version)
+ *   2. prisma/schema.sql (build artifact, may be stale on Vercel)
+ * Throws if neither exists.
+ */
+async function loadSchemaSql(): Promise<string> {
+  // Try public/schema.sql first (served as static file, always current)
+  const publicPath = path.join(process.cwd(), 'public/schema.sql')
+  if (existsSync(publicPath)) {
+    return readFileSync(publicPath, 'utf-8')
+  }
+  // Fallback to prisma/schema.sql (build artifact)
+  const prismaPath = path.join(process.cwd(), 'prisma/schema.sql')
+  if (existsSync(prismaPath)) {
+    return readFileSync(prismaPath, 'utf-8')
+  }
+  throw new Error(
+    'Cannot push schema: neither public/schema.sql nor prisma/schema.sql found. ' +
+    'These files are generated at build time by generate-schema-sql.mjs.'
+  )
+}
 
 /**
  * POST /api/internal/provision?mode=full|seed-only|schema-only
@@ -98,11 +122,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── 2. Push schema via direct SQL (full + schema-only; ALWAYS push even if tables exist) ──
     if (mode === 'full' || mode === 'schema-only') {
       try {
-        // Read pre-generated schema SQL (built at deploy time by generate-schema-sql.mjs)
-        const schemaSql = readFileSync(
-          path.join(process.cwd(), 'prisma/schema.sql'),
-          'utf-8'
-        )
+        // Load schema SQL from build artifact (multiple fallback sources)
+        const schemaSql = await loadSchemaSql()
         // Use Pool for raw multi-statement SQL (neon() tagged template can't accept raw strings)
         const pool = new Pool({ connectionString: venueDirectUrl })
         try {

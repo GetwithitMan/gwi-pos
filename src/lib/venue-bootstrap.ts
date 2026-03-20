@@ -146,15 +146,18 @@ async function applySchemaToEmptyDb(
     $queryRawUnsafe: (sql: string) => Promise<unknown[]>
   }
 ): Promise<void> {
-  const schemaPath = path.join(process.cwd(), 'prisma/schema.sql')
-  if (!existsSync(schemaPath)) {
+  // Load schema SQL from best available source
+  const publicPath = path.join(process.cwd(), 'public/schema.sql')
+  const prismaPath = path.join(process.cwd(), 'prisma/schema.sql')
+  const schemaPath = existsSync(publicPath) ? publicPath : existsSync(prismaPath) ? prismaPath : null
+  if (!schemaPath) {
     throw new Error(
-      'Cannot repair empty DB: prisma/schema.sql not found. ' +
-      'This file is generated at build time by generate-schema-sql.mjs.'
+      'Cannot repair empty DB: neither public/schema.sql nor prisma/schema.sql found. ' +
+      'These files are generated at build time by generate-schema-sql.mjs.'
     )
   }
 
-  log.info('Applying schema.sql to empty Neon DB')
+  log.info({ source: schemaPath.includes('public') ? 'public/schema.sql' : 'prisma/schema.sql' }, 'Applying schema to empty Neon DB')
   const { readFileSync } = await import('fs')
   const sql = readFileSync(schemaPath, 'utf-8')
   await client.$executeRawUnsafe(sql)
