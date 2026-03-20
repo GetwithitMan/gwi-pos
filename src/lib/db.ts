@@ -34,9 +34,9 @@ export function createPrismaClient(url?: string) {
   // On NUC: use PrismaPg (TCP to local PostgreSQL — fast, reliable)
   let adapter: any
   if (isVercel) {
-    // Lazy-load to avoid bundling neon serverless on NUC
     const { PrismaNeon } = require('@prisma/adapter-neon')
-    adapter = new PrismaNeon({ connectionString })
+    const { Pool: NeonPool } = require('@neondatabase/serverless')
+    adapter = new PrismaNeon(new NeonPool({ connectionString }))
   } else {
     const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '', 10)
     const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 25 : rawPoolSize
@@ -213,7 +213,8 @@ function createAdminClient(url?: string): PrismaClient {
   let adapter: any
   if (isVercel) {
     const { PrismaNeon } = require('@prisma/adapter-neon')
-    adapter = new PrismaNeon({ connectionString })
+    const { Pool: NeonPool } = require('@neondatabase/serverless')
+    adapter = new PrismaNeon(new NeonPool({ connectionString }))
   } else {
     adapter = new PrismaPg({ connectionString, max: 5 })
   }

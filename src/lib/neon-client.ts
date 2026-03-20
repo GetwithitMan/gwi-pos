@@ -26,8 +26,8 @@ function createNeonClient(): PrismaClient | null {
   if (isVercel) {
     // HTTP — instant, no TCP cold start
     const { PrismaNeon } = require('@prisma/adapter-neon')
-    
-    adapter = new PrismaNeon({ connectionString: neonUrl })
+    const { Pool: NeonPool } = require('@neondatabase/serverless')
+    adapter = new PrismaNeon(new NeonPool({ connectionString: neonUrl }))
   } else {
     // TCP — fast on NUC with local/nearby database
     const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || '10', 10)
