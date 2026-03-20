@@ -18,22 +18,21 @@ const log = createChildLogger('db-tenant-scope')
  * async getLocationId() (which itself is cached per-venue with 5min TTL).
  * Returns undefined during startup/migrations/cron — caller must skip scoping.
  */
-// Module-level fallback guard for contexts without AsyncLocalStorage
-// (RSC rendering, server components outside server.ts request wrapper).
-// Not concurrency-safe across multiple requests, but prevents the Map
-// overflow crash that kills the dev server entirely.
-let _globalResolving = false
-
 export async function resolveTenantLocationId(): Promise<string | undefined> {
   // Guard against infinite recursion: tenant extension intercepts findFirst →
   // calls resolveTenantLocationId → getLocationId → findFirst → loop.
-  // Uses per-request AsyncLocalStorage flag when available (concurrency-safe),
-  // falls back to module-level flag for RSC/no-store contexts.
+  // Uses per-request AsyncLocalStorage flag when available (concurrency-safe).
   const store = requestStore.getStore()
   if (store) {
     if (store._resolvingLocationId) return undefined
   } else {
-    if (_globalResolving) return undefined
+    // No AsyncLocalStorage context (RSC rendering, server components outside
+    // server.ts request wrapper). The old _globalResolving module-level flag
+    // was NOT concurrency-safe — multiple concurrent requests sharing a single
+    // boolean could corrupt each other's state. Fail closed: return undefined
+    // (no tenant scoping) rather than risk cross-tenant data leakage. The
+    // normal request path always has AsyncLocalStorage via withVenue/server.ts.
+    return undefined
   }
 
   // Fast path: already cached in this request's AsyncLocalStorage
@@ -44,31 +43,28 @@ export async function resolveTenantLocationId(): Promise<string | undefined> {
   // MUST NOT call getLocationId() here — that triggers the tenant extension
   // again, and the inflight promise coalescing returns the same promise
   // that's currently executing, causing a deadlock (Promise waits for itself).
-  if (store) {
-    store._resolvingLocationId = true
-  } else {
-    _globalResolving = true
-  }
+  store._resolvingLocationId = true
   try {
     const { getRequestPrisma } = await import('./request-context')
     const prisma = getRequestPrisma()
     if (!prisma) return undefined
     // Raw SQL bypasses all extensions (soft-delete, tenant scope, write guard)
+    // Uses window function COUNT(*) OVER() to detect multi-location invariant violation
     const rows = await (prisma as any).$queryRawUnsafe(
-      'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
-    ) as Array<{ id: string }>
-    const id = rows[0]?.id
-    if (id) {
-      setRequestLocationId(id)
-      return id
+      'SELECT id, COUNT(*) OVER() as total FROM "Location" WHERE "deletedAt" IS NULL ORDER BY "createdAt" ASC LIMIT 1'
+    ) as Array<{ id: string; total: bigint | number }>
+    const row = rows[0]
+    if (row) {
+      const total = Number(row.total)
+      if (total > 1) {
+        log.error(`[tenant-scope] CRITICAL: ${total} active locations found — single-location invariant violated. Using oldest location ${row.id}.`)
+      }
+      setRequestLocationId(row.id)
+      return row.id
     }
     return undefined
   } finally {
-    if (store) {
-      store._resolvingLocationId = false
-    } else {
-      _globalResolving = false
-    }
+    store._resolvingLocationId = false
   }
 }
 

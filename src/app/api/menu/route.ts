@@ -96,25 +96,26 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           category: {
             select: { categoryType: true }
           },
-          // Slim includes for Vercel — deep nesting causes Neon query timeout.
-          // Modifier details, recipes, and ingredients are loaded on-demand
-          // when a user clicks into an item (not needed for the menu grid).
-          ownedModifierGroups: {
-            where: { deletedAt: null },
-            select: { id: true, name: true, isSpiritGroup: true, showOnline: true, sortOrder: true },
-            orderBy: { sortOrder: 'asc' },
-          },
-          pricingOptionGroups: {
-            where: { deletedAt: null },
-            orderBy: { sortOrder: 'asc' },
-            include: {
-              options: {
-                where: { deletedAt: null },
-                orderBy: { sortOrder: 'asc' },
-                select: { id: true, label: true, price: true, priceCC: true, sortOrder: true, isDefault: true, showOnPos: true, color: true },
+          // When slim=true, skip modifier groups and pricing options entirely from the DB query.
+          // These are only needed for full admin responses and add significant query overhead.
+          ...(slim ? {} : {
+            ownedModifierGroups: {
+              where: { deletedAt: null },
+              select: { id: true, name: true, isSpiritGroup: true, showOnline: true, sortOrder: true },
+              orderBy: { sortOrder: 'asc' },
+            },
+            pricingOptionGroups: {
+              where: { deletedAt: null },
+              orderBy: { sortOrder: 'asc' },
+              include: {
+                options: {
+                  where: { deletedAt: null },
+                  orderBy: { sortOrder: 'asc' },
+                  select: { id: true, label: true, price: true, priceCC: true, sortOrder: true, isDefault: true, showOnPos: true, color: true },
+                },
               },
             },
-          },
+          }),
         }
       }),
 
@@ -174,7 +175,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         stockCount: stockStatus?.lowestCount || null,
         stockIngredientName: stockStatus?.lowestIngredientName || null,
         spiritTiers: null, // Spirit tiers loaded on-demand via modifier endpoint
-        hasOtherModifiers: item.ownedModifierGroups.filter((mg: any) => !mg.isSpiritGroup).length > 0,
+        hasOtherModifiers: (item.ownedModifierGroups || []).filter((mg: any) => !mg.isSpiritGroup).length > 0,
       }
     })
 
@@ -206,7 +207,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           isAvailable: item.isAvailable,
           itemType: item.itemType,
           isPizza: isPizzaItem,
-          hasModifiers: item.ownedModifierGroups.length > 0 || isPizzaItem,
+          hasModifiers: (item.ownedModifierGroups || []).length > 0 || isPizzaItem,
           timedPricing: item.timedPricing,
           minimumMinutes: item.minimumMinutes,
           commissionType: item.commissionType,
@@ -219,8 +220,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
           blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
           waitlistCount: item.itemType === 'timed_rental' ? (waitlistCountMap.get(item.id) || 0) : undefined,
-          modifierGroupCount: item.ownedModifierGroups.length,
-          modifierGroups: item.ownedModifierGroups.map(mg => ({
+          modifierGroupCount: (item.ownedModifierGroups || []).length,
+          modifierGroups: (item.ownedModifierGroups || []).map((mg: any) => ({
             id: mg.id,
             name: mg.name,
             showOnline: mg.showOnline,

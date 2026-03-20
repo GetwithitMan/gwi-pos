@@ -5,6 +5,16 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
+/** Validate IPv4 address — each octet must be 0-255 with no leading zeros */
+function isValidIPv4(ip: string): boolean {
+  const parts = ip.split('.')
+  if (parts.length !== 4) return false
+  return parts.every(p => {
+    const n = parseInt(p, 10)
+    return n >= 0 && n <= 255 && String(n) === p
+  })
+}
+
 // GET all terminals for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -181,8 +191,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Validate IP address format if provided
     if (staticIp) {
-      const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
-      if (!ipv4Regex.test(staticIp)) {
+      if (!isValidIPv4(staticIp)) {
         return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
       }
     }

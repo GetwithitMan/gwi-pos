@@ -37,12 +37,11 @@ function getCachedEmployee(employeeId: string, locationId: string) {
 function setCachedEmployee(employeeId: string, locationId: string, employee: any) {
   const cacheKey = `${employeeId}:${locationId}`
   permissionCache.set(cacheKey, { employee, expiry: Date.now() + PERMISSION_CACHE_TTL })
-  // Evict stale entries periodically (keep cache bounded)
+  // Evict oldest entry when cache exceeds capacity (O(1) instead of O(N) scan).
+  // Map iteration order is insertion order, so keys().next() is the oldest entry.
   if (permissionCache.size > 500) {
-    const now = Date.now()
-    for (const [key, entry] of permissionCache) {
-      if (now >= entry.expiry) permissionCache.delete(key)
-    }
+    const firstKey = permissionCache.keys().next().value
+    if (firstKey) permissionCache.delete(firstKey)
   }
 }
 
@@ -61,11 +60,11 @@ function getCachedOverrides(employeeId: string, locationId: string): Map<string,
 function setCachedOverrides(employeeId: string, locationId: string, overrides: Map<string, boolean>) {
   const cacheKey = `${employeeId}:${locationId}`
   overrideCache.set(cacheKey, { overrides, expiry: Date.now() + PERMISSION_CACHE_TTL })
+  // Evict oldest entry when cache exceeds capacity (O(1) instead of O(N) scan).
+  // Map iteration order is insertion order, so keys().next() is the oldest entry.
   if (overrideCache.size > 500) {
-    const now = Date.now()
-    for (const [key, entry] of overrideCache) {
-      if (now >= entry.expiry) overrideCache.delete(key)
-    }
+    const firstKey = overrideCache.keys().next().value
+    if (firstKey) overrideCache.delete(firstKey)
   }
 }
 
@@ -122,7 +121,7 @@ export function clearPermissionCache(employeeId?: string, locationId?: string): 
  * Read the pos-cloud-session cookie, verify it, and resolve to a real Employee ID.
  * If the token sub is a prefixed cloud/MC owner ID, auto-provisions a real Employee record.
  */
-async function getCloudSessionEmployee(): Promise<{ employeeId: string; locationId: string } | null> {
+async function getCloudSessionEmployee(): Promise<{ employeeId: string; locationId: string; cloudRole?: string } | null> {
   try {
     const secret = process.env.PROVISION_API_KEY
     if (!secret) { console.log('[cloud-auth] No PROVISION_API_KEY'); return null }
@@ -146,7 +145,7 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
       const prisma = getRequestPrisma() || db
       if (prisma) {
         const rows = await (prisma as any).$queryRawUnsafe(
-          'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
+          'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY "createdAt" ASC LIMIT 1'
         ) as Array<{ id: string }>
         locationId = rows[0]?.id
       }
@@ -157,7 +156,7 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
     console.log('[cloud-auth] Resolved employeeId:', employeeId)
     if (!employeeId) return null
 
-    return { employeeId, locationId }
+    return { employeeId, locationId, cloudRole: payload.role }
   } catch (err) {
     console.error('[cloud-auth] Error:', err)
     return null
@@ -207,16 +206,30 @@ export async function resolveOrProvisionEmployee(
     }
 
     // No existing employee — auto-provision one
-    // Find admin role (prefer role with 'all' or 'admin' permission)
-    const allRoles = await (prismaResolve as any).role.findMany({
-      where: { locationId, deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+    // Use a deterministic system-owned role for MC-provisioned employees.
+    // This ensures consistent 'all' permissions across all venues.
+    let adminRole = await (prismaResolve as any).role.findFirst({
+      where: { id: { startsWith: 'mc-admin-role' }, locationId, deletedAt: null },
     })
-
-    const adminRole = allRoles.find(r => {
-      const perms = (r.permissions as string[]) || []
-      return perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')
-    }) || allRoles[0]
+    if (!adminRole) {
+      try {
+        adminRole = await (prismaResolve as any).role.create({
+          data: {
+            id: 'mc-admin-role',
+            locationId,
+            name: 'MC Administrator',
+            permissions: ['all'],
+            isTipped: false,
+            cashHandlingMode: 'none',
+          },
+        })
+      } catch {
+        // Race condition: another request may have created it — fetch again
+        adminRole = await (prismaResolve as any).role.findFirst({
+          where: { id: 'mc-admin-role', locationId, deletedAt: null },
+        })
+      }
+    }
 
     if (!adminRole) return null
 
@@ -291,6 +304,7 @@ export async function requirePermission(
   // Always check cloud session to override locationId, even when employeeId
   // was already resolved by getActorFromRequest(). Routes pass body.locationId
   // which may not match the MC employee's locationId → "Employee not found".
+  let cloudRole: string | undefined
   try {
     const cloud = await getCloudSessionEmployee()
     if (cloud?.employeeId) {
@@ -301,6 +315,7 @@ export async function requirePermission(
       // the MC employee was provisioned in. Without this, 156 routes fail with
       // "Employee not found" when accessed from Mission Control.
       locationId = cloud.locationId
+      cloudRole = cloud.cloudRole
     }
   } catch { /* no cloud cookie or invalid — fall through */ }
 
@@ -336,6 +351,22 @@ export async function requirePermission(
   }
 
   if (!employee) {
+    // Cloud super-admin bypass — MC super_admin/sub_admin users are god-mode
+    // even if no local Employee record exists (e.g., fresh venue with no provisioned employee)
+    if (cloudRole && ['super_admin', 'sub_admin'].includes(cloudRole)) {
+      log.info(`[api-auth] Cloud super-admin bypass: role=${cloudRole}, permission=${permission}, locationId=${locationId}`)
+      return {
+        authorized: true,
+        employee: {
+          id: employeeId,
+          firstName: 'Cloud',
+          lastName: 'Admin',
+          displayName: 'Cloud Admin',
+          locationId,
+          permissions: ['all'],
+        },
+      }
+    }
     return {
       authorized: false,
       error: 'Employee not found',
@@ -435,6 +466,7 @@ export async function requireAnyPermission(
   // Cloud session — pos-cloud-session cookie (email/password or MC redirect)
   // Always check cloud session to override locationId, even when employeeId
   // was already resolved by getActorFromRequest(). This matches requirePermission().
+  let cloudRoleAny: string | undefined
   try {
     const cloud = await getCloudSessionEmployee()
     if (cloud?.employeeId) {
@@ -445,6 +477,7 @@ export async function requireAnyPermission(
       // the MC employee was provisioned in. Without this, routes fail with
       // "Employee not found" when accessed from Mission Control.
       locationId = cloud.locationId
+      cloudRoleAny = cloud.cloudRole
     }
   } catch { /* no cloud cookie or invalid — fall through */ }
 
@@ -480,6 +513,21 @@ export async function requireAnyPermission(
   }
 
   if (!employee) {
+    // Cloud super-admin bypass — MC super_admin/sub_admin users are god-mode
+    if (cloudRoleAny && ['super_admin', 'sub_admin'].includes(cloudRoleAny)) {
+      log.info(`[api-auth] Cloud super-admin bypass: role=${cloudRoleAny}, permissions=[${permissions.join(', ')}], locationId=${locationId}`)
+      return {
+        authorized: true,
+        employee: {
+          id: employeeId,
+          firstName: 'Cloud',
+          lastName: 'Admin',
+          displayName: 'Cloud Admin',
+          locationId,
+          permissions: ['all'],
+        },
+      }
+    }
     return {
       authorized: false,
       error: 'Employee not found',

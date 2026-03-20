@@ -5,7 +5,7 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { hash } from 'bcryptjs'
 import { randomInt } from 'crypto'
 import { Pool } from '@neondatabase/serverless'
-import { readFileSync, existsSync } from 'fs'
+import fs from 'fs'
 import path from 'path'
 import { withVenue } from '@/lib/with-venue'
 
@@ -22,13 +22,19 @@ export const maxDuration = 60
 async function loadSchemaSql(): Promise<string> {
   // Try public/schema.sql first (served as static file, always current)
   const publicPath = path.join(process.cwd(), 'public/schema.sql')
-  if (existsSync(publicPath)) {
-    return readFileSync(publicPath, 'utf-8')
+  try {
+    await fs.promises.access(publicPath)
+    return await fs.promises.readFile(publicPath, 'utf-8')
+  } catch {
+    // File doesn't exist — try fallback
   }
   // Fallback to prisma/schema.sql (build artifact)
   const prismaPath = path.join(process.cwd(), 'prisma/schema.sql')
-  if (existsSync(prismaPath)) {
-    return readFileSync(prismaPath, 'utf-8')
+  try {
+    await fs.promises.access(prismaPath)
+    return await fs.promises.readFile(prismaPath, 'utf-8')
+  } catch {
+    // File doesn't exist either
   }
   throw new Error(
     'Cannot push schema: neither public/schema.sql nor prisma/schema.sql found. ' +
@@ -229,13 +235,15 @@ function generateSecurePin(): string {
 }
 
 async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Promise<{ locationId: string; ownerPin: string }> {
-  // Organization
-  const org = await venueDb.organization.create({
+  // Organization — upsert by name for idempotency on retries
+  const existingOrg = await venueDb.organization.findFirst({ where: { name: venueName } })
+  const org = existingOrg || await venueDb.organization.create({
     data: { name: venueName },
   })
 
-  // Location
-  const location = await venueDb.location.create({
+  // Location — upsert: find existing for this org, or create
+  const existingLocation = await venueDb.location.findFirst({ where: { organizationId: org.id } })
+  const location = existingLocation || await venueDb.location.create({
     data: {
       organizationId: org.id,
       name: venueName,
@@ -244,9 +252,10 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
 
   const locationId = location.id
 
-  // Roles
+  // Roles — use deterministic IDs so upserts are idempotent on retries
   const roles = [
     {
+      id: 'role-mgr',
       name: 'Manager',
       permissions: [
         'pos.access', 'pos.create_order', 'pos.modify_order', 'pos.void_item',
@@ -266,6 +275,7 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
       cashHandlingMode: CashHandlingMode.none,
     },
     {
+      id: 'role-server',
       name: 'Server',
       permissions: [
         'pos.access', 'pos.create_order', 'pos.modify_order', 'pos.process_payment',
@@ -275,6 +285,7 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
       cashHandlingMode: CashHandlingMode.purse,
     },
     {
+      id: 'role-bartender',
       name: 'Bartender',
       permissions: [
         'pos.access', 'pos.create_order', 'pos.modify_order', 'pos.process_payment',
@@ -285,6 +296,7 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
       cashHandlingMode: CashHandlingMode.drawer,
     },
     {
+      id: 'role-host',
       name: 'Host',
       permissions: ['pos.access', 'tables.view', 'menu.view'],
       isTipped: false,
@@ -293,10 +305,12 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   ]
 
   const createdRoles: Record<string, string> = {}
-  for (let i = 0; i < roles.length; i++) {
-    const r = roles[i]
-    const role = await venueDb.role.create({
-      data: {
+  for (const r of roles) {
+    const role = await venueDb.role.upsert({
+      where: { id: r.id },
+      update: {},  // don't overwrite existing data on retries
+      create: {
+        id: r.id,
         locationId,
         name: r.name,
         permissions: r.permissions,
@@ -310,7 +324,10 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   // Owner employee — random secure PIN (returned to MC for merchant display)
   const ownerPin = generateSecurePin()
   const pinHash = await hash(ownerPin, 10)
-  const owner = await venueDb.employee.create({
+  const existingOwner = await venueDb.employee.findFirst({
+    where: { locationId, firstName: 'Owner', lastName: 'Manager', deletedAt: null },
+  })
+  const owner = existingOwner || await venueDb.employee.create({
     data: {
       locationId,
       roleId: createdRoles['Manager'],
@@ -321,16 +338,22 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
     },
   })
 
-  await venueDb.employeeRole.create({
-    data: {
-      locationId,
-      employeeId: owner.id,
-      roleId: createdRoles['Manager'],
-      isPrimary: true,
-    },
+  // EmployeeRole — upsert by employeeId+roleId natural key
+  const existingEmployeeRole = await venueDb.employeeRole.findFirst({
+    where: { employeeId: owner.id, roleId: createdRoles['Manager'] },
   })
+  if (!existingEmployeeRole) {
+    await venueDb.employeeRole.create({
+      data: {
+        locationId,
+        employeeId: owner.id,
+        roleId: createdRoles['Manager'],
+        isPrimary: true,
+      },
+    })
+  }
 
-  // Order types
+  // Order types — upsert by slug (natural key within location)
   const orderTypes = [
     { name: 'Dine In', slug: 'dine_in', icon: '🍽️', color: '#3B82F6', isSystem: true, sortOrder: 0,
       workflowRules: { requireTableSelection: true, allowSplitCheck: true, showOnKDS: true } },
@@ -344,22 +367,27 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   ]
 
   for (const ot of orderTypes) {
-    await venueDb.orderType.create({
-      data: {
-        locationId,
-        name: ot.name,
-        slug: ot.slug,
-        icon: ot.icon,
-        color: ot.color,
-        isSystem: ot.isSystem,
-        sortOrder: ot.sortOrder,
-        requiredFields: 'requiredFields' in ot ? ot.requiredFields : undefined,
-        workflowRules: ot.workflowRules,
-      },
+    const existingOt = await venueDb.orderType.findFirst({
+      where: { locationId, slug: ot.slug },
     })
+    if (!existingOt) {
+      await venueDb.orderType.create({
+        data: {
+          locationId,
+          name: ot.name,
+          slug: ot.slug,
+          icon: ot.icon,
+          color: ot.color,
+          isSystem: ot.isSystem,
+          sortOrder: ot.sortOrder,
+          requiredFields: 'requiredFields' in ot ? ot.requiredFields : undefined,
+          workflowRules: ot.workflowRules,
+        },
+      })
+    }
   }
 
-  // Default categories
+  // Default categories — upsert by name+locationId (natural key)
   const categories = [
     { name: 'Appetizers', categoryType: CategoryType.food, color: '#F59E0B', sortOrder: 0 },
     { name: 'Entrees', categoryType: CategoryType.food, color: '#EF4444', sortOrder: 1 },
@@ -371,13 +399,21 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   ]
 
   for (const cat of categories) {
-    await venueDb.category.create({
-      data: { locationId, ...cat },
+    const existingCat = await venueDb.category.findFirst({
+      where: { locationId, name: cat.name },
     })
+    if (!existingCat) {
+      await venueDb.category.create({
+        data: { locationId, ...cat },
+      })
+    }
   }
 
-  // Default section + 6 tables
-  const section = await venueDb.section.create({
+  // Default section + 6 tables — upsert by name+locationId
+  const existingSection = await venueDb.section.findFirst({
+    where: { locationId, name: 'Main Dining' },
+  })
+  const section = existingSection || await venueDb.section.create({
     data: { locationId, name: 'Main Dining', sortOrder: 0 },
   })
 
@@ -391,17 +427,22 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   ]
 
   for (const t of tableGrid) {
-    await venueDb.table.create({
-      data: {
-        locationId,
-        sectionId: section.id,
-        name: t.name,
-        capacity: 4,
-        shape: 'circle',
-        posX: t.posX,
-        posY: t.posY,
-      },
+    const existingTable = await venueDb.table.findFirst({
+      where: { locationId, sectionId: section.id, name: t.name },
     })
+    if (!existingTable) {
+      await venueDb.table.create({
+        data: {
+          locationId,
+          sectionId: section.id,
+          name: t.name,
+          capacity: 4,
+          shape: 'circle',
+          posX: t.posX,
+          posY: t.posY,
+        },
+      })
+    }
   }
 
   return { locationId, ownerPin }

@@ -216,7 +216,7 @@ export function withAuth(
             if (!locationId) {
               const loc = await (prisma as any).location.findFirst({
                 select: { id: true },
-                orderBy: { id: 'asc' },
+                orderBy: { createdAt: 'asc' },
               })
               locationId = loc?.id ?? null
             }

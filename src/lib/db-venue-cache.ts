@@ -34,6 +34,10 @@ const VENUE_CLIENT_TTL_MS = parseInt(process.env.VENUE_CLIENT_TTL_MS || '', 10) 
 // Periodic cleanup: disconnect idle venue clients every 5 minutes
 // ---------------------------------------------------------------------------
 
+// NOTE: On Vercel serverless, setInterval does NOT tick reliably between requests.
+// TTL-based eviction is effectively dead code on Vercel. The LRU size-based eviction
+// (MAX_VENUE_CLIENTS check in getDbForVenue) is the real protection on serverless.
+// This interval only works on NUC (long-running process).
 if (typeof setInterval !== 'undefined') {
   setInterval(() => {
     const clients = globalForPrisma.venueClients

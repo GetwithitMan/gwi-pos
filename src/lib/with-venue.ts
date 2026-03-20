@@ -115,7 +115,15 @@ export function withVenue(handler: RouteHandler): RouteHandler {
           )
         }
 
-        // Capture verified locationId from JWT (cryptographically trusted)
+        // Capture verified locationId from JWT (cryptographically trusted).
+        //
+        // DESIGN NOTE: Venue routing is done by slug (database-level isolation).
+        // Each slug maps to a separate Neon database, so cross-venue writes are
+        // prevented by the database-per-venue model, not by locationId validation.
+        // The locationId from the JWT is used for app-layer tenant scoping within
+        // the venue DB (e.g., Prisma extension WHERE clause injection). It is NOT
+        // validated against the venue's actual Location row here — the DB routing
+        // via slug is the security boundary.
         if (payload.locationId) {
           verifiedLocationId = payload.locationId
         }

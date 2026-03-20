@@ -95,7 +95,7 @@ export async function getLocationId(): Promise<string | null> {
     const prisma = getRequestPrisma() || db
     const location = await (prisma as any).location.findFirst({
       select: { id: true },
-      orderBy: { id: 'asc' },
+      orderBy: { createdAt: 'asc' },
     })
     return location?.id ?? null
   }
@@ -116,7 +116,7 @@ export async function getLocationId(): Promise<string | null> {
     const prisma = getRequestPrisma() || db
     const location = await (prisma as any).location.findFirst({
       select: { id: true },
-      orderBy: { id: 'asc' },
+      orderBy: { createdAt: 'asc' },
     })
 
     const id = location?.id ?? null
