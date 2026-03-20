@@ -145,7 +145,20 @@ function KDSContent() {
   const [station, setStation] = useState<PrepStation | null>(null)
   const [stations, setStations] = useState<PrepStation[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [clockTime, setClockTime] = useState('')
+
+  // Hydration-safe clock — only runs on client
+  useEffect(() => {
+    const tick = () => setClockTime(new Date().toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }))
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [])
   const [showCompleted, setShowCompleted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [socketConnected, setSocketConnected] = useState(false)
@@ -1080,12 +1093,8 @@ function KDSContent() {
         <span className="text-gray-400">
           {locationName}
         </span>
-        <span className="font-mono text-2xl">
-          {new Date().toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          })}
+        <span className="font-mono text-2xl" suppressHydrationWarning>
+          {clockTime}
         </span>
         <span className="text-gray-400 flex items-center gap-2">
           {screenConfig && <span className="w-2 h-2 rounded-full bg-green-500" />}

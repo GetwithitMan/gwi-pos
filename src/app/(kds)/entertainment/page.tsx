@@ -46,7 +46,7 @@ export default function EntertainmentKDSPage() {
   const [selectedItemForWaitlist, setSelectedItemForWaitlist] = useState<string | undefined>()
   const [showSeatModal, setShowSeatModal] = useState(false)
   const [selectedEntryForSeat, setSelectedEntryForSeat] = useState<WaitlistEntry | null>(null)
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [socketConnected, setSocketConnected] = useState(false)
 
   const socketRef = useRef<any>(null)
@@ -518,7 +518,7 @@ export default function EntertainmentKDSPage() {
           <div>
             <h1 className="text-2xl font-bold">Entertainment Center</h1>
             <p className="text-sm text-gray-400 flex items-center gap-2">
-              {employee?.location?.name || kdsScreenName} - Last updated: {lastRefresh.toLocaleTimeString()}
+              {employee?.location?.name || kdsScreenName} - Last updated: {lastRefresh ? lastRefresh.toLocaleTimeString() : '...'}
               <span
                 className={`inline-block w-2 h-2 rounded-full ${socketConnected ? 'bg-green-400' : 'bg-yellow-400'}`}
                 title={socketConnected ? 'Live updates' : 'Polling fallback'}

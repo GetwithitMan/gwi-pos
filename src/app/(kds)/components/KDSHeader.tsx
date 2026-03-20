@@ -41,7 +41,7 @@ export interface KDSHeaderProps {
   screenConfig: ScreenConfig | null
   station: PrepStation | null
   orders: KDSOrder[]
-  lastUpdate: Date
+  lastUpdate: Date | null
   socketConnected: boolean
   expoMode: boolean
   setExpoMode: (value: boolean) => void
@@ -118,7 +118,7 @@ export function KDSHeader({
           </h1>
           <p className="text-sm text-gray-400">
             {orders.length} order{orders.length !== 1 ? 's' : ''} •
-            Updated {lastUpdate.toLocaleTimeString()}
+            Updated {lastUpdate ? lastUpdate.toLocaleTimeString() : '...'}
             <span className={`ml-2 w-2 h-2 rounded-full inline-block ${socketConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}
               title={socketConnected ? 'Live updates' : 'Polling fallback'} />
             {authState === 'employee_fallback' && (
