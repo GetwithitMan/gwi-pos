@@ -132,7 +132,8 @@ function buildTotalsCacheKey(
   discountTotal: number,
   tipTotal: number,
   priceRounding: PriceRoundingSettings | undefined,
-  paymentMethod: string
+  paymentMethod: string,
+  isTaxExempt?: boolean
 ): string {
   // Cheap key: version + item count + sum of price-affecting fields.
   // This avoids JSON.stringify on 5-10KB of data per call.
@@ -161,7 +162,7 @@ function buildTotalsCacheKey(
   hash = (hash * 31 + (locationSettings?.tax?.inclusiveTaxRate ?? 0) * 100) | 0
   hash = (hash * 31 + discountTotal * 100) | 0
   hash = (hash * 31 + tipTotal * 100) | 0
-  return `${items.length}:${hash}:${paymentMethod}:${priceRounding ? 1 : 0}`
+  return `${items.length}:${hash}:${paymentMethod}:${priceRounding ? 1 : 0}:${isTaxExempt ? 1 : 0}`
 }
 
 /**
@@ -241,9 +242,9 @@ export function calculateOrderTotals(
   orderInclusiveTaxRate?: number
 ): OrderTotals {
   // Memoization: return cached result if inputs unchanged
-  const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod)
+  const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod, isTaxExempt)
   const cached = _totalsCache.get(cacheKey)
-  if (cached && !isTaxExempt) return cached
+  if (cached) return cached
 
   const rawRate = locationSettings?.tax?.defaultRate ?? 0
   const taxRate = isTaxExempt ? 0 : (Number.isFinite(rawRate) ? rawRate : 0) / 100

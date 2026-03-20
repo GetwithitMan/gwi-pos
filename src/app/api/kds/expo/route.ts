@@ -6,6 +6,8 @@ import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks } from '@/lib/kds/screen-links'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * Expo KDS API - Returns all items from all stations for expeditor view
@@ -28,6 +30,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Auth check — require pos.kds permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_KDS_ACCESS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get all open orders with full item data
     // Cursor-based pagination: take 50 at a time for performance at 100+ open orders
@@ -211,6 +218,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     const locationId = firstItem?.order?.locationId
     const bumpedBy = body.employeeId || firstItem?.order?.employeeId || 'unknown'
     const screenId = body.screenId as string | undefined
+
+    // Auth check — require pos.kds permission
+    if (locationId) {
+      const actorPut = await getActorFromRequest(request)
+      const authPut = await requirePermission(actorPut.employeeId, locationId, PERMISSIONS.POS_KDS_ACCESS)
+      if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
+    }
 
     if (action === 'serve' || status === 'served') {
       // Mark items as delivered/served

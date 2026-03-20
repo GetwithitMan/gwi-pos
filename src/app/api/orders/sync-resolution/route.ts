@@ -4,6 +4,8 @@ import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
+import { getActorFromRequest, requireAnyPermission, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * Transaction payload from offline queue
@@ -89,6 +91,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require pos.card_payments or pos.access
+    const actor = await getActorFromRequest(request)
+    const auth = await requireAnyPermission(actor.employeeId, locationId, [
+      PERMISSIONS.POS_CARD_PAYMENTS,
+      PERMISSIONS.POS_ACCESS,
+    ])
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!transactions || !Array.isArray(transactions)) {
       return NextResponse.json(
@@ -416,6 +426,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require pos.access permission
+    const actorGet = await getActorFromRequest(request)
+    const authGet = await requirePermission(actorGet.employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!authGet.authorized) return NextResponse.json({ error: authGet.error }, { status: authGet.status })
+
     const dateStr = searchParams.get('date') // YYYY-MM-DD format
 
     // Build date filter

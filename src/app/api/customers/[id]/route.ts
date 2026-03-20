@@ -423,9 +423,9 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    // Soft delete
+    // Soft delete (tenant-scoped)
     await db.customer.update({
-      where: { id },
+      where: { id, locationId },
       data: { isActive: false, deletedAt: new Date() },
     })
 

@@ -17,8 +17,11 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
 
-    const modifierGroup = await db.modifierGroup.findUnique({
-      where: { id },
+    // Get locationId for tenant isolation
+    const locationId = getRequestLocationId()
+
+    const modifierGroup = await db.modifierGroup.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       include: {
         modifiers: {
           orderBy: { sortOrder: 'asc' },

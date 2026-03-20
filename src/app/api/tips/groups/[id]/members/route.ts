@@ -18,6 +18,7 @@ import {
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Add member OR request to join ─────────────────────────────────────
 
@@ -108,6 +109,16 @@ export const POST = withVenue(async function POST(
       employeeId,
       approvedBy: requestingEmployeeId || '',
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroup', groupInfo.locationId, groupId, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // Fire-and-forget socket dispatch
     dispatchTipGroupUpdate(groupInfo.locationId, {
@@ -205,6 +216,16 @@ export const PUT = withVenue(async function PUT(
       employeeId,
       approvedBy: requestingEmployeeId || '',
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroup', groupInfo.locationId, groupId, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // Fire-and-forget socket dispatch
     dispatchTipGroupUpdate(groupInfo.locationId, {
@@ -306,6 +327,18 @@ export const DELETE = withVenue(async function DELETE(
       // Group was closed — we need to look it up (even closed groups still exist in DB)
       const closedGroupInfo = await getGroupInfo(groupId)
       locationId = closedGroupInfo?.locationId ?? null
+    }
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    if (locationId) {
+      try {
+        await queueIfOutageOrFail('TipGroup', locationId, groupId, 'UPDATE')
+      } catch (err) {
+        if (err instanceof OutageQueueFullError) {
+          return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        }
+        throw err
+      }
     }
 
     if (locationId) {

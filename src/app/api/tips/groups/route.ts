@@ -14,6 +14,7 @@ import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── GET: List active tip groups for a location ─────────────────────────────
 
@@ -161,6 +162,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       registerId: registerId || undefined,
       splitMode: splitMode || undefined,
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroup', locationId, group.id, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // ── Socket dispatch (fire-and-forget) ─────────────────────────────────
 

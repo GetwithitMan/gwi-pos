@@ -4,6 +4,8 @@ import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // Shared include shape for recipe queries
 const recipeInclude = {
@@ -174,6 +176,11 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
+    // Auth check — require menu.edit_items permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     if (!Array.isArray(ingredients)) {
       return NextResponse.json(
         { error: 'Ingredients must be an array' },
@@ -320,6 +327,11 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
+    // Auth check — require menu.edit_items permission
+    const actorPatch = await getActorFromRequest(request)
+    const authPatch = await requirePermission(actorPatch.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
+
     if (!bottleProductId) {
       return NextResponse.json(
         { error: 'bottleProductId is required' },
@@ -416,6 +428,11 @@ export const DELETE = withVenue(async function DELETE(
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require menu.edit_items permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
 
     // Get locationId for socket dispatch (tenant-safe)
     const menuItem = await MenuItemRepository.getMenuItemByIdWithSelect(id, locationId, {

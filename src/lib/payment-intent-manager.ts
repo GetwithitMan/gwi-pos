@@ -203,12 +203,11 @@ class PaymentIntentManagerClass {
 
     const now = new Date().toISOString()
     intent.status = 'authorizing'
-    intent.attempts += 1
     intent.lastAttempt = now
     intent.statusHistory.push({
       status: 'authorizing',
       timestamp: now,
-      details: `Authorization attempt ${intent.attempts}`,
+      details: `Authorization attempt ${intent.attempts + 1}`,
     })
 
     await offlineDb.paymentIntents.put(intent)

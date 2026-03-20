@@ -643,8 +643,8 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "
 
   log "Secrets decrypted successfully."
 
-  # ── Offline-first: always use local PG, sync to cloud in background ──
-  # If a cloud DATABASE_URL was provided, store it as NEON_DATABASE_URL for sync
+  # ── Offline-first: local PG is primary, Neon is canonical cloud DB ──
+  # If a cloud DATABASE_URL was provided, store it as NEON_DATABASE_URL for sync + cellular ingress
   NEON_DATABASE_URL=""
   NEON_DIRECT_URL=""
   SYNC_ENABLED="false"
@@ -652,7 +652,7 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "
     NEON_DATABASE_URL="$DATABASE_URL"
     NEON_DIRECT_URL="$DIRECT_URL"
     SYNC_ENABLED="true"
-    log "Cloud database URL provided — storing as NEON_DATABASE_URL for background sync."
+    log "Cloud database URL provided — storing as NEON_DATABASE_URL for sync + cellular ingress."
     log "Local PostgreSQL will be primary (offline-first mode)."
     # Clear cloud URLs — local PG will be set up in the PostgreSQL section
     DATABASE_URL=""
@@ -699,7 +699,10 @@ BACKOFFICE_API_URL=${BACKOFFICE_API_URL}
 DATABASE_URL=${DATABASE_URL}
 DIRECT_URL=${DIRECT_URL}
 
-# Cloud sync target (Neon — background sync only)
+# Cloud sync + cellular ingress (Neon — canonical cloud DB)
+# Serves as: background sync target for upstream/downstream replication,
+# AND direct write target for cellular terminals operating off-LAN.
+# See docs/architecture/AUTHORITY-MODEL.md Section 7: Dual-Ingress Model.
 NEON_DATABASE_URL=${NEON_DATABASE_URL}
 NEON_DIRECT_URL=${NEON_DIRECT_URL}
 SYNC_ENABLED=${SYNC_ENABLED:-false}
@@ -811,7 +814,7 @@ else
 
   # ── Offline-first fix: if DATABASE_URL points at Neon/cloud, redirect to local PG ──
   # Older installers set DATABASE_URL to Neon — this breaks offline-first architecture.
-  # Move cloud URL to NEON_DATABASE_URL (for background sync) and force local PG.
+  # Move cloud URL to NEON_DATABASE_URL (sync + cellular ingress) and force local PG.
   if [[ -n "$DATABASE_URL" ]] && [[ "$DATABASE_URL" != *"localhost"* ]] && [[ "$DATABASE_URL" != *"127.0.0.1"* ]]; then
     if [[ -z "$NEON_DATABASE_URL" ]]; then
       NEON_DATABASE_URL="$DATABASE_URL"

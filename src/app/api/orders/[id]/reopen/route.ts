@@ -125,218 +125,228 @@ export const POST = withVenue(async function POST(
     const cardPayments = order.payments.filter(
       p => p.paymentMethod === 'credit' || p.paymentMethod === 'debit'
     )
+    const orderCards = order.cards || []
 
-    // W1-P4: Mark all existing completed payments as voided so the pay route's
-    // alreadyPaid calculation starts fresh (old payments were for the previous close).
-    if (order.payments.length > 0) {
-      // TODO: Batch payment void by orderId+status -- no single repository method; raw db with locationId guard
-      await db.payment.updateMany({
+    // Wrap all reopen mutations in a transaction with row-level lock
+    const reopenedOrder = await db.$transaction(async (tx) => {
+      // Row-level lock to prevent concurrent reopens
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
+      // W1-P4: Mark all existing completed payments as voided so the pay route's
+      // alreadyPaid calculation starts fresh (old payments were for the previous close).
+      if (order.payments.length > 0) {
+        // TODO: Batch payment void by orderId+status -- no single repository method; raw db with locationId guard
+        await tx.payment.updateMany({
+          where: {
+            orderId,
+            locationId: order.locationId,
+            status: 'completed',
+          },
+          data: {
+            status: 'voided',
+          },
+        })
+      }
+
+      // Restore OrderCards for token reuse after reopen
+      // Cards with Recurring tokens can potentially be re-used for new charges
+      if (orderCards.length > 0) {
+        const cardIdsToRestore = orderCards
+          .filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring')
+          .map(c => c.id)
+
+        if (cardIdsToRestore.length > 0) {
+          await tx.orderCard.updateMany({
+            where: { id: { in: cardIdsToRestore } },
+            data: {
+              status: 'authorized',
+              capturedAmount: null,
+              capturedAt: null,
+              tipAmount: null,
+            },
+          })
+
+          console.log(
+            `[reopen] Restored ${cardIdsToRestore.length} Recurring token OrderCard(s) to 'authorized' for potential reuse`
+          )
+        }
+      }
+
+      // W2-R2: Recalculate order totals from active items (payments were voided, totals are stale)
+      // TODO: OrderItemRepository.getItemsForOrderWithModifiers filters deletedAt:null but not status.
+      // Add a method or use getItemsForOrderWhere + include for status filter.
+      const activeItems = await tx.orderItem.findMany({
         where: {
           orderId,
           locationId: order.locationId,
-          status: 'completed',
+          deletedAt: null,
+          status: { not: 'voided' },
         },
-        data: {
-          status: 'voided',
+        include: {
+          modifiers: true,
         },
       })
 
-      // Reverse card charges at Datacap for each card payment (fire-and-forget).
-      // DB is already updated above — Datacap voids are best-effort so the reopen
-      // is never blocked by processor unreachability.
-      if (cardPayments.length > 0) {
-        void (async () => {
-          let client: Awaited<ReturnType<typeof requireDatacapClient>> | null = null
-          try {
-            client = await requireDatacapClient(order.locationId)
-          } catch (err) {
-            console.error(
-              `[reopen] Failed to create Datacap client for location ${order.locationId}. ` +
-              `${cardPayments.length} card payment(s) were NOT reversed at the processor. ` +
-              `Void manually via Datacap portal.`,
-              err
-            )
-            return
-          }
+      // Use canonical order calculation utility for tax + total (with split tax support)
+      const locationSettings = await tx.location.findUnique({
+        where: { id: order.locationId },
+        select: { settings: true },
+      })
+      const locSettings = (locationSettings?.settings as Record<string, unknown>) || {}
+      const calcItems: OrderItemForCalculation[] = activeItems.map(i => ({
+        price: Number(i.price),
+        quantity: i.quantity,
+        status: i.status,
+        itemTotal: Number(i.itemTotal),
+        isTaxInclusive: (i as any).isTaxInclusive ?? false,
+        modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+      }))
+      const recalcTotals = calculateOrderTotals(
+        calcItems,
+        locSettings as { tax?: { defaultRate?: number } },
+        Number(order.discountTotal) || 0,
+        0,
+        undefined,
+        'card',
+        order.isTaxExempt,
+        Number(order.inclusiveTaxRate) || undefined
+      )
 
-          for (const cp of cardPayments) {
-            const recordNo = cp.datacapRecordNo
-            const readerId = cp.paymentReaderId
-
-            if (!recordNo) {
-              console.warn(
-                `[reopen] Skipping Datacap void for payment ${cp.id} — no datacapRecordNo. ` +
-                `amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
-                `Void manually via Datacap portal.`
-              )
-              continue
-            }
-
-            if (!readerId) {
-              console.warn(
-                `[reopen] Skipping Datacap void for payment ${cp.id} — no paymentReaderId. ` +
-                `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
-                `Void manually via Datacap portal.`
-              )
-              continue
-            }
-
-            try {
-              const datacapResponse = await client.voidSale(readerId, { recordNo })
-              const datacapError = parseError(datacapResponse)
-
-              if (datacapResponse.cmdStatus === 'Approved' && !datacapError) {
-                console.log(
-                  `[reopen] Datacap void succeeded for payment ${cp.id}. ` +
-                  `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}`
-                )
-              } else {
-                console.error(
-                  `[reopen] Datacap void FAILED for payment ${cp.id}. ` +
-                  `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
-                  `error=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}. ` +
-                  `Void manually via Datacap portal.`
-                )
-              }
-            } catch (voidErr) {
-              console.error(
-                `[reopen] Datacap void EXCEPTION for payment ${cp.id}. ` +
-                `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
-                `Void manually via Datacap portal.`,
-                voidErr
-              )
-            }
-          }
-        })().catch(console.error)
-      }
-    }
-
-    // Restore OrderCards for token reuse after reopen
-    // Cards with Recurring tokens can potentially be re-used for new charges
-    const orderCards = order.cards || []
-    if (orderCards.length > 0) {
-      const cardIdsToRestore = orderCards
-        .filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring')
-        .map(c => c.id)
-
-      if (cardIdsToRestore.length > 0) {
-        await db.orderCard.updateMany({
-          where: { id: { in: cardIdsToRestore } },
-          data: {
-            status: 'authorized',
-            capturedAmount: null,
-            capturedAt: null,
-            tipAmount: null,
-          },
-        })
-
-        console.log(
-          `[reopen] Restored ${cardIdsToRestore.length} Recurring token OrderCard(s) to 'authorized' for potential reuse`
-        )
-      }
-    }
-
-    // W2-R2: Recalculate order totals from active items (payments were voided, totals are stale)
-    // TODO: OrderItemRepository.getItemsForOrderWithModifiers filters deletedAt:null but not status.
-    // Add a method or use getItemsForOrderWhere + include for status filter.
-    const activeItems = await db.orderItem.findMany({
-      where: {
+      // Update order to open status
+      // Bug 9: Clear paidAt and closedAt so the pay route's alreadyPaid calculation isn't confused
+      const result = await OrderRepository.updateOrderAndReturn(
         orderId,
-        locationId: order.locationId,
-        deletedAt: null,
-        status: { not: 'voided' },
-      },
-      include: {
-        modifiers: true,
-      },
-    })
+        order.locationId,
+        {
+          status: 'open',
+          paidAt: null,
+          closedAt: null,
+          subtotal: recalcTotals.subtotal,
+          taxTotal: recalcTotals.taxTotal,
+          taxFromInclusive: recalcTotals.taxFromInclusive,
+          taxFromExclusive: recalcTotals.taxFromExclusive,
+          total: recalcTotals.total,
+          tipTotal: 0,
+          reopenedAt: new Date(),
+          reopenedBy: managerId,
+          reopenReason: reason,
+          version: { increment: 1 },
+        },
+        undefined,
+        tx,
+      )
 
-    // Use canonical order calculation utility for tax + total (with split tax support)
-    const locationSettings = await db.location.findUnique({
-      where: { id: order.locationId },
-      select: { settings: true },
-    })
-    const locSettings = (locationSettings?.settings as Record<string, unknown>) || {}
-    const calcItems: OrderItemForCalculation[] = activeItems.map(i => ({
-      price: Number(i.price),
-      quantity: i.quantity,
-      status: i.status,
-      itemTotal: Number(i.itemTotal),
-      isTaxInclusive: (i as any).isTaxInclusive ?? false,
-      modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
-    }))
-    const recalcTotals = calculateOrderTotals(
-      calcItems,
-      locSettings as { tax?: { defaultRate?: number } },
-      Number(order.discountTotal) || 0,
-      0,
-      undefined,
-      'card',
-      order.isTaxExempt,
-      Number(order.inclusiveTaxRate) || undefined
-    )
+      // Revert table status to occupied if order had a table
+      if (order.tableId) {
+        await tx.table.update({
+          where: { id: order.tableId },
+          data: { status: 'occupied' },
+        })
+        invalidateSnapshotCache(order.locationId)
+      }
 
-    // Update order to open status
-    // Bug 9: Clear paidAt and closedAt so the pay route's alreadyPaid calculation isn't confused
-    const reopenedOrder = await OrderRepository.updateOrderAndReturn(
-      orderId,
-      order.locationId,
-      {
-        status: 'open',
-        paidAt: null,
-        closedAt: null,
-        subtotal: recalcTotals.subtotal,
-        taxTotal: recalcTotals.taxTotal,
-        taxFromInclusive: recalcTotals.taxFromInclusive,
-        taxFromExclusive: recalcTotals.taxFromExclusive,
-        total: recalcTotals.total,
-        tipTotal: 0,
-        reopenedAt: new Date(),
-        reopenedBy: managerId,
-        reopenReason: reason,
-        version: { increment: 1 },
-      },
-    )
+      // Create audit log
+      await tx.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId: managerId,
+          action: 'order_reopened',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            orderId,
+            orderNumber: order.orderNumber,
+            oldStatus: order.status,
+            newStatus: 'open',
+            reason,
+            notes: notes || null,
+            closedAt: order.closedAt,
+            total: Number(order.total),
+            paymentsVoided: order.payments.length,
+            cardPaymentsVoided: cardPayments.length,
+            cardsRestored: orderCards.filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring').length,
+            recurringTokensAvailable: orderCards.filter(c => c.tokenFrequency === 'Recurring').length,
+          },
+          ipAddress: request.headers.get('x-forwarded-for'),
+          userAgent: request.headers.get('user-agent'),
+        },
+      })
+
+      return result
+    })
 
     if (!reopenedOrder) {
       return NextResponse.json({ error: 'Failed to reopen order' }, { status: 500 })
     }
 
-    // Revert table status to occupied if order had a table
-    if (order.tableId) {
-      await db.table.update({
-        where: { id: order.tableId },
-        data: { status: 'occupied' },
-      })
-      invalidateSnapshotCache(order.locationId)
-    }
+    // Reverse card charges at Datacap (fire-and-forget, outside transaction).
+    // DB is already updated above — Datacap voids are best-effort so the reopen
+    // is never blocked by processor unreachability.
+    if (cardPayments.length > 0) {
+      void (async () => {
+        let client: Awaited<ReturnType<typeof requireDatacapClient>> | null = null
+        try {
+          client = await requireDatacapClient(order.locationId)
+        } catch (err) {
+          console.error(
+            `[reopen] Failed to create Datacap client for location ${order.locationId}. ` +
+            `${cardPayments.length} card payment(s) were NOT reversed at the processor. ` +
+            `Void manually via Datacap portal.`,
+            err
+          )
+          return
+        }
 
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        locationId: order.locationId,
-        employeeId: managerId,
-        action: 'order_reopened',
-        entityType: 'order',
-        entityId: orderId,
-        details: {
-          orderId,
-          orderNumber: order.orderNumber,
-          oldStatus: order.status,
-          newStatus: 'open',
-          reason,
-          notes: notes || null,
-          closedAt: order.closedAt,
-          total: Number(order.total),
-          paymentsVoided: order.payments.length,
-          cardPaymentsVoided: cardPayments.length,
-          cardsRestored: orderCards.filter(c => c.status === 'captured' && c.tokenFrequency === 'Recurring').length,
-          recurringTokensAvailable: orderCards.filter(c => c.tokenFrequency === 'Recurring').length,
-        },
-        ipAddress: request.headers.get('x-forwarded-for'),
-        userAgent: request.headers.get('user-agent'),
-      },
-    })
+        for (const cp of cardPayments) {
+          const recordNo = cp.datacapRecordNo
+          const readerId = cp.paymentReaderId
+
+          if (!recordNo) {
+            console.warn(
+              `[reopen] Skipping Datacap void for payment ${cp.id} — no datacapRecordNo. ` +
+              `amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+              `Void manually via Datacap portal.`
+            )
+            continue
+          }
+
+          if (!readerId) {
+            console.warn(
+              `[reopen] Skipping Datacap void for payment ${cp.id} — no paymentReaderId. ` +
+              `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+              `Void manually via Datacap portal.`
+            )
+            continue
+          }
+
+          try {
+            const datacapResponse = await client.voidSale(readerId, { recordNo })
+            const datacapError = parseError(datacapResponse)
+
+            if (datacapResponse.cmdStatus === 'Approved' && !datacapError) {
+              console.log(
+                `[reopen] Datacap void succeeded for payment ${cp.id}. ` +
+                `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}`
+              )
+            } else {
+              console.error(
+                `[reopen] Datacap void FAILED for payment ${cp.id}. ` +
+                `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+                `error=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}. ` +
+                `Void manually via Datacap portal.`
+              )
+            }
+          } catch (voidErr) {
+            console.error(
+              `[reopen] Datacap void EXCEPTION for payment ${cp.id}. ` +
+              `recordNo=${recordNo}, amount=$${Number(cp.amount).toFixed(2)}, card=****${cp.cardLast4 || '????'}. ` +
+              `Void manually via Datacap portal.`,
+              voidErr
+            )
+          }
+        }
+      })().catch(console.error)
+    }
 
     // Emit ORDER_REOPENED event (fire-and-forget)
     void emitOrderEvent(order.locationId, orderId, 'ORDER_REOPENED', {

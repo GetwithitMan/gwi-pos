@@ -203,7 +203,7 @@ DIRECT_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
 DATABASE_URL="postgresql://thepasspos:xxx@localhost:5432/thepasspos"
 DIRECT_URL="postgresql://thepasspos:xxx@localhost:5432/thepasspos"
 
-# SYNC TARGET — Neon cloud (background sync only)
+# SYNC TARGET + CELLULAR INGRESS — Neon cloud (canonical cloud DB)
 NEON_DATABASE_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
 NEON_DIRECT_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
 SYNC_ENABLED=true

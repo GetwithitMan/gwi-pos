@@ -129,6 +129,9 @@ export const POST = withVenue(async function POST(
       // BUG #461 FIX: Create Payment record for same_card retry capture
       const paymentMethod = capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
       await db.$transaction(async (tx) => {
+        // Row-level lock to prevent concurrent retry captures
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
         await tx.orderCard.update({
           where: { id: capturedCard!.id },
           data: { status: 'captured', capturedAmount: purchaseAmount, capturedAt: now, tipAmount: 0 },
@@ -246,6 +249,9 @@ export const POST = withVenue(async function POST(
       const paymentAmount = Number(order.total)
       const tipAmount = Number(order.tipTotal) || 0
       await db.$transaction(async (tx) => {
+        // Row-level lock to prevent concurrent retry captures
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
         // TX-KEEP: CREATE — cash fallback payment record for retry capture; no repo create method that accepts tx
         await tx.payment.create({
           data: {
@@ -345,6 +351,9 @@ export const POST = withVenue(async function POST(
 
       // Void all cards, close order, audit log, and queue socket events atomically
       await db.$transaction(async (tx) => {
+        // Row-level lock to prevent concurrent retry captures
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
         await tx.orderCard.updateMany({
           where: { orderId, status: 'authorized' },
           data: { status: PAYMENT_STATES.VOIDED },

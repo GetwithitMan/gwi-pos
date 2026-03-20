@@ -231,227 +231,235 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    switch (action) {
-      case 'fire': {
-        // Query item IDs before batch update for event emission (tenant-safe)
-        const fireItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
-          courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending', isHeld: false,
-        })).map(i => i.id)
+    // Wrap batch item updates in a transaction with row-level lock
+    const result = await db.$transaction(async (tx) => {
+      // Row-level lock to prevent concurrent course mutations
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-        // Fire all items in this course (excluding held items unless explicitly including them)
-        const firedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
-          courseNumber,
-          status: 'active',
-          deletedAt: null,
-          courseStatus: 'pending',
-          isHeld: false,
-        }, {
-          courseStatus: 'fired',
-          firedAt: new Date(),
-        })
+      switch (action) {
+        case 'fire': {
+          // Query item IDs before batch update for event emission (tenant-safe)
+          const fireItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+            courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending', isHeld: false,
+          }, tx)).map(i => i.id)
 
-        // Update current course if this course is higher
-        if (courseNumber > order.currentCourse) {
-          await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber })
+          // Fire all items in this course (excluding held items unless explicitly including them)
+          const firedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            courseStatus: 'pending',
+            isHeld: false,
+          }, {
+            courseStatus: 'fired',
+            firedAt: new Date(),
+          }, tx)
+
+          // Update current course if this course is higher
+          if (courseNumber > order.currentCourse) {
+            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber }, tx)
+          }
+
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
+
+          // Emit event-sourced events for fired items
+          if (fireItemIds.length > 0) {
+            void emitOrderEvents(order.locationId, orderId, fireItemIds.map(id => ({
+              type: 'ITEM_UPDATED' as const,
+              payload: { lineItemId: id, courseStatus: 'fired' },
+            })))
+          }
+
+          return { data: {
+            success: true,
+            courseNumber,
+            itemsFired: firedItems.count,
+          } }
         }
 
-        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
+        case 'fire_all': {
+          // Query item IDs before batch update for event emission (tenant-safe)
+          const fireAllItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+            courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['pending'] },
+          }, tx)).map(i => i.id)
 
-        // Emit event-sourced events for fired items
-        if (fireItemIds.length > 0) {
-          void emitOrderEvents(order.locationId, orderId, fireItemIds.map(id => ({
-            type: 'ITEM_UPDATED' as const,
-            payload: { lineItemId: id, courseStatus: 'fired' },
-          })))
+          // Fire all items in this course including held items
+          const allFiredItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            courseStatus: { in: ['pending'] },
+          }, {
+            courseStatus: 'fired',
+            firedAt: new Date(),
+            isHeld: false,
+          }, tx)
+
+          // Update current course
+          if (courseNumber > order.currentCourse) {
+            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber }, tx)
+          }
+
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})
+
+          // Emit event-sourced events for fired items
+          if (fireAllItemIds.length > 0) {
+            void emitOrderEvents(order.locationId, orderId, fireAllItemIds.map(id => ({
+              type: 'ITEM_UPDATED' as const,
+              payload: { lineItemId: id, courseStatus: 'fired', isHeld: false },
+            })))
+          }
+
+          return { data: {
+            success: true,
+            courseNumber,
+            itemsFired: allFiredItems.count,
+          } }
         }
 
-        return NextResponse.json({ data: {
-          success: true,
-          courseNumber,
-          itemsFired: firedItems.count,
-        } })
+        case 'hold': {
+          // Query item IDs before batch update for event emission (tenant-safe)
+          const holdItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+            courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending',
+          }, tx)).map(i => i.id)
+
+          // Hold all pending items in this course
+          const heldItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            courseStatus: 'pending',
+          }, {
+            isHeld: true,
+          }, tx)
+
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-held'] }).catch(() => {})
+
+          // Emit event-sourced events for held items
+          if (holdItemIds.length > 0) {
+            void emitOrderEvents(order.locationId, orderId, holdItemIds.map(id => ({
+              type: 'ITEM_UPDATED' as const,
+              payload: { lineItemId: id, isHeld: true },
+            })))
+          }
+
+          return { data: {
+            success: true,
+            courseNumber,
+            itemsHeld: heldItems.count,
+          } }
+        }
+
+        case 'release': {
+          // Query item IDs before batch update for event emission (tenant-safe)
+          const releaseItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+            courseNumber, status: 'active', deletedAt: null, isHeld: true,
+          }, tx)).map(i => i.id)
+
+          // Release hold on all items in this course
+          const releasedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            isHeld: true,
+          }, {
+            isHeld: false,
+          }, tx)
+
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-released'] }).catch(() => {})
+
+          // Emit event-sourced events for released items
+          if (releaseItemIds.length > 0) {
+            void emitOrderEvents(order.locationId, orderId, releaseItemIds.map(id => ({
+              type: 'ITEM_UPDATED' as const,
+              payload: { lineItemId: id, isHeld: false },
+            })))
+          }
+
+          return { data: {
+            success: true,
+            courseNumber,
+            itemsReleased: releasedItems.count,
+          } }
+        }
+
+        case 'mark_ready': {
+          // Query item IDs before batch update for event emission (tenant-safe)
+          const readyItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+            courseNumber, status: 'active', deletedAt: null, courseStatus: 'fired',
+          }, tx)).map(i => i.id)
+
+          // Mark all fired items in course as ready
+          const readyItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            courseStatus: 'fired',
+          }, {
+            courseStatus: 'ready',
+            kitchenStatus: 'ready',
+          }, tx)
+
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-ready'] }).catch(() => {})
+
+          // Emit event-sourced events for ready items
+          if (readyItemIds.length > 0) {
+            void emitOrderEvents(order.locationId, orderId, readyItemIds.map(id => ({
+              type: 'ITEM_UPDATED' as const,
+              payload: { lineItemId: id, courseStatus: 'ready', kitchenStatus: 'ready' },
+            })))
+          }
+
+          return { data: {
+            success: true,
+            courseNumber,
+            itemsReady: readyItems.count,
+          } }
+        }
+
+        case 'mark_served': {
+          // Query item IDs before batch update for event emission (tenant-safe)
+          const servedItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
+            courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['fired', 'ready'] },
+          }, tx)).map(i => i.id)
+
+          // Mark all ready items in course as served
+          const servedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            courseStatus: { in: ['fired', 'ready'] },
+          }, {
+            courseStatus: 'served',
+            kitchenStatus: 'delivered',
+          }, tx)
+
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-served'] }).catch(() => {})
+
+          // Emit event-sourced events for served items
+          if (servedItemIds.length > 0) {
+            void emitOrderEvents(order.locationId, orderId, servedItemIds.map(id => ({
+              type: 'ITEM_UPDATED' as const,
+              payload: { lineItemId: id, courseStatus: 'served', kitchenStatus: 'delivered' },
+            })))
+          }
+
+          return { data: {
+            success: true,
+            courseNumber,
+            itemsServed: servedItems.count,
+          } }
+        }
+
+        default:
+          return { error: 'Invalid action. Use: fire, fire_all, hold, release, mark_ready, mark_served, set_mode, set_current', status: 400 }
       }
+    })
 
-      case 'fire_all': {
-        // Query item IDs before batch update for event emission (tenant-safe)
-        const fireAllItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
-          courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['pending'] },
-        })).map(i => i.id)
-
-        // Fire all items in this course including held items
-        const allFiredItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
-          courseNumber,
-          status: 'active',
-          deletedAt: null,
-          courseStatus: { in: ['pending'] },
-        }, {
-          courseStatus: 'fired',
-          firedAt: new Date(),
-          isHeld: false,
-        })
-
-        // Update current course
-        if (courseNumber > order.currentCourse) {
-          await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber })
-        }
-
-        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})
-
-        // Emit event-sourced events for fired items
-        if (fireAllItemIds.length > 0) {
-          void emitOrderEvents(order.locationId, orderId, fireAllItemIds.map(id => ({
-            type: 'ITEM_UPDATED' as const,
-            payload: { lineItemId: id, courseStatus: 'fired', isHeld: false },
-          })))
-        }
-
-        return NextResponse.json({ data: {
-          success: true,
-          courseNumber,
-          itemsFired: allFiredItems.count,
-        } })
-      }
-
-      case 'hold': {
-        // Query item IDs before batch update for event emission (tenant-safe)
-        const holdItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
-          courseNumber, status: 'active', deletedAt: null, courseStatus: 'pending',
-        })).map(i => i.id)
-
-        // Hold all pending items in this course
-        const heldItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
-          courseNumber,
-          status: 'active',
-          deletedAt: null,
-          courseStatus: 'pending',
-        }, {
-          isHeld: true,
-        })
-
-        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-held'] }).catch(() => {})
-
-        // Emit event-sourced events for held items
-        if (holdItemIds.length > 0) {
-          void emitOrderEvents(order.locationId, orderId, holdItemIds.map(id => ({
-            type: 'ITEM_UPDATED' as const,
-            payload: { lineItemId: id, isHeld: true },
-          })))
-        }
-
-        return NextResponse.json({ data: {
-          success: true,
-          courseNumber,
-          itemsHeld: heldItems.count,
-        } })
-      }
-
-      case 'release': {
-        // Query item IDs before batch update for event emission (tenant-safe)
-        const releaseItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
-          courseNumber, status: 'active', deletedAt: null, isHeld: true,
-        })).map(i => i.id)
-
-        // Release hold on all items in this course
-        const releasedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
-          courseNumber,
-          status: 'active',
-          deletedAt: null,
-          isHeld: true,
-        }, {
-          isHeld: false,
-        })
-
-        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-released'] }).catch(() => {})
-
-        // Emit event-sourced events for released items
-        if (releaseItemIds.length > 0) {
-          void emitOrderEvents(order.locationId, orderId, releaseItemIds.map(id => ({
-            type: 'ITEM_UPDATED' as const,
-            payload: { lineItemId: id, isHeld: false },
-          })))
-        }
-
-        return NextResponse.json({ data: {
-          success: true,
-          courseNumber,
-          itemsReleased: releasedItems.count,
-        } })
-      }
-
-      case 'mark_ready': {
-        // Query item IDs before batch update for event emission (tenant-safe)
-        const readyItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
-          courseNumber, status: 'active', deletedAt: null, courseStatus: 'fired',
-        })).map(i => i.id)
-
-        // Mark all fired items in course as ready
-        const readyItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
-          courseNumber,
-          status: 'active',
-          deletedAt: null,
-          courseStatus: 'fired',
-        }, {
-          courseStatus: 'ready',
-          kitchenStatus: 'ready',
-        })
-
-        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-ready'] }).catch(() => {})
-
-        // Emit event-sourced events for ready items
-        if (readyItemIds.length > 0) {
-          void emitOrderEvents(order.locationId, orderId, readyItemIds.map(id => ({
-            type: 'ITEM_UPDATED' as const,
-            payload: { lineItemId: id, courseStatus: 'ready', kitchenStatus: 'ready' },
-          })))
-        }
-
-        return NextResponse.json({ data: {
-          success: true,
-          courseNumber,
-          itemsReady: readyItems.count,
-        } })
-      }
-
-      case 'mark_served': {
-        // Query item IDs before batch update for event emission (tenant-safe)
-        const servedItemIds = (await OrderItemRepository.getItemIdsForOrderWhere(orderId, postLocationId, {
-          courseNumber, status: 'active', deletedAt: null, courseStatus: { in: ['fired', 'ready'] },
-        })).map(i => i.id)
-
-        // Mark all ready items in course as served
-        const servedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
-          courseNumber,
-          status: 'active',
-          deletedAt: null,
-          courseStatus: { in: ['fired', 'ready'] },
-        }, {
-          courseStatus: 'served',
-          kitchenStatus: 'delivered',
-        })
-
-        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-served'] }).catch(() => {})
-
-        // Emit event-sourced events for served items
-        if (servedItemIds.length > 0) {
-          void emitOrderEvents(order.locationId, orderId, servedItemIds.map(id => ({
-            type: 'ITEM_UPDATED' as const,
-            payload: { lineItemId: id, courseStatus: 'served', kitchenStatus: 'delivered' },
-          })))
-        }
-
-        return NextResponse.json({ data: {
-          success: true,
-          courseNumber,
-          itemsServed: servedItems.count,
-        } })
-      }
-
-      default:
-        return NextResponse.json(
-          { error: 'Invalid action. Use: fire, fire_all, hold, release, mark_ready, mark_served, set_mode, set_current' },
-          { status: 400 }
-        )
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
     }
+    return NextResponse.json(result)
   } catch (error) {
     console.error('Failed to update course:', error)
     return NextResponse.json(

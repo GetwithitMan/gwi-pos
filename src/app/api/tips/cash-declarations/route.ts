@@ -11,6 +11,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { checkDeclarationMinimum } from '@/lib/domain/tips/tip-compliance'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Declare cash tips ─────────────────────────────────────────────────
 
@@ -85,6 +86,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         overrideReason: isSelfDeclaration ? null : (body.overrideReason || null),
       },
     })
+
+    // ── Outage queue protection ───────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('CashTipDeclaration', locationId, declaration.id, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // ── Compliance check (optional) ───────────────────────────────────────
     let complianceWarnings: { code: string; level: string; message: string; details?: Record<string, unknown> }[] | undefined

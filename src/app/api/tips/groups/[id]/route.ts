@@ -17,6 +17,7 @@ import {
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── GET: Get group details ─────────────────────────────────────────────────
 
@@ -173,6 +174,16 @@ export const PUT = withVenue(async function PUT(
       })
     }
 
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroup', existingGroup.locationId, id, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
+
     // ── Return updated group ──────────────────────────────────────────────
 
     const updatedGroup = await getGroupInfo(id)
@@ -243,6 +254,16 @@ export const DELETE = withVenue(async function DELETE(
     // ── Close the group ───────────────────────────────────────────────────
 
     await closeGroup(id)
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroup', existingGroup.locationId, id, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // ── Socket dispatch (fire-and-forget) ─────────────────────────────────
 

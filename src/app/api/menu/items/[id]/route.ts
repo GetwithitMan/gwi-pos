@@ -299,7 +299,7 @@ export const PUT = withVenue(async function PUT(
 
     // TODO: Migrate to MenuItemRepository.updateMenuItemAndReturn() once complex update shapes are supported
     const item = await db.menuItem.update({
-      where: { id },
+      where: { id, locationId },
       data: {
         ...(categoryId !== undefined && categoryId !== null && { categoryId }),
         ...(name !== undefined && { name }),

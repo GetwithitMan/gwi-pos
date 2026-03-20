@@ -16,33 +16,28 @@ async function getInvoicingSettings(locationId: string) {
   return settings.invoicing ?? DEFAULT_INVOICING
 }
 
-/** Generate the next auto-incremented invoice number and bump the counter. */
+/** Generate the next auto-incremented invoice number and bump the counter atomically. */
 async function generateInvoiceNumber(locationId: string): Promise<string> {
   const invSettings = await getInvoicingSettings(locationId)
   const prefix = invSettings.autoNumberPrefix || 'INV'
-  const nextNum = invSettings.nextInvoiceNumber || 1001
+  const defaultStart = invSettings.nextInvoiceNumber || 1001
 
-  // Bump the counter in settings
-  const location = await db.location.findFirst({
-    where: { id: locationId },
-    select: { id: true, settings: true },
-  })
-  if (location) {
-    const currentSettings = (location.settings as any) || {}
-    const currentInvoicing = currentSettings.invoicing || {}
-    await db.location.update({
-      where: { id: locationId },
-      data: {
-        settings: {
-          ...currentSettings,
-          invoicing: {
-            ...currentInvoicing,
-            nextInvoiceNumber: nextNum + 1,
-          },
-        },
-      },
-    })
-  }
+  // Atomic increment: UPDATE ... RETURNING prevents two concurrent requests
+  // from reading the same nextInvoiceNumber.
+  const rows = await db.$queryRawUnsafe<{ next: number }[]>(
+    `UPDATE "Location"
+     SET settings = jsonb_set(
+       COALESCE(settings, '{}'),
+       '{invoicing,nextInvoiceNumber}',
+       to_jsonb(COALESCE((settings->'invoicing'->>'nextInvoiceNumber')::int, $2) + 1)
+     )
+     WHERE id = $1
+     RETURNING COALESCE((settings->'invoicing'->>'nextInvoiceNumber')::int, $2 + 1) - 1 AS next`,
+    locationId,
+    defaultStart
+  )
+
+  const nextNum = rows[0]?.next ?? defaultStart
 
   return `${prefix}-${String(nextNum).padStart(5, '0')}`
 }

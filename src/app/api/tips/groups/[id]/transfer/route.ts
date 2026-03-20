@@ -22,6 +22,7 @@ import {
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 interface TransferPayload {
   toEmployeeId: string
@@ -190,6 +191,16 @@ export const POST = withVenue(async function POST(
         },
       },
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroup', group.locationId, groupId, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // ── Socket dispatch (fire-and-forget) ───────────────────────────────
     void dispatchTipGroupUpdate(group.locationId, {

@@ -17,6 +17,7 @@ import {
 } from '@/lib/domain/tips'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Cash out tips for a single employee ──────────────────────────────
 
@@ -103,6 +104,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
         { status: 400 }
       )
+    }
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipLedgerEntry', locationId, result.ledgerEntryId, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
     }
 
     // Emit cloud event for tip payout (fire-and-forget)

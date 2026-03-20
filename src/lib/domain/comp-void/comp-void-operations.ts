@@ -100,7 +100,7 @@ export async function applyCompVoid(
   })
 
   // 2. Create void log entry
-  await (tx as any).voidLog.create({
+  const voidLogEntry = await (tx as any).voidLog.create({
     data: {
       locationId,
       orderId,
@@ -266,6 +266,7 @@ export async function applyCompVoid(
     shouldAutoClose,
     parentTotals,
     cardPayments,
+    voidLogId: voidLogEntry.id as string,
   }
 }
 

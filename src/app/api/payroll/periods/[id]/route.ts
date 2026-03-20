@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateTaxes, TaxCalculationInput } from '@/lib/payroll/tax-calculator'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get payroll period details with pay stubs
 export const GET = withVenue(async function GET(
@@ -33,6 +35,11 @@ export const GET = withVenue(async function GET(
     if (!period) {
       return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
     }
+
+    // Auth check — require reports.labor permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, period.locationId, PERMISSIONS.REPORTS_LABOR)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     return NextResponse.json({ data: {
       period: {
@@ -104,6 +111,11 @@ export const PUT = withVenue(async function PUT(
     if (!period) {
       return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
     }
+
+    // Auth check — require reports.labor permission
+    const actorPut = await getActorFromRequest(request)
+    const authPut = await requirePermission(actorPut.employeeId, period.locationId, PERMISSIONS.REPORTS_LABOR)
+    if (!authPut.authorized) return NextResponse.json({ error: authPut.error }, { status: authPut.status })
 
     // Get payroll settings for tax calculation
     const payrollSettings = await db.payrollSettings.findUnique({
@@ -453,6 +465,11 @@ export const DELETE = withVenue(async function DELETE(
     if (!period) {
       return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
     }
+
+    // Auth check — require reports.labor permission
+    const actorDel = await getActorFromRequest(request)
+    const authDel = await requirePermission(actorDel.employeeId, period.locationId, PERMISSIONS.REPORTS_LABOR)
+    if (!authDel.authorized) return NextResponse.json({ error: authDel.error }, { status: authDel.status })
 
     if (period.status !== 'open') {
       return NextResponse.json(

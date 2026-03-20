@@ -7,7 +7,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationId } from '@/lib/location-cache'
 import {
   calculateShiftSummary,
   getShiftTipDistributionSummary,
@@ -21,9 +21,10 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
 
-    const shift = await db.shift.findUnique({
-      where: { id },
+    const shift = await db.shift.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       include: {
         employee: {
           select: {

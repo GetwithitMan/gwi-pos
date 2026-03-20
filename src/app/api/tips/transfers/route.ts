@@ -17,6 +17,7 @@ import {
   centsToDollars,
 } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Create a tip transfer ────────────────────────────────────────────
 
@@ -169,6 +170,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
         { status: 400 }
       )
+    }
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipLedgerEntry', locationId, result.debit.id, 'INSERT')
+      await queueIfOutageOrFail('TipLedgerEntry', locationId, result.credit.id, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
     }
 
     // ── Return success ────────────────────────────────────────────────────

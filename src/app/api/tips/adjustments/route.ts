@@ -17,6 +17,7 @@ import {
 } from '@/lib/domain/tips/tip-recalculation'
 import type { AdjustmentType } from '@/lib/domain/tips/tip-recalculation'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── Valid adjustment types ──────────────────────────────────────────────────
 
@@ -247,6 +248,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         paymentUpdate: { paymentId, tipAmountCents },
       })
 
+      try {
+        await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
+      } catch (err) {
+        if (err instanceof OutageQueueFullError) {
+          return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+        }
+        throw err
+      }
+
       return NextResponse.json({ adjustment: result })
     }
 
@@ -303,6 +313,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           reason,
         })
 
+        try {
+          await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
+        } catch (err) {
+          if (err instanceof OutageQueueFullError) {
+            return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+          }
+          throw err
+        }
+
         return NextResponse.json({ adjustment: result })
 
       } else if (recalculate.type === 'order') {
@@ -319,6 +338,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           orderId: recalculate.orderId,
           reason,
         })
+
+        try {
+          await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
+        } catch (err) {
+          if (err instanceof OutageQueueFullError) {
+            return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+          }
+          throw err
+        }
 
         return NextResponse.json({ adjustment: result })
 
@@ -339,6 +367,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       context,
       employeeDeltas,
     })
+
+    try {
+      await queueIfOutageOrFail('TipAdjustment', locationId, result.adjustmentId, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     return NextResponse.json({ adjustment: result })
 

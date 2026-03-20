@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * GET /api/inventory/86-status
@@ -279,9 +281,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
     }
 
-    // Update 86 status
+    // Auth check — require menu.86_items permission
+    const actor = await getActorFromRequest(request)
+    const auth = await requirePermission(actor.employeeId, ingredient.locationId, PERMISSIONS.MENU_86_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    // Update 86 status (tenant-scoped)
     const updated = await db.ingredient.update({
-      where: { id: ingredientId },
+      where: { id: ingredientId, locationId: ingredient.locationId },
       data: {
         is86d,
         last86dAt: is86d ? new Date() : null,
@@ -378,8 +385,22 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    const updated = await db.ingredient.update({
+    // Fetch ingredient to get locationId for auth check
+    const ingredientForAuth = await db.ingredient.findUnique({
       where: { id: ingredientId },
+      select: { locationId: true },
+    })
+    if (!ingredientForAuth) {
+      return NextResponse.json({ error: 'Ingredient not found' }, { status: 404 })
+    }
+
+    // Auth check — require menu.86_items permission
+    const actorPatch = await getActorFromRequest(request)
+    const authPatch = await requirePermission(actorPatch.employeeId, ingredientForAuth.locationId, PERMISSIONS.MENU_86_ITEMS)
+    if (!authPatch.authorized) return NextResponse.json({ error: authPatch.error }, { status: authPatch.status })
+
+    const updated = await db.ingredient.update({
+      where: { id: ingredientId, locationId: ingredientForAuth.locationId },
       data: { showOnQuick86 },
       select: {
         id: true,

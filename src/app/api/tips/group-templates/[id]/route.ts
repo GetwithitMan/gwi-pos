@@ -11,6 +11,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -132,6 +133,16 @@ export const PUT = withVenue(async function PUT(request: NextRequest, context: R
       data: updateData,
     })
 
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroupTemplate', locationId, id, 'UPDATE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
+
     return NextResponse.json({
       data: {
         id: template.id,
@@ -195,6 +206,16 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, cont
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroupTemplate', locationId, id, 'DELETE')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -14,6 +14,7 @@ import {
   centsToDollars,
 } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Batch payroll payout ──────────────────────────────────────────────
 
@@ -77,6 +78,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       employeeIds: employeeIds || undefined,
       memo,
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      for (const entry of result.entries) {
+        await queueIfOutageOrFail('TipLedgerEntry', locationId, entry.ledgerEntryId, 'INSERT')
+      }
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // ── Return success ────────────────────────────────────────────────────
     return NextResponse.json({

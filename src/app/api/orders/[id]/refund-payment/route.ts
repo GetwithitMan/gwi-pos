@@ -12,6 +12,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 
@@ -257,6 +258,16 @@ export const POST = withVenue(async function POST(
     }
 
     const { refundLog, isPartial } = txResult
+
+    // ── Outage queue protection for RefundLog ───────────────────────────────
+    try {
+      await queueIfOutageOrFail('RefundLog', order.locationId, refundLog.id, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     // Emit PAYMENT_VOIDED event (fire-and-forget)
     void emitOrderEvent(order.locationId, id, 'PAYMENT_VOIDED', {

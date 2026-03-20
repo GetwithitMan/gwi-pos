@@ -11,6 +11,7 @@ import { TipGroupSplitMode } from '@/generated/prisma/client'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── GET: List templates ─────────────────────────────────────────────────────
 
@@ -132,6 +133,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sortOrder: nextSort,
       },
     })
+
+    // ── Outage queue protection ────────────────────────────────────────────
+    try {
+      await queueIfOutageOrFail('TipGroupTemplate', locationId, template.id, 'INSERT')
+    } catch (err) {
+      if (err instanceof OutageQueueFullError) {
+        return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
+      }
+      throw err
+    }
 
     return NextResponse.json({
       data: {

@@ -183,60 +183,58 @@ export const PUT = withVenue(async function PUT(
     // Regular update (no action specified)
     const quantityChanged = updateData.quantity !== undefined && updateData.quantity !== item.quantity
 
-    // Fetch active modifiers for fresh modifierTotal (stale item.modifierTotal can cause penny drift)
-    let liveModifierTotal = Number(item.modifierTotal)
+    // If quantity changed, wrap in a transaction with FOR UPDATE to prevent concurrent total drift
     if (quantityChanged) {
-      liveModifierTotal = await fetchLiveModifierTotal(db as any, itemId)
-    }
+      const txResult = await db.$transaction(async (tx) => {
+        // Row-level lock to prevent concurrent quantity updates from producing incorrect totals
+        await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
 
-    // Update the item (tenant-safe write) then read-back with modifiers
-    await OrderItemRepository.updateItem(itemId, locationId, {
-      seatNumber: updateData.seatNumber !== undefined ? updateData.seatNumber : undefined,
-      courseNumber: updateData.courseNumber !== undefined ? updateData.courseNumber : undefined,
-      courseStatus: updateData.courseStatus,
-      isHeld: updateData.isHeld !== undefined ? updateData.isHeld : undefined,
-      holdUntil: updateData.holdUntil ? new Date(updateData.holdUntil) : undefined,
-      specialNotes: updateData.specialNotes,
-      ...(quantityChanged ? {
-        quantity: updateData.quantity,
-        modifierTotal: liveModifierTotal,
-        itemTotal: calculateUpdatedItemTotal(Number(item.price), liveModifierTotal, updateData.quantity),
-      } : {}),
-    })
-    const updated = await OrderItemRepository.getItemByIdWithInclude(itemId, locationId, {
-      modifiers: { where: { deletedAt: null } },
-    })
-    if (!updated) throw new Error('OrderItem not found after update')
+        // Fetch active modifiers for fresh modifierTotal (stale item.modifierTotal can cause penny drift)
+        const liveModifierTotal = await fetchLiveModifierTotal(tx as any, itemId)
 
-    // If quantity changed, recalculate order totals via domain
-    if (quantityChanged) {
-      const fullOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
-        location: { select: { settings: true } },
+        // Update the item (tenant-safe write) then read-back with modifiers
+        await OrderItemRepository.updateItem(itemId, locationId, {
+          seatNumber: updateData.seatNumber !== undefined ? updateData.seatNumber : undefined,
+          courseNumber: updateData.courseNumber !== undefined ? updateData.courseNumber : undefined,
+          courseStatus: updateData.courseStatus,
+          isHeld: updateData.isHeld !== undefined ? updateData.isHeld : undefined,
+          holdUntil: updateData.holdUntil ? new Date(updateData.holdUntil) : undefined,
+          specialNotes: updateData.specialNotes,
+          quantity: updateData.quantity,
+          modifierTotal: liveModifierTotal,
+          itemTotal: calculateUpdatedItemTotal(Number(item.price), liveModifierTotal, updateData.quantity),
+        }, tx)
+
+        const fullOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+          location: { select: { settings: true } },
+        }, tx)
+        if (!fullOrder) throw new Error('Order not found after update')
+
+        const totals = await recalculateOrderTotals(
+          tx as any, orderId, fullOrder.location.settings,
+          Number(fullOrder.tipTotal) || 0, fullOrder.isTaxExempt
+        )
+
+        await OrderRepository.updateOrder(orderId, locationId, {
+          ...totals,
+          version: { increment: 1 },
+        }, tx)
+
+        // Return full order response so clients get updated totals
+        const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
+          items: {
+            where: { deletedAt: null },
+            include: { modifiers: { where: { deletedAt: null } } },
+          },
+          employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+          table: { select: { id: true, name: true } },
+          payments: true,
+          discounts: true,
+        }, tx)
+        if (!updatedOrder) throw new Error('Order not found after totals update')
+
+        return updatedOrder
       })
-      if (!fullOrder) throw new Error('Order not found after update')
-
-      const totals = await recalculateOrderTotals(
-        db as any, orderId, fullOrder.location.settings,
-        Number(fullOrder.tipTotal) || 0, fullOrder.isTaxExempt
-      )
-
-      await OrderRepository.updateOrder(orderId, locationId, {
-        ...totals,
-        version: { increment: 1 },
-      })
-
-      // Return full order response so clients get updated totals
-      const updatedOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
-        items: {
-          where: { deletedAt: null },
-          include: { modifiers: { where: { deletedAt: null } } },
-        },
-        employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
-        table: { select: { id: true, name: true } },
-        payments: true,
-        discounts: true,
-      })
-      if (!updatedOrder) throw new Error('Order not found after totals update')
 
       void dispatchOpenOrdersChanged(order.locationId, {
         trigger: 'item_updated',
@@ -260,8 +258,26 @@ export const PUT = withVenue(async function PUT(
         quantity: updateData.quantity,
       })
 
-      return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
+      return NextResponse.json({ data: mapOrderForResponse(txResult) })
     }
+
+    // Non-quantity update (no total recalculation needed, no lock required)
+    // Fetch active modifiers for fresh modifierTotal (stale item.modifierTotal can cause penny drift)
+    const liveModifierTotal = Number(item.modifierTotal)
+
+    // Update the item (tenant-safe write) then read-back with modifiers
+    await OrderItemRepository.updateItem(itemId, locationId, {
+      seatNumber: updateData.seatNumber !== undefined ? updateData.seatNumber : undefined,
+      courseNumber: updateData.courseNumber !== undefined ? updateData.courseNumber : undefined,
+      courseStatus: updateData.courseStatus,
+      isHeld: updateData.isHeld !== undefined ? updateData.isHeld : undefined,
+      holdUntil: updateData.holdUntil ? new Date(updateData.holdUntil) : undefined,
+      specialNotes: updateData.specialNotes,
+    })
+    const updated = await OrderItemRepository.getItemByIdWithInclude(itemId, locationId, {
+      modifiers: { where: { deletedAt: null } },
+    })
+    if (!updated) throw new Error('OrderItem not found after update')
 
     // Emit ITEM_UPDATED event with only changed fields (fire-and-forget)
     const itemUpdatedPayload: Record<string, unknown> = { lineItemId: itemId }
