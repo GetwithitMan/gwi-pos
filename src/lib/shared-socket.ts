@@ -176,6 +176,17 @@ function attachVisibilityHandler(socket: Socket) {
 export function getSharedSocket(): Socket {
   if (!sharedSocket) {
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL
+
+    // On Vercel (no custom server.ts) without an external WS URL,
+    // create a dormant socket — serverless can't host WebSockets.
+    // Consumers work normally (handlers register but never fire).
+    // Set NEXT_PUBLIC_WS_URL to an external WebSocket server to enable real-time on Vercel.
+    if (!wsUrl && process.env.NEXT_PUBLIC_VERCEL_URL) {
+      sharedSocket = io({ autoConnect: false })
+      refCount++
+      return sharedSocket
+    }
+
     const serverUrl = wsUrl || process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
     // Standalone ws-server uses /ws path; monolithic uses /api/socket
     const socketPath = wsUrl ? '/ws' : '/api/socket'
