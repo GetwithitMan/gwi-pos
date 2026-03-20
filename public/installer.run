@@ -1139,6 +1139,32 @@ log "Node.js: $(node -v)"
 log "npm: $(npm -v)"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PostgreSQL Official Apt Repository (PGDG)
+# ─────────────────────────────────────────────────────────────────────────────
+# Required for PG17 packages on Ubuntu 22.04/24.04. Neon runs PG17, so we
+# need postgresql-client-17 (pg_dump, psql, pg_restore) to talk to Neon.
+# The local server also installs PG17 via this repo.
+
+if ! dpkg -l postgresql-client-17 >/dev/null 2>&1; then
+  log "Adding PostgreSQL official apt repository (PGDG) for PG17..."
+  # Use VERSION_CODENAME from /etc/os-release (already sourced above)
+  local_codename="${VERSION_CODENAME:-$(. /etc/os-release && echo "$VERSION_CODENAME")}"
+  echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] http://apt.postgresql.org/pub/repos/apt ${local_codename}-pgdg main" \
+    > /etc/apt/sources.list.d/pgdg.list
+  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    | gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg 2>/dev/null
+  apt-get update -qq
+fi
+apt-get install -y postgresql-client-17 || warn "Could not install postgresql-client-17 — pg_dump may fail against Neon PG17"
+
+# Set up PG17 binary aliases for Neon connections
+# (Neon runs PG17; version mismatch causes pg_dump to abort)
+NEON_PSQL="/usr/lib/postgresql/17/bin/psql"
+if [[ ! -x "$NEON_PSQL" ]]; then
+  NEON_PSQL="psql"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Server Role: Local PostgreSQL (always — offline-first architecture)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1734,7 +1760,7 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     NEON_SCHEMA_VERSION=""
     if [[ -n "$NEON_DIRECT_URL" ]]; then
       log "Reading schema version from Neon (source of record)..."
-      NEON_SCHEMA_VERSION=$(PGPASSWORD="" psql "$NEON_DIRECT_URL" --connect-timeout=10 -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null | tr -d '[:space:]' || echo "")
+      NEON_SCHEMA_VERSION=$(PGPASSWORD="" $NEON_PSQL "$NEON_DIRECT_URL" --connect-timeout=10 -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null | tr -d '[:space:]' || echo "")
       if [[ -n "$NEON_SCHEMA_VERSION" ]]; then
         log "Neon schema version: $NEON_SCHEMA_VERSION"
       else
@@ -1826,6 +1852,22 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
   fi
 
   log "POS application built successfully!"
+
+  # ── Post-build: update _venue_schema_state with freshly generated version ──
+  # The build step generates version-contract.json with the real schema version.
+  # The pre-build write used a stale committed copy; this corrects it.
+  if [[ "$STATION_ROLE" == "server" ]]; then
+    BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
+    if [[ -z "$BUILT_VERSION" ]]; then
+      BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/public/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
+    fi
+    if [[ -n "$BUILT_VERSION" ]] && [[ "$BUILT_VERSION" != "$SCHEMA_VERSION" ]]; then
+      log "Updating _venue_schema_state to build version: $BUILT_VERSION (was: $SCHEMA_VERSION)"
+      sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
+        UPDATE \"_venue_schema_state\" SET \"schemaVersion\" = '$BUILT_VERSION', \"provisionedBy\" = 'installer-post-build', \"updatedAt\" = NOW() WHERE id = 1;
+      " >/dev/null 2>&1
+    fi
+  fi
 
   # ───────────────────────────────────────────────────────────────────────────
   # Server Role: Systemd Services

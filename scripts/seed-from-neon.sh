@@ -21,11 +21,24 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 
+# Prefer PG17 client tools (Neon runs PG17; PG16 pg_dump refuses PG17 server)
+PG_DUMP="/usr/lib/postgresql/17/bin/pg_dump"
+if [[ ! -x "$PG_DUMP" ]]; then
+  PG_DUMP="pg_dump"  # fall back to system default
+fi
+
+PG_RESTORE="/usr/lib/postgresql/17/bin/pg_restore"
+if [[ ! -x "$PG_RESTORE" ]]; then
+  PG_RESTORE="pg_restore"  # fall back to system default
+fi
+
+echo "[seed] Using pg_dump: $PG_DUMP ($($PG_DUMP --version 2>/dev/null || echo 'unknown'))"
+
 echo "[seed] Dumping from Neon cloud..."
-PGCONNECT_TIMEOUT=10 pg_dump "$NEON_DATABASE_URL" --no-owner --no-acl -Fc -f /tmp/neon-seed.pgdump
+PGCONNECT_TIMEOUT=10 $PG_DUMP "$NEON_DATABASE_URL" --no-owner --no-acl -Fc -f /tmp/neon-seed.pgdump
 
 echo "[seed] Restoring to local PostgreSQL..."
-pg_restore -d "$DATABASE_URL" --no-owner --no-acl --clean --if-exists /tmp/neon-seed.pgdump || true
+$PG_RESTORE -d "$DATABASE_URL" --no-owner --no-acl --clean --if-exists /tmp/neon-seed.pgdump || true
 
 echo "[seed] Running pre-migrations..."
 node scripts/nuc-pre-migrate.js || true
