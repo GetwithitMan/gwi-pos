@@ -1,8 +1,5 @@
 import { PrismaClient } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless'
-import { PrismaNeon } from '@prisma/adapter-neon'
-import ws from 'ws'
 import { orderWriteGuardExtension } from './order-write-guard'
 import { getRequestPrisma, getRequestLocationId } from './request-context'
 import { applySoftDeleteFilter } from './db-soft-delete'
@@ -17,13 +14,6 @@ import {
 } from './db-venue-cache'
 
 const isVercel = !!process.env.VERCEL
-
-// Neon serverless requires WebSocket in Node.js — must set before any Pool creation.
-// On Vercel (serverless Node.js), this enables HTTP/WebSocket transport instead of TCP,
-// eliminating the 5-10s cold start that caused /api/menu to timeout.
-if (isVercel) {
-  neonConfig.webSocketConstructor = ws
-}
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required')
@@ -40,24 +30,17 @@ const globalForPrisma = globalThis as unknown as {
 export function createPrismaClient(url?: string) {
   const connectionString = url || process.env.DATABASE_URL || ''
 
-  // On Vercel: Neon serverless adapter (HTTP/WebSocket — instant, no TCP cold start)
-  // On NUC: PrismaPg (TCP to local PostgreSQL — fast, reliable)
-  let adapter: any
-  if (isVercel) {
-    // Neon serverless: connections are instant regardless of compute suspend state.
-    // No TCP handshake, no wake-up wait. This is why hardware routes work but menu timed out —
-    // PrismaPg TCP needed 5-10s to wake Neon, eating into the 30s function timeout.
-    const pool = new NeonPool({ connectionString })
-    adapter = new PrismaNeon(pool)
-  } else {
-    // NUC: TCP to local PostgreSQL — fast and reliable, no cold starts.
-    adapter = new PrismaPg({
-      connectionString,
-      max: 25,
-      connectionTimeoutMillis: 10000,
-      idleTimeoutMillis: 30000,
-    })
-  }
+  // PrismaPg for all environments.
+  // Vercel: small pool + long timeout for Neon cold starts (compute wake = 3-10s).
+  // NUC: large pool + short timeout for local PostgreSQL.
+  const poolSize = isVercel ? 1 : 25
+  const timeoutMs = isVercel ? 60000 : 10000
+  const adapter: any = new PrismaPg({
+    connectionString,
+    max: poolSize,
+    connectionTimeoutMillis: timeoutMs,
+    idleTimeoutMillis: isVercel ? 0 : 30000,
+  })
 
   const client = new PrismaClient({
     adapter,
@@ -222,13 +205,8 @@ export const db: PrismaClient = new Proxy(masterClient, {
 
 function createAdminClient(url?: string): PrismaClient {
   const connectionString = url || process.env.DATABASE_URL || ''
-  let adapter: any
-  if (isVercel) {
-    const pool = new NeonPool({ connectionString })
-    adapter = new PrismaNeon(pool)
-  } else {
-    adapter = new PrismaPg({ connectionString, max: 5, connectionTimeoutMillis: 10000 })
-  }
+  const adminPoolSize = isVercel ? 1 : 5
+  const adapter: any = new PrismaPg({ connectionString, max: adminPoolSize, connectionTimeoutMillis: isVercel ? 60000 : 10000 })
   const client = new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
