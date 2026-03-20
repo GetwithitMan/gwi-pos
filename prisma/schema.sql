@@ -4770,6 +4770,7 @@ CREATE TABLE "ReservationDeposit" (
     "refundReason" TEXT,
     "employeeId" TEXT,
     "notes" TEXT,
+    "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -4791,6 +4792,73 @@ CREATE TABLE "EmployeePermissionOverride" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "EmployeePermissionOverride_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "_gwi_migrations" (
+    "name" TEXT NOT NULL,
+    "applied_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "_gwi_migrations_pkey" PRIMARY KEY ("name")
+);
+
+-- CreateTable
+CREATE TABLE "SyncWatermark" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "lastAcknowledgedDownstreamAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastAcknowledgedUpstreamAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SyncWatermark_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "_gwi_sync_state" (
+    "table_name" TEXT NOT NULL,
+    "high_water_mark" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "_gwi_sync_state_pkey" PRIMARY KEY ("table_name")
+);
+
+-- CreateTable
+CREATE TABLE "SocketEventLog" (
+    "id" BIGSERIAL NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "event" TEXT NOT NULL,
+    "data" JSONB NOT NULL DEFAULT '{}',
+    "room" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "flushed" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SocketEventLog_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "_local_schema_state" (
+    "id" SERIAL NOT NULL,
+    "schemaVersion" TEXT,
+    "observedNeonVersion" TEXT,
+    "appVersion" TEXT,
+    "bootedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "neonReachable" BOOLEAN NOT NULL DEFAULT false,
+    "syncBlocked" BOOLEAN NOT NULL DEFAULT false,
+    "blockReason" TEXT,
+
+    CONSTRAINT "_local_schema_state_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "_local_install_state" (
+    "id" SERIAL NOT NULL,
+    "installed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "pos_version" TEXT,
+    "installer_version" TEXT,
+    "schema_migrations_run" INTEGER,
+
+    CONSTRAINT "_local_install_state_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -7015,6 +7083,12 @@ CREATE INDEX "EmployeePermissionOverride_employeeId_idx" ON "EmployeePermissionO
 
 -- CreateIndex
 CREATE UNIQUE INDEX "EmployeePermissionOverride_employeeId_permissionKey_key" ON "EmployeePermissionOverride"("employeeId", "permissionKey");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "SyncWatermark_locationId_key" ON "SyncWatermark"("locationId");
+
+-- CreateIndex
+CREATE INDEX "SocketEventLog_locationId_id_idx" ON "SocketEventLog"("locationId", "id");
 
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
