@@ -329,11 +329,9 @@ async function handleForceUpdate(payload) {
     }
   }
 
-  // Also migrate Neon cloud database (if configured for offline-first mode)
-  if (env.NEON_DATABASE_URL) {
-    step('neon-pre-migrate', 'NEON_MIGRATE=true node scripts/nuc-pre-migrate.js', true, 180)
-    step('neon-db-push', 'DATABASE_URL=' + JSON.stringify(env.NEON_DATABASE_URL) + ' npx prisma db push --accept-data-loss', true, 180)
-  }
+  // NOTE: NUC does NOT migrate Neon. MC owns Neon schema advancement.
+  // NUC reads version truth from Neon and blocks sync if behind.
+  // If Neon schema is behind, MC must push the update to this venue.
   if (!step('build', 'npm run build', false, 600)) {
     return { ok: false, error: 'build failed', steps: steps }
   }

@@ -1725,78 +1725,30 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
 
   # Database migrations only run on server (backup gets data via pg_basebackup)
   if [[ "$STATION_ROLE" == "server" ]]; then
-    log "Running pre-migrate backfill..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" || warn "Pre-migrate backfill had warnings (non-fatal)"
 
-    # ── Schema application: Neon is source of record ──
-    # Primary path: dump schema from Neon (MC already provisioned this venue's cloud DB)
-    # and apply it to local PG. This guarantees local schema matches Neon exactly.
-    # Fallback: prisma db push against local PG (offline install / no Neon).
-    SCHEMA_APPLIED=false
+    # ── Step 1: Read schema version from Neon (source of record) ──
+    # Neon is the canonical schema authority. We read the version from Neon
+    # to know what version local PG should report, but we use LOCAL tested
+    # migration paths (prisma db push + nuc-pre-migrate.js) to build the schema.
+    # NO pg_dump. NO Neon schema cloning. Local migrations are the schema path.
+    NEON_SCHEMA_VERSION=""
     if [[ -n "$NEON_DIRECT_URL" ]]; then
-      log "Pulling schema from Neon cloud database (source of record)..."
-      if pg_dump "$NEON_DIRECT_URL" --schema-only --no-owner --no-acl --no-comments -f /tmp/neon-schema.sql 2>/dev/null; then
-        if [[ -s /tmp/neon-schema.sql ]]; then
-          log "Applying Neon schema to local PostgreSQL..."
-          if sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -f /tmp/neon-schema.sql >/dev/null 2>&1; then
-            SCHEMA_APPLIED=true
-            log "Local database schema synced from Neon."
-          else
-            warn "Failed to apply Neon schema dump — falling back to prisma db push"
-          fi
-          rm -f /tmp/neon-schema.sql
-        else
-          warn "Neon schema dump was empty — falling back to prisma db push"
-          rm -f /tmp/neon-schema.sql
-        fi
+      log "Reading schema version from Neon (source of record)..."
+      NEON_SCHEMA_VERSION=$(PGPASSWORD="" psql "$NEON_DIRECT_URL" -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null | tr -d '[:space:]' || echo "")
+      if [[ -n "$NEON_SCHEMA_VERSION" ]]; then
+        log "Neon schema version: $NEON_SCHEMA_VERSION"
       else
-        warn "Could not dump Neon schema (pg_dump failed) — falling back to prisma db push"
-        rm -f /tmp/neon-schema.sql 2>/dev/null || true
+        warn "Could not read schema version from Neon — Neon may not be provisioned yet"
       fi
     fi
 
-    if [[ "$SCHEMA_APPLIED" != "true" ]]; then
-      # Fallback: no Neon or Neon dump failed — use prisma db push against local PG
-      if [[ -z "$NEON_DIRECT_URL" ]]; then
-        log "No NEON_DIRECT_URL — using prisma db push for local schema"
-      fi
-      log "Applying database schema via prisma db push..."
-      MIGRATE_OUTPUT=$(sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy 2>&1") && {
-        log "Database migrations applied successfully."
-      } || {
-        if echo "$MIGRATE_OUTPUT" | grep -q "P3005"; then
-          # P3005: database has tables but no _prisma_migrations table.
-          warn "Database has tables but no migration history (P3005). Baselining..."
-          for mdir in "$APP_DIR"/prisma/migrations/*/; do
-            [[ -d "$mdir" ]] || continue
-            mname=$(basename "$mdir")
-            log "  Marking as applied: $mname"
-            sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate resolve --applied '$mname'" || true
-          done
-          log "Running db push to create any missing tables..."
-          if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss"; then
-            warn "prisma db push had issues — some tables may need manual creation."
-          fi
-          # Re-grant permissions + disable RLS after db push
-          sudo -u postgres psql -d "$DB_NAME" -c "
-            GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_USER;
-            GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;
-            DO \$\$ DECLARE r RECORD; BEGIN
-              FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true LOOP
-                EXECUTE 'ALTER TABLE public.\"' || r.tablename || '\" DISABLE ROW LEVEL SECURITY';
-              END LOOP;
-            END \$\$;
-          " >/dev/null 2>&1
-          log "Baseline + schema sync complete (permissions + RLS fixed)."
-        else
-          err "Database migration failed (prisma migrate deploy)."
-          echo "$MIGRATE_OUTPUT" >&2
-          err "Check DATABASE_URL and PostgreSQL status."
-          err "If schema is out of sync, fix migrations manually or contact support."
-          exit 1
-        fi
-      }
-    fi
+    # ── Step 2: Apply schema to LOCAL PG using local tested migration path ──
+    # prisma db push creates tables/columns from schema.prisma.
+    # nuc-pre-migrate.js runs numbered migrations for data backfills + DDL patches.
+    log "Applying schema to local PostgreSQL..."
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss" 2>&1 | tail -5
+    log "Running local migrations..."
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1 | tail -5
 
     # Seed local PG from Neon cloud (offline-first mode)
     if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
@@ -1805,7 +1757,7 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     fi
 
     # ── Post-schema: disable RLS on all tables ──
-    # Schema application (pg_dump or prisma) may enable RLS via the Prisma schema.
+    # prisma db push may enable RLS via the Prisma schema.
     # The POS app user doesn't have RLS policies configured, so RLS must be off.
     log "Disabling RLS on all tables..."
     sudo -u postgres psql -d "$DB_NAME" -c "
@@ -1817,21 +1769,13 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     " >/dev/null 2>&1
     log "RLS disabled on all tables."
 
-    # ── Post-seed: sync _venue_schema_state from Neon (source of record) ──
-    # The schema version must match what Neon has — not a hardcoded value.
-    # Primary: read from Neon. Fallback: read from version-contract.json (built at deploy time).
-    log "Syncing _venue_schema_state..."
-    SCHEMA_VERSION=""
-    if [[ -n "$NEON_DIRECT_URL" ]]; then
-      log "Reading schema version from Neon..."
-      SCHEMA_VERSION=$(PGPASSWORD="" psql "$NEON_DIRECT_URL" -tAc "SELECT \"schemaVersion\" FROM \"_venue_schema_state\" WHERE id = 1" 2>/dev/null || echo "")
-    fi
-
-    if [[ -n "$SCHEMA_VERSION" ]]; then
-      log "Neon schema version: $SCHEMA_VERSION"
-      SCHEMA_SOURCE="installer-from-neon"
-    else
-      # Fallback: read from version-contract.json (generated at build time)
+    # ── Step 3: Write _venue_schema_state — version comes from Neon (SOR) ──
+    # The schema version is what Neon reports, NOT hardcoded. If Neon is
+    # unreachable, fall back to version-contract.json (built at deploy time).
+    SCHEMA_VERSION="${NEON_SCHEMA_VERSION}"
+    SCHEMA_SOURCE="neon"
+    if [[ -z "$SCHEMA_VERSION" ]]; then
+      # Fallback: read from locally-built version-contract.json
       if [[ -f "$APP_DIR/public/version-contract.json" ]]; then
         SCHEMA_VERSION=$(sudo -u "$POSUSER" node -e "try { console.log(require('$APP_DIR/public/version-contract.json').schemaVersion) } catch(e) { console.log('') }" 2>/dev/null)
       fi
@@ -1839,13 +1783,12 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
         SCHEMA_VERSION=$(sudo -u "$POSUSER" node -e "try { console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion) } catch(e) { console.log('') }" 2>/dev/null)
       fi
       if [[ -n "$SCHEMA_VERSION" ]]; then
-        log "Using schema version from version-contract.json: $SCHEMA_VERSION"
-        SCHEMA_SOURCE="installer-from-version-contract"
-      else
-        warn "Could not determine schema version from Neon or version-contract.json"
-        SCHEMA_VERSION="000"
-        SCHEMA_SOURCE="installer-fallback-unknown"
+        SCHEMA_SOURCE="version-contract"
       fi
+    fi
+    if [[ -z "$SCHEMA_VERSION" ]]; then
+      SCHEMA_VERSION="000"
+      SCHEMA_SOURCE="unknown"
     fi
 
     sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
@@ -1864,14 +1807,14 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
         \"updatedAt\"           TIMESTAMPTZ DEFAULT NOW()
       );
       INSERT INTO \"_venue_schema_state\" (\"id\", \"schemaVersion\", \"seedVersion\", \"provisionerVersion\", \"provisionedAt\", \"provisionedBy\")
-      VALUES (1, '$SCHEMA_VERSION', 'v1', '1', NOW(), '$SCHEMA_SOURCE')
+      VALUES (1, '$SCHEMA_VERSION', 'v1', '1', NOW(), 'installer-from-${SCHEMA_SOURCE}')
       ON CONFLICT (id) DO UPDATE SET
         \"schemaVersion\" = '$SCHEMA_VERSION',
         \"provisionerVersion\" = '1',
-        \"provisionedBy\" = '$SCHEMA_SOURCE',
+        \"provisionedBy\" = 'installer-from-${SCHEMA_SOURCE}',
         \"updatedAt\" = NOW();
     " >/dev/null 2>&1
-    log "_venue_schema_state synced (version: $SCHEMA_VERSION, source: $SCHEMA_SOURCE)"
+    log "_venue_schema_state set to version $SCHEMA_VERSION (source: $SCHEMA_SOURCE)"
   else
     log "Skipping database migrations (backup standby — data replicated from primary)."
   fi

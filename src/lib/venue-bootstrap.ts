@@ -275,62 +275,16 @@ export async function runBootstrap(): Promise<BootstrapResult> {
             } else if (neonState) {
               // State exists -- check versions
               if (neonState.schemaVersion < EXPECTED_SCHEMA_VERSION) {
-                log.warn(
-                  { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
-                  'Neon schema version behind — attempting upgrade via nuc-pre-migrate...'
-                )
-
-                // Attempt to upgrade Neon schema before blocking sync
-                let neonUpgraded = false
-                try {
-                  const { execSync } = await import('child_process')
-                  const neonDirectUrl = process.env.NEON_DIRECT_URL || process.env.NEON_DATABASE_URL
-                  if (neonDirectUrl) {
-                    execSync('node scripts/nuc-pre-migrate.js', {
-                      stdio: 'pipe',
-                      timeout: 120000,
-                      cwd: process.cwd(),
-                      env: { ...process.env, NEON_MIGRATE: 'true', NEON_DATABASE_URL: neonDirectUrl },
-                    })
-                    log.info('Neon migration completed — re-checking schema state...')
-
-                    // Re-read state after migration
-                    const updatedNeonState = await readSchemaState(neonClient)
-                    if (updatedNeonState && updatedNeonState.schemaVersion >= EXPECTED_SCHEMA_VERSION) {
-                      neonUpgraded = true
-                      log.info(
-                        { expected: EXPECTED_SCHEMA_VERSION, actual: updatedNeonState.schemaVersion },
-                        'Neon schema upgraded successfully'
-                      )
-                      // Update the _venue_schema_state version to match
-                      await writeSchemaState(neonClient, {
-                        schemaVersion: EXPECTED_SCHEMA_VERSION,
-                        seedVersion: updatedNeonState.seedVersion || EXPECTED_SEED_VERSION,
-                        provisionerVersion: PROVISIONER_VERSION,
-                        provisionedAt: updatedNeonState.provisionedAt || new Date(),
-                        provisionedBy: 'nuc-bootstrap-upgrade',
-                        appVersion: APP_VERSION,
-                      })
-                      result.neonSchemaReady = await buildReadiness(neonClient, {
-                        schemaVersion: EXPECTED_SCHEMA_VERSION,
-                        seedVersion: updatedNeonState.seedVersion || EXPECTED_SEED_VERSION,
-                      })
-                    }
-                  }
-                } catch (upgradeErr) {
-                  log.error(
-                    { err: upgradeErr instanceof Error ? upgradeErr.message : upgradeErr },
-                    'Neon schema upgrade attempt failed'
-                  )
-                }
-
-                if (!neonUpgraded) {
-                  log.error(
-                    { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
-                    'Neon schema still behind after upgrade attempt — sync will be blocked'
-                  )
-                  result.neonSchemaReady = await buildReadiness(neonClient, neonState)
-                }
+                // Neon is behind — this is MC's responsibility to fix.
+                // NUC cannot and should not advance Neon schema.
+                // Report the issue and block sync until MC pushes the update.
+                log.error({
+                  worker: 'venue-bootstrap',
+                  expected: EXPECTED_SCHEMA_VERSION,
+                  actual: neonState.schemaVersion,
+                }, 'Neon schema version behind — sync blocked. MC must push schema update to this venue.')
+                result.neonSchemaReady = await buildReadiness(neonClient, neonState)
+                result.degradedReasons.push('neon-schema-behind')
               } else if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION) {
                 log.warn(
                   { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
@@ -347,17 +301,6 @@ export async function runBootstrap(): Promise<BootstrapResult> {
                 log.warn({ repairCount: neonState.repairCount, lastReason: neonState.lastRepairReason },
                   'Neon DB has been repaired 3+ times — marking as degraded')
                 result.degradedReasons.push('repeated-schema-repair')
-              }
-
-              // Neon schema BEHIND local is a rollback scenario — block sync but don't kill the process
-              // Only flag if upgrade attempt above didn't fix it
-              const currentReadiness = result.neonSchemaReady
-              if (currentReadiness && !currentReadiness.schemaVersionMatch && currentReadiness.schemaVersionBehind && config.isProduction) {
-                log.error(
-                  { expected: EXPECTED_SCHEMA_VERSION, actual: currentReadiness.schemaVersion },
-                  'Neon schema behind NUC in production — sync blocked until deploy pipeline catches up'
-                )
-                result.degradedReasons.push('neon-schema-behind')
               }
             }
           } // close primary else block

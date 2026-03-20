@@ -204,25 +204,10 @@ async function main() {
       // Schema verification will catch issues and block sync workers
     }
 
-    // Run migrations on Neon too (if configured) — keeps Neon in sync with NUC
-    // This handles the case where NUC has new migration files but Neon hasn't
-    // been upgraded yet (e.g., NUC updated via git pull before Vercel deployed).
-    if (config.neonDatabaseUrl) {
-      try {
-        console.log('[server] Running migrations on Neon cloud DB...')
-        execSync('node scripts/nuc-pre-migrate.js', {
-          stdio: 'inherit',
-          timeout: 300000,
-          cwd: process.cwd(),
-          env: { ...process.env, NEON_MIGRATE: 'true', NEON_DATABASE_URL: config.neonDatabaseUrl },
-        })
-        console.log('[server] Neon migrations complete')
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        console.error('[server] Neon migration failed (non-fatal):', errMsg)
-        // Non-fatal: NUC continues with local PG. Bootstrap will detect Neon version mismatch.
-      }
-    }
+    // NOTE: NUC does NOT migrate Neon. That is MC's responsibility.
+    // Neon is the canonical schema source of record — MC advances it.
+    // NUC reads Neon version truth via venue-bootstrap and blocks sync if behind.
+    // If Neon is behind, MC must push the schema update to this venue.
   }
 
   await app.prepare()
