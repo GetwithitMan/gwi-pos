@@ -139,10 +139,16 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
     let locationId = payload.posLocationId
     if (!locationId) {
       console.log('[cloud-auth] posLocationId missing, querying DB...')
-      const rows = await db.$queryRawUnsafe(
-        'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
-      ) as Array<{ id: string }>
-      locationId = rows[0]?.id
+      // Use request context PrismaClient directly — NOT the db proxy.
+      // The db proxy triggers tenant scope extension which can deadlock.
+      const { getRequestPrisma } = await import('./request-context')
+      const prisma = getRequestPrisma()
+      if (prisma) {
+        const rows = await (prisma as any).$queryRawUnsafe(
+          'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
+        ) as Array<{ id: string }>
+        locationId = rows[0]?.id
+      }
       console.log('[cloud-auth] DB locationId:', locationId)
       if (!locationId) return null
     }
