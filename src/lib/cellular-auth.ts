@@ -630,9 +630,13 @@ async function isRevokedFromDb(terminalId: string, locationId: string): Promise<
         const result = await db.$queryRawUnsafe<Array<{ exists: boolean }>>(
           `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'CellularDevice') as exists`
         )
-        _cellularDeviceTableChecked = result[0]?.exists ?? false
+        if (result[0]?.exists) {
+          _cellularDeviceTableChecked = true
+        } else {
+          _cellularDeviceTableChecked = null  // Retry next time — DB may be in recovery
+        }
       } catch {
-        _cellularDeviceTableChecked = false
+        _cellularDeviceTableChecked = null  // Retry next time
       }
     }
     if (!_cellularDeviceTableChecked) return false
@@ -652,7 +656,7 @@ async function isRevokedFromDb(terminalId: string, locationId: string): Promise<
     const errMsg = error instanceof Error ? error.message : String(error)
     // "relation does not exist" = table missing — not a security risk, just missing migration
     if (errMsg.includes('does not exist') || errMsg.includes('relation')) {
-      _cellularDeviceTableChecked = false
+      _cellularDeviceTableChecked = null  // Retry next time — table may appear after migration
       return false
     }
     // Fail-closed: if we can't verify a device's revocation status for other reasons, reject

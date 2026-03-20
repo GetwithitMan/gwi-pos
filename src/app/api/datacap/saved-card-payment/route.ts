@@ -147,7 +147,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         tipAmount: tipAmount || 0,
         totalAmount: amount + (tipAmount || 0),
         // Datacap fields for the /pay route
-        datacapRecordNo: result.recordNo || '(stored)',
+        datacapRecordNo: result.recordNo || null,
         datacapRefNumber: result.refNo,
         datacapSequenceNo: result.sequenceNo,
         authCode: result.authCode,

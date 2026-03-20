@@ -112,7 +112,7 @@ function buildConfig(): SystemConfig {
     syncEnabled: parseBool(process.env.SYNC_ENABLED, false),
     posLocationId: process.env.POS_LOCATION_ID || undefined,
     stationRole: parseStationRole(process.env.STATION_ROLE),
-    tenantJwtEnabled: parseBool(process.env.TENANT_JWT_ENABLED, !!process.env.VERCEL),
+    tenantJwtEnabled: parseBool(process.env.TENANT_JWT_ENABLED, !!(process.env.VERCEL && process.env.TENANT_SIGNING_KEY)),
     tenantSigningKey,
     neonDatabaseUrl: process.env.NEON_DATABASE_URL || undefined,
     provisionApiKey,

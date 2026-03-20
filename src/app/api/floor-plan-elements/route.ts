@@ -16,11 +16,15 @@ export const GET = withVenue(async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'locationId required' }, { status: 400 })
   }
 
-  const actor = await getActorFromRequest(req)
-  const employeeId = searchParams.get('employeeId') ?? actor.employeeId
-  const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
-  if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  // Allow device-authenticated requests (KDS/CFD via cellular proxy or device token)
+  const isCellularDevice = req.headers.get('x-cellular-authenticated') === 'true'
+  if (!isCellularDevice) {
+    const actor = await getActorFromRequest(req)
+    const employeeId = searchParams.get('employeeId') ?? actor.employeeId
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
   }
 
   try {

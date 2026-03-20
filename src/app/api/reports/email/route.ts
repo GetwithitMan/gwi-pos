@@ -7,6 +7,8 @@ import { getLocationDateRange } from '@/lib/timezone'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
+import { getLocationSettings } from '@/lib/location-cache'
+import { parseSettings } from '@/lib/settings'
 
 export const POST = withVenue(async (request: NextRequest) => {
   try {
@@ -35,10 +37,16 @@ export const POST = withVenue(async (request: NextRequest) => {
       select: { id: true },
     })
     if (!allowedRecipient) {
-      return NextResponse.json(
-        { error: 'Reports can only be emailed to active employees at this location' },
-        { status: 403 }
-      )
+      // Check settings allowlist for external recipients (e.g. accountant)
+      const rawSettings = await getLocationSettings(locationId)
+      const settings = parseSettings(rawSettings)
+      const allowlist: string[] = (settings as any)?.reports?.emailAllowlist || []
+      if (!allowlist.includes(recipientEmail)) {
+        return NextResponse.json(
+          { error: 'Recipient not in employee list or report email allowlist' },
+          { status: 403 }
+        )
+      }
     }
 
     // ── Generic report email path (from ReportExportBar) ─────────────────

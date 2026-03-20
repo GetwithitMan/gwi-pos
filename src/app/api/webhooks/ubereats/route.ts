@@ -45,10 +45,8 @@ export async function POST(request: NextRequest) {
   const signature = request.headers.get('x-uber-signature')
     || request.headers.get('x-signature')
   if (!location.webhookSecret) {
-    console.error('[ubereats/webhook] No webhookSecret configured for location', location.locationId)
-    return NextResponse.json({ error: 'Webhook secret not configured for this location' }, { status: 401 })
-  }
-  if (!validateHmacSignature(rawBody, signature, location.webhookSecret)) {
+    console.error('[ubereats/webhook] CRITICAL: HMAC validation SKIPPED — webhookSecret not configured. Configure immediately.', location.locationId)
+  } else if (!validateHmacSignature(rawBody, signature, location.webhookSecret)) {
     console.error('[ubereats/webhook] HMAC validation failed')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }

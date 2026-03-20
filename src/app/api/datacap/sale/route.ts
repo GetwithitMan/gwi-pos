@@ -53,7 +53,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
     if (existingSale.length > 0) {
       return Response.json(
-        { error: 'Duplicate sale: a transaction with this invoiceNo is already pending or completed' },
+        {
+          error: 'Duplicate sale: a transaction with this invoiceNo is already pending or completed',
+          duplicate: true,
+          existingSale: { id: existingSale[0].id, status: existingSale[0].status },
+        },
         { status: 409 }
       )
     }

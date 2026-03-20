@@ -33,11 +33,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
   }
 
-  const actor = await getActorFromRequest(request)
-  const employeeId = searchParams.get('employeeId') ?? actor.employeeId
-  const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
-  if (!auth.authorized) {
-    return NextResponse.json({ error: auth.error }, { status: auth.status })
+  // Allow device-authenticated requests (KDS/CFD via cellular proxy or device token)
+  const isCellularDevice = request.headers.get('x-cellular-authenticated') === 'true'
+  if (!isCellularDevice) {
+    const actor = await getActorFromRequest(request)
+    const employeeId = searchParams.get('employeeId') ?? actor.employeeId
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
   }
 
   try {

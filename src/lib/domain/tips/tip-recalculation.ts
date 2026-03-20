@@ -267,14 +267,12 @@ export async function recalculateGroupAllocations(params: {
       select: { employeeId: true, amountCents: true },
     })
 
-    // Build actual-received map — only sum CREDIT entries (positive amounts)
-    // to avoid DEBITs from chargebacks/adjustments deflating the actual total
+    // Build actual-received map — sum ALL signed entries (CREDITs positive, DEBITs negative)
+    // so that prior correction DEBITs are reflected and we don't loop infinitely
     const actualMap = new Map<string, number>()
     for (const entry of existingEntries) {
-      if (Number(entry.amountCents) > 0) {
-        const current = actualMap.get(entry.employeeId) || 0
-        actualMap.set(entry.employeeId, current + Number(entry.amountCents))
-      }
+      const current = actualMap.get(entry.employeeId) || 0
+      actualMap.set(entry.employeeId, current + Number(entry.amountCents))
     }
 
     // Accumulate deltas per employee across all transactions
@@ -286,7 +284,7 @@ export async function recalculateGroupAllocations(params: {
       employeeDeltaMap.set(share.employeeId, existing)
     }
 
-    // Also account for employees who received credits but are no longer in the expected shares
+    // Also account for employees who received entries but are no longer in the expected shares
     for (const [empId, actualCents] of actualMap) {
       if (!expectedShares.some((s) => s.employeeId === empId)) {
         const existing = employeeDeltaMap.get(empId) || { previousCents: 0, newCents: 0 }
@@ -439,14 +437,12 @@ export async function recalculateOrderAllocations(params: {
       select: { employeeId: true, amountCents: true },
     })
 
-    // Build actual-received map — only sum CREDIT entries (positive amounts)
-    // to avoid DEBITs from chargebacks/adjustments deflating the actual total
+    // Build actual-received map — sum ALL signed entries (CREDITs positive, DEBITs negative)
+    // so that prior correction DEBITs are reflected and we don't loop infinitely
     const actualMap = new Map<string, number>()
     for (const entry of existingEntries) {
-      if (Number(entry.amountCents) > 0) {
-        const current = actualMap.get(entry.employeeId) || 0
-        actualMap.set(entry.employeeId, current + Number(entry.amountCents))
-      }
+      const current = actualMap.get(entry.employeeId) || 0
+      actualMap.set(entry.employeeId, current + Number(entry.amountCents))
     }
 
     // Accumulate deltas per employee across all transactions
@@ -458,7 +454,7 @@ export async function recalculateOrderAllocations(params: {
       employeeDeltaMap.set(share.employeeId, existing)
     }
 
-    // Account for employees who received credits but are no longer owners
+    // Account for employees who received entries but are no longer owners
     for (const [empId, actualCents] of actualMap) {
       if (!expectedShares.some((s) => s.employeeId === empId)) {
         const existing = employeeDeltaMap.get(empId) || { previousCents: 0, newCents: 0 }

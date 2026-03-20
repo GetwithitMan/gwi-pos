@@ -191,15 +191,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { locationId, isActive: true, deletedAt: null },
         select: { id: true, pin: true, displayName: true, firstName: true, lastName: true, role: { select: { permissions: true } } },
       })
-      for (const emp of employees) {
-        if (!emp.pin) continue
-        const pinMatch = await compare(managerPin, emp.pin)
-        if (pinMatch) {
-          const perms = (emp.role.permissions as string[]) || []
-          if (hasPermission(perms, PERMISSIONS.MGR_PAY_IN_OUT)) {
-            verifiedApprover = emp.id
-          }
-          break
+      const results = await Promise.all(
+        employees.map(async (emp) => {
+          if (!emp.pin) return null
+          const match = await compare(managerPin, emp.pin)
+          return match ? emp : null
+        })
+      )
+      const matchedManager = results.find(r => r !== null)
+      if (matchedManager) {
+        const perms = (matchedManager.role.permissions as string[]) || []
+        if (hasPermission(perms, PERMISSIONS.MGR_PAY_IN_OUT)) {
+          verifiedApprover = matchedManager.id
         }
       }
       if (!verifiedApprover) {

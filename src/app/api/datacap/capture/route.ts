@@ -47,9 +47,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!orderCard) {
       return Response.json({ error: 'No pre-auth found for this recordNo' }, { status: 404 })
     }
-    if (purchaseAmount > Number(orderCard.authAmount)) {
+    if (purchaseAmount + (gratuityAmount || 0) > Number(orderCard.authAmount)) {
       return Response.json(
-        { error: `Capture amount $${purchaseAmount.toFixed(2)} exceeds authorized amount $${Number(orderCard.authAmount).toFixed(2)}` },
+        { error: `Capture amount $${(purchaseAmount + (gratuityAmount || 0)).toFixed(2)} exceeds authorized amount $${Number(orderCard.authAmount).toFixed(2)}` },
         { status: 400 }
       )
     }

@@ -20,11 +20,15 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
-    const actor = await getActorFromRequest(req)
-    const employeeId = searchParams.get('employeeId') ?? actor.employeeId
-    const authCheck = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
-    if (!authCheck.authorized) {
-      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+    // Allow device-authenticated requests (KDS/CFD via cellular proxy or device token)
+    const isCellularDevice = req.headers.get('x-cellular-authenticated') === 'true'
+    if (!isCellularDevice) {
+      const actor = await getActorFromRequest(req)
+      const employeeId = searchParams.get('employeeId') ?? actor.employeeId
+      const authCheck = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+      if (!authCheck.authorized) {
+        return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
+      }
     }
 
     const element = await db.floorPlanElement.findFirst({
