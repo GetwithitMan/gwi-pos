@@ -21,7 +21,7 @@ import { neonClient, hasNeonConnection } from '../neon-client'
 
 const log = createChildLogger('downstream-sync')
 import { masterClient } from '../db'
-import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, getBusinessKey, DOWNSTREAM_INTERVAL_MS, type ConflictStrategy } from './sync-config'
+import { getDownstreamModels, getBidirectionalModelNames, getConflictStrategy, getBusinessKey, getSkipFields, DOWNSTREAM_INTERVAL_MS, type ConflictStrategy } from './sync-config'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig } from '../fulfillment-router'
 import { syncDenyList } from '../cellular-auth'
 import { checkQuarantine, QUARANTINE_PROTECTED_MODELS, loadWatermarks, updateDownstreamWatermark } from './sync-conflict-quarantine'
@@ -282,8 +282,11 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   const quotedCols = upsertCols.map((c) => `"${c}"`).join(', ')
   const types = columnTypeMap.get(tableName)
   const placeholders = upsertCols.map((c, i) => `$${i + 1}${types?.get(c) ?? ''}`).join(', ')
+  // skipFields: columns that are included in INSERT (for new rows) but excluded
+  // from ON CONFLICT UPDATE (to preserve locally-set values like pairing state)
+  const skip = getSkipFields(tableName)
   const updateSet = upsertCols
-    .filter((c) => c !== 'id')
+    .filter((c) => c !== 'id' && (!skip || !skip.has(c)))
     .map((c) => `"${c}" = EXCLUDED."${c}"`)
     .join(', ')
 

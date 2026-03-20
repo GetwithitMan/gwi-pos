@@ -95,6 +95,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
+    console.log(
+      `[pair-native] Terminal ${updated.id} (${updated.name}) paired successfully — fingerprint: ${deviceFingerprint || 'none'}, platform: ${platform}, ip: ${clientIp}`
+    )
+
     // Return token in JSON body (native apps use Bearer token auth, no httpOnly cookie)
     return NextResponse.json({ data: {
       token: deviceToken,

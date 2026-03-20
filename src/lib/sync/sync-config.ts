@@ -29,6 +29,14 @@ export interface SyncModelConfig {
    * This resolves ID divergence from the cloud-primary transition.
    */
   businessKey?: string[]
+  /**
+   * Fields to skip during downstream sync ON CONFLICT UPDATE.
+   * These columns are still INSERTed on first sync (new row), but are NOT
+   * overwritten on subsequent downstream upserts. Use for fields that are
+   * set locally (e.g., Terminal pairing state) but where the model is
+   * otherwise cloud-owned.
+   */
+  skipFields?: string[]
 }
 
 /**
@@ -102,7 +110,7 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   PrintRule:              { direction: 'downstream', owner: 'cloud', priority: 215, batchSize: 50 },
   KDSScreen:              { direction: 'downstream', owner: 'cloud', priority: 216, batchSize: 50 },
   KDSScreenStation:       { direction: 'downstream', owner: 'cloud', priority: 217, batchSize: 50 },
-  Terminal:               { direction: 'downstream', owner: 'cloud', priority: 218, batchSize: 50 },
+  Terminal:               { direction: 'downstream', owner: 'cloud', priority: 218, batchSize: 50, skipFields: ['isPaired', 'deviceToken', 'deviceFingerprint', 'deviceInfo', 'platform', 'appVersion', 'osVersion', 'pushToken', 'lastKnownIp', 'lastSeenAt', 'isOnline', 'pairingCode', 'pairingCodeExpiresAt'] },
   PaymentReader:          { direction: 'downstream', owner: 'cloud', priority: 219, batchSize: 50 },
   Scale:                  { direction: 'downstream', owner: 'cloud', priority: 220, batchSize: 10 },
   Station:                { direction: 'downstream', owner: 'cloud', priority: 221, batchSize: 50 },
@@ -297,6 +305,12 @@ export function getConflictStrategy(model: string): ConflictStrategy {
 /** Get the business key columns for a cloud-owned downstream model, if declared */
 export function getBusinessKey(model: string): string[] | undefined {
   return effectiveSyncModels[model]?.businessKey
+}
+
+/** Get the skip fields for a downstream model (fields not overwritten on upsert) */
+export function getSkipFields(model: string): Set<string> | undefined {
+  const fields = effectiveSyncModels[model]?.skipFields
+  return fields && fields.length > 0 ? new Set(fields) : undefined
 }
 
 export const UPSTREAM_INTERVAL_MS = parseInt(
