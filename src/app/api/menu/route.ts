@@ -12,6 +12,7 @@ import type { CategoryType, CategoryShow } from '@/generated/prisma/client'
 
 const VALID_CATEGORY_TYPES: readonly string[] = ['food', 'drinks', 'liquor', 'entertainment', 'combos', 'retail', 'pizza'] as const
 const VALID_CATEGORY_SHOWS: readonly string[] = ['food', 'bar', 'entertainment', 'all'] as const
+const MAX_MENU_ITEMS = 2000 // safety cap — no venue should have more
 
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
@@ -91,6 +92,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           ...(categoryType ? { category: { categoryType } } : {}),
           ...(categoryShow ? { category: { categoryShow } } : {}),
         },
+        take: MAX_MENU_ITEMS,
         orderBy: { sortOrder: 'asc' },
         include: {
           category: {

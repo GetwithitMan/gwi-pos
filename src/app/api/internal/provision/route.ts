@@ -92,6 +92,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
   }
 
+  // gwi_pos_ prefix = 8 chars, slug with hyphens→underscores, PG limit = 63
+  if (slug.length > 50) {
+    return Response.json({ error: 'Slug too long (max 50 characters)' }, { status: 400 })
+  }
+
   const mode = request.nextUrl.searchParams.get('mode') || 'full'
   const VALID_MODES = ['full', 'seed-only', 'schema-only'] as const
   if (!VALID_MODES.includes(mode as any)) {

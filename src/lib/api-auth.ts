@@ -2,8 +2,6 @@
 // Uses the same hasPermission() logic as client-side, but validates against DB
 
 import { cookies } from 'next/headers'
-import { randomInt } from 'crypto'
-import { hash } from 'bcryptjs'
 import { db } from './db'
 import { getRequestPrisma } from './request-context'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
@@ -200,6 +198,10 @@ export async function resolveOrProvisionEmployee(
         select: { id: true },
       })
       if (existing) {
+        if (cloudSubToEmployeeId.size > 200) {
+          const firstKey = cloudSubToEmployeeId.keys().next().value
+          if (firstKey) cloudSubToEmployeeId.delete(firstKey)
+        }
         cloudSubToEmployeeId.set(cacheKey, existing.id)
         return existing.id
       }
@@ -237,10 +239,7 @@ export async function resolveOrProvisionEmployee(
     const firstName = nameParts[0] || 'Owner'
     const lastName = nameParts.slice(1).join(' ') || 'Admin'
 
-    // Generate a cryptographically random PIN and hash it before storing
-    const rawPin = String(randomInt(100000, 1000000))
-    const hashedPin = await hash(rawPin, 10)
-
+    // MC employees authenticate via JWT, not PIN — no PIN needed
     const employee = await EmployeeRepository.createEmployee(locationId, {
       firstName,
       lastName,
@@ -248,9 +247,13 @@ export async function resolveOrProvisionEmployee(
       email: payload.email,
       roleId: adminRole.id,
       isActive: true,
-      pin: hashedPin,
+      pin: null,
     })
 
+    if (cloudSubToEmployeeId.size > 200) {
+      const firstKey = cloudSubToEmployeeId.keys().next().value
+      if (firstKey) cloudSubToEmployeeId.delete(firstKey)
+    }
     cloudSubToEmployeeId.set(cacheKey, employee.id)
     log.info(`[api-auth] Auto-provisioned employee ${employee.id} for cloud user ${sub} (${payload.email}) at location ${locationId}`)
     return employee.id

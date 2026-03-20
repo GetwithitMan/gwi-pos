@@ -344,12 +344,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ data: { terminal } })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to create terminal:', error)
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
+    if (error?.code === 'P2002') {
+      const target = error.meta?.target as string[] | undefined
+      if (target?.includes('scaleId')) {
+        return NextResponse.json(
+          { error: 'This scale is already assigned to another terminal' },
+          { status: 409 }
+        )
+      }
       return NextResponse.json(
-        { error: 'A terminal with this name already exists at this location' },
-        { status: 400 }
+        { error: 'A terminal with this name already exists' },
+        { status: 409 }
       )
     }
     const msg = error instanceof Error ? error.message : 'Unknown error'
