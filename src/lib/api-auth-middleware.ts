@@ -39,6 +39,7 @@ import { PERMISSIONS } from './auth-utils'
 import { createChildLogger } from '@/lib/logger'
 import { cookies } from 'next/headers'
 import { db } from './db'
+import { getRequestPrisma } from './request-context'
 
 const log = createChildLogger('api-auth-middleware')
 
@@ -197,17 +198,20 @@ export function withAuth(
         if (cloudToken) {
           const payload = await verifyCloudToken(cloudToken, secret)
           if (payload) {
+            // Use raw PrismaClient to avoid deadlock with tenant-scoped db proxy
+            const prisma = getRequestPrisma() || db
+
             // Resolve location from venue DB
             let locationId: string | null = null
             if (payload.posLocationId) {
-              const loc = await db.location.findUnique({
+              const loc = await (prisma as any).location.findUnique({
                 where: { id: payload.posLocationId },
                 select: { id: true },
               })
               locationId = loc?.id ?? null
             }
             if (!locationId) {
-              const loc = await db.location.findFirst({
+              const loc = await (prisma as any).location.findFirst({
                 select: { id: true },
                 orderBy: { id: 'asc' },
               })
@@ -223,13 +227,13 @@ export function withAuth(
 
               if (!isCloudSub) {
                 // Real employee ID in sub
-                employee = await db.employee.findFirst({
+                employee = await (prisma as any).employee.findFirst({
                   where: { id: sub, locationId, deletedAt: null, isActive: true },
                   select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
                 })
               } else if (payload.email) {
                 // Look up by email
-                employee = await db.employee.findFirst({
+                employee = await (prisma as any).employee.findFirst({
                   where: { locationId, email: { equals: payload.email, mode: 'insensitive' }, deletedAt: null, isActive: true },
                   select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
                 })
@@ -253,7 +257,7 @@ export function withAuth(
                 try {
                   // FIRST: check for existing MC employee by email (prevents duplicates on cold starts)
                   if (payload.email) {
-                    employee = await db.employee.findFirst({
+                    employee = await (prisma as any).employee.findFirst({
                       where: { locationId, email: { equals: payload.email, mode: 'insensitive' }, deletedAt: null },
                       select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
                     })
@@ -265,12 +269,12 @@ export function withAuth(
                   // Only create if truly no employee found
                   if (!employee) {
                     // Find or create an MC admin role with full permissions
-                    let mcRole = await db.role.findFirst({
+                    let mcRole = await (prisma as any).role.findFirst({
                       where: { locationId, name: mcRoleName, deletedAt: null },
                       select: { id: true, permissions: true, name: true },
                     })
                     if (!mcRole) {
-                      mcRole = await db.role.create({
+                      mcRole = await (prisma as any).role.create({
                         data: {
                           locationId,
                           name: mcRoleName,
@@ -289,7 +293,7 @@ export function withAuth(
                       const rawPin = String(randomInt(100000, 1000000))
                       const hashedPin = await hash(rawPin, 10)
 
-                      const created = await db.employee.create({
+                      const created = await (prisma as any).employee.create({
                         data: {
                           locationId,
                           firstName: nameParts[0] || 'MC',

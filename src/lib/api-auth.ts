@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { randomInt } from 'crypto'
 import { hash } from 'bcryptjs'
 import { db } from './db'
+import { getRequestPrisma } from './request-context'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { createChildLogger } from '@/lib/logger'
 import { hasPermission } from './auth-utils'
@@ -74,7 +75,8 @@ async function getOverrides(employeeId: string, locationId: string): Promise<Map
 
   overrides = new Map<string, boolean>()
   try {
-    const rows = await db.employeePermissionOverride.findMany({
+    const prisma = getRequestPrisma() || db
+    const rows = await (prisma as any).employeePermissionOverride.findMany({
       where: { employeeId, locationId },
       select: { permissionKey: true, allowed: true },
     })
@@ -141,8 +143,7 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
       console.log('[cloud-auth] posLocationId missing, querying DB...')
       // Use request context PrismaClient directly — NOT the db proxy.
       // The db proxy triggers tenant scope extension which can deadlock.
-      const { getRequestPrisma } = await import('./request-context')
-      const prisma = getRequestPrisma()
+      const prisma = getRequestPrisma() || db
       if (prisma) {
         const rows = await (prisma as any).$queryRawUnsafe(
           'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
@@ -187,8 +188,9 @@ async function resolveOrProvisionEmployee(
 
   try {
     // Look up existing employee by email in this location
+    const prismaResolve = getRequestPrisma() || db
     if (payload.email) {
-      const existing = await db.employee.findFirst({
+      const existing = await (prismaResolve as any).employee.findFirst({
         where: {
           locationId,
           email: { equals: payload.email, mode: 'insensitive' },
@@ -204,7 +206,7 @@ async function resolveOrProvisionEmployee(
 
     // No existing employee — auto-provision one
     // Find admin role (prefer role with 'all' or 'admin' permission)
-    const allRoles = await db.role.findMany({
+    const allRoles = await (prismaResolve as any).role.findMany({
       where: { locationId, deletedAt: null },
       orderBy: { createdAt: 'asc' },
     })
@@ -320,7 +322,8 @@ export async function requirePermission(
     )
     // If not found, try without locationId constraint (MC employees may have different locationId)
     if (!employee) {
-      employee = await db.employee.findFirst({
+      const prismaFallback = getRequestPrisma() || db
+      employee = await (prismaFallback as any).employee.findFirst({
         where: { id: employeeId, deletedAt: null, isActive: true },
         include: { role: true },
       }) as typeof employee

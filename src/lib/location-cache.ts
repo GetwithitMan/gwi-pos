@@ -10,7 +10,7 @@
  */
 
 import { db } from '@/lib/db'
-import { getRequestSlug, getRequestLocationId } from '@/lib/request-context'
+import { getRequestPrisma, getRequestSlug, getRequestLocationId } from '@/lib/request-context'
 
 // ============================================================================
 // TYPES
@@ -92,7 +92,8 @@ export async function getLocationId(): Promise<string | null> {
   // Without a venue slug, we can't safely cache — different venues could share the same
   // serverless process. Always go to DB for unscoped requests.
   if (!cacheKey) {
-    const location = await db.location.findFirst({
+    const prisma = getRequestPrisma() || db
+    const location = await (prisma as any).location.findFirst({
       select: { id: true },
       orderBy: { id: 'asc' },
     })
@@ -112,7 +113,8 @@ export async function getLocationId(): Promise<string | null> {
     // Use deterministic ordering so seed data (e.g. 'loc-1') is preferred
     // over auto-generated cuid IDs if multiple locations somehow exist.
     // Also prefer locations that have menu items (active venue vs stale shell).
-    const location = await db.location.findFirst({
+    const prisma = getRequestPrisma() || db
+    const location = await (prisma as any).location.findFirst({
       select: { id: true },
       orderBy: { id: 'asc' },
     })
@@ -161,7 +163,8 @@ export async function getLocationSettings(
 
   const promise = (async () => {
     // Cache miss or expired - fetch from database
-    const location = await db.location.findUnique({
+    const prismaSettings = getRequestPrisma() || db
+    const location = await (prismaSettings as any).location.findUnique({
       where: { id: locationId },
       select: { settings: true },
     })
@@ -172,7 +175,7 @@ export async function getLocationSettings(
     // Safety net: if settings.tax.defaultRate is missing, compute live from TaxRule records.
     // This handles locations where TaxRules exist but settings.tax.defaultRate was never synced.
     if (location && !settings?.tax?.defaultRate) {
-      const rules = await db.taxRule.findMany({
+      const rules = await (prismaSettings as any).taxRule.findMany({
         where: { locationId, deletedAt: null, isActive: true },
         select: { rate: true },
       })
@@ -251,7 +254,8 @@ export function getCacheStats() {
  *   await warmLocationCache([locationId1, locationId2])
  */
 export async function warmLocationCache(locationIds: string[]): Promise<void> {
-  const locations = await db.location.findMany({
+  const prisma = getRequestPrisma() || db
+  const locations = await (prisma as any).location.findMany({
     where: { id: { in: locationIds } },
     select: { id: true, settings: true },
   })
