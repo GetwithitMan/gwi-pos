@@ -123,30 +123,36 @@ export function clearPermissionCache(employeeId?: string, locationId?: string): 
 async function getCloudSessionEmployee(): Promise<{ employeeId: string; locationId: string } | null> {
   try {
     const secret = process.env.PROVISION_API_KEY
-    if (!secret) return null
+    if (!secret) { console.log('[cloud-auth] No PROVISION_API_KEY'); return null }
 
     const cookieStore = await cookies()
     const token = cookieStore.get('pos-cloud-session')?.value
-    if (!token) return null
+    if (!token) { console.log('[cloud-auth] No pos-cloud-session cookie'); return null }
 
     const payload = await verifyCloudToken(token, secret)
-    if (!payload) return null
+    if (!payload) { console.log('[cloud-auth] Token verification failed'); return null }
+
+    console.log('[cloud-auth] Token OK:', { sub: payload.sub, slug: payload.slug, posLocationId: payload.posLocationId })
 
     // posLocationId may be missing if MC didn't have it when creating the session.
     // Fall back to querying the venue DB (each venue has exactly one Location row).
     let locationId = payload.posLocationId
     if (!locationId) {
+      console.log('[cloud-auth] posLocationId missing, querying DB...')
       const rows = await db.$queryRawUnsafe(
         'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
       ) as Array<{ id: string }>
       locationId = rows[0]?.id
+      console.log('[cloud-auth] DB locationId:', locationId)
       if (!locationId) return null
     }
     const employeeId = await resolveOrProvisionEmployee(payload, locationId)
+    console.log('[cloud-auth] Resolved employeeId:', employeeId)
     if (!employeeId) return null
 
     return { employeeId, locationId }
-  } catch {
+  } catch (err) {
+    console.error('[cloud-auth] Error:', err)
     return null
   }
 }
