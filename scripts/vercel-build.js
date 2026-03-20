@@ -25,14 +25,9 @@ async function main() {
   console.log('[vercel-build] Running prisma generate...')
   execSync('npx prisma generate', { stdio: 'inherit' })
 
-  // 1b. Generate schema.sql + version contract (MC provisions new venues from these)
-  // Must run AFTER prisma generate (needs Prisma CLI) and BEFORE migrations
-  // so the artifacts reflect the current schema for this deploy.
-  console.log('[vercel-build] Generating schema.sql + version contract...')
+  // 1b. Pre-generate schema.sql (needed by migrations, will be REGENERATED in step 4)
+  console.log('[vercel-build] Pre-generating schema.sql for migrations...')
   execSync('node scripts/generate-schema-sql.mjs', { stdio: 'inherit' })
-  execSync('cp prisma/schema.sql public/schema.sql', { stdio: 'inherit' })
-  execSync('node scripts/generate-version-contract.mjs', { stdio: 'inherit' })
-  execSync('cp src/generated/version-contract.json public/version-contract.json', { stdio: 'inherit' })
 
   // 2. Run pre-push migrations on master Neon DB (via PrismaClient + DIRECT_URL)
   console.log('[vercel-build] Running pre-push migrations (master)...')
@@ -56,8 +51,16 @@ async function main() {
   console.log('[vercel-build] Running prisma db push (master)...')
   execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' })
 
-  // 4. Venue schema sync disabled — use MC provisioning pipeline for per-venue schema updates
-  console.log('[vercel-build] Venue schema sync disabled — use MC provisioning pipeline for per-venue schema updates')
+  // 4. REGENERATE schema.sql AFTER db push — this is the FINAL truth.
+  // The schema.sql generated in step 1b may be stale if prisma db push applied
+  // additional changes (enum alterations, constraint fixes, etc.).
+  // MC uses this file to provision new venues — it MUST match the Prisma client exactly.
+  console.log('[vercel-build] Regenerating schema.sql (post-push — final truth)...')
+  execSync('node scripts/generate-schema-sql.mjs', { stdio: 'inherit' })
+  execSync('cp prisma/schema.sql public/schema.sql', { stdio: 'inherit' })
+  execSync('node scripts/generate-version-contract.mjs', { stdio: 'inherit' })
+  execSync('cp src/generated/version-contract.json public/version-contract.json', { stdio: 'inherit' })
+  console.log('[vercel-build] schema.sql + version-contract regenerated from final schema state')
 
   // 5. Build Next.js
   console.log('[vercel-build] Running next build...')

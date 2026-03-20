@@ -176,8 +176,10 @@ export async function resolveOrProvisionEmployee(
 ): Promise<string | null> {
   const sub = payload.sub
 
-  // Real employee ID — no prefix
-  if (!sub.startsWith('cloud-') && !sub.startsWith('mc-owner-')) {
+  // Real employee ID — no prefix.
+  // Cloud/MC identifiers start with 'cloud-', 'mc-owner-', or 'user_' (Clerk user IDs).
+  // Anything else (cuid, uuid) is a real POS employee ID from venue-login.
+  if (!sub.startsWith('cloud-') && !sub.startsWith('mc-owner-') && !sub.startsWith('user_')) {
     return sub
   }
 
