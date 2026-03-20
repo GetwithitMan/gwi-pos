@@ -8,9 +8,11 @@ export async function GET(request: Request) {
   // Auth check — lazy-load config to avoid crashing if secrets are missing.
   // This endpoint is a diagnostic tool and must NEVER 500 on config errors.
   let provisionApiKey: string | undefined
+  let sysConfig: any = null
   try {
     const { config } = await import('@/lib/system-config')
     provisionApiKey = config.provisionApiKey
+    sysConfig = config
   } catch {
     // Config failed (missing secrets) — fall back to env var directly
     provisionApiKey = process.env.PROVISION_API_KEY
@@ -42,10 +44,10 @@ export async function GET(request: Request) {
     },
     workers,
     config: {
-      syncEnabled: config.syncEnabled,
-      stationRole: config.stationRole,
-      neonConfigured: !!config.neonDatabaseUrl,
-      posLocationId: config.posLocationId ?? null,
+      syncEnabled: sysConfig?.syncEnabled ?? false,
+      stationRole: sysConfig?.stationRole ?? 'unknown',
+      neonConfigured: !!sysConfig?.neonDatabaseUrl,
+      posLocationId: sysConfig?.posLocationId ?? null,
     },
   })
 }
