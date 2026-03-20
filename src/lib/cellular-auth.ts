@@ -246,16 +246,23 @@ function getCellularSecret(): string {
     } catch { /* file doesn't exist yet */ }
   }
 
-  // Priority 4: Generate a new secret and persist it to disk
+  // Priority 4: No secret found anywhere — fail hard in production, auto-generate in dev/test
   if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      // FAIL HARD — do not auto-generate secrets in production
+      throw new Error(
+        'FATAL: CELLULAR_TOKEN_SECRET is not configured. ' +
+        'In production, this secret must be explicitly set via /opt/gwi-pos/.env. ' +
+        'Auto-generation is disabled in production to prevent unauthorized trust roots.'
+      )
+    }
+
+    // Dev/test: auto-generate for convenience
     try {
       const crypto = require('node:crypto')
       const fs = require('node:fs')
       secret = (crypto.randomBytes(48) as Buffer).toString('hex')
-      log.warn('[cellular-auth] CELLULAR_TOKEN_SECRET not set — generated new secret and persisting to',
-        CELLULAR_SECRET_FILE,
-        '(set the env var to avoid this warning)'
-      )
+      log.warn('[cellular-auth] CELLULAR_TOKEN_SECRET not set — auto-generating for development')
       try {
         fs.writeFileSync(CELLULAR_SECRET_FILE, secret, { mode: 0o600 })
       } catch (writeErr) {

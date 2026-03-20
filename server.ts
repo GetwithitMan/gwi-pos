@@ -472,9 +472,21 @@ async function main() {
         initialSyncComplete,
         new Promise(resolve => setTimeout(resolve, 15_000))
       ])
-      // Advance canonical readiness to ORDERS — safe for customer traffic
-      advanceToOrders()
-      logger.info('Initial downstream sync gate passed — server fully ready')
+      // Verify critical tables are populated before advancing to ORDERS
+      const criticalCounts: Record<string, number> = {}
+      const criticalTables = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType']
+      for (const table of criticalTables) {
+        try {
+          const rows = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
+            `SELECT COUNT(*) as count FROM "${table}" WHERE "deletedAt" IS NULL`
+          )
+          criticalCounts[table] = Number(rows[0]?.count ?? 0)
+        } catch {
+          criticalCounts[table] = 0
+        }
+      }
+      advanceToOrders(criticalCounts)
+      logger.info({ criticalCounts }, 'Initial downstream sync gate passed — server fully ready')
     }
   })
 

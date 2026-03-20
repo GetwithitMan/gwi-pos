@@ -189,9 +189,32 @@ export function setReadinessState(state: ReadinessState): void {
 /**
  * Advance readiness to ORDERS level after initial downstream sync completes.
  * Only advances if current level is SYNC (won't override FAILED/BOOT/DEGRADED).
+ *
+ * If criticalTableCounts are provided, verifies that essential operational tables
+ * are populated locally. If any are empty, transitions to DEGRADED instead of ORDERS
+ * so the venue doesn't accept customer traffic with an incomplete catalog.
  */
-export function advanceToOrders(): void {
+export function advanceToOrders(criticalTableCounts?: Record<string, number>): void {
   if (!_state || _state.level !== 'SYNC') return
+
+  // If counts provided, verify critical tables have data
+  if (criticalTableCounts) {
+    const required = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType']
+    const missing = required.filter(t => !criticalTableCounts[t] || criticalTableCounts[t] === 0)
+    if (missing.length > 0) {
+      // Don't advance — critical tables empty after first sync
+      _state = {
+        ..._state,
+        level: 'DEGRADED',
+        degradedReasons: [..._state.degradedReasons, `critical-tables-empty: ${missing.join(', ')}`],
+        initialSyncComplete: true,
+        timestamp: new Date().toISOString(),
+      }
+      log.warn({ missing }, 'ORDERS gate FAILED — critical tables empty after initial sync, entering DEGRADED')
+      return
+    }
+  }
+
   _state = {
     ..._state,
     level: 'ORDERS',

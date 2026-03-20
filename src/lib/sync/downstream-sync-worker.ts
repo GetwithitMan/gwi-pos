@@ -1025,10 +1025,22 @@ async function runDownstreamCycle(): Promise<void> {
     if (!initialSyncDone && initialSyncResolve) {
       initialSyncDone = true
       initialSyncResolve()
-      // Advance canonical readiness to ORDERS (safe even if server.ts already called it)
+      // Verify critical tables are populated before advancing to ORDERS
       try {
         const { advanceToOrders } = await import('../readiness')
-        advanceToOrders()
+        const criticalCounts: Record<string, number> = {}
+        const criticalTables = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType']
+        for (const table of criticalTables) {
+          try {
+            const rows = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
+              `SELECT COUNT(*) as count FROM "${table}" WHERE "deletedAt" IS NULL`
+            )
+            criticalCounts[table] = Number(rows[0]?.count ?? 0)
+          } catch {
+            criticalCounts[table] = 0
+          }
+        }
+        advanceToOrders(criticalCounts)
       } catch {
         // readiness module may not be loaded yet — server.ts will handle it
       }

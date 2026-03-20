@@ -202,14 +202,14 @@ export function withAuth(
     try {
       const { config } = await import('./system-config')
       const secret = config.cloudJwtSecret
-      console.log('[auth-middleware] Cloud auth: secret=' + (secret ? 'SET' : 'MISSING'))
+      log.debug({ secretPresent: !!secret }, '[withAuth] Cloud auth: checking secret')
       if (secret) {
         const cookieStore = await cookies()
         const cloudToken = cookieStore.get('pos-cloud-session')?.value
-        console.log('[auth-middleware] Cloud auth: cookie=' + (cloudToken ? 'PRESENT(' + cloudToken.substring(0, 20) + '...)' : 'MISSING'))
+        log.debug({ cookiePresent: !!cloudToken }, '[withAuth] Cloud auth: checking cookie')
         if (cloudToken) {
           const payload = await verifyCloudToken(cloudToken, secret)
-          console.log('[auth-middleware] Cloud auth: payload=' + (payload ? JSON.stringify({ slug: payload.slug, role: payload.role, posLocationId: payload.posLocationId }) : 'INVALID'))
+          log.debug({ valid: !!payload, slug: payload?.slug, role: payload?.role }, '[withAuth] Cloud auth: token verification')
           if (payload) {
             // Use raw PrismaClient to avoid deadlock with tenant-scoped db proxy
             const prisma = getRequestPrisma() || db
@@ -230,12 +230,12 @@ export function withAuth(
               })
               locationId = loc?.id ?? null
             }
-            console.log('[auth-middleware] Cloud auth: locationId=' + (locationId || 'NULL'))
+            log.debug({ locationId }, '[withAuth] Cloud auth: resolved locationId')
 
             if (locationId) {
               // Delegate to shared resolution — returns real employee ID or null (shadow admin)
               const employeeId = await resolveOrProvisionEmployee(payload, locationId)
-              console.log('[auth-middleware] Cloud auth: employeeId=' + (employeeId || 'NULL (shadow)'))
+              log.debug({ employeeId: employeeId || null, isShadow: !employeeId }, '[withAuth] Cloud auth: resolved employee')
 
               if (employeeId) {
                 // Real employee (venue-login path) — look up role/permissions
@@ -300,7 +300,7 @@ export function withAuth(
       }
     } catch (cloudErr) {
       // Cloud session check failed — log the actual error, don't swallow silently
-      console.error('[auth-middleware] Cloud session auth failed:', cloudErr instanceof Error ? cloudErr.message : cloudErr)
+      log.warn({ err: cloudErr instanceof Error ? cloudErr.message : String(cloudErr) }, '[withAuth] Cloud session auth failed')
     }
 
     // ── 3. Try cellular Bearer token ─────────────────────────────────
@@ -316,13 +316,13 @@ export function withAuth(
           // the proxy, we trust it. But we still block if the route explicitly
           // requires a permission and cellular auth doesn't carry permissions.
           if (resolvedPermission) {
-            // Cellular tokens don't carry permission arrays.
-            // Routes requiring specific permissions should not be accessible
-            // via cellular (the proxy.ts allowlist should block them).
-            // If we get here, it means the route is on the allowlist but
-            // also requires a permission — this is a config error.
-            // Log a warning but allow it (defense in depth is at proxy level).
-            log.warn(`[withAuth] Cellular terminal ${payload.terminalId} accessing permission-gated route (${resolvedPermission}). Proxy allowlist should be reviewed.`
+            // Cellular terminals are DENIED on permission-gated routes by default.
+            // Routes that need cellular access must use allowCellular: true explicitly
+            // AND perform route-level validation via cellular-validation.ts helpers.
+            log.warn({ terminalId: payload.terminalId, permission: resolvedPermission }, `[withAuth] Cellular terminal ${payload.terminalId} DENIED on permission-gated route (${resolvedPermission}). Use allowCellular+route validation if this route needs cellular access.`)
+            return NextResponse.json(
+              { error: 'Cellular terminals cannot access this route. Use a LAN terminal.' },
+              { status: 403 }
             )
           }
 

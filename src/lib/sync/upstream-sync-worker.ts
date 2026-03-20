@@ -71,7 +71,7 @@ export async function queueOutageWrite(
   operation: 'INSERT' | 'UPDATE' | 'DELETE',
   payload: Record<string, unknown>,
   locationId: string,
-): Promise<void> {
+): Promise<{ queued: boolean; reason?: string }> {
   // Check queue size before inserting
   try {
     const [{ count }] = await masterClient.$queryRawUnsafe<{ count: number }[]>(
@@ -89,7 +89,7 @@ export async function queueOutageWrite(
         action: 'queue_overflow',
         entityId: recordId,
       })
-      return
+      return { queued: false, reason: 'queue_full' }
     }
   } catch {
     // If count check fails, still try to queue (better to have data than lose it)
@@ -98,8 +98,8 @@ export async function queueOutageWrite(
   try {
     // Monotonic localSeq — simple counter, resets on restart (new outage = new sequence)
     const localSeq = ++outageSeqCounter
-    // C1: idempotencyKey uses timestamp so it survives server restarts (localSeq resets to 0)
-    const idempotencyKey = `${locationId}:${tableName}:${recordId}:${Date.now()}`
+    // Idempotency key: deterministic prefix (for debugging) + random suffix (for uniqueness across retries/restarts)
+    const idempotencyKey = `${locationId}:${tableName}:${recordId}:${randomUUID().slice(0, 8)}`
 
     await masterClient.$executeRawUnsafe(
       `INSERT INTO "OutageQueueEntry" (id, "tableName", "recordId", operation, payload, "locationId", status, "localSeq", "idempotencyKey", "createdAt")
@@ -112,8 +112,10 @@ export async function queueOutageWrite(
       localSeq,
       idempotencyKey,
     )
+    return { queued: true }
   } catch (err) {
     log.error({ err, table: tableName, recordId }, 'Failed to queue outage write')
+    return { queued: false, reason: 'insert_failed' }
   }
 }
 
