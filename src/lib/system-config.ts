@@ -70,15 +70,20 @@ function buildConfig(): SystemConfig {
   // In dev/test, an ephemeral key is auto-generated for convenience (same-process proxy).
   let tenantSigningKey = process.env.TENANT_SIGNING_KEY || ''
   if (!tenantSigningKey) {
-    if (requireProdKeys) {
+    // On NUC (STATION_ROLE set), this key is critical for proxy JWT signing.
+    // On Vercel (serverless), tenant context uses different mechanisms — key is optional.
+    const isNuc = !!process.env.STATION_ROLE || !!process.env.POS_LOCATION_ID
+    if (requireProdKeys && isNuc) {
       throw new Error(
         'FATAL: TENANT_SIGNING_KEY is not configured. ' +
-        'In production/staging, this secret must be explicitly set via environment. ' +
+        'On NUC servers, this secret must be explicitly set via /opt/gwi-pos/.env. ' +
         'Auto-generation is disabled to prevent unauthorized trust roots.'
       )
     }
     tenantSigningKey = randomBytes(32).toString('hex')
-    log.warn('TENANT_SIGNING_KEY not set — auto-generating ephemeral key for development (will not survive restarts)')
+    if (requireProdKeys) {
+      log.warn('TENANT_SIGNING_KEY not set — auto-generating ephemeral key. Set this in Vercel env vars for stable tenant JWT signing.')
+    }
   }
 
   // Provision API key — required in prod (non-NUC)
