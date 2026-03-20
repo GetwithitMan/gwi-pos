@@ -60,7 +60,10 @@ function buildConfig(): SystemConfig {
   const nodeEnv = parseNodeEnv(process.env.NODE_ENV)
   const isProduction = nodeEnv === 'production'
   const isStaging = parseBool(process.env.STAGING, false)
-  const requireProdKeys = isProduction || isStaging
+  // Skip secret enforcement during Next.js build phase (NEXT_PHASE='phase-production-build').
+  // Secrets are only needed at runtime, not during static page collection.
+  const isBuildPhase = !!process.env.NEXT_PHASE
+  const requireProdKeys = (isProduction || isStaging) && !isBuildPhase
 
   // Tenant signing key — used by proxy JWT signing when TENANT_JWT_ENABLED=true.
   // In production, this must be explicitly configured to prevent ephemeral trust roots.
