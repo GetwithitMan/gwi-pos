@@ -17,7 +17,7 @@ export const POST = withVenue(async function POST(
 
     // Generate 6-digit code
     const pairingCode = Math.random().toString().slice(2, 8)
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000) // 5 minutes
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes
 
     await db.terminal.update({
       where: { id },

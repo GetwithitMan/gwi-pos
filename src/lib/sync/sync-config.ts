@@ -110,7 +110,7 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   PrintRule:              { direction: 'downstream', owner: 'cloud', priority: 215, batchSize: 50 },
   KDSScreen:              { direction: 'downstream', owner: 'cloud', priority: 216, batchSize: 50 },
   KDSScreenStation:       { direction: 'downstream', owner: 'cloud', priority: 217, batchSize: 50 },
-  Terminal:               { direction: 'downstream', owner: 'cloud', priority: 218, batchSize: 50, skipFields: ['isPaired', 'deviceToken', 'deviceFingerprint', 'deviceInfo', 'platform', 'appVersion', 'osVersion', 'pushToken', 'lastKnownIp', 'lastSeenAt', 'isOnline', 'pairingCode', 'pairingCodeExpiresAt'] },
+  Terminal:               { direction: 'bidirectional', owner: 'cloud', priority: 218, batchSize: 50, skipFields: ['isPaired', 'deviceToken', 'deviceFingerprint', 'deviceInfo', 'platform', 'appVersion', 'osVersion', 'pushToken', 'lastKnownIp', 'lastSeenAt', 'isOnline', 'pairingCode', 'pairingCodeExpiresAt'] },
   PaymentReader:          { direction: 'downstream', owner: 'cloud', priority: 219, batchSize: 50 },
   Scale:                  { direction: 'downstream', owner: 'cloud', priority: 220, batchSize: 10 },
   Station:                { direction: 'downstream', owner: 'cloud', priority: 221, batchSize: 50 },
