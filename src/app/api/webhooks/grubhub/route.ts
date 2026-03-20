@@ -43,7 +43,11 @@ export async function POST(request: NextRequest) {
   // Validate HMAC signature
   const signature = request.headers.get('x-grubhub-signature')
     || request.headers.get('x-signature')
-  if (location.webhookSecret && !validateHmacSignature(rawBody, signature, location.webhookSecret)) {
+  if (!location.webhookSecret) {
+    console.error('[grubhub/webhook] No webhookSecret configured for location', location.locationId)
+    return NextResponse.json({ error: 'Webhook secret not configured for this location' }, { status: 401 })
+  }
+  if (!validateHmacSignature(rawBody, signature, location.webhookSecret)) {
     console.error('[grubhub/webhook] HMAC validation failed')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }

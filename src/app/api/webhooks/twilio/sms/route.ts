@@ -32,17 +32,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const body = params.Body || ''
     const messageSid = params.MessageSid || ''
 
-    // Validate Twilio signature (if configured)
+    // Validate Twilio signature
     const twilioSignature = request.headers.get('X-Twilio-Signature') || ''
     const webhookUrl = request.url
 
-    // Only validate signature in production
-    if (process.env.NODE_ENV === 'production') {
-      const isValid = validateTwilioSignature(webhookUrl, params, twilioSignature)
-      if (!isValid) {
-        console.error('[Twilio Webhook] Invalid signature')
-        return new NextResponse('Invalid signature', { status: 403 })
-      }
+    if (!process.env.TWILIO_AUTH_TOKEN) {
+      console.error('[Twilio Webhook] TWILIO_AUTH_TOKEN not set')
+      return new NextResponse('Twilio auth token not configured', { status: 500 })
+    }
+
+    const isValid = await validateTwilioSignature(webhookUrl, params, twilioSignature)
+    if (!isValid) {
+      console.error('[Twilio Webhook] Invalid signature')
+      return new NextResponse('Invalid signature', { status: 403 })
     }
 
     // Parse the reply

@@ -54,6 +54,7 @@ interface CheckoutBody {
   orderType?: string
   notes?: string
   tip?: number
+  idempotencyKey?: string
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -136,6 +137,35 @@ export async function POST(request: NextRequest) {
         { error: 'Online ordering is not currently available' },
         { status: 503 }
       )
+    }
+
+    // ── 1d. Idempotency check ─────────────────────────────────────────────────
+
+    if (body.idempotencyKey) {
+      const existingOrder = await venueDb.order.findFirst({
+        where: {
+          locationId,
+          metadata: { path: ['idempotencyKey'], equals: body.idempotencyKey },
+          deletedAt: null,
+        },
+        select: { id: true, orderNumber: true, subtotal: true, taxTotal: true, tipTotal: true, total: true },
+      })
+
+      if (existingOrder) {
+        const prepTimeMinutes = (onlineSettings?.prepTime as number | undefined) ?? 20
+        return NextResponse.json({
+          data: {
+            orderId: existingOrder.id,
+            orderNumber: existingOrder.orderNumber,
+            subtotal: Number(existingOrder.subtotal),
+            tax: Number(existingOrder.taxTotal),
+            tip: Number(existingOrder.tipTotal),
+            total: Number(existingOrder.total),
+            prepTime: prepTimeMinutes,
+            duplicate: true,
+          },
+        })
+      }
     }
 
     // ── 2. Fetch menu items server-side (BUG #386: deletedAt filter) ─────────
@@ -398,6 +428,7 @@ export async function POST(request: NextRequest) {
             body.notes ? `Notes: ${body.notes}` : null,
           ].filter(Boolean).join('\n'),
           businessDayDate: businessDayStart,
+          ...(body.idempotencyKey ? { metadata: { idempotencyKey: body.idempotencyKey } } : {}),
           // Create order items inline
           items: {
             create: lineItems.map(({ item, mi, basePrice, modsTotal, lineTotal }) => ({

@@ -432,7 +432,7 @@ export function ShiftCloseoutModal({
       return
     }
 
-    if (amount > netTips + amount) { // Check if this would make net negative
+    if (amount > netTips) { // Check if this would make net negative
       setError('Cannot share more than available tips')
       return
     }

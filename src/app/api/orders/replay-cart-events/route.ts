@@ -74,20 +74,7 @@ async function ensureDedupTable(): Promise<void> {
   dedupTableReady = true
 }
 
-async function wasProcessedInDb(eventId: string): Promise<boolean> {
-  const rows = await db.$queryRawUnsafe<{ eventId: string }[]>(
-    `SELECT "eventId" FROM "_processed_cart_events" WHERE "eventId" = $1 LIMIT 1`,
-    eventId
-  )
-  return rows.length > 0
-}
-
-async function markProcessedInDb(eventId: string): Promise<void> {
-  await db.$executeRawUnsafe(
-    `INSERT INTO "_processed_cart_events" ("eventId") VALUES ($1) ON CONFLICT DO NOTHING`,
-    eventId
-  )
-}
+// wasProcessedInDb / markProcessedInDb removed — atomic claim in the tx loop handles both
 
 // ─── POST /api/orders/replay-cart-events ────────────────────────────────
 
@@ -235,8 +222,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               skipped++
               continue
             }
-            // Idempotency L2: DB-backed (survives restart / cold start)
-            if (await wasProcessedInDb(evt.eventId)) {
+            // Idempotency L2: atomic claim via INSERT ... ON CONFLICT DO NOTHING RETURNING
+            // This is race-safe — if two requests race, only one gets the RETURNING row.
+            const [claimed] = await tx.$queryRawUnsafe<{eventId: string}[]>(
+              `INSERT INTO "_processed_cart_events" ("eventId", "processedAt")
+               VALUES ($1, NOW())
+               ON CONFLICT ("eventId") DO NOTHING
+               RETURNING "eventId"`,
+              evt.eventId
+            )
+            if (!claimed) {
+              // Already processed by another request
               markProcessedLocal(evt.eventId)
               skipped++
               continue
@@ -250,6 +246,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               continue
             }
 
+            // Use authenticated employeeId, not payload (payload could be spoofed)
+            const payloadEmployeeId = payload.employeeId || null
+            const trustedEmployeeId = authEmployeeId || payloadEmployeeId
+            if (payloadEmployeeId && authEmployeeId && payloadEmployeeId !== authEmployeeId) {
+              console.warn(`[replay] Payload employeeId ${payloadEmployeeId} differs from authenticated user ${authEmployeeId}`)
+            }
+
             switch (evt.eventType) {
               case 'ORDER_STARTED': {
                 // Check if order already exists (idempotency for ORDER_STARTED)
@@ -261,7 +264,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   serverOrderId = existing.id
                   skipped++
                   markProcessedLocal(evt.eventId)
-                  await markProcessedInDb(evt.eventId)
                   continue
                 }
 
@@ -284,7 +286,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   data: {
                     id: clientOrderId, // Use client-provided ID for correlation
                     locationId,
-                    employeeId: payload.employeeId || authEmployeeId,
+                    employeeId: trustedEmployeeId,
                     orderNumber,
                     orderType: payload.orderType || 'dine_in',
                     tableId: payload.tableId || null,
@@ -315,7 +317,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 void db.auditLog.create({
                   data: {
                     locationId,
-                    employeeId: payload.employeeId || authEmployeeId,
+                    employeeId: trustedEmployeeId,
                     action: 'order_replay_created',
                     entityType: 'order',
                     entityId: order.id,
@@ -326,7 +328,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 // Emit event (fire-and-forget)
                 void emitOrderEvent(locationId, order.id, 'ORDER_CREATED', {
                   locationId,
-                  employeeId: payload.employeeId || authEmployeeId,
+                  employeeId: trustedEmployeeId,
                   orderType: payload.orderType || 'dine_in',
                   tableId: payload.tableId || null,
                   guestCount: initialSeatCount,
@@ -342,7 +344,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
                 processed++
                 markProcessedLocal(evt.eventId)
-                await markProcessedInDb(evt.eventId)
                 break
               }
 
@@ -431,7 +432,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
                 processed++
                 markProcessedLocal(evt.eventId)
-                await markProcessedInDb(evt.eventId)
                 break
               }
 
@@ -458,7 +458,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                   // Already deleted — idempotent
                   skipped++
                   markProcessedLocal(evt.eventId)
-                  await markProcessedInDb(evt.eventId)
                   continue
                 }
 
@@ -498,7 +497,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
                 processed++
                 markProcessedLocal(evt.eventId)
-                await markProcessedInDb(evt.eventId)
                 break
               }
 
@@ -591,7 +589,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
                 processed++
                 markProcessedLocal(evt.eventId)
-                await markProcessedInDb(evt.eventId)
                 break
               }
 
