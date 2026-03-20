@@ -1,7 +1,7 @@
 import { PrismaClient } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { orderWriteGuardExtension } from './order-write-guard'
-import { getRequestPrisma, getRequestLocationId } from './request-context'
+import { getRequestPrisma } from './request-context'
 import { applySoftDeleteFilter } from './db-soft-delete'
 import { createTenantScopedExtension } from './db-tenant-scope'
 import {
@@ -128,46 +128,6 @@ function resolveClient(): PrismaClient {
 }
 
 /**
- * Wrap a $transaction callback to auto-inject the RLS GUC.
- *
- * When a locationId is available from the request context, the wrapper
- * calls `SET LOCAL app.current_tenant = locationId` at the start of each
- * transaction. This enables PostgreSQL RLS policies (migration 078) as a
- * defense-in-depth layer on top of the app-layer tenant scoping.
- *
- * Safe for startup/sync/cron: if no locationId is in context, the GUC
- * is not set and RLS policies return zero rows (fail-closed). These paths
- * use `adminDb` or `masterClient` which don't go through this proxy.
- */
-function wrapTransactionWithRLS(client: PrismaClient) {
-  const original = (client as any).$transaction.bind(client)
-  return function rlsTransaction(...args: any[]) {
-    // Only intercept callback-style: $transaction(async (tx) => { ... })
-    // Array-style: $transaction([query1, query2]) — pass through as-is
-    const [firstArg, ...rest] = args
-    if (typeof firstArg !== 'function') {
-      return original(firstArg, ...rest)
-    }
-
-    const locationId = getRequestLocationId()
-    if (!locationId) {
-      // No tenant context — pass through without RLS
-      return original(firstArg, ...rest)
-    }
-
-    // Wrap the callback to inject SET LOCAL at the start
-    const wrappedFn = async (tx: any) => {
-      await tx.$queryRawUnsafe(
-        `SELECT set_config('app.current_tenant', $1, true)`,
-        locationId
-      )
-      return firstArg(tx)
-    }
-    return original(wrappedFn, ...rest)
-  }
-}
-
-/**
  * Tenant-aware Prisma client proxy.
  *
  * Every property access on `db` is forwarded to the PrismaClient
@@ -179,17 +139,10 @@ function wrapTransactionWithRLS(client: PrismaClient) {
  *
  * Under the hood, the proxy routes to the correct venue database
  * based on the x-venue-slug header set by proxy.ts.
- *
- * $transaction calls are wrapped to automatically inject the RLS GUC
- * (SET LOCAL app.current_tenant) when a locationId is in the request context.
  */
 export const db: PrismaClient = new Proxy(masterClient, {
   get(_target, prop) {
     const client = resolveClient()
-    // Intercept $transaction to inject RLS GUC
-    if (prop === '$transaction') {
-      return wrapTransactionWithRLS(client)
-    }
     const value = (client as any)[prop]
     if (typeof value === 'function') {
       return value.bind(client)

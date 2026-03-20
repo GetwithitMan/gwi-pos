@@ -144,7 +144,8 @@ export function withVenue(handler: RouteHandler): RouteHandler {
           || headersList.get('x-location-id')
           || undefined
 
-        return requestStore.run({ slug, prisma, locationId }, () => handler(request, context))
+        const requestId = headersList.get('x-request-id') || undefined
+        return requestStore.run({ slug, prisma, locationId, requestId }, () => handler(request, context))
       }
 
       // No slug (main domain, local dev via `next dev`) — use master client

@@ -36,6 +36,7 @@ import { verifyCellularToken, recordActivity } from './cellular-auth'
 import { verifyCloudToken } from './cloud-auth'
 import { hasPermission } from './auth-utils'
 import { PERMISSIONS } from './auth-utils'
+import { resolveOrProvisionEmployee } from './api-auth'
 import { createChildLogger } from '@/lib/logger'
 import { cookies } from 'next/headers'
 import { db } from './db'
@@ -190,6 +191,8 @@ export function withAuth(
     }
 
     // ── 2. Try cloud session cookie (Mission Control admin) ────────
+    // Delegates to the shared resolveOrProvisionEmployee() in api-auth.ts
+    // so that both auth paths use the same provisioning logic.
     try {
       const secret = process.env.PROVISION_API_KEY
       if (secret) {
@@ -219,134 +222,42 @@ export function withAuth(
             }
 
             if (locationId) {
-              // Find or provision the cloud admin employee
-              const sub = payload.sub
-              const isCloudSub = sub.startsWith('cloud-') || sub.startsWith('mc-owner-')
+              // Delegate to shared provisioning — same path as api-auth.ts
+              const employeeId = await resolveOrProvisionEmployee(payload, locationId)
 
-              let employee: { id: string; roleId: string; role: { permissions: unknown; name: string } | null } | null = null
-
-              if (!isCloudSub) {
-                // Real employee ID in sub
-                employee = await (prisma as any).employee.findFirst({
-                  where: { id: sub, locationId, deletedAt: null, isActive: true },
+              if (employeeId) {
+                // Look up the employee to get role/permissions
+                const employee = await (prisma as any).employee.findFirst({
+                  where: { id: employeeId, deletedAt: null, isActive: true },
                   select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
                 })
-              } else if (payload.email) {
-                // Look up by email
-                employee = await (prisma as any).employee.findFirst({
-                  where: { locationId, email: { equals: payload.email, mode: 'insensitive' }, deletedAt: null, isActive: true },
-                  select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
-                })
-              }
 
-              // MC role mapping: cloud role → local MC employee type
-              const MC_ROLE_MAP: Record<string, string> = {
-                super_admin: 'MC Admin',
-                sub_admin: 'MC Admin',
-                enterprise_admin: 'MC Enterprise',
-                org_admin: 'MC Manager',
-                agent: 'MC Agent',
-                dealer: 'MC Dealer',
-                tech_support: 'MC Tech Support',
-              }
-              const isStaff = payload.role === 'super_admin' || payload.role === 'sub_admin'
-              const mcRoleName = MC_ROLE_MAP[payload.role] || 'MC Access'
+                if (employee) {
+                  const perms = (employee.role?.permissions as string[]) || []
+                  // MC staff (super_admin/sub_admin) get 'all' permissions
+                  const isStaff = payload.role === 'super_admin' || payload.role === 'sub_admin'
+                  const effectivePerms = isStaff ? ['all', ...perms] : perms
 
-              // Auto-provision a trackable MC employee if none exists
-              if (!employee && isCloudSub) {
-                try {
-                  // FIRST: check for existing MC employee by email (prevents duplicates on cold starts)
-                  if (payload.email) {
-                    employee = await (prisma as any).employee.findFirst({
-                      where: { locationId, email: { equals: payload.email, mode: 'insensitive' }, deletedAt: null },
-                      select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
-                    })
-                    if (employee) {
-                      log.info(`[withAuth] Found existing MC employee by email: ${employee.id} (${payload.email})`)
-                    }
+                  if (resolvedPermission && !hasPermission(effectivePerms, resolvedPermission)) {
+                    return NextResponse.json(
+                      { error: 'You do not have permission to perform this action' },
+                      { status: 403 }
+                    )
                   }
 
-                  // Only create if truly no employee found
-                  if (!employee) {
-                    // Find or create an MC admin role with full permissions
-                    let mcRole = await (prisma as any).role.findFirst({
-                      where: { locationId, name: mcRoleName, deletedAt: null },
-                      select: { id: true, permissions: true, name: true },
-                    })
-                    if (!mcRole) {
-                      mcRole = await (prisma as any).role.create({
-                        data: {
-                          locationId,
-                          name: mcRoleName,
-                          permissions: ['all'],
-                          roleType: 'ADMIN',
-                          accessLevel: 'OWNER_ADMIN',
-                        },
-                        select: { id: true, permissions: true, name: true },
-                      }) as any
-                    }
-
-                    if (mcRole) {
-                      const nameParts = (payload.name || 'MC Admin').split(' ')
-                      const { hash } = await import('bcryptjs')
-                      const { randomInt } = await import('crypto')
-                      const rawPin = String(randomInt(100000, 1000000))
-                      const hashedPin = await hash(rawPin, 10)
-
-                      const created = await (prisma as any).employee.create({
-                        data: {
-                          locationId,
-                          firstName: nameParts[0] || 'MC',
-                          lastName: nameParts.slice(1).join(' ') || 'Admin',
-                          displayName: payload.name || mcRoleName,
-                          email: payload.email || null,
-                          pin: hashedPin,
-                          roleId: mcRole.id,
-                          isActive: true,
-                        },
-                        select: { id: true, roleId: true, role: { select: { permissions: true, name: true } } },
-                      })
-                      employee = created
-                      log.info(`[withAuth] Auto-provisioned ${mcRoleName} employee: ${created.id} (${payload.email || payload.name})`)
-                    }
+                  const authCtx: AuthContext = {
+                    employeeId: employee.id,
+                    locationId,
+                    permissions: effectivePerms,
+                    roleId: employee.roleId,
+                    roleName: employee.role?.name || null,
+                    source: 'cloud',
                   }
-                } catch (provisionErr) {
-                  log.error('[withAuth] Failed to auto-provision MC employee:', provisionErr)
+                  return handler(request, { auth: authCtx, params: context?.params })
                 }
               }
-
-              if (employee) {
-                const perms = (employee.role?.permissions as string[]) || []
-                const effectivePerms = isStaff ? ['all', ...perms] : perms
-
-                if (resolvedPermission && !hasPermission(effectivePerms, resolvedPermission)) {
-                  return NextResponse.json(
-                    { error: 'You do not have permission to perform this action' },
-                    { status: 403 }
-                  )
-                }
-
-                const authCtx: AuthContext = {
-                  employeeId: employee.id,
-                  locationId,
-                  permissions: effectivePerms,
-                  roleId: employee.roleId,
-                  roleName: employee.role?.name || null,
-                  source: 'cloud',
-                }
-                return handler(request, { auth: authCtx, params: context?.params })
-              } else if (isStaff) {
-                // Last resort: MC staff without provisioned employee — grant access
-                const authCtx: AuthContext = {
-                  employeeId: null,
-                  locationId,
-                  permissions: ['all'],
-                  roleId: null,
-                  roleName: mcRoleName,
-                  source: 'cloud',
-                }
-                return handler(request, { auth: authCtx, params: context?.params })
-              }
+              // If provisioning failed, fall through to other auth methods
+              // (no employeeId: null fallback — every cloud user must have a real employee)
             }
           }
         }

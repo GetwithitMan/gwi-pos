@@ -10,6 +10,9 @@ import type { CategoryType, CategoryShow } from '@/generated/prisma/client'
 
 // TODO: Migrate db.menuItem.findMany to MenuItemRepository once complex include+parallel shapes are supported
 
+const VALID_CATEGORY_TYPES: readonly string[] = ['food', 'drinks', 'liquor', 'entertainment', 'combos', 'retail', 'pizza'] as const
+const VALID_CATEGORY_SHOWS: readonly string[] = ['food', 'bar', 'entertainment', 'all'] as const
+
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -20,8 +23,27 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
   try {
     const { searchParams } = new URL(request.url)
-    const categoryType = searchParams.get('categoryType') as CategoryType | null   // Optional: 'food', 'liquor', 'drinks', etc.
-    const categoryShow = searchParams.get('categoryShow') as CategoryShow | null   // Optional: 'food', 'bar', 'entertainment'
+    const categoryTypeRaw = searchParams.get('categoryType')
+    const categoryShowRaw = searchParams.get('categoryShow')
+
+    // Validate categoryType against known enum values
+    if (categoryTypeRaw && !VALID_CATEGORY_TYPES.includes(categoryTypeRaw)) {
+      return NextResponse.json(
+        { error: `Invalid categoryType '${categoryTypeRaw}'. Must be one of: ${VALID_CATEGORY_TYPES.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Validate categoryShow against known enum values
+    if (categoryShowRaw && !VALID_CATEGORY_SHOWS.includes(categoryShowRaw)) {
+      return NextResponse.json(
+        { error: `Invalid categoryShow '${categoryShowRaw}'. Must be one of: ${VALID_CATEGORY_SHOWS.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    const categoryType = categoryTypeRaw as CategoryType | null
+    const categoryShow = categoryShowRaw as CategoryShow | null
     const categoryId = searchParams.get('categoryId')                              // Optional: filter items to a single category
     const slim = searchParams.get('slim') === 'true'                               // Optional: omit admin/cost fields for POS grid
 
@@ -143,7 +165,10 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         totalPourCost: null as number | null,
         profitMargin: null as number | null,
         isLiquorItem: item.category?.categoryType === 'liquor',
-        is86d: false, // 86 status loaded on-demand
+        // Placeholder values: deep ingredient includes were removed for menu grid performance.
+        // Real 86 status is computed on-demand via the item detail endpoint (/api/menu/items/[id])
+        // which checks ingredient stock levels and recipe requirements.
+        is86d: false,
         reasons86d: [] as string[],
         stockStatus: stockStatus?.status || 'ok',
         stockCount: stockStatus?.lowestCount || null,
@@ -176,7 +201,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           categoryType: item.category?.categoryType || 'food',
           name: item.name,
           price: Number(item.price),
-          priceCC: item.priceCC ? Number(item.priceCC) : null,
+          priceCC: item.priceCC !== null && item.priceCC !== undefined ? Number(item.priceCC) : null,
           isActive: item.isActive,
           isAvailable: item.isAvailable,
           itemType: item.itemType,
@@ -185,7 +210,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           timedPricing: item.timedPricing,
           minimumMinutes: item.minimumMinutes,
           commissionType: item.commissionType,
-          commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
+          commissionValue: item.commissionValue !== null && item.commissionValue !== undefined ? Number(item.commissionValue) : null,
           availableFrom: item.availableFrom,
           availableTo: item.availableTo,
           availableDays: item.availableDays,
@@ -218,7 +243,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           // Weight-based selling
           soldByWeight: item.soldByWeight,
           weightUnit: item.weightUnit,
-          pricePerWeightUnit: item.pricePerWeightUnit ? Number(item.pricePerWeightUnit) : null,
+          pricePerWeightUnit: item.pricePerWeightUnit !== null && item.pricePerWeightUnit !== undefined ? Number(item.pricePerWeightUnit) : null,
           // Pricing option groups (size/variant pricing)
           pricingOptionGroups: (item as any).pricingOptionGroups?.map((group: any) => ({
             id: group.id,
@@ -258,7 +283,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           availableFromDate: item.availableFromDate?.toISOString() ?? null,
           availableUntilDate: item.availableUntilDate?.toISOString() ?? null,
           showOnline: item.showOnline,
-          onlinePrice: item.onlinePrice !== null ? Number(item.onlinePrice) : null,
+          onlinePrice: item.onlinePrice !== null && item.onlinePrice !== undefined ? Number(item.onlinePrice) : null,
           // Liquor Builder recipe/cost data (loaded on-demand via item detail endpoint)
           recipeIngredientCount: item.recipeIngredientCount,
           linkedBottleProductName: null,
@@ -268,7 +293,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           linkedBottleUnitCost: null,
           linkedBottleSizeMl: null,
           linkedBottleSpiritCategory: null,
-          linkedPourSizeOz: item.linkedPourSizeOz ? Number(item.linkedPourSizeOz) : null,
+          linkedPourSizeOz: item.linkedPourSizeOz !== null && item.linkedPourSizeOz !== undefined ? Number(item.linkedPourSizeOz) : null,
           totalPourCost: item.totalPourCost,
           profitMargin: item.profitMargin,
           // CFD featured

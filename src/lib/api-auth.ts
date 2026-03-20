@@ -169,8 +169,10 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
  * - If sub is a real employee ID (no prefix), return it directly.
  * - If sub starts with cloud- or mc-owner-, look up by email or auto-provision.
  * - Caches the mapping in-memory to avoid re-provisioning every request.
+ *
+ * Exported so that api-auth-middleware.ts can delegate to the same provisioning path.
  */
-async function resolveOrProvisionEmployee(
+export async function resolveOrProvisionEmployee(
   payload: CloudTokenPayload,
   locationId: string
 ): Promise<string | null> {
@@ -430,15 +432,21 @@ export async function requireAnyPermission(
     } catch { /* no cookie or invalid */ }
   }
 
-  // Cloud session fallback — pos-cloud-session cookie (email/password or MC redirect)
-  if (!employeeId) {
-    try {
-      const cloud = await getCloudSessionEmployee()
-      if (cloud?.employeeId) {
+  // Cloud session — pos-cloud-session cookie (email/password or MC redirect)
+  // Always check cloud session to override locationId, even when employeeId
+  // was already resolved by getActorFromRequest(). This matches requirePermission().
+  try {
+    const cloud = await getCloudSessionEmployee()
+    if (cloud?.employeeId) {
+      if (!employeeId) {
         employeeId = cloud.employeeId
       }
-    } catch { /* no cloud cookie or invalid — fall through */ }
-  }
+      // ALWAYS override locationId from cloud session — this is the locationId
+      // the MC employee was provisioned in. Without this, routes fail with
+      // "Employee not found" when accessed from Mission Control.
+      locationId = cloud.locationId
+    }
+  } catch { /* no cloud cookie or invalid — fall through */ }
 
   if (!employeeId) {
     log.warn(`[api-auth] Authentication required: no employeeId resolved for locationId=${locationId}, permissions=[${permissions.join(', ')}]`)
@@ -449,16 +457,25 @@ export async function requireAnyPermission(
     }
   }
 
-  // Check permission cache first (15s TTL)
+  // Check permission cache first (15s TTL — avoids DB hit on every API call)
   let employee = getCachedEmployee(employeeId, locationId)
   if (!employee) {
+    // Try with the provided locationId first
     employee = await EmployeeRepository.getEmployeeByIdWithInclude(
       employeeId,
       locationId,
       { role: true },
     )
+    // If not found, try without locationId constraint (MC employees may have different locationId)
+    if (!employee) {
+      const prismaFallback = getRequestPrisma() || db
+      employee = await (prismaFallback as any).employee.findFirst({
+        where: { id: employeeId, deletedAt: null, isActive: true },
+        include: { role: true },
+      }) as typeof employee
+    }
     if (employee) {
-      setCachedEmployee(employeeId, locationId, employee)
+      setCachedEmployee(employeeId, employee.locationId, employee)
     }
   }
 

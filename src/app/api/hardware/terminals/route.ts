@@ -13,6 +13,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    // Auth check — require settings.hardware permission (read access)
+    const actor = await getActorFromRequest(request)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     const category = searchParams.get('category') as TerminalCategory | null
 
     let terminals
@@ -115,19 +124,22 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       platform = 'BROWSER',
       staticIp,
       receiptPrinterId,
+      kitchenPrinterId,
+      barPrinterId,
       roleSkipRules,
       scaleId,
-      employeeId: bodyEmployeeId,
     } = body
 
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
-    // Auth check — require settings.hardware permission
+    // Auth check — require settings.hardware permission (session only, no body fallback)
     const actor = await getActorFromRequest(request)
-    const resolvedEmployeeId = actor.employeeId ?? bodyEmployeeId
-    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Device count limit check (subscription-gated)
@@ -175,19 +187,36 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // If receiptPrinterId is provided, verify it exists and is a receipt printer
-    if (receiptPrinterId) {
-      const printer = await db.printer.findUnique({
-        where: { id: receiptPrinterId },
+    // Validate printers belong to the same location
+    const printerChecks: { id: string; label: string; requiredRole?: string }[] = []
+    if (receiptPrinterId) printerChecks.push({ id: receiptPrinterId, label: 'Receipt printer', requiredRole: 'receipt' })
+    if (kitchenPrinterId) printerChecks.push({ id: kitchenPrinterId, label: 'Kitchen printer', requiredRole: 'kitchen' })
+    if (barPrinterId) printerChecks.push({ id: barPrinterId, label: 'Bar printer', requiredRole: 'bar' })
+
+    if (printerChecks.length > 0) {
+      const printerIds = printerChecks.map((p) => p.id)
+      const printers = await db.printer.findMany({
+        where: { id: { in: printerIds } },
+        select: { id: true, locationId: true, printerRole: true },
       })
-      if (!printer) {
-        return NextResponse.json({ error: 'Receipt printer not found' }, { status: 400 })
-      }
-      if (printer.printerRole !== 'receipt') {
-        return NextResponse.json(
-          { error: 'Selected printer must have receipt role' },
-          { status: 400 }
-        )
+
+      for (const check of printerChecks) {
+        const printer = printers.find((p) => p.id === check.id)
+        if (!printer) {
+          return NextResponse.json({ error: `${check.label} not found` }, { status: 400 })
+        }
+        if (printer.locationId !== locationId) {
+          return NextResponse.json(
+            { error: `${check.label} belongs to a different location` },
+            { status: 403 }
+          )
+        }
+        if (check.requiredRole && printer.printerRole !== check.requiredRole) {
+          return NextResponse.json(
+            { error: `${check.label} must have ${check.requiredRole} role` },
+            { status: 400 }
+          )
+        }
       }
     }
 
@@ -200,6 +229,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
         if (!scale) {
           return NextResponse.json({ error: 'Scale not found' }, { status: 400 })
+        }
+        if (scale.locationId !== locationId) {
+          return NextResponse.json(
+            { error: 'Scale belongs to a different location' },
+            { status: 403 }
+          )
         }
       } catch {
         // Scale table doesn't exist on un-migrated DB — ignore scaleId
@@ -216,11 +251,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           platform,
           staticIp: staticIp || null,
           receiptPrinterId: receiptPrinterId || null,
+          kitchenPrinterId: kitchenPrinterId || null,
+          barPrinterId: barPrinterId || null,
           roleSkipRules: roleSkipRules || {},
           scaleId: cleanScaleId,
         },
         include: {
           receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          kitchenPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          barPrinter: {
             select: {
               id: true,
               name: true,
@@ -248,10 +301,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           platform,
           staticIp: staticIp || null,
           receiptPrinterId: receiptPrinterId || null,
+          kitchenPrinterId: kitchenPrinterId || null,
+          barPrinterId: barPrinterId || null,
           roleSkipRules: roleSkipRules || {},
         },
         include: {
           receiptPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          kitchenPrinter: {
+            select: {
+              id: true,
+              name: true,
+              ipAddress: true,
+              printerRole: true,
+            },
+          },
+          barPrinter: {
             select: {
               id: true,
               name: true,
