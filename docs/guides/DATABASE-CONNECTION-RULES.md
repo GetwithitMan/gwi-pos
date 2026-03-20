@@ -69,6 +69,19 @@ Routes without tenant scoping (health, cron) worked fine.
 
 The adapter was never the problem. The deadlock was.
 
+## Dual-Ingress Write Model
+
+Neon receives writes from two independent ingress paths:
+
+1. **NUC upstream sync (LAN ingress):** LAN devices write to NUC local PG. The upstream sync worker replicates to Neon every 5 seconds.
+2. **Cellular terminals (cloud ingress):** Roaming Android devices write directly to Neon through Vercel API routes, bypassing the NUC entirely (they cannot reach it over the public internet).
+
+Both paths converge in Neon, which is the canonical SOR. The NUC's downstream sync worker (also 5s) pulls cellular-originated writes from Neon into local PG for fulfillment (kitchen prints, KDS, receipts).
+
+This means Neon's write traffic is the **union** of upstream sync batches and cellular terminal writes. Connection pool sizing on the Neon side must account for both sources.
+
+See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 2 (Cellular Edge) and Phase 6 (Cloud-Primary Architecture) for full details.
+
 ## Vercel Function Timeouts
 
 | Route | maxDuration | Why |

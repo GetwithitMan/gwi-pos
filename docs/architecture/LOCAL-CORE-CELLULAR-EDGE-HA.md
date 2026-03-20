@@ -1,19 +1,27 @@
 # Local-Core / Cellular-Edge HA Architecture
 
-**Version:** 3.0
-**Updated:** March 14, 2026
+**Version:** 3.1
+**Updated:** March 20, 2026
 **Status:** Implementation complete (Phases 1–7)
 **Scope:** Cloud-primary HA with local NUC execution layer, cellular edge for roaming devices, fulfillment routing
+**This is the canonical authority document for the GWI POS architecture model.**
 
 ---
 
 ## Executive Summary
 
-GWI POS is a cloud-primary architecture: Neon is the canonical source of truth in normal operation, with an on-site NUC as the local execution and continuity layer. The NUC serves LAN devices, drives all hardware, and temporarily becomes the write authority during internet outages. This design extends the architecture with these capabilities:
+GWI POS is a cloud-primary, dual-ingress architecture:
+
+- **Neon (Cloud) is the primary source of truth.** MC owns schema version, provisioning, rollout, and `_venue_schema_state`. All venue data converges in Neon.
+- **Local NUC/PG is the source of truth ONLY when internet is disconnected.** LAN devices write to local PG; during outage, all writes queue durably in `OutageQueueEntry` for FIFO replay when reconnected. NUC NEVER mutates Neon schema in production — observe and report only.
+- **Cellular terminals write to Neon, then data syncs down to NUC.** Cellular → Vercel → Neon (direct write). Neon → downstream sync (5s) → NUC local PG → kitchen/fulfillment/reports. This is the dual-ingress model: local ingress (LAN→NUC) + cloud ingress (cellular→Neon).
+- **The installer only points to things, never hardcodes.** Registration gives the NUC its venue identity + Neon URL. `.env.local` is a symlink to `/opt/gwi-pos/.env` (never a copy). Installer never writes `_venue_schema_state` (MC-only). No `--accept-data-loss`. Schema updates auto-follow via MC rollout → Neon → NUC downstream sync.
+
+The on-site NUC remains mandatory as the local execution and continuity layer: it serves LAN devices, drives all hardware, and temporarily becomes the write authority during internet outages. This design extends the architecture with these capabilities:
 
 1. **Backup NUC + HA Failover (Phase 1):** A second NUC at each venue runs as a hot standby via PostgreSQL streaming replication. keepalived manages a Virtual IP (VIP). If the primary NUC goes down, the backup promotes in ≤10 seconds with zero data loss for committed transactions.
 
-2. **Cellular Edge Path (Phase 2):** Roaming Android devices (poolside servers, event floors) connect via cellular data through the cloud, which relays operations to the venue NUC. These devices have restricted permissions (no refunds, no tip adjustments) and are authenticated with a dedicated 6-gate model.
+2. **Cellular Edge Path (Phase 2):** Roaming Android devices (poolside servers, event floors) connect via cellular data and write directly to Neon through Vercel. The NUC receives this data via downstream sync (5s) for kitchen fulfillment and hardware dispatch. These devices have restricted permissions (no refunds, no tip adjustments) and are authenticated with a dedicated 6-gate model.
 
 3. **Fulfillment Routing (Phase 3):** Item-level routing engine that resolves each menu item to its correct kitchen/bar/prep station at send time. Supports cloud-originated orders arriving via the cellular path. Uses send-time snapshots so menu edits never retroactively change routing.
 
@@ -279,16 +287,18 @@ The installer (`public/installer.run`) gains a new `backup` station role (option
 ### Goal
 Roaming Android devices (poolside, event floor, outdoor patio) can take orders and process payments over cellular data, relayed through the cloud to the venue NUC.
 
-### Architecture
+### Architecture — Dual-Ingress Model
 
-Cellular devices cannot reach the NUC directly (NUC has no public IP). The cloud acts as a relay:
+Cellular devices cannot reach the NUC directly (NUC has no public IP). They write to Neon through Vercel, and the NUC receives the data via downstream sync:
 
 1. Device sends request to cloud (Vercel) with cellular JWT token
 2. `proxy.ts` (Next.js middleware) validates token, checks route allowlist
-3. Cloud writes order to Neon with `lastMutatedBy = 'cloud'`
-4. Sync agent on NUC receives SSE wake-up from Mission Control
-5. Downstream sync worker pulls cloud-originated order to local PG
+3. **Cloud writes order directly to Neon** with `lastMutatedBy = 'cloud'`
+4. Sync agent on NUC receives SSE wake-up from Mission Control (or cloud relay WS push)
+5. **Downstream sync worker (5s) pulls cloud-originated order to NUC local PG**
 6. Fulfillment router fires on the NUC (prints tickets, updates KDS)
+
+This is the **cloud ingress** path. Combined with the **local ingress** (LAN devices → NUC → upstream sync → Neon), this creates the dual-ingress model where Neon receives writes from both directions and is the canonical convergence point for all venue data.
 
 ### proxy.ts Gate (INV-5)
 
@@ -669,24 +679,49 @@ Three new models added to `prisma/schema.prisma`:
 - **ID Drift Alert** — flags venues where posLocationId != canonicalLocationId
 - Dashboard page at `/dashboard/monitoring`
 
-### Write Path (Cloud-Primary)
+### Write Path — Dual-Ingress (Cloud-Primary)
+
+Neon receives writes from **two independent ingress paths**. This is the core architectural pattern:
+
+```
+LOCAL INGRESS (LAN):
+  LAN Device → NUC API → Local PG → Upstream Sync (5s) → Neon
+
+CLOUD INGRESS (Cellular):
+  Cellular Device → Vercel API → Neon (direct write)
+  Neon → Downstream Sync (5s) → NUC Local PG → Fulfillment (KDS/print)
+```
 
 **Normal operation (internet up):**
-1. LAN terminals → NUC local API → write to local PG (for speed) → upstream sync to Neon (5s)
-2. Cellular → Vercel → Neon (direct)
-3. NUC downstream sync pulls Neon changes (5s) — accelerated by cloud relay WS for instant push
+1. **LAN ingress:** LAN terminals → NUC local API → write to local PG (for speed) → upstream sync to Neon (5s)
+2. **Cloud ingress:** Cellular → Vercel → Neon (direct write, `lastMutatedBy = 'cloud'`)
+3. NUC downstream sync pulls ALL Neon changes (5s) — accelerated by cloud relay WS for instant push
+4. Both paths converge in Neon, which is the single canonical SOR
 
 **Outage (internet down):**
 1. Upstream sync detects 3 consecutive failures → outage mode
 2. LAN terminals → NUC local API → write to local PG + append OutageQueueEntry
 3. Cellular → local outbox on device → retry on reconnect
 4. Hardware continues locally (printers, KDS, drawers)
+5. NUC is the SOLE write authority during outage — all writes are queued for replay
 
 **Recovery (internet returns):**
 1. Outage replay worker processes queue FIFO
 2. Each entry has idempotencyKey: `{locationId}:{tableName}:{recordId}:{localSeq}`
 3. Neon-wins on timestamp ties (cloud is canonical)
 4. Conflicts logged, visible in MC monitoring dashboard
+
+### Installer Authority Model
+
+The installer (`public/installer.run`) is **pointer-only**. It gives the NUC its venue identity but asserts no schema or provisioning authority:
+
+- Registration provides: venue slug, location ID, Neon URL, server API key
+- `.env.local` is a **symlink** to `/opt/gwi-pos/.env` (never a copy)
+- Installer NEVER writes `_venue_schema_state` — that is MC-only
+- Installer NEVER uses `--accept-data-loss`
+- Installer NEVER hardcodes URLs — all URLs come from MC registration response
+- Schema updates follow: MC rollout → Neon schema update → NUC downstream sync picks up new data
+- NUC NEVER mutates Neon schema in production — it observes and reports only
 
 ---
 

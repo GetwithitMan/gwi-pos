@@ -108,12 +108,17 @@ Only after Steps 1–5:
 
 ## Hard Rules
 
-### Offline-First (7 rules)
-- NEVER query Neon from POS API routes — all `db.*` → local PG
+### Offline-First + Cloud-Primary Authority Model
+- NEVER query Neon from POS API routes — all `db.*` → local PG. **Exception:** Cellular terminals write through Vercel → Neon directly (they cannot reach the NUC over the internet).
 - NEVER make POS startup/login/orders/payments depend on cloud
 - NEVER set NUC `DATABASE_URL` to neon.tech
 - Clock discipline: DB-generated `NOW()` only, never client timestamps
 - **Cloud-primary architecture:** Neon is the canonical SOR. NUC writes replicate upstream (5s). During outage, NUC queues writes in OutageQueueEntry for FIFO replay. Conflict resolution: neon-wins (default). See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6.
+- **Dual-ingress model:** Neon receives writes from TWO paths: (1) NUC upstream sync (LAN devices → NUC → Neon), and (2) cellular terminals writing directly through Vercel → Neon. Downstream sync (5s) delivers cellular-originated data to the NUC for fulfillment (kitchen prints, KDS).
+- **Authority boundaries:** MC owns schema version, provisioning, `_venue_schema_state`, and rollout. NUC owns local runtime during internet outage. NUC NEVER mutates Neon schema in production — observe and report only.
+- **Installer is pointer-only:** Registration gives the NUC its venue identity + Neon URL. `.env.local` is a symlink to `/opt/gwi-pos/.env` (never a copy). Installer never writes `_venue_schema_state` (MC-only), never uses `--accept-data-loss`, never hardcodes URLs. Schema updates follow MC rollout → Neon → NUC downstream sync.
+- **Universal outage queue:** ALL upstream model writes MUST use outage queue protection (`OutageQueueEntry`). No upstream write may silently fail during an internet outage.
+- **Canonical authority doc:** `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` (Phases 6-8)
 - **Full rules:** `docs/guides/ARCHITECTURE-RULES.md`
 
 ### Event-Sourced Orders

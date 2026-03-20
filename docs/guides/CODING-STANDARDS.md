@@ -112,6 +112,17 @@ return NextResponse.json({ data: order })  // return immediately
 ```
 **NEVER** `await` background work before returning the response.
 
+### Upstream Write Safety (Outage Queue Protection)
+All writes to upstream-synced models (models that replicate NUC → Neon) **MUST** use outage queue protection. When `isInOutageMode()` returns true, writes are appended to `OutageQueueEntry` for FIFO replay on reconnect. No upstream write may silently fail during an internet outage.
+
+### Cellular Route Requirements
+Routes that accept cellular terminal requests must satisfy three conditions:
+1. **Explicit opt-in:** The route must be on the `proxy.ts` allowlist with `allowCellular: true`. Routes not on the allowlist return 403 for cellular tokens.
+2. **Employee binding validation:** Cellular requests must validate that the employee in the request is bound to the terminal's location. Cellular tokens carry a `locationId` — the route must verify the employee belongs to that location.
+3. **Restricted permissions:** Cellular terminals (`CELLULAR_ROAMING` role) cannot access refunds, tip adjustments, shift operations, admin, settings, or reports. See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 2 for the full allowlist.
+
+See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` for the authority model.
+
 ### Indexes — Required for New Query Patterns
 ```prisma
 @@index([locationId, status])   // add compound index for multi-column filters

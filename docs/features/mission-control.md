@@ -3,7 +3,9 @@
 > **Before editing this feature:** Read `_CROSS-REF-MATRIX.md` → find this feature → read every listed dependency doc.
 
 ## Summary
-Cloud fleet management platform for GWI POS. Handles NUC server registration, heartbeat monitoring, license validation, remote command execution (50+ command types), and secure credential delivery. HMAC-SHA256 for fleet API auth, AES-256-GCM for sensitive config at rest, RSA-OAEP for key exchange during registration. Separate repo (`gwi-mission-control`).
+Cloud fleet management platform for GWI POS. **MC is the sole schema and provisioning authority** for all venues. It handles schema versioning (`_venue_schema_state`), venue provisioning, release channel management, NUC server registration, heartbeat monitoring, license validation, remote command execution (50+ command types), and secure credential delivery. HMAC-SHA256 for fleet API auth, AES-256-GCM for sensitive config at rest, RSA-OAEP for key exchange during registration. Separate repo (`gwi-mission-control`).
+
+MC owns the full lifecycle: provisioning a venue, assigning its Neon database, managing schema migrations via release channels, and rolling out updates. The NUC defers to MC for all provisioning and schema decisions — it never writes `_venue_schema_state` or mutates Neon schema directly. See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` for the full authority model.
 
 ## Status
 `Active`
@@ -110,6 +112,22 @@ FleetCommand {
 ---
 
 ## Business Logic
+
+### Schema & Provisioning Authority (MC-Only)
+
+MC is the **sole authority** for the following. No other system (NUC, installer, sync worker) may perform these actions:
+
+| Authority | MC Owns | NUC/Installer NEVER |
+|-----------|---------|---------------------|
+| Schema version | `_venue_schema_state` table — tracks migration state per venue | Writes `_venue_schema_state` |
+| Schema migration | Rollout via release channels (dev → canary → production) | Uses `--accept-data-loss` or pushes schema to Neon |
+| Venue provisioning | Creates CloudLocation, assigns Neon DB, generates registration token | Self-provisions or re-provisions |
+| Release management | Sets `targetVersion` per venue, health-gated rollout | Auto-updates without MC approval |
+| Device approval | Cellular device lifecycle (PENDING → APPROVED → ACTIVE → REVOKED) | Approves its own cellular devices |
+
+The installer is **pointer-only**: it receives venue identity + Neon URL from MC registration, symlinks `.env.local` → `/opt/gwi-pos/.env`, and never hardcodes URLs or asserts schema authority. Schema updates flow automatically via MC rollout → Neon → NUC downstream sync.
+
+See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` for the full dual-ingress architecture and authority model.
 
 ### Registration Flow
 1. Admin creates location in Mission Control, generates registration token (24h expiry)
@@ -230,4 +248,4 @@ A persistent outbound WebSocket from each NUC to the cloud relay enables real-ti
 
 ---
 
-*Last updated: 2026-03-14*
+*Last updated: 2026-03-20*

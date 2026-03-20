@@ -25,7 +25,7 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                  LOCAL SERVER (Ubuntu NUC)                        │
 │  Node.js (systemd) + LOCAL PostgreSQL (PRIMARY) + Socket.io     │
-│  Syncs to Neon cloud in background (orders, payments, shifts)   │
+│  Upstream sync → Neon (5s). Downstream sync ← Neon (5s).       │
 │  Provisioned via installer.run • Works 100% OFFLINE             │
 │  Heartbeat (60s cron) • Sync agent (SSE) • Kiosk mode           │
 └─────────────────────────────────────────────────────────────────┘
@@ -54,7 +54,7 @@ Every POS terminal, kiosk, SmartTab, and browser **MUST** connect to the local N
 
 ### 7 NEVER Rules
 
-1. **NEVER** write code that queries Neon directly from a POS API route — all `db.*` calls go to local PG.
+1. **NEVER** write code that queries Neon directly from a POS API route — all `db.*` calls go to local PG. **Exception:** Cellular terminal routes on Vercel write to Neon directly because cellular devices cannot reach the NUC over the public internet (see Phase 2 — Cellular Edge Path in `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md`).
 2. **NEVER** make POS startup, login, order creation, or payment depend on cloud connectivity.
 3. **NEVER** set `DATABASE_URL` on a NUC to a `neon.tech` URL — that destroys offline capability.
 4. The `neonClient` (`src/lib/neon-client.ts`) is **sync-only** — used exclusively by background sync workers, `hardware-command-worker`, and `online-order-worker`.
@@ -80,6 +80,7 @@ These rules were discovered via penetration testing and prevent data loss, dupli
 
 > **INV-12:** Neon is the canonical source of record (SOR) in normal operation.
 > The NUC is the local execution layer — not a peer database.
+> Canonical authority reference: `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` (Phases 6-8)
 
 ### Rules
 
@@ -90,6 +91,43 @@ These rules were discovered via penetration testing and prevent data loss, dupli
 5. **Cloud-owned models can be fully re-synced from Neon.** A NUC can be rebuilt from zero using downstream sync alone.
 6. **NUC-owned operational models must NOT be overwritten by downstream sync.** These flow upstream only.
 7. **Bidirectional models use `lastMutatedBy` column** to filter sync direction. Every NUC mutation to a bidirectional model MUST set `lastMutatedBy: 'local'`.
+
+### Dual-Ingress Write Model
+
+Neon receives writes from **two ingress paths**:
+
+| Ingress | Path | Write Destination | Then |
+|---------|------|-------------------|------|
+| **Local (LAN)** | LAN device → NUC API → local PG → upstream sync (5s) | NUC local PG first, then Neon | Immediate local fulfillment |
+| **Cloud (Cellular)** | Cellular device → Vercel → Neon directly | Neon first | Downstream sync (5s) → NUC → fulfillment |
+
+- Cellular terminals are the **only** devices that write to Neon directly. They cannot reach the NUC over the public internet.
+- Once cellular data reaches Neon, downstream sync delivers it to the NUC local PG for kitchen prints, KDS updates, and all hardware fulfillment.
+- During internet outage, LAN devices continue writing to local PG. Cellular devices queue writes locally on the device and retry on reconnect.
+
+### Installer Authority Model
+
+The installer (`public/installer.run`) is **pointer-only** — it gives the NUC its identity but never asserts schema or provisioning authority:
+
+| Installer DOES | Installer NEVER |
+|----------------|-----------------|
+| Set venue identity (slug, location ID) | Write `_venue_schema_state` (MC-only) |
+| Set Neon URL (`NEON_DATABASE_URL`) | Use `--accept-data-loss` |
+| Symlink `.env.local` → `/opt/gwi-pos/.env` | Hardcode URLs (always from MC registration) |
+| Register with Mission Control | Run schema migrations directly against Neon |
+
+Schema updates flow: MC rollout → Neon schema update → NUC downstream sync picks up new data. The NUC NEVER mutates Neon schema in production — it observes and reports only.
+
+### Mission Control as Schema/Provisioning Authority
+
+MC is the sole authority for:
+- Schema versioning and migration rollout (`_venue_schema_state`)
+- Venue provisioning and registration
+- Release channel management (dev → canary → production)
+- Device limits and subscription tier enforcement
+- Cellular device approval/revocation
+
+The NUC defers to MC for all provisioning decisions. See `docs/features/mission-control.md`.
 
 ### Source of Truth by Model
 
@@ -331,4 +369,4 @@ The Android native app is the **PRIMARY** POS interface. Web/browser is secondar
 
 ---
 
-*Last updated: 2026-03-18*
+*Last updated: 2026-03-20*
