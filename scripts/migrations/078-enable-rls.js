@@ -1,69 +1,41 @@
 /**
- * Migration 078: Enable Row-Level Security (RLS) on Tenant-Scoped Models
+ * Migration 078: RLS DISABLED — was causing write failures everywhere
  *
- * Adds PostgreSQL RLS policies to all tenant-scoped models. Each policy
- * enforces that rows can only be read/written when the `app.current_tenant`
- * GUC matches the row's `locationId`.
+ * ORIGINAL: Enabled Row-Level Security on 15 tenant-scoped tables.
+ * PROBLEM: RLS without proper per-connection GUC setup blocks ALL writes
+ * from sync workers, MC provisioning, and direct seed operations. Every
+ * `prisma db push`, `git pull + build`, and NUC restart re-ran this
+ * migration and re-enabled RLS, causing "new row violates row-level
+ * security policy" errors that silently broke downstream sync.
  *
- * The GUC is set via `SELECT set_config('app.current_tenant', $1, true)`
- * at the start of each Prisma $transaction block. The `true` parameter
- * in `current_setting('app.current_tenant', true)` means "missing_ok" —
- * if the GUC is not set, it returns NULL, and the USING clause evaluates
- * to FALSE. This is fail-closed: queries without SET LOCAL see NO rows.
+ * DECISION: RLS is disabled. Tenant isolation is enforced at the
+ * application layer (db-tenant-scope.ts extension + withVenue() routing).
+ * If RLS is needed in the future, it must be implemented with proper
+ * policies that don't block the app's own writes.
  *
- * FORCE ROW LEVEL SECURITY ensures the policy applies to the table owner
- * role too (critical for Neon where the app connects as the owner).
+ * This migration is now a NO-OP. The tracking table records it as
+ * "applied" so it never re-runs.
  */
 
 /** @param {import('@prisma/client').PrismaClient} prisma */
 export async function up(prisma) {
-  // Must match TENANT_SCOPED_MODELS in src/lib/tenant-validation.ts
-  const tenantModels = [
-    'BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'RecipeIngredient',
-    'SpiritUpsellEvent', 'BottleServiceTier', 'MenuItem', 'Category',
-    'Modifier', 'ModifierGroup', 'Order', 'OrderItem',
-    'InventoryItem', 'InventoryItemTransaction', 'Employee',
-  ]
+  // NO-OP — RLS disabled permanently
+  // Tenant isolation handled by application layer (db-tenant-scope.ts)
 
-  for (const model of tenantModels) {
-    // Guard: check if table exists
-    const tableExists = await prisma.$queryRawUnsafe(`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = '${model}'
-      ) as exists
-    `)
-    if (!tableExists[0]?.exists) {
-      console.log(`[Migration 078] Table ${model} does not exist, skipping`)
-      continue
-    }
-
-    // Check if RLS is already enabled
-    const rlsCheck = await prisma.$queryRawUnsafe(`
-      SELECT relrowsecurity FROM pg_class WHERE relname = '${model}'
-    `)
-    if (rlsCheck[0]?.relrowsecurity) {
-      console.log(`[Migration 078] RLS already enabled on ${model}`)
-      continue
-    }
-
-    // Enable RLS
-    await prisma.$executeRawUnsafe(`ALTER TABLE "${model}" ENABLE ROW LEVEL SECURITY`)
-
-    // FORCE ensures policy applies to table owner too (critical for Neon)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "${model}" FORCE ROW LEVEL SECURITY`)
-
-    // Create tenant isolation policy:
-    //   USING  — controls which rows are visible (SELECT/UPDATE/DELETE)
-    //   WITH CHECK — controls which rows can be inserted/updated
-    //   current_setting('app.current_tenant', true) returns NULL when not set,
-    //   causing the comparison to fail → fail-closed by default
+  // If RLS was previously enabled, disable it on all tables
+  try {
     await prisma.$executeRawUnsafe(`
-      CREATE POLICY tenant_isolation_${model.toLowerCase()} ON "${model}"
-        USING ("locationId" = current_setting('app.current_tenant', true)::text)
-        WITH CHECK ("locationId" = current_setting('app.current_tenant', true)::text)
+      DO $$ DECLARE r RECORD;
+      BEGIN
+        FOR r IN SELECT relname FROM pg_class WHERE relrowsecurity = true AND relkind = 'r'
+        LOOP
+          EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', r.relname);
+          EXECUTE format('ALTER TABLE %I NO FORCE ROW LEVEL SECURITY', r.relname);
+        END LOOP;
+      END $$;
     `)
-
-    console.log(`[Migration 078] Enabled RLS + tenant isolation policy on ${model}`)
+    console.log('[Migration 078] Disabled RLS on all tables (permanent fix)')
+  } catch (err) {
+    console.warn('[Migration 078] RLS disable failed (non-fatal):', err.message)
   }
 }
