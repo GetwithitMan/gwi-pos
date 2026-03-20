@@ -9047,3 +9047,59 @@ model GwiMigrations {
 
   @@map("_gwi_migrations")
 }
+
+// ── Infrastructure tables ─────────────────────────────────────────────────
+// These tables are created by raw migrations or bootstrap logic.
+// They MUST be in the Prisma schema so prisma db push doesn't try to drop them.
+
+model SyncWatermark {
+  id                           String   @id @default(cuid())
+  locationId                   String   @unique
+  lastAcknowledgedDownstreamAt DateTime @default(now())
+  lastAcknowledgedUpstreamAt   DateTime @default(now())
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @default(now()) @updatedAt
+}
+
+model GwiSyncState {
+  tableName     String   @id @map("table_name")
+  highWaterMark DateTime @map("high_water_mark")
+
+  @@map("_gwi_sync_state")
+}
+
+model SocketEventLog {
+  id         BigInt   @id @default(autoincrement())
+  locationId String
+  event      String
+  data       Json     @default("{}")
+  room       String?
+  status     String   @default("pending")
+  flushed    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([locationId, id])
+}
+
+model LocalSchemaState {
+  id                  Int      @id @default(autoincrement())
+  schemaVersion       String?
+  observedNeonVersion String?
+  appVersion          String?
+  bootedAt            DateTime @default(now())
+  neonReachable       Boolean  @default(false)
+  syncBlocked         Boolean  @default(false)
+  blockReason         String?
+
+  @@map("_local_schema_state")
+}
+
+model LocalInstallState {
+  id               Int      @id @default(autoincrement())
+  installedAt      DateTime @default(now()) @map("installed_at")
+  posVersion       String?  @map("pos_version")
+  installerVersion String?  @map("installer_version")
+  schemaMigrationsRun Int?  @map("schema_migrations_run")
+
+  @@map("_local_install_state")
+}
