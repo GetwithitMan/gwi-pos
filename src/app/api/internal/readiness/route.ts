@@ -1,14 +1,22 @@
 import { NextResponse } from 'next/server'
-import { config } from '@/lib/system-config'
 import { getBootstrapResult } from '@/lib/venue-bootstrap'
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, PROVISIONER_VERSION, APP_VERSION } from '@/lib/version-contract'
 import { getWorkerHealth } from '@/lib/worker-registry'
 import { getReadinessState } from '@/lib/readiness'
 
 export async function GET(request: Request) {
-  // Auth check
+  // Auth check — lazy-load config to avoid crashing if secrets are missing.
+  // This endpoint is a diagnostic tool and must NEVER 500 on config errors.
+  let provisionApiKey: string | undefined
+  try {
+    const { config } = await import('@/lib/system-config')
+    provisionApiKey = config.provisionApiKey
+  } catch {
+    // Config failed (missing secrets) — fall back to env var directly
+    provisionApiKey = process.env.PROVISION_API_KEY
+  }
   const apiKey = request.headers.get('x-api-key')
-  if (!apiKey || apiKey !== config.provisionApiKey) {
+  if (!apiKey || apiKey !== provisionApiKey) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
