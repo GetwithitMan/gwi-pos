@@ -2025,6 +2025,36 @@ export async function dispatchPaymentRefunded(
   }
 }
 
+// ==================== Tip Allocation Events ====================
+
+/**
+ * Dispatch tips:allocated event after tip allocation completes.
+ *
+ * Notifies employees at the location that tips have been allocated
+ * from a payment, so they can update their tip dashboard without
+ * a manual refresh.
+ */
+export async function dispatchTipAllocated(
+  locationId: string,
+  payload: {
+    orderId: string
+    paymentId: string
+    allocations: Array<{
+      employeeId: string
+      amountCents: number
+      sourceType: 'DIRECT_TIP' | 'TIP_GROUP'
+    }>
+    ccFeeCents: number
+    netTipCents: number
+  },
+): Promise<void> {
+  try {
+    await emitToLocation(locationId, 'tips:allocated', payload)
+  } catch (err) {
+    log.error({ err }, 'Failed to dispatch tips:allocated')
+  }
+}
+
 // ── Cake Order Dispatch ─────────────────────────────────────────────────────
 
 /**

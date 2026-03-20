@@ -31,6 +31,7 @@ import type { TipBankSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
+import { dispatchTipAllocated } from '@/lib/socket-dispatch'
 
 const log = createChildLogger('tip-allocation')
 
@@ -153,6 +154,22 @@ export async function allocateTipsForPayment(params: {
     ccFeeAmountCents,
     kind,
   })
+
+  // Emit socket event so employees see the allocation in real-time
+  if (result.allocations.length > 0) {
+    const isGroupAllocation = result.allocations.some(a => a.sourceType === 'TIP_GROUP')
+    void dispatchTipAllocated(locationId, {
+      orderId,
+      paymentId,
+      allocations: result.allocations.map(a => ({
+        employeeId: a.employeeId,
+        amountCents: a.amountCents,
+        sourceType: isGroupAllocation ? 'TIP_GROUP' : 'DIRECT_TIP',
+      })),
+      ccFeeCents: ccFeeAmountCents,
+      netTipCents: netTipAmountCents,
+    }).catch(console.error)
+  }
 
   return result
 }

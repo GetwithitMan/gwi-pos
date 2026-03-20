@@ -556,6 +556,7 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "
   MC_LOCATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.locationId // empty')
   CLOUD_ORGANIZATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.organizationId // empty')
   CLOUD_ENTERPRISE_ID=$(echo "$REG_RESPONSE" | jq -r '.data.enterpriseId // empty')
+  VENUE_SLUG=$(echo "$REG_RESPONSE" | jq -r '.data.venueSlug // empty')
   LOCATION_ID="${POS_LOCATION_ID:-$MC_LOCATION_ID}"
   ENCRYPTED_API_KEY=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedApiKey // empty')
   ENCRYPTED_DB_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDatabaseUrl // empty')
@@ -716,6 +717,13 @@ CELLULAR_TOKEN_SECRET=${CELLULAR_SECRET}
 SESSION_SECRET=${SESSION_SECRET}
 SERVER_URL=${SERVER_URL}${HA_ENV_SECTION}
 ENVEOF
+
+  # Append POS_VENUE_SLUG only if MC returned a slug (avoids writing empty value)
+  if [[ -n "${VENUE_SLUG:-}" ]]; then
+    echo "" >> "$ENV_FILE"
+    echo "# Venue identity (routing header for cloud relay)" >> "$ENV_FILE"
+    echo "POS_VENUE_SLUG=${VENUE_SLUG}" >> "$ENV_FILE"
+  fi
 
   chmod 600 "$ENV_FILE"
   chown "$POSUSER":"$POSUSER" "$ENV_FILE"
@@ -1743,6 +1751,16 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
   ln -sf "$ENV_FILE" "$APP_DIR/.env"
   ln -sf "$ENV_FILE" "$APP_DIR/.env.local"
   chown -h "$POSUSER":"$POSUSER" "$APP_DIR/.env" "$APP_DIR/.env.local"
+
+  # Verify symlinks were created correctly (catches silent rm/ln failures from permission errors)
+  for _ef in "$APP_DIR/.env" "$APP_DIR/.env.local"; do
+    if [[ ! -L "$_ef" ]]; then
+      err "FATAL: Failed to create symlink at $_ef"
+      err "  This usually means a permission issue prevented rm -f or ln -sf from succeeding."
+      err "  Check ownership of $APP_DIR and ensure $POSUSER has write access."
+      exit 1
+    fi
+  done
 
   # Build the application (each step checked explicitly)
   # Clean stale build artifacts first (prevents mixed old+new state)

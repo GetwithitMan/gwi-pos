@@ -60,7 +60,7 @@ function createJwt(credentials: DoorDashCredentials): string {
   const header = {
     alg: 'HS256',
     typ: 'JWT',
-    kid: credentials.keyId,
+    'dd-ver': 'DD-JWT-V1',
   }
 
   const payload = {
@@ -139,6 +139,7 @@ export class DoorDashClient implements IPlatformClient {
   async confirmOrder(
     externalOrderId: string,
     _prepTimeMinutes?: number,
+    posOrderId?: string,
   ): Promise<OrderConfirmation> {
     try {
       await withRetry(
@@ -147,7 +148,7 @@ export class DoorDashClient implements IPlatformClient {
             method: 'PATCH',
             url: `${BASE_URL}/marketplace/api/v1/orders/${externalOrderId}`,
             headers: this.authHeaders(),
-            body: { order_status: 'success' },
+            body: { order_status: 'success', merchant_supplied_id: posOrderId || '' },
           }),
         { platform: 'doordash', operation: `confirmOrder(${externalOrderId})` },
       )
@@ -234,6 +235,7 @@ export class DoorDashClient implements IPlatformClient {
             method: 'PATCH',
             url: `${BASE_URL}/marketplace/api/v1/orders/${externalOrderId}/events/order_ready_for_pickup`,
             headers: this.authHeaders(),
+            body: { merchant_supplied_id: '' },
           }),
         { platform: 'doordash', operation: `markReady(${externalOrderId})` },
       )
@@ -263,7 +265,7 @@ export class DoorDashClient implements IPlatformClient {
             method: 'PATCH',
             url: `${BASE_URL}/marketplace/api/v1/orders/${externalOrderId}/cancellation`,
             headers: this.authHeaders(),
-            body: { reason },
+            body: { cancel_reason: mapCancelReason(reason) },
           }),
         { platform: 'doordash', operation: `cancelOrder(${externalOrderId})` },
       )
@@ -501,10 +503,10 @@ export class DoorDashClient implements IPlatformClient {
       await withRetry(
         () =>
           platformFetch('doordash', {
-            method: 'PATCH',
+            method: 'PUT',
             url: `${BASE_URL}/drive/v2/deliveries/${externalDeliveryId}/cancel`,
             headers: this.authHeaders(),
-            body: { reason },
+            body: { cancel_reason: mapCancelReason(reason) },
           }),
         { platform: 'doordash', operation: `cancelDelivery(${externalDeliveryId})` },
       )

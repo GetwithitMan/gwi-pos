@@ -48,6 +48,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         deletedAt: null,
       },
       include: {
+        template: {
+          select: { name: true },
+        },
         memberships: {
           where: { deletedAt: null },
           include: {
@@ -109,6 +112,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         endedAt: group.endedAt,
         status: group.status,
         splitMode: group.splitMode,
+        templateName: group.template?.name ?? null,
         members,
         currentSegment,
       }
@@ -129,7 +133,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, initialMemberIds, registerId, splitMode } = body
+    const { locationId, initialMemberIds, registerId, splitMode, customSplits } = body
 
     // ── Validate required fields ──────────────────────────────────────────
 
@@ -153,6 +157,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.POS_ACCESS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+    // ── Validate custom splits if provided ────────────────────────────
+    if (splitMode === 'custom' && !customSplits) {
+      return NextResponse.json(
+        { error: "customSplits is required when splitMode is 'custom'" },
+        { status: 400 }
+      )
+    }
+
+    if (customSplits && typeof customSplits !== 'object') {
+      return NextResponse.json(
+        { error: 'customSplits must be an object mapping employeeId to decimal percentage' },
+        { status: 400 }
+      )
+    }
+
     // ── Create the group ──────────────────────────────────────────────────
 
     const group = await startTipGroup({
@@ -161,6 +180,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       initialMemberIds,
       registerId: registerId || undefined,
       splitMode: splitMode || undefined,
+      customSplits: customSplits || undefined,
     })
 
     // ── Outage queue protection ────────────────────────────────────────────

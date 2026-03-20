@@ -857,6 +857,10 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     allowEmployeeCreatedGroups: true,        // Allow ad-hoc group creation (legacy behavior)
     noTipQuickButton: false,                 // Off by default to encourage tipping
     tipAttribution: 'tab_closer',            // Default: whoever processes the payment gets the tip
+    tipGroupsEnabled: false,                 // Off by default — venues must opt in to tip pooling
+    allowEmployeeGroupCreation: false,       // Off by default — only admin templates until enabled
+    showTipIndicatorOnPOS: true,             // Show tip badge in POS header by default
+    showCCFeeToEmployee: true,              // Show CC fee deduction in closeout by default
   },
   receipts: {
     headerText: 'Thank you for your visit!',

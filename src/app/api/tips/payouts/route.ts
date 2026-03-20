@@ -2,12 +2,13 @@
  * Tip Payout API (Skill 251)
  *
  * POST - Cash out tips for a single employee
- * GET  - Get payout history
+ * GET  - Get payout history OR payout preview (when ?preview=true)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { db } from '@/lib/db'
 import {
   cashOutTips,
   getPayoutHistory,
@@ -150,13 +151,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 })
 
-// ─── GET: Get payout history ─────────────────────────────────────────────────
+// ─── GET: Get payout history OR payout preview ──────────────────────────────
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const employeeId = searchParams.get('employeeId')
+    const preview = searchParams.get('preview')
     const dateFrom = searchParams.get('dateFrom')
     const dateTo = searchParams.get('dateTo')
     const limitParam = searchParams.get('limit')
@@ -190,6 +192,107 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         )
       }
     }
+
+    // ── Preview mode: return payout breakdown before actual cash-out ─────
+    if (preview === 'true') {
+      if (!employeeId) {
+        return NextResponse.json(
+          { error: 'employeeId is required for preview' },
+          { status: 400 }
+        )
+      }
+
+      const todayStart = new Date()
+      todayStart.setHours(0, 0, 0, 0)
+      const todayEnd = new Date()
+      todayEnd.setHours(23, 59, 59, 999)
+
+      // Fetch balance and today's ledger entries in parallel
+      const [balance, todayEntries, previousPayouts] = await Promise.all([
+        getLedgerBalance(employeeId),
+        db.tipLedgerEntry.findMany({
+          where: {
+            employeeId,
+            locationId,
+            deletedAt: null,
+            createdAt: { gte: todayStart, lte: todayEnd },
+          },
+          select: {
+            amountCents: true,
+            type: true,
+            sourceType: true,
+          },
+        }),
+        db.tipLedgerEntry.aggregate({
+          where: {
+            employeeId,
+            locationId,
+            deletedAt: null,
+            sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
+            createdAt: { gte: todayStart, lte: todayEnd },
+          },
+          _sum: { amountCents: true },
+        }),
+      ])
+
+      const totalAvailableCents = balance?.currentBalanceCents ?? 0
+
+      // Categorize today's entries
+      let directTipsCents = 0
+      let groupTipsCents = 0
+      let tipOutsGivenCents = 0
+      let tipOutsReceivedCents = 0
+      let adjustmentsCents = 0
+
+      for (const entry of todayEntries) {
+        const amt = Number(entry.amountCents)
+        switch (entry.sourceType) {
+          case 'DIRECT_TIP':
+            if (entry.type === 'CREDIT') directTipsCents += amt
+            break
+          case 'TIP_GROUP':
+            if (entry.type === 'CREDIT') groupTipsCents += amt
+            break
+          case 'ROLE_TIPOUT':
+            if (entry.type === 'DEBIT') tipOutsGivenCents += amt   // negative (debit)
+            if (entry.type === 'CREDIT') tipOutsReceivedCents += amt
+            break
+          case 'ADJUSTMENT':
+          case 'CHARGEBACK':
+            adjustmentsCents += amt
+            break
+        }
+      }
+
+      // Previous payouts today (debits, so the sum is negative)
+      const previousPayoutsCents = Number(previousPayouts._sum.amountCents || 0)
+
+      // Today's tips = sum of all CREDIT entries today
+      const todaysTipsCents = directTipsCents + groupTipsCents + tipOutsReceivedCents
+
+      // Previous balance = total available - today's net activity
+      const todayNetCents = todayEntries.reduce(
+        (sum, e) => sum + Number(e.amountCents), 0
+      )
+      const previousBalanceCents = totalAvailableCents - todayNetCents
+
+      return NextResponse.json({
+        todaysTips: centsToDollars(todaysTipsCents),
+        previousBalance: centsToDollars(Math.max(0, previousBalanceCents)),
+        totalAvailable: centsToDollars(totalAvailableCents),
+        payoutAmount: centsToDollars(totalAvailableCents),
+        breakdown: {
+          directTips: centsToDollars(directTipsCents),
+          groupTips: centsToDollars(groupTipsCents),
+          tipOutsGiven: centsToDollars(tipOutsGivenCents),
+          tipOutsReceived: centsToDollars(tipOutsReceivedCents),
+          adjustments: centsToDollars(adjustmentsCents),
+          previousPayouts: centsToDollars(previousPayoutsCents),
+        },
+      })
+    }
+
+    // ── Standard mode: return payout history ─────────────────────────────
 
     // ── Build filters ─────────────────────────────────────────────────────
     const limit = limitParam ? Math.max(1, Math.min(500, parseInt(limitParam, 10) || 50)) : 50

@@ -130,6 +130,10 @@ export function TimeClockModal({
   const [pendingTips, setPendingTips] = useState<PendingTipsData | null>(null)
   const [showTipsNotification, setShowTipsNotification] = useState(false)
 
+  // Tip group template state
+  const [tipGroupTemplates, setTipGroupTemplates] = useState<{ id: string; name: string }[]>([])
+  const [selectedTipGroupTemplateId, setSelectedTipGroupTemplateId] = useState<string | null>(null)
+
   // Check if user can force clock out
   const canForceClockOut = hasPermission(permissions, PERMISSIONS.MGR_FORCE_CLOCK_OUT)
 
@@ -149,6 +153,7 @@ export function TimeClockModal({
   useEffect(() => {
     if (isOpen) {
       loadCurrentEntry()
+      loadTipGroupTemplates()
     }
   }, [isOpen, employeeId])
 
@@ -218,6 +223,19 @@ export function TimeClockModal({
       }
     } catch (err) {
       console.error('Failed to load pending tips:', err)
+    }
+  }
+
+  const loadTipGroupTemplates = async () => {
+    try {
+      const params = new URLSearchParams({ locationId, employeeId })
+      const res = await fetch(`/api/tips/group-templates/eligible?${params}`)
+      if (res.ok) {
+        const data = await res.json()
+        setTipGroupTemplates(data.templates || [])
+      }
+    } catch {
+      // silent — templates are optional
     }
   }
 
@@ -298,6 +316,7 @@ export function TimeClockModal({
           locationId,
           employeeId,
           ...(workingRoleId ? { workingRoleId } : {}),
+          ...(selectedTipGroupTemplateId ? { selectedTipGroupTemplateId } : {}),
         }),
       })
 
@@ -951,6 +970,25 @@ export function TimeClockModal({
                 <h3 className="text-lg font-semibold">Not Clocked In</h3>
                 <p className="text-sm text-gray-500">Ready to start your shift?</p>
               </div>
+
+              {/* Tip Group Template Picker */}
+              {tipGroupTemplates.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Join a tip group?
+                  </label>
+                  <select
+                    value={selectedTipGroupTemplateId || ''}
+                    onChange={(e) => setSelectedTipGroupTemplateId(e.target.value || null)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">None</option>
+                    {tipGroupTemplates.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {error && (
                 <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">

@@ -140,7 +140,7 @@ export function ShiftCloseoutModal({
   const isServerBanking = mode === 'purse' // Server banking uses purse mode
 
   // Start at 'count' for blind mode (default), or 'summary' if manager with full access
-  const [step, setStep] = useState<'count' | 'summary' | 'reveal' | 'tips' | 'payout' | 'complete'>('count')
+  const [step, setStep] = useState<'count' | 'summary' | 'reveal' | 'tips' | 'payout' | 'confirm' | 'complete'>('count')
   const [isLoading, setIsLoading] = useState(false)
   const [summary, setSummary] = useState<ShiftSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -187,6 +187,8 @@ export function ShiftCloseoutModal({
     allowEODCashOut: boolean
     requireManagerApprovalForCashOut: boolean
     defaultPayoutMethod: 'cash' | 'payroll'
+    deductCCFeeFromTips: boolean
+    ccFeePercent: number
   } | null>(null)
 
   // Calculate total from denomination counts
@@ -240,6 +242,7 @@ export function ShiftCloseoutModal({
         // Auto-fetch summary and tip data — no cash count needed
         fetchShiftSummary(false)
         fetchTipData()
+        fetchTipBankInfo()
       }
     }
    
@@ -326,6 +329,8 @@ export function ShiftCloseoutModal({
             allowEODCashOut: tb.allowEODCashOut ?? false,
             requireManagerApprovalForCashOut: tb.requireManagerApprovalForCashOut ?? false,
             defaultPayoutMethod: tb.defaultPayoutMethod ?? 'cash',
+            deductCCFeeFromTips: tb.deductCCFeeFromTips ?? false,
+            ccFeePercent: tb.ccFeePercent ?? 0,
           })
           setPayoutChoice(tb.defaultPayoutMethod ?? 'cash')
         }
@@ -413,11 +418,14 @@ export function ShiftCloseoutModal({
     calculateTipOuts()
   }, [tipsDeclared, tipOutRules, summary])
 
-  // Calculate net tips (after tip-outs and custom shares)
+  // Calculate net tips (after CC fee, tip-outs, and custom shares)
   const totalTipOuts = calculatedTipOuts.reduce((sum, t) => sum + t.amount, 0)
   const totalCustomShares = customTipShares.reduce((sum, t) => sum + t.amount, 0)
   const grossTips = parseFloat(tipsDeclared) || 0
-  const netTips = grossTips - totalTipOuts - totalCustomShares
+  const ccFeeDeducted = (tipBankSettings?.deductCCFeeFromTips && tipBankSettings.ccFeePercent > 0)
+    ? Math.round(grossTips * (tipBankSettings.ccFeePercent / 100) * 100) / 100
+    : 0
+  const netTips = grossTips - ccFeeDeducted - totalTipOuts - totalCustomShares
 
   // Add custom tip share
   const addCustomShare = () => {
@@ -460,7 +468,7 @@ export function ShiftCloseoutModal({
 
   // Handler to proceed to tip distribution step
   const handleProceedToTips = async () => {
-    await fetchTipData()
+    await Promise.all([fetchTipData(), fetchTipBankInfo()])
     setStep('tips')
   }
 
@@ -1057,6 +1065,21 @@ export function ShiftCloseoutModal({
                     </div>
                   </Card>
 
+                  {/* CC Processing Fee (shown only when enabled and > $0) */}
+                  {ccFeeDeducted > 0 && (
+                    <Card className="p-4 bg-red-50 border-red-200">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <span className="text-gray-700">CC Processing Fee ({tipBankSettings?.ccFeePercent}%)</span>
+                          <p className="text-xs text-gray-600">Deducted from credit card tips</p>
+                        </div>
+                        <span className="text-lg font-bold text-red-600">
+                          -{formatCurrency(ccFeeDeducted)}
+                        </span>
+                      </div>
+                    </Card>
+                  )}
+
                   {/* Automatic Tip-Outs */}
                   {calculatedTipOuts.length > 0 && (
                     <Card className="p-4">
@@ -1173,6 +1196,12 @@ export function ShiftCloseoutModal({
                         <span className="text-gray-600">Gross Tips</span>
                         <span>{formatCurrency(grossTips)}</span>
                       </div>
+                      {ccFeeDeducted > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">CC Fee ({tipBankSettings?.ccFeePercent}%)</span>
+                          <span className="text-red-600">-{formatCurrency(ccFeeDeducted)}</span>
+                        </div>
+                      )}
                       {totalTipOuts > 0 && (
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Role Tip-Outs</span>
@@ -1228,29 +1257,27 @@ export function ShiftCloseoutModal({
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg">Tip Payout</h3>
 
-                  {/* Current Tip Bank Balance */}
+                  {/* Payout Breakdown */}
                   <Card className="p-4 bg-green-50">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <span className="text-gray-700 font-medium">Your Tip Bank Balance</span>
-                        <p className="text-xs text-gray-600">Available for payout (includes tonight&apos;s tips after shift close)</p>
+                    <div className="text-sm font-medium text-gray-800 mb-3">Payout Breakdown</div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Today&apos;s net tips</span>
+                        <span className="font-medium text-blue-600">{formatCurrency(netTips)}</span>
                       </div>
-                      <span className="text-2xl font-bold text-green-600">
-                        {formatCurrency(tipBankBalance / 100)}
-                      </span>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Previous balance</span>
+                        <span className="font-medium">{formatCurrency(tipBankBalance / 100)}</span>
+                      </div>
+                      <div className="flex justify-between border-t pt-2">
+                        <span className="font-medium text-gray-800">Total available after close</span>
+                        <span className="text-xl font-bold text-green-600">
+                          {formatCurrency((tipBankBalance / 100) + netTips)}
+                        </span>
+                      </div>
                     </div>
-                  </Card>
-
-                  {/* Net Tips from this Shift */}
-                  <Card className="p-4 bg-blue-50">
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-700">Net Tips This Shift</span>
-                      <span className="text-xl font-bold text-blue-600">
-                        {formatCurrency(netTips)}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">
-                      This amount will be added to your tip bank when the shift closes.
+                    <p className="text-xs text-gray-500 mt-2">
+                      Today&apos;s tips will be added to your bank when the shift closes.
                     </p>
                   </Card>
 
@@ -1425,6 +1452,110 @@ export function ShiftCloseoutModal({
                     <Button
                       variant="primary"
                       className="flex-1"
+                      onClick={() => setStep('confirm')}
+                    >
+                      Review &amp; Confirm →
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step: Confirmation before final close */}
+              {step === 'confirm' && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg">Confirm &amp; Close Shift</h3>
+                  <p className="text-sm text-gray-600">Review the summary below, then confirm to close your shift.</p>
+
+                  {/* Cash Drawer Summary (skip for 'none' mode) */}
+                  {mode !== 'none' && summary && (
+                    <Card className="p-4">
+                      <div className="text-sm font-medium text-gray-800 mb-2">Cash Drawer</div>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Expected</span>
+                          <span className="font-medium">{formatCurrency(expectedCash)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Counted</span>
+                          <span className="font-medium">{formatCurrency(actualCash)}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-1">
+                          <span className="text-gray-600">Variance</span>
+                          <span className={`font-bold ${variance === 0 ? 'text-green-600' : variance > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                            {variance >= 0 ? '+' : ''}{formatCurrency(variance)}
+                          </span>
+                        </div>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Tip Breakdown */}
+                  <Card className="p-4">
+                    <div className="text-sm font-medium text-gray-800 mb-2">Tip Breakdown</div>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Gross Tips</span>
+                        <span className="font-medium">{formatCurrency(grossTips)}</span>
+                      </div>
+                      {ccFeeDeducted > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">CC Fee ({tipBankSettings?.ccFeePercent}%)</span>
+                          <span className="font-medium text-red-600">-{formatCurrency(ccFeeDeducted)}</span>
+                        </div>
+                      )}
+                      {calculatedTipOuts.map((tipOut, i) => (
+                        <div key={i} className="flex justify-between">
+                          <span className="text-gray-600">Tip-Out: {tipOut.toRoleName} ({tipOut.percentage}%)</span>
+                          <span className="font-medium text-red-600">-{formatCurrency(tipOut.amount)}</span>
+                        </div>
+                      ))}
+                      {customTipShares.map((share, i) => (
+                        <div key={i} className="flex justify-between">
+                          <span className="text-gray-600">Share: {share.toEmployeeName}</span>
+                          <span className="font-medium text-red-600">-{formatCurrency(share.amount)}</span>
+                        </div>
+                      ))}
+                      <div className="flex justify-between border-t pt-1">
+                        <span className="font-medium">Net Tips</span>
+                        <span className={`font-bold ${netTips >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatCurrency(netTips)}
+                        </span>
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Payout Method */}
+                  <Card className="p-4 bg-gray-50">
+                    <div className="text-sm font-medium text-gray-800 mb-2">Payout</div>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Method</span>
+                        <span className="font-medium">
+                          {payoutChoice === 'cash' && tipBankSettings?.allowEODCashOut
+                            ? `Cash Out ${formatCurrency((tipBankBalance / 100) + netTips)}`
+                            : 'Added to Payroll'}
+                        </span>
+                      </div>
+                      {payoutChoice === 'cash' && tipBankSettings?.allowEODCashOut && tipBankBalance > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Includes previous balance</span>
+                          <span className="font-medium">{formatCurrency(tipBankBalance / 100)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setStep('payout')}
+                    >
+                      &larr; Go Back
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
                       onClick={async () => {
                         // If they chose cash and EOD cash out is enabled, process payout first
                         if (payoutChoice === 'cash' && tipBankSettings?.allowEODCashOut && tipBankBalance > 0 && !payoutResult) {
@@ -1463,7 +1594,7 @@ export function ShiftCloseoutModal({
                       }}
                       disabled={isLoading || payoutProcessing}
                     >
-                      {payoutProcessing ? 'Processing Payout...' : isLoading ? 'Closing...' : 'Close Shift'}
+                      {payoutProcessing ? 'Processing Payout...' : isLoading ? 'Closing...' : 'Confirm & Close Shift'}
                     </Button>
                   </div>
                 </div>

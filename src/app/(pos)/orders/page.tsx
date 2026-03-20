@@ -752,6 +752,8 @@ export default function OrdersPage() {
         orderTypes={bootstrap.orderTypes}
         employeeName={employee.displayName}
         employeeRole={employee.role?.name}
+        employeeId={employee.id}
+        locationId={employee.location?.id}
         viewMode={viewMode}
         onViewModeChange={(mode) => {
           const order = useOrderStore.getState().currentOrder

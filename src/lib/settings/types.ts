@@ -142,6 +142,16 @@ export interface TipBankSettings {
   // tab_closer = whoever processes the payment gets the tip (default, current behavior)
   // tab_owner = the employee who originally opened the tab gets the tip
   tipAttribution: 'tab_owner' | 'tab_closer'
+
+  // ── Feature Flags ───────────────────────────────────────────────────────
+  /** Master toggle for tip pooling/groups. When false, all group UI is hidden and group creation is blocked. */
+  tipGroupsEnabled: boolean
+  /** Whether employees can create their own ad-hoc groups (in addition to admin templates). */
+  allowEmployeeGroupCreation: boolean
+  /** Show a tip badge/indicator in the POS header showing current group and live tip total. */
+  showTipIndicatorOnPOS: boolean
+  /** Show the CC fee deduction amount in the shift closeout receipt/screen. */
+  showCCFeeToEmployee: boolean
 }
 
 export interface AutoGratuitySettings {

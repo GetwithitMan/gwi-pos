@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useRef, useEffect, memo } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MenuSearchResults } from '@/components/search'
 import { PendingSyncBadge } from '@/components/PendingSyncBadge'
 import { ScaleStatusBadge } from '@/components/scale/ScaleStatusBadge'
 import { PrinterStatusIndicator } from '@/components/pos/PrinterStatusIndicator'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type { OrderTypeConfig } from '@/types/order-types'
 
 interface SearchMenuItem {
@@ -73,6 +74,8 @@ export interface UnifiedPOSHeaderProps {
   onScanComplete?: (sku: string) => void
   onQuickServiceOrder?: () => void
   scaleId?: string | null
+  employeeId?: string
+  locationId?: string
 }
 
 export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
@@ -114,6 +117,8 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   onScanComplete,
   onQuickServiceOrder,
   scaleId,
+  employeeId,
+  locationId,
 }: UnifiedPOSHeaderProps) {
   const [showEmployeeMenu, setShowEmployeeMenu] = useState(false)
   const [showGearMenu, setShowGearMenu] = useState(false)
@@ -123,6 +128,48 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   const searchWrapRef = useRef<HTMLDivElement>(null)
   const scanBuffer = useRef('')
   const lastKeyTime = useRef(0)
+
+  // Tip group badge state
+  const [activeTipGroupName, setActiveTipGroupName] = useState<string | null>(null)
+
+  const fetchActiveTipGroup = useCallback(async () => {
+    if (!locationId || !employeeId) return
+    try {
+      const res = await fetch(`/api/tips/groups?locationId=${locationId}&status=active`)
+      if (res.ok) {
+        const data = await res.json()
+        const groups = data.groups || []
+        // Find the group where this employee is an active member
+        const myGroup = groups.find((g: { members?: { employeeId: string; status: string }[] }) =>
+          g.members?.some((m: { employeeId: string; status: string }) => m.employeeId === employeeId && m.status === 'active')
+        )
+        if (myGroup) {
+          setActiveTipGroupName(myGroup.templateName || 'Tip Group')
+        } else {
+          setActiveTipGroupName(null)
+        }
+      }
+    } catch {
+      // silent
+    }
+  }, [locationId, employeeId])
+
+  // Fetch on mount
+  useEffect(() => {
+    fetchActiveTipGroup()
+  }, [fetchActiveTipGroup])
+
+  // Listen for tip-group:updated socket event
+  useEffect(() => {
+    if (!locationId || !employeeId) return
+    const socket = getSharedSocket() as { on: (e: string, cb: (...args: unknown[]) => void) => void; off: (e: string, cb?: (...args: unknown[]) => void) => void }
+    const handler = () => { fetchActiveTipGroup() }
+    socket.on('tip-group:updated', handler)
+    return () => {
+      socket.off('tip-group:updated', handler)
+      releaseSharedSocket()
+    }
+  }, [locationId, employeeId, fetchActiveTipGroup])
 
   // Click-outside to close dropdowns
   useEffect(() => {
@@ -283,6 +330,28 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
           )}
         </AnimatePresence>
       </div>
+
+      {/* ── Tip Group Badge ── */}
+      {activeTipGroupName && (
+        <div
+          title={activeTipGroupName}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            height: '22px', padding: '0 8px',
+            background: 'rgba(16, 185, 129, 0.15)',
+            border: '1px solid rgba(16, 185, 129, 0.3)',
+            borderRadius: '11px',
+            color: '#6ee7b7',
+            fontSize: '11px', fontWeight: 600,
+            whiteSpace: 'nowrap', flexShrink: 0,
+          }}
+        >
+          <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          {activeTipGroupName}
+        </div>
+      )}
 
       {/* ── Divider ── */}
       <div style={{ width: '1px', height: '20px', background: 'rgba(255, 255, 255, 0.08)', flexShrink: 0 }} />

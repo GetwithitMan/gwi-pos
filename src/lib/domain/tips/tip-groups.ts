@@ -91,6 +91,52 @@ function buildEqualSplitJson(memberIds: string[]): Record<string, number> {
 }
 
 /**
+ * Validate that a custom splits map sums to ~1.0 (within 0.01 tolerance)
+ * and that all values are positive decimals.
+ *
+ * @throws Error if validation fails
+ */
+function validateCustomSplits(
+  customSplits: Record<string, number>,
+  memberIds: string[]
+): void {
+  const splitKeys = Object.keys(customSplits)
+
+  // Every active member must have a split entry
+  const missingMembers = memberIds.filter(id => !(id in customSplits))
+  if (missingMembers.length > 0) {
+    throw new Error(
+      `Custom splits missing entries for members: ${missingMembers.join(', ')}`
+    )
+  }
+
+  // No extra entries beyond active members
+  const extraKeys = splitKeys.filter(k => !memberIds.includes(k))
+  if (extraKeys.length > 0) {
+    throw new Error(
+      `Custom splits contain unknown employee IDs: ${extraKeys.join(', ')}`
+    )
+  }
+
+  // All values must be positive
+  for (const [empId, value] of Object.entries(customSplits)) {
+    if (typeof value !== 'number' || value < 0) {
+      throw new Error(
+        `Custom split for employee ${empId} must be a non-negative number, got: ${value}`
+      )
+    }
+  }
+
+  // Sum must be ~1.0 (within 0.01 tolerance)
+  const sum = Object.values(customSplits).reduce((a, b) => a + b, 0)
+  if (Math.abs(sum - 1.0) > 0.01) {
+    throw new Error(
+      `Custom splits must sum to 1.0 (got ${sum.toFixed(4)})`
+    )
+  }
+}
+
+/**
  * Build a role-weighted split JSON from member employee IDs and their role weights.
  * Each member's share = their weight / total weight of all members.
  * The last member (alphabetically) absorbs rounding remainder.
@@ -137,7 +183,8 @@ async function createSegment(
   groupId: string,
   locationId: string,
   activeMembers: { employeeId: string }[],
-  splitMode: string = 'equal'
+  splitMode: string = 'equal',
+  customSplits?: Record<string, number>
 ): Promise<TipGroupSegmentInfo> {
   const now = new Date()
   const memberIds = activeMembers.map((m) => m.employeeId)
@@ -155,7 +202,13 @@ async function createSegment(
 
   let splitJson: Record<string, number>
 
-  if (splitMode === 'role_weighted' && memberIds.length > 0) {
+  if (splitMode === 'custom') {
+    if (!customSplits) {
+      throw new Error("Custom splits required when splitMode is 'custom'")
+    }
+    validateCustomSplits(customSplits, memberIds)
+    splitJson = { ...customSplits }
+  } else if (splitMode === 'role_weighted' && memberIds.length > 0) {
     // Look up each member's role weight
     const employees = await tx.employee.findMany({
       where: { id: { in: memberIds } },
@@ -320,8 +373,9 @@ export async function startTipGroup(params: {
   registerId?: string
   initialMemberIds: string[]
   splitMode?: string
+  customSplits?: Record<string, number>
 }): Promise<TipGroupInfo> {
-  const { locationId, createdBy, registerId, initialMemberIds, splitMode } = params
+  const { locationId, createdBy, registerId, initialMemberIds, splitMode, customSplits } = params
   const mode = splitMode ?? 'equal'
   const now = new Date()
 
@@ -375,7 +429,8 @@ export async function startTipGroup(params: {
       tipGroup.id,
       locationId,
       allMemberIds.map((id) => ({ employeeId: id })),
-      mode
+      mode,
+      customSplits
     )
 
     return tipGroup
@@ -388,7 +443,10 @@ export async function startTipGroup(params: {
 
 /**
  * Add an employee to an active group. Closes the current segment and opens
- * a new one with recalculated equal splits including the new member.
+ * a new one with recalculated splits including the new member.
+ *
+ * For 'custom' splitMode, the caller must provide updated customSplits
+ * that include the new member. For other modes, splits are recalculated automatically.
  *
  * @throws Error if the group is not active or the employee is already a member
  */
@@ -396,8 +454,9 @@ export async function addMemberToGroup(params: {
   groupId: string
   employeeId: string
   approvedBy: string
+  customSplits?: Record<string, number>
 }): Promise<TipGroupInfo> {
-  const { groupId, employeeId, approvedBy } = params
+  const { groupId, employeeId, approvedBy, customSplits } = params
   const now = new Date()
 
   await db.$transaction(async (tx) => {
@@ -462,7 +521,7 @@ export async function addMemberToGroup(params: {
     })
 
     // Create new segment with recalculated splits
-    await createSegment(tx, groupId, group.locationId, activeMembers, group.splitMode)
+    await createSegment(tx, groupId, group.locationId, activeMembers, group.splitMode, customSplits)
   })
 
   const info = await getGroupInfo(groupId)

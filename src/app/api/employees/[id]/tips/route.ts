@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { centsToDollars, getLedgerBalance } from '@/lib/domain/tips'
+import { centsToDollars, getLedgerBalance, findActiveGroupForEmployee } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 
@@ -114,8 +114,39 @@ export const GET = withVenue(async function GET(
     const pendingTotal = centsToDollars(pendingTotalCents)
     const bankedTotal = centsToDollars(bankedTotalCents)
 
-    // Also fetch ledger balance for reference (used by other flows)
-    const balance = await getLedgerBalance(employeeId)
+    // ── CC fee total: sum of all CC fees deducted from this employee's tips today ──
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    const todayEnd = new Date()
+    todayEnd.setHours(23, 59, 59, 999)
+
+    // Fetch balance, CC fee total, and active tip group in parallel
+    const [balance, ccFeeResult, activeGroup] = await Promise.all([
+      getLedgerBalance(employeeId),
+      db.tipTransaction.aggregate({
+        where: {
+          primaryEmployeeId: employeeId,
+          locationId,
+          ccFeeAmountCents: { gt: 0 },
+          collectedAt: { gte: todayStart, lte: todayEnd },
+          deletedAt: null,
+        },
+        _sum: { ccFeeAmountCents: true },
+      }),
+      findActiveGroupForEmployee(employeeId),
+    ])
+
+    const ccFeeTotalCents = Number(ccFeeResult._sum.ccFeeAmountCents || 0)
+
+    // Build tip group info for the response
+    let tipGroupName: string | null = null
+    let tipGroupMembers: string[] = []
+    if (activeGroup) {
+      tipGroupName = `Tip Group`
+      tipGroupMembers = activeGroup.members
+        .filter(m => m.status === 'active' && m.employeeId !== employeeId)
+        .map(m => m.displayName || `${m.firstName} ${m.lastName}`)
+    }
 
     return NextResponse.json({ data: {
       pending: {
@@ -145,6 +176,12 @@ export const GET = withVenue(async function GET(
       // Extra field: ledger balance for UIs that want the true running balance
       ledgerBalanceCents: balance?.currentBalanceCents ?? 0,
       ledgerBalanceDollars: centsToDollars(balance?.currentBalanceCents ?? 0),
+      // CC fee deductions today
+      ccFeeTotal: centsToDollars(ccFeeTotalCents),
+      ccFeeTotalCents,
+      // Tip group membership
+      tipGroupName,
+      tipGroupMembers,
     } })
   } catch (error) {
     console.error('Failed to fetch pending tips:', error)
