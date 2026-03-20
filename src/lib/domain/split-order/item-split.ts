@@ -19,7 +19,7 @@ function splitSubtotals(items: SplitOrderItem[]): { inclSub: number; exclSub: nu
   let inclSub = 0, exclSub = 0
   for (const item of items) {
     const t = Number(item.price) * item.quantity
-      + item.modifiers.reduce((s, m) => s + Number(m.price), 0) * item.quantity
+      + item.modifiers.reduce((s, m) => s + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
     if (item.isTaxInclusive) inclSub += t; else exclSub += t
   }
   return { inclSub, exclSub }
@@ -36,7 +36,7 @@ function buildItemCreateData(
   let newSubtotal = 0
   const newItems = itemsToMove.map(item => {
     const itemTotal = Number(item.price) * item.quantity
-    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
     newSubtotal += itemTotal + modifiersTotal
 
     return {
@@ -133,10 +133,14 @@ export async function createItemSplit(
     select: { id: true },
   })
   const freshItemIds = new Set(freshItems.map(i => i.id))
-  const validItemIds = itemIds.filter((iid: string) => freshItemIds.has(iid))
-  if (validItemIds.length === 0) {
+  const movedItems = itemIds.filter((iid: string) => !freshItemIds.has(iid))
+  if (movedItems.length === itemIds.length) {
     throw new Error('All selected items were already moved by a concurrent split')
   }
+  if (movedItems.length > 0) {
+    throw new Error(`${movedItems.length} of ${itemIds.length} items already moved by concurrent operation. Please refresh and try again.`)
+  }
+  const validItemIds = itemIds.filter((iid: string) => freshItemIds.has(iid))
   const validItemsToMove = itemsToMove.filter(item => freshItemIds.has(item.id))
 
   // Build item create data
@@ -275,7 +279,7 @@ export async function createItemSplit(
   let remainingSubtotal = 0
   remainingItems.forEach(item => {
     const itemTotal = Number(item.price) * item.quantity
-    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
     remainingSubtotal += itemTotal + modifiersTotal
   })
   const parentSubtotal = Number(order.subtotal)

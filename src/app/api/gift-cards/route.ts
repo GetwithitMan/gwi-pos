@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
@@ -11,7 +12,7 @@ function generateCardNumber(): string {
   for (let i = 0; i < 4; i++) {
     if (i > 0) result += '-'
     for (let j = 0; j < 4; j++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length))
+      result += chars.charAt(randomInt(chars.length))
     }
   }
   return result

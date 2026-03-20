@@ -179,6 +179,18 @@ async function processOneMembership(
 
   if (existing.length > 0) return // Already charged this period
 
+  // Check for pending charges from previous timeouts — requires manual reconciliation
+  const pendingFromTimeout: any[] = await db.$queryRawUnsafe(`
+    SELECT "id" FROM "MembershipCharge"
+    WHERE "membershipId" = $1 AND "status" = 'pending' AND "periodStart" = $2
+    LIMIT 1
+  `, mbr.id, mbr.currentPeriodEnd || new Date())
+
+  if (pendingFromTimeout.length > 0) {
+    log.warn({ membershipId: mbr.id, chargeId: pendingFromTimeout[0].id }, 'Skipping charge — pending timeout charge exists. Requires manual reconciliation.')
+    return
+  }
+
   // Validate token
   if (!mbr.lastToken) {
     // No card on file — mark uncollectible

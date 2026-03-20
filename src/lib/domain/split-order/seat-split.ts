@@ -69,7 +69,7 @@ export async function createSeatSplit(
     let seatSubtotal = 0
     const newItems = seatItems.map(item => {
       const itemTotal = Number(item.price) * item.quantity
-      const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+      const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
       seatSubtotal += itemTotal + modifiersTotal
 
       return {
@@ -146,7 +146,7 @@ export async function createSeatSplit(
     let seatInclSub = 0, seatExclSub = 0
     for (const item of seatItems) {
       const t = Number(item.price) * item.quantity
-        + item.modifiers.reduce((s, m) => s + Number(m.price), 0) * item.quantity
+        + item.modifiers.reduce((s, m) => s + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
       if (item.isTaxInclusive) seatInclSub += t; else seatExclSub += t
     }
     const seatTaxResult = calculateSplitTax(seatInclSub, seatExclSub, taxRate, inclusiveTaxRate)
@@ -250,7 +250,7 @@ export async function createSeatSplit(
     let sub = 0
     seatItems.forEach(item => {
       sub += Number(item.price) * item.quantity
-      sub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+      sub += item.modifiers.reduce((ms, m) => ms + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
     })
     childSubtotals.set(child.id, sub)
     totalChildSubtotal += sub
@@ -276,7 +276,7 @@ export async function createSeatSplit(
         let cInclSub = 0, cExclSub = 0
         for (const ci of childSeatItems) {
           const t = Number(ci.price) * ci.quantity
-            + ci.modifiers.reduce((s, m) => s + Number(m.price), 0) * ci.quantity
+            + ci.modifiers.reduce((s, m) => s + Number(m.price) * (m.quantity ?? 1), 0) * ci.quantity
           if (ci.isTaxInclusive) cInclSub += t; else cExclSub += t
         }
         // Allocate discount proportionally between inclusive and exclusive
@@ -307,7 +307,7 @@ export async function createSeatSplit(
   let remInclSub = 0, remExclSub = 0
   remainingItems.forEach(item => {
     const itemTotal = Number(item.price) * item.quantity
-    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
     const t = itemTotal + modifiersTotal
     remainingSubtotal += t
     if (item.isTaxInclusive) remInclSub += t; else remExclSub += t

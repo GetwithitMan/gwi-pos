@@ -9005,6 +9005,7 @@ model ReservationDeposit {
   refundReason     String?
   employeeId       String?
   notes            String?
+  metadata         Json?
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
   deletedAt        DateTime?

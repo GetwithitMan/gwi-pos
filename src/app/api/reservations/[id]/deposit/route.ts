@@ -140,11 +140,31 @@ export const POST = withVenue(async function POST(
     }
 
     const body = await request.json()
-    const { amount, paymentMethod, cardLast4, cardBrand, datacapRecordNo, datacapRefNumber, notes } = body
+    const { amount, paymentMethod, cardLast4, cardBrand, datacapRecordNo, datacapRefNumber, notes, idempotencyKey } = body
     const employeeId = actor.employeeId
 
     if (!amount || amount <= 0) {
       return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
+    }
+
+    // Idempotency guard — prevent double-deposit from rapid clicks
+    if (idempotencyKey) {
+      const existing = await db.$queryRawUnsafe<Array<{
+        id: string
+        amount: string
+        paymentMethod: string
+        status: string
+        createdAt: Date
+      }>>(
+        `SELECT id, amount, "paymentMethod", status, "createdAt"
+         FROM "ReservationDeposit"
+         WHERE "reservationId" = $1 AND metadata->>'idempotencyKey' = $2 AND "deletedAt" IS NULL
+         LIMIT 1`,
+        id, idempotencyKey
+      )
+      if (existing.length > 0) {
+        return NextResponse.json({ data: existing[0], duplicate: true })
+      }
     }
 
     if (!paymentMethod || !['cash', 'card'].includes(paymentMethod)) {
@@ -189,15 +209,17 @@ export const POST = withVenue(async function POST(
     // Create deposit record (use crypto UUID instead of predictable ID)
     const { randomUUID } = await import('crypto')
     const depositId = randomUUID()
+    const metadata = idempotencyKey ? JSON.stringify({ idempotencyKey }) : null
     await db.$executeRawUnsafe(
       `INSERT INTO "ReservationDeposit" (id, "locationId", "reservationId", type, amount, "paymentMethod",
-        "cardLast4", "cardBrand", "datacapRecordNo", "datacapRefNumber", status, "employeeId", notes)
-       VALUES ($1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, 'completed', $10, $11)`,
+        "cardLast4", "cardBrand", "datacapRecordNo", "datacapRefNumber", status, "employeeId", notes, metadata)
+       VALUES ($1, $2, $3, 'deposit', $4, $5, $6, $7, $8, $9, 'completed', $10, $11, $12::jsonb)`,
       depositId, res.locationId, id,
       amount, paymentMethod,
       cardLast4 || null, cardBrand || null,
       datacapRecordNo || null, datacapRefNumber || null,
-      employeeId || null, notes || null
+      employeeId || null, notes || null,
+      metadata
     )
 
     const newTotal = currentPaid + amount

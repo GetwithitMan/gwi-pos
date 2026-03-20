@@ -213,7 +213,7 @@ export async function applyCompVoid(
   if (discountTotal > 0 && split.subtotal > 0) {
     const inclShare = split.inclusiveSubtotal / split.subtotal
     discOnIncl = roundToCents(discountTotal * inclShare)
-    discOnExcl = roundToCents(discountTotal - discOnIncl)
+    discOnExcl = discountTotal - discOnIncl  // Don't double-round — remainder preserves sum
   }
   const postDiscIncl = roundToCents(Math.max(0, split.inclusiveSubtotal - discOnIncl))
   const postDiscExcl = roundToCents(Math.max(0, split.exclusiveSubtotal - discOnExcl))
@@ -324,7 +324,7 @@ export async function applyRestore(
   if (discountTotal > 0 && split.subtotal > 0) {
     const inclShare = split.inclusiveSubtotal / split.subtotal
     discOnIncl = roundToCents(discountTotal * inclShare)
-    discOnExcl = roundToCents(discountTotal - discOnIncl)
+    discOnExcl = discountTotal - discOnIncl  // Don't double-round — remainder preserves sum
   }
   const postDiscIncl = roundToCents(Math.max(0, split.inclusiveSubtotal - discOnIncl))
   const postDiscExcl = roundToCents(Math.max(0, split.exclusiveSubtotal - discOnExcl))

@@ -267,11 +267,14 @@ export async function recalculateGroupAllocations(params: {
       select: { employeeId: true, amountCents: true },
     })
 
-    // Build actual-received map (amountCents is signed: positive for CREDIT)
+    // Build actual-received map — only sum CREDIT entries (positive amounts)
+    // to avoid DEBITs from chargebacks/adjustments deflating the actual total
     const actualMap = new Map<string, number>()
     for (const entry of existingEntries) {
-      const current = actualMap.get(entry.employeeId) || 0
-      actualMap.set(entry.employeeId, current + Number(entry.amountCents))
+      if (Number(entry.amountCents) > 0) {
+        const current = actualMap.get(entry.employeeId) || 0
+        actualMap.set(entry.employeeId, current + Number(entry.amountCents))
+      }
     }
 
     // Accumulate deltas per employee across all transactions
@@ -436,11 +439,14 @@ export async function recalculateOrderAllocations(params: {
       select: { employeeId: true, amountCents: true },
     })
 
-    // Build actual-received map
+    // Build actual-received map — only sum CREDIT entries (positive amounts)
+    // to avoid DEBITs from chargebacks/adjustments deflating the actual total
     const actualMap = new Map<string, number>()
     for (const entry of existingEntries) {
-      const current = actualMap.get(entry.employeeId) || 0
-      actualMap.set(entry.employeeId, current + Number(entry.amountCents))
+      if (Number(entry.amountCents) > 0) {
+        const current = actualMap.get(entry.employeeId) || 0
+        actualMap.set(entry.employeeId, current + Number(entry.amountCents))
+      }
     }
 
     // Accumulate deltas per employee across all transactions

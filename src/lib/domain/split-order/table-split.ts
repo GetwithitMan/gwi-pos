@@ -73,7 +73,7 @@ export async function createTableSplit(
     let tableSubtotal = 0
     const newItems = tableItems.map(item => {
       const itemTotal = Number(item.price) * item.quantity
-      const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+      const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
       tableSubtotal += itemTotal + modifiersTotal
 
       return {
@@ -151,7 +151,7 @@ export async function createTableSplit(
     let tblInclSub = 0, tblExclSub = 0
     for (const item of tableItems) {
       const t = Number(item.price) * item.quantity
-        + item.modifiers.reduce((s, m) => s + Number(m.price), 0) * item.quantity
+        + item.modifiers.reduce((s, m) => s + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
       if (item.isTaxInclusive) tblInclSub += t; else tblExclSub += t
     }
     const tableTaxResult = calculateSplitTax(tblInclSub, tblExclSub, taxRate, inclusiveTaxRate)
@@ -256,7 +256,7 @@ export async function createTableSplit(
     let sub = 0
     tblItems.forEach(item => {
       sub += Number(item.price) * item.quantity
-      sub += item.modifiers.reduce((ms, m) => ms + Number(m.price), 0) * item.quantity
+      sub += item.modifiers.reduce((ms, m) => ms + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
     })
     childSubtotals.set(child.id, sub)
     totalChildSubtotal += sub
@@ -281,7 +281,7 @@ export async function createTableSplit(
         let cInclSub = 0, cExclSub = 0
         for (const ci of childTableItems) {
           const t = Number(ci.price) * ci.quantity
-            + ci.modifiers.reduce((s, m) => s + Number(m.price), 0) * ci.quantity
+            + ci.modifiers.reduce((s, m) => s + Number(m.price) * (m.quantity ?? 1), 0) * ci.quantity
           if (ci.isTaxInclusive) cInclSub += t; else cExclSub += t
         }
         const discOnIncl = childSub > 0 ? Math.round(totalChildDisc * (cInclSub / childSub) * 100) / 100 : 0
@@ -311,7 +311,7 @@ export async function createTableSplit(
   let remInclSub = 0, remExclSub = 0
   remainingItems.forEach(item => {
     const itemTotal = Number(item.price) * item.quantity
-    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+    const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price) * (m.quantity ?? 1), 0) * item.quantity
     const t = itemTotal + modifiersTotal
     remainingSubtotal += t
     if (item.isTaxInclusive) remInclSub += t; else remExclSub += t

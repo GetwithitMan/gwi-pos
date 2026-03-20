@@ -378,6 +378,13 @@ export async function updateOwnershipSplits(params: {
 }): Promise<OwnershipInfo> {
   const { orderId, splits } = params
 
+  // Validate individual share percents are within 0-100
+  for (const split of splits) {
+    if (split.sharePercent < 0 || split.sharePercent > 100) {
+      throw new Error('INVALID_SHARE_PERCENT: Each share must be between 0% and 100%')
+    }
+  }
+
   // Validate sum to 100% (+/- 0.01 tolerance)
   const total = splits.reduce((sum, s) => sum + s.sharePercent, 0)
   if (Math.abs(total - 100) > 0.01) {
