@@ -10,7 +10,7 @@
  */
 
 import { db } from '@/lib/db'
-import { getRequestSlug } from '@/lib/request-context'
+import { getRequestSlug, getRequestLocationId } from '@/lib/request-context'
 
 // ============================================================================
 // TYPES
@@ -81,6 +81,11 @@ const locationIdCache = new Map<string, { id: string | null; timestamp: number }
  *   if (!locationId) return NextResponse.json({ error: 'No location found' }, { status: 400 })
  */
 export async function getLocationId(): Promise<string | null> {
+  // Fast path: if proxy/withVenue already resolved locationId from tenant JWT,
+  // skip the DB query entirely. Saves 3-5s on Vercel cold starts.
+  const contextLocationId = getRequestLocationId()
+  if (contextLocationId) return contextLocationId
+
   const now = Date.now()
   const cacheKey = getRequestSlug()
 

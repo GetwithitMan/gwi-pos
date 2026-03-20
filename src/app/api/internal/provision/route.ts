@@ -2,12 +2,19 @@ import { NextRequest } from 'next/server'
 import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
 import { PrismaClient, CashHandlingMode, CategoryType } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { Pool, neonConfig } from '@neondatabase/serverless'
+import { PrismaNeon } from '@prisma/adapter-neon'
+import ws from 'ws'
 import { hash } from 'bcryptjs'
 import { randomInt } from 'crypto'
-import { Pool } from '@neondatabase/serverless'
 import { readFileSync, existsSync } from 'fs'
 import path from 'path'
 import { withVenue } from '@/lib/with-venue'
+
+// Neon serverless WebSocket polyfill (required for Node.js)
+if (process.env.VERCEL) {
+  neonConfig.webSocketConstructor = ws
+}
 
 // Allow up to 60s for seed (schema push via direct SQL is fast)
 export const maxDuration = 60
@@ -163,7 +170,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (mode === 'full' || mode === 'seed-only') {
       let venueAdapter: any
       if (process.env.VERCEL) {
-        venueAdapter = new PrismaPg({ connectionString: venueDbUrl, max: 1, connectionTimeoutMillis: 60000 })
+        const pool = new Pool({ connectionString: venueDbUrl })
+        venueAdapter = new PrismaNeon(pool)
       } else {
         venueAdapter = new PrismaPg({ connectionString: venueDbUrl })
       }

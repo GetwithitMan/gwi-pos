@@ -20,7 +20,7 @@ const db = new PrismaClient({
 
 let passed = 0
 let failed = 0
-let skipped = 0
+const skipped = 0
 
 async function test(name: string, fn: () => Promise<boolean>) {
   try {

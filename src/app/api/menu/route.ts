@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
 import { getLocationId } from '@/lib/location-cache'
+import { getRequestLocationId } from '@/lib/request-context'
 import type { CategoryType, CategoryShow } from '@/generated/prisma/client'
 
 // TODO: Migrate db.menuItem.findMany to MenuItemRepository once complex include+parallel shapes are supported
@@ -12,7 +13,7 @@ import type { CategoryType, CategoryShow } from '@/generated/prisma/client'
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-export const maxDuration = 30 // Neon cold start can take 5-10s on first connection
+export const maxDuration = 60 // Neon cold start (5-10s) + complex query (10-20s) needs headroom
 
 export const GET = withVenue(withTiming(async function GET(request: NextRequest) {
   const timing = getTimingFromRequest(request)
@@ -24,8 +25,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const categoryId = searchParams.get('categoryId')                              // Optional: filter items to a single category
     const slim = searchParams.get('slim') === 'true'                               // Optional: omit admin/cost fields for POS grid
 
-    // Get the location ID (cached)
-    const locationId = await getLocationId()
+    // Get the location ID — prefer request context (set by proxy, zero DB cost)
+    const locationId = getRequestLocationId() || await getLocationId()
     if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },

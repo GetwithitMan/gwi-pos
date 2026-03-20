@@ -137,7 +137,7 @@ async function run() {
 
   const orders: { id: string; total: number; status: string; paymentMethod?: string }[] = []
   let expectedCashRevenue = 0
-  let expectedCardRevenue = 0
+  const expectedCardRevenue = 0
   let expectedVoidedTotal = 0
 
   // Helper: get exact total from server, adding 1 cent buffer for cash rounding safety

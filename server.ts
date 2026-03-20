@@ -12,7 +12,7 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { randomUUID } from 'crypto'
 import next from 'next'
-import compression from 'compression'  // eslint-disable-line @typescript-eslint/no-var-requires
+import compression from 'compression'
 import { initializeSocketServer, getSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
@@ -32,7 +32,7 @@ import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-rel
 import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
-import { runBootstrap, getBootstrapResult } from './src/lib/venue-bootstrap'
+import { runBootstrap } from './src/lib/venue-bootstrap'
 
 const dev = config.nodeEnv !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
