@@ -9081,25 +9081,9 @@ model SocketEventLog {
   @@index([locationId, id])
 }
 
-model LocalSchemaState {
-  id                  Int      @id @default(autoincrement())
-  schemaVersion       String?
-  observedNeonVersion String?
-  appVersion          String?
-  bootedAt            DateTime @default(now())
-  neonReachable       Boolean  @default(false)
-  syncBlocked         Boolean  @default(false)
-  blockReason         String?
-
-  @@map("_local_schema_state")
-}
-
-model LocalInstallState {
-  id               Int      @id @default(autoincrement())
-  installedAt      DateTime @default(now()) @map("installed_at")
-  posVersion       String?  @map("pos_version")
-  installerVersion String?  @map("installer_version")
-  schemaMigrationsRun Int?  @map("schema_migrations_run")
-
-  @@map("_local_install_state")
-}
+// NOTE: _local_schema_state and _local_install_state are NUC-only tables
+// created by the installer/bootstrap with raw SQL. They use SERIAL id columns
+// which conflict with Prisma's autoincrement on the Neon master DB.
+// They are NOT in the Prisma schema — prisma db push will try to drop them
+// on NUCs, but the pre-start script recreates them. On Vercel/Neon master,
+// they simply don't exist (and shouldn't).
