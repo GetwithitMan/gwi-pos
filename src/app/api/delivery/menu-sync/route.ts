@@ -19,6 +19,24 @@ import { parseSettings } from '@/lib/settings'
 import { getPlatformClient, getActivePlatformClients } from '@/lib/delivery/clients/platform-registry'
 import type { DeliveryPlatformId, MenuSyncItem, MenuSyncModifierGroup, MenuSyncResult } from '@/lib/delivery/clients/types'
 
+// ─── Delivery markup helpers ────────────────────────────────────────────────
+
+function applyMarkup(priceInDollars: number, markupPercent: number, roundingRule: string): number {
+  if (markupPercent <= 0) return priceInDollars
+  const marked = priceInDollars * (1 + markupPercent / 100)
+  return applyRounding(marked, roundingRule)
+}
+
+function applyRounding(price: number, rule: string): number {
+  switch (rule) {
+    case 'nearest_99': return Math.ceil(price) - 0.01
+    case 'nearest_49': return Math.floor(price) + 0.49
+    case 'nearest_quarter': return Math.ceil(price * 4) / 4
+    case 'round_up': return Math.ceil(price)
+    default: return Math.round(price * 100) / 100
+  }
+}
+
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -129,47 +147,62 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       mgByItemId.set(mg.menuItemId, existing)
     }
 
-    // Convert to MenuSyncItem[] (prices in cents — multiply dollars by 100)
-    const syncItems: MenuSyncItem[] = menuItems.map(item => {
-      const priceInDollars = typeof item.price === 'string' ? parseFloat(item.price) : Number(item.price)
-      const priceCents = Math.round(priceInDollars * 100)
+    // Resolve delivery markup settings
+    const markup = settings.thirdPartyDelivery?.deliveryMarkup
+    const markupEnabled = markup?.enabled && (markup.defaultPercent > 0 || Object.values(markup.platformOverrides || {}).some(v => v != null && v > 0))
+    const roundingRule = markup?.roundingRule ?? 'none'
+    const markupModifiers = markup?.applyToModifiers ?? true
 
-      const itemModGroups = mgByItemId.get(item.id) || []
-      const modifierGroupsSynced: MenuSyncModifierGroup[] = itemModGroups.map(mg => {
-        const groupMods = modsByGroup.get(mg.id) || []
+    // Build sync items per-platform (markup may differ per platform)
+    function buildSyncItems(platformId: DeliveryPlatformId): MenuSyncItem[] {
+      const effectiveMarkup = markupEnabled
+        ? (markup!.platformOverrides?.[platformId as keyof typeof markup.platformOverrides] ?? markup!.defaultPercent)
+        : 0
+
+      return menuItems.map(item => {
+        const priceInDollars = typeof item.price === 'string' ? parseFloat(item.price) : Number(item.price)
+        const markedPrice = effectiveMarkup > 0 ? applyMarkup(priceInDollars, effectiveMarkup, roundingRule) : priceInDollars
+        const priceCents = Math.round(markedPrice * 100)
+
+        const itemModGroups = mgByItemId.get(item.id) || []
+        const modifierGroupsSynced: MenuSyncModifierGroup[] = itemModGroups.map(mg => {
+          const groupMods = modsByGroup.get(mg.id) || []
+          return {
+            externalId: mg.id,
+            name: mg.name,
+            minSelections: mg.minSelections,
+            maxSelections: mg.maxSelections,
+            options: groupMods.map(mod => {
+              const modPrice = typeof mod.price === 'string' ? parseFloat(mod.price) : Number(mod.price)
+              const markedModPrice = (effectiveMarkup > 0 && markupModifiers) ? applyMarkup(modPrice, effectiveMarkup, roundingRule) : modPrice
+              return {
+                externalId: mod.id,
+                name: mod.name,
+                price: Math.round(markedModPrice * 100),
+                available: mod.isActive,
+              }
+            }),
+          }
+        })
+
         return {
-          externalId: mg.id,
-          name: mg.name,
-          minSelections: mg.minSelections,
-          maxSelections: mg.maxSelections,
-          options: groupMods.map(mod => {
-            const modPrice = typeof mod.price === 'string' ? parseFloat(mod.price) : Number(mod.price)
-            return {
-              externalId: mod.id,
-              name: mod.name,
-              price: Math.round(modPrice * 100),
-              available: mod.isActive,
-            }
-          }),
+          externalId: item.id,
+          name: item.name,
+          description: item.description || undefined,
+          price: priceCents,
+          categoryName: categoryMap.get(item.categoryId) || 'Uncategorized',
+          categoryExternalId: item.categoryId,
+          available: true,
+          modifierGroups: modifierGroupsSynced.length > 0 ? modifierGroupsSynced : undefined,
         }
       })
-
-      return {
-        externalId: item.id,
-        name: item.name,
-        description: item.description || undefined,
-        price: priceCents,
-        categoryName: categoryMap.get(item.categoryId) || 'Uncategorized',
-        categoryExternalId: item.categoryId,
-        available: true,
-        modifierGroups: modifierGroupsSynced.length > 0 ? modifierGroupsSynced : undefined,
-      }
-    })
+    }
 
     // Sync to each platform
     const results: Record<string, MenuSyncResult> = {}
     for (const { platform: p, client } of clients) {
       try {
+        const syncItems = buildSyncItems(p)
         results[p] = await client.syncMenu(syncItems)
       } catch (err) {
         results[p] = {
@@ -181,10 +214,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
+    // Build markup info for response
+    const markupInfo = markupEnabled ? {
+      enabled: true,
+      defaultPercent: markup!.defaultPercent,
+      roundingRule,
+      applyToModifiers: markupModifiers,
+      platformOverrides: markup!.platformOverrides,
+      sample: (() => {
+        const base = 12.00
+        const pct = markup!.defaultPercent
+        const marked = applyMarkup(base, pct, roundingRule)
+        return { basePrice: base, markupPercent: pct, finalPrice: marked }
+      })(),
+    } : { enabled: false }
+
     return NextResponse.json({
       data: {
-        itemCount: syncItems.length,
+        itemCount: menuItems.length,
         results,
+        markup: markupInfo,
       },
     })
   } catch (error) {

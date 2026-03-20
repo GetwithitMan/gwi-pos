@@ -985,6 +985,20 @@ export interface DeliverySettings {
   dispatchProvider: 'in_house'
 }
 
+// ─── Delivery Platform Price Markup ──────────────────────────────────────────
+
+export interface DeliveryMarkupSettings {
+  enabled: boolean
+  defaultPercent: number
+  roundingRule: 'none' | 'nearest_99' | 'nearest_49' | 'nearest_quarter' | 'round_up'
+  applyToModifiers: boolean
+  platformOverrides: {
+    doordash?: number | null
+    ubereats?: number | null
+    grubhub?: number | null
+  }
+}
+
 // ─── Third-Party Delivery Settings ──────────────────────────────────────────
 
 export interface ThirdPartyDeliveryPlatformSettings {
@@ -1010,6 +1024,7 @@ export interface ThirdPartyDeliverySettings {
   autoPrintTicket: boolean       // Auto-print kitchen ticket on new delivery order
   alertOnNewOrder: boolean       // Sound alert on new delivery order
   defaultTaxRate: number         // Override tax rate for delivery orders (0 = use location default)
+  deliveryMarkup?: DeliveryMarkupSettings  // Price markup for delivery platform menu sync
 }
 
 // ─── Marketing Campaign Settings ────────────────────────────────────────────

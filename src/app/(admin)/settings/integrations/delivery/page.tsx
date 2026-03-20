@@ -7,8 +7,8 @@ import { toast } from '@/stores/toast-store'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
 import { SettingsSaveBar } from '@/components/admin/settings/SettingsSaveBar'
 import { ToggleRow } from '@/components/admin/settings/ToggleRow'
-import type { ThirdPartyDeliverySettings, ThirdPartyDeliveryPlatformSettings, ThirdPartyDeliveryUberEatsSettings } from '@/lib/settings'
-import { DEFAULT_THIRD_PARTY_DELIVERY } from '@/lib/settings'
+import type { ThirdPartyDeliverySettings, ThirdPartyDeliveryPlatformSettings, ThirdPartyDeliveryUberEatsSettings, DeliveryMarkupSettings } from '@/lib/settings'
+import { DEFAULT_THIRD_PARTY_DELIVERY, DEFAULT_DELIVERY_MARKUP } from '@/lib/settings'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import type { DoorDashCredentials, UberEatsCredentials, GrubhubCredentials } from '@/lib/delivery/clients/types'
@@ -171,6 +171,173 @@ function ConnectionBadge({ status }: { status: ConnectionStatus }) {
       {icons[status] && <span>{icons[status]}</span>}
       {labels[status]}
     </span>
+  )
+}
+
+// ─── Delivery Pricing Card ──────────────────────────────────────────────────
+
+const ROUNDING_OPTIONS: { value: DeliveryMarkupSettings['roundingRule']; label: string }[] = [
+  { value: 'none', label: 'None (exact)' },
+  { value: 'nearest_99', label: 'Nearest $X.99' },
+  { value: 'nearest_49', label: 'Nearest $X.49' },
+  { value: 'nearest_quarter', label: 'Nearest $0.25' },
+  { value: 'round_up', label: 'Round Up ($X.00)' },
+]
+
+function previewMarkup(base: number, pct: number, rule: DeliveryMarkupSettings['roundingRule']): { marked: number; final: number } {
+  if (pct <= 0) return { marked: base, final: base }
+  const marked = base * (1 + pct / 100)
+  let final: number
+  switch (rule) {
+    case 'nearest_99': final = Math.ceil(marked) - 0.01; break
+    case 'nearest_49': final = Math.floor(marked) + 0.49; break
+    case 'nearest_quarter': final = Math.ceil(marked * 4) / 4; break
+    case 'round_up': final = Math.ceil(marked); break
+    default: final = Math.round(marked * 100) / 100
+  }
+  return { marked: Math.round(marked * 100) / 100, final }
+}
+
+function DeliveryPricingCard({
+  markup,
+  onChange,
+}: {
+  markup: DeliveryMarkupSettings
+  onChange: (m: DeliveryMarkupSettings) => void
+}) {
+  const update = <K extends keyof DeliveryMarkupSettings>(key: K, value: DeliveryMarkupSettings[K]) =>
+    onChange({ ...markup, [key]: value })
+
+  const preview = previewMarkup(12.0, markup.defaultPercent, markup.roundingRule)
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="text-lg">Delivery Pricing</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Mark up menu prices when syncing to delivery platforms to offset commission fees. POS prices stay unchanged.
+        </p>
+
+        <ToggleRow
+          label="Enable Delivery Markup"
+          description="Automatically inflate prices when pushing menu to delivery platforms"
+          checked={markup.enabled}
+          onChange={v => update('enabled', v)}
+        />
+
+        {markup.enabled && (
+          <>
+            {/* Default Markup % */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm text-gray-900">Default Markup</div>
+                <div className="text-xs text-gray-600">Applied to all platforms unless overridden below</div>
+              </div>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={markup.defaultPercent}
+                  onChange={e => update('defaultPercent', Math.max(0, Math.min(100, Number(e.target.value))))}
+                  className="w-20 px-2 py-1 border rounded text-sm text-right"
+                />
+                <span className="text-sm text-gray-900">%</span>
+              </div>
+            </div>
+
+            {/* Rounding Rule */}
+            <div className="flex items-center justify-between py-2">
+              <div>
+                <div className="text-sm text-gray-900">Price Rounding</div>
+                <div className="text-xs text-gray-600">Round marked-up prices for cleaner presentation</div>
+              </div>
+              <select
+                value={markup.roundingRule}
+                onChange={e => update('roundingRule', e.target.value as DeliveryMarkupSettings['roundingRule'])}
+                className="px-2 py-1 border rounded text-sm"
+              >
+                {ROUNDING_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Apply to modifiers */}
+            <ToggleRow
+              label="Apply to Modifiers"
+              description="Also mark up modifier prices (e.g., extra cheese, add bacon)"
+              checked={markup.applyToModifiers}
+              onChange={v => update('applyToModifiers', v)}
+              border
+            />
+
+            {/* Per-Platform Overrides */}
+            <div className="border-t border-gray-100 pt-4">
+              <div className="text-sm font-medium text-gray-900 mb-2">Per-Platform Overrides</div>
+              <p className="text-xs text-gray-600 mb-3">Leave blank to use the default markup above</p>
+              <div className="space-y-2">
+                {(['doordash', 'ubereats', 'grubhub'] as const).map(p => {
+                  const override = markup.platformOverrides?.[p]
+                  const hasOverride = override != null
+                  return (
+                    <div key={p} className="flex items-center justify-between">
+                      <span className="text-sm text-gray-900">{PLATFORM_CONFIG[p].label}</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={hasOverride ? override : ''}
+                          placeholder="default"
+                          onChange={e => {
+                            const val = e.target.value.trim()
+                            const overrides = { ...markup.platformOverrides }
+                            if (val === '') {
+                              delete overrides[p]
+                            } else {
+                              overrides[p] = Math.max(0, Math.min(100, Number(val)))
+                            }
+                            update('platformOverrides', overrides)
+                          }}
+                          className="w-20 px-2 py-1 border rounded text-sm text-right"
+                        />
+                        <span className="text-sm text-gray-900">%</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Live Preview */}
+            {markup.defaultPercent > 0 && (
+              <div className="bg-gray-50 rounded-lg p-3 border-t border-gray-100">
+                <div className="text-xs font-medium text-gray-900 mb-1">Preview</div>
+                <div className="text-sm text-gray-900">
+                  $12.00 base
+                  <span className="mx-1 text-gray-400">&rarr;</span>
+                  ${preview.marked.toFixed(2)} ({markup.defaultPercent}%)
+                  {markup.roundingRule !== 'none' && (
+                    <>
+                      <span className="mx-1 text-gray-400">&rarr;</span>
+                      <span className="font-medium">${preview.final.toFixed(2)}</span>
+                    </>
+                  )}
+                  {markup.roundingRule === 'none' && (
+                    <span className="font-medium"> = ${preview.final.toFixed(2)}</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -398,13 +565,17 @@ export default function DeliveryIntegrationSettingsPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok) {
-        const results = data.results ? Object.values(data.results) as Array<{ platform: string; success: boolean; itemsSynced: number; errors: string[] }> : []
+        const syncData = data.data || data
+        const results = syncData.results ? Object.values(syncData.results) as Array<{ platform: string; success: boolean; itemsSynced: number; errors: string[] }> : []
         const successCount = results?.filter(r => r.success).length ?? 0
         const totalItems = results?.reduce((s, r) => s + (r.itemsSynced ?? 0), 0) ?? 0
+        const markupNote = syncData.markup?.enabled
+          ? ` (${syncData.markup.defaultPercent}% markup applied)`
+          : ''
         setLastMenuSync({
           time: new Date().toLocaleString(),
           success: successCount > 0,
-          details: `${totalItems} items synced to ${successCount} platform${successCount !== 1 ? 's' : ''}`,
+          details: `${totalItems} items synced to ${successCount} platform${successCount !== 1 ? 's' : ''}${markupNote}`,
         })
         toast.success(platform
           ? `Menu synced to ${PLATFORM_CONFIG[platform].label}`
@@ -498,6 +669,12 @@ export default function DeliveryIntegrationSettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Delivery Pricing (Markup) ─────────────────────────────── */}
+      <DeliveryPricingCard
+        markup={form.deliveryMarkup ?? DEFAULT_DELIVERY_MARKUP}
+        onChange={m => { setForm(prev => ({ ...prev, deliveryMarkup: m })); setIsDirty(true) }}
+      />
 
       {/* ── Menu Sync Status + Global Sync Button ──────────────────── */}
       <Card className="mb-6">

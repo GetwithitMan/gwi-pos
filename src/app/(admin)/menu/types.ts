@@ -11,6 +11,7 @@ export const CATEGORY_TYPES = [
   { value: 'pizza', label: 'Pizza', color: '#ef4444', description: 'Pizza items with sectional toppings builder' },
   { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Pool tables, darts, games - timed billing' },
   { value: 'combos', label: 'Combos', color: '#ec4899', description: 'Bundled items' },
+  { value: 'retail', label: 'Retail', color: '#f59e0b', description: 'Retail products — scanned items, merchandise, inventory tracked' },
 ]
 
 export interface Category {

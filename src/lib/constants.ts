@@ -17,6 +17,7 @@ export const CATEGORY_TYPES = [
   { value: 'liquor', label: 'Liquor', color: '#a855f7', description: 'Alcoholic beverages' },
   { value: 'entertainment', label: 'Entertainment', color: '#f59e0b', description: 'Games, rentals, services' },
   { value: 'combos', label: 'Combos', color: '#ef4444', description: 'Combo meals and bundles' },
+  { value: 'retail', label: 'Retail', color: '#f59e0b', description: 'Retail products — scanned items, merchandise, inventory tracked' },
 ] as const
 
 export type CategoryType = typeof CATEGORY_TYPES[number]['value']

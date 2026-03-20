@@ -389,7 +389,7 @@ async function processCommand(dataStr) {
 
     var result
     if (cmd.type === 'FORCE_UPDATE') {
-      result = handleForceUpdate(cmd.payload || {})
+      result = await handleForceUpdate(cmd.payload || {})
     } else if (cmd.type === 'DATA_CHANGED') {
       var domain = (cmd.payload && cmd.payload.domain) || 'unknown'
       var models = (cmd.payload && Array.isArray(cmd.payload.models)) ? cmd.payload.models : null
@@ -529,7 +529,7 @@ async function processCommand(dataStr) {
       }
     } else if (cmd.type === 'RE_PROVISION') {
       // Re-provision = full update cycle (same as FORCE_UPDATE)
-      result = handleForceUpdate(cmd.payload || {})
+      result = await handleForceUpdate(cmd.payload || {})
     } else if (cmd.type === 'RELOAD_TERMINALS') {
       // Restart POS service to force all connected terminals to reconnect
       log('[Sync] RELOAD_TERMINALS — restarting POS service...')

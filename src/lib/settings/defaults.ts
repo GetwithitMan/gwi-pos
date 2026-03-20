@@ -31,6 +31,7 @@ import type {
   HostViewSettings,
   DeliveryDispatchPolicy,
   DeliverySettings,
+  DeliveryMarkupSettings,
   ThirdPartyDeliverySettings,
   MarketingSettings,
   UpsellPromptSettings,
@@ -361,6 +362,14 @@ export const DEFAULT_DELIVERY: DeliverySettings = {
   deliveryAutoGratuityPercent: 0,
   peakHours: [],
   dispatchProvider: 'in_house',
+}
+
+export const DEFAULT_DELIVERY_MARKUP: DeliveryMarkupSettings = {
+  enabled: false,
+  defaultPercent: 0,
+  roundingRule: 'none',
+  applyToModifiers: true,
+  platformOverrides: {},
 }
 
 export const DEFAULT_THIRD_PARTY_DELIVERY: ThirdPartyDeliverySettings = {
@@ -1261,6 +1270,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
           doordash: { ...DEFAULT_THIRD_PARTY_DELIVERY.doordash, ...partial.thirdPartyDelivery.doordash },
           ubereats: { ...DEFAULT_THIRD_PARTY_DELIVERY.ubereats, ...partial.thirdPartyDelivery.ubereats },
           grubhub: { ...DEFAULT_THIRD_PARTY_DELIVERY.grubhub, ...partial.thirdPartyDelivery.grubhub },
+          deliveryMarkup: partial.thirdPartyDelivery.deliveryMarkup
+            ? { ...DEFAULT_DELIVERY_MARKUP, ...partial.thirdPartyDelivery.deliveryMarkup, platformOverrides: { ...partial.thirdPartyDelivery.deliveryMarkup.platformOverrides } }
+            : undefined,
         }
       : undefined,
     hostView: partial.hostView
