@@ -1,5 +1,7 @@
 # Database Connection Rules
 
+> **Authority model:** MC/Neon is the sole schema authority. NUC owns local runtime only. See [`docs/architecture/AUTHORITY-MODEL.md`](../architecture/AUTHORITY-MODEL.md) for full rules. All infrastructure tables (SyncWatermark, SocketEventLog, etc.) MUST be in `prisma/schema.prisma` to prevent `prisma db push` from dropping them.
+
 **DO NOT CHANGE THESE RULES. They were found through painful trial and error.**
 
 ## The Rule: PrismaPg Everywhere

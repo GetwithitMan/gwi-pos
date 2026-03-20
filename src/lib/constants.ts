@@ -14,9 +14,10 @@ export const REVENUE_ORDER_STATUSES = ['completed', 'closed', 'paid'] as const
 export const CATEGORY_TYPES = [
   { value: 'food', label: 'Food', color: '#22c55e', description: 'Main dishes, appetizers, sides' },
   { value: 'drinks', label: 'Drinks', color: '#3b82f6', description: 'Non-alcoholic beverages' },
-  { value: 'liquor', label: 'Liquor', color: '#a855f7', description: 'Alcoholic beverages' },
-  { value: 'entertainment', label: 'Entertainment', color: '#f59e0b', description: 'Games, rentals, services' },
-  { value: 'combos', label: 'Combos', color: '#ef4444', description: 'Combo meals and bundles' },
+  { value: 'liquor', label: 'Liquor', color: '#8b5cf6', description: 'Alcoholic beverages' },
+  { value: 'pizza', label: 'Pizza', color: '#ef4444', description: 'Pizza builder — sizes, crusts, toppings' },
+  { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Games, rentals, services' },
+  { value: 'combos', label: 'Combos', color: '#ec4899', description: 'Combo meals and bundles' },
   { value: 'retail', label: 'Retail', color: '#f59e0b', description: 'Retail products — scanned items, merchandise, inventory tracked' },
 ] as const
 

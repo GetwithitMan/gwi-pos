@@ -228,6 +228,17 @@ These rules are absolute. Violating any of them is a system-level bug.
 
 8. **Reconnect = queue drain + downstream catch-up before "converged."** The system is not healthy after reconnection until the outbound queue is fully drained AND downstream sync has caught up. Only then may MC mark the venue as converged.
 
+### Shadow MC Admin
+
+MC/cloud users (Clerk `user_*`, `cloud-*`, `mc-owner-*`) operate as invisible shadow admins:
+- `employeeId: null` in auth context
+- `permissions: ['all']` (full god-mode access)
+- `isCloudAdmin: true` flag
+- No Employee record created in the venue database
+- Invisible in: staff lists, time clock, tips, shifts, reports, audit logs (as actor)
+- Can perform all setup tasks: create employees, configure hardware, edit menu, manage settings
+- Authenticated via `pos-cloud-session` JWT (HMAC-SHA256 signed, 8-hour lifetime)
+
 ---
 
 ## 7. Dual-Ingress Model (Cellular Terminals)
@@ -278,7 +289,7 @@ MC creates release (targetVersion + release channel)
       → npm install
       → npx prisma generate
       → node scripts/nuc-pre-migrate.js   (numbered migrations)
-      → npx prisma db push --accept-data-loss=NEVER
+      → npx prisma db push  # --accept-data-loss is NEVER used
       → npm run build
       → systemctl restart gwi-pos
       → POST /fleet/commands/{id}/ack (SUCCESS or FAILED + error details)

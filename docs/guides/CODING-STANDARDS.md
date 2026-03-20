@@ -367,6 +367,8 @@ All client-created entities MUST use a client-generated UUID as their primary ke
 
 ---
 
+> **Authority model:** All sync, schema, and provisioning rules are defined in [`docs/architecture/AUTHORITY-MODEL.md`](../architecture/AUTHORITY-MODEL.md). Read it before adding new synced models or modifying schema.
+
 ## Schema & Sync Hygiene
 
 ### Raw-SQL Tables Must Be in Prisma Schema

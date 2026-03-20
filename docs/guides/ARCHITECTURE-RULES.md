@@ -1,5 +1,7 @@
 # GWI POS — Architecture Rules
 
+> **Canonical authority document:** [`docs/architecture/AUTHORITY-MODEL.md`](../architecture/AUTHORITY-MODEL.md) — defines who owns what, conflict resolution rules, and order-ready gate.
+
 > Reference doc for AI agents and developers working on the GWI POS codebase.
 > Violations of these rules are **bugs**, not style preferences.
 
@@ -308,6 +310,18 @@ The NUC deploy pipeline is orchestrated by MC via fleet commands and executed by
 4. **Terminal pairing fields use `skipFields` in sync config.** Models like `Terminal` have NUC-local operational state (e.g., `lastSeenAt`, `isOnline`) that must not be overwritten by downstream sync. The sync config `skipFields` array prevents this.
 5. **Pre-start script is the safety gate.** Before the NUC server starts, the pre-start script: (a) verifies `.env.local` symlink, (b) runs `nuc-pre-migrate.js` for pending migrations, (c) runs `prisma db push` for schema alignment. If any step fails, the service does not start.
 6. **`--accept-data-loss` is banned.** Neither the pre-start script, the sync agent, nor any deploy step may use this flag. Schema must only move forward.
+
+### Order-Ready Gate
+
+A venue is NOT ready for customer orders until ALL conditions are met:
+
+1. Local schema applied (prisma db push + migrations complete)
+2. Local seed present (critical tables non-empty: Location, Organization, Role, Employee, Category, OrderType)
+3. Neon schema compatible (match or ahead)
+4. Initial downstream sync complete
+5. Readiness level = ORDERS (advanced by `advanceToOrders()` with critical table verification)
+
+If any condition fails, readiness stays at SYNC or DEGRADED. The 503 fail-closed gate in `with-venue.ts` blocks API traffic until schema verification passes.
 
 ---
 

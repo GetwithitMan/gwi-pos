@@ -121,6 +121,8 @@ Only after Steps 1–5:
 - **All infrastructure tables in Prisma schema:** `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state`, and similar operational tables MUST be defined in `prisma/schema.prisma` so that `prisma db push` never blocks or drops them.
 - **Universal outage queue:** ALL upstream model writes MUST use outage queue protection (`OutageQueueEntry`). No upstream write may silently fail during an internet outage.
 - **Canonical authority doc:** `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` (Phases 6-8)
+- **Readiness gate:** BOOT → SYNC → ORDERS. Venues cannot take orders until local schema verified, seed present, Neon compatible, first downstream sync complete, and critical tables populated. See `docs/architecture/AUTHORITY-MODEL.md` Section 5.
+- **Shadow MC admin:** MC/cloud users operate with `employeeId: null`, `permissions: ['all']`, `isCloudAdmin: true`. No Employee record created — invisible in staff lists, tips, shifts, reports.
 - **Full rules:** `docs/guides/ARCHITECTURE-RULES.md`
 
 ### Event-Sourced Orders

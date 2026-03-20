@@ -34,7 +34,7 @@ Cloud-primary sync architecture (since Phase 6, March 2026). **Neon cloud is the
 ### gwi-pos
 | File / Directory | Purpose |
 |-----------------|---------|
-| `src/lib/sync/sync-config.ts` | Registry of 95+ models with direction, owner, FK priority, batch size |
+| `src/lib/sync/sync-config.ts` | Registry of 170+ models with direction, owner, FK priority, batch size |
 | `src/lib/sync/upstream-sync-worker.ts` | NUC → Neon: pushes orders, payments, shifts (5s interval) |
 | `src/lib/sync/downstream-sync-worker.ts` | Neon → NUC: pulls menu, employees, settings (5s interval) |
 | `src/lib/cloud-event-queue.ts` | Queue event batching, retry logic, dead-letter handling |
