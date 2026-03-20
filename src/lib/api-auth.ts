@@ -130,9 +130,18 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
     if (!token) return null
 
     const payload = await verifyCloudToken(token, secret)
-    if (!payload || !payload.posLocationId) return null
+    if (!payload) return null
 
-    const locationId = payload.posLocationId
+    // posLocationId may be missing if MC didn't have it when creating the session.
+    // Fall back to querying the venue DB (each venue has exactly one Location row).
+    let locationId = payload.posLocationId
+    if (!locationId) {
+      const rows = await db.$queryRawUnsafe(
+        'SELECT id FROM "Location" WHERE "deletedAt" IS NULL ORDER BY id ASC LIMIT 1'
+      ) as Array<{ id: string }>
+      locationId = rows[0]?.id
+      if (!locationId) return null
+    }
     const employeeId = await resolveOrProvisionEmployee(payload, locationId)
     if (!employeeId) return null
 
