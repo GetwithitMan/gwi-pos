@@ -351,6 +351,7 @@ All production secrets are managed in **Vercel Dashboard → Project → Setting
 |------------|-----------|--------|
 | Socket.io (realtime) | Enabled (custom server.ts) | Not available (serverless) |
 | Custom server | server.ts via tsx | Vercel's built-in Next.js |
+| DB adapter | PrismaPg (TCP) | PrismaNeon (HTTP/WebSocket) |
 | Database | Neon PostgreSQL (shared) | Neon PostgreSQL (shared) |
 | Hot reload | Yes | N/A (deploy on push) |
 | KDS realtime | Full Socket.io | Polling fallback |

@@ -176,6 +176,11 @@ These rules were discovered via penetration testing and prevent data loss, dupli
 
 ## Database Rules
 
+> **CRITICAL: Read `docs/guides/DATABASE-CONNECTION-RULES.md` before touching any database adapter code.**
+> Vercel MUST use PrismaNeon (HTTP/WebSocket). NUC MUST use PrismaPg (TCP).
+> `ws`, `@neondatabase/serverless`, `@prisma/adapter-neon` MUST be in `serverExternalPackages`.
+> This was learned through 5 failed attempts — do not deviate.
+
 ### Environment Routing
 
 | Environment | `DATABASE_URL` target |

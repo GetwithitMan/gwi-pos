@@ -94,6 +94,9 @@ export const GET = withVenue(async (req, { venue }) => {
 
 **Key files:** `server.ts`, `src/lib/with-venue.ts`, `src/lib/request-context.ts`, `src/lib/db.ts`
 
+> **Connection adapters:** Vercel uses PrismaNeon (instant HTTP), NUC uses PrismaPg (TCP).
+> See `docs/guides/DATABASE-CONNECTION-RULES.md` — DO NOT change adapter choices.
+
 ### Response Format
 ```typescript
 return NextResponse.json({ data: result })      // success
