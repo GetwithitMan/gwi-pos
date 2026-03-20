@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyCloudToken } from '@/lib/cloud-auth'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { config } from '@/lib/system-config'
 
 /**
  * POST /api/auth/cloud-session
@@ -20,9 +21,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Token required' }, { status: 400 })
   }
 
-  const secret = process.env.PROVISION_API_KEY
+  const secret = config.cloudJwtSecret
   if (!secret) {
-    console.error('[cloud-auth] PROVISION_API_KEY not configured')
+    console.error('[cloud-auth] CLOUD_JWT_SECRET (or PROVISION_API_KEY fallback) not configured')
     return NextResponse.json(
       { error: 'Server misconfigured' },
       { status: 500 }
@@ -155,7 +156,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
   }
 
-  const secret = process.env.PROVISION_API_KEY
+  const secret = config.cloudJwtSecret
   if (!secret) {
     return NextResponse.json(
       { error: 'Server misconfigured' },

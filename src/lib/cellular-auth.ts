@@ -621,7 +621,7 @@ async function isRevokedFromDb(terminalId: string, locationId: string): Promise<
     if (!_cellularDeviceTableChecked) return false
 
     const revoked = await db.$queryRawUnsafe<Array<{ id: string }>>(
-      `SELECT id FROM "CellularDevice" WHERE "terminalId" = $1 AND "locationId" = $2 AND status IN ('revoked', 'quarantined') LIMIT 1`,
+      `SELECT id FROM "CellularDevice" WHERE "terminalId" = $1 AND "locationId" = $2 AND status IN ('REVOKED', 'QUARANTINED') LIMIT 1`,
       terminalId,
       locationId
     )
@@ -644,14 +644,34 @@ async function isRevokedFromDb(terminalId: string, locationId: string): Promise<
   }
 }
 
-/** Revoke a terminal (add to deny list + remove from active sessions) */
-export function revokeTerminal(terminalId: string): void {
+/** Revoke a terminal (add to deny list + persist to DB + remove from active sessions) */
+export async function revokeTerminal(terminalId: string, locationId?: string): Promise<void> {
   denyList.set(terminalId, Date.now())
   // Remove all sessions for this terminal from the active registry
   for (const [key, session] of activeSessions) {
     if (session.terminalId === terminalId) {
       activeSessions.delete(key)
     }
+  }
+
+  // Persist revocation to CellularDevice table (best-effort — in-memory is already set)
+  try {
+    const { db } = await import('@/lib/db')
+    if (locationId) {
+      await db.$executeRawUnsafe(
+        `UPDATE "CellularDevice" SET status = 'REVOKED', "revokedAt" = NOW(), "updatedAt" = NOW() WHERE "terminalId" = $1 AND "locationId" = $2`,
+        terminalId,
+        locationId
+      )
+    } else {
+      await db.$executeRawUnsafe(
+        `UPDATE "CellularDevice" SET status = 'REVOKED', "revokedAt" = NOW(), "updatedAt" = NOW() WHERE "terminalId" = $1`,
+        terminalId
+      )
+    }
+  } catch {
+    // DB write failed — in-memory revocation still active for this process lifetime
+    log.warn(`[cellular-auth] Failed to persist revocation to DB for terminal ${terminalId}`)
   }
 }
 
@@ -667,6 +687,50 @@ export function syncDenyList(entries: Array<{ terminalId: string; revokedAt: num
     denyList.set(entry.terminalId, entry.revokedAt)
   }
 }
+
+/**
+ * Load revoked/quarantined devices from the CellularDevice table into
+ * the in-memory deny list. Called on module initialization so the deny
+ * list survives process restarts (closes the cold-start gap on NUC).
+ */
+export async function loadDenyListFromDb(): Promise<void> {
+  try {
+    const { db } = await import('@/lib/db')
+
+    // Check table existence first (reuses the same pattern as isRevokedFromDb)
+    const tableCheck = await db.$queryRawUnsafe<Array<{ exists: boolean }>>(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'CellularDevice') as exists`
+    )
+    if (!tableCheck[0]?.exists) return
+
+    const revoked = await db.$queryRawUnsafe<Array<{
+      terminalId: string
+      revokedAt: Date | null
+      updatedAt: Date
+    }>>(
+      `SELECT "terminalId", "revokedAt", "updatedAt" FROM "CellularDevice" WHERE status IN ('REVOKED', 'QUARANTINED') AND "terminalId" IS NOT NULL`
+    )
+
+    for (const r of revoked) {
+      const ts = r.revokedAt instanceof Date
+        ? r.revokedAt.getTime()
+        : r.updatedAt instanceof Date
+          ? r.updatedAt.getTime()
+          : Date.now()
+      denyList.set(r.terminalId, ts)
+    }
+
+    if (revoked.length > 0) {
+      log.info(`[cellular-auth] Loaded ${revoked.length} revoked/quarantined devices from DB into deny list`)
+    }
+  } catch {
+    // DB not available yet or table doesn't exist — deny list starts empty
+    // (isRevokedFromDb L2 check still catches revocations on a per-request basis)
+  }
+}
+
+// Load deny list from DB on module init (non-blocking — don't delay imports)
+void loadDenyListFromDb().catch(() => {})
 
 // ═══════════════════════════════════════════════════════════
 // Rate limiting (in-memory, 1-second sliding window)

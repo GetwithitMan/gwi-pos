@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { transition } from '@/lib/reservations/state-machine'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { forAllVenues } from '@/lib/cron-venue-helper'
+import { notifyNuc } from '@/lib/cron-nuc-notify'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -20,14 +21,16 @@ export async function GET(request: NextRequest) {
   if (cronAuthError) return cronAuthError
 
   const now = new Date()
-  let cancelledCount = 0
-  let idempotencyKeysDeleted = 0
-  let depositTokensDeleted = 0
+  const allProcessed: Record<string, unknown> = {}
 
-  try {
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    let cancelledCount = 0
+    let idempotencyKeysDeleted = 0
+    let depositTokensDeleted = 0
+
     // ── Step 1: Find pending reservations with expired holds ──────
     // Atomic: only grab rows where holdExpiresAt IS NOT NULL to avoid re-processing
-    const expiredHolds: { id: string; locationId: string }[] = await db.$queryRaw`
+    const expiredHolds: { id: string; locationId: string }[] = await venueDb.$queryRaw`
       UPDATE "Reservation"
       SET "holdExpiresAt" = NULL
       WHERE status = 'pending'
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
     // ── Step 2: Transition each to cancelled ─────────────────────
     for (const row of expiredHolds) {
       try {
-        await db.$transaction(async (tx: any) => {
+        await venueDb.$transaction(async (tx: any) => {
           await transition({
             reservationId: row.id,
             to: 'cancelled',
@@ -50,40 +53,47 @@ export async function GET(request: NextRequest) {
           })
         })
         cancelledCount++
-        void dispatchReservationChanged(row.locationId, {
-          reservationId: row.id, action: 'cancelled',
-        }).catch(console.error)
+        if (process.env.VERCEL) {
+          void notifyNuc(slug, 'reservation:changed', {
+            locationId: row.locationId,
+            reservationId: row.id,
+            action: 'cancelled',
+          }).catch(console.error)
+        } else {
+          void dispatchReservationChanged(row.locationId, {
+            reservationId: row.id, action: 'cancelled',
+          }).catch(console.error)
+        }
       } catch (err) {
-        console.error(`[reservation-hold-expiry] Failed to cancel ${row.id}:`, err)
+        console.error(`[cron:reservation-hold-expiry] Venue ${slug}: Failed to cancel ${row.id}:`, err)
       }
     }
 
     // ── Step 3: Clean up expired idempotency keys (>1 hour old) ──
     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
-    const idempResult = await db.$executeRaw`
+    const idempResult = await venueDb.$executeRaw`
       DELETE FROM "ReservationIdempotencyKey"
       WHERE "createdAt" < ${oneHourAgo}
     `
     idempotencyKeysDeleted = typeof idempResult === 'number' ? idempResult : 0
 
     // ── Step 4: Clean up expired deposit tokens ──────────────────
-    const depositResult = await db.$executeRaw`
+    const depositResult = await venueDb.$executeRaw`
       DELETE FROM "ReservationDepositToken"
       WHERE "expiresAt" < ${now}
     `
     depositTokensDeleted = typeof depositResult === 'number' ? depositResult : 0
 
-    return NextResponse.json({
-      ok: true,
-      processed: {
-        cancelledHolds: cancelledCount,
-        idempotencyKeysDeleted,
-        depositTokensDeleted,
-      },
-      timestamp: now.toISOString(),
-    })
-  } catch (err) {
-    console.error('[reservation-hold-expiry] Fatal error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+    allProcessed[slug] = {
+      cancelledHolds: cancelledCount,
+      idempotencyKeysDeleted,
+      depositTokensDeleted,
+    }
+  }, { label: 'cron:reservation-hold-expiry' })
+
+  return NextResponse.json({
+    ...summary,
+    processed: allProcessed,
+    timestamp: now.toISOString(),
+  })
 }

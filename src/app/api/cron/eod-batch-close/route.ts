@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_EOD_SETTINGS } from '@/lib/settings'
 import { executeEodReset } from '@/lib/eod'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -13,10 +13,10 @@ export async function GET(request: NextRequest) {
   if (cronAuthError) return cronAuthError
 
   const now = new Date()
-  const results: Record<string, unknown>[] = []
+  const allResults: Record<string, unknown>[] = []
 
-  try {
-    const locations = await db.location.findMany({
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    const locations = await venueDb.location.findMany({
       where: { deletedAt: null },
       select: { id: true, settings: true },
     })
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       const minutesSinceBatch = currentMinuteOfDay - batchMinuteOfDay
 
       if (minutesSinceBatch < 0 || minutesSinceBatch >= 15) {
-        results.push({ locationId: loc.id, skipped: true, reason: 'outside_batch_window' })
+        allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'outside_batch_window' })
         continue
       }
 
@@ -49,11 +49,12 @@ export async function GET(request: NextRequest) {
         })
 
         if (result.alreadyRanToday) {
-          results.push({ locationId: loc.id, skipped: true, reason: 'already_ran_today' })
+          allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'already_ran_today' })
           continue
         }
 
-        results.push({
+        allResults.push({
+          slug,
           locationId: loc.id,
           rolledOverOrders: result.rolledOverOrders,
           tablesReset: result.tablesReset,
@@ -70,24 +71,19 @@ export async function GET(request: NextRequest) {
           warnings: result.warnings,
         })
       } catch (locErr) {
-        results.push({
+        allResults.push({
+          slug,
           locationId: loc.id,
           error: locErr instanceof Error ? locErr.message : 'Unknown error',
         })
-        console.error(`[EOD Cron] Failed for location ${loc.id}:`, locErr)
+        console.error(`[cron:eod-batch-close] Venue ${slug} location ${loc.id} failed:`, locErr)
       }
     }
+  }, { label: 'cron:eod-batch-close' })
 
-    return NextResponse.json({
-      ok: true,
-      processed: results,
-      timestamp: now.toISOString(),
-    })
-  } catch (error) {
-    console.error('[EOD Auto Batch] Failed:', error)
-    return NextResponse.json(
-      { error: 'EOD auto batch close failed', details: error instanceof Error ? error.message : 'Unknown' },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json({
+    ...summary,
+    processed: allResults,
+    timestamp: now.toISOString(),
+  })
 }

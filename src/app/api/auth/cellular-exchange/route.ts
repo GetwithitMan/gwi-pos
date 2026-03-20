@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     // -----------------------------------------------------------------------
     let resolvedLocationId: string
     try {
-      const venueDb = getDbForVenue(mcData.venueSlug)
+      const venueDb = await getDbForVenue(mcData.venueSlug)
 
       // Try MC's hint first (works when NUC and Neon IDs match)
       let location = await venueDb.location.findUnique({
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
 
     // Cellular device count limit check (subscription-gated)
     // Pass the venue-specific DB since this route is NOT wrapped in withVenue
-    const venueDbForLimits = getDbForVenue(mcData.venueSlug)
+    const venueDbForLimits = await getDbForVenue(mcData.venueSlug)
     const { checkDeviceLimit } = await import('@/lib/device-limits')
     const cellularLimit = await checkDeviceLimit(resolvedLocationId, 'cellular', venueDbForLimits)
     if (!cellularLimit.allowed) {

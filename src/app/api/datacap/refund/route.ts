@@ -16,7 +16,8 @@ interface RefundRequest {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<RefundRequest>(request)
-    const { readerId, recordNo, invoiceNo, amount, employeeId } = body
+    const { readerId, recordNo, invoiceNo, employeeId } = body
+    let { amount } = body
 
     if (!readerId || !recordNo || !invoiceNo || amount === undefined || amount === null) {
       return Response.json(
@@ -24,6 +25,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    if (amount <= 0) {
+      return Response.json({ error: 'Refund amount must be positive' }, { status: 400 })
+    }
+
+    amount = roundToCents(amount)
 
     // Look up reader to get its locationId for client config
     const { db } = await import('@/lib/db')
@@ -47,14 +54,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: { datacapRecordNo: recordNo, locationId: reader.locationId, deletedAt: null },
       select: { id: true, amount: true, refundedAmount: true },
     })
-    if (originalPayment) {
-      const maxRefundable = Number(originalPayment.amount) - Number(originalPayment.refundedAmount || 0)
-      if (amount > maxRefundable) {
-        return Response.json(
-          { error: `Refund amount $${amount.toFixed(2)} exceeds maximum refundable $${maxRefundable.toFixed(2)}` },
-          { status: 400 }
-        )
-      }
+    if (!originalPayment) {
+      return Response.json(
+        { error: 'Original payment not found for this recordNo' },
+        { status: 404 }
+      )
+    }
+    const maxRefundable = Number(originalPayment.amount) - Number(originalPayment.refundedAmount || 0)
+    if (amount > maxRefundable) {
+      return Response.json(
+        { error: `Refund amount $${amount.toFixed(2)} exceeds maximum refundable $${maxRefundable.toFixed(2)}` },
+        { status: 400 }
+      )
     }
 
     await validateReader(readerId, reader.locationId)

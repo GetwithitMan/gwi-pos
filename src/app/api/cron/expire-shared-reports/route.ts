@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { withVenue } from '@/lib/with-venue'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -12,19 +11,21 @@ export const maxDuration = 30
  * Deletes SharedReport rows where expiresAt < now.
  * Intended to be called by cron (Vercel Cron or NUC crontab).
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const cronAuthError = verifyCronSecret(request.headers.get('authorization'))
   if (cronAuthError) return cronAuthError
-  try {
-    const result = await db.$executeRawUnsafe(
+
+  const allResults: Record<string, unknown> = {}
+
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    const result = await venueDb.$executeRawUnsafe(
       `DELETE FROM "SharedReport" WHERE "expiresAt" < NOW()`
     )
+    allResults[slug] = { deleted: result }
+  }, { label: 'cron:expire-shared-reports' })
 
-    return NextResponse.json({
-      data: { deleted: result },
-    })
-  } catch (error) {
-    console.error('[cron/expire-shared-reports] Error:', error)
-    return NextResponse.json({ error: 'Failed to clean up expired reports' }, { status: 500 })
-  }
-})
+  return NextResponse.json({
+    ...summary,
+    data: allResults,
+  })
+}

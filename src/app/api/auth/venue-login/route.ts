@@ -8,6 +8,7 @@ import { verifyPassword } from '@/lib/auth'
 import { signVenueToken, signOwnerToken } from '@/lib/cloud-auth'
 import { verifyWithClerk } from '@/lib/clerk-verify'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
+import { config } from '@/lib/system-config'
 
 /**
  * POST /api/auth/venue-login
@@ -46,9 +47,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Email and password required' }, { status: 400 })
   }
 
-  const secret = process.env.PROVISION_API_KEY
+  const secret = config.cloudJwtSecret
   if (!secret) {
-    console.error('[venue-login] PROVISION_API_KEY not configured')
+    console.error('[venue-login] CLOUD_JWT_SECRET (or PROVISION_API_KEY fallback) not configured')
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
@@ -240,7 +241,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // Clear rate limit on success
   recordLoginSuccess(ip, employee.id)
 
-  // Generate a cloud-session-compatible JWT signed with PROVISION_API_KEY
+  // Generate a cloud-session-compatible JWT signed with CLOUD_JWT_SECRET
   const token = await signVenueToken(
     {
       sub: employee.id,

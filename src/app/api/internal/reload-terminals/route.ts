@@ -9,14 +9,11 @@ import { getLocationId } from '@/lib/location-cache'
  * Called by the NUC sync-agent when Mission Control sends a RELOAD_TERMINALS command.
  */
 export async function POST(request: Request) {
-  // C16: API key validation + localhost fallback for backward compatibility
+  // Auth: require valid API key or Bearer token — no localhost bypass
   const apiKey = request.headers.get('x-api-key') || request.headers.get('authorization')?.replace('Bearer ', '')
-  if (!apiKey || apiKey !== process.env.INTERNAL_API_SECRET) {
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || ''
-    const isLocal = ['127.0.0.1', '::1', 'localhost'].includes(ip)
-    if (!isLocal) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  const secret = process.env.PROVISION_API_KEY || process.env.INTERNAL_API_SECRET
+  if (!apiKey || !secret || apiKey !== secret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {

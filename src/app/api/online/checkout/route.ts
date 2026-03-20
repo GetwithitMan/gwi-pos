@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 
   // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
   // Falls back to db proxy (NUC local mode).
-  const venueDb = slug ? getDbForVenue(slug) : db
+  const venueDb = slug ? await getDbForVenue(slug) : db
 
   if (!token) {
     return NextResponse.json({ error: 'Payment token is required' }, { status: 400 })

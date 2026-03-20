@@ -11,7 +11,7 @@
     { "path": "/api/cron/7shifts-sync", "schedule": "0 7 * * *" },
     { "path": "/api/cron/marginedge-sync", "schedule": "0 8 * * *" },
     { "path": "/api/cron/process-deductions", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/berg-reprocess", "schedule": "* * * * *" },
+    { "path": "/api/cron/berg-reprocess", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/entertainment-expiry", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/eod-batch-close", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/expire-payment-links", "schedule": "*/5 * * * *" },
@@ -19,6 +19,11 @@
     { "path": "/api/cron/reservation-hold-expiry", "schedule": "*/2 * * * *" },
     { "path": "/api/cron/reservation-no-shows", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/reservation-reminders", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/reservation-thank-you", "schedule": "*/30 * * * *" }
+    { "path": "/api/cron/reservation-thank-you", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/process-scheduled-orders", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/accounting-export", "schedule": "0 * * * *" },
+    { "path": "/api/cron/delivery-maintenance", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/expire-shared-reports", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/invoice-overdue", "schedule": "0 * * * *" }
   ]
 }

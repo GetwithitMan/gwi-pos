@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
 import { parseSettings } from '@/lib/settings'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -20,17 +20,18 @@ export async function GET(request: NextRequest) {
   if (cronAuthError) return cronAuthError
 
   const now = new Date()
-  let reminder24hCount = 0
-  let reminder2hCount = 0
+  const allProcessed: Record<string, unknown> = {}
 
-  try {
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    let reminder24hCount = 0
+    let reminder2hCount = 0
+
     // ── Step 1: 24-hour reminders ────────────────────────────────
-    // Window: reservation is 23-25 hours away
     const min24h = new Date(now.getTime() + 23 * 60 * 60 * 1000)
     const max24h = new Date(now.getTime() + 25 * 60 * 60 * 1000)
 
     // Atomically claim un-sent 24h reminders
-    const claimed24h: { id: string; locationId: string }[] = await db.$queryRaw`
+    const claimed24h: { id: string; locationId: string }[] = await venueDb.$queryRaw`
       UPDATE "Reservation"
       SET "reminder24hSentAt" = ${now}
       WHERE status = 'confirmed'
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
 
     for (const row of claimed24h) {
       try {
-        const reservation = await db.reservation.findUnique({
+        const reservation = await venueDb.reservation.findUnique({
           where: { id: row.id },
           include: {
             customer: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
         })
         if (!reservation) continue
 
-        const location = await db.location.findUnique({
+        const location = await venueDb.location.findUnique({
           where: { id: row.locationId },
           select: { name: true, settings: true, phone: true, slug: true },
         })
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
         await sendReservationNotification({
           reservation,
           templateKey: 'reminder24h',
-          db,
+          db: venueDb,
           templates: templates || {},
           venueInfo: {
             name: location.name,
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
         })
 
         // Write event
-        await db.reservationEvent.create({
+        await venueDb.reservationEvent.create({
           data: {
             locationId: row.locationId,
             reservationId: row.id,
@@ -85,20 +86,19 @@ export async function GET(request: NextRequest) {
 
         reminder24hCount++
       } catch (err) {
-        console.error(`[reservation-reminders] 24h failed for ${row.id}:`, err)
+        console.error(`[cron:reservation-reminders] Venue ${slug}: 24h failed for ${row.id}:`, err)
         // Rollback the sentAt so it can be retried
-        void db.$executeRaw`
+        void venueDb.$executeRaw`
           UPDATE "Reservation" SET "reminder24hSentAt" = NULL WHERE id = ${row.id}
         `.catch(console.error)
       }
     }
 
     // ── Step 2: 2-hour reminders ─────────────────────────────────
-    // Window: reservation is 1.5-2.5 hours away
     const min2h = new Date(now.getTime() + 1.5 * 60 * 60 * 1000)
     const max2h = new Date(now.getTime() + 2.5 * 60 * 60 * 1000)
 
-    const claimed2h: { id: string; locationId: string }[] = await db.$queryRaw`
+    const claimed2h: { id: string; locationId: string }[] = await venueDb.$queryRaw`
       UPDATE "Reservation"
       SET "reminder2hSentAt" = ${now}
       WHERE status = 'confirmed'
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
 
     for (const row of claimed2h) {
       try {
-        const reservation = await db.reservation.findUnique({
+        const reservation = await venueDb.reservation.findUnique({
           where: { id: row.id },
           include: {
             customer: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
         })
         if (!reservation) continue
 
-        const location = await db.location.findUnique({
+        const location = await venueDb.location.findUnique({
           where: { id: row.locationId },
           select: { name: true, settings: true, phone: true, slug: true },
         })
@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
         await sendReservationNotification({
           reservation,
           templateKey: 'reminder2h',
-          db,
+          db: venueDb,
           templates: templates || {},
           venueInfo: {
             name: location.name,
@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
           },
         })
 
-        await db.reservationEvent.create({
+        await venueDb.reservationEvent.create({
           data: {
             locationId: row.locationId,
             reservationId: row.id,
@@ -152,23 +152,22 @@ export async function GET(request: NextRequest) {
 
         reminder2hCount++
       } catch (err) {
-        console.error(`[reservation-reminders] 2h failed for ${row.id}:`, err)
-        void db.$executeRaw`
+        console.error(`[cron:reservation-reminders] Venue ${slug}: 2h failed for ${row.id}:`, err)
+        void venueDb.$executeRaw`
           UPDATE "Reservation" SET "reminder2hSentAt" = NULL WHERE id = ${row.id}
         `.catch(console.error)
       }
     }
 
-    return NextResponse.json({
-      ok: true,
-      processed: {
-        reminder24h: reminder24hCount,
-        reminder2h: reminder2hCount,
-      },
-      timestamp: now.toISOString(),
-    })
-  } catch (err) {
-    console.error('[reservation-reminders] Fatal error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+    allProcessed[slug] = {
+      reminder24h: reminder24hCount,
+      reminder2h: reminder2hCount,
+    }
+  }, { label: 'cron:reservation-reminders' })
+
+  return NextResponse.json({
+    ...summary,
+    processed: allProcessed,
+    timestamp: now.toISOString(),
+  })
 }

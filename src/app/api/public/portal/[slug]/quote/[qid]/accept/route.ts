@@ -47,7 +47,7 @@ export async function PATCH(
     // ── Resolve venue DB ───────────────────────────────────────────
     let venueDb
     try {
-      venueDb = getDbForVenue(slug)
+      venueDb = await getDbForVenue(slug)
     } catch {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 })
     }

@@ -158,7 +158,7 @@ export const db: PrismaClient = new Proxy(masterClient, {
 
 function createAdminClient(url?: string): PrismaClient {
   const connectionString = url || process.env.DATABASE_URL || ''
-  const adminPoolSize = isVercel ? 1 : 5
+  const adminPoolSize = isVercel ? 1 : 3
   const adapter: any = new PrismaPg({ connectionString, max: adminPoolSize, connectionTimeoutMillis: isVercel ? 60000 : 10000 })
   const client = new PrismaClient({
     adapter,
@@ -204,7 +204,7 @@ globalForAdminDb.adminDb = adminDb
  * Get a PrismaClient for a specific venue database.
  * Wraps the venue cache's getDbForVenue with the local createPrismaClient.
  */
-export function getDbForVenue(slug: string): PrismaClient {
+export async function getDbForVenue(slug: string): Promise<PrismaClient> {
   return _getDbForVenue(slug, createPrismaClient)
 }
 

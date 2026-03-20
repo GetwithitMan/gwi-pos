@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     // unmodified), so we can't rely on the db proxy's header-based routing here.
     let venueDb
     try {
-      venueDb = getDbForVenue(slug)
+      venueDb = await getDbForVenue(slug)
     } catch {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 })
     }

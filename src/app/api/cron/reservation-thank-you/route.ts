@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
 import { parseSettings } from '@/lib/settings'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -20,11 +20,13 @@ export async function GET(request: NextRequest) {
 
   const now = new Date()
   const thirtyMinAgo = new Date(now.getTime() - 30 * 60 * 1000)
-  let sentCount = 0
+  const allProcessed: Record<string, unknown> = {}
 
-  try {
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    let sentCount = 0
+
     // Atomically claim un-sent thank-you messages
-    const claimed: { id: string; locationId: string }[] = await db.$queryRaw`
+    const claimed: { id: string; locationId: string }[] = await venueDb.$queryRaw`
       UPDATE "Reservation"
       SET "thankYouSentAt" = ${now}
       WHERE status = 'completed'
@@ -36,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     for (const row of claimed) {
       try {
-        const reservation = await db.reservation.findUnique({
+        const reservation = await venueDb.reservation.findUnique({
           where: { id: row.id },
           include: {
             customer: { select: { id: true, firstName: true, lastName: true, phone: true, email: true } },
@@ -44,7 +46,7 @@ export async function GET(request: NextRequest) {
         })
         if (!reservation) continue
 
-        const location = await db.location.findUnique({
+        const location = await venueDb.location.findUnique({
           where: { id: row.locationId },
           select: { name: true, settings: true, phone: true, slug: true },
         })
@@ -56,7 +58,7 @@ export async function GET(request: NextRequest) {
         await sendReservationNotification({
           reservation,
           templateKey: 'thankYou',
-          db,
+          db: venueDb,
           templates: templates || {},
           venueInfo: {
             name: location.name,
@@ -66,7 +68,7 @@ export async function GET(request: NextRequest) {
           },
         })
 
-        await db.reservationEvent.create({
+        await venueDb.reservationEvent.create({
           data: {
             locationId: row.locationId,
             reservationId: row.id,
@@ -78,21 +80,20 @@ export async function GET(request: NextRequest) {
 
         sentCount++
       } catch (err) {
-        console.error(`[reservation-thank-you] Failed for ${row.id}:`, err)
+        console.error(`[cron:reservation-thank-you] Venue ${slug}: Failed for ${row.id}:`, err)
         // Rollback so it can be retried
-        void db.$executeRaw`
+        void venueDb.$executeRaw`
           UPDATE "Reservation" SET "thankYouSentAt" = NULL WHERE id = ${row.id}
         `.catch(console.error)
       }
     }
 
-    return NextResponse.json({
-      ok: true,
-      processed: { thankYouSent: sentCount },
-      timestamp: now.toISOString(),
-    })
-  } catch (err) {
-    console.error('[reservation-thank-you] Fatal error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+    allProcessed[slug] = { thankYouSent: sentCount }
+  }, { label: 'cron:reservation-thank-you' })
+
+  return NextResponse.json({
+    ...summary,
+    processed: allProcessed,
+    timestamp: now.toISOString(),
+  })
 }

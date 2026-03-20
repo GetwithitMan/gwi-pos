@@ -16,13 +16,17 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
+if (!process.env.DATABASE_URL) {
+  console.error('DATABASE_URL is required. Run with: dotenv -e .env.local -- tsx scripts/seed-gwi-admin-dev.ts')
+  process.exit(1)
+}
+
 const ORG_ID  = 'cmm7zv5y0000604js1umry0ch'
 const LOC_ID  = 'cmm802vg50001ceud43jxhtnl'
 const SOURCE  = 'loc-1'   // copy menu from this existing local location
 
 const LOCAL_URL = process.env.LOCAL_DB_URL  || process.env.DATABASE_URL!
-const NEON_URL  = process.env.NEON_DB_URL   ||
-  'postgresql://neondb_owner:npg_oFx7hM6sTSwy@ep-withered-forest-ahcqgqj7.c-3.us-east-1.aws.neon.tech/gwi_pos?sslmode=require'
+const NEON_URL  = process.env.NEON_DB_URL   || process.env.DATABASE_URL!
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 

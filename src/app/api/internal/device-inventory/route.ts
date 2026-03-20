@@ -5,12 +5,20 @@ import { getLocationId } from '@/lib/location-cache'
 /**
  * GET /api/internal/device-inventory
  *
- * Localhost-only endpoint returning all devices at this venue.
+ * Returns all devices at this venue.
  * Called by the NUC sync-agent to include device inventory in heartbeats.
  *
- * No auth required — only accessible on the local network (NUC → localhost).
+ * Headers:
+ *   x-api-key: PROVISION_API_KEY or INTERNAL_API_SECRET
  */
-export async function GET() {
+export async function GET(request: Request) {
+  // ── Auth ──────────────────────────────────────────────────────────────
+  const apiKey = request.headers.get('x-api-key')
+  const secret = process.env.PROVISION_API_KEY || process.env.INTERNAL_API_SECRET
+  if (!apiKey || !secret || apiKey !== secret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const locationId = await getLocationId()
     if (!locationId) {

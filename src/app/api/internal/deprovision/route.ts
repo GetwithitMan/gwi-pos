@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { db } from '@/lib/db'
+import { db, masterClient } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -43,6 +43,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   try {
+    // Mark venue as inactive in cron registry before dropping DB
+    const slug = body.slug as string | undefined
+    if (slug) {
+      try {
+        await masterClient.$executeRawUnsafe(
+          `UPDATE "_cron_venue_registry" SET "is_active" = false, "updated_at" = NOW() WHERE "slug" = $1`,
+          slug,
+        )
+        console.log(`[Deprovision] Marked venue ${slug} as inactive in cron registry`)
+      } catch (registryErr) {
+        // Non-fatal: registry table may not exist yet
+        console.warn(`[Deprovision] Failed to deactivate ${slug} in cron registry:`, registryErr)
+      }
+    }
+
     // Check if database exists
     const existing = await db.$queryRawUnsafe<{ datname: string }[]>(
       `SELECT datname FROM pg_database WHERE datname = $1`,

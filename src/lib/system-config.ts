@@ -30,6 +30,7 @@ export interface SystemConfig {
   readonly tenantSigningKey: string
   readonly neonDatabaseUrl: string | undefined
   readonly provisionApiKey: string
+  readonly cloudJwtSecret: string
   readonly port: number
 }
 
@@ -57,16 +58,24 @@ function buildConfig(): SystemConfig {
   // Note: proxy.ts already throws at boot if missing in prod non-NUC.
   // We don't duplicate that check here — just provide the value.
 
+  // Cloud JWT secret — used for signing/verifying cloud session JWTs.
+  // Falls back to PROVISION_API_KEY for backward compatibility.
+  const cloudJwtSecret = process.env.CLOUD_JWT_SECRET || provisionApiKey
+  if (!process.env.CLOUD_JWT_SECRET && provisionApiKey && requireProdKeys) {
+    log.warn('CLOUD_JWT_SECRET not set — falling back to PROVISION_API_KEY for JWT signing. Set CLOUD_JWT_SECRET to a separate secret before scaling.')
+  }
+
   return Object.freeze({
     nodeEnv,
     isProduction,
     syncEnabled: parseBool(process.env.SYNC_ENABLED, false),
     posLocationId: process.env.POS_LOCATION_ID || undefined,
     stationRole: parseStationRole(process.env.STATION_ROLE),
-    tenantJwtEnabled: parseBool(process.env.TENANT_JWT_ENABLED, false),
+    tenantJwtEnabled: parseBool(process.env.TENANT_JWT_ENABLED, !!process.env.VERCEL),
     tenantSigningKey,
     neonDatabaseUrl: process.env.NEON_DATABASE_URL || undefined,
     provisionApiKey,
+    cloudJwtSecret,
     port: parsePort(process.env.PORT, 3005),
   })
 }

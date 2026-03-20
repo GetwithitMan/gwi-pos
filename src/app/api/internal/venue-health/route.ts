@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
   try {
     const start = Date.now()
-    const venueDb = getDbForVenue(slug)
+    const venueDb = await getDbForVenue(slug)
 
     // Quick connectivity check — count tables in the schema
     const tables = await venueDb.$queryRawUnsafe<{ count: bigint }[]>(

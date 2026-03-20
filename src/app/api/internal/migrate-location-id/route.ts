@@ -13,7 +13,7 @@ import { db } from '@/lib/db'
  */
 export async function POST(request: NextRequest) {
   // Auth: require internal API key (consistent with other internal endpoints)
-  const apiKey = request.headers.get('x-internal-api-key')
+  const apiKey = request.headers.get('x-internal-api-key') || request.headers.get('x-api-key')
   if (apiKey !== process.env.INTERNAL_API_KEY) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

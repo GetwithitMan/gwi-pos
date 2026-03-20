@@ -180,7 +180,7 @@ export async function getLocationSettings(
         select: { rate: true },
       })
       if (rules.length > 0) {
-        const effectiveRate = rules.reduce((sum, rule) => sum + Number(rule.rate), 0)
+        const effectiveRate = rules.reduce((sum: number, rule: { rate: unknown }) => sum + Number(rule.rate), 0)
         const enriched: LocationSettings = {
           ...(settings || {}),
           tax: { ...(settings?.tax || {}), defaultRate: Math.round(effectiveRate * 100 * 10000) / 10000 },

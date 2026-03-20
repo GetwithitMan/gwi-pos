@@ -26,10 +26,36 @@ interface SaleRequest {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<SaleRequest>(request)
-    const { locationId, readerId, invoiceNo, amount, tipAmount, tipMode, tipSuggestions, employeeId } = body
+    const { locationId, readerId, invoiceNo, tipAmount, tipMode, tipSuggestions, employeeId } = body
+    let { amount } = body
 
     if (!locationId || !readerId || !invoiceNo || amount === undefined || amount === null) {
       return Response.json({ error: 'Missing required fields: locationId, readerId, invoiceNo, amount' }, { status: 400 })
+    }
+
+    if (amount <= 0) {
+      return Response.json({ error: 'Amount must be positive' }, { status: 400 })
+    }
+    if (tipAmount !== undefined && tipAmount !== null && tipAmount < 0) {
+      return Response.json({ error: 'Tip amount must be non-negative' }, { status: 400 })
+    }
+    if (tipAmount !== undefined && tipAmount !== null && tipAmount > amount) {
+      return Response.json({ error: 'Tip amount cannot exceed purchase amount' }, { status: 400 })
+    }
+
+    amount = roundToCents(amount)
+
+    const existingSale = await db.$queryRawUnsafe<Array<{ id: string; status: string }>>(
+      `SELECT id, status FROM "_pending_datacap_sales"
+       WHERE "invoiceNo" = $1 AND "locationId" = $2 AND "status" IN ('pending', 'completed')
+       LIMIT 1`,
+      invoiceNo, locationId
+    )
+    if (existingSale.length > 0) {
+      return Response.json(
+        { error: 'Duplicate sale: a transaction with this invoiceNo is already pending or completed' },
+        { status: 409 }
+      )
     }
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)

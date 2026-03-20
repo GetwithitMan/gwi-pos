@@ -42,7 +42,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   if (!INTERNAL_SECRET) {
     return NextResponse.json({ error: 'Internal API secret not configured' }, { status: 500 })
   }
-  const secret = request.headers.get('X-Internal-Secret')
+  const secret = request.headers.get('X-Internal-Secret') || request.headers.get('x-api-key')
   if (secret !== INTERNAL_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

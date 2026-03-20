@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { verifyOwnerToken } from '@/lib/cloud-auth'
-import { signVenueToken } from '@/lib/cloud-auth'
+import { verifyOwnerToken, signVenueToken } from '@/lib/cloud-auth'
+import { config } from '@/lib/system-config'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
@@ -12,7 +12,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Token required' }, { status: 400 })
   }
 
-  const secret = process.env.PROVISION_API_KEY
+  const secret = config.cloudJwtSecret
   if (!secret) return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
 
   const venueSlug = request.headers.get('x-venue-slug')

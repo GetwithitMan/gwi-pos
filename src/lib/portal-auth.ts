@@ -7,7 +7,18 @@
 
 import crypto from 'crypto'
 
-const PORTAL_SECRET = process.env.PORTAL_HMAC_SECRET || 'gwi-portal-hmac-secret-change-me'
+function getPortalSecret(): string {
+  const secret = process.env.PORTAL_HMAC_SECRET
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: PORTAL_HMAC_SECRET must be set in production')
+    }
+    return 'gwi-portal-hmac-secret-change-me' // dev only
+  }
+  return secret
+}
+
+const PORTAL_SECRET = getPortalSecret()
 
 // ─── HMAC-Signed Order View Tokens ─────────────────────────────────────────
 

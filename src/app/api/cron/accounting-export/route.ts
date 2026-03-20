@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { parseSettings, DEFAULT_ACCOUNTING_SETTINGS } from '@/lib/settings'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { generateDailySalesJournal } from '@/lib/accounting/daily-journal'
 import { exportToCSV } from '@/lib/accounting/csv-exporter'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -22,10 +22,10 @@ export async function GET(request: NextRequest) {
   if (cronAuthError) return cronAuthError
 
   const now = new Date()
-  const results: Record<string, unknown>[] = []
+  const allResults: Record<string, unknown>[] = []
 
-  try {
-    const locations = await db.location.findMany({
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    const locations = await venueDb.location.findMany({
       where: { deletedAt: null },
       select: { id: true, name: true, settings: true },
     })
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
       // Skip if auto-export is not enabled
       if (!accounting.enabled || !accounting.autoExportDaily) {
-        results.push({ locationId: loc.id, skipped: true, reason: 'auto_export_disabled' })
+        allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'auto_export_disabled' })
         continue
       }
 
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
       const minutesSinceExport = currentMinuteOfDay - exportMinuteOfDay
 
       if (minutesSinceExport < 0 || minutesSinceExport >= 15) {
-        results.push({ locationId: loc.id, skipped: true, reason: 'outside_export_window' })
+        allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'outside_export_window' })
         continue
       }
 
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
       const businessDate = yesterday.toISOString().split('T')[0]
 
       // Idempotency: check if auto export already ran for this date
-      const alreadyRan = await db.auditLog.findFirst({
+      const alreadyRan = await venueDb.auditLog.findFirst({
         where: {
           locationId: loc.id,
           action: 'accounting_auto_export',
@@ -74,19 +74,19 @@ export async function GET(request: NextRequest) {
       })
 
       if (alreadyRan) {
-        results.push({ locationId: loc.id, skipped: true, reason: 'already_ran_today', date: businessDate })
+        allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'already_ran_today', date: businessDate })
         continue
       }
 
       try {
         // Generate the journal
-        const journal = await generateDailySalesJournal(db as any, loc.id, businessDate)
+        const journal = await generateDailySalesJournal(venueDb as any, loc.id, businessDate)
 
         // Generate CSV (universal format for auto-export)
         const csvData = exportToCSV(journal.entries)
 
         // Log the auto-export
-        await db.auditLog.create({
+        await venueDb.auditLog.create({
           data: {
             locationId: loc.id,
             action: 'accounting_auto_export',
@@ -112,7 +112,8 @@ export async function GET(request: NextRequest) {
           },
         })
 
-        results.push({
+        allResults.push({
+          slug,
           locationId: loc.id,
           date: businessDate,
           entryCount: journal.entries.length,
@@ -122,8 +123,9 @@ export async function GET(request: NextRequest) {
           status: 'exported',
         })
       } catch (err) {
-        console.error(`[Accounting Cron] Failed for location ${loc.id}:`, err)
-        results.push({
+        console.error(`[cron:accounting-export] Failed for venue ${slug} location ${loc.id}:`, err)
+        allResults.push({
+          slug,
           locationId: loc.id,
           date: businessDate,
           status: 'failed',
@@ -131,17 +133,11 @@ export async function GET(request: NextRequest) {
         })
       }
     }
+  }, { label: 'cron:accounting-export' })
 
-    return NextResponse.json({
-      ok: true,
-      processed: results,
-      timestamp: now.toISOString(),
-    })
-  } catch (error) {
-    console.error('[Accounting Cron] Failed:', error)
-    return NextResponse.json(
-      { error: 'Accounting auto-export failed', details: error instanceof Error ? error.message : 'Unknown' },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json({
+    ...summary,
+    processed: allResults,
+    timestamp: now.toISOString(),
+  })
 }

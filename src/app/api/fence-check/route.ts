@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocalLeaseExpiry } from '@/lib/ha-lease-state'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,23 +29,6 @@ interface FenceCheckResponse {
   primaryLeaseExpiry: string | null
   /** Whether this node currently holds a valid MC primary lease */
   holdsMcLease: boolean
-}
-
-/**
- * In-memory primary lease state.
- * Updated by ha-check.sh via the MC arbiter renew-lease endpoint.
- * The primary's health check loop renews the lease every 10 seconds.
- */
-let mcLeaseExpiry: Date | null = null
-
-/** Called by ha-check.sh lease renewal (via health route) to update local lease cache */
-export function updateLocalLeaseExpiry(expiry: Date | null): void {
-  mcLeaseExpiry = expiry
-}
-
-/** Read the current local lease expiry (used by health route) */
-export function getLocalLeaseExpiry(): Date | null {
-  return mcLeaseExpiry
 }
 
 /** RFC-1918 + loopback ranges */
@@ -118,6 +102,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   // MC primary lease status
   const now = new Date()
+  const mcLeaseExpiry = getLocalLeaseExpiry()
   const holdsMcLease = mcLeaseExpiry !== null && mcLeaseExpiry > now
   const primaryLeaseExpiry = mcLeaseExpiry ? mcLeaseExpiry.toISOString() : null
 

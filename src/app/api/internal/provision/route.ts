@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
+import { db, masterClient, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
 import { PrismaClient, CashHandlingMode, CategoryType } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { hash } from 'bcryptjs'
@@ -123,8 +123,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // SAFETY: slug is validated by /^[a-z0-9]+(-[a-z0-9]+)*$/ regex above,
         // and venueDbName() only adds a safe prefix. No user-controlled characters
         // can escape the double-quoted identifier.
-        await db.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`)
-        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Created database: ${dbName}`)
+        try {
+          await db.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`)
+          if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Created database: ${dbName}`)
+        } catch (createErr: any) {
+          // Race condition: another request created the DB between our SELECT and CREATE.
+          // Treat "already exists" as success (idempotent).
+          if (createErr?.message?.includes('already exists')) {
+            console.log(`[Provision] Database already exists (race): ${dbName}`)
+          } else {
+            throw createErr
+          }
+        }
       } else {
         if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Database already exists: ${dbName}`)
       }
@@ -161,8 +171,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       } catch (pushErr) {
         console.error('[Provision] Schema push failed:', pushErr)
+        // Cleanup: drop the half-provisioned database so retries start fresh
+        try {
+          await db.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${dbName}"`)
+          console.log(`[Provision] Cleaned up failed database: ${dbName}`)
+        } catch (dropErr) {
+          // Don't mask the original schema push error
+          console.error('[Provision] Failed to clean up database after schema push failure:', dropErr)
+        }
         return Response.json(
-          { error: 'Schema push failed. Database was created but tables were not.' },
+          { error: 'Schema push failed. Database has been cleaned up for retry.' },
           { status: 500 }
         )
       }
@@ -188,6 +206,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         await venueDb.$disconnect()
       }
 
+      // Register venue in cron registry (master DB) for multi-tenant cron iteration
+      await upsertCronVenueRegistry(slug, dbName)
+
       return Response.json({
         success: true,
         databaseName: dbName,
@@ -198,6 +219,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         posUrl: `https://${slug}.ordercontrolcenter.com`,
       })
     }
+
+    // Register venue in cron registry (master DB) for multi-tenant cron iteration
+    await upsertCronVenueRegistry(slug, dbName)
 
     // schema-only response (no seed data to return)
     return Response.json({
@@ -327,21 +351,33 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   }
 
   // Owner employee — random secure PIN (returned to MC for merchant display)
+  // Use atomic INSERT ... WHERE NOT EXISTS to prevent duplicate owner creation
+  // from concurrent provision requests (no unique constraint on name fields).
   const ownerPin = generateSecurePin()
   const pinHash = await hash(ownerPin, 10)
-  const existingOwner = await venueDb.employee.findFirst({
-    where: { locationId, firstName: 'Owner', lastName: 'Manager', deletedAt: null },
-  })
-  const owner = existingOwner || await venueDb.employee.create({
-    data: {
-      locationId,
-      roleId: createdRoles['Manager'],
-      firstName: 'Owner',
-      lastName: 'Manager',
-      pin: pinHash,
-      isActive: true,
-    },
-  })
+  const insertResult = await venueDb.$queryRawUnsafe<{ id: string }[]>(
+    `INSERT INTO "Employee" ("id", "locationId", "roleId", "firstName", "lastName", "pin", "isActive", "createdAt", "updatedAt")
+     SELECT gen_random_uuid()::text, $1, $2, 'Owner', 'Manager', $3, true, NOW(), NOW()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM "Employee"
+       WHERE "locationId" = $1 AND "firstName" = 'Owner' AND "lastName" = 'Manager' AND "deletedAt" IS NULL
+     )
+     RETURNING "id"`,
+    locationId,
+    createdRoles['Manager'],
+    pinHash,
+  )
+  let owner: { id: string }
+  if (insertResult.length > 0) {
+    owner = insertResult[0]
+  } else {
+    // Already exists from a prior or concurrent request — fetch it
+    const existingOwner = await venueDb.employee.findFirst({
+      where: { locationId, firstName: 'Owner', lastName: 'Manager', deletedAt: null },
+      select: { id: true },
+    })
+    owner = existingOwner!
+  }
 
   // EmployeeRole — upsert by employeeId+roleId natural key
   const existingEmployeeRole = await venueDb.employeeRole.findFirst({
@@ -451,4 +487,28 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   }
 
   return { locationId, ownerPin }
+}
+
+// ============================================================================
+// Cron venue registry — master DB bookkeeping for multi-tenant cron iteration
+// ============================================================================
+
+async function upsertCronVenueRegistry(slug: string, databaseName: string): Promise<void> {
+  try {
+    await masterClient.$executeRawUnsafe(
+      `INSERT INTO "_cron_venue_registry" ("slug", "database_name", "is_active", "created_at", "updated_at")
+       VALUES ($1, $2, true, NOW(), NOW())
+       ON CONFLICT ("slug") DO UPDATE
+       SET "database_name" = EXCLUDED."database_name",
+           "is_active" = true,
+           "updated_at" = NOW()`,
+      slug,
+      databaseName,
+    )
+    console.log(`[Provision] Registered venue ${slug} in cron registry`)
+  } catch (err) {
+    // Non-fatal: table may not exist yet if migration hasn't run.
+    // Cron jobs will still work once migration runs and venues are re-provisioned.
+    console.warn(`[Provision] Failed to register ${slug} in cron registry:`, err)
+  }
 }

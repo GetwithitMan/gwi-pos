@@ -304,6 +304,10 @@ export const PUT = withVenue(async function PUT(
     void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})
     // Also emit employee:updated for Android/PAX devices
     void emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id }).catch(() => {})
+    // Force logout if employee was deactivated via PUT
+    if (isActive === false) {
+      void emitToLocation(existing.locationId, 'employee:deactivated', { employeeId: id }).catch(console.error)
+    }
 
     return NextResponse.json({ data: {
       id: employee.id,
@@ -387,6 +391,8 @@ export const DELETE = withVenue(async function DELETE(
     void emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(() => {})
     // Also emit employee:updated for Android/PAX devices
     void emitToLocation(employee.locationId, 'employee:updated', { action: 'deleted', employeeId: id }).catch(() => {})
+    // Force logout deactivated employee on all terminals
+    void emitToLocation(employee.locationId, 'employee:deactivated', { employeeId: id }).catch(console.error)
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

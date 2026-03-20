@@ -27,6 +27,8 @@ import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -58,6 +60,16 @@ export const POST = withVenue(async function POST(
 
     if (!employeeId) {
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+    }
+
+    // Permission check — closing a tab is a card payment operation
+    const orderForAuth = await db.order.findUnique({ where: { id: orderId }, select: { locationId: true } })
+    if (!orderForAuth) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+    const auth = await requirePermission(employeeId, orderForAuth.locationId, PERMISSIONS.POS_CARD_PAYMENTS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Order claim check — block if another employee has an active claim

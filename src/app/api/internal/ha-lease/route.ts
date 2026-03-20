@@ -15,7 +15,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { updateLocalLeaseExpiry, getLocalLeaseExpiry } from '@/app/api/fence-check/route'
+import { updateLocalLeaseExpiry, getLocalLeaseExpiry } from '@/lib/ha-lease-state'
 
 export const dynamic = 'force-dynamic'
 

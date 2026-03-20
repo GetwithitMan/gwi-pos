@@ -10,19 +10,19 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { verifyCronSecret } from '@/lib/cron-auth'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret (Vercel sends this header)
+  // Verify cron secret
   const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
+  const cronAuthError = verifyCronSecret(authHeader)
+  if (cronAuthError) return cronAuthError
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const allResults: Record<string, unknown> = {}
 
-  try {
-    const result = await db.$executeRawUnsafe(`
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    const result = await venueDb.$executeRawUnsafe(`
       UPDATE "PaymentLink"
       SET "status" = 'expired', "updatedAt" = NOW()
       WHERE "status" = 'pending'
@@ -30,16 +30,12 @@ export async function GET(request: NextRequest) {
     `)
 
     const expiredCount = typeof result === 'number' ? result : 0
+    allResults[slug] = { expired: expiredCount }
+  }, { label: 'cron:expire-payment-links' })
 
-    if (expiredCount > 0) { /* expired count returned in response */ }
-
-    return NextResponse.json({
-      success: true,
-      expired: expiredCount,
-      timestamp: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.error('[cron/expire-payment-links] Error:', error)
-    return NextResponse.json({ error: 'Failed to expire payment links' }, { status: 500 })
-  }
+  return NextResponse.json({
+    ...summary,
+    data: allResults,
+    timestamp: new Date().toISOString(),
+  })
 }

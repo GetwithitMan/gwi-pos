@@ -26,8 +26,8 @@ function createNeonClient(): PrismaClient | null {
   if (isVercel) {
     adapter = new PrismaPg({ connectionString: neonUrl, max: 1, connectionTimeoutMillis: 60000 })
   } else {
-    const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || '10', 10)
-    const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 10 : rawPoolSize
+    const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || '3', 10)
+    const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 3 : rawPoolSize
     adapter = new PrismaPg({
       connectionString: neonUrl,
       max: poolSize,

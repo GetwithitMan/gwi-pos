@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db, adminDb } from '@/lib/db'
+import { adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import {
   dispatchFloorPlanUpdate,
@@ -10,6 +10,8 @@ import {
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { forAllVenues } from '@/lib/cron-venue-helper'
+import { notifyNuc } from '@/lib/cron-nuc-notify'
 
 import { expireSession } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
@@ -25,11 +27,13 @@ export async function GET(request: NextRequest) {
   if (cronAuthError) return cronAuthError
 
   const now = new Date()
-  let expiredSessionCount = 0
-  let expiredWaitlistCount = 0
-  let staleNotifiedCount = 0
+  const allProcessed: Record<string, unknown> = {}
 
-  try {
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    let expiredSessionCount = 0
+    let expiredWaitlistCount = 0
+    let staleNotifiedCount = 0
+
     // TODO: Migrate to OrderItemRepository once it supports cross-tenant cron queries with menuItem+order joins.
     // ── Step 1: Find expired entertainment sessions ──────────────
     const expiredItems = await adminDb.orderItem.findMany({
@@ -80,7 +84,7 @@ export async function GET(request: NextRequest) {
 
     for (const item of expiredItems) {
       try {
-        const result = await db.$transaction(async (tx) => {
+        const result = await venueDb.$transaction(async (tx: any) => {
           return expireSession(tx, {
             id: item.id,
             menuItemId: item.menuItem.id,
@@ -120,7 +124,7 @@ export async function GET(request: NextRequest) {
               )
               if (!order) return
               const totals = await recalculateOrderTotals(
-                db, item.order.id, (order as any).location.settings,
+                venueDb, item.order.id, (order as any).location.settings,
                 Number(order.tipTotal) || 0, order.isTaxExempt
               )
               await OrderRepository.updateOrder(item.order.id, item.order.locationId, {
@@ -132,39 +136,75 @@ export async function GET(request: NextRequest) {
                 commissionTotal: totals.commissionTotal,
                 itemCount: totals.itemCount,
               })
-              void dispatchOrderTotalsUpdate(item.order.locationId, item.order.id, {
-                subtotal: totals.subtotal,
-                taxTotal: totals.taxTotal,
-                tipTotal: Number(order.tipTotal) || 0,
-                discountTotal: 0,
-                total: totals.total,
-                commissionTotal: totals.commissionTotal,
-              }, { async: true }).catch(console.error)
+              // Socket dispatch — works on NUC, falls back to NUC notification on Vercel
+              if (process.env.VERCEL) {
+                void notifyNuc(slug, 'ORDER_TOTALS_UPDATE', {
+                  locationId: item.order.locationId,
+                  orderId: item.order.id,
+                  subtotal: totals.subtotal,
+                  taxTotal: totals.taxTotal,
+                  tipTotal: Number(order.tipTotal) || 0,
+                  discountTotal: 0,
+                  total: totals.total,
+                  commissionTotal: totals.commissionTotal,
+                }).catch(console.error)
+              } else {
+                void dispatchOrderTotalsUpdate(item.order.locationId, item.order.id, {
+                  subtotal: totals.subtotal,
+                  taxTotal: totals.taxTotal,
+                  tipTotal: Number(order.tipTotal) || 0,
+                  discountTotal: 0,
+                  total: totals.total,
+                  commissionTotal: totals.commissionTotal,
+                }, { async: true }).catch(console.error)
+              }
             } catch (err) {
-              console.error('[entertainment-expiry] Failed to recalculate order totals:', err)
+              console.error('[cron:entertainment-expiry] Failed to recalculate order totals:', err)
             }
           })()
         }
 
         // Fire-and-forget socket events (outside transaction)
-        void dispatchEntertainmentStatusChanged(item.order.locationId, {
-          itemId: item.menuItem.id,
-          entertainmentStatus: 'available',
-          currentOrderId: null,
-          expiresAt: null,
-        }).catch(console.error)
+        if (process.env.VERCEL) {
+          void notifyNuc(slug, 'ENTERTAINMENT_STATUS_CHANGED', {
+            locationId: item.order.locationId,
+            itemId: item.menuItem.id,
+            entertainmentStatus: 'available',
+            currentOrderId: null,
+            expiresAt: null,
+          }).catch(console.error)
+        } else {
+          void dispatchEntertainmentStatusChanged(item.order.locationId, {
+            itemId: item.menuItem.id,
+            entertainmentStatus: 'available',
+            currentOrderId: null,
+            expiresAt: null,
+          }).catch(console.error)
+        }
 
         void notifyNextWaitlistEntry(item.order.locationId, item.menuItem.id, item.menuItem.name).catch(console.error)
 
         if (!result.closedOrder) {
-          void dispatchEntertainmentUpdate(item.order.locationId, {
-            sessionId: item.id,
-            tableId: item.menuItem.id,
-            tableName: item.menuItem.name,
-            action: 'stopped',
-            expiresAt: null,
-            startedAt: null,
-          }).catch(console.error)
+          if (process.env.VERCEL) {
+            void notifyNuc(slug, 'ENTERTAINMENT_UPDATE', {
+              locationId: item.order.locationId,
+              sessionId: item.id,
+              tableId: item.menuItem.id,
+              tableName: item.menuItem.name,
+              action: 'stopped',
+              expiresAt: null,
+              startedAt: null,
+            }).catch(console.error)
+          } else {
+            void dispatchEntertainmentUpdate(item.order.locationId, {
+              sessionId: item.id,
+              tableId: item.menuItem.id,
+              tableName: item.menuItem.name,
+              action: 'stopped',
+              expiresAt: null,
+              startedAt: null,
+            }).catch(console.error)
+          }
 
           void emitOrderEvent(
             item.order.locationId,
@@ -182,7 +222,7 @@ export async function GET(request: NextRequest) {
         }
       } catch (itemErr) {
         console.error(
-          `[entertainment-expiry] Failed to process expired session for OrderItem ${item.id}:`,
+          `[cron:entertainment-expiry] Venue ${slug}: Failed to process expired session for OrderItem ${item.id}:`,
           itemErr
         )
       }
@@ -190,13 +230,17 @@ export async function GET(request: NextRequest) {
 
     // Dispatch floor plan updates grouped by location
     for (const locationId of locationIdsToRefresh) {
-      void dispatchFloorPlanUpdate(locationId).catch(console.error)
+      if (process.env.VERCEL) {
+        void notifyNuc(slug, 'FLOOR_PLAN_UPDATE', { locationId }).catch(console.error)
+      } else {
+        void dispatchFloorPlanUpdate(locationId).catch(console.error)
+      }
     }
 
     // ── Step 3: Expire stale waitlist entries ────────────────────
 
     // 3a: Waiting entries past their expiresAt
-    const expiredWaitlist = await db.entertainmentWaitlist.findMany({
+    const expiredWaitlist = await venueDb.entertainmentWaitlist.findMany({
       where: {
         expiresAt: { lt: now },
         status: 'waiting',
@@ -206,13 +250,13 @@ export async function GET(request: NextRequest) {
 
     for (const entry of expiredWaitlist) {
       try {
-        await db.entertainmentWaitlist.update({
+        await venueDb.entertainmentWaitlist.update({
           where: { id: entry.id },
           data: { status: 'expired' },
         })
 
         // Decrement positions of entries after this one
-        await db.entertainmentWaitlist.updateMany({
+        await venueDb.entertainmentWaitlist.updateMany({
           where: {
             locationId: entry.locationId,
             status: 'waiting',
@@ -226,7 +270,7 @@ export async function GET(request: NextRequest) {
         })
       } catch (waitlistErr) {
         console.error(
-          `[entertainment-expiry] Failed to expire waitlist entry ${entry.id}:`,
+          `[cron:entertainment-expiry] Venue ${slug}: Failed to expire waitlist entry ${entry.id}:`,
           waitlistErr
         )
       }
@@ -234,7 +278,7 @@ export async function GET(request: NextRequest) {
     expiredWaitlistCount = expiredWaitlist.length
 
     // 3b: Notified entries that haven't been seated within 10 minutes
-    const staleNotified = await db.entertainmentWaitlist.findMany({
+    const staleNotified = await venueDb.entertainmentWaitlist.findMany({
       where: {
         status: 'notified',
         notifiedAt: { lt: new Date(now.getTime() - 10 * 60 * 1000) },
@@ -249,16 +293,16 @@ export async function GET(request: NextRequest) {
 
     for (const entry of staleNotified) {
       try {
-        await db.entertainmentWaitlist.update({
+        await venueDb.entertainmentWaitlist.update({
           where: { id: entry.id },
           data: {
             status: 'expired',
-            notes: 'Auto-expired — no response within 10 minutes',
+            notes: 'Auto-expired -- no response within 10 minutes',
           },
         })
 
         // Decrement positions of entries after this one
-        await db.entertainmentWaitlist.updateMany({
+        await venueDb.entertainmentWaitlist.updateMany({
           where: {
             locationId: entry.locationId,
             status: 'waiting',
@@ -281,25 +325,23 @@ export async function GET(request: NextRequest) {
         }
       } catch (notifiedErr) {
         console.error(
-          `[entertainment-expiry] Failed to expire stale notified entry ${entry.id}:`,
+          `[cron:entertainment-expiry] Venue ${slug}: Failed to expire stale notified entry ${entry.id}:`,
           notifiedErr
         )
       }
     }
     staleNotifiedCount = staleNotified.length
 
-    // ── Step 4: Log and return summary ───────────────────────────
-    return NextResponse.json({
-      ok: true,
-      processed: {
-        expiredSessions: expiredSessionCount,
-        expiredWaitlist: expiredWaitlistCount,
-        staleNotified: staleNotifiedCount,
-      },
-      timestamp: now.toISOString(),
-    })
-  } catch (err) {
-    console.error('[entertainment-expiry] Fatal error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+    allProcessed[slug] = {
+      expiredSessions: expiredSessionCount,
+      expiredWaitlist: expiredWaitlistCount,
+      staleNotified: staleNotifiedCount,
+    }
+  }, { label: 'cron:entertainment-expiry' })
+
+  return NextResponse.json({
+    ...summary,
+    processed: allProcessed,
+    timestamp: now.toISOString(),
+  })
 }

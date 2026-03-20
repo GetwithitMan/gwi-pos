@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
     // Falls back to db proxy (NUC local mode where DATABASE_URL already points
     // to the venue database).
-    const venueDb = slug ? getDbForVenue(slug) : db
+    const venueDb = slug ? await getDbForVenue(slug) : db
 
     // ── Check online ordering is enabled (BUG #394) ─────────────────────────
     const locationRec = await venueDb.location.findFirst({

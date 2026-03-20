@@ -194,7 +194,8 @@ export function withAuth(
     // Delegates to the shared resolveOrProvisionEmployee() in api-auth.ts
     // so that both auth paths use the same provisioning logic.
     try {
-      const secret = process.env.PROVISION_API_KEY
+      const { config } = await import('./system-config')
+      const secret = config.cloudJwtSecret
       if (secret) {
         const cookieStore = await cookies()
         const cloudToken = cookieStore.get('pos-cloud-session')?.value

@@ -11,9 +11,19 @@ import { getLocationId } from '@/lib/location-cache'
  *
  * Body: { terminalId: string }
  *
+ * Headers:
+ *   x-api-key: PROVISION_API_KEY or INTERNAL_API_SECRET
+ *
  * Called by the NUC sync-agent when Mission Control sends a RELOAD_TERMINAL command.
  */
 export async function POST(request: Request) {
+  // ── Auth ──────────────────────────────────────────────────────────────
+  const apiKey = request.headers.get('x-api-key')
+  const secret = process.env.PROVISION_API_KEY || process.env.INTERNAL_API_SECRET
+  if (!apiKey || !secret || apiKey !== secret) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   try {
     const locationId = await getLocationId()
     if (!locationId) {

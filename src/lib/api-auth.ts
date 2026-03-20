@@ -121,23 +121,24 @@ export function clearPermissionCache(employeeId?: string, locationId?: string): 
  */
 async function getCloudSessionEmployee(): Promise<{ employeeId: string; locationId: string; cloudRole?: string } | null> {
   try {
-    const secret = process.env.PROVISION_API_KEY
-    if (!secret) { console.log('[cloud-auth] No PROVISION_API_KEY'); return null }
+    const { config } = await import('./system-config')
+    const secret = config.cloudJwtSecret
+    if (!secret) { log.info('[cloud-auth] No CLOUD_JWT_SECRET or PROVISION_API_KEY'); return null }
 
     const cookieStore = await cookies()
     const token = cookieStore.get('pos-cloud-session')?.value
-    if (!token) { console.log('[cloud-auth] No pos-cloud-session cookie'); return null }
+    if (!token) { log.info('[cloud-auth] No pos-cloud-session cookie'); return null }
 
     const payload = await verifyCloudToken(token, secret)
-    if (!payload) { console.log('[cloud-auth] Token verification failed'); return null }
+    if (!payload) { log.warn('[cloud-auth] Token verification failed'); return null }
 
-    console.log('[cloud-auth] Token OK:', { sub: payload.sub, slug: payload.slug, posLocationId: payload.posLocationId })
+    log.info({ sub: payload.sub, slug: payload.slug, posLocationId: payload.posLocationId }, '[cloud-auth] Token OK')
 
     // posLocationId may be missing if MC didn't have it when creating the session.
     // Fall back to querying the venue DB (each venue has exactly one Location row).
     let locationId = payload.posLocationId
     if (!locationId) {
-      console.log('[cloud-auth] posLocationId missing, querying DB...')
+      log.info('[cloud-auth] posLocationId missing, querying DB...')
       // Use request context PrismaClient directly — NOT the db proxy.
       // The db proxy triggers tenant scope extension which can deadlock.
       const prisma = getRequestPrisma() || db
@@ -147,16 +148,16 @@ async function getCloudSessionEmployee(): Promise<{ employeeId: string; location
         ) as Array<{ id: string }>
         locationId = rows[0]?.id
       }
-      console.log('[cloud-auth] DB locationId:', locationId)
+      log.info({ locationId }, '[cloud-auth] DB locationId resolved')
       if (!locationId) return null
     }
     const employeeId = await resolveOrProvisionEmployee(payload, locationId)
-    console.log('[cloud-auth] Resolved employeeId:', employeeId)
+    log.info({ employeeId }, '[cloud-auth] Resolved employeeId')
     if (!employeeId) return null
 
     return { employeeId, locationId, cloudRole: payload.role }
   } catch (err) {
-    console.error('[cloud-auth] Error:', err)
+    log.error({ err }, '[cloud-auth] Error')
     return null
   }
 }
@@ -247,7 +248,7 @@ export async function resolveOrProvisionEmployee(
       email: payload.email,
       roleId: adminRole.id,
       isActive: true,
-      pin: null,
+      pin: `MC-${crypto.randomUUID().slice(0, 8)}`, // MC employees use JWT, not PIN — placeholder satisfies schema
     })
 
     if (cloudSubToEmployeeId.size > 200) {

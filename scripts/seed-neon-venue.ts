@@ -17,6 +17,15 @@
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
+if (!process.env.NEON_DATABASE_URL) {
+  console.error('NEON_DATABASE_URL is required. Run with: dotenv -e .env.local -- tsx scripts/seed-neon-venue.ts')
+  process.exit(1)
+}
+if (!process.env.NEON_DIRECT_URL) {
+  console.error('NEON_DIRECT_URL is required. Run with: dotenv -e .env.local -- tsx scripts/seed-neon-venue.ts')
+  process.exit(1)
+}
+
 const SOURCE_LOC = 'loc-1'
 const TARGET_LOC = 'cmm80xd200002ld04nd39guhn' // GWI-ADMIN-Demo in Neon
 
@@ -25,11 +34,10 @@ const LOCAL_URL =
   'postgresql://brianlewis@localhost/gwi_pos_dev'
 
 const NEON_VENUE_URL =
-  process.env.NEON_VENUE_URL ||
-  'postgresql://neondb_owner:npg_oFx7hM6sTSwy@ep-withered-forest-ahcqgqj7-pooler.c-3.us-east-1.aws.neon.tech/gwi_pos_gwi_admin_demo?sslmode=require'
+  process.env.NEON_VENUE_URL || process.env.NEON_DATABASE_URL!
 
 const NEON_VENUE_DIRECT_URL =
-  'postgresql://neondb_owner:npg_oFx7hM6sTSwy@ep-withered-forest-ahcqgqj7.c-3.us-east-1.aws.neon.tech/gwi_pos_gwi_admin_demo?sslmode=require'
+  process.env.NEON_DIRECT_URL!
 
 function client(url: string) {
   return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) })

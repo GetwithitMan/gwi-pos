@@ -41,15 +41,15 @@ export interface PosSessionPayload {
 function getSecret(): string {
   const secret = process.env.NEXTAUTH_SECRET || process.env.SESSION_SECRET
   if (secret) return secret
-  // Auto-generate a per-process secret so NUCs without the env var don't crash.
+  // In production, refuse to start with a random secret — sessions MUST be durable.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: SESSION_SECRET or NEXTAUTH_SECRET must be set in production. Sessions will not work without it.')
+  }
+  // Auto-generate a per-process secret for dev convenience.
   // Sessions won't survive restarts, but the POS stays operational.
   if (!_fallbackSecret) {
     _fallbackSecret = crypto.randomBytes(32).toString('hex')
-    if (process.env.NODE_ENV === 'production') {
-      log.error('[auth-session] SESSION_SECRET not set in production — using auto-generated secret (sessions will not survive restarts)')
-    } else {
-      log.warn('[auth-session] SESSION_SECRET not set — using auto-generated secret (sessions will not survive restarts)')
-    }
+    log.warn('[auth-session] SESSION_SECRET not set — using auto-generated secret (sessions will not survive restarts)')
   }
   return _fallbackSecret
 }

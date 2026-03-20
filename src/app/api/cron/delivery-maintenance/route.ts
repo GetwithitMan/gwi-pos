@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { isDeliveryFeatureActive } from '@/lib/delivery/feature-check'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -15,7 +15,7 @@ export const maxDuration = 30
  *  3. Prune old notification attempts (> 30 days)
  *  4. Clean up expired proof media references (> 90 days)
  *
- * Runs per-location. Skips silently if delivery is not enabled.
+ * Runs per-location per-venue. Skips silently if delivery is not enabled.
  */
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -23,10 +23,10 @@ export async function GET(request: NextRequest) {
   if (cronAuthError) return cronAuthError
 
   const now = new Date()
-  const results: Record<string, unknown>[] = []
+  const allResults: Record<string, unknown>[] = []
 
-  try {
-    const locations = await db.location.findMany({
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    const locations = await venueDb.location.findMany({
       where: { deletedAt: null },
       select: { id: true, settings: true },
     })
@@ -36,15 +36,15 @@ export async function GET(request: NextRequest) {
 
       // Skip if delivery is not enabled for this location
       if (!isDeliveryFeatureActive(settings)) {
-        results.push({ locationId: loc.id, skipped: true, reason: 'delivery_not_enabled' })
+        allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'delivery_not_enabled' })
         continue
       }
 
-      const locationResult: Record<string, unknown> = { locationId: loc.id }
+      const locationResult: Record<string, unknown> = { slug, locationId: loc.id }
 
       try {
-        // ── 1. Prune GPS breadcrumbs older than 7 days ────────────────
-        const gpsPruned = await db.$executeRawUnsafe(
+        // 1. Prune GPS breadcrumbs older than 7 days
+        const gpsPruned = await venueDb.$executeRawUnsafe(
           `DELETE FROM "DeliveryTracking"
            WHERE "locationId" = $1
              AND "recordedAt" < NOW() - INTERVAL '7 days'`,
@@ -52,11 +52,11 @@ export async function GET(request: NextRequest) {
         )
         locationResult.gpsBreadcrumbsPruned = gpsPruned
         if (gpsPruned > 0) {
-          console.log(`[delivery-maintenance] Location ${loc.id}: pruned ${gpsPruned} GPS breadcrumbs`)
+          console.log(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id}: pruned ${gpsPruned} GPS breadcrumbs`)
         }
 
-        // ── 2. Flag expiring driver documents (within 14 days) ────────
-        const expiringDocs = await db.$queryRawUnsafe<any[]>(
+        // 2. Flag expiring driver documents (within 14 days)
+        const expiringDocs = await venueDb.$queryRawUnsafe<any[]>(
           `SELECT dd."id", dd."driverId", dd."documentType", dd."expiresAt"
            FROM "DeliveryDriverDocument" dd
            WHERE dd."expiresAt" < NOW() + INTERVAL '14 days'
@@ -73,8 +73,7 @@ export async function GET(request: NextRequest) {
 
         let exceptionsCreated = 0
         for (const doc of expiringDocs) {
-          // Only create exception if one doesn't already exist for this document
-          const existing = await db.$queryRawUnsafe<{ count: number }[]>(
+          const existing = await venueDb.$queryRawUnsafe<{ count: number }[]>(
             `SELECT COUNT(*)::int as count
              FROM "DeliveryException"
              WHERE "locationId" = $1
@@ -89,7 +88,7 @@ export async function GET(request: NextRequest) {
           )
 
           if ((existing[0]?.count ?? 0) === 0) {
-            await db.$executeRawUnsafe(
+            await venueDb.$executeRawUnsafe(
               `INSERT INTO "DeliveryException" (
                 "id", "locationId", "driverId", "type", "severity", "status",
                 "description", "createdAt", "updatedAt"
@@ -107,11 +106,11 @@ export async function GET(request: NextRequest) {
         locationResult.expiringDocumentsFound = expiringDocs.length
         locationResult.exceptionsCreated = exceptionsCreated
         if (expiringDocs.length > 0) {
-          console.log(`[delivery-maintenance] Location ${loc.id}: ${expiringDocs.length} expiring docs, ${exceptionsCreated} new exceptions`)
+          console.log(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id}: ${expiringDocs.length} expiring docs, ${exceptionsCreated} new exceptions`)
         }
 
-        // ── 3. Prune old notification attempts (> 30 days) ────────────
-        const attemptsPruned = await db.$executeRawUnsafe(
+        // 3. Prune old notification attempts (> 30 days)
+        const attemptsPruned = await venueDb.$executeRawUnsafe(
           `DELETE FROM "DeliveryNotificationAttempt"
            WHERE "attemptedAt" < NOW() - INTERVAL '30 days'
              AND "notificationId" IN (
@@ -122,11 +121,11 @@ export async function GET(request: NextRequest) {
         )
         locationResult.notificationAttemptsPruned = attemptsPruned
         if (attemptsPruned > 0) {
-          console.log(`[delivery-maintenance] Location ${loc.id}: pruned ${attemptsPruned} notification attempts`)
+          console.log(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id}: pruned ${attemptsPruned} notification attempts`)
         }
 
-        // ── 4. Clean up expired proof media references (> 90 days) ────
-        const proofsCleared = await db.$executeRawUnsafe(
+        // 4. Clean up expired proof media references (> 90 days)
+        const proofsCleared = await venueDb.$executeRawUnsafe(
           `UPDATE "DeliveryProofOfDelivery"
            SET "storageKey" = NULL
            WHERE "locationId" = $1
@@ -136,26 +135,24 @@ export async function GET(request: NextRequest) {
         )
         locationResult.proofMediaRefsCleared = proofsCleared
         if (proofsCleared > 0) {
-          console.log(`[delivery-maintenance] Location ${loc.id}: cleared ${proofsCleared} expired proof media refs`)
+          console.log(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id}: cleared ${proofsCleared} expired proof media refs`)
         }
 
-        results.push(locationResult)
+        allResults.push(locationResult)
       } catch (locErr) {
-        console.error(`[delivery-maintenance] Error processing location ${loc.id}:`, locErr)
-        results.push({
+        console.error(`[cron:delivery-maintenance] Venue ${slug} location ${loc.id} error:`, locErr)
+        allResults.push({
+          slug,
           locationId: loc.id,
           error: locErr instanceof Error ? locErr.message : 'Unknown error',
         })
       }
     }
+  }, { label: 'cron:delivery-maintenance' })
 
-    return NextResponse.json({
-      ok: true,
-      processed: results,
-      timestamp: now.toISOString(),
-    })
-  } catch (err) {
-    console.error('[delivery-maintenance] Fatal error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+  return NextResponse.json({
+    ...summary,
+    processed: allResults,
+    timestamp: now.toISOString(),
+  })
 }

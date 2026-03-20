@@ -43,7 +43,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let dbRevokedTerminals: string[] = []
     try {
       const revoked = await db.$queryRawUnsafe<Array<{ terminalId: string }>>(
-        `SELECT "terminalId" FROM "CellularDevice" WHERE "locationId" = $1 AND status IN ('revoked', 'quarantined') AND "terminalId" IS NOT NULL`,
+        `SELECT "terminalId" FROM "CellularDevice" WHERE "locationId" = $1 AND status IN ('REVOKED', 'QUARANTINED') AND "terminalId" IS NOT NULL`,
         locationId
       )
       dbRevokedTerminals = revoked.map(r => r.terminalId)
@@ -127,19 +127,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Add to in-memory deny list (blocks all future requests from this terminal)
-    revokeTerminal(terminalId)
-
-    // Also update DB if CellularDevice table exists
-    try {
-      await db.$executeRawUnsafe(
-        `UPDATE "CellularDevice" SET status = 'revoked', "updatedAt" = NOW() WHERE "terminalId" = $1 AND "locationId" = $2`,
-        terminalId,
-        locationId
-      )
-    } catch {
-      // CellularDevice table may not exist — in-memory revocation still works
-    }
+    // Add to in-memory deny list + persist to DB (revokeTerminal handles both)
+    await revokeTerminal(terminalId, locationId)
 
     // Audit log
     void db.auditLog.create({

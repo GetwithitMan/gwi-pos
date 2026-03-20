@@ -110,7 +110,7 @@ export async function GET(request: NextRequest) {
     // Route to venue database
     let venueDb
     try {
-      venueDb = getDbForVenue(slug)
+      venueDb = await getDbForVenue(slug)
     } catch {
       return NextResponse.json({ error: 'Location not found' }, { status: 404 })
     }

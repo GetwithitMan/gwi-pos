@@ -4,6 +4,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { roundToCents } from '@/lib/pricing'
 
 interface PreAuthRequest {
   locationId: string
@@ -16,11 +17,18 @@ interface PreAuthRequest {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<PreAuthRequest>(request)
-    const { locationId, readerId, orderId, amount, employeeId } = body
+    const { locationId, readerId, orderId, employeeId } = body
+    let { amount } = body
 
     if (!locationId || !readerId || !orderId || amount === undefined || amount === null) {
       return Response.json({ error: 'Missing required fields: locationId, readerId, orderId, amount' }, { status: 400 })
     }
+
+    if (amount <= 0) {
+      return Response.json({ error: 'Amount must be positive' }, { status: 400 })
+    }
+
+    amount = roundToCents(amount)
 
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {

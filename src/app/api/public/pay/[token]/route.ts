@@ -114,7 +114,7 @@ async function findPaymentLink(token: string): Promise<{
         `, row.locationId) as { slug: string }[]
 
         slug = slugRows[0]?.slug || ''
-        if (slug) venueDb = getDbForVenue(slug)
+        if (slug) venueDb = await getDbForVenue(slug)
       } catch {
         // Fall back to masterClient
       }

@@ -106,10 +106,10 @@ export function buildVenueDirectUrl(slug: string): string {
  *
  * @throws Error if slug is invalid (non-alphanumeric-hyphen)
  */
-export function getDbForVenue(
+export async function getDbForVenue(
   slug: string,
   createPrismaClient: (url?: string) => PrismaClient
-): PrismaClient {
+): Promise<PrismaClient> {
   // Guard: reject anything that isn't a valid slug
   if (!slug || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
     throw new Error(`[db] Invalid venue slug: "${slug}"`)
@@ -142,6 +142,22 @@ export function getDbForVenue(
 
   const venueUrl = buildVenueDatabaseUrl(slug)
   const client = createPrismaClient(venueUrl)
+
+  // Connectivity test: verify the venue database exists before caching.
+  // Only runs on first connection (not cached hits). If the DB doesn't exist,
+  // throw a descriptive error and do NOT cache the failed client.
+  try {
+    await client.$queryRawUnsafe('SELECT 1')
+  } catch (connErr: any) {
+    // Disconnect the failed client immediately
+    void client.$disconnect().catch(() => {})
+    const msg = connErr?.message || ''
+    if (msg.includes('does not exist') || msg.includes('FATAL') || msg.includes('3D000')) {
+      throw new Error(`Venue database not found for slug "${slug}"`)
+    }
+    throw new Error(`Venue database connection failed for slug "${slug}": ${msg}`)
+  }
+
   clients.set(slug, { client, lastAccessed: Date.now() })
   return client
 }

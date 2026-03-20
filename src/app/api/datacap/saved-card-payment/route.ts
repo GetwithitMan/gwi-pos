@@ -5,6 +5,7 @@ import { parseSettings } from '@/lib/settings'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getDatacapClient } from '@/lib/datacap/helpers'
+import { roundToCents } from '@/lib/pricing'
 
 // POST - Process a payment using a saved card token (SaleByRecordNo)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -21,6 +22,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (amount <= 0) {
       return NextResponse.json({ error: 'Amount must be positive' }, { status: 400 })
+    }
+    if (tipAmount !== undefined && tipAmount !== null && tipAmount < 0) {
+      return NextResponse.json({ error: 'Tip amount must be non-negative' }, { status: 400 })
+    }
+    if (tipAmount !== undefined && tipAmount !== null && tipAmount > amount) {
+      return NextResponse.json({ error: 'Tip amount cannot exceed purchase amount' }, { status: 400 })
     }
 
     // Permission check — card payment permission
@@ -105,12 +112,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Process via Datacap SaleByRecordNo using the stored token
     const datacap = await getDatacapClient(locationId)
     const invoiceNo = `${order.orderNumber || orderId.slice(-8)}-${Date.now().toString(36)}`
+    const roundedAmount = roundToCents(amount)
+    const roundedTip = roundToCents(tipAmount || 0)
 
     const result = await datacap.saleByRecordNo(readerId, {
       recordNo: card.token,
       invoiceNo,
-      amount,
-      gratuityAmount: tipAmount || 0,
+      amount: roundedAmount,
+      gratuityAmount: roundedTip,
     })
 
     const isApproved = result.cmdStatus === 'Approved' || result.cmdStatus === 'Success'
@@ -138,7 +147,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         tipAmount: tipAmount || 0,
         totalAmount: amount + (tipAmount || 0),
         // Datacap fields for the /pay route
-        datacapRecordNo: result.recordNo || card.token,
+        datacapRecordNo: result.recordNo || '(stored)',
         datacapRefNumber: result.refNo,
         datacapSequenceNo: result.sequenceNo,
         authCode: result.authCode,

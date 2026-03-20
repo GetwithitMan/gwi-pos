@@ -134,7 +134,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
         // instead of silently falling back to master DB
         let prisma
         try {
-          prisma = getDbForVenue(slug)
+          prisma = await getDbForVenue(slug)
         } catch (err) {
           logger.error(`[withVenue] DB routing error for slug "${slug}":`, err)
           return new Response(

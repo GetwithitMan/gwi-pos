@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { transition } from '@/lib/reservations/state-machine'
 import { parseSettings, DEFAULT_RESERVATION_SETTINGS } from '@/lib/settings'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { forAllVenues } from '@/lib/cron-venue-helper'
+import { notifyNuc } from '@/lib/cron-nuc-notify'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -22,12 +23,14 @@ export async function GET(request: NextRequest) {
   if (cronAuthError) return cronAuthError
 
   const now = new Date()
-  let noShowCount = 0
-  let blacklistedCount = 0
+  const allProcessed: Record<string, unknown> = {}
 
-  try {
+  const summary = await forAllVenues(async (venueDb, slug) => {
+    let noShowCount = 0
+    let blacklistedCount = 0
+
     // ── Step 1: Get all locations with confirmed reservations today ──
-    const locations: { id: string; settings: any }[] = await db.$queryRaw`
+    const locations: { id: string; settings: any }[] = await venueDb.$queryRaw`
       SELECT DISTINCT l.id, l.settings
       FROM "Location" l
       JOIN "Reservation" r ON r."locationId" = l.id
@@ -42,9 +45,8 @@ export async function GET(request: NextRequest) {
       const blacklistThreshold = resSetting.noShowBlacklistAfterCount ?? 3
 
       // ── Step 2: Find no-show candidates for this location ──────
-      // Reservation time + grace has passed
       const candidates: { id: string; customerId: string | null; depositStatus: string | null }[] =
-        await db.$queryRaw`
+        await venueDb.$queryRaw`
           SELECT r.id, r."customerId", r."depositStatus"
           FROM "Reservation" r
           WHERE r."locationId" = ${location.id}
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
       // ── Step 3: Process each candidate ─────────────────────────
       for (const candidate of candidates) {
         try {
-          await db.$transaction(async (tx: any) => {
+          await venueDb.$transaction(async (tx: any) => {
             await transition({
               reservationId: candidate.id,
               to: 'no_show',
@@ -76,7 +78,6 @@ export async function GET(request: NextRequest) {
             // Forfeit deposit if paid and settings allow
             if (candidate.depositStatus === 'paid') {
               const depositRules = settings.depositRules
-              // Default: forfeit on no-show (unless explicitly disabled)
               const shouldForfeit = !depositRules || depositRules.enabled !== false
               if (shouldForfeit) {
                 await tx.$executeRawUnsafe(
@@ -102,7 +103,6 @@ export async function GET(request: NextRequest) {
                 candidate.customerId
               )
 
-              // Check if threshold exceeded
               const rows: { noShowCount: number }[] = await tx.$queryRawUnsafe(
                 `SELECT "noShowCount" FROM "Customer" WHERE id = $1`,
                 candidate.customerId
@@ -117,25 +117,32 @@ export async function GET(request: NextRequest) {
             }
           })
           noShowCount++
-          void dispatchReservationChanged(location.id, {
-            reservationId: candidate.id, action: 'no_show',
-          }).catch(console.error)
+          if (process.env.VERCEL) {
+            void notifyNuc(slug, 'reservation:changed', {
+              locationId: location.id,
+              reservationId: candidate.id,
+              action: 'no_show',
+            }).catch(console.error)
+          } else {
+            void dispatchReservationChanged(location.id, {
+              reservationId: candidate.id, action: 'no_show',
+            }).catch(console.error)
+          }
         } catch (err) {
-          console.error(`[reservation-no-shows] Failed for ${candidate.id}:`, err)
+          console.error(`[cron:reservation-no-shows] Venue ${slug}: Failed for ${candidate.id}:`, err)
         }
       }
     }
 
-    return NextResponse.json({
-      ok: true,
-      processed: {
-        noShows: noShowCount,
-        blacklisted: blacklistedCount,
-      },
-      timestamp: now.toISOString(),
-    })
-  } catch (err) {
-    console.error('[reservation-no-shows] Fatal error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
+    allProcessed[slug] = {
+      noShows: noShowCount,
+      blacklisted: blacklistedCount,
+    }
+  }, { label: 'cron:reservation-no-shows' })
+
+  return NextResponse.json({
+    ...summary,
+    processed: allProcessed,
+    timestamp: now.toISOString(),
+  })
 }

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { forAllVenues } from '@/lib/cron-venue-helper'
+import { notifyNuc } from '@/lib/cron-nuc-notify'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -15,12 +16,14 @@ export async function GET(request: NextRequest) {
   const cronAuthError = verifyCronSecret(request.headers.get('authorization'))
   if (cronAuthError) return cronAuthError
 
-  try {
+  const allResults: Record<string, unknown> = {}
+
+  const summary = await forAllVenues(async (venueDb, slug) => {
     const now = new Date()
 
     // Find orders where scheduledFor <= now and status is 'draft' or 'open'
     // Uses raw query because scheduledFor is a raw column (not in Prisma schema)
-    const scheduledOrders = await db.$queryRawUnsafe<{
+    const scheduledOrders = await venueDb.$queryRawUnsafe<{
       id: string
       locationId: string
       employeeId: string
@@ -40,7 +43,8 @@ export async function GET(request: NextRequest) {
     `, now)
 
     if (scheduledOrders.length === 0) {
-      return NextResponse.json({ data: { processed: 0 } })
+      allResults[slug] = { processed: 0 }
+      return
     }
 
     let processed = 0
@@ -51,14 +55,14 @@ export async function GET(request: NextRequest) {
         // Update order: set status to 'open' if draft, mark as fired
         // Clear scheduledFor so it won't be re-processed
         if (order.status === 'draft') {
-          await db.$executeRawUnsafe(`
+          await venueDb.$executeRawUnsafe(`
             UPDATE "Order"
             SET status = 'open', "scheduledFor" = NULL, "updatedAt" = NOW()
             WHERE id = $1 AND "deletedAt" IS NULL
           `, order.id)
         } else {
           // Already 'open' — just clear scheduledFor to mark as processed
-          await db.$executeRawUnsafe(`
+          await venueDb.$executeRawUnsafe(`
             UPDATE "Order"
             SET "scheduledFor" = NULL, "updatedAt" = NOW()
             WHERE id = $1 AND "deletedAt" IS NULL
@@ -72,13 +76,21 @@ export async function GET(request: NextRequest) {
         })
 
         // Dispatch socket events so terminals see the order appear
-        void dispatchOpenOrdersChanged(order.locationId, {
-          trigger: 'updated',
-          orderId: order.id,
-        }, { async: true }).catch(() => {})
+        if (process.env.VERCEL) {
+          void notifyNuc(slug, 'OPEN_ORDERS_CHANGED', {
+            locationId: order.locationId,
+            trigger: 'updated',
+            orderId: order.id,
+          }).catch(() => {})
+        } else {
+          void dispatchOpenOrdersChanged(order.locationId, {
+            trigger: 'updated',
+            orderId: order.id,
+          }, { async: true }).catch(() => {})
+        }
 
         // Audit log (fire-and-forget)
-        void db.auditLog.create({
+        void venueDb.auditLog.create({
           data: {
             locationId: order.locationId,
             employeeId: order.employeeId,
@@ -96,23 +108,17 @@ export async function GET(request: NextRequest) {
         processed++
       } catch (err) {
         const msg = `Failed to fire order ${order.id}: ${err instanceof Error ? err.message : String(err)}`
-        console.error(msg)
+        console.error(`[cron:process-scheduled-orders] Venue ${slug}: ${msg}`)
         errors.push(msg)
       }
     }
 
-    return NextResponse.json({
-      data: {
-        processed,
-        total: scheduledOrders.length,
-        errors: errors.length > 0 ? errors : undefined,
-      },
-    })
-  } catch (error) {
-    console.error('Failed to process scheduled orders:', error)
-    return NextResponse.json(
-      { error: 'Failed to process scheduled orders' },
-      { status: 500 }
-    )
-  }
+    allResults[slug] = {
+      processed,
+      total: scheduledOrders.length,
+      errors: errors.length > 0 ? errors : undefined,
+    }
+  }, { label: 'cron:process-scheduled-orders' })
+
+  return NextResponse.json({ ...summary, data: allResults })
 }

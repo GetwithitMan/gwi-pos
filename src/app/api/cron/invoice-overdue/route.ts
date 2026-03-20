@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { withVenue } from '@/lib/with-venue'
 import { sendEmail } from '@/lib/email-service'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { forAllVenues } from '@/lib/cron-venue-helper'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -15,21 +14,22 @@ const BILLING_SOURCE = 'api' as never
 // 1. Find sent invoices past due date and flag as overdue (no separate status -- stays pending)
 // 2. Send reminder emails for invoices approaching due date
 // 3. Apply late fees if configured
-export const GET = withVenue(async function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const cronAuthError = verifyCronSecret(request.headers.get('authorization'))
   if (cronAuthError) return cronAuthError
 
-  try {
+  const allResults = {
+    overdueFound: 0,
+    remindersSent: 0,
+    lateFeesApplied: 0,
+    errors: [] as string[],
+  }
+
+  const summary = await forAllVenues(async (venueDb, slug) => {
     const now = new Date()
-    const results = {
-      overdueFound: 0,
-      remindersSent: 0,
-      lateFeesApplied: 0,
-      errors: [] as string[],
-    }
 
     // Get all locations (cron runs across all locations)
-    const locations = await db.location.findMany({
+    const locations = await venueDb.location.findMany({
       select: { id: true, settings: true },
     })
 
@@ -42,9 +42,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const locationId = location.id
 
       // 1. Find overdue invoices (pending/approved, past due date)
-      // We don't change their status since the enum doesn't have 'overdue'
-      // but we can log them for reporting
-      const overdueInvoices = await db.invoice.findMany({
+      const overdueInvoices = await venueDb.invoice.findMany({
         where: {
           locationId,
           deletedAt: null,
@@ -57,7 +55,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
       })
 
-      results.overdueFound += overdueInvoices.length
+      allResults.overdueFound += overdueInvoices.length
 
       // 2. Apply late fees if configured
       if (invSettings.lateFeePercent > 0) {
@@ -78,7 +76,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             const newTotal = Number(inv.totalAmount) + lateFee
 
             // Add late fee as a line item
-            await db.invoiceLineItem.create({
+            await venueDb.invoiceLineItem.create({
               data: {
                 locationId,
                 invoiceId: inv.id,
@@ -91,7 +89,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             })
 
             // Update invoice total and mark fee applied
-            await db.invoice.update({
+            await venueDb.invoice.update({
               where: { id: inv.id },
               data: {
                 subtotal: Number(inv.subtotal) + lateFee,
@@ -100,10 +98,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               },
             })
 
-            results.lateFeesApplied++
+            allResults.lateFeesApplied++
           } catch (err) {
             const msg = err instanceof Error ? err.message : 'Unknown error'
-            results.errors.push(`Late fee error for ${inv.invoiceNumber}: ${msg}`)
+            allResults.errors.push(`[${slug}] Late fee error for ${inv.invoiceNumber}: ${msg}`)
           }
         }
       }
@@ -120,7 +118,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           const endOfDay = new Date(reminderDate)
           endOfDay.setHours(23, 59, 59, 999)
 
-          const upcomingInvoices = await db.invoice.findMany({
+          const upcomingInvoices = await venueDb.invoice.findMany({
             where: {
               locationId,
               deletedAt: null,
@@ -174,26 +172,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               }).catch(console.error)
 
               // Mark reminder sent
-              await db.invoice.update({
+              await venueDb.invoice.update({
                 where: { id: inv.id },
                 data: {
                   notes: (inv.notes || '') + `\n${reminderKey}`,
                 },
               })
 
-              results.remindersSent++
+              allResults.remindersSent++
             } catch (err) {
               const msg = err instanceof Error ? err.message : 'Unknown error'
-              results.errors.push(`Reminder error for ${inv.invoiceNumber}: ${msg}`)
+              allResults.errors.push(`[${slug}] Reminder error for ${inv.invoiceNumber}: ${msg}`)
             }
           }
         }
       }
     }
+  }, { label: 'cron:invoice-overdue' })
 
-    return NextResponse.json({ data: results })
-  } catch (error) {
-    console.error('Invoice overdue cron error:', error)
-    return NextResponse.json({ error: 'Failed to process overdue invoices' }, { status: 500 })
-  }
-})
+  return NextResponse.json({ ...summary, data: allResults })
+}

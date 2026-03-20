@@ -37,6 +37,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     await validateReader(readerId, locationId)
+
+    const alreadyUploaded = await db.payment.count({
+      where: {
+        paymentReaderId: readerId,
+        safStatus: 'UPLOAD_SUCCESS',
+        order: { locationId },
+      },
+    })
+    if (alreadyUploaded > 0) {
+      return Response.json(
+        { error: `${alreadyUploaded} payment(s) for this reader already have safStatus=UPLOAD_SUCCESS. Manual review required to avoid double-submission.` },
+        { status: 409 }
+      )
+    }
+
     const client = await requireDatacapClient(locationId)
 
     const response = await client.safForwardAll(readerId)

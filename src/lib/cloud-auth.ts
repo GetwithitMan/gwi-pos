@@ -14,7 +14,7 @@ import { base64urlEncodeBytes, base64urlDecode } from './base64url'
  * 5. POS validates JWT → creates session → shows admin pages only
  *
  * Security:
- * - HMAC-SHA256 signed JWT (shared PROVISION_API_KEY secret)
+ * - HMAC-SHA256 signed JWT (CLOUD_JWT_SECRET, falls back to PROVISION_API_KEY)
  * - 8-hour token lifetime
  * - Slug-bound (token only works for the matching venue)
  * - httpOnly session cookie (XSS-proof)

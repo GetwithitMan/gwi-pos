@@ -4,6 +4,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { db } from '@/lib/db'
 
 interface VoidRequest {
   locationId: string
@@ -24,6 +25,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_CARD_PAYMENTS)
     if (!auth.authorized) {
       return Response.json({ error: auth.error }, { status: auth.status ?? 403 })
+    }
+
+    const alreadyVoided = await db.payment.findFirst({
+      where: {
+        datacapRecordNo: recordNo,
+        locationId,
+        status: 'voided',
+        deletedAt: null,
+      },
+      select: { id: true },
+    })
+    if (alreadyVoided) {
+      return Response.json({
+        data: { approved: true, isDuplicate: true, sequenceNo: null, error: null },
+      })
     }
 
     await validateReader(readerId, locationId)

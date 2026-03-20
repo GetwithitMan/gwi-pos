@@ -2,15 +2,11 @@ import { NextResponse } from 'next/server'
 import { triggerImmediateDownstreamSync } from '@/lib/sync/downstream-sync-worker'
 
 export async function POST(request: Request) {
-  // C16: API key validation + localhost fallback for backward compatibility
+  // Always require INTERNAL_API_SECRET Bearer token — no localhost bypass
   const authHeader = request.headers.get('authorization')
   const apiKey = request.headers.get('x-api-key') || authHeader?.replace('Bearer ', '')
   const isAuthed = !!apiKey && apiKey === process.env.INTERNAL_API_SECRET
-  // Localhost check: only trust when no x-forwarded-for header (direct local connection)
-  const forwardedFor = request.headers.get('x-forwarded-for')
-  const ip = forwardedFor?.split(',')[0]?.trim() || ''
-  const isLocal = !forwardedFor || ['127.0.0.1', '::1'].includes(ip)
-  if (!isAuthed && !isLocal) {
+  if (!isAuthed) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

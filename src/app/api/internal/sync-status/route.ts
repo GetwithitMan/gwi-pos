@@ -5,7 +5,7 @@ import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 
 export async function GET(request: NextRequest) {
   // Internal route — require INTERNAL_API_SECRET or admin session
-  const authHeader = request.headers.get('x-internal-secret')
+  const authHeader = request.headers.get('x-internal-secret') || request.headers.get('x-api-key')
   const expectedSecret = process.env.INTERNAL_API_SECRET
   if (expectedSecret && authHeader !== expectedSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

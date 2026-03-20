@@ -6,11 +6,16 @@ import { db } from '@/lib/db'
  * Returns the current cloud identity from the Location record.
  * Called by support tooling and sync-agent for "who am I?" queries.
  */
-export async function GET() {
-  // Internal endpoints require INTERNAL_API_SECRET
+export async function GET(request: Request) {
+  // Internal endpoints require INTERNAL_API_SECRET + Bearer token validation
   const secret = process.env.INTERNAL_API_SECRET
   if (!secret) {
     return NextResponse.json({ error: 'Not configured' }, { status: 503 })
+  }
+
+  const authHeader = request.headers.get('authorization')
+  if (authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {

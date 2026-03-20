@@ -10,6 +10,7 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http'
+import { execSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import next from 'next'
 import compression from 'compression'
@@ -185,6 +186,25 @@ async function main() {
   const app = next({ dev, hostname, port })
   const handle = app.getRequestHandler()
 
+  // ── Run migrations before anything else (NUC only) ───────────────────
+  // Vercel handles migrations in vercel-build.js; NUC must run them on boot
+  // so the schema is current before app.prepare(), validateSyncCoverage(), etc.
+  if (!process.env.VERCEL) {
+    try {
+      console.log('[server] Running pre-start migrations...')
+      execSync('node scripts/nuc-pre-migrate.js', {
+        stdio: 'inherit',
+        timeout: 300000, // 5 minute timeout (matches the script's internal timeout)
+        cwd: process.cwd()
+      })
+      console.log('[server] Migrations complete')
+    } catch (err) {
+      console.error('[server] Migration failed:', err)
+      // Don't exit — server should still start for recovery access
+      // Schema verification will catch issues and block sync workers
+    }
+  }
+
   await app.prepare()
 
   const socketPath = process.env.SOCKET_PATH || '/api/socket'
@@ -210,8 +230,12 @@ async function main() {
       const slug = req.headers['x-venue-slug'] as string | undefined
       const requestId = (req.headers['x-request-id'] as string) || randomUUID()
       if (slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-        const prisma = getDbForVenue(slug)
-        requestStore.run({ slug, prisma, requestId }, () => handle(req, res))
+        getDbForVenue(slug).then((prisma) => {
+          requestStore.run({ slug, prisma, requestId }, () => handle(req, res))
+        }).catch(() => {
+          res.statusCode = 502
+          res.end(JSON.stringify({ error: 'Venue database not available' }))
+        })
       } else {
         // Local/NUC mode (no slug header): still wrap in requestStore so
         // withVenue() fast-path fires and skips await headers() entirely.
