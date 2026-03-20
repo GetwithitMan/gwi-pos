@@ -1,5 +1,8 @@
 import { base64urlEncodeBytes, base64urlDecode } from './base64url'
 
+// TODO(scale): PROVISION_API_KEY is used here for JWT verification but also for API auth.
+// These should use separate secrets. See cloud-session/route.ts for details.
+
 /**
  * Cloud Authentication for Venue Admin Access
  *

@@ -4,6 +4,10 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { config } from '@/lib/system-config'
 
+// TODO(scale): PROVISION_API_KEY is currently used for both MC→POS API auth AND JWT signing.
+// Split into separate secrets (PROVISION_API_KEY for API auth, CLOUD_SESSION_SECRET for JWT)
+// before scaling to 1000+ merchants to limit blast radius of key compromise.
+
 /**
  * POST /api/auth/cloud-session
  *

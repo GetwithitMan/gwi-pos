@@ -83,6 +83,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   const body = await request.json()
   const slug: string = body.slug
   const name: string = body.name || slug
+  const nucBaseUrl: string | undefined = body.nucBaseUrl
 
   // ── Validate slug ────────────────────────────────────────────────────
   if (!slug || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
@@ -207,7 +208,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       // Register venue in cron registry (master DB) for multi-tenant cron iteration
-      await upsertCronVenueRegistry(slug, dbName)
+      await upsertCronVenueRegistry(slug, dbName, nucBaseUrl)
 
       return Response.json({
         success: true,
@@ -221,7 +222,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Register venue in cron registry (master DB) for multi-tenant cron iteration
-    await upsertCronVenueRegistry(slug, dbName)
+    await upsertCronVenueRegistry(slug, dbName, nucBaseUrl)
 
     // schema-only response (no seed data to return)
     return Response.json({
@@ -493,19 +494,21 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
 // Cron venue registry — master DB bookkeeping for multi-tenant cron iteration
 // ============================================================================
 
-async function upsertCronVenueRegistry(slug: string, databaseName: string): Promise<void> {
+async function upsertCronVenueRegistry(slug: string, databaseName: string, nucBaseUrl?: string): Promise<void> {
   try {
     await masterClient.$executeRawUnsafe(
-      `INSERT INTO "_cron_venue_registry" ("slug", "database_name", "is_active", "created_at", "updated_at")
-       VALUES ($1, $2, true, NOW(), NOW())
+      `INSERT INTO "_cron_venue_registry" ("slug", "database_name", "is_active", "nuc_base_url", "created_at", "updated_at")
+       VALUES ($1, $2, true, $3, NOW(), NOW())
        ON CONFLICT ("slug") DO UPDATE
        SET "database_name" = EXCLUDED."database_name",
            "is_active" = true,
+           "nuc_base_url" = COALESCE(EXCLUDED."nuc_base_url", "_cron_venue_registry"."nuc_base_url"),
            "updated_at" = NOW()`,
       slug,
       databaseName,
+      nucBaseUrl || null,
     )
-    console.log(`[Provision] Registered venue ${slug} in cron registry`)
+    console.log(`[Provision] Registered venue ${slug} in cron registry${nucBaseUrl ? ` (NUC: ${nucBaseUrl})` : ''}`)
   } catch (err) {
     // Non-fatal: table may not exist yet if migration hasn't run.
     // Cron jobs will still work once migration runs and venues are re-provisioned.

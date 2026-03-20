@@ -114,7 +114,27 @@ export async function forAllVenues(
       const venueDb = await getDbForVenue(slug)
       // Run the callback inside requestStore so that `db` proxy resolves to venueDb
       await requestStore.run({ slug, prisma: venueDb }, async () => {
-        await callback(venueDb, slug)
+        try {
+          await callback(venueDb, slug)
+        } catch (err: any) {
+          // Schema drift: venue DB may not have all tables yet (e.g. DB_PENDING,
+          // SEEDED but missing latest migrations). Prisma emits "prisma:error Invalid"
+          // or "Invalid `prisma.xxx.findMany()` invocation" for missing tables/columns.
+          // Log as warning instead of error so monitoring doesn't alert on expected drift.
+          const msg = err instanceof Error ? err.message : String(err)
+          if (
+            msg.includes('prisma:error') ||
+            msg.includes('Invalid `prisma.') ||
+            msg.includes('does not exist') ||
+            msg.includes('relation') && msg.includes('does not exist') ||
+            msg.includes('column') && msg.includes('does not exist') ||
+            msg.includes('The table') && msg.includes('does not exist')
+          ) {
+            console.warn(`[${label}] Venue ${slug} skipped — schema drift (table/column missing): ${msg.slice(0, 200)}`)
+            return // Don't re-throw: counts as skipped, not failed
+          }
+          throw err // Re-throw non-schema errors for normal failure handling
+        }
       })
     }
 

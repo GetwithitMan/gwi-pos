@@ -73,6 +73,7 @@ export async function handleCloudMode(
   venueSlug: string,
 ): Promise<NextResponse | null> {
   // Always allow: SMS access gate + auth endpoints (no session required)
+  // Health endpoints must be accessible without auth for monitoring/uptime checks.
   if (
     pathname === '/access' ||
     pathname.startsWith('/api/access/') ||
@@ -86,7 +87,10 @@ export async function handleCloudMode(
     pathname === '/api/auth/forgot-password' ||
     pathname === '/api/auth/reset-password' ||
     // Internal MC->POS endpoints — authenticated via x-api-key, not session cookie
-    pathname.startsWith('/api/internal/')
+    pathname.startsWith('/api/internal/') ||
+    // Health check endpoints — must be accessible without auth for monitoring
+    pathname === '/api/health' ||
+    pathname.startsWith('/api/health/')
   ) {
     const headers = new Headers(request.headers)
     headers.set('x-venue-slug', venueSlug)
