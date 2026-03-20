@@ -272,10 +272,13 @@ async function main() {
     logger.info({ hostname, port, mode: dev ? 'development' : 'production' }, 'GWI POS ready')
     logger.info({ socketUrl: `ws://${hostname}:${port}/api/socket` }, 'Socket.io endpoint')
 
-    // Schema verification (non-blocking, logs warnings)
-    void import('./src/lib/schema-verify').then(({ verifySchema }) =>
+    // Schema verification (non-blocking, but result gates sync workers)
+    const schemaResult = await import('./src/lib/schema-verify').then(({ verifySchema }) =>
       verifySchema()
-    ).catch(err => logger.error({ err }, 'Schema verification failed'))
+    ).catch(err => {
+      logger.error({ err }, 'Schema verification failed')
+      return { passed: false, missing: [{ table: '_VERIFICATION_ERROR' }], checked: 0, error: String(err) } as const
+    })
 
     // Tenant model set validation — fatal in production, warning in dev
     void import('./src/lib/tenant-validation').then(({ validateTenantModelSets }) =>
@@ -305,14 +308,19 @@ async function main() {
       () => { /* no stop — interval-based, exits with process */ }
     )
 
-    // Sync workers — only when sync is enabled, not backup, Neon URL present, and schema ready
+    // Sync workers — only when sync is enabled, not backup, Neon URL present, schema ready, AND local schema verified
     const neonReady = bootstrapResult?.neonSchemaReady
     // Fail-CLOSED for sync: if bootstrap didn't run or Neon readiness is unknown, block sync.
     // Local orders still work (POS boots regardless), but sync must not start without verified schema.
     const neonSchemaOk = (neonReady != null)
       ? (neonReady.coreTablesExist && neonReady.requiredEnumsExist && neonReady.schemaVersionMatch && neonReady.baseSeedPresent)
       : !config.neonDatabaseUrl  // Only true if Neon isn't configured (local-only mode)
-    const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl && neonSchemaOk
+    // Local schema must also be verified — prevents sync with missing tables/columns
+    const localSchemaOk = schemaResult.passed
+    if (!localSchemaOk) {
+      logger.error({ schemaResult }, 'Local schema verification failed — sync workers will NOT start. Server continues for recovery access.')
+    }
+    const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl && neonSchemaOk && localSchemaOk
     if (config.syncEnabled && config.stationRole === 'backup') {
       logger.warn('STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
     } else if (config.syncEnabled && !config.neonDatabaseUrl) {

@@ -18,6 +18,23 @@ interface SchemaCheckResult {
   passed: boolean
   missing: Array<{ table: string; column?: string }>
   checked: number
+  /** When verification itself throws, the error message is captured here */
+  error?: string
+}
+
+// ── Module-level verification state ──────────────────────────────────────────
+// Other modules (e.g., server.ts worker registration) can check this flag
+// to decide whether to start sync workers. Defaults to null (not yet run).
+let _lastSchemaResult: SchemaCheckResult | null = null
+
+/** Returns the most recent schema verification result, or null if not yet run. */
+export function getSchemaVerificationResult(): SchemaCheckResult | null {
+  return _lastSchemaResult
+}
+
+/** Returns true only if schema verification has run AND passed. */
+export function isSchemaVerified(): boolean {
+  return _lastSchemaResult?.passed === true
 }
 
 /**
@@ -79,16 +96,24 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
       }
     }
   } catch (err) {
-    log.error({ err: err instanceof Error ? err.message : err }, '[SchemaVerify] Failed to verify schema')
-    // In production, schema verification failure is a serious signal — do NOT silently pass.
-    // Return passed: false so callers can decide how to handle it.
-    // In dev, still fail-open to avoid blocking local development.
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    log.error({ err: errorMsg }, '[SchemaVerify] Failed to verify schema')
+
+    // ALWAYS return passed: false when verification itself throws.
+    // A broken verification must never look "verified".
     const isProduction = process.env.NODE_ENV === 'production'
     if (isProduction) {
-      log.error('[SchemaVerify] Schema verification failed in production — returning NOT passed')
-      return { passed: false, missing: [{ table: '_VERIFICATION_ERROR' }], checked: 0 }
+      log.fatal('[SchemaVerify] FATAL: Schema verification error in production — sync workers must NOT start')
     }
-    return { passed: true, missing: [], checked: 0 } // Dev: fail-open
+
+    const result: SchemaCheckResult = {
+      passed: false,
+      missing: [{ table: '_VERIFICATION_ERROR' }],
+      checked: 0,
+      error: errorMsg,
+    }
+    _lastSchemaResult = result
+    return result
   }
 
   const passed = missing.length === 0
@@ -96,9 +121,14 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
   if (!passed) {
     log.error('[SchemaVerify] CRITICAL: Missing schema elements:', missing)
     log.error('[SchemaVerify] This usually means migrations did not run. Check pre-start.sh logs.')
+    if (process.env.NODE_ENV === 'production') {
+      log.fatal({ missing }, '[SchemaVerify] FATAL: Schema missing critical elements in production — sync workers must NOT start')
+    }
   } else {
     log.info(`[SchemaVerify] Schema OK — ${checked} elements verified`)
   }
 
-  return { passed, missing, checked }
+  const result: SchemaCheckResult = { passed, missing, checked }
+  _lastSchemaResult = result
+  return result
 }

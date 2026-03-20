@@ -49,6 +49,7 @@ const SLUGLESS_ALLOWED_PATTERNS = [
   '/api/sync/',          // Sync endpoints (NUC-local)
   '/api/order-events/',  // Order event batch (NUC-local)
   '/api/fleet/',         // Fleet endpoints (NUC heartbeat)
+  '/api/cron/',          // Vercel cron jobs (authed via CRON_SECRET, not slug)
   '/pay/',               // Payment links
   '/approve-void/',      // Void approval links
 ]
@@ -159,8 +160,8 @@ export function withVenue(handler: RouteHandler): RouteHandler {
         return NextResponse.json({ error: 'Venue context required' }, { status: 400 })
       }
 
-      if (process.env.NEON_DATABASE_URL && process.env.NODE_ENV === 'production') {
-        console.warn(`[with-venue] Request to ${pathname} has no x-venue-slug — running in master DB context (allowed slugless route).`)
+      if (process.env.NODE_ENV === 'production') {
+        logger.warn({ pathname }, '[withVenue] Slugless request running in master DB context (allowed slugless route)')
       }
       return requestStore.run(
         { slug: '', prisma: masterClient },

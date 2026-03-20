@@ -61,11 +61,17 @@ let cycleRunning = false
 const notificationDispatchedLocations = new Set<string>()
 
 /**
- * Catalog tables use soft-delete (quarantine) instead of hard-delete for
- * business-key conflicts. Hard-deleting a Category/MenuItem/ModifierGroup/Modifier
+ * Catalog tables use ID-swap instead of delete for business-key conflicts.
+ * When a Neon row has a different ID but matching business key to a local row,
+ * we UPDATE the local row's ID to match Neon's ID. PostgreSQL FK constraints
+ * (ON UPDATE CASCADE) cascade the change to all child rows, preserving the
+ * entire catalog graph (e.g., MenuItem→Category, Modifier→ModifierGroup).
+ *
+ * If the ID-swap fails (target ID exists, FK issues), falls back to soft-delete
+ * + SyncConflict record for operator review.
+ *
+ * Hard-deleting or soft-deleting a Category/MenuItem/ModifierGroup/Modifier
  * can leave orphaned child rows and partial catalog graphs during convergence.
- * Soft-deleting (setting deletedAt = NOW()) preserves the data for operator review
- * while still allowing the authoritative Neon row to be inserted.
  */
 const CATALOG_QUARANTINE_TABLES = new Set(['Category', 'MenuItem', 'ModifierGroup', 'Modifier'])
 
@@ -397,17 +403,73 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
               'Business-key conflict: local row is locally-mutated and newer — skipping (local wins)'
             )
           } else if (CATALOG_QUARANTINE_TABLES.has(tableName)) {
-            // Catalog tables: soft-delete (quarantine) the conflicting row instead of
-            // destroying it. This prevents partial catalog graphs (e.g., a MenuItem's
-            // Category disappearing mid-sync) while still allowing the Neon row to land.
-            await masterClient.$executeRawUnsafe(
-              `UPDATE "${tableName}" SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $1`,
-              local.id
-            )
-            log.warn(
-              { table: tableName, localId: local.id, neonId: row.id },
-              'Quarantined catalog row (soft-delete) for business-key conflict — local row preserved for review'
-            )
+            // Catalog tables: ID-swap instead of delete/soft-delete.
+            // UPDATE the local row's ID to match the Neon row's ID. PostgreSQL FK
+            // constraints (ON UPDATE CASCADE) will cascade the change to all child
+            // rows (e.g., MenuItem.categoryId, Modifier.modifierGroupId), preserving
+            // the entire catalog graph. The subsequent ON CONFLICT upsert will then
+            // find the row by the new ID and update all non-ID columns to match Neon.
+            let idSwapSucceeded = false
+            try {
+              // Check if the target Neon ID already exists locally (would cause unique violation)
+              const targetExists = await masterClient.$queryRawUnsafe<{ id: string }[]>(
+                `SELECT id FROM "${tableName}" WHERE "id" = $1 LIMIT 1`,
+                row.id as string
+              )
+              if (targetExists.length > 0) {
+                // Target ID already exists — can't swap. This means the Neon row
+                // will land via normal upsert. Soft-delete the conflicting local row
+                // to clear the business-key constraint, but log to SyncConflict for audit.
+                log.warn(
+                  { table: tableName, localId: local.id, neonId: row.id },
+                  'ID-swap skipped: target Neon ID already exists locally — falling back to soft-delete'
+                )
+              } else {
+                await masterClient.$executeRawUnsafe(
+                  `UPDATE "${tableName}" SET "id" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+                  row.id as string, local.id
+                )
+                idSwapSucceeded = true
+                log.info(
+                  { table: tableName, localId: local.id, neonId: row.id },
+                  'Catalog ID-swap: local row ID updated to match Neon (FK cascaded to children)'
+                )
+              }
+            } catch (swapErr) {
+              // ID-swap failed (FK constraint without CASCADE, unique violation, etc.)
+              // Fall back to soft-delete + SyncConflict record
+              log.warn(
+                { table: tableName, localId: local.id, neonId: row.id, err: swapErr instanceof Error ? swapErr.message : String(swapErr) },
+                'Catalog ID-swap failed — falling back to soft-delete with SyncConflict record'
+              )
+            }
+
+            if (!idSwapSucceeded) {
+              // Fallback: soft-delete the conflicting row and log to SyncConflict for operator review
+              await masterClient.$executeRawUnsafe(
+                `UPDATE "${tableName}" SET "deletedAt" = NOW(), "updatedAt" = NOW() WHERE "id" = $1`,
+                local.id
+              )
+              // Record in SyncConflict for audit trail
+              try {
+                await masterClient.$executeRawUnsafe(
+                  `INSERT INTO "SyncConflict" (id, model, "recordId", "localVersion", "cloudVersion", "localData", "cloudData", "detectedAt")
+                   VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::jsonb, $6::jsonb, NOW())`,
+                  tableName,
+                  local.id,
+                  localUpdatedAt?.toISOString() ?? new Date().toISOString(),
+                  neonUpdatedAt?.toISOString() ?? new Date().toISOString(),
+                  JSON.stringify({ id: local.id, conflictType: 'business-key-id-mismatch', fallback: 'soft-delete' }),
+                  JSON.stringify({ id: row.id }),
+                )
+              } catch {
+                // SyncConflict table may not exist — non-fatal
+              }
+              log.warn(
+                { table: tableName, localId: local.id, neonId: row.id },
+                'Catalog business-key conflict: soft-deleted local row (ID-swap failed) — logged to SyncConflict for review'
+              )
+            }
           } else {
             // Non-catalog tables: hard-delete the conflicting local row
             log.info({ table: tableName, localId: local.id, neonId: row.id }, 'Resolving business-key conflict — local replaced by Neon')

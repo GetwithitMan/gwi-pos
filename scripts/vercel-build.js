@@ -5,79 +5,20 @@
  * 1. prisma generate
  * 2. Run nuc-pre-migrate.js against master Neon DB (via PrismaClient)
  * 3. prisma db push on master
- * 4. For each venue DB: run nuc-pre-migrate.js + prisma db push
- * 5. next build
+ * 4. next build
  *
  * The migration logic lives in scripts/migrations/ and is shared between
  * NUC (local PG) and Vercel (Neon) via nuc-pre-migrate.js.
+ *
+ * NOTE: Venue databases are NOT synced during build. The previous approach
+ * of looping through every venue DB and running migrations + prisma db push
+ * was the #1 source of schema drift — if any venue failed, the build still
+ * "succeeded" and that venue was left with a broken schema. Per-venue schema
+ * updates are now handled exclusively through the MC provisioning pipeline
+ * (via /api/internal/provision + _venue_schema_state tracking), which has
+ * proper error handling, retry logic, and state tracking per venue.
  */
 const { execSync } = require('child_process')
-
-/**
- * Sync schema to all venue databases on this Neon project.
- *
- * Each venue uses its own DB (gwi_pos_{slug}) on the same Neon endpoint.
- * Vercel build only syncs the master gwi_pos DB by default; this step
- * ensures existing venue DBs stay in sync after schema changes.
- *
- * New venues are handled at provision time (via /api/internal/provision),
- * so they always start with the correct schema — this only covers existing ones.
- */
-async function syncVenueSchemas() {
-  if (!process.env.DATABASE_URL) {
-    console.warn('[vercel-build] DATABASE_URL not set — skipping venue sync')
-    return
-  }
-  const { neon } = require('@neondatabase/serverless')
-  const sql = neon(process.env.DATABASE_URL)
-
-  // Enumerate all venue DBs on this Neon project (same credentials, different DB name)
-  const venueRows = await sql`
-    SELECT datname FROM pg_database
-    WHERE datname LIKE 'gwi_pos_%' AND datname != 'gwi_pos'
-    ORDER BY datname
-  `
-
-  if (venueRows.length === 0) {
-    console.log('[vercel-build] No venue databases found, skipping venue sync')
-    return
-  }
-
-  console.log(`[vercel-build] Syncing schema for ${venueRows.length} venue database(s)...`)
-
-  // Replace the DB name portion of a postgres URL (e.g. /gwi_pos? -> /gwi_pos_foo?)
-  function swapDb(url, dbName) {
-    return url.replace(/\/[^/?]+(\?|$)/, `/${dbName}$1`)
-  }
-
-  const basePooler = process.env.DATABASE_URL
-  const baseDirect = process.env.DIRECT_URL || process.env.DATABASE_URL
-
-  for (const { datname } of venueRows) {
-    const venuePooler = swapDb(basePooler, datname)
-    const venueDirect = swapDb(baseDirect, datname)
-
-    console.log(`[vercel-build]   -> ${datname}`)
-    try {
-      // 1. Run pre-push migrations (shared migration runner via PrismaClient)
-      execSync('node scripts/nuc-pre-migrate.js', {
-        stdio: 'inherit',
-        env: { ...process.env, NEON_MIGRATE: 'true', NEON_DATABASE_URL: venueDirect, DATABASE_URL: venueDirect },
-      })
-
-      // 2. Push full Prisma schema
-      execSync('npx prisma db push --accept-data-loss', {
-        stdio: 'inherit',
-        env: { ...process.env, DATABASE_URL: venuePooler, DIRECT_URL: venueDirect },
-      })
-    } catch (err) {
-      // Log but don't fail the build — a single venue schema error shouldn't block deploy
-      console.error(`[vercel-build]   FAILED ${datname}:`, err.message)
-    }
-  }
-
-  console.log('[vercel-build] Venue schema sync complete')
-}
 
 async function main() {
   // 1. Generate Prisma client
@@ -99,16 +40,8 @@ async function main() {
   console.log('[vercel-build] Running prisma db push (master)...')
   execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' })
 
-  // 4. Sync schema to all existing venue DBs (same Neon project, different DB name per venue)
-  // Wrapped in try/catch — venue sync failure must not block main deployment.
-  // Individual venue failures are already non-fatal (caught inside syncVenueSchemas),
-  // but the venue enumeration query itself could fail (e.g., pg_database permission denied).
-  try {
-    await syncVenueSchemas()
-  } catch (err) {
-    console.error('[vercel-build] WARNING: Venue schema sync failed (non-fatal):', err.message)
-    console.error('[vercel-build] Main DB is synced. Venue DBs may need manual sync.')
-  }
+  // 4. Venue schema sync disabled — use MC provisioning pipeline for per-venue schema updates
+  console.log('[vercel-build] Venue schema sync disabled — use MC provisioning pipeline for per-venue schema updates')
 
   // 5. Build Next.js
   console.log('[vercel-build] Running next build...')

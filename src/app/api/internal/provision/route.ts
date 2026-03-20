@@ -4,7 +4,7 @@ import { PrismaClient, CashHandlingMode, CategoryType } from '@/generated/prisma
 import { PrismaPg } from '@prisma/adapter-pg'
 import { hash } from 'bcryptjs'
 import { randomInt } from 'crypto'
-import { neon, Pool } from '@neondatabase/serverless'
+import { Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
 import { withVenue } from '@/lib/with-venue'
@@ -13,7 +13,7 @@ import { withVenue } from '@/lib/with-venue'
 export const maxDuration = 60
 
 /**
- * POST /api/internal/provision
+ * POST /api/internal/provision?mode=full|seed-only|schema-only
  *
  * Creates a new Neon database for a venue, pushes the Prisma schema,
  * and seeds it with default data (org, location, roles, employee, order types,
@@ -21,14 +21,27 @@ export const maxDuration = 60
  *
  * Called by Mission Control when a new location is created.
  *
+ * Query params:
+ *   mode (optional, default "full"):
+ *     - "full":        Create DB + push schema + disable RLS + seed defaults
+ *     - "seed-only":   Skip DB creation and schema push, only run seed.
+ *                      Used by MC provisioning pipeline after it handles schema separately.
+ *     - "schema-only": Create DB (if needed) + push schema + disable RLS, skip seed.
+ *                      Used for schema upgrades on existing venues.
+ *
+ *   In "full" and "schema-only" modes, schema is ALWAYS pushed (even if tables
+ *   already exist) to prevent schema drift.
+ *
  * Headers:
  *   x-api-key: PROVISION_API_KEY (shared secret between MC and POS)
  *
  * Body:
  *   { slug: "joes-bar", name: "Joe's Bar & Grill" }
  *
- * Response:
- *   { success: true, databaseName: "gwi_pos_joes_bar", slug: "joes-bar" }
+ * Response (full/seed-only):
+ *   { success: true, databaseName, posLocationId, ownerPin, slug, mode, posUrl }
+ * Response (schema-only):
+ *   { success: true, databaseName, slug, mode, posUrl }
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
@@ -50,14 +63,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   const mode = request.nextUrl.searchParams.get('mode') || 'full'
+  const VALID_MODES = ['full', 'seed-only', 'schema-only'] as const
+  if (!VALID_MODES.includes(mode as any)) {
+    return Response.json(
+      { error: `Invalid mode "${mode}". Must be one of: ${VALID_MODES.join(', ')}` },
+      { status: 400 }
+    )
+  }
 
   const dbName = venueDbName(slug)
   const venueDbUrl = buildVenueDatabaseUrl(slug)
   const venueDirectUrl = buildVenueDirectUrl(slug)
 
   try {
+    // ── 1. Create database on Neon (skip for seed-only) ──────────────
     if (mode !== 'seed-only') {
-      // ── 1. Create database on Neon ─────────────────────────────────────
       const existing = await db.$queryRawUnsafe<{ datname: string }[]>(
         `SELECT datname FROM pg_database WHERE datname = $1`,
         dbName
@@ -73,34 +93,39 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       } else {
         if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Database already exists: ${dbName}`)
       }
+    }
 
-      // ── 2. Push schema via direct SQL (no execSync needed) ─────────────
+    // ── 2. Push schema via direct SQL (full + schema-only; ALWAYS push even if tables exist) ──
+    if (mode === 'full' || mode === 'schema-only') {
       try {
-        const venueSQL = neon(venueDirectUrl)
+        // Read pre-generated schema SQL (built at deploy time by generate-schema-sql.mjs)
+        const schemaSql = readFileSync(
+          path.join(process.cwd(), 'prisma/schema.sql'),
+          'utf-8'
+        )
+        // Use Pool for raw multi-statement SQL (neon() tagged template can't accept raw strings)
+        const pool = new Pool({ connectionString: venueDirectUrl })
+        try {
+          await pool.query(schemaSql)
+        } finally {
+          await pool.end()
+        }
+        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema pushed to ${dbName}`)
 
-        // Check if tables already exist (idempotency)
-        const tableCheck = await venueSQL`
-          SELECT COUNT(*)::int as count
-          FROM information_schema.tables
-          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-        `
-
-        if (tableCheck[0].count > 0) {
-          if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema already exists in ${dbName}, skipping push`)
-        } else {
-          // Read pre-generated schema SQL (built at deploy time by generate-schema-sql.mjs)
-          const schemaSql = readFileSync(
-            path.join(process.cwd(), 'prisma/schema.sql'),
-            'utf-8'
-          )
-          // Use Pool for raw multi-statement SQL (neon() tagged template can't accept raw strings)
-          const pool = new Pool({ connectionString: venueDirectUrl })
-          try {
-            await pool.query(schemaSql)
-          } finally {
-            await pool.end()
-          }
-          if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema pushed to ${dbName}`)
+        // Disable RLS on all tables — schema.sql may enable it, but the POS app
+        // doesn't have RLS policies configured. RLS blocks sync, menu queries, and login.
+        const rlsPool = new Pool({ connectionString: venueDirectUrl })
+        try {
+          await rlsPool.query(`
+            DO $$ DECLARE r RECORD; BEGIN
+              FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true LOOP
+                EXECUTE 'ALTER TABLE public."' || r.tablename || '" DISABLE ROW LEVEL SECURITY';
+              END LOOP;
+            END $$;
+          `)
+          if (process.env.NODE_ENV !== 'production') console.log(`[Provision] RLS disabled in ${dbName}`)
+        } finally {
+          await rlsPool.end()
         }
       } catch (pushErr) {
         console.error('[Provision] Schema push failed:', pushErr)
@@ -110,27 +135,39 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
       }
     } else {
-      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] mode=seed-only — skipping DB creation and schema push for ${slug}`)
+      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] mode=${mode} — skipping schema push for ${slug}`)
     }
 
-    // ── 3. Seed default data ───────────────────────────────────────────
-    const venueAdapter = new PrismaPg({ connectionString: venueDbUrl })
-    const venueDb = new PrismaClient({ adapter: venueAdapter })
+    // ── 3. Seed default data (full + seed-only) ──────────────────────
+    if (mode === 'full' || mode === 'seed-only') {
+      const venueAdapter = new PrismaPg({ connectionString: venueDbUrl })
+      const venueDb = new PrismaClient({ adapter: venueAdapter })
 
-    let seedResult: { locationId: string; ownerPin: string }
-    try {
-      seedResult = await seedVenueDefaults(venueDb, name)
-      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Seeded defaults for ${slug} (locationId: ${seedResult.locationId})`)
-    } finally {
-      await venueDb.$disconnect()
+      let seedResult: { locationId: string; ownerPin: string }
+      try {
+        seedResult = await seedVenueDefaults(venueDb, name)
+        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Seeded defaults for ${slug} (locationId: ${seedResult.locationId})`)
+      } finally {
+        await venueDb.$disconnect()
+      }
+
+      return Response.json({
+        success: true,
+        databaseName: dbName,
+        posLocationId: seedResult.locationId,
+        ownerPin: seedResult.ownerPin,
+        slug,
+        mode,
+        posUrl: `https://${slug}.ordercontrolcenter.com`,
+      })
     }
 
+    // schema-only response (no seed data to return)
     return Response.json({
       success: true,
       databaseName: dbName,
-      posLocationId: seedResult.locationId,
-      ownerPin: seedResult.ownerPin,
       slug,
+      mode,
       posUrl: `https://${slug}.ordercontrolcenter.com`,
     })
   } catch (error) {

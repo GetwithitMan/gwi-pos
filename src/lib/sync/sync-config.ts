@@ -321,7 +321,7 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
  */
 
 /** Tables that must NEVER sync — operational/ephemeral NUC-local data */
-const LOCAL_ONLY_TABLES = new Set([
+export const LOCAL_ONLY_TABLES = new Set([
   'HardwareCommand', 'CloudEventQueue', 'SyncAuditEntry', 'HealthCheck',
   'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog',
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
@@ -351,7 +351,7 @@ const LOCAL_ONLY_TABLES = new Set([
 ])
 
 /** System/internal tables that are not Prisma models */
-const SYSTEM_TABLES = new Set([
+export const SYSTEM_TABLES = new Set([
   '_prisma_migrations', '_gwi_migrations', '_gwi_sync_state',
   '_pending_datacap_sales', '_pending_captures',
 ])

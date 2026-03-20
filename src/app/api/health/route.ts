@@ -15,6 +15,7 @@ import { getLocalLeaseExpiry } from '@/app/api/fence-check/route'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { getUpdateAgentStatus } from '@/lib/update-agent'
+import { getSchemaVerificationResult } from '@/lib/schema-verify'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,6 +64,13 @@ interface HealthResponse {
     isUpdating: boolean
     lockFileExists: boolean
   }
+  /** Schema verification result from startup. Null if verification hasn't run yet. */
+  schemaVerification: {
+    passed: boolean
+    missing: Array<{ table: string; column?: string }>
+    checked: number
+    error?: string
+  } | null
   error?: string
 }
 
@@ -117,6 +125,12 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   if (!databaseCheck) {
     status = 'unhealthy'
   } else if (!memoryCheck) {
+    status = 'degraded'
+  }
+
+  // Schema verification failure degrades health — sync workers won't be running
+  const schemaState = getSchemaVerificationResult()
+  if (schemaState && !schemaState.passed && status === 'healthy') {
     status = 'degraded'
   }
 
@@ -223,6 +237,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     downstreamSync,
     upstreamSync,
     updateAgent: getUpdateAgentStatus(),
+    schemaVerification: getSchemaVerificationResult(),
   }
 
   // Return appropriate HTTP status
