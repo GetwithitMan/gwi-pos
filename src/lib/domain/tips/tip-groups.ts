@@ -831,9 +831,11 @@ export async function findActiveGroupForEmployee(
  */
 export async function findSegmentForTimestamp(
   groupId: string,
-  timestamp: Date
+  timestamp: Date,
+  txClient?: any
 ): Promise<TipGroupSegmentInfo | null> {
-  const segment = await db.tipGroupSegment.findFirst({
+  const client = txClient ?? db
+  const segment = await client.tipGroupSegment.findFirst({
     where: {
       groupId,
       deletedAt: null,

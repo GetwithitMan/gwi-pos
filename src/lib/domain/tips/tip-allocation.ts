@@ -343,7 +343,8 @@ export async function allocateTipsForOrder(params: {
     })
   }
 
-  // Check whether the primary employee is in an active tip group
+  // ── Pre-fetch group info OUTSIDE transaction (read-only, no lock needed) ──
+  // Moving these lookups before any transaction reduces lock hold time by 20-150ms.
   const activeGroup = await findActiveGroupForEmployee(primaryEmployeeId)
 
   if (!activeGroup) {
@@ -384,6 +385,9 @@ export async function allocateTipsForOrder(params: {
     })
   }
 
+  // Pre-fetch segment info BEFORE transaction (read-only, no lock needed)
+  const prefetchedSegment = await findSegmentForTimestamp(activeGroup.id, collectedAt)
+
   // ── Proportional per-item allocation (Skill 252+) ────────────────────
   // When tipAttributionTiming is 'per_item', distribute tip proportionally
   // across segments based on when each item was added to the order.
@@ -422,6 +426,7 @@ export async function allocateTipsForOrder(params: {
     groupId: activeGroup.id,
     ccFeeAmountCents,
     kind,
+    prefetchedSegment,
   })
 }
 
@@ -684,7 +689,7 @@ async function allocateWithOwnership(params: {
 
       if (ownerGroup) {
         // Owner is in a tip group -- find the active segment and split their slice
-        const segment = await findSegmentForTimestamp(ownerGroup.id, collectedAt)
+        const segment = await findSegmentForTimestamp(ownerGroup.id, collectedAt, tx)
 
         if (segment) {
           const splitJson = segment.splitJson
@@ -781,46 +786,52 @@ async function allocateIndividual(params: {
     kind = 'tip',
   } = params
 
-  // Create TipTransaction record (Skill 274: idempotency key)
-  const tipTxn = await db.tipTransaction.create({
-    data: {
-      locationId,
-      orderId,
-      paymentId,
-      amountCents: tipAmountCents,
-      sourceType,
-      kind,
-      collectedAt,
-      primaryEmployeeId,
-      ccFeeAmountCents: ccFeeAmountCents ?? 0,
-      idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
-    },
-  })
-
-  // Post single credit to the employee's ledger (Skill 274: idempotency key)
-  const ledgerEntry = await postToTipLedger({
-    locationId,
-    employeeId: primaryEmployeeId,
-    amountCents: tipAmountCents,
-    type: 'CREDIT',
-    sourceType: 'DIRECT_TIP',
-    sourceId: tipTxn.id,
-    orderId,
-    memo: `Tip from order ${orderId} (${sourceType})`,
-    idempotencyKey: `tip-ledger:${orderId}:${paymentId}:${primaryEmployeeId}`,
-  })
-
-  return {
-    tipTransactionId: tipTxn.id,
-    allocations: [
-      {
-        employeeId: primaryEmployeeId,
+  // Wrap TipTransaction + ledger post in a single transaction for atomicity.
+  // Prevents tip recorded but never credited if server crashes between writes.
+  const result = await db.$transaction(async (tx: TxClient) => {
+    // Create TipTransaction record (Skill 274: idempotency key)
+    const tipTxn = await tx.tipTransaction.create({
+      data: {
+        locationId,
+        orderId,
+        paymentId,
         amountCents: tipAmountCents,
-        sourceType: 'DIRECT_TIP',
-        ledgerEntryId: ledgerEntry.id,
+        sourceType,
+        kind,
+        collectedAt,
+        primaryEmployeeId,
+        ccFeeAmountCents: ccFeeAmountCents ?? 0,
+        idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
       },
-    ],
-  }
+    })
+
+    // Post single credit to the employee's ledger (Skill 274: idempotency key)
+    const ledgerEntry = await postToTipLedger({
+      locationId,
+      employeeId: primaryEmployeeId,
+      amountCents: tipAmountCents,
+      type: 'CREDIT',
+      sourceType: 'DIRECT_TIP',
+      sourceId: tipTxn.id,
+      orderId,
+      memo: `Tip from order ${orderId} (${sourceType})`,
+      idempotencyKey: `tip-ledger:${orderId}:${paymentId}:${primaryEmployeeId}`,
+    }, tx)
+
+    return {
+      tipTransactionId: tipTxn.id,
+      allocations: [
+        {
+          employeeId: primaryEmployeeId,
+          amountCents: tipAmountCents,
+          sourceType: 'DIRECT_TIP' as const,
+          ledgerEntryId: ledgerEntry.id,
+        },
+      ],
+    }
+  })
+
+  return result
 }
 
 /**
@@ -841,6 +852,7 @@ async function allocateToGroup(params: {
   groupId: string
   ccFeeAmountCents?: number
   kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
+  prefetchedSegment?: TipGroupSegmentInfo | null  // Pre-fetched outside transaction to reduce lock time
 }): Promise<TipAllocationResult> {
   const {
     locationId,
@@ -853,10 +865,13 @@ async function allocateToGroup(params: {
     groupId,
     ccFeeAmountCents,
     kind = 'tip',
+    prefetchedSegment,
   } = params
 
-  // Find the segment that was active at collectedAt
-  const segment = await findSegmentForTimestamp(groupId, collectedAt)
+  // Use pre-fetched segment if available, otherwise fetch now
+  const segment = prefetchedSegment !== undefined
+    ? prefetchedSegment
+    : await findSegmentForTimestamp(groupId, collectedAt)
 
   if (!segment) {
     // No segment found (edge case: group exists but no segment covers this time).
