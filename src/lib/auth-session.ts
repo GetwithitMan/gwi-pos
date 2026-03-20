@@ -42,7 +42,8 @@ function getSecret(): string {
   const secret = process.env.NEXTAUTH_SECRET || process.env.SESSION_SECRET
   if (secret) return secret
   // In production, refuse to start with a random secret — sessions MUST be durable.
-  if (process.env.NODE_ENV === 'production') {
+  // NEXT_PHASE=phase-production-build during `next build` — secrets aren't available yet
+  if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PHASE) {
     throw new Error('FATAL: SESSION_SECRET or NEXTAUTH_SECRET must be set in production. Sessions will not work without it.')
   }
   // Auto-generate a per-process secret for dev convenience.

@@ -10,15 +10,21 @@ import crypto from 'crypto'
 function getPortalSecret(): string {
   const secret = process.env.PORTAL_HMAC_SECRET
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
+    // NEXT_PHASE=phase-production-build during `next build` — secrets aren't available yet
+    if (process.env.NODE_ENV === 'production' && !process.env.NEXT_PHASE) {
       throw new Error('FATAL: PORTAL_HMAC_SECRET must be set in production')
     }
-    return 'gwi-portal-hmac-secret-change-me' // dev only
+    return 'gwi-portal-hmac-secret-change-me' // dev / build only
   }
   return secret
 }
 
-const PORTAL_SECRET = getPortalSecret()
+// Lazy — evaluated on first use, not at module load (avoids build-time crash)
+let _portalSecret: string | undefined
+function portalSecret(): string {
+  if (!_portalSecret) _portalSecret = getPortalSecret()
+  return _portalSecret
+}
 
 // ─── HMAC-Signed Order View Tokens ─────────────────────────────────────────
 
@@ -26,7 +32,7 @@ const PORTAL_SECRET = getPortalSecret()
 export function generateOrderViewToken(cakeOrderId: string, customerId: string, expiryDays = 30): string {
   const exp = Date.now() + expiryDays * 86400000
   const payload = Buffer.from(JSON.stringify({ cakeOrderId, customerId, exp })).toString('base64url')
-  const sig = crypto.createHmac('sha256', PORTAL_SECRET).update(payload).digest('base64url')
+  const sig = crypto.createHmac('sha256', portalSecret()).update(payload).digest('base64url')
   return `${payload}.${sig}`
 }
 
@@ -35,7 +41,7 @@ export function verifyOrderViewToken(token: string): { valid: boolean; cakeOrder
   try {
     const [payload, sig] = token.split('.')
     if (!payload || !sig) return { valid: false }
-    const expectedSig = crypto.createHmac('sha256', PORTAL_SECRET).update(payload).digest('base64url')
+    const expectedSig = crypto.createHmac('sha256', portalSecret()).update(payload).digest('base64url')
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return { valid: false }
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString())
     if (data.exp < Date.now()) return { valid: false, expired: true, cakeOrderId: data.cakeOrderId, customerId: data.customerId }
@@ -48,7 +54,7 @@ export function verifyOrderViewToken(token: string): { valid: boolean; cakeOrder
 /** Generate 6-digit OTP + SHA-256 hash */
 export function generateOTP(): { code: string; hash: string; expiresAt: Date } {
   const code = String(crypto.randomInt(100000, 999999))
-  const hash = crypto.createHash('sha256').update(code + PORTAL_SECRET).digest('hex')
+  const hash = crypto.createHash('sha256').update(code + portalSecret()).digest('hex')
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
   return { code, hash, expiresAt }
 }
@@ -56,7 +62,7 @@ export function generateOTP(): { code: string; hash: string; expiresAt: Date } {
 /** Verify OTP code against stored hash */
 export function verifyOTP(code: string, storedHash: string, expiresAt: Date): boolean {
   if (new Date() > expiresAt) return false
-  const hash = crypto.createHash('sha256').update(code + PORTAL_SECRET).digest('hex')
+  const hash = crypto.createHash('sha256').update(code + portalSecret()).digest('hex')
   return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(storedHash))
 }
 
