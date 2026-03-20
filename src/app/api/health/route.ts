@@ -8,14 +8,17 @@
  */
 
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db, getVenueClientCount } from '@/lib/db'
+import { CONNECTION_BUDGET } from '@/lib/db-connection-budget'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchFailoverActive, dispatchFailoverResolved } from '@/lib/socket-dispatch'
 import { getLocalLeaseExpiry } from '@/lib/ha-lease-state'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { getUpdateAgentStatus } from '@/lib/update-agent'
-import { getSchemaVerificationResult } from '@/lib/schema-verify'
+import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
+import { getWorkerHealth } from '@/lib/worker-registry'
+import { getReadinessState, type ReadinessLevel } from '@/lib/readiness'
 
 export const dynamic = 'force-dynamic'
 
@@ -70,6 +73,30 @@ interface HealthResponse {
     missing: Array<{ table: string; column?: string }>
     checked: number
     error?: string
+  } | null
+  /** True when schema verification has run AND passed. False otherwise. */
+  schemaVerified: boolean
+  /** Whether sync workers (upstream/downstream) are registered and running. */
+  syncWorkersRunning: boolean
+  /** Canonical readiness state — ONE source of truth for venue readiness. */
+  readiness: {
+    level: ReadinessLevel
+    syncContractReady: boolean
+    initialSyncComplete: boolean
+    degradedReasons: string[]
+  } | null
+  /** Connection pool utilization (NUC only, null on Vercel) */
+  connectionPool: {
+    /** Active connections from this application (from pg_stat_activity) */
+    activeConnections: number
+    /** PG max_connections setting */
+    maxConnections: number
+    /** Budget allocated to this process (sum of all pools) */
+    budgetTotal: number
+    /** Number of cached venue PrismaClients */
+    venueCacheSize: number
+    /** Max venue cache capacity */
+    venueCacheMax: number
   } | null
   error?: string
 }
@@ -132,6 +159,16 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   const schemaState = getSchemaVerificationResult()
   if (schemaState && !schemaState.passed && status === 'healthy') {
     status = 'degraded'
+  }
+
+  // Canonical readiness: FAILED → unhealthy, DEGRADED → degraded
+  const readinessState = getReadinessState()
+  if (readinessState) {
+    if (readinessState.level === 'FAILED' && status !== 'unhealthy') {
+      status = 'unhealthy'
+    } else if (readinessState.level === 'DEGRADED' && status === 'healthy') {
+      status = 'degraded'
+    }
   }
 
   const stationRole = process.env.STATION_ROLE || 'unknown'
@@ -214,6 +251,28 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     // Worker not initialized — leave null
   }
 
+  // Connection pool utilization — query pg_stat_activity for live connection counts.
+  // Only meaningful on NUC (long-running process); skip on Vercel (1-conn ephemeral).
+  let connectionPool: HealthResponse['connectionPool'] = null
+  if (databaseCheck && !process.env.VERCEL) {
+    try {
+      const [poolStats] = await db.$queryRaw<[{ active: bigint; max_conn: number }]>`
+        SELECT
+          (SELECT count(*) FROM pg_stat_activity WHERE pid <> pg_backend_pid()) AS active,
+          (SELECT setting::int FROM pg_settings WHERE name = 'max_connections') AS max_conn
+      `
+      connectionPool = {
+        activeConnections: Number(poolStats.active),
+        maxConnections: poolStats.max_conn,
+        budgetTotal: CONNECTION_BUDGET.LOCAL_TOTAL,
+        venueCacheSize: getVenueClientCount(),
+        venueCacheMax: CONNECTION_BUDGET.VENUE_CACHE_MAX,
+      }
+    } catch {
+      // Non-critical — pool stats unavailable
+    }
+  }
+
   const response: HealthResponse = {
     status,
     timestamp,
@@ -238,6 +297,25 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     upstreamSync,
     updateAgent: getUpdateAgentStatus(),
     schemaVerification: getSchemaVerificationResult(),
+    schemaVerified: isSchemaVerified(),
+    syncWorkersRunning: (() => {
+      const workers = getWorkerHealth()
+      const syncWorkerNames = ['upstreamSync', 'downstreamSync']
+      const syncWorkers = workers.filter(w => syncWorkerNames.includes(w.name))
+      // True only if at least one sync worker exists AND all registered sync workers are running
+      return syncWorkers.length > 0 && syncWorkers.every(w => w.running)
+    })(),
+    readiness: (() => {
+      const rs = getReadinessState()
+      if (!rs) return null
+      return {
+        level: rs.level,
+        syncContractReady: rs.syncContractReady,
+        initialSyncComplete: rs.initialSyncComplete,
+        degradedReasons: rs.degradedReasons,
+      }
+    })(),
+    connectionPool,
   }
 
   // Return appropriate HTTP status

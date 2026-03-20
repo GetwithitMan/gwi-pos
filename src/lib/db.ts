@@ -4,6 +4,7 @@ import { orderWriteGuardExtension } from './order-write-guard'
 import { getRequestPrisma } from './request-context'
 import { applySoftDeleteFilter } from './db-soft-delete'
 import { createTenantScopedExtension } from './db-tenant-scope'
+import { CONNECTION_BUDGET } from './db-connection-budget'
 import {
   getDbForVenue as _getDbForVenue,
   disconnectVenue,
@@ -11,9 +12,13 @@ import {
   buildVenueDatabaseUrl,
   buildVenueDirectUrl,
   venueDbName,
+  checkSlugCollisions,
 } from './db-venue-cache'
 
 const isVercel = !!process.env.VERCEL
+
+// Re-export so existing `import { CONNECTION_BUDGET } from '@/lib/db'` works
+export { CONNECTION_BUDGET } from './db-connection-budget'
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required')
@@ -30,10 +35,10 @@ const globalForPrisma = globalThis as unknown as {
 export function createPrismaClient(url?: string) {
   const connectionString = url || process.env.DATABASE_URL || ''
 
-  // PrismaPg for all environments.
-  // Vercel: small pool, long timeout for Neon cold starts.
-  // NUC: large pool, short timeout for local PostgreSQL.
-  const poolSize = isVercel ? 1 : 25
+  // PrismaPg for all environments — see CONNECTION_BUDGET above.
+  // Vercel: 1 conn per function, long timeout for Neon cold starts.
+  // NUC: budget-allocated pool, short timeout for local PostgreSQL.
+  const poolSize = isVercel ? CONNECTION_BUDGET.VERCEL_PER_FUNCTION : CONNECTION_BUDGET.LOCAL_APP_POOL
   const timeoutMs = isVercel ? 60000 : 10000
   const adapter: any = new PrismaPg({
     connectionString,
@@ -158,7 +163,8 @@ export const db: PrismaClient = new Proxy(masterClient, {
 
 function createAdminClient(url?: string): PrismaClient {
   const connectionString = url || process.env.DATABASE_URL || ''
-  const adminPoolSize = isVercel ? 1 : 3
+  // See CONNECTION_BUDGET — admin pool is sized for cross-tenant ops, MC sync, cron
+  const adminPoolSize = isVercel ? CONNECTION_BUDGET.VERCEL_PER_FUNCTION : CONNECTION_BUDGET.LOCAL_ADMIN_POOL
   const adapter: any = new PrismaPg({ connectionString, max: adminPoolSize, connectionTimeoutMillis: isVercel ? 60000 : 10000 })
   const client = new PrismaClient({
     adapter,
@@ -209,6 +215,6 @@ export async function getDbForVenue(slug: string): Promise<PrismaClient> {
 }
 
 // Re-export venue utilities so the public API of '@/lib/db' is unchanged
-export { disconnectVenue, getVenueClientCount, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName }
+export { disconnectVenue, getVenueClientCount, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName, checkSlugCollisions }
 
 export default db

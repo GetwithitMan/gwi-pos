@@ -187,7 +187,8 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     const neonUrl = process.env.NEON_DATABASE_URL
     if (neonUrl) {
       try {
-        // PrismaPg everywhere — Vercel uses lower pool size + longer timeout for cold starts
+        // PrismaPg everywhere — transient bootstrap connections (not persistent pools).
+        // These are short-lived and fall under CONNECTION_BUDGET.LOCAL_RESERVED headroom.
         const { PrismaClient } = await import('@/generated/prisma/client')
         const directUrl = process.env.NEON_DIRECT_URL || neonUrl
         let neonAdapter: any

@@ -34,6 +34,7 @@ import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
 import { runBootstrap } from './src/lib/venue-bootstrap'
+import { computeReadiness, setReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
 
 const dev = config.nodeEnv !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -337,30 +338,43 @@ async function main() {
       () => { /* no stop — interval-based, exits with process */ }
     )
 
-    // Sync workers — only when sync is enabled, not backup, Neon URL present, schema ready, AND local schema verified
+    // ── Canonical readiness evaluation ──────────────────────────────────
+    // Single source of truth for "is this venue ready?" — replaces inline
+    // neonSchemaOk / localSchemaOk / syncReady logic that was duplicated
+    // between server.ts, venue-bootstrap.ts, and health endpoints.
     const neonReady = bootstrapResult?.neonSchemaReady
-    // Fail-CLOSED for sync: if bootstrap didn't run or Neon readiness is unknown, block sync.
-    // Local orders still work (POS boots regardless), but sync must not start without verified schema.
-    // Schema version: match OR ahead is OK (Neon may have a newer schema from Vercel deploy).
-    // Only "behind" blocks sync. This matches venue-bootstrap.ts syncContractReady logic.
     const neonSchemaVersionOk = neonReady
       ? (neonReady.schemaVersionMatch || neonReady.schemaVersionAhead)
       : false
-    const neonSchemaOk = (neonReady != null)
-      ? (neonReady.coreTablesExist && neonReady.requiredEnumsExist && neonSchemaVersionOk && neonReady.baseSeedPresent)
-      : !config.neonDatabaseUrl  // Only true if Neon isn't configured (local-only mode)
-    // Local schema must also be verified — prevents sync with missing tables/columns
-    const localSchemaOk = schemaResult.passed
-    if (!localSchemaOk) {
+
+    const readinessInputs: ReadinessInputs = {
+      localDbUp: bootstrapResult?.localDb ?? false,
+      localSchemaVerified: schemaResult.passed,
+      neonConfigured: !!config.neonDatabaseUrl,
+      neonReachable: bootstrapResult?.neonReachable ?? false,
+      neonSchemaVersionOk,
+      neonCoreTablesExist: neonReady?.coreTablesExist ?? false,
+      neonRequiredEnumsExist: neonReady?.requiredEnumsExist ?? false,
+      baseSeedPresent: neonReady?.baseSeedPresent ?? false,
+      syncEnabled: config.syncEnabled,
+      stationRole: config.stationRole,
+      initialSyncComplete: false,
+    }
+    const readiness = computeReadiness(readinessInputs)
+    setReadinessState(readiness)
+
+    const syncReady = isReadyForSync()
+
+    // Log specific failure reasons so operators know what to fix
+    if (!schemaResult.passed) {
       logger.error({ schemaResult }, 'Local schema verification failed — sync workers will NOT start. Server continues for recovery access.')
     }
-    const syncReady = config.syncEnabled && config.stationRole !== 'backup' && !!config.neonDatabaseUrl && neonSchemaOk && localSchemaOk
     if (config.syncEnabled && config.stationRole === 'backup') {
       logger.warn('STATION_ROLE=backup — sync workers DISABLED to prevent stale standby PG from overwriting Neon. Promote via promote.sh first.')
     } else if (config.syncEnabled && !config.neonDatabaseUrl) {
       logger.error('SYNC_ENABLED=true but NEON_DATABASE_URL not set — sync workers NOT started. Fix .env and restart.')
     }
-    if (config.syncEnabled && config.neonDatabaseUrl && !neonSchemaOk) {
+    if (config.syncEnabled && config.neonDatabaseUrl && !syncReady) {
       if (!neonReady) {
         logger.error('Sync workers NOT started — bootstrap did not produce Neon readiness. Fix bootstrap and restart.')
       } else {
@@ -370,7 +384,9 @@ async function main() {
           schemaVersionMatch: neonReady.schemaVersionMatch,
           baseSeedPresent: neonReady.baseSeedPresent,
           schemaVersion: neonReady.schemaVersion,
-        }, 'Sync workers NOT started — Neon schema readiness check failed. Fix schema and restart.')
+          readinessLevel: readiness.level,
+          degradedReasons: readiness.degradedReasons,
+        }, 'Sync workers NOT started — readiness check failed. Fix schema and restart.')
       }
     }
 
@@ -435,6 +451,8 @@ async function main() {
         initialSyncComplete,
         new Promise(resolve => setTimeout(resolve, 15_000))
       ])
+      // Advance canonical readiness to ORDERS — safe for customer traffic
+      advanceToOrders()
       logger.info('Initial downstream sync gate passed — server fully ready')
     }
   })

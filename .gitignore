@@ -6,6 +6,7 @@
 /server.mjs
 /ws-server.js
 /src/generated/prisma
+/public/artifacts/
 
 # Dependencies
 /node_modules

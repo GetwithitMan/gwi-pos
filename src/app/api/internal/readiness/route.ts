@@ -3,6 +3,7 @@ import { config } from '@/lib/system-config'
 import { getBootstrapResult } from '@/lib/venue-bootstrap'
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, PROVISIONER_VERSION, APP_VERSION } from '@/lib/version-contract'
 import { getWorkerHealth } from '@/lib/worker-registry'
+import { getReadinessState } from '@/lib/readiness'
 
 export async function GET(request: Request) {
   // Auth check
@@ -13,11 +14,15 @@ export async function GET(request: Request) {
 
   const bootstrap = getBootstrapResult()
   const workers = getWorkerHealth()
+  const readiness = getReadinessState()
 
   return NextResponse.json({
-    localBootOk: bootstrap?.localBootOk ?? false,  // renamed from 'ready'
-    syncContractReady: bootstrap?.syncContractReady ?? false,
-    degradedReasons: bootstrap?.degradedReasons ?? [],
+    // Canonical readiness — ONE source of truth
+    readiness: readiness ?? null,
+    // Legacy fields (kept for backward compat with existing MC consumers)
+    localBootOk: bootstrap?.localBootOk ?? false,
+    syncContractReady: readiness?.syncContractReady ?? bootstrap?.syncContractReady ?? false,
+    degradedReasons: readiness?.degradedReasons ?? bootstrap?.degradedReasons ?? [],
     bootstrap: bootstrap ?? null,
     versions: {
       expected: {

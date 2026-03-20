@@ -33,6 +33,7 @@ import { getDbForVenue, masterClient } from './db'
 import { verifyTenantContext, type VerifyOptions } from './tenant-context-signer'
 import { config } from './system-config'
 import { logger } from './logger'
+import { getSchemaVerificationResult } from './schema-verify'
 
 /**
  * Routes explicitly allowed to run without a venue slug.
@@ -59,6 +60,32 @@ type RouteHandler = (request: any, context?: any) => Promise<Response> | Respons
 export function withVenue(handler: RouteHandler): RouteHandler {
   return async (request, context) => {
     try {
+      // ── Fail-closed 503 gate ──────────────────────────────────────────
+      // When schema verification has explicitly failed in production, return
+      // 503 for sync-critical routes. This prevents devices from appearing
+      // "online" while data is silently diverging.
+      //
+      // IMPORTANT: Only fires when verification has RUN and FAILED (result
+      // is non-null with passed === false). Does NOT fire during dev, or
+      // when verification hasn't run yet (e.g., server still booting).
+      if (process.env.NODE_ENV === 'production') {
+        const schemaResult = getSchemaVerificationResult()
+        if (schemaResult !== null && !schemaResult.passed) {
+          // Allow health, auth, internal, and recovery endpoints through
+          const pathname = request?.nextUrl?.pathname || request?.url?.split('?')[0] || ''
+          const isExempt = SLUGLESS_ALLOWED_PATTERNS.some(p => pathname.startsWith(p))
+          if (!isExempt) {
+            return new Response(
+              JSON.stringify({
+                error: 'Service unavailable — schema verification failed',
+                code: 'SCHEMA_NOT_VERIFIED',
+              }),
+              { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' } }
+            )
+          }
+        }
+      }
+
       // Fast path: if already inside a request context (NUC server.ts wraps
       // every request in requestStore.run()), skip the headers() lookup entirely.
       // This avoids the async overhead of await headers() on local POS.

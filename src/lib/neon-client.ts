@@ -11,6 +11,7 @@
 
 import { PrismaClient } from '@/generated/prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { CONNECTION_BUDGET } from './db-connection-budget'
 
 const isVercel = !!process.env.VERCEL
 
@@ -22,12 +23,14 @@ function createNeonClient(): PrismaClient | null {
   const neonUrl = process.env.NEON_DATABASE_URL
   if (!neonUrl) return null
 
+  // See CONNECTION_BUDGET in db.ts — Neon sync pool is budgeted separately from local app pool
   let adapter: any
   if (isVercel) {
-    adapter = new PrismaPg({ connectionString: neonUrl, max: 1, connectionTimeoutMillis: 60000 })
+    adapter = new PrismaPg({ connectionString: neonUrl, max: CONNECTION_BUDGET.VERCEL_PER_FUNCTION, connectionTimeoutMillis: 60000 })
   } else {
-    const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || '3', 10)
-    const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 3 : rawPoolSize
+    // DB_POOL_SIZE env override for Neon pool; defaults to LOCAL_NEON_SYNC budget
+    const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || '', 10)
+    const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? CONNECTION_BUDGET.LOCAL_NEON_SYNC : rawPoolSize
     adapter = new PrismaPg({
       connectionString: neonUrl,
       max: poolSize,

@@ -62,6 +62,11 @@ async function main() {
   execSync('cp src/generated/version-contract.json public/version-contract.json', { stdio: 'inherit' })
   console.log('[vercel-build] schema.sql + version-contract regenerated from final schema state')
 
+  // 4b. Generate immutable versioned artifacts for fleet rollouts
+  // MC pins rollouts to a specific artifact version instead of "whatever is live"
+  console.log('[vercel-build] Generating versioned artifacts...')
+  execSync('node scripts/generate-artifacts.mjs', { stdio: 'inherit' })
+
   // 5. Build Next.js
   console.log('[vercel-build] Running next build...')
   execSync('npx next build', { stdio: 'inherit' })

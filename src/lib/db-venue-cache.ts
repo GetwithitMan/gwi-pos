@@ -5,9 +5,17 @@
  * Only the database name differs:
  *   Master: postgresql://user:pass@host/gwi_pos?sslmode=require
  *   Venue:  postgresql://user:pass@host/gwi_pos_joes_bar?sslmode=require
+ *
+ * VENUE_DB_ID support (immutable database identifiers):
+ *   When VENUE_DB_ID is set (NUC single-venue mode), the DB name becomes
+ *   `gwi_pos_{uuid}` instead of `gwi_pos_{slug}`. This decouples the database
+ *   identity from the mutable slug, preventing rename pain and collision risk.
+ *   On Vercel (multi-tenant), venueDbId is not used — slug-derived names remain
+ *   until MC sends venueDbId per-request in a future phase.
  */
 
 import type { PrismaClient } from '@/generated/prisma/client'
+import { CONNECTION_BUDGET } from './db-connection-budget'
 
 // ---------------------------------------------------------------------------
 // Types + globalThis cache
@@ -15,6 +23,7 @@ import type { PrismaClient } from '@/generated/prisma/client'
 
 const globalForPrisma = globalThis as unknown as {
   venueClients: Map<string, { client: PrismaClient; lastAccessed: number }> | undefined
+  _venueDbCollisionChecked?: boolean
 }
 
 if (!globalForPrisma.venueClients) {
@@ -25,7 +34,8 @@ if (!globalForPrisma.venueClients) {
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_VENUE_CLIENTS = parseInt(process.env.MAX_VENUE_CLIENTS || '', 10) || 50
+// See CONNECTION_BUDGET — env override available, defaults to budgeted max
+const MAX_VENUE_CLIENTS = parseInt(process.env.MAX_VENUE_CLIENTS || '', 10) || CONNECTION_BUDGET.VENUE_CACHE_MAX
 
 /** Idle venue clients are disconnected after 30 minutes of inactivity (configurable via env) */
 const VENUE_CLIENT_TTL_MS = parseInt(process.env.VENUE_CLIENT_TTL_MS || '', 10) || 30 * 60 * 1000
@@ -53,11 +63,46 @@ if (typeof setInterval !== 'undefined') {
 }
 
 // ---------------------------------------------------------------------------
+// Immutable venue DB ID support
+// ---------------------------------------------------------------------------
+
+/**
+ * Read VENUE_DB_ID from env at module load. This is a validated UUID or null.
+ * On NUC (single-venue), this overrides slug-based DB naming.
+ * On Vercel (multi-tenant), this is null — slug-derived names are used.
+ */
+function getVenueDbIdFromEnv(): string | null {
+  const raw = process.env.VENUE_DB_ID || null
+  if (!raw) return null
+  const normalized = raw.trim().toLowerCase()
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(normalized)) {
+    return normalized
+  }
+  return null
+}
+
+const ENV_VENUE_DB_ID = getVenueDbIdFromEnv()
+
+// ---------------------------------------------------------------------------
 // URL helpers
 // ---------------------------------------------------------------------------
 
-/** Convert venue slug to PostgreSQL database name */
+/**
+ * Convert venue slug to PostgreSQL database name.
+ *
+ * Resolution order:
+ *   1. If VENUE_DB_ID env var is set (NUC single-venue), use `gwi_pos_{uuid_underscored}`
+ *   2. Otherwise, use slug-derived: `gwi_pos_{slug_underscored}`
+ *
+ * The venueDbId uses underscores in place of hyphens because PostgreSQL identifiers
+ * with hyphens require quoting. The UUID format (8-4-4-4-12 hex) is safe after
+ * hyphen-to-underscore conversion.
+ */
 export function venueDbName(slug: string): string {
+  // VENUE_DB_ID takes precedence (NUC mode: single immutable DB identifier)
+  if (ENV_VENUE_DB_ID) {
+    return `gwi_pos_${ENV_VENUE_DB_ID.replace(/-/g, '_')}`
+  }
   return `gwi_pos_${slug.replace(/-/g, '_')}`
 }
 
@@ -90,6 +135,50 @@ export function buildVenueDirectUrl(slug: string): string {
   if (!directUrl) throw new Error('DIRECT_URL environment variable is required')
   const dbName = venueDbName(slug)
   return replaceDbNameInUrl(directUrl, dbName)
+}
+
+// ---------------------------------------------------------------------------
+// Collision detection (one-time check on Vercel multi-tenant)
+// ---------------------------------------------------------------------------
+
+/**
+ * Check for slug-to-DB-name collisions in the venue client cache.
+ *
+ * Two different slugs can map to the same DB name after the slug-to-underscore
+ * transform (e.g., "joes-bar" and "joes_bar" both become "gwi_pos_joes_bar",
+ * though the slug regex rejects underscores so this is currently theoretical).
+ *
+ * This function checks all slugs in the active client cache. It runs once
+ * after the cache grows beyond 1 entry and logs an error for any collisions.
+ *
+ * On NUC (single-venue), this is a no-op since there's only one slug.
+ * On Vercel, this checks accumulated venue connections for collisions.
+ */
+export function checkSlugCollisions(): { collisions: Array<{ slugA: string; slugB: string; dbName: string }> } {
+  const clients = globalForPrisma.venueClients
+  if (!clients || clients.size < 2) return { collisions: [] }
+
+  const dbNameToSlug = new Map<string, string>()
+  const collisions: Array<{ slugA: string; slugB: string; dbName: string }> = []
+
+  for (const [slug] of clients) {
+    const dbName = `gwi_pos_${slug.replace(/-/g, '_')}`
+    const existing = dbNameToSlug.get(dbName)
+    if (existing && existing !== slug) {
+      collisions.push({ slugA: existing, slugB: slug, dbName })
+    } else {
+      dbNameToSlug.set(dbName, slug)
+    }
+  }
+
+  if (collisions.length > 0) {
+    console.error(
+      `[db-venue-cache] COLLISION DETECTED: ${collisions.length} slug pair(s) map to the same database name:`,
+      collisions.map(c => `"${c.slugA}" + "${c.slugB}" -> ${c.dbName}`).join('; ')
+    )
+  }
+
+  return { collisions }
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +248,14 @@ export async function getDbForVenue(
   }
 
   clients.set(slug, { client, lastAccessed: Date.now() })
+
+  // Run collision check once after the cache grows beyond 1 entry (multi-tenant only).
+  // This is a lightweight in-memory check, not a DB query.
+  if (!globalForPrisma._venueDbCollisionChecked && clients.size > 1) {
+    globalForPrisma._venueDbCollisionChecked = true
+    checkSlugCollisions()
+  }
+
   return client
 }
 

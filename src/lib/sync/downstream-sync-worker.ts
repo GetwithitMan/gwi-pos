@@ -26,6 +26,7 @@ import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationCon
 import { syncDenyList } from '../cellular-auth'
 import { checkQuarantine, QUARANTINE_PROTECTED_MODELS, loadWatermarks, updateDownstreamWatermark } from './sync-conflict-quarantine'
 import { registerDownstreamHandler, dispatchDownstreamNotifications } from './downstream-notification-pipeline'
+import { runReconciliationCheck } from './reconciliation-check'
 
 // ── Initial sync completion tracking ──────────────────────────────────────────
 
@@ -72,6 +73,11 @@ let immediateRunning = false
 let cycleRunning = false
 /** Per-table-batch deduplication for open-orders socket dispatch (cleared in syncTableDown) */
 const notificationDispatchedLocations = new Set<string>()
+
+/** Reconciliation check interval — 5 minutes */
+const RECONCILIATION_INTERVAL_MS = 5 * 60 * 1000
+/** Timestamp of last reconciliation check */
+let lastReconciliationAt = 0
 
 /**
  * Catalog tables use ID-swap instead of delete for business-key conflicts.
@@ -1019,6 +1025,13 @@ async function runDownstreamCycle(): Promise<void> {
     if (!initialSyncDone && initialSyncResolve) {
       initialSyncDone = true
       initialSyncResolve()
+      // Advance canonical readiness to ORDERS (safe even if server.ts already called it)
+      try {
+        const { advanceToOrders } = await import('../readiness')
+        advanceToOrders()
+      } catch {
+        // readiness module may not be loaded yet — server.ts will handle it
+      }
       log.info({ cycleId, rows: totalSynced }, 'Initial sync cycle complete — server ready')
     }
 
@@ -1030,6 +1043,15 @@ async function runDownstreamCycle(): Promise<void> {
     void syncCellularDenyList().catch((err) => {
       log.error({ err }, 'Cellular deny list sync failed')
     })
+
+    // Periodic reconciliation check — runs every 5 minutes (fire-and-forget)
+    const now = Date.now()
+    if (now - lastReconciliationAt > RECONCILIATION_INTERVAL_MS) {
+      lastReconciliationAt = now
+      void runReconciliationCheck().catch((err) => {
+        log.error({ err }, 'Reconciliation check failed')
+      })
+    }
   } catch (err) {
     log.error({ cycleId, err }, 'Cycle error')
   } finally {

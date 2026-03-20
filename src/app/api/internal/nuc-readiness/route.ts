@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { config } from '@/lib/system-config'
 import { getBootstrapResult } from '@/lib/venue-bootstrap'
 import { getWorkerHealth } from '@/lib/worker-registry'
+import { getReadinessState } from '@/lib/readiness'
 
 /**
  * GET /api/internal/nuc-readiness
@@ -19,6 +20,7 @@ export async function GET(request: Request) {
   const bootstrap = getBootstrapResult()
   const workers = getWorkerHealth()
   const nr = bootstrap?.neonSchemaReady
+  const readiness = getReadinessState()
 
   // Determine if sync workers are running
   const syncRunning = workers.some(
@@ -27,6 +29,11 @@ export async function GET(request: Request) {
   )
 
   return NextResponse.json({
+    // Canonical readiness level — ONE source of truth
+    readinessLevel: readiness?.level ?? null,
+    syncContractReady: readiness?.syncContractReady ?? false,
+    initialSyncComplete: readiness?.initialSyncComplete ?? false,
+    // Existing fields (kept for backward compat with heartbeat consumers)
     localDb: bootstrap?.localDb ?? false,
     neonReachable: bootstrap?.neonReachable ?? false,
     neonSchemaVersion: nr?.schemaVersion ?? null,
