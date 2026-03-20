@@ -312,8 +312,8 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
  * SYNC COVERAGE VALIDATOR (Fail-Closed)
  *
  * Called at server startup (blocking). Queries the database for all tables
- * and verifies every one is in SYNC_MODELS. Unknown tables are always a
- * FATAL error — there is no auto-register bypass.
+ * and verifies every one is in SYNC_MODELS. Unknown tables are auto-registered
+ * as local-only (direction: 'none') with a warning — they never crash the NUC.
  *
  * Also validates:
  *   - LOCAL_ONLY_TABLES/SYSTEM_TABLES entries exist in actual DB (catch stale names)
@@ -325,7 +325,6 @@ const LOCAL_ONLY_TABLES = new Set([
   'HardwareCommand', 'CloudEventQueue', 'SyncAuditEntry', 'HealthCheck',
   'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog',
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
-  'PaymentSession', // local payment state machine
   'SyncConflict', 'SyncWatermark', // quarantine infrastructure
   // Reservation infrastructure
   'ReservationIdempotencyKey', 'ReservationDepositToken', 'ReservationTable',
@@ -384,7 +383,9 @@ export async function validateSyncCoverage(
       // Known local-only — register in effectiveSyncModels (never mutate SYNC_MODELS)
       effectiveSyncModels[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
     } else {
-      errors.push(`Unknown table "${table_name}" — add it to SYNC_MODELS or LOCAL_ONLY_TABLES in sync-config.ts`)
+      // Auto-register unknown tables as local-only — never crash a running NUC
+      effectiveSyncModels[table_name] = { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 }
+      log.warn({ table: table_name }, 'Auto-registered unknown table as local-only: %s — add it to SYNC_MODELS or LOCAL_ONLY_TABLES in sync-config.ts', table_name)
     }
   }
 

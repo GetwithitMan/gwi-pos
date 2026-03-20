@@ -1776,6 +1776,45 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
       log "Seeding local PostgreSQL from Neon cloud..."
       sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && bash scripts/seed-from-neon.sh" || warn "Neon seed had warnings (non-fatal — local PG will sync on first run)"
     fi
+
+    # ── Post-migration: disable RLS on all tables ──
+    # prisma db push / migrate deploy may (re-)enable RLS via the Prisma schema.
+    # The POS app user doesn't have RLS policies configured, so RLS must be off.
+    log "Disabling RLS on all tables..."
+    sudo -u postgres psql -d "$DB_NAME" -c "
+      DO \$\$ DECLARE r RECORD; BEGIN
+        FOR r IN SELECT relname FROM pg_class WHERE relrowsecurity = true AND relkind = 'r' LOOP
+          EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', r.relname);
+        END LOOP;
+      END \$\$;
+    " >/dev/null 2>&1
+    log "RLS disabled on all tables."
+
+    # ── Post-seed: ensure _venue_schema_state table exists ──
+    # Required by bootstrap readiness checks and downstream sync worker.
+    log "Ensuring _venue_schema_state table exists..."
+    sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
+      CREATE TABLE IF NOT EXISTS \"_venue_schema_state\" (
+        \"id\"                  INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+        \"schemaVersion\"       TEXT NOT NULL,
+        \"seedVersion\"         TEXT NOT NULL DEFAULT 'v1',
+        \"provisionerVersion\"  TEXT,
+        \"provisionedAt\"       TIMESTAMPTZ DEFAULT NOW(),
+        \"provisionedBy\"       TEXT DEFAULT 'installer',
+        \"lastRepairAt\"        TIMESTAMPTZ,
+        \"lastRepairBy\"        TEXT,
+        \"lastRepairReason\"    TEXT,
+        \"repairCount\"         INTEGER NOT NULL DEFAULT 0,
+        \"appVersion\"          TEXT,
+        \"updatedAt\"           TIMESTAMPTZ DEFAULT NOW()
+      );
+      INSERT INTO \"_venue_schema_state\" (\"id\", \"schemaVersion\", \"seedVersion\", \"provisionerVersion\", \"provisionedAt\", \"provisionedBy\")
+      VALUES (1, '083', 'v1', '1', NOW(), 'installer')
+      ON CONFLICT (id) DO UPDATE SET
+        \"provisionerVersion\" = '1',
+        \"updatedAt\" = NOW();
+    " >/dev/null 2>&1
+    log "_venue_schema_state table ready."
   else
     log "Skipping database migrations (backup standby — data replicated from primary)."
   fi
@@ -1849,6 +1888,19 @@ PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
     # Non-destructive failure (e.g., network issue) — continue anyway
   fi
 }
+
+# Disable RLS on all tables after schema push.
+# prisma db push may (re-)enable RLS via the Prisma schema, but the POS app
+# user doesn't have RLS policies configured. RLS blocks sync, queries, login.
+echo "[pre-start] Disabling RLS on all tables..."
+psql "$DATABASE_URL" -c "
+  DO $$ DECLARE r RECORD;
+  BEGIN
+    FOR r IN SELECT relname FROM pg_class WHERE relrowsecurity = true AND relkind = 'r'
+    LOOP EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', r.relname);
+    END LOOP;
+  END $$;
+" 2>/dev/null && echo "[pre-start] RLS disabled." || echo "[pre-start] WARNING: RLS disable had issues — continuing."
 
 # Run custom migrations if the script exists
 # TIMEOUT: 300s (5min) matches the internal timeout in nuc-pre-migrate.js

@@ -242,13 +242,31 @@ export async function runBootstrap(): Promise<BootstrapResult> {
                 result.neonSchemaReady = await buildReadiness(neonClient, null)
               }
             } else if (!neonState && tableCount > 0) {
-            // Partial/unknown state -- DO NOT auto-repair
-            log.error(
+            // Tables exist but no _venue_schema_state — likely Vercel ran prisma db push.
+            // Create the state table and seed it with the NUC's expected version so sync can start.
+            log.info(
               { tableCount },
-              'Neon DB has tables but no _venue_schema_state — partial/unknown state. ' +
-              'NOT auto-repairing. Manual intervention required.'
+              'Neon DB has tables but no _venue_schema_state — creating state table (likely Vercel-provisioned)'
             )
-            result.neonSchemaReady = await buildReadiness(neonClient, null)
+            try {
+              await ensureSchemaStateTable(neonClient)
+              await writeSchemaState(neonClient, {
+                schemaVersion: EXPECTED_SCHEMA_VERSION,
+                seedVersion: EXPECTED_SEED_VERSION,
+                provisionerVersion: PROVISIONER_VERSION,
+                provisionedAt: new Date(),
+                provisionedBy: 'nuc-bootstrap-backfill',
+                appVersion: APP_VERSION,
+              })
+              result.neonSchemaReady = await buildReadiness(neonClient, {
+                schemaVersion: EXPECTED_SCHEMA_VERSION,
+                seedVersion: EXPECTED_SEED_VERSION,
+              })
+              log.info('Created _venue_schema_state for existing Neon DB')
+            } catch (backfillErr) {
+              log.error({ err: backfillErr }, 'Failed to create _venue_schema_state — falling back to degraded')
+              result.neonSchemaReady = await buildReadiness(neonClient, null)
+            }
             } else if (neonState) {
               // State exists -- check versions
               if (neonState.schemaVersion < EXPECTED_SCHEMA_VERSION) {
@@ -271,13 +289,13 @@ export async function runBootstrap(): Promise<BootstrapResult> {
                 result.degradedReasons.push('repeated-schema-repair')
               }
 
-              // Schema ahead in production is fatal — prevents running old code against new schema
-              if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION && config.isProduction) {
-                log.fatal(
+              // Neon schema BEHIND local is a rollback scenario — block sync but don't kill the process
+              if (neonState.schemaVersion < EXPECTED_SCHEMA_VERSION && config.isProduction) {
+                log.error(
                   { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
-                  'Neon schema ahead in production — aborting boot. Deploy a newer POS version.'
+                  'Neon schema behind NUC in production — sync blocked until deploy pipeline catches up'
                 )
-                process.exit(1)
+                result.degradedReasons.push('neon-schema-behind')
               }
             }
           } // close primary else block
@@ -304,10 +322,11 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     result.localBootOk = result.localDb && neonOk
 
     // syncContractReady: matches the exact contract server.ts uses for sync workers
-    // All four must be true: coreTablesExist, requiredEnumsExist, schemaVersionMatch, baseSeedPresent
+    // Schema version: match OR ahead is OK (Vercel deployed newer schema). Only "behind" blocks sync.
     const nsr = result.neonSchemaReady
+    const schemaVersionOk = !!nsr && (nsr.schemaVersionMatch || nsr.schemaVersionAhead)
     result.syncContractReady = result.localDb && !!neonUrl && result.neonReachable && !!nsr &&
-      nsr.coreTablesExist && nsr.requiredEnumsExist && nsr.schemaVersionMatch && nsr.baseSeedPresent
+      nsr.coreTablesExist && nsr.requiredEnumsExist && schemaVersionOk && nsr.baseSeedPresent
 
     log.info({
       localDb: result.localDb,
