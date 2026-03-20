@@ -63,6 +63,10 @@ export interface AuthContext {
   terminalId?: string
   /** True when caller is an MC/cloud admin operating in shadow mode (no local Employee record). */
   isCloudAdmin?: boolean
+  /** For cellular auth: the bound employee ID from the token (for impersonation prevention). */
+  cellularEmployeeId?: string | null
+  /** For cellular auth: whether the terminal is authorized for refunds. */
+  canRefund?: boolean
 }
 
 export interface AuthenticatedContext {
@@ -325,13 +329,15 @@ export function withAuth(
           recordActivity(payload.terminalId)
 
           const authCtx: AuthContext = {
-            employeeId: null, // Cellular terminals don't authenticate as an employee
+            employeeId: payload.employeeId || null,  // Bound employee (if any)
             locationId: payload.locationId,
             permissions: [],
             roleId: null,
             roleName: null,
             source: 'cellular',
             terminalId: payload.terminalId,
+            cellularEmployeeId: payload.employeeId || null,
+            canRefund: payload.canRefund ?? false,
           }
 
           return handler(request, { auth: authCtx, params: context?.params })

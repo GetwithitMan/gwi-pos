@@ -48,6 +48,20 @@ export const POST = withVenue(withTiming(async function POST(
       // No body or invalid JSON — send all pending items
     }
 
+    // Cellular ownership gating — block send on locally-owned orders
+    const isCellularSend = request.headers.get('x-cellular-authenticated') === '1'
+    if (isCellularSend) {
+      const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
+      try {
+        await validateCellularOrderAccess(true, id, 'mutate', db)
+      } catch (err) {
+        if (err instanceof CellularAuthError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
+    }
+
     // Order claim check — block if another employee has an active claim
     if (sendEmployeeId) {
       const terminalId = request.headers.get('x-terminal-id')

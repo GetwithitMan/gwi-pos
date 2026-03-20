@@ -230,6 +230,40 @@ These rules are absolute. Violating any of them is a system-level bug.
 
 ---
 
+## 7. Dual-Ingress Model (Cellular Terminals)
+
+Cellular terminals are full POS clients that write through the cloud path (Neon)
+when they cannot reach the local NUC. This makes the system dual-ingress:
+
+- **Local ingress:** LAN terminals -> NUC -> local PG -> upstream sync to Neon
+- **Cloud ingress:** Cellular terminals -> Vercel -> Neon -> downstream sync to NUC
+
+Both are legitimate write paths. The sync layer converges them.
+
+### Ownership Gating
+
+Orders with `lastMutatedBy = 'local'` are protected from cellular mutation.
+This prevents split-brain when a LAN terminal is actively working an order:
+
+- **Mutate operations blocked:** Add item, send to kitchen, update order, comp/void
+- **Payment always allowed:** Card processing must work regardless of origin
+- **Read always allowed:** Cellular terminals can always view any order
+- Orders with `lastMutatedBy = 'cloud'` can be mutated by either path
+
+Implementation: `validateCellularOrderAccess()` in `src/lib/cellular-validation.ts`.
+Wired into: items, send, order PUT/PATCH, void-payment, comp-void routes.
+
+### Audit Trail
+
+All orders carry device origin metadata for debugging and accountability:
+
+- `Order.metadata.originDeviceType` -- `'cellular'` or `'lan'` (set at creation)
+- `Order.metadata.originTerminalId` -- specific device identifier (set at creation)
+- `Order.lastMutatedBy` -- `'cloud'` or `'local'` (updated on every mutation)
+- `Order.originTerminalId` -- top-level field tracking the originating terminal
+
+---
+
 ## Appendix: Decision Record
 
 | Decision | Rationale |
@@ -242,3 +276,6 @@ These rules are absolute. Violating any of them is a system-level bug.
 | Quarantine over overwrite for protected models | Financial records must never be silently replaced |
 | `lastMutatedBy` + `updatedAt` for bidirectional | Simple, deterministic, auditable conflict resolution |
 | Order-Ready Gate is all-or-nothing | Partial readiness leads to subtle data loss scenarios |
+| Cellular ownership gating on locally-owned orders | Prevents split-brain when LAN terminal is actively working an order |
+| Payment exempt from ownership gating | Card processing must work regardless of originating terminal type |
+| `originDeviceType` in order metadata | Debugging and accountability for dual-ingress order creation |

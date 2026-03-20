@@ -20,6 +20,7 @@ import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isClosed } from '@/lib/domain/order-status'
 import { getRequestLocationId } from '@/lib/request-context'
+import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
 import {
   calculateItemTotal,
   isEmployeeMealReason,
@@ -43,6 +44,7 @@ interface CompVoidRequest {
   employeeId: string
   wasMade?: boolean  // Was the item already made? Determines waste tracking
   approvedById?: string  // Manager ID if approval required
+  managerPinHash?: string  // Manager PIN hash for cellular re-auth
   remoteApprovalCode?: string  // 6-digit code from remote manager approval (Skill 121)
   version?: number  // Optimistic concurrency control
 }
@@ -56,13 +58,39 @@ export const POST = withVenue(async function POST(
     const { id: orderId } = await params
     const body = await request.json() as CompVoidRequest
 
-    const { action, itemId, reason, employeeId, wasMade, approvedById, remoteApprovalCode, version } = body
+    const { action, itemId, reason, employeeId, wasMade, approvedById, managerPinHash, remoteApprovalCode, version } = body
 
     if (!action || !itemId || !reason || !employeeId) {
       return NextResponse.json(
         { error: 'Action, item ID, reason, and employee ID are required' },
         { status: 400 }
       )
+    }
+
+    // Cellular terminal: require manager PIN re-authentication for comp/void
+    // (only when approvedById is provided and not using remote approval)
+    if (approvedById && !remoteApprovalCode) {
+      try {
+        validateManagerReauthFromHeaders(request, approvedById, managerPinHash)
+      } catch (err) {
+        if (err instanceof CellularAuthError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
+    }
+
+    // Cellular ownership gating — block comp/void on locally-owned orders
+    const isCellularCompVoid = request.headers.get('x-cellular-authenticated') === '1'
+    if (isCellularCompVoid) {
+      try {
+        await validateCellularOrderAccess(true, orderId, 'mutate', db)
+      } catch (err) {
+        if (err instanceof CellularAuthError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
     }
 
     // Order claim check — block if another employee has an active claim

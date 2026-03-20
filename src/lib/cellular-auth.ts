@@ -28,6 +28,10 @@ export interface CellularTokenPayload {
   deviceFingerprint: string
   canRefund: boolean
   terminalRole: CellularTerminalRole
+  /** Bound employee ID — set when a specific employee logs in on the cellular terminal */
+  employeeId: string | null
+  /** Bound employee display name — for audit logging */
+  employeeName: string | null
   iat: number
   exp: number
 }
@@ -443,7 +447,9 @@ export async function issueCellularToken(
   locationId: string,
   venueSlug: string,
   deviceFingerprint: string,
-  terminalRole: CellularTerminalRole
+  terminalRole: CellularTerminalRole,
+  employeeId?: string | null,
+  employeeName?: string | null,
 ): Promise<string> {
   const secret = getCellularSecret()
   const now = Math.floor(Date.now() / 1000)
@@ -456,6 +462,8 @@ export async function issueCellularToken(
     deviceFingerprint,
     canRefund: false, // HARD rule: CELLULAR_ROAMING can NEVER refund
     terminalRole,
+    employeeId: employeeId || null,
+    employeeName: employeeName || null,
     iat: now,
     exp: now + 24 * 60 * 60, // 24h expiry
   }
@@ -541,7 +549,9 @@ export async function refreshCellularToken(oldToken: string): Promise<string | n
     payload.locationId,
     payload.venueSlug,
     payload.deviceFingerprint,
-    payload.terminalRole
+    payload.terminalRole,
+    payload.employeeId,
+    payload.employeeName,
   )
 }
 

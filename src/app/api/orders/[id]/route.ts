@@ -391,6 +391,20 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
+    // Cellular ownership gating — block mutation of locally-owned orders
+    const isCellularPut = request.headers.get('x-cellular-authenticated') === '1'
+    if (isCellularPut) {
+      const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
+      try {
+        await validateCellularOrderAccess(true, id, 'mutate', db)
+      } catch (err) {
+        if (err instanceof CellularAuthError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
+    }
+
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.
     let resolvedLocationId = getRequestLocationId()
     if (!resolvedLocationId) {
@@ -748,6 +762,20 @@ export const PATCH = withVenue(async function PATCH(
     }
     if (notes !== undefined && notes !== null && notes.length > 500) {
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
+    }
+
+    // Cellular ownership gating — block mutation of locally-owned orders
+    const isCellularPatch = request.headers.get('x-cellular-authenticated') === '1'
+    if (isCellularPatch) {
+      const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
+      try {
+        await validateCellularOrderAccess(true, id, 'mutate', db)
+      } catch (err) {
+        if (err instanceof CellularAuthError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.

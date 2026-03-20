@@ -17,6 +17,7 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { getRequestLocationId } from '@/lib/request-context'
+import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
 
 class VoidValidationError extends Error {
   statusCode: number
@@ -44,7 +45,7 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id: orderId } = await params
-    const { paymentId, reason, notes, managerId, readerId } = await request.json()
+    const { paymentId, reason, notes, managerId, readerId, managerPinHash } = await request.json()
 
     // Validate inputs
     if (!paymentId || !reason || !managerId) {
@@ -52,6 +53,29 @@ export const POST = withVenue(async function POST(
         { error: 'Missing required fields' },
         { status: 400 }
       )
+    }
+
+    // Cellular terminal: require manager PIN re-authentication for void
+    try {
+      validateManagerReauthFromHeaders(request, managerId, managerPinHash)
+    } catch (err) {
+      if (err instanceof CellularAuthError) {
+        return NextResponse.json({ error: err.message }, { status: err.status })
+      }
+      throw err
+    }
+
+    // Cellular ownership gating — block void on locally-owned orders
+    const isCellularVoid = request.headers.get('x-cellular-authenticated') === '1'
+    if (isCellularVoid) {
+      try {
+        await validateCellularOrderAccess(true, orderId, 'mutate', db)
+      } catch (err) {
+        if (err instanceof CellularAuthError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
     }
 
     // Fast path: locationId from request context (JWT/cellular). Fallback: bootstrap from DB.

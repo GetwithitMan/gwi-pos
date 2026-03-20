@@ -62,7 +62,9 @@ export async function handleCellularAuth(
             gracePayload.payload.locationId,
             gracePayload.payload.venueSlug,
             gracePayload.payload.deviceFingerprint,
-            gracePayload.payload.terminalRole
+            gracePayload.payload.terminalRole,
+            gracePayload.payload.employeeId,
+            gracePayload.payload.employeeName,
           )
           console.warn(JSON.stringify({
             event: 'cellular_grace_token_issued',
@@ -139,6 +141,10 @@ export async function handleCellularAuth(
     headers.set('x-terminal-role', payload.terminalRole)
     headers.set('x-cellular-authenticated', '1')
     headers.set('x-can-refund', String(payload.canRefund))
+    // Forward bound employee for impersonation prevention at route level
+    if (payload.employeeId) {
+      headers.set('x-cellular-employee-id', payload.employeeId)
+    }
     // Route to the correct venue database — venueSlug is mandatory
     if (!payload.venueSlug) {
       console.error(`[proxy] cellular token missing venueSlug — cannot resolve venue DB. terminalId=${payload.terminalId} locationId=${payload.locationId}`)

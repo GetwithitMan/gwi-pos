@@ -154,6 +154,20 @@ export const POST = withVenue(async function POST(
       return apiError.badRequest('Location not found', ERROR_CODES.VALIDATION_ERROR)
     }
 
+    // Cellular ownership gating — block mutation of locally-owned orders
+    const isCellular = request.headers.get('x-cellular-authenticated') === '1'
+    if (isCellular) {
+      const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
+      try {
+        await validateCellularOrderAccess(true, orderId, 'mutate', db)
+      } catch (err) {
+        if (err instanceof CellularAuthError) {
+          return NextResponse.json({ error: err.message }, { status: err.status })
+        }
+        throw err
+      }
+    }
+
     // Auth checks — fetch order metadata once for all permission guards (tenant-safe)
     if (requestingEmployeeId) {
       const orderMeta = await OrderRepository.getOrderByIdWithSelect(orderId, locationId, {

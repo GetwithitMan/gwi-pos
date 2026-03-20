@@ -13,6 +13,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
+import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -20,7 +21,7 @@ export const POST = withVenue(async function POST(
 ) {
   try {
     const { id } = await params
-    const { paymentId, refundAmount, refundReason, notes, managerId, readerId, remoteApprovalCode, approvedById } =
+    const { paymentId, refundAmount, refundReason, notes, managerId, readerId, remoteApprovalCode, approvedById, managerPinHash } =
       await request.json()
 
     // Validate required fields
@@ -29,6 +30,26 @@ export const POST = withVenue(async function POST(
         { error: 'Missing required fields' },
         { status: 400 }
       )
+    }
+
+    // Cellular terminal: block refunds entirely (canRefund=false for CELLULAR_ROAMING)
+    try {
+      validateCellularRefundFromHeaders(request)
+    } catch (err) {
+      if (err instanceof CellularAuthError) {
+        return NextResponse.json({ error: err.message }, { status: err.status })
+      }
+      throw err
+    }
+
+    // Cellular terminal: require manager PIN re-authentication for refund
+    try {
+      validateManagerReauthFromHeaders(request, managerId, managerPinHash)
+    } catch (err) {
+      if (err instanceof CellularAuthError) {
+        return NextResponse.json({ error: err.message }, { status: err.status })
+      }
+      throw err
     }
 
     // Fetch order (unlocked — lightweight check before acquiring lock)

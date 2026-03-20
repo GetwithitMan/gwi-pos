@@ -20,6 +20,7 @@ import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import type { AddItemInput } from '@/lib/domain/order-items/types'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { isTrainingEmployee } from '@/lib/training-mode'
+import { validateCellularEmployeeFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
@@ -39,8 +40,19 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       return apiError.badRequest(validation.error, ERROR_CODES.VALIDATION_ERROR)
     }
 
-    const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields, idempotencyKey, scheduledFor } = validation.data
+    const { employeeId: claimedEmployeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields, idempotencyKey, scheduledFor } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
+
+    // Cellular employee binding: prevent impersonation by validating bound employee
+    let employeeId: string
+    try {
+      employeeId = validateCellularEmployeeFromHeaders(request, claimedEmployeeId)
+    } catch (err) {
+      if (err instanceof CellularAuthError) {
+        return NextResponse.json({ error: err.message }, { status: err.status })
+      }
+      throw err
+    }
 
     // Order creation idempotency — prevent double-tap / retry duplicates
     if (idempotencyKey) {
@@ -56,11 +68,20 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }
     }
 
-    // HA cellular sync — detect mutation origin
+    // HA cellular sync — detect mutation origin + audit trail enrichment
     const isCellularOrigin = request.headers.get('x-cellular-authenticated') === '1'
+    const originTerminalIdValue = request.headers.get('x-terminal-id') || null
     const cellularMutationFields = isCellularOrigin
-      ? { lastMutatedBy: 'cloud', originTerminalId: request.headers.get('x-terminal-id') || null }
-      : { lastMutatedBy: 'local', originTerminalId: null as string | null }
+      ? {
+          lastMutatedBy: 'cloud',
+          originTerminalId: originTerminalIdValue,
+          metadata: { originDeviceType: 'cellular' as const, originTerminalId: originTerminalIdValue },
+        }
+      : {
+          lastMutatedBy: 'local',
+          originTerminalId: null as string | null,
+          metadata: { originDeviceType: 'lan' as const, originTerminalId: null as string | null },
+        }
 
     // Auth check — require POS access
     const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
