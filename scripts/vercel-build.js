@@ -25,6 +25,15 @@ async function main() {
   console.log('[vercel-build] Running prisma generate...')
   execSync('npx prisma generate', { stdio: 'inherit' })
 
+  // 1b. Generate schema.sql + version contract (MC provisions new venues from these)
+  // Must run AFTER prisma generate (needs Prisma CLI) and BEFORE migrations
+  // so the artifacts reflect the current schema for this deploy.
+  console.log('[vercel-build] Generating schema.sql + version contract...')
+  execSync('node scripts/generate-schema-sql.mjs', { stdio: 'inherit' })
+  execSync('cp prisma/schema.sql public/schema.sql', { stdio: 'inherit' })
+  execSync('node scripts/generate-version-contract.mjs', { stdio: 'inherit' })
+  execSync('cp src/generated/version-contract.json public/version-contract.json', { stdio: 'inherit' })
+
   // 2. Run pre-push migrations on master Neon DB (via PrismaClient + DIRECT_URL)
   console.log('[vercel-build] Running pre-push migrations (master)...')
   const directUrl = process.env.DIRECT_URL || process.env.DATABASE_URL

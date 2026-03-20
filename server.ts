@@ -191,17 +191,37 @@ async function main() {
   // so the schema is current before app.prepare(), validateSyncCoverage(), etc.
   if (!process.env.VERCEL) {
     try {
-      console.log('[server] Running pre-start migrations...')
+      console.log('[server] Running pre-start migrations on local PG...')
       execSync('node scripts/nuc-pre-migrate.js', {
         stdio: 'inherit',
         timeout: 300000, // 5 minute timeout (matches the script's internal timeout)
         cwd: process.cwd()
       })
-      console.log('[server] Migrations complete')
+      console.log('[server] Local PG migrations complete')
     } catch (err) {
-      console.error('[server] Migration failed:', err)
+      console.error('[server] Local PG migration failed:', err)
       // Don't exit — server should still start for recovery access
       // Schema verification will catch issues and block sync workers
+    }
+
+    // Run migrations on Neon too (if configured) — keeps Neon in sync with NUC
+    // This handles the case where NUC has new migration files but Neon hasn't
+    // been upgraded yet (e.g., NUC updated via git pull before Vercel deployed).
+    if (config.neonDatabaseUrl) {
+      try {
+        console.log('[server] Running migrations on Neon cloud DB...')
+        execSync('node scripts/nuc-pre-migrate.js', {
+          stdio: 'inherit',
+          timeout: 300000,
+          cwd: process.cwd(),
+          env: { ...process.env, NEON_MIGRATE: 'true', NEON_DATABASE_URL: config.neonDatabaseUrl },
+        })
+        console.log('[server] Neon migrations complete')
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        console.error('[server] Neon migration failed (non-fatal):', errMsg)
+        // Non-fatal: NUC continues with local PG. Bootstrap will detect Neon version mismatch.
+      }
     }
   }
 
