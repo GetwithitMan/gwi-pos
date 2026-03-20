@@ -12,6 +12,7 @@ import type { CategoryType, CategoryShow } from '@/generated/prisma/client'
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const maxDuration = 30 // Neon cold start can take 5-10s on first connection
 
 export const GET = withVenue(withTiming(async function GET(request: NextRequest) {
   const timing = getTimingFromRequest(request)

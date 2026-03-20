@@ -27,10 +27,13 @@ const globalForPrisma = globalThis as unknown as {
 
 export function createPrismaClient(url?: string) {
   const connectionString = url || process.env.DATABASE_URL || ''
-  const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '25', 10)
-  const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? 25 : rawPoolSize
-  const rawPoolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
-  const poolTimeout = Number.isNaN(rawPoolTimeout) || rawPoolTimeout < 1 ? 10 : rawPoolTimeout
+  // On Vercel serverless: small pool (2 connections), longer timeout (30s) for Neon cold starts
+  // On NUC: larger pool (25 connections), shorter timeout (10s) since DB is local
+  const isVercel = !!process.env.VERCEL
+  const rawPoolSize = parseInt(process.env.DB_POOL_SIZE || process.env.DATABASE_CONNECTION_LIMIT || '', 10)
+  const poolSize = Number.isNaN(rawPoolSize) || rawPoolSize < 1 ? (isVercel ? 2 : 25) : rawPoolSize
+  const rawPoolTimeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '', 10)
+  const poolTimeout = Number.isNaN(rawPoolTimeout) || rawPoolTimeout < 1 ? (isVercel ? 30 : 10) : rawPoolTimeout
 
   const adapter = new PrismaPg({
     connectionString,
