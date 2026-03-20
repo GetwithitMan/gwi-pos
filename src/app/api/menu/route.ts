@@ -26,9 +26,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const slim = searchParams.get('slim') === 'true'                               // Optional: omit admin/cost fields for POS grid
 
     // Get the location ID — prefer request context (set by proxy, zero DB cost)
-    console.log('[menu] START — getting locationId...')
     const locationId = getRequestLocationId() || await getLocationId()
-    console.log('[menu] locationId:', locationId)
     if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
@@ -48,7 +46,6 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const categoryShowFilter = categoryShow ? { categoryShow } : {}
 
     // Run all three queries in parallel
-    console.log('[menu] Starting DB queries...')
     timing.start('db')
     const [categories, items, stockStatusMap] = await Promise.all([
       db.category.findMany({
@@ -102,7 +99,6 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       getAllMenuItemsStockStatus(locationId),
     ])
     timing.end('db', 'Queries')
-    console.log('[menu] DB queries done — categories:', categories.length, 'items:', items.length)
 
     // Get waitlist counts for entertainment items
     const entertainmentItemIds = items

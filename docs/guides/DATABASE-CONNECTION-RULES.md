@@ -2,83 +2,58 @@
 
 **DO NOT CHANGE THESE RULES. They were found through painful trial and error.**
 
-## The Rule: One Adapter Per Runtime
+## The Rule: PrismaPg Everywhere
 
-| Runtime | Adapter | Why |
-|---------|---------|-----|
-| **Vercel (serverless)** | `PrismaNeon` + `@neondatabase/serverless` + `ws` | HTTP/WebSocket. Instant connections. No cold start. |
-| **NUC (long-running)** | `PrismaPg` + `@prisma/adapter-pg` | TCP to local PostgreSQL. Fast, reliable, persistent. |
+PrismaPg (`@prisma/adapter-pg`) is used for ALL environments:
+- **Vercel:** `max: 1`, `connectionTimeoutMillis: 60000` (handles Neon cold starts)
+- **NUC:** `max: 25`, `connectionTimeoutMillis: 10000` (local PostgreSQL)
 
-**NEVER use PrismaPg on Vercel.** It uses TCP, and Neon auto-suspends compute after 5 min idle. TCP reconnection takes 5-10s to wake it. Combined with complex queries, this exceeds Vercel's function timeout every time.
+PrismaNeon was attempted 4 times and fails with "No database host" on Vercel
+because the DATABASE_URL uses Neon's pooler endpoint which NeonPool's WebSocket
+can't connect to. Do not try PrismaNeon again without changing DATABASE_URL
+to a direct (non-pooler) endpoint.
 
-**NEVER use PrismaNeon on NUC.** It adds WebSocket overhead for a local TCP connection that doesn't need it.
+## Critical: Tenant Scope Deadlock (THE BIG ONE)
 
-## Critical: serverExternalPackages
+`resolveTenantLocationId()` in `db-tenant-scope.ts` MUST use `$queryRawUnsafe`
+to look up the location ID. It MUST NOT call `getLocationId()`.
 
-In `next.config.ts`:
-```typescript
-serverExternalPackages: ['serialport', 'ws', '@neondatabase/serverless', '@prisma/adapter-neon'],
-```
+**Why:** `getLocationId()` uses inflight promise coalescing. When the tenant
+scope extension calls `getLocationId()` recursively, it gets back the SAME
+promise that's currently executing. That promise waits for the extension.
+The extension waits for the promise. **Deadlock.** Every venue-scoped route
+hangs forever until 504 timeout.
 
-**DO NOT REMOVE THESE.** Turbopack bundles modules by default. When it bundles `ws`, it breaks the WebSocket constructor that `@neondatabase/serverless` needs. Every route returns `prisma:error No database host`. Adding these to `serverExternalPackages` tells Next.js to load them from `node_modules` at runtime instead of bundling.
-
-## Critical: ws Polyfill
-
-`@neondatabase/serverless` uses WebSocket internally. In Node.js (which Vercel serverless functions run on), WebSocket is not globally available. The `ws` package provides it. You MUST set it before creating any Pool:
-
-```typescript
-import { neonConfig } from '@neondatabase/serverless'
-import ws from 'ws'
-
-if (isVercel) {
-  neonConfig.webSocketConstructor = ws
-}
-```
-
-This must run at module scope, before `createPrismaClient()` is called.
+This was the root cause of ALL Vercel menu/terminal/settings failures.
+Routes without tenant scoping (health, cron) worked fine.
 
 ## Files That Must Follow These Rules
 
 | File | What it does |
 |------|-------------|
-| `src/lib/db.ts` | `createPrismaClient()` and `createAdminClient()` |
+| `src/lib/db.ts` | `createPrismaClient()` and `createAdminClient()` — PrismaPg everywhere |
+| `src/lib/db-tenant-scope.ts` | `resolveTenantLocationId()` — MUST use raw SQL, never `getLocationId()` |
+| `src/lib/location-cache.ts` | `getLocationId()` — has inflight coalescing that causes the deadlock if called from tenant scope |
 | `src/lib/neon-client.ts` | `createNeonClient()` for sync workers |
 | `src/lib/venue-bootstrap.ts` | Bootstrap Neon check |
 | `src/app/api/internal/provision/route.ts` | Venue provisioning seed client |
 
-All four files use the same pattern:
-```typescript
-if (isVercel) {
-  const pool = new NeonPool({ connectionString })
-  adapter = new PrismaNeon(pool)
-} else {
-  adapter = new PrismaPg({ connectionString, ... })
-}
-```
-
 ## What Went Wrong (History)
 
-1. **Original:** PrismaPg everywhere. Worked on NUC. Timed out on Vercel (504 on /api/menu).
-2. **Attempt 1:** Switched to PrismaNeon on Vercel. Passed `{ connectionString }` directly — wrong constructor. "No database host."
-3. **Attempt 2:** Fixed constructor to use `Pool`. Forgot `ws` polyfill. Silent hang.
-4. **Attempt 3:** Added `ws` polyfill. Turbopack bundled `ws` and broke it. "No database host."
-5. **Fix:** Added `ws`, `@neondatabase/serverless`, `@prisma/adapter-neon` to `serverExternalPackages`. Works.
+1. **Original:** PrismaPg everywhere. Simple routes worked (hardware 200). Menu timed out (504).
+2. **Misdiagnosis:** Thought it was Neon cold starts / query complexity. Spent hours switching adapters.
+3. **PrismaNeon attempts (4x):** All failed with "No database host" — DATABASE_URL uses Neon pooler endpoint.
+4. **Simplified query:** Still 504. Even a trivial query on the venue DB hung forever.
+5. **Debug logging:** `getLocationId()` never returned. Found the deadlock.
+6. **Real fix:** `resolveTenantLocationId()` uses `$queryRawUnsafe` instead of `getLocationId()`.
 
-**Do not repeat this cycle.** The fix is steps 4+5 together.
-
-## Dependencies
-
-These must be direct dependencies in `package.json` (not just transitive):
-- `ws` — WebSocket polyfill for Node.js
-- `@neondatabase/serverless` — Neon's serverless driver (HTTP/WebSocket transport)
-- `@prisma/adapter-neon` — Prisma adapter that uses the Neon driver
-- `@prisma/adapter-pg` — Prisma adapter for standard TCP (NUC only)
+The adapter was never the problem. The deadlock was.
 
 ## Vercel Function Timeouts
 
 | Route | maxDuration | Why |
 |-------|------------|-----|
-| `/api/menu` | 60 | 314 items with 5-level nested includes |
+| `/api/menu` | 60 | Large menu with nested includes |
 | `/api/internal/provision` | 60 | Schema push + seed |
 | `/api/sync/bootstrap` | 120 | Full venue data bootstrap |
-| Most routes | default (15) | Simple queries, fast with PrismaNeon |
+| Most routes | default (15) | Simple queries |

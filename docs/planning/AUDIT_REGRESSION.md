@@ -142,6 +142,16 @@ If a future PR touches the areas below, check the corresponding invariant before
 
 See `docs/guides/STABLE-ID-CONTRACT.md` for the full contract.
 
+## Tenant Scope Deadlock Invariant (2026-03-20)
+
+> Added after a deadlock in `resolveTenantLocationId()` caused EVERY venue-scoped Vercel route to hang until 504 timeout. Non-scoped routes (health, cron) worked fine, masking the issue.
+
+| # | Invariant | Where Enforced | Test Trigger |
+|---|-----------|----------------|--------------|
+| TDL1 | `resolveTenantLocationId()` MUST use `$queryRawUnsafe` to look up the Location ID. It MUST NEVER call `getLocationId()`. Violation = deadlock (Promise waits for itself via inflight coalescing map). | `db-tenant-scope.ts:resolveTenantLocationId()` | Access any venue-scoped route on Vercel (e.g., `/api/menu` on `*.ordercontrolcenter.com`) — must return data, not 504 |
+
+See `docs/guides/DATABASE-CONNECTION-RULES.md` for the full history.
+
 ## Dev Infrastructure Invariants (2026-03-16)
 
 > Added after 4-root-cause dev server outage. These invariants prevent dev environment regressions.

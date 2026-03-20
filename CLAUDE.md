@@ -157,9 +157,8 @@ Only after Steps 1–5:
 - **Full rules:** `docs/guides/ARCHITECTURE-RULES.md`
 
 ### Database Connections (DO NOT CHANGE)
-- **Vercel:** `PrismaNeon` + `@neondatabase/serverless` + `ws` polyfill. NEVER use PrismaPg on Vercel (TCP cold starts cause timeouts).
-- **NUC:** `PrismaPg` + `@prisma/adapter-pg`. NEVER use PrismaNeon on NUC.
-- `ws`, `@neondatabase/serverless`, `@prisma/adapter-neon` MUST be in `serverExternalPackages` (Turbopack breaks ws if bundled).
+- **All environments:** `PrismaPg` (`@prisma/adapter-pg`). Vercel: `max=1, timeout=60s`. NUC: `max=25, timeout=10s`.
+- **CRITICAL DEADLOCK RULE:** `resolveTenantLocationId()` in `db-tenant-scope.ts` MUST use `$queryRawUnsafe`. NEVER call `getLocationId()` from inside a Prisma extension — it deadlocks via inflight promise coalescing.
 - **Full rules:** `docs/guides/DATABASE-CONNECTION-RULES.md`
 
 ### Migrations (dual-script unified)
