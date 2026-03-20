@@ -217,6 +217,7 @@ export function normalizeDoorDashItems(payload: Record<string, unknown>): Platfo
         quantity: Number(item.quantity || 1),
         price: Number(item.price || 0) / 100, // cents to dollars
         modifiers,
+        specialInstructions: String(item.special_instructions || ''),
         externalId: String(item.merchant_supplied_id || item.id || ''),
       })
     }
@@ -233,7 +234,7 @@ export function normalizeUberEatsItems(payload: Record<string, unknown>): Platfo
   return items.map(item => ({
     name: String(item.title || item.name || ''),
     quantity: Number(item.quantity || 1),
-    price: Number((item.price as Record<string, unknown>)?.amount || item.price || 0) / 100,  // UberEats sends cents
+    price: Number((item.price as Record<string, unknown>)?.amount ?? item.price ?? 0) / 100,  // UberEats sends cents
     modifiers: ((item.selected_modifier_groups || []) as Array<Record<string, unknown>>)
       .flatMap(g => ((g.selected_items || []) as Array<Record<string, unknown>>)
         .map(m => String(m.title || m.name || ''))),
@@ -249,7 +250,7 @@ export function normalizeGrubhubItems(payload: Record<string, unknown>): Platfor
   return items.map(item => ({
     name: String(item.name || item.item_name || ''),
     quantity: Number(item.quantity || 1),
-    price: Number(item.price || item.unit_price || 0) / 100,  // Grubhub sends cents
+    price: Number(item.price ?? item.unit_price ?? 0) / 100,  // Grubhub sends cents
     modifiers: ((item.options || item.modifiers || []) as Array<Record<string, unknown>>)
       .map(m => String(m.name || '')),
     specialInstructions: String(item.special_instructions || item.special_request || ''),

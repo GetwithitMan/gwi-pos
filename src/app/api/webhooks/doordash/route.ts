@@ -62,6 +62,18 @@ export async function POST(request: NextRequest) {
     customerObj.phone_number || orderObj.customer_phone || '',
   )
 
+  // ── Parse delivery address from v2 nested structure ───────────────────
+  const deliveryObj = (orderObj.delivery_address || orderObj.dropoff_address || {}) as Record<string, unknown>
+  const deliveryAddress = deliveryObj.printable_address
+    ? String(deliveryObj.printable_address)
+    : [
+        deliveryObj.street || deliveryObj.address_line_1 || '',
+        deliveryObj.unit || deliveryObj.address_line_2 || '',
+        deliveryObj.city || '',
+        deliveryObj.state || '',
+        deliveryObj.zip_code || deliveryObj.postal_code || '',
+      ].filter(Boolean).join(', ') || ''
+
   // Resolve location by storeId
   const location = await resolveLocationForWebhook('doordash', storeId || null)
   if (!location) {
@@ -127,13 +139,17 @@ export async function POST(request: NextRequest) {
         // Auto-accept if configured
         let posOrderId: string | null = null
         if (location.autoAccept) {
-          posOrderId = await createPosOrderFromDelivery(
-            result.id,
-            items,
-            'doordash',
+          posOrderId = await createPosOrderFromDelivery({
+            thirdPartyOrderId: result.id,
+            platform: 'doordash',
             locationId,
-            location.defaultTaxRate,
-          )
+            taxRate: location.defaultTaxRate,
+            customerName: customerName || undefined,
+            customerPhone: customerPhone || undefined,
+            deliveryAddress: deliveryAddress || undefined,
+            specialInstructions: specialInstructions || undefined,
+            deliveryFee,
+          }, items)
 
           // Confirm with DoorDash after POS order is created
           if (posOrderId) {
@@ -210,6 +226,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   } catch (error) {
     console.error('[doordash-webhook] Error processing webhook:', error)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return NextResponse.json({ received: true })
   }
 }

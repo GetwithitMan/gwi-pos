@@ -141,6 +141,12 @@ export interface OrderContext {
   tabName: string | null
   employeeName: string
   createdAt: Date
+  // Delivery customer info (from DeliveryOrder table)
+  customerName?: string | null
+  customerPhone?: string | null
+  deliveryAddress?: string | null
+  deliveryInstructions?: string | null
+  source?: string | null
 }
 
 // Complete routing result

@@ -293,6 +293,31 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // Fetch delivery info for kitchen tickets (DeliveryOrder is raw SQL, not in Prisma schema)
+    let deliveryCustomerName: string | null = null
+    let deliveryPhone: string | null = null
+    let deliveryAddr: string | null = null
+    let deliveryNotes: string | null = null
+    if (order.orderType?.startsWith('delivery')) {
+      try {
+        const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
+          `SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+           FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
+          id
+        )
+        if (rows.length > 0) {
+          const row = rows[0]
+          deliveryCustomerName = row.customerName
+          deliveryPhone = row.phone
+          const addrParts = [row.address, row.addressLine2, row.city, row.state, row.zipCode].filter(Boolean)
+          deliveryAddr = addrParts.length > 0 ? addrParts.join(', ') : null
+          deliveryNotes = row.notes
+        }
+      } catch {
+        // Non-fatal: delivery info is supplementary for ticket printing
+      }
+    }
+
     // Route order to stations using tag-based routing engine
     // Pass pre-fetched order data to avoid redundant DB fetch inside resolveRouting
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds, {
@@ -304,6 +329,12 @@ export const POST = withVenue(withTiming(async function POST(
       createdAt: order.createdAt,
       table: order.table,
       employee: order.employee,
+      // Delivery customer info for kitchen ticket printing
+      customerName: deliveryCustomerName,
+      customerPhone: deliveryPhone,
+      deliveryAddress: deliveryAddr,
+      deliveryInstructions: deliveryNotes,
+      source: order.source,
     })
 
     // Fulfillment routing — item-level station dispatch for HA cellular architecture (fire-and-forget)

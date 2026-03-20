@@ -142,6 +142,19 @@ export async function allocateTipsForPayment(params: {
   const paymentWithTip = createdPayments.find(p => Number(p.tipAmount) > 0)
   const paymentId = paymentWithTip?.id || createdPayments[0]?.id || ''
 
+  // Use the payment's actual createdAt for segment lookup (critical for SAF/offline payments
+  // where the payment was created earlier than the current time)
+  let collectedAt = new Date()
+  if (paymentId) {
+    const paymentRecord = await db.payment.findUnique({
+      where: { id: paymentId },
+      select: { createdAt: true },
+    })
+    if (paymentRecord?.createdAt) {
+      collectedAt = paymentRecord.createdAt
+    }
+  }
+
   // Delegate to the allocation pipeline (handles group detection + splits)
   const result = await allocateTipsForOrder({
     locationId,
@@ -150,7 +163,7 @@ export async function allocateTipsForPayment(params: {
     tipAmountCents: netTipAmountCents,
     primaryEmployeeId,
     sourceType,
-    collectedAt: new Date(),
+    collectedAt,
     ccFeeAmountCents,
     kind,
   })

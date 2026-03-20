@@ -76,6 +76,18 @@ export async function POST(request: NextRequest) {
         const customerName = String(customer.name || customer.first_name || '')
         const customerPhone = String(customer.phone || '')
 
+        // Parse delivery address from Grubhub order
+        const addressObj = (orderData.delivery_address || orderData.address || customer.address || {}) as Record<string, unknown>
+        const deliveryAddress = addressObj.formatted_address
+          ? String(addressObj.formatted_address)
+          : [
+              addressObj.street || addressObj.address_1 || '',
+              addressObj.unit || addressObj.address_2 || '',
+              addressObj.city || '',
+              addressObj.state || '',
+              addressObj.zip || addressObj.zip_code || '',
+            ].filter(Boolean).join(', ') || ''
+
         const items = normalizeGrubhubItems(orderData)
 
         const subtotal = Number(orderData.subtotal || 0) / 100
@@ -119,16 +131,22 @@ export async function POST(request: NextRequest) {
         // Auto-accept if configured
         let posOrderId: string | null = null
         if (location.autoAccept) {
-          posOrderId = await createPosOrderFromDelivery(
-            result.id,
-            items,
-            'grubhub',
+          posOrderId = await createPosOrderFromDelivery({
+            thirdPartyOrderId: result.id,
+            platform: 'grubhub',
             locationId,
-            location.defaultTaxRate,
-          )
+            taxRate: location.defaultTaxRate,
+            customerName: customerName || undefined,
+            customerPhone: customerPhone || undefined,
+            deliveryAddress: deliveryAddress || undefined,
+            specialInstructions: specialInstructions || undefined,
+            deliveryFee,
+          }, items)
 
           // Fix 6: Confirm with Grubhub after auto-accept creates POS order
-          void confirmWithPlatform('grubhub', externalOrderId, locationId).catch(console.error)
+          if (posOrderId) {
+            void confirmWithPlatform('grubhub', externalOrderId, locationId).catch(console.error)
+          }
         }
 
         dispatchDeliveryEvent(locationId, 'delivery:new-order', {
@@ -189,6 +207,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   } catch (error) {
     console.error('[grubhub/webhook] Error processing webhook:', error)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return NextResponse.json({ received: true })
   }
 }

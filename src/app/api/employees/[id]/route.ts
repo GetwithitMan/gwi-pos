@@ -7,6 +7,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { removeMemberFromGroup } from '@/lib/domain/tips/tip-groups'
 
 // GET - Get employee details
 export const GET = withVenue(async function GET(
@@ -307,6 +308,23 @@ export const PUT = withVenue(async function PUT(
     // Force logout if employee was deactivated via PUT
     if (isActive === false) {
       void emitToLocation(existing.locationId, 'employee:deactivated', { employeeId: id }).catch(console.error)
+
+      // Remove deactivated employee from any active tip groups so tips stop allocating to them
+      try {
+        const activeMemberships = await db.tipGroupMembership.findMany({
+          where: { employeeId: id, status: 'active', group: { status: 'active' } },
+          select: { groupId: true },
+        })
+        for (const mem of activeMemberships) {
+          try {
+            await removeMemberFromGroup({ groupId: mem.groupId, employeeId: id })
+          } catch (e) {
+            console.error(`[employee] Failed to remove from tip group ${mem.groupId}:`, e)
+          }
+        }
+      } catch (e) {
+        console.error('[employee] Failed to query tip group memberships:', e)
+      }
     }
 
     return NextResponse.json({ data: {

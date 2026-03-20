@@ -154,6 +154,36 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { createdAt: 'asc' },
     })
 
+    // Batch-fetch delivery info for all orders in a single query
+    // DeliveryOrder is a raw SQL table (not in Prisma schema), so we use $queryRawUnsafe
+    const orderIds = orders.map(o => o.id)
+    let deliveryInfoMap: Record<string, { customerName: string | null; phone: string | null; address: string | null; notes: string | null }> = {}
+    if (orderIds.length > 0) {
+      try {
+        const deliveryRows: Array<{ orderId: string; customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
+          `SELECT "orderId", "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+           FROM "DeliveryOrder"
+           WHERE "orderId" = ANY($1::text[])`,
+          orderIds
+        )
+        for (const row of deliveryRows) {
+          if (row.orderId) {
+            // Build full address from components
+            const addressParts = [row.address, row.addressLine2, row.city, row.state, row.zipCode].filter(Boolean)
+            deliveryInfoMap[row.orderId] = {
+              customerName: row.customerName,
+              phone: row.phone,
+              address: addressParts.length > 0 ? addressParts.join(', ') : null,
+              notes: row.notes,
+            }
+          }
+        }
+      } catch (err) {
+        // Non-fatal: delivery info is supplementary
+        console.warn('[KDS] Failed to fetch delivery info:', err)
+      }
+    }
+
     // Filter and format orders for KDS
     const kdsOrders = orders.map(order => {
       // Filter items for this station
@@ -212,6 +242,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         timeStatus = 'aging'
       }
 
+      // Resolve delivery info for this order
+      const deliveryInfo = deliveryInfoMap[order.id]
+
       return {
         id: order.id,
         orderNumber: order.orderNumber,
@@ -224,6 +257,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         elapsedMinutes,
         timeStatus,
         notes: order.notes,
+        // Delivery customer info (from DeliveryOrder table)
+        customerName: deliveryInfo?.customerName || null,
+        customerPhone: deliveryInfo?.phone || null,
+        deliveryAddress: deliveryInfo?.address || null,
+        deliveryInstructions: deliveryInfo?.notes || null,
+        source: order.source || null,
         items: filteredItems.map(item => ({
           id: item.id,
           name: item.menuItem.name,

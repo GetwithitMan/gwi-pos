@@ -38,6 +38,12 @@ export interface PreloadedOrderData {
   createdAt: Date
   table?: { id: string; name: string; abbreviation?: string | null } | null
   employee?: { id: string; displayName: string | null; firstName: string | null; lastName: string | null } | null
+  // Delivery customer info (from DeliveryOrder table, resolved by caller)
+  customerName?: string | null
+  customerPhone?: string | null
+  deliveryAddress?: string | null
+  deliveryInstructions?: string | null
+  source?: string | null
 }
 
 /**
@@ -190,7 +196,38 @@ export class OrderRouter {
         throw new Error(`Order not found: ${orderId}`)
       }
 
-      orderData = order
+      // Fetch delivery info from DeliveryOrder table (raw SQL, not in Prisma schema)
+      let deliveryCustomerName: string | null = null
+      let deliveryPhone: string | null = null
+      let deliveryAddr: string | null = null
+      let deliveryNotes: string | null = null
+      if (order.orderType?.startsWith('delivery')) {
+        try {
+          const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
+            `SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+             FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
+            orderId
+          )
+          if (rows.length > 0) {
+            const row = rows[0]
+            deliveryCustomerName = row.customerName
+            deliveryPhone = row.phone
+            const addrParts = [row.address, row.addressLine2, row.city, row.state, row.zipCode].filter(Boolean)
+            deliveryAddr = addrParts.length > 0 ? addrParts.join(', ') : null
+            deliveryNotes = row.notes
+          }
+        } catch {
+          // Non-fatal: delivery info is supplementary for ticket printing
+        }
+      }
+
+      orderData = {
+        ...order,
+        customerName: deliveryCustomerName,
+        customerPhone: deliveryPhone,
+        deliveryAddress: deliveryAddr,
+        deliveryInstructions: deliveryNotes,
+      }
       items = order.items
     }
 
@@ -215,6 +252,12 @@ export class OrderRouter {
         `${orderData.employee?.firstName || ''} ${orderData.employee?.lastName || ''}`.trim() ||
         'Unknown',
       createdAt: orderData.createdAt,
+      // Delivery customer info (passed through from preloaded data)
+      customerName: orderData.customerName || null,
+      customerPhone: orderData.customerPhone || null,
+      deliveryAddress: orderData.deliveryAddress || null,
+      deliveryInstructions: orderData.deliveryInstructions || null,
+      source: orderData.source || null,
     }
 
     // 4. Transform items with resolved tags

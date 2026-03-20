@@ -394,7 +394,7 @@ export default function DeliveryIntegrationSettingsPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok) {
-        const results = data.results as Array<{ platform: string; success: boolean; itemsSynced: number; errors: string[] }> | undefined
+        const results = data.results ? Object.values(data.results) as Array<{ platform: string; success: boolean; itemsSynced: number; errors: string[] }> : []
         const successCount = results?.filter(r => r.success).length ?? 0
         const totalItems = results?.reduce((s, r) => s + (r.itemsSynced ?? 0), 0) ?? 0
         setLastMenuSync({

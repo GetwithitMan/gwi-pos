@@ -109,7 +109,21 @@ export async function POST(request: NextRequest) {
         const customerName = String(eater.first_name || '') +
           (eater.last_name ? ` ${eater.last_name}` : '')
         const phoneObj = eater.phone as Record<string, unknown> | undefined
-        const customerPhone = String(phoneObj?.number || eater.phone || '')
+        const customerPhone = String(phoneObj?.number || (typeof eater?.phone === 'string' ? eater.phone : '') || '')
+
+        // Parse delivery address from UberEats full order response
+        // Full response has: dropoff.location.address, dropoff.location.address2, dropoff.location.city, etc.
+        const dropoff = (orderData.dropoff || orderData.delivery_address || {}) as Record<string, unknown>
+        const dropoffLocation = (dropoff.location || dropoff) as Record<string, unknown>
+        const deliveryAddress = dropoffLocation.formatted_address
+          ? String(dropoffLocation.formatted_address)
+          : [
+              dropoffLocation.address || dropoffLocation.address_line_1 || '',
+              dropoffLocation.address2 || dropoffLocation.address_line_2 || '',
+              dropoffLocation.city || '',
+              dropoffLocation.state || '',
+              dropoffLocation.postal_code || dropoffLocation.zip_code || '',
+            ].filter(Boolean).join(', ') || ''
 
         // Parse items from the full order (cart.items[])
         const items = normalizeUberEatsItems(orderData)
@@ -158,16 +172,22 @@ export async function POST(request: NextRequest) {
         // Auto-accept if configured
         let posOrderId: string | null = null
         if (location.autoAccept) {
-          posOrderId = await createPosOrderFromDelivery(
-            result.id,
-            items,
-            'ubereats',
+          posOrderId = await createPosOrderFromDelivery({
+            thirdPartyOrderId: result.id,
+            platform: 'ubereats',
             locationId,
-            location.defaultTaxRate,
-          )
+            taxRate: location.defaultTaxRate,
+            customerName: customerName.trim() || undefined,
+            customerPhone: customerPhone || undefined,
+            deliveryAddress: deliveryAddress || undefined,
+            specialInstructions: specialInstructions || undefined,
+            deliveryFee,
+          }, items)
 
           // Fix 2: Confirm with UberEats after auto-accept creates POS order
-          void confirmWithPlatform('ubereats', orderId, locationId).catch(console.error)
+          if (posOrderId) {
+            void confirmWithPlatform('ubereats', orderId, locationId).catch(console.error)
+          }
         }
 
         dispatchDeliveryEvent(locationId, 'delivery:new-order', {
@@ -233,6 +253,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   } catch (error) {
     console.error('[ubereats/webhook] Error processing webhook:', error)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    return NextResponse.json({ received: true })
   }
 }

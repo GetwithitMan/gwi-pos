@@ -338,11 +338,18 @@ function buildTicketBuffer(order: OrderContext, manifest: RoutingManifest): Buff
   content.push(TALL)
   content.push(line(`#${order.orderNumber}`))
 
-  const orderTypeDisplay = order.orderType.toUpperCase()
-    .replace('DINE_IN', 'DINE IN')
-    .replace('BAR_TAB', 'BAR')
-    .replace('TAKEOUT', 'TOGO')
-    .replace('DELIVERY', 'DELIV')
+  // Platform-specific delivery labels
+  const orderTypeDisplayMap: Record<string, string> = {
+    'delivery_doordash': 'DOORDASH',
+    'delivery_ubereats': 'UBER EATS',
+    'delivery_grubhub': 'GRUBHUB',
+  }
+  const orderTypeDisplay = orderTypeDisplayMap[order.orderType]
+    || order.orderType.toUpperCase()
+      .replace('DINE_IN', 'DINE IN')
+      .replace('BAR_TAB', 'BAR')
+      .replace('TAKEOUT', 'TOGO')
+      .replace('DELIVERY', 'DELIVERY')
   content.push(line(orderTypeDisplay))
 
   if (order.tableName) {
@@ -355,6 +362,47 @@ function buildTicketBuffer(order: OrderContext, manifest: RoutingManifest): Buff
   content.push(line(`Server: ${order.employeeName}`))
   content.push(line(new Date().toLocaleTimeString()))
   content.push(divider(width))
+
+  // Delivery customer info section
+  if (order.orderType?.startsWith('delivery') && (order.customerName || order.deliveryAddress)) {
+    content.push(line(''))
+    if (!isImpact) content.push(ESCPOS.BOLD_ON)
+
+    // Platform name banner
+    if (order.source) {
+      content.push(ESCPOS.ALIGN_CENTER)
+      content.push(TALL)
+      content.push(line(`** ${order.source.toUpperCase()} DELIVERY **`))
+      content.push(NORMAL)
+      content.push(ESCPOS.ALIGN_LEFT)
+    }
+
+    // Customer name and phone
+    if (order.customerName) {
+      content.push(line(`CUSTOMER: ${order.customerName}`))
+    }
+    if (order.customerPhone) {
+      content.push(line(`PHONE: ${order.customerPhone}`))
+    }
+
+    if (!isImpact) content.push(ESCPOS.BOLD_OFF)
+
+    // Delivery address
+    if (order.deliveryAddress) {
+      content.push(line(`DELIVER TO: ${order.deliveryAddress}`))
+    }
+
+    // Delivery instructions (emphasized)
+    if (order.deliveryInstructions) {
+      content.push(line(''))
+      if (!isImpact) content.push(ESCPOS.BOLD_ON)
+      content.push(line(`!! ${order.deliveryInstructions} !!`))
+      if (!isImpact) content.push(ESCPOS.BOLD_OFF)
+    }
+
+    content.push(divider(width))
+  }
+
   content.push(line(''))
 
   // --- ITEMS ---

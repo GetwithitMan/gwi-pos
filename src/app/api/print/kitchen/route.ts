@@ -88,6 +88,37 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
+    // Fetch delivery customer info from DeliveryOrder table (raw SQL, not in Prisma schema)
+    let deliveryInfo: { customerName?: string | null; customerPhone?: string | null; deliveryAddress?: string | null; deliveryInstructions?: string | null; source?: string | null } = {}
+    if (order.orderType?.startsWith('delivery')) {
+      try {
+        const rows: Array<{ customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
+          `SELECT "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
+           FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
+          orderId
+        )
+        if (rows.length > 0) {
+          const row = rows[0]
+          const addrParts = [row.address, row.addressLine2, row.city, row.state, row.zipCode].filter(Boolean)
+          deliveryInfo = {
+            customerName: row.customerName,
+            customerPhone: row.phone,
+            deliveryAddress: addrParts.length > 0 ? addrParts.join(', ') : null,
+            deliveryInstructions: row.notes,
+            source: (order as any).source || null,
+          }
+        }
+      } catch {
+        // Non-fatal: delivery info is supplementary for ticket printing
+      }
+    }
+
+    // Enrich order with delivery fields for ticket rendering
+    const orderWithDelivery = {
+      ...order,
+      ...deliveryInfo,
+    }
+
     // Filter items using shared kitchen eligibility logic (aligned with send route)
     // Always exclude held items — they should not print until explicitly fired
     // Fallback: print items that have been sent to kitchen (not pending/delayed/held/completed)
@@ -282,7 +313,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Build the ticket content - pass printer type and settings for formatting
       try {
-        const ticketContent = buildKitchenTicket(order, items, width, printer.printerType, printSettings, printerSettings)
+        const ticketContent = buildKitchenTicket(orderWithDelivery, items, width, printer.printerType, printSettings, printerSettings)
         // Build document with or without cut
         const document = printer.supportsCut
           ? buildDocument(...ticketContent)
@@ -443,6 +474,12 @@ function buildKitchenTicket(
     table: { name: string } | null
     employee: { displayName: string | null; firstName: string; lastName: string }
     createdAt: Date
+    // Delivery customer info
+    customerName?: string | null
+    customerPhone?: string | null
+    deliveryAddress?: string | null
+    deliveryInstructions?: string | null
+    source?: string | null
   },
   items: Array<{
     id: string
@@ -616,12 +653,18 @@ function buildKitchenTicket(
   // Order number on its own line, order type abbreviated to fit
   content.push(line(`#${order.orderNumber}`))
 
-  // Order type - abbreviate common types to prevent wrapping
-  const orderTypeDisplay = order.orderType.toUpperCase()
-    .replace('DINE_IN', 'DINE IN')
-    .replace('BAR_TAB', 'BAR')
-    .replace('TAKEOUT', 'TOGO')
-    .replace('DELIVERY', 'DELIV')
+  // Order type - platform-specific delivery labels, abbreviate common types
+  const orderTypeDisplayMap: Record<string, string> = {
+    'delivery_doordash': 'DOORDASH',
+    'delivery_ubereats': 'UBER EATS',
+    'delivery_grubhub': 'GRUBHUB',
+  }
+  const orderTypeDisplay = orderTypeDisplayMap[order.orderType]
+    || order.orderType.toUpperCase()
+      .replace('DINE_IN', 'DINE IN')
+      .replace('BAR_TAB', 'BAR')
+      .replace('TAKEOUT', 'TOGO')
+      .replace('DELIVERY', 'DELIVERY')
   content.push(line(orderTypeDisplay))
 
   if (order.table) {
@@ -637,6 +680,44 @@ function buildKitchenTicket(
   content.push(line(new Date().toLocaleTimeString()))
 
   content.push(divider(width))
+
+  // Delivery customer info section
+  if (order.orderType?.startsWith('delivery') && (order.customerName || order.deliveryAddress)) {
+    content.push(line(''))
+    const isImpact = printerType === 'impact'
+
+    // Platform name banner
+    if (order.source) {
+      content.push(ESCPOS.ALIGN_CENTER)
+      content.push(getSizeCommand(headerSize))
+      content.push(line(`** ${order.source.toUpperCase()} DELIVERY **`))
+      content.push(NORMAL)
+      content.push(ESCPOS.ALIGN_LEFT)
+    }
+
+    if (!isImpact) content.push(ESCPOS.BOLD_ON)
+    if (order.customerName) {
+      content.push(line(`CUSTOMER: ${order.customerName}`))
+    }
+    if (order.customerPhone) {
+      content.push(line(`PHONE: ${order.customerPhone}`))
+    }
+    if (!isImpact) content.push(ESCPOS.BOLD_OFF)
+
+    if (order.deliveryAddress) {
+      content.push(line(`DELIVER TO: ${order.deliveryAddress}`))
+    }
+
+    if (order.deliveryInstructions) {
+      content.push(line(''))
+      if (!isImpact) content.push(ESCPOS.BOLD_ON)
+      content.push(line(`!! ${order.deliveryInstructions} !!`))
+      if (!isImpact) content.push(ESCPOS.BOLD_OFF)
+    }
+
+    content.push(divider(width))
+  }
+
   content.push(line(''))
 
   // ITEMS

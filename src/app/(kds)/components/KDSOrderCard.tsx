@@ -50,6 +50,12 @@ export interface KDSOrder {
   elapsedMinutes: number
   timeStatus: 'fresh' | 'aging' | 'late'
   notes: string | null
+  // Delivery customer info
+  customerName?: string | null
+  customerPhone?: string | null
+  deliveryAddress?: string | null
+  deliveryInstructions?: string | null
+  source?: string | null
   items: KDSItem[]
 }
 
@@ -69,6 +75,9 @@ export const ORDER_TYPE_LABELS: Record<string, string> = {
   dine_in: 'Dine In',
   takeout: 'Takeout',
   delivery: 'Delivery',
+  delivery_doordash: 'DoorDash',
+  delivery_ubereats: 'Uber Eats',
+  delivery_grubhub: 'Grubhub',
   bar_tab: 'Bar',
   boh_sale: 'BOH',
 }
@@ -77,6 +86,9 @@ export const ORDER_TYPE_COLORS: Record<string, string> = {
   dine_in: 'bg-blue-600',
   takeout: 'bg-orange-600',
   delivery: 'bg-purple-600',
+  delivery_doordash: 'bg-red-500',
+  delivery_ubereats: 'bg-green-500',
+  delivery_grubhub: 'bg-orange-500',
   bar_tab: 'bg-green-600',
   boh_sale: 'bg-gray-600',
 }
@@ -175,6 +187,27 @@ export const KDSOrderCard = memo(function KDSOrderCard({
           <span>{order.tableName || order.tabName || order.employeeName}</span>
           <span>{order.items.length} item{order.items.length !== 1 ? 's' : ''}</span>
         </div>
+
+        {/* Delivery Customer Info */}
+        {order.orderType.startsWith('delivery') && (order.customerName || order.customerPhone) && (
+          <div className="mt-1 text-xs space-y-0.5">
+            {order.customerName && (
+              <div className="font-semibold text-white truncate">
+                {order.customerName}
+              </div>
+            )}
+            {order.customerPhone && (
+              <div className="text-gray-400 truncate">
+                {order.customerPhone}
+              </div>
+            )}
+            {order.deliveryAddress && (
+              <div className="text-gray-400 truncate" title={order.deliveryAddress}>
+                {order.deliveryAddress}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Items */}
@@ -341,11 +374,18 @@ export const KDSOrderCard = memo(function KDSOrderCard({
         ))}
       </div>
 
-      {order.notes && (
+      {(order.notes || order.deliveryInstructions) && (
         <div className="px-4 py-2 bg-orange-900/30 border-t border-orange-800/50">
-          <p className="text-sm text-orange-300">
-            <span className="font-medium">Note:</span> {order.notes}
-          </p>
+          {order.deliveryInstructions && (
+            <p className="text-sm text-orange-300 font-medium">
+              Delivery: {order.deliveryInstructions}
+            </p>
+          )}
+          {order.notes && order.notes !== order.deliveryInstructions && (
+            <p className="text-sm text-orange-300">
+              <span className="font-medium">Note:</span> {order.notes}
+            </p>
+          )}
         </div>
       )}
 

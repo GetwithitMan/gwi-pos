@@ -207,6 +207,18 @@ export async function createThirdPartyOrder(params: CreateThirdPartyOrderParams)
 
 // ─── POS Order Creation (for auto-accept) ───────────────────────────────────
 
+export interface DeliveryOrderContext {
+  thirdPartyOrderId: string
+  platform: DeliveryPlatform
+  locationId: string
+  taxRate: number
+  customerName?: string
+  customerPhone?: string
+  deliveryAddress?: string
+  specialInstructions?: string
+  deliveryFee?: number
+}
+
 /**
  * Create a POS Order from a ThirdPartyOrder and link them.
  * Used when autoAccept is enabled.
@@ -214,31 +226,53 @@ export async function createThirdPartyOrder(params: CreateThirdPartyOrderParams)
  * NOTE: Platform tips do NOT enter tip banking — they're paid by the platform, not the venue.
  */
 export async function createPosOrderFromDelivery(
-  thirdPartyOrderId: string,
+  context: DeliveryOrderContext,
   platformItems: PlatformItem[],
-  platform: DeliveryPlatform,
-  locationId: string,
-  taxRate: number,
 ): Promise<string | null> {
+  const {
+    thirdPartyOrderId,
+    platform,
+    locationId,
+    taxRate,
+    customerName,
+    customerPhone,
+    deliveryAddress,
+    specialInstructions,
+  } = context
+
   try {
     const mapped = await mapThirdPartyOrder(platformItems, platform, locationId, taxRate)
 
-    // Create a minimal POS Order
-    // TODO: When full order creation API is wired, use the proper order creation flow
-    // For now, create a basic order record that kitchen can see
+    // Build a rich note for kitchen visibility
+    const noteParts = [`\u{1F697} ${platform.toUpperCase()} Delivery`]
+    if (customerName) noteParts.push(customerName)
+    if (customerPhone) noteParts.push(customerPhone)
+    const notes = noteParts.join(' | ')
+      + (specialInstructions ? `\n${specialInstructions}` : '')
+
+    // Create POS Order with full delivery context
     const orderResult = await db.$queryRawUnsafe<Array<{ id: string; orderNumber: number }>>(
       `INSERT INTO "Order" (
         "locationId", "orderType", "status",
         "subtotal", "tax", "total",
-        "specialInstructions", "source"
-      ) VALUES ($1, $2, 'sent', $3, $4, $5, $6, $7)
+        "customerName", "customerPhone", "deliveryAddress", "deliveryInstructions",
+        "notes", "source"
+      ) VALUES (
+        $1, $2, 'sent', $3, $4, $5,
+        $6, $7, $8, $9,
+        $10, $11
+      )
       RETURNING "id", "orderNumber"`,
       locationId,
       mapped.orderType,
       mapped.subtotal,
       mapped.tax,
       mapped.total,
-      `[${platform.toUpperCase()}] Delivery order`,
+      customerName || null,
+      customerPhone || null,
+      deliveryAddress || null,
+      specialInstructions || null,
+      notes,
       platform,
     )
 
@@ -257,8 +291,9 @@ export async function createPosOrderFromDelivery(
     for (const item of mapped.items) {
       const itemRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
         `INSERT INTO "OrderItem" (
-          "orderId", "menuItemId", "name", "quantity", "price", "locationId"
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+          "orderId", "menuItemId", "name", "quantity", "price", "locationId",
+          "specialNotes"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING "id"`,
         orderId,
         item.menuItemId,
@@ -266,6 +301,7 @@ export async function createPosOrderFromDelivery(
         item.quantity,
         item.price,
         locationId,
+        item.specialInstructions || null,
       )
 
       // Store modifiers on the OrderItem

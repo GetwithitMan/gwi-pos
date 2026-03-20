@@ -145,13 +145,16 @@ export const PUT = withVenue(async function PUT(
 
         // Create POS Order
         const platformItems = (order.items || []) as PlatformItem[]
-        const posOrderId = await createPosOrderFromDelivery(
-          id,
-          platformItems,
+        const posOrderId = await createPosOrderFromDelivery({
+          thirdPartyOrderId: id,
           platform,
           locationId,
           taxRate,
-        )
+          customerName: order.externalCustomerName ? String(order.externalCustomerName) : undefined,
+          customerPhone: order.externalCustomerPhone ? String(order.externalCustomerPhone) : undefined,
+          specialInstructions: order.specialInstructions ? String(order.specialInstructions) : undefined,
+          deliveryFee: toNum(order.deliveryFee),
+        }, platformItems)
 
         if (!posOrderId) {
           // Still mark as accepted even if POS order creation fails
