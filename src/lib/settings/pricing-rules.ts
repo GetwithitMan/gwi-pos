@@ -1,10 +1,15 @@
 // Location Settings — Pricing Rules Engine
 // Split from src/lib/settings.ts for maintainability
 
-import { createChildLogger } from '@/lib/logger'
+import type { GwiLogger } from '@/lib/logger'
 import type { PricingRule, PricingAdjustment, HappyHourSettings } from './types'
 
-const log = createChildLogger('settings')
+// Lazy logger — avoids module-scope side effects that inflate middleware bundles
+let _log: GwiLogger | null = null
+function log() {
+  if (!_log) { _log = require('@/lib/logger').createChildLogger('settings') }
+  return _log
+}
 
 // ─── Legacy Happy Hour Functions (Deprecated) ───────────────────────────────
 
@@ -371,7 +376,7 @@ function isLeapYear(year: number): boolean {
  */
 export function getActivePricingRules(rules: PricingRule[], now?: Date, timezone?: string): PricingRule[] {
   if (!Array.isArray(rules)) {
-    log.warn('[PricingRules] getActivePricingRules called with non-array, returning []')
+    log().warn('[PricingRules] getActivePricingRules called with non-array, returning []')
     return []
   }
   const _now = now ?? new Date()

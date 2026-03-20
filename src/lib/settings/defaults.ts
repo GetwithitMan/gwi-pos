@@ -2,7 +2,7 @@
 // Split from src/lib/settings.ts for maintainability
 
 import { DEFAULT_GLOBAL_RECEIPT_SETTINGS, mergeGlobalReceiptSettings } from '@/types/print'
-import { createChildLogger } from '@/lib/logger'
+import type { GwiLogger } from '@/lib/logger'
 
 import type {
   PricingProgram,
@@ -61,7 +61,12 @@ import type {
   MessageTemplate,
 } from './types'
 
-const log = createChildLogger('settings')
+// Lazy logger — avoids module-scope side effects that inflate middleware bundles
+let _log: GwiLogger | null = null
+function log() {
+  if (!_log) { _log = require('@/lib/logger').createChildLogger('settings') }
+  return _log
+}
 
 // ─── Default Constants ──────────────────────────────────────────────────────
 
@@ -1078,7 +1083,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       }
       // If pricingRules exists but is not an array, treat as empty and warn
       if (partial.pricingRules !== undefined) {
-        log.warn('[PricingRules] pricingRules exists but is not an array, defaulting to []')
+        log().warn('[PricingRules] pricingRules exists but is not an array, defaulting to []')
         return []
       }
       // pricingRules is undefined (never set) — migrate from legacy happyHour if enabled
@@ -1105,7 +1110,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
             createdAt: new Date().toISOString(),
           }] as PricingRule[]
         } catch {
-          log.warn('[PricingRules] Invalid legacy happyHour data, falling back to empty rules')
+          log().warn('[PricingRules] Invalid legacy happyHour data, falling back to empty rules')
           return []
         }
       }

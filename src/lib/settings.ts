@@ -1,3 +1,61 @@
-// This file has been split into src/lib/settings/ for maintainability.
-// All exports are preserved via the barrel index.
-export * from './settings/index'
+// Barrel re-export — all imports from '@/lib/settings' resolve here.
+// Uses explicit re-exports from settings/index.ts (no wildcard barrels).
+export {
+  // Defaults
+  DEFAULT_PRICING_PROGRAM, DEFAULT_BREAK_COMPLIANCE, DEFAULT_AUTO_GRATUITY,
+  DEFAULT_MARGIN_EDGE_SETTINGS, DEFAULT_HOTEL_PMS_SETTINGS, DEFAULT_SEVEN_SHIFTS_SETTINGS,
+  DEFAULT_EOD_SETTINGS, DEFAULT_SPEED_OF_SERVICE, DEFAULT_WALKOUT_SETTINGS,
+  DEFAULT_AGE_VERIFICATION, DEFAULT_PAYROLL_EXPORT, DEFAULT_CATERING, DEFAULT_CAKE_ORDERING,
+  DEFAULT_VENUE_PORTAL, DEFAULT_ENTERTAINMENT_SETTINGS, DEFAULT_MEMBERSHIP_SETTINGS,
+  DEFAULT_BAR_OPERATIONS, DEFAULT_RESERVATION_SETTINGS, DEFAULT_DEPOSIT_RULES,
+  DEFAULT_TEXT_TO_PAY, DEFAULT_HOST_VIEW, DEFAULT_DISPATCH_POLICY, DEFAULT_DELIVERY,
+  DEFAULT_THIRD_PARTY_DELIVERY, DEFAULT_MARKETING, DEFAULT_UPSELL_PROMPTS,
+  DEFAULT_INVOICING_COMPANY_INFO, DEFAULT_INVOICING, DEFAULT_PRINTER_FAILOVER,
+  DEFAULT_RESERVATION_DEPOSIT, DEFAULT_CARD_ON_FILE, DEFAULT_WAITLIST_SETTINGS,
+  DEFAULT_MENU_RESTORE_POINT_SETTINGS, DEFAULT_CASH_MANAGEMENT, DEFAULT_LOGIN_MESSAGES,
+  DEFAULT_TRAINING_SETTINGS, DEFAULT_EMPLOYEE_MEAL_SETTINGS, DEFAULT_SERVER_BANKING,
+  DEFAULT_PRE_ORDER, DEFAULT_COVER_CHARGE, DEFAULT_HARDWARE_LIMITS, DEFAULT_QR_ORDERING,
+  DEFAULT_KDS_SETTINGS, DEFAULT_GL_MAPPING, DEFAULT_ACCOUNTING_SETTINGS,
+  DEFAULT_CUSTOMER_FEEDBACK, DEFAULT_POUR_CONTROL, DEFAULT_LAYOUT_SETTINGS,
+  DEFAULT_RESERVATION_TEMPLATES, TEMPLATE_PACKS, AVAILABLE_PLACEHOLDERS,
+  DEFAULT_RESERVATION_INTEGRATION, RESERVATION_PLATFORMS, DEFAULT_SETTINGS,
+  mergeWithDefaults, getPricingProgram, effectivePricingProgram,
+  getEffectiveDepositMode, parseSettings,
+  // Pricing Rules
+  getHappyHourEndTime, isHappyHourActive, getHappyHourPrice,
+  isPricingRuleActive, getActivePricingRules, getAdjustedPrice,
+  getBestPricingRuleForItem, getPricingRuleEndTime,
+  // Validators
+  validatePricingRule, checkPricingRuleOverlaps,
+} from './settings/index'
+
+// Types — re-exported for consumers using '@/lib/settings'
+export type {
+  GlobalReceiptSettings, PricingProgram, DualPricingSettings, PriceRoundingSettings,
+  TaxSettings, TipSettings, TipShareSettings, TipBankSettings, AutoGratuitySettings,
+  AutoRebootSettings, AlertSettings, SecuritySettings, BusinessDaySettings,
+  BreakComplianceSettings, ClockOutSettings, ReceiptSettings, PaymentSettings,
+  LoyaltySettings, HappyHourSchedule, HappyHourSettings, PricingRuleSchedule,
+  PricingRule, PricingAdjustment, BarTabSettings, POSDisplaySettings,
+  CategoryColorOverride, PopEffect, MenuItemCustomization, POSLayoutSettings,
+  BartenderPreferences, FavoriteItemRef, BartenderCategorySettings,
+  BartenderItemSettings, BartenderItemCustomization, ApprovalSettings,
+  HotelPmsSettings, MarginEdgeSettings, SevenShiftsSettings, EodSettings,
+  SpeedOfServiceSettings, WalkoutSettings, AgeVerificationSettings,
+  PayrollExportSettings, CateringSettings, CakeOrderingSettings, VenuePortalSettings,
+  EntertainmentSettings, MembershipSettings, BarOperationsSettings,
+  ReservationSettings, DepositRules, MessageTemplate, ReservationMessageTemplates,
+  ReservationPlatform, ReservationIntegrationStatusMapping,
+  ReservationIntegrationSyncError, ReservationIntegration, TwilioSettings,
+  TextToPaySettings, HostViewSettings, DeliveryDispatchPolicy, DeliverySettings,
+  ThirdPartyDeliveryPlatformSettings, ThirdPartyDeliveryUberEatsSettings,
+  ThirdPartyDeliverySettings, MarketingSettings, UpsellPromptSettings,
+  InvoicingCompanyInfo, InvoicingSettings, PrinterFailoverSettings,
+  ReservationDepositSettings, CardOnFileSettings, WaitlistSettings,
+  MenuRestorePointSettings, CashManagementSettings, LoginMessage,
+  LoginMessageSettings, TrainingSettings, EmployeeMealSettings,
+  ServerBankingSettings, PreOrderSettings, CoverChargeSettings,
+  HardwareLimitsSettings, QrOrderingSettings, KdsSettings,
+  AccountingGLMapping, AccountingSettings, CustomerFeedbackSettings,
+  PourControlSettings, LocationSettings,
+} from './settings/index'
