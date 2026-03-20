@@ -202,9 +202,8 @@ export async function runBootstrap(): Promise<BootstrapResult> {
         const directUrl = process.env.NEON_DIRECT_URL || neonUrl
         let neonAdapter: any
         if (process.env.VERCEL) {
-          const { PrismaNeon } = await import('@prisma/adapter-neon')
-          const { Pool: NeonPool } = await import('@neondatabase/serverless')
-          neonAdapter = new PrismaNeon(new NeonPool({ connectionString: directUrl }) as any)
+          const { PrismaPg } = await import('@prisma/adapter-pg')
+          neonAdapter = new PrismaPg({ connectionString: directUrl, max: 1, connectionTimeoutMillis: 60000 })
         } else {
           const { PrismaPg } = await import('@prisma/adapter-pg')
           neonAdapter = new PrismaPg({ connectionString: directUrl, max: 2 })

@@ -163,9 +163,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (mode === 'full' || mode === 'seed-only') {
       let venueAdapter: any
       if (process.env.VERCEL) {
-        const { PrismaNeon } = require('@prisma/adapter-neon')
-        const { Pool: NeonPool } = require('@neondatabase/serverless')
-        venueAdapter = new PrismaNeon(new NeonPool({ connectionString: venueDbUrl }))
+        venueAdapter = new PrismaPg({ connectionString: venueDbUrl, max: 1, connectionTimeoutMillis: 60000 })
       } else {
         venueAdapter = new PrismaPg({ connectionString: venueDbUrl })
       }
