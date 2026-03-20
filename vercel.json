@@ -2,6 +2,11 @@
   "buildCommand": "node scripts/vercel-build.js",
   "framework": "nextjs",
   "installCommand": "npm install",
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     { "path": "/api/cron/7shifts-sync", "schedule": "0 7 * * *" },
     { "path": "/api/cron/marginedge-sync", "schedule": "0 8 * * *" },
