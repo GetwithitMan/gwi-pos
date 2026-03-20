@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -149,7 +151,22 @@ export const PUT = withVenue(async function PUT(
       categoryId,
       isActive,
       components,
+      requestingEmployeeId,
     } = body
+
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = requestingEmployeeId ?? actor.employeeId
+
+    // Verify menu item exists to get locationId for auth
+    const existing = await db.menuItem.findUnique({ where: { id }, select: { locationId: true } })
+    if (!existing) {
+      return NextResponse.json({ error: 'Combo not found' }, { status: 404 })
+    }
+
+    const auth = await requirePermission(resolvedEmployeeId, existing.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     // Update the menu item
     const updateData: Record<string, unknown> = {}
@@ -242,6 +259,20 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+
+    const actor = await getActorFromRequest(request)
+    const resolvedEmployeeId = request.nextUrl.searchParams.get('requestingEmployeeId') ?? actor.employeeId
+
+    // Verify menu item exists to get locationId for auth
+    const menuItemCheck = await db.menuItem.findUnique({ where: { id }, select: { locationId: true } })
+    if (!menuItemCheck) {
+      return NextResponse.json({ error: 'Combo not found' }, { status: 404 })
+    }
+
+    const auth = await requirePermission(resolvedEmployeeId, menuItemCheck.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     // Find and delete the template first (cascades to components and options)
     const template = await db.comboTemplate.findFirst({

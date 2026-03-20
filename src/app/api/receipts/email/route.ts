@@ -98,7 +98,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order does not belong to this location' }, { status: 403 })
     }
 
-    const serverName = order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`
+    const serverName = escapeHtml(order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`)
     const locationName = escapeHtml(order.location.name)
     const locationAddress = order.location.address ? escapeHtml(order.location.address) : ''
     const locationPhone = order.location.phone ? escapeHtml(order.location.phone) : ''
@@ -180,7 +180,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               </tr>
               <tr>
                 <td style="padding:2px 0;">Server:</td>
-                <td style="padding:2px 0;text-align:right;">${escapeHtml(serverName)}</td>
+                <td style="padding:2px 0;text-align:right;">${serverName}</td>
               </tr>
             </table>
           </div>

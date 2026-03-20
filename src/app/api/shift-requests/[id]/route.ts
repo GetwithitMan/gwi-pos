@@ -87,6 +87,13 @@ export const PUT = withVenue(async function PUT(
           { status: 400 }
         )
       }
+      // Only the target employee can decline a swap request
+      if (swapRequest.requestedToEmployeeId && resolvedEmployeeId !== swapRequest.requestedToEmployeeId) {
+        return NextResponse.json(
+          { error: 'Only the target employee can decline this request' },
+          { status: 403 }
+        )
+      }
       const updated = await db.shiftSwapRequest.update({
         where: { id: requestId },
         data: { status: 'rejected', respondedAt: now, declineReason: reason || null },

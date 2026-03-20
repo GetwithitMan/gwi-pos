@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
-import { PERMISSIONS } from '@/lib/auth-utils'
+import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
+import { compare } from 'bcryptjs'
 
 // Parse category from stored reason format: "[Category] Reason text"
 function parseCategoryFromReason(reason: string): { category: string | null; reason: string } {
@@ -176,27 +177,38 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Manager approval required for paid-out over threshold
     // TODO: Make threshold configurable via cashManagement settings (e.g. cashManagement.paidOutApprovalThreshold)
     const PAID_OUT_APPROVAL_THRESHOLD = 100
-    const managerId = body.managerId as string | undefined
+    const managerPin = body.managerPin as string | undefined
+    let verifiedApprover: string | null = null
     if (type === 'paid_out' && Number(amount) > PAID_OUT_APPROVAL_THRESHOLD) {
-      if (!managerId && !approvedBy) {
+      if (!managerPin) {
         return NextResponse.json(
           { error: 'Paid-out transactions over $100 require manager approval. Please enter a manager PIN.' },
           { status: 403 }
         )
       }
-      // Verify the approver has the right permission
-      const approverAuth = await requirePermission(
-        managerId || approvedBy,
-        locationId,
-        PERMISSIONS.MGR_PAY_IN_OUT
-      )
-      if (!approverAuth.authorized) {
+      // Verify manager PIN server-side — find an employee whose PIN matches
+      const employees = await db.employee.findMany({
+        where: { locationId, isActive: true, deletedAt: null },
+        select: { id: true, pin: true, displayName: true, firstName: true, lastName: true, role: { select: { permissions: true } } },
+      })
+      for (const emp of employees) {
+        if (!emp.pin) continue
+        const pinMatch = await compare(managerPin, emp.pin)
+        if (pinMatch) {
+          const perms = (emp.role.permissions as string[]) || []
+          if (hasPermission(perms, PERMISSIONS.MGR_PAY_IN_OUT)) {
+            verifiedApprover = emp.id
+          }
+          break
+        }
+      }
+      if (!verifiedApprover) {
         return NextResponse.json(
-          { error: 'Approver does not have paid-in/out permission' },
+          { error: 'Invalid PIN or approver does not have paid-in/out permission' },
           { status: 403 }
         )
       }
-      console.log(`[AUDIT] PAID_OUT over $${PAID_OUT_APPROVAL_THRESHOLD} approved by ${managerId || approvedBy}`)
+      console.log(`[AUDIT] PAID_OUT over $${PAID_OUT_APPROVAL_THRESHOLD} approved by ${verifiedApprover}`)
     }
 
     // Resolve drawer — use provided drawerId or find first active drawer
@@ -230,7 +242,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         reason: formattedReason,
         reference: reference?.trim() || null,
         employeeId,
-        approvedBy: approvedBy || null,
+        approvedBy: verifiedApprover || null,
       },
       include: {
         employee: {

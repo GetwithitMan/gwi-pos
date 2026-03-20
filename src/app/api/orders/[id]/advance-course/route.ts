@@ -184,6 +184,25 @@ export const POST = withVenue(async function POST(
         void emitOrderEvents(order.locationId, orderId, advanceEvents)
       }
 
+      // Audit log for course advancement
+      void db.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId: employeeId || 'system',
+          action: 'advance_course',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            previousCourse: currentCourse,
+            nextCourse,
+            itemsFired: firedItems.count,
+            markServed,
+          },
+        },
+      }).catch(err => {
+        console.error('[advance-course] Audit log failed:', err)
+      })
+
       return NextResponse.json({ data: {
         success: true,
         previousCourse: currentCourse,
@@ -227,6 +246,25 @@ export const POST = withVenue(async function POST(
         payload: { lineItemId: item.id, courseStatus: 'served', kitchenStatus: 'delivered' },
       })))
     }
+
+    // Audit log for courses complete
+    void db.auditLog.create({
+      data: {
+        locationId: order.locationId,
+        employeeId: employeeId || 'system',
+        action: 'advance_course',
+        entityType: 'order',
+        entityId: orderId,
+        details: {
+          previousCourse: currentCourse,
+          nextCourse: null,
+          coursesComplete: true,
+          markServed,
+        },
+      },
+    }).catch(err => {
+      console.error('[advance-course] Audit log failed:', err)
+    })
 
     // No more courses
     return NextResponse.json({ data: {

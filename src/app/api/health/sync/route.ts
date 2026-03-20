@@ -8,7 +8,7 @@
  * GET /api/health/sync
  */
 
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getOutageReplayMetrics } from '@/lib/sync/outage-replay-worker'
@@ -17,6 +17,8 @@ import { getBootstrapResult } from '@/lib/venue-bootstrap'
 import { getReconciliationResult } from '@/lib/sync/reconciliation-check'
 import { masterClient } from '@/lib/db'
 import { EXPECTED_SCHEMA_VERSION } from '@/lib/version-contract'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -104,7 +106,23 @@ function deriveReadiness(
   return 'ORDERS'
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Auth gate: require INTERNAL_API_SECRET or SETTINGS_VIEW permission
+  const secret = process.env.INTERNAL_API_SECRET
+  const apiKey = req.headers.get('x-api-key')
+  const hasApiKey = secret && apiKey === secret
+
+  if (!hasApiKey) {
+    const actor = await getActorFromRequest(req)
+    if (!actor.employeeId || !actor.locationId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, actor.locationId, PERMISSIONS.SETTINGS_VIEW)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status ?? 403 })
+    }
+  }
+
   const locationId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID || ''
 
   // ── Upstream metrics ────────────────────────────────────────────────────

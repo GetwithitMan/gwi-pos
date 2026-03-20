@@ -1,17 +1,26 @@
 import { db } from '@/lib/db'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { logger } from '@/lib/logger'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - List all floor plan elements for a location (optionally filtered by section)
-export const GET = withVenue(async function GET(req: Request) {
+export const GET = withVenue(async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const locationId = searchParams.get('locationId')
   const sectionId = searchParams.get('sectionId')
 
   if (!locationId) {
     return NextResponse.json({ error: 'locationId required' }, { status: 400 })
+  }
+
+  const actor = await getActorFromRequest(req)
+  const employeeId = searchParams.get('employeeId') ?? actor.employeeId
+  const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
 
   try {
@@ -124,10 +133,10 @@ export const POST = withVenue(async function POST(req: Request) {
       )
     }
 
-    // Verify linkedMenuItemId exists if provided (must not be soft-deleted)
+    // Verify linkedMenuItemId exists if provided (must not be soft-deleted, must belong to same location)
     if (linkedMenuItemId) {
       const menuItem = await db.menuItem.findFirst({
-        where: { id: linkedMenuItemId, deletedAt: null },
+        where: { id: linkedMenuItemId, locationId, deletedAt: null },
         select: { id: true },
       })
       if (!menuItem) {

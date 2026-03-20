@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
@@ -151,7 +151,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       paymentMethod,
       guestCount,
       notes,
-      employeeId,
       isVip,
       isComped,
       compReason,
@@ -160,6 +159,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID is required' }, { status: 400 })
     }
+
+    // Resolve employeeId from authenticated session, fall back to body for Android clients
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId || body.employeeId
     if (!employeeId) {
       return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 })
     }

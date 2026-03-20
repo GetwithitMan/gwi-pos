@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
+import { requirePermission } from '@/lib/api-auth'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -40,7 +41,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ data: {
+    // Only expose the full permission catalog to users with STAFF_MANAGE_ROLES
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
+    let includePermissionCatalog = false
+    if (requestingEmployeeId) {
+      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
+      includePermissionCatalog = auth.authorized
+    }
+
+    const responseData: Record<string, unknown> = {
       roles: roles.map(role => ({
         id: role.id,
         name: role.name,
@@ -54,13 +63,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeCount: role._count.employees,
         createdAt: role.createdAt.toISOString(),
       })),
-      // Include available permissions for UI
-      availablePermissions: Object.entries(PERMISSIONS).map(([key, value]) => ({
+    }
+
+    // Include available permissions only for authorized role managers
+    if (includePermissionCatalog) {
+      responseData.availablePermissions = Object.entries(PERMISSIONS).map(([key, value]) => ({
         key,
         value,
         category: value.split('.')[0],
-      })),
-    } })
+      }))
+    }
+
+    return NextResponse.json({ data: responseData })
   } catch (error) {
     console.error('Failed to fetch roles:', error)
     return NextResponse.json(

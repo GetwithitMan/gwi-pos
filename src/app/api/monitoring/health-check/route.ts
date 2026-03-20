@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchLocationAlert } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getActorFromRequest } from '@/lib/api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -131,6 +132,21 @@ export const GET = withVenue(async function GET(req: NextRequest) {
         { error: 'locationId query parameter required' },
         { status: 400 }
       )
+    }
+
+    // Auth gate: require INTERNAL_API_SECRET or validate requesting user owns this locationId
+    const secret = process.env.INTERNAL_API_SECRET
+    const apiKey = req.headers.get('x-api-key')
+    const hasApiKey = secret && apiKey === secret
+
+    if (!hasApiKey) {
+      const actor = await getActorFromRequest(req)
+      if (!actor.employeeId || !actor.locationId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      if (actor.locationId !== locationId) {
+        return NextResponse.json({ error: 'Forbidden: location mismatch' }, { status: 403 })
+      }
     }
 
     // Get latest health check for each check type

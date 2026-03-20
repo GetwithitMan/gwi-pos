@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,entertainment,elements
@@ -29,6 +31,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { error: 'locationId is required' },
       { status: 400 }
     )
+  }
+
+  const actor = await getActorFromRequest(request)
+  const employeeId = searchParams.get('employeeId') ?? actor.employeeId
+  const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+  if (!auth.authorized) {
+    return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
 
   try {

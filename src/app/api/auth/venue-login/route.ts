@@ -181,30 +181,31 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               }
             }
 
-            // Use real employee ID if provisioned, fall back to prefixed ID
-            const employeeId = ownerEmployee?.id || `mc-owner-${normalizedEmail}`
-            const roleName = ownerEmployee?.role?.name || 'Owner Manager'
-            const roleId = ownerEmployee?.role?.id || 'mc-owner'
+            // If auto-provisioning failed, do not proceed with a fake ID
+            if (!ownerEmployee) {
+              console.error(`[venue-login] Failed to auto-provision employee for MC owner ${normalizedEmail} at location ${location.id}`)
+              return NextResponse.json({ error: 'Failed to provision employee account. Contact support.' }, { status: 500 })
+            }
 
             const token = await signVenueToken(
               {
-                sub: employeeId,
+                sub: ownerEmployee.id,
                 email: normalizedEmail,
                 name: ownerName,
                 slug: venueSlug,
                 orgId: 'venue-local',
-                role: roleName,
+                role: ownerEmployee.role?.name || 'Owner Manager',
                 posLocationId: location.id,
               },
               secret
             )
 
             const employeeData = {
-              id: employeeId,
-              firstName: ownerEmployee?.firstName || nameParts[0] || ownerName,
-              lastName: ownerEmployee?.lastName || nameParts.slice(1).join(' ') || '',
-              displayName: ownerEmployee?.displayName || ownerName,
-              role: { id: roleId, name: roleName },
+              id: ownerEmployee.id,
+              firstName: ownerEmployee.firstName,
+              lastName: ownerEmployee.lastName,
+              displayName: ownerEmployee.displayName || ownerName,
+              role: { id: ownerEmployee.role?.id || '', name: ownerEmployee.role?.name || 'Owner Manager' },
               location: { id: location.id, name: location.name },
               permissions: ['admin'],
               isDevAccess: false,

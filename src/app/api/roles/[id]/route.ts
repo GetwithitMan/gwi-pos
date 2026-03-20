@@ -24,9 +24,19 @@ export const GET = withVenue(async function GET(
   try {
     const { id } = await params
     const requestingEmployeeId = request.nextUrl.searchParams.get('requestingEmployeeId')
+    const locationId = request.nextUrl.searchParams.get('locationId')
 
-    const role = await db.role.findUnique({
-      where: { id },
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    const role = await db.role.findFirst({
+      where: { id, locationId },
       include: {
         _count: {
           select: { employees: true },
@@ -39,11 +49,6 @@ export const GET = withVenue(async function GET(
         { error: 'Role not found' },
         { status: 404 }
       )
-    }
-
-    const auth = await requirePermission(requestingEmployeeId, role.locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     return NextResponse.json({ data: {

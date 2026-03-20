@@ -993,6 +993,10 @@ export interface ThirdPartyDeliverySettings {
   doordash: ThirdPartyDeliveryPlatformSettings
   ubereats: ThirdPartyDeliveryUberEatsSettings
   grubhub: ThirdPartyDeliveryPlatformSettings
+  // Per-platform API credentials (stored separately from platform toggle settings)
+  doordashCredentials?: import('@/lib/delivery/clients/types').DoorDashCredentials
+  uberEatsCredentials?: import('@/lib/delivery/clients/types').UberEatsCredentials
+  grubhubCredentials?: import('@/lib/delivery/clients/types').GrubhubCredentials
   autoPrintTicket: boolean       // Auto-print kitchen ticket on new delivery order
   alertOnNewOrder: boolean       // Sound alert on new delivery order
   defaultTaxRate: number         // Override tax rate for delivery orders (0 = use location default)

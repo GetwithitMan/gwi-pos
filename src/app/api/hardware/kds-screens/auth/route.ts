@@ -5,9 +5,63 @@ import { withVenue } from '@/lib/with-venue'
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
 
+// ── IP-based rate limiting for device token guessing (5 attempts / 60s) ──
+const KDS_AUTH_MAX_FAILURES = 5
+const KDS_AUTH_LOCKOUT_MS = 60 * 1000
+const kdsAuthIpMap = new Map<string, { failures: number; lockedUntil: number | null; lastFailure: number }>()
+
+function checkKdsAuthRateLimit(ip: string): { allowed: boolean; retryAfterSeconds?: number; reason?: string } {
+  const now = Date.now()
+  let entry = kdsAuthIpMap.get(ip)
+  if (!entry) {
+    entry = { failures: 0, lockedUntil: null, lastFailure: 0 }
+    kdsAuthIpMap.set(ip, entry)
+  }
+  if (entry.lockedUntil && now < entry.lockedUntil) {
+    const retryAfterSeconds = Math.ceil((entry.lockedUntil - now) / 1000)
+    return { allowed: false, retryAfterSeconds, reason: `Too many failed attempts. Try again in ${retryAfterSeconds} seconds.` }
+  }
+  if (entry.lockedUntil && now >= entry.lockedUntil) {
+    entry.failures = 0
+    entry.lockedUntil = null
+  }
+  return { allowed: true }
+}
+
+function recordKdsAuthFailure(ip: string): void {
+  const now = Date.now()
+  let entry = kdsAuthIpMap.get(ip)
+  if (!entry) {
+    entry = { failures: 0, lockedUntil: null, lastFailure: 0 }
+    kdsAuthIpMap.set(ip, entry)
+  }
+  entry.failures++
+  entry.lastFailure = now
+  if (entry.failures >= KDS_AUTH_MAX_FAILURES) {
+    entry.lockedUntil = now + KDS_AUTH_LOCKOUT_MS
+  }
+}
+
 // GET /api/hardware/kds-screens/auth - Verify device token and get screen info
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
+    // ── Rate limiting (5 attempts / minute) ────────────────────
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || request.headers.get('x-real-ip')
+      || 'unknown'
+
+    const rateCheck = checkKdsAuthRateLimit(ip)
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.reason },
+        {
+          status: 429,
+          headers: rateCheck.retryAfterSeconds
+            ? { 'Retry-After': String(rateCheck.retryAfterSeconds) }
+            : undefined,
+        }
+      )
+    }
     // Try to get token from httpOnly cookie first (most secure), then header (fallback)
     const cookieToken = request.cookies.get(DEVICE_TOKEN_COOKIE)?.value
     const headerToken = request.headers.get('x-device-token')
@@ -68,6 +122,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     if (!screen) {
+      recordKdsAuthFailure(ip)
       return NextResponse.json(
         { error: 'KDS screen not found or invalid token' },
         { status: 404 }
@@ -76,6 +131,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // If screen requires pairing and request has no valid token
     if (screen.isPaired && deviceToken !== screen.deviceToken) {
+      recordKdsAuthFailure(ip)
       return NextResponse.json(
         {
           error: 'Device not paired',

@@ -1,11 +1,13 @@
 import { db } from '@/lib/db'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get a single floor plan element
 export const GET = withVenue(async function GET(
-  req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
@@ -16,6 +18,13 @@ export const GET = withVenue(async function GET(
 
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    const actor = await getActorFromRequest(req)
+    const employeeId = searchParams.get('employeeId') ?? actor.employeeId
+    const authCheck = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error }, { status: authCheck.status })
     }
 
     const element = await db.floorPlanElement.findFirst({

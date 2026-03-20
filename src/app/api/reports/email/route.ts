@@ -23,6 +23,24 @@ export const POST = withVenue(async (request: NextRequest) => {
       return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
     }
 
+    // Security: restrict report email recipients to employees at this location
+    // Prevents sending sensitive sales data to arbitrary external addresses
+    const allowedRecipient = await db.employee.findFirst({
+      where: {
+        locationId,
+        email: recipientEmail,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    })
+    if (!allowedRecipient) {
+      return NextResponse.json(
+        { error: 'Reports can only be emailed to active employees at this location' },
+        { status: 403 }
+      )
+    }
+
     // ── Generic report email path (from ReportExportBar) ─────────────────
     if (body.reportTitle && body.generatedData) {
       const { reportTitle, parameters, generatedData, recipientName, employeeId } = body

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { withVenue } from '@/lib/with-venue'
 import { hashPassword, hashPin } from '@/lib/auth'
+import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
 
 /**
  * POST /api/auth/venue-setup
@@ -24,6 +25,24 @@ import { hashPassword, hashPin } from '@/lib/auth'
  * during venue provisioning in a future update.
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
+  // ── Rate limiting (5 attempts / 5 minutes) ─────────────────────
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || 'unknown'
+
+  const rateCheck = checkLoginRateLimit(ip)
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { error: rateCheck.reason },
+      {
+        status: 429,
+        headers: rateCheck.retryAfterSeconds
+          ? { 'Retry-After': String(rateCheck.retryAfterSeconds) }
+          : undefined,
+      }
+    )
+  }
+
   const body = await request.json().catch(() => ({}))
   const { email, setupKey, newPassword } = body
 
@@ -37,6 +56,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   // Validate using PROVISION_API_KEY as bootstrap auth
   const secret = process.env.PROVISION_API_KEY
   if (!secret || setupKey !== secret) {
+    recordLoginFailure(ip)
     return NextResponse.json({ error: 'Invalid setup key' }, { status: 403 })
   }
 
