@@ -310,6 +310,26 @@ async function main() {
       return { passed: false, missing: [{ table: '_VERIFICATION_ERROR' }], checked: 0, error: String(err) } as const
     })
 
+    // Seed completion check — detect incomplete Neon seeds
+    let seedComplete = true
+    try {
+      const fs = await import('fs')
+      const seedStatusPath = '/opt/gwi-pos/.seed-status'
+      if (fs.existsSync(seedStatusPath)) {
+        const seedStatus = fs.readFileSync(seedStatusPath, 'utf-8').trim()
+        if (seedStatus.startsWith('INCOMPLETE')) {
+          seedComplete = false
+          logger.error({ seedStatus }, 'Seed from Neon is INCOMPLETE — venue may be missing critical data. Re-run installer or: bash scripts/seed-from-neon.sh')
+        } else if (seedStatus.startsWith('COMPLETE')) {
+          logger.info({ seedStatus }, 'Seed status: complete')
+        } else {
+          logger.warn({ seedStatus }, 'Unrecognized seed status')
+        }
+      }
+    } catch {
+      // No seed status file — either dev env or pre-hardening install. Not an error.
+    }
+
     // Tenant model set validation — fatal in production, warning in dev
     void import('./src/lib/tenant-validation').then(({ validateTenantModelSets }) =>
       validateTenantModelSets(masterClient, { failOnStale: config.isProduction })
@@ -359,6 +379,7 @@ async function main() {
       syncEnabled: config.syncEnabled,
       stationRole: config.stationRole,
       initialSyncComplete: false,
+      seedComplete,
     }
     const readiness = computeReadiness(readinessInputs)
     setReadinessState(readiness)

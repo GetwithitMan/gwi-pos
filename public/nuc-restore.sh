@@ -513,24 +513,24 @@ sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma migrate deploy" 2>>"$LOG
 log "Migrations complete"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stamp syncedAt (prevent immediate re-sync of all rows)
+# syncedAt: NOT stamped (sync worker owns this metadata)
 # ─────────────────────────────────────────────────────────────────────────────
+# INTENTIONALLY REMOVED: Stamping syncedAt = NOW() on all rows after restore
+# poisoned the sync worker's change detection. Rows restored from Neon retain
+# whatever syncedAt value they had in Neon (or NULL if never synced). The
+# upstream sync worker uses "updatedAt > COALESCE(syncedAt, '1970-01-01')" to
+# find unsynced changes — blanket-stamping syncedAt defeats this detection.
+log "Skipping syncedAt stamping (sync worker owns sync metadata)"
 
-log "Stamping syncedAt on all rows..."
-sudo -u postgres psql -U "$DB_USER" -d "$DB_NAME" -c "
-DO \$\$
-DECLARE
-  tbl text;
-BEGIN
-  FOR tbl IN
-    SELECT table_name FROM information_schema.columns
-    WHERE column_name = 'syncedAt' AND table_schema = 'public'
-  LOOP
-    EXECUTE format('UPDATE %I SET \"syncedAt\" = NOW() WHERE \"syncedAt\" IS NULL', tbl);
-  END LOOP;
-END
-\$\$;
-" 2>>"$LOG_FILE" || warn "syncedAt stamping had warnings"
+# Write seed status marker for server.ts readiness check
+_SEED_STATUS_FILE="/opt/gwi-pos/.seed-status"
+if [[ "$RESTORE_MODE" == "neon" ]]; then
+  echo "COMPLETE:$(date -u +%Y-%m-%dT%H:%M:%SZ):nuc-restore-neon" > "$_SEED_STATUS_FILE"
+  log "Seed status: COMPLETE (nuc-restore from Neon)"
+elif [[ "$RESTORE_MODE" == "cloud" ]]; then
+  echo "COMPLETE:$(date -u +%Y-%m-%dT%H:%M:%SZ):nuc-restore-cloud" > "$_SEED_STATUS_FILE"
+  log "Seed status: COMPLETE (nuc-restore from cloud backup)"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Start POS application

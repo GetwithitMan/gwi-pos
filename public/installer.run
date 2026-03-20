@@ -17,6 +17,13 @@
 # pulls latest code, restarts services.
 # =============================================================================
 
+# ── AUTHORITY MODEL ──────────────────────────────────────────────────
+# MC/Neon = sole authority for schema version, provisioning state, rollout
+# NUC/local PG = authority for runtime operations during outage
+# Installer = prepares local env + PG, but NEVER declares schema truth
+# _venue_schema_state is MC-owned — installer must NOT write to it
+# ─────────────────────────────────────────────────────────────────────
+
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1773,14 +1780,37 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     # prisma db push creates tables/columns from schema.prisma.
     # nuc-pre-migrate.js runs numbered migrations for data backfills + DDL patches.
     log "Applying schema to local PostgreSQL..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss" 2>&1 | tail -5
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5
     log "Running local migrations..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1 | tail -5
 
     # Seed local PG from Neon cloud (offline-first mode)
     if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
       log "Seeding local PostgreSQL from Neon cloud..."
-      sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && bash scripts/seed-from-neon.sh" || warn "Neon seed had warnings (non-fatal — local PG will sync on first run)"
+      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && APP_BASE='$APP_BASE' bash scripts/seed-from-neon.sh"; then
+        # Check if seed wrote an INCOMPLETE marker
+        if [[ -f "$APP_BASE/.seed-status" ]] && grep -q "^INCOMPLETE" "$APP_BASE/.seed-status"; then
+          SEED_REASON=$(cat "$APP_BASE/.seed-status" | cut -d: -f3-)
+          err "Neon seed FAILED: $SEED_REASON"
+          err "The venue cannot activate on partial data. Fix the issue and re-run the installer."
+          err "Seed status file: $APP_BASE/.seed-status"
+          exit 1
+        else
+          warn "Neon seed had warnings — check $APP_BASE/.seed-status"
+        fi
+      fi
+      # Verify seed completed successfully
+      if [[ -f "$APP_BASE/.seed-status" ]]; then
+        SEED_STATE=$(head -c 8 "$APP_BASE/.seed-status")
+        if [[ "$SEED_STATE" == "COMPLETE" ]]; then
+          log "Neon seed verified complete."
+        else
+          err "Seed did not complete successfully (status: $(cat "$APP_BASE/.seed-status"))"
+          exit 1
+        fi
+      else
+        warn "No seed status file found — seed may not have run the hardened version"
+      fi
     fi
 
     # ── Post-schema: disable RLS on all tables ──
@@ -1796,13 +1826,15 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     " >/dev/null 2>&1
     log "RLS disabled on all tables."
 
-    # ── Step 3: Write _venue_schema_state — version comes from Neon (SOR) ──
-    # The schema version is what Neon reports, NOT hardcoded. If Neon is
-    # unreachable, fall back to version-contract.json (built at deploy time).
+    # ── Step 3: Record local install state (informational only) ──
+    # AUTHORITY MODEL: _venue_schema_state is MC/Neon-owned. The installer
+    # must NOT create or write to it. MC provisions that table during venue
+    # setup and owns the schema version lifecycle. Instead, we write a
+    # LOCAL-ONLY install record for diagnostics/troubleshooting.
     SCHEMA_VERSION="${NEON_SCHEMA_VERSION}"
     SCHEMA_SOURCE="neon"
     if [[ -z "$SCHEMA_VERSION" ]]; then
-      # Fallback: read from locally-built version-contract.json
+      # Fallback: read from locally-built version-contract.json (informational)
       if [[ -f "$APP_DIR/public/version-contract.json" ]]; then
         SCHEMA_VERSION=$(sudo -u "$POSUSER" node -e "try { console.log(require('$APP_DIR/public/version-contract.json').schemaVersion) } catch(e) { console.log('') }" 2>/dev/null)
       fi
@@ -1814,34 +1846,22 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
       fi
     fi
     if [[ -z "$SCHEMA_VERSION" ]]; then
-      SCHEMA_VERSION="000"
+      SCHEMA_VERSION="unknown"
       SCHEMA_SOURCE="unknown"
     fi
 
     sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
-      CREATE TABLE IF NOT EXISTS \"_venue_schema_state\" (
-        \"id\"                  INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-        \"schemaVersion\"       TEXT NOT NULL,
-        \"seedVersion\"         TEXT NOT NULL DEFAULT 'v1',
-        \"provisionerVersion\"  TEXT,
-        \"provisionedAt\"       TIMESTAMPTZ DEFAULT NOW(),
-        \"provisionedBy\"       TEXT DEFAULT 'installer',
-        \"lastRepairAt\"        TIMESTAMPTZ,
-        \"lastRepairBy\"        TEXT,
-        \"lastRepairReason\"    TEXT,
-        \"repairCount\"         INTEGER NOT NULL DEFAULT 0,
-        \"appVersion\"          TEXT,
-        \"updatedAt\"           TIMESTAMPTZ DEFAULT NOW()
+      CREATE TABLE IF NOT EXISTS \"_local_install_state\" (
+        id SERIAL PRIMARY KEY,
+        installed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        pos_version TEXT,
+        installer_version TEXT,
+        schema_migrations_run INTEGER
       );
-      INSERT INTO \"_venue_schema_state\" (\"id\", \"schemaVersion\", \"seedVersion\", \"provisionerVersion\", \"provisionedAt\", \"provisionedBy\")
-      VALUES (1, '$SCHEMA_VERSION', 'v1', '1', NOW(), 'installer-from-${SCHEMA_SOURCE}')
-      ON CONFLICT (id) DO UPDATE SET
-        \"schemaVersion\" = '$SCHEMA_VERSION',
-        \"provisionerVersion\" = '1',
-        \"provisionedBy\" = 'installer-from-${SCHEMA_SOURCE}',
-        \"updatedAt\" = NOW();
+      INSERT INTO \"_local_install_state\" (pos_version, installer_version) VALUES ('$SCHEMA_VERSION', 'installer.run');
     " >/dev/null 2>&1
-    log "_venue_schema_state set to version $SCHEMA_VERSION (source: $SCHEMA_SOURCE)"
+    log "Local install state recorded (pos_version=$SCHEMA_VERSION, source=$SCHEMA_SOURCE)"
+    log "NOTE: _venue_schema_state is MC-owned — installer does not write to it"
   else
     log "Skipping database migrations (backup standby — data replicated from primary)."
   fi
@@ -1854,18 +1874,18 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
 
   log "POS application built successfully!"
 
-  # ── Post-build: update _venue_schema_state with freshly generated version ──
+  # ── Post-build: update _local_install_state with freshly generated version ──
   # The build step generates version-contract.json with the real schema version.
-  # The pre-build write used a stale committed copy; this corrects it.
+  # This is purely informational — _venue_schema_state is MC-owned, not touched here.
   if [[ "$STATION_ROLE" == "server" ]]; then
     BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
     if [[ -z "$BUILT_VERSION" ]]; then
       BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/public/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
     fi
     if [[ -n "$BUILT_VERSION" ]] && [[ "$BUILT_VERSION" != "$SCHEMA_VERSION" ]]; then
-      log "Updating _venue_schema_state to build version: $BUILT_VERSION (was: $SCHEMA_VERSION)"
+      log "Recording post-build version in _local_install_state: $BUILT_VERSION (was: $SCHEMA_VERSION)"
       sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "
-        UPDATE \"_venue_schema_state\" SET \"schemaVersion\" = '$BUILT_VERSION', \"provisionedBy\" = 'installer-post-build', \"updatedAt\" = NOW() WHERE id = 1;
+        INSERT INTO \"_local_install_state\" (pos_version, installer_version) VALUES ('$BUILT_VERSION', 'installer-post-build');
       " >/dev/null 2>&1
     fi
   fi
@@ -1975,6 +1995,19 @@ if [[ -f scripts/nuc-pre-migrate.js ]]; then
       echo "[pre-start] WARNING: custom migrations had issues (exit $EXIT_CODE) — continuing."
     fi
   }
+fi
+
+# Check seed completion status — warn loudly if seed was incomplete
+_SEED_STATUS="/opt/gwi-pos/.seed-status"
+if [[ -f "$_SEED_STATUS" ]]; then
+  _SEED_STATE=$(head -c 10 "$_SEED_STATUS")
+  if [[ "$_SEED_STATE" == "INCOMPLETE:" ]]; then
+    echo "[pre-start] CRITICAL: Seed from Neon is INCOMPLETE. Details: $(cat "$_SEED_STATUS")"
+    echo "[pre-start] The venue may be missing critical data (Organization, Location, Employees, etc.)"
+    echo "[pre-start] Re-run the installer or manually run: bash scripts/seed-from-neon.sh"
+    # Don't exit — let the app start so operators can diagnose via the UI/API.
+    # The schema-verify + readiness system will gate sync workers.
+  fi
 fi
 PSEOF
   chmod +x "$PRE_START"

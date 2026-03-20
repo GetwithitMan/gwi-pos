@@ -45,6 +45,8 @@ export interface ReadinessInputs {
   syncEnabled: boolean
   stationRole: string | undefined   // 'primary' | 'backup' | 'fenced' | undefined
   initialSyncComplete: boolean
+  /** True when seed-from-neon.sh completed successfully (or no seed status file exists — pre-hardening). */
+  seedComplete: boolean
 }
 
 export interface ReadinessState {
@@ -59,6 +61,7 @@ export interface ReadinessState {
   baseSeedPresent: boolean
   syncEnabled: boolean
   initialSyncComplete: boolean
+  seedComplete: boolean
   /** True when all Neon checks pass and sync can start */
   syncContractReady: boolean
   /** Human-readable reasons for degradation or failure */
@@ -89,6 +92,7 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessState {
     baseSeedPresent: inputs.baseSeedPresent,
     syncEnabled: inputs.syncEnabled,
     initialSyncComplete: inputs.initialSyncComplete,
+    seedComplete: inputs.seedComplete,
     syncContractReady: false,
     degradedReasons,
     timestamp,
@@ -123,12 +127,13 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessState {
     return state
   }
 
-  // Evaluate sync contract: all Neon checks must pass + local schema verified
+  // Evaluate sync contract: all Neon checks must pass + local schema verified + seed complete
   if (!inputs.neonReachable) degradedReasons.push('neon-unreachable')
   if (!inputs.neonSchemaVersionOk) degradedReasons.push('neon-schema-version-incompatible')
   if (!inputs.neonCoreTablesExist) degradedReasons.push('neon-core-tables-missing')
   if (!inputs.neonRequiredEnumsExist) degradedReasons.push('neon-required-enums-missing')
   if (!inputs.baseSeedPresent) degradedReasons.push('base-seed-missing')
+  if (!inputs.seedComplete) degradedReasons.push('seed-incomplete')
 
   const neonSchemaOk = inputs.neonReachable &&
     inputs.neonSchemaVersionOk &&
@@ -138,6 +143,7 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessState {
 
   state.syncContractReady = inputs.localDbUp &&
     inputs.localSchemaVerified &&
+    inputs.seedComplete &&
     neonSchemaOk
 
   if (!state.syncContractReady) {
