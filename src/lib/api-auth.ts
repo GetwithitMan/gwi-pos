@@ -251,6 +251,7 @@ export async function resolveOrProvisionEmployee(
       roleId: adminRole.id,
       isActive: true,
       pin: `MC-${crypto.randomUUID().slice(0, 8)}`, // MC employees use JWT, not PIN — placeholder satisfies schema
+      updatedAt: new Date(),
     })
 
     if (cloudSubToEmployeeId.size > 200) {
