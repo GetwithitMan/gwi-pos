@@ -85,7 +85,7 @@ export interface WithAuthOptions {
   permission?: string
   /** Allow x-api-key internal auth (for MC->POS routes). Default: false. */
   allowInternal?: boolean
-  /** Allow cellular terminal auth. Default: true. */
+  /** Allow cellular terminal auth. Default: false — routes must explicitly opt in. */
   allowCellular?: boolean
 }
 
@@ -159,7 +159,7 @@ export function withAuth(
   const {
     permission,
     allowInternal = false,
-    allowCellular = true,
+    allowCellular = false,
   } = options
 
   const resolvedPermission = permission ? resolvePermission(permission) : null

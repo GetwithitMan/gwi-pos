@@ -154,10 +154,10 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessState {
   // Level 2: SYNC — sync workers can safely start
   state.level = 'SYNC'
 
-  // Level 3: ORDERS — first downstream sync complete, safe for traffic
-  if (inputs.initialSyncComplete) {
-    state.level = 'ORDERS'
-  }
+  // Level 3: ORDERS — ONLY reachable through advanceToOrders() which verifies
+  // critical tables are populated. computeReadiness() never promotes to ORDERS
+  // directly, even if initialSyncComplete is true. This eliminates the semantic
+  // split where two code paths could disagree about order-readiness.
 
   return state
 }
