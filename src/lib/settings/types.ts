@@ -1,6 +1,7 @@
 // Location Settings — Type Definitions
 // Split from src/lib/settings.ts for maintainability
 
+import type { GlobalReceiptSettings } from '@/types/print'
 export type { GlobalReceiptSettings } from '@/types/print'
 
 // ─── Pricing Program (T-080 Phase 1A) ────────────────────────────────────────
