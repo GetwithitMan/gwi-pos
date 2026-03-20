@@ -262,19 +262,22 @@ export async function requirePermission(
     } catch { /* no cookie or invalid — fall through */ }
   }
 
-  // Cloud session fallback — pos-cloud-session cookie (email/password or MC redirect)
-  // MC admins get immediate full access without employee lookup
-  if (!employeeId) {
-    try {
-      const cloud = await getCloudSessionEmployee()
-      if (cloud?.employeeId) {
+  // Cloud session — pos-cloud-session cookie (email/password or MC redirect)
+  // Always check cloud session to override locationId, even when employeeId
+  // was already resolved by getActorFromRequest(). Routes pass body.locationId
+  // which may not match the MC employee's locationId → "Employee not found".
+  try {
+    const cloud = await getCloudSessionEmployee()
+    if (cloud?.employeeId) {
+      if (!employeeId) {
         employeeId = cloud.employeeId
-        // MC cloud session employees may be in a different locationId context.
-        // Override locationId to match the cloud session so the lookup succeeds.
-        locationId = cloud.locationId
       }
-    } catch { /* no cloud cookie or invalid — fall through */ }
-  }
+      // ALWAYS override locationId from cloud session — this is the locationId
+      // the MC employee was provisioned in. Without this, 156 routes fail with
+      // "Employee not found" when accessed from Mission Control.
+      locationId = cloud.locationId
+    }
+  } catch { /* no cloud cookie or invalid — fall through */ }
 
   if (!employeeId) {
     log.warn(`[api-auth] Authentication required: no employeeId resolved for locationId=${locationId}, permission=${permission}`)
