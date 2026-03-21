@@ -13,6 +13,7 @@ import {
   getShiftTipDistributionSummary,
   closeShift,
 } from '@/lib/domain/shift-close'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get shift details with sales summary
 export const GET = withVenue(async function GET(
@@ -243,6 +244,7 @@ export const PUT = withVenue(async function PUT(
         })
       })
       const { updatedShift, transferredOrderIds } = closeResult
+      pushUpstream()
 
       // Fetch tip distribution summary for the response (fire-and-forget safe — not blocking)
       const tipDistributionSummary = await getShiftTipDistributionSummary(id, shift.locationId)
@@ -313,6 +315,7 @@ export const PUT = withVenue(async function PUT(
         ...(notes !== undefined ? { notes } : {}),
       },
     })
+    pushUpstream()
 
     // Real-time cross-terminal update
     void emitToLocation(shift.locationId, 'shifts:changed', { action: 'updated', shiftId: id }).catch(() => {})

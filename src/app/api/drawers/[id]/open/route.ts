@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
-import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { ESCPOS } from '@/lib/escpos/commands'
 import { dispatchAlert } from '@/lib/alert-service'
@@ -152,6 +152,7 @@ export const POST = withVenue(async function POST(
       },
     }).then((entry) => {
       queueIfOutage('AuditLog', drawer.locationId, entry.id, 'INSERT')
+      pushUpstream()
     }).catch(console.error)
 
     // ── Manager drawer access audit (fire-and-forget) ──────────────

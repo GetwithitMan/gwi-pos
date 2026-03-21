@@ -5,6 +5,7 @@ import { requirePermission, getActorFromRequest, clearPermissionCache } from '@/
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List all permission overrides for an employee
 export const GET = withVenue(async function GET(
@@ -102,6 +103,8 @@ export const POST = withVenue(async function POST(
       },
     })
 
+    pushUpstream()
+
     // Audit log: track permission override changes
     void db.auditLog.create({
       data: {
@@ -161,6 +164,8 @@ export const DELETE = withVenue(async function DELETE(
     } catch {
       // Record not found — treat as success (idempotent delete)
     }
+
+    pushUpstream()
 
     // Audit log: track permission override removal
     void db.auditLog.create({

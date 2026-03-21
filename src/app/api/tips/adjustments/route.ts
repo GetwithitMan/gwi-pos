@@ -18,7 +18,7 @@ import {
 } from '@/lib/domain/tips/tip-recalculation'
 import type { AdjustmentType } from '@/lib/domain/tips/tip-recalculation'
 import { withVenue } from '@/lib/with-venue'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── Valid adjustment types ──────────────────────────────────────────────────
 
@@ -259,6 +259,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
         throw err
       }
+      pushUpstream()
 
       return NextResponse.json({ adjustment: result })
     }
@@ -452,6 +453,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           }
           throw err
         }
+        pushUpstream()
 
         return NextResponse.json({ adjustment: result })
 
@@ -478,6 +480,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           }
           throw err
         }
+        pushUpstream()
 
         return NextResponse.json({ adjustment: result })
 
@@ -507,6 +510,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
       throw err
     }
+    pushUpstream()
 
     return NextResponse.json({ adjustment: result })
 

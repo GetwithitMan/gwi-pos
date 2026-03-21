@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchVoidApprovalUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface RejectBody {
   reason?: string
@@ -85,6 +86,7 @@ export const POST = withVenue(async function POST(
         rejectionReason: body.reason || null,
       },
     })
+    pushUpstream()
 
     const managerName =
       approval.manager.displayName ||

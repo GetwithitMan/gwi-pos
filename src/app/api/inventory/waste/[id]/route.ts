@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get single waste log entry
 export const GET = withVenue(async function GET(
@@ -66,6 +67,7 @@ export const PUT = withVenue(async function PUT(
         },
       },
     })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       entry: {
@@ -136,6 +138,7 @@ export const DELETE = withVenue(async function DELETE(
         data: { deletedAt: new Date() },
       }),
     ])
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

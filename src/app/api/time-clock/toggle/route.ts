@@ -6,6 +6,7 @@ import { parseSettings, DEFAULT_BREAK_COMPLIANCE } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchAlert } from '@/lib/alert-service'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST /api/time-clock/toggle - Single-call clock in/out toggle
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -83,6 +84,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
 
       const employeeName = entry.employee.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`
+      pushUpstream()
 
       // Fire-and-forget side effects
       void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})
@@ -208,6 +210,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
 
       const employeeName = updated.employee.displayName || `${updated.employee.firstName} ${updated.employee.lastName}`
+      pushUpstream()
 
       // Fire-and-forget side effects
       void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})

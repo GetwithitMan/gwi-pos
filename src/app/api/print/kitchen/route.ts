@@ -15,7 +15,7 @@ import {
 import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
-import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface PrintKitchenRequest {
   orderId: string
@@ -454,6 +454,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         payload: { lineItemId: item.id, kitchenStatus: 'cooking' },
       })))
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: results.some(r => r.success),

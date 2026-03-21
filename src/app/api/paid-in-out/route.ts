@@ -7,6 +7,7 @@ import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { compare } from 'bcryptjs'
 
 // Parse category from stored reason format: "[Category] Reason text"
@@ -259,6 +260,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    pushUpstream()
 
     // Audit trail for paid in/out
     console.log(`[AUDIT] PAID_${dbType.toUpperCase()}: $${Number(record.amount)} by employee ${employeeId} — reason: "${record.reason}", reference: "${record.reference || 'none'}", locationId: ${locationId}`)

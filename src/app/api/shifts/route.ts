@@ -5,7 +5,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List shifts with optional filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -213,6 +213,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('Shift', locationId, shift.id, 'INSERT', shift as unknown as Record<string, unknown>)
+    pushUpstream()
 
     // Real-time cross-terminal update
     void emitToLocation(locationId, 'shifts:changed', { action: 'started', shiftId: shift.id, employeeId }).catch(() => {})

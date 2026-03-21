@@ -22,7 +22,7 @@ import {
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface TransferPayload {
   toEmployeeId: string
@@ -201,6 +201,7 @@ export const POST = withVenue(async function POST(
       }
       throw err
     }
+    pushUpstream()
 
     // ── Socket dispatch (fire-and-forget) ───────────────────────────────
     void dispatchTipGroupUpdate(group.locationId, {

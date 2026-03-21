@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -59,6 +60,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         },
       },
     })
+    pushUpstream()
 
     return NextResponse.json({
       data: {

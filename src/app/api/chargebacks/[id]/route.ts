@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 const VALID_STATUSES = ['open', 'responded', 'won', 'lost'] as const
 
@@ -80,6 +81,8 @@ export const PUT = withVenue(async function PUT(
         },
       }),
     ])
+
+    pushUpstream()
 
     // Emit socket event (fire-and-forget)
     void emitToLocation(existing.locationId, 'chargeback:updated', {

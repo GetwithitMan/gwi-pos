@@ -10,6 +10,7 @@ import { db } from '@/lib/db'
 import { generateApprovalCode, sendApprovalCodeSMS } from '@/lib/twilio'
 import { dispatchVoidApprovalUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -103,6 +104,7 @@ export const POST = withVenue(async function POST(
         approvedAt: now,
       },
     })
+    pushUpstream()
 
     const serverName =
       approval.requestedBy.displayName ||

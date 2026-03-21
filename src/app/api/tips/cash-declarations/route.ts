@@ -11,7 +11,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { checkDeclarationMinimum } from '@/lib/domain/tips/tip-compliance'
 import { withVenue } from '@/lib/with-venue'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Declare cash tips ─────────────────────────────────────────────────
 
@@ -96,6 +96,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
       throw err
     }
+    pushUpstream()
 
     // ── Compliance check (optional) ───────────────────────────────────────
     let complianceWarnings: { code: string; level: string; message: string; details?: Record<string, unknown> }[] | undefined

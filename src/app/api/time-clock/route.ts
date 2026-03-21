@@ -11,7 +11,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { findLastMemberGroup } from '@/lib/domain/tips/tip-groups'
 import { dispatchAlert } from '@/lib/alert-service'
-import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List time clock entries
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -172,6 +172,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('TimeClockEntry', locationId, entry.id, 'INSERT', entry as unknown as Record<string, unknown>)
+    pushUpstream()
 
     // Fire-and-forget socket dispatch for real-time clock updates
     void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})
@@ -563,6 +564,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('TimeClockEntry', entry.locationId, updated.id, 'UPDATE', updated as unknown as Record<string, unknown>)
+    pushUpstream()
 
     // Fire-and-forget socket dispatch for real-time clock updates
     void emitToLocation(entry.locationId, 'employee:clock-changed', { employeeId: entry.employeeId }).catch(() => {})
@@ -746,6 +748,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('TimeClockEntry', original.locationId, updated.id, 'UPDATE', updated as unknown as Record<string, unknown>)
+    pushUpstream()
 
     // Capture after values
     const afterValues = {

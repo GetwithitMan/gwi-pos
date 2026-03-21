@@ -6,7 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
-import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * POST /api/drawers/[id]/safe-drop
@@ -135,6 +135,7 @@ export const POST = withVenue(async function POST(
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('PaidInOut', drawer.locationId, record.id, 'INSERT', record as unknown as Record<string, unknown>)
+    pushUpstream()
 
     // ── Audit log ────────────────────────────────────────────────────
     void db.auditLog.create({

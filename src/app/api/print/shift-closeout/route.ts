@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { buildShiftCloseoutReceipt } from '@/lib/escpos/shift-closeout-receipt'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
-import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -182,6 +182,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Outage queue protection (fire-and-forget)
     queueIfOutage('PrintJob', locationId, printJob.id, 'INSERT')
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
