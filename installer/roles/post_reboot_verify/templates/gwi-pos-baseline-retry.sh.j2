@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# GWI POS — Baseline auto-retry
+# Runs via systemd timer. Only retries if last baseline failed AND no open batch.
+# Max 3 attempts per day. Stops retrying on success or max attempts.
+set -euo pipefail
+
+STATE_DIR="{{ gwi_state_dir }}"
+RESULT_FILE="$STATE_DIR/stage11-result.json"
+RETRY_FILE="$STATE_DIR/baseline-retry-count"
+APP_DIR="{{ gwi_app_dir }}"
+POS_PORT="{{ gwi_pos_port }}"
+MAX_RETRIES=3
+INSTALLER="$APP_DIR/public/installer.run"
+
+log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [baseline-retry] $*"; }
+
+# ── Check if retry is needed ──────────────────────────────────────────────
+if [[ ! -f "$RESULT_FILE" ]]; then
+  log "No stage11-result.json — nothing to retry"
+  exit 0
+fi
+
+OUTCOME=$(python3 -c "import json; print(json.load(open('$RESULT_FILE')).get('outcome','unknown'))" 2>/dev/null || echo "unknown")
+
+if [[ "$OUTCOME" != "failed_required" ]]; then
+  # Reset retry counter on non-failure
+  rm -f "$RETRY_FILE"
+  log "Last outcome=$OUTCOME — no retry needed"
+  exit 0
+fi
+
+# ── Check retry count ─────────────────────────────────────────────────────
+TODAY=$(date +%Y-%m-%d)
+RETRY_COUNT=0
+if [[ -f "$RETRY_FILE" ]]; then
+  RETRY_DATE=$(head -1 "$RETRY_FILE" 2>/dev/null || echo "")
+  if [[ "$RETRY_DATE" == "$TODAY" ]]; then
+    RETRY_COUNT=$(tail -1 "$RETRY_FILE" 2>/dev/null || echo "0")
+  fi
+fi
+
+if [[ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]]; then
+  log "Max retries ($MAX_RETRIES) reached today — waiting for human intervention"
+  exit 0
+fi
+
+# ── Check for open batch (no retry during active business) ────────────────
+BATCH_STATUS=$(curl -sf "http://localhost:$POS_PORT/api/system/batch-status" 2>/dev/null || echo "")
+
+if [[ -n "$BATCH_STATUS" ]]; then
+  IS_OPEN=$(echo "$BATCH_STATUS" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    # Check if batch is open or if there are active orders
+    batch = d.get('batch', d)
+    is_open = batch.get('isOpen', batch.get('status') == 'OPEN')
+    print('true' if is_open else 'false')
+except:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+
+  if [[ "$IS_OPEN" == "true" ]]; then
+    log "Batch is open — skipping retry (will check again next timer interval)"
+    exit 0
+  fi
+
+  if [[ "$IS_OPEN" == "unknown" ]]; then
+    log "Could not determine batch status — skipping retry for safety"
+    exit 0
+  fi
+fi
+
+# If POS is not responding at all, don't retry (bigger problem)
+if [[ -z "$BATCH_STATUS" ]]; then
+  POS_RUNNING=$(systemctl is-active thepasspos 2>/dev/null || echo "inactive")
+  if [[ "$POS_RUNNING" != "active" ]]; then
+    log "POS not running — skipping retry"
+    exit 0
+  fi
+  # POS running but batch-status endpoint not responding — skip for safety
+  log "POS running but batch-status unreachable — skipping retry"
+  exit 0
+fi
+
+# ── Batch is closed — run retry ───────────────────────────────────────────
+RETRY_COUNT=$((RETRY_COUNT + 1))
+log "Batch closed. Running baseline retry ($RETRY_COUNT/$MAX_RETRIES)..."
+
+# Update retry counter
+echo "$TODAY" > "$RETRY_FILE"
+echo "$RETRY_COUNT" >> "$RETRY_FILE"
+
+# Run Stage 11 only (via the installer resume mechanism)
+if [[ -x "$INSTALLER" ]]; then
+  cd "$(dirname "$INSTALLER")" && ./installer.run --resume-from=system_hardening 2>&1 | tee -a "$STATE_DIR/baseline-retry.log"
+else
+  log "ERROR: installer not found at $INSTALLER"
+  exit 1
+fi
+
+# Check result
+NEW_OUTCOME=$(python3 -c "import json; print(json.load(open('$RESULT_FILE')).get('outcome','unknown'))" 2>/dev/null || echo "unknown")
+if [[ "$NEW_OUTCOME" == "success" || "$NEW_OUTCOME" == "success_with_warnings" ]]; then
+  log "Retry succeeded: $NEW_OUTCOME — clearing retry counter"
+  rm -f "$RETRY_FILE"
+else
+  log "Retry still failing: $NEW_OUTCOME ($RETRY_COUNT/$MAX_RETRIES)"
+fi

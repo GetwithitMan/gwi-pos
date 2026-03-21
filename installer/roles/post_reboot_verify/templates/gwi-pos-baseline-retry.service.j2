@@ -1,0 +1,11 @@
+[Unit]
+Description=GWI POS Baseline Auto-Retry
+After=thepasspos.service
+Wants=thepasspos.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gwi-pos/bin/baseline-retry.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gwi-pos-baseline-retry

@@ -1,0 +1,12 @@
+[Unit]
+Description=GWI POS Baseline Auto-Retry Timer
+
+[Timer]
+# Check every hour — script decides whether to actually retry
+OnBootSec=15min
+OnUnitActiveSec=1h
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
