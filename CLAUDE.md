@@ -181,6 +181,12 @@ Only after Steps 1–5:
 - Event-sourced orders: Android sends events → POS assigns `serverSequence`
 - **Full rules:** `docs/guides/ANDROID-INTEGRATION.md`
 
+### Web UI & Kiosk
+- **Web UI is for settings/admin only** — Android tablets are the primary ordering client
+- **Chromium kiosk removed from server role** — servers have no locked-down kiosk; POS accessed via normal web browser
+- **Terminals still use Chromium kiosk** — dedicated display stations pointing at the server retain kiosk mode
+- Chromium is only installed on terminal role NUCs (not servers)
+
 ## Quick Reference
 
 ### Demo Credentials

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 07-services.sh — systemd units (thepasspos, sync-agent, kiosk), sudoers,
-#                  backups, pre-start, terminal kiosk
+# 07-services.sh — systemd units (thepasspos, sync-agent), sudoers,
+#                  backups, pre-start, terminal kiosk (kiosk removed from server)
 # =============================================================================
 # Entry: run_services
 # Expects: STATION_ROLE, APP_BASE, APP_DIR, ENV_FILE, POSUSER, POSUSER_HOME,
 #          USE_LOCAL_PG, VIRTUAL_IP, SERVER_URL, DB_NAME, BACKUP_DIR,
 #          BACKUP_SCRIPT
-# Sets: KIOSK_OK, CHROMIUM_BIN, POS_READY
+# Sets: POS_READY
 # =============================================================================
 
 run_services() {
@@ -204,91 +204,6 @@ SyslogIdentifier=thepasspos
 WantedBy=multi-user.target
 SVCEOF
 
-    # ── Kiosk preflight: verify X11 session is available ──
-    KIOSK_OK=true
-    # CHROMIUM_BIN may already be set by 04-database.sh (native, snap wrapper, etc.)
-    if [[ -z "${CHROMIUM_BIN:-}" ]]; then
-      if command -v chromium-kiosk >/dev/null 2>&1; then
-        CHROMIUM_BIN="chromium-kiosk"
-      elif command -v chromium-browser >/dev/null 2>&1; then
-        CHROMIUM_BIN="chromium-browser"
-      elif command -v chromium >/dev/null 2>&1; then
-        CHROMIUM_BIN="chromium"
-      else
-        track_warn "Chromium not found — kiosk mode will not work."
-        KIOSK_OK=false
-      fi
-    fi
-
-    # Check for Wayland vs X11 (filter by POSUSER, prefer graphical sessions)
-    if [[ "$KIOSK_OK" == "true" ]]; then
-      # Find the best graphical session: prefer x11, then wayland, then any
-      POSUSER_SESSION=""
-      SESSION_TYPE="unknown"
-      while read -r sid _ suser _rest; do
-        [[ "$suser" != "$POSUSER" ]] && continue
-        stype=$(loginctl show-session "$sid" -p Type --value 2>/dev/null || echo "")
-        if [[ "$stype" == "x11" ]]; then
-          POSUSER_SESSION="$sid"; SESSION_TYPE="x11"; break
-        elif [[ "$stype" == "wayland" ]] && [[ -z "$POSUSER_SESSION" ]]; then
-          POSUSER_SESSION="$sid"; SESSION_TYPE="wayland"
-        elif [[ -z "$POSUSER_SESSION" ]]; then
-          POSUSER_SESSION="$sid"; SESSION_TYPE="${stype:-unknown}"
-        fi
-      done < <(loginctl list-sessions --no-legend 2>/dev/null)
-      if [[ "$SESSION_TYPE" == "wayland" ]]; then
-        # Wayland was detected despite preflight fix — this means the session
-        # started before the installer ran, or preflight didn't cover this DM.
-        # Try to fix it now for next reboot.
-        if [[ -f /etc/gdm3/custom.conf ]]; then
-          if ! grep -q "WaylandEnable=false" /etc/gdm3/custom.conf 2>/dev/null; then
-            log "Disabling Wayland in GDM3 for next reboot..."
-            if grep -q "\[daemon\]" /etc/gdm3/custom.conf; then
-              sed -i '/\[daemon\]/a WaylandEnable=false' /etc/gdm3/custom.conf
-            else
-              echo -e "\n[daemon]\nWaylandEnable=false" >> /etc/gdm3/custom.conf
-            fi
-          fi
-        fi
-        warn "Wayland session is currently active. Kiosk requires X11."
-        warn "Wayland has been disabled in GDM3 — a REBOOT is required."
-        warn "After reboot, the kiosk will start automatically on X11."
-        KIOSK_OK=false
-      elif [[ "$SESSION_TYPE" == "unknown" ]]; then
-        warn "No active graphical session detected."
-        warn "Ensure auto-login is configured for '$POSUSER' before rebooting."
-        warn "Kiosk will be enabled but may not start until a graphical session is available."
-        KIOSK_OK=false
-      fi
-    fi
-
-    # thepasspos-kiosk.service — Chromium in kiosk mode
-    # Resolve full path to Chromium binary (may be /usr/bin, /usr/local/bin, or /snap/bin)
-    CHROMIUM_FULL_PATH=$(command -v "${CHROMIUM_BIN:-chromium-browser}" 2>/dev/null || echo "/usr/bin/${CHROMIUM_BIN:-chromium-browser}")
-    cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
-[Unit]
-Description=ThePassPOS Kiosk
-After=graphical.target thepasspos.service
-Wants=thepasspos.service
-StartLimitIntervalSec=600
-StartLimitBurst=10
-
-[Service]
-Type=simple
-User=$POSUSER
-Environment=DISPLAY=:0
-Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
-ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
-ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
-ExecStartPre=/opt/gwi-pos/wait-for-pos.sh
-ExecStart=$CHROMIUM_FULL_PATH --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile http://localhost:3005
-Restart=always
-RestartSec=30
-
-[Install]
-WantedBy=graphical.target
-SVCEOF
-
     systemctl daemon-reload
 
     if [[ "$STATION_ROLE" == "backup" ]]; then
@@ -297,21 +212,10 @@ SVCEOF
       # stale standby PG and overwrite newer data in Neon. POS will be started
       # by promote.sh if this NUC takes over as primary.
       systemctl disable thepasspos 2>/dev/null || true
-      systemctl disable thepasspos-kiosk 2>/dev/null || true
       log "POS service installed but DISABLED (backup standby mode)."
       log "POS will start automatically on promotion via promote.sh."
     else
       systemctl enable thepasspos
-
-      # Don't enable kiosk yet — enable AFTER POS is confirmed ready.
-      # If enabled now, systemd's Wants= dependency auto-starts kiosk
-      # when POS starts, causing duplicate Chromium tabs.
-      systemctl disable thepasspos-kiosk 2>/dev/null || true
-      systemctl stop thepasspos-kiosk 2>/dev/null || true
-
-      # Kill any stale Chromium kiosk processes from previous installs
-      pkill -u "$POSUSER" -f "chromium.*kiosk" 2>/dev/null || true
-      pkill -u "$POSUSER" -f "chromium-browser.*kiosk" 2>/dev/null || true
 
       log "Starting POS server..."
       systemctl restart thepasspos || track_warn "POS service restart failed — will retry on reboot"
@@ -330,27 +234,11 @@ SVCEOF
         sleep 2
       done
 
-      if [[ "$KIOSK_OK" == "true" ]]; then
-        if [[ "$POS_READY" == "true" ]]; then
-          # POS is healthy — NOW enable and start kiosk
-          systemctl enable thepasspos-kiosk
-          systemctl restart thepasspos-kiosk || track_warn "Kiosk service restart failed — will retry on reboot"
-
-          # Verify kiosk process actually launched
-          sleep 5
-          if ! pgrep -u "$POSUSER" -f "${CHROMIUM_BIN:-chromium}" >/dev/null 2>&1; then
-            track_warn "Kiosk process not detected — check display, graphics drivers, or X11 session"
-          fi
-        else
-          # POS didn't start in time — enable kiosk for reboot but don't start now
-          systemctl enable thepasspos-kiosk
-          track_warn "POS not ready after 120s — kiosk enabled for next reboot"
-          track_warn "Check: sudo journalctl -u thepasspos -f"
-        fi
-      else
-        track_warn "Skipping kiosk service — preflight failed (Chromium missing or Wayland)."
+      if [[ "$POS_READY" != "true" ]]; then
+        track_warn "POS not ready after 120s — will retry on reboot"
+        track_warn "Check: sudo journalctl -u thepasspos -f"
       fi
-      log "Services configured and started."
+      log "Services configured and started (no kiosk — web UI for settings/admin only)."
     fi
 
     # ───────────────────────────────────────────────────────────────────────────

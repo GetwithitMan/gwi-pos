@@ -339,6 +339,7 @@
 
     - role: kiosk_hardening
       tags: ['optional', 'kiosk_hardening']
+      when: gwi_station_role == 'terminal'
 
     - role: log_rotation
       tags: ['optional', 'log_rotation']
