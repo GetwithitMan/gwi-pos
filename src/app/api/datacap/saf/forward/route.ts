@@ -3,6 +3,7 @@ import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse }
 import { withVenue } from '@/lib/with-venue'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface SAFForwardRequest {
   locationId: string
@@ -81,6 +82,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     logger.log('datacap', `SAF forward complete: ${safForwarded} forwarded, ${updated.count} payment records updated to ${newStatus}`, {
       readerId, locationId, safForwarded, updatedCount: updated.count, success,
     })
+
+    pushUpstream()
 
     return Response.json({
       data: {

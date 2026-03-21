@@ -13,6 +13,7 @@ import {
 } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST /api/orders/[id]/pat-complete
 // Called by pay-at-table after all datacap payments complete.
@@ -227,6 +228,8 @@ export const POST = withVenue(async function POST(
       payload: { closedStatus: 'paid', reason: 'Pay-at-table completed' },
     })
     void emitOrderEvents(locationId, orderId, patEvents).catch(console.error)
+
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

@@ -6,6 +6,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatus
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -230,6 +231,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
       }
     }
+
+    pushUpstream()
 
     // Dispatch socket update
     dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})

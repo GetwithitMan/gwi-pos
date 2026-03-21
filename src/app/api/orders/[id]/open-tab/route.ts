@@ -12,6 +12,7 @@ import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { OrderRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
@@ -247,6 +248,8 @@ export const POST = withVenue(async function POST(
         avsResult: undefined, // Pre-auth doesn't return AVS
         refNo: preAuthResponse.refNo,
       })
+
+      pushUpstream()
 
       return NextResponse.json({
         data: {

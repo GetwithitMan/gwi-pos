@@ -4,6 +4,7 @@ import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ============================================
 // POST - Create a new empty check on a split order
@@ -130,6 +131,8 @@ export const POST = withVenue(async function POST(
       parentOrderId: id,
       splitIndex: newOrder.splitIndex,
     }).catch(console.error)
+
+    pushUpstream()
 
     return NextResponse.json(
       { data: {

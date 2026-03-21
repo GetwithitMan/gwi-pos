@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/paid-in-out/[id] — get a single paid in/out record
 export const GET = withVenue(async function GET(
@@ -99,6 +100,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

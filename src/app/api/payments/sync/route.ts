@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * POST /api/payments/sync
@@ -200,6 +201,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
       .catch(console.error)
 
+    pushUpstream()
+
     // Return the payment from the transaction directly (no redundant re-fetch)
     return NextResponse.json({
       success: true,
@@ -326,6 +329,8 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         reconciledBy: reconciledBy || null,
       },
     })
+
+    pushUpstream()
 
     return NextResponse.json({
       success: true,

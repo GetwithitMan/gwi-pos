@@ -12,6 +12,7 @@ import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * Atomic Seat Management API (Skill 121)
@@ -587,6 +588,8 @@ export const POST = withVenue(async function POST(
         count: result.newTotalSeats,
       }).catch(console.error)
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: result })
 

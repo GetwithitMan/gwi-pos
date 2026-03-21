@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -109,6 +110,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Refresh floor plan so table statuses update on other terminals
     if (toResetTableIds.length > 0) {
       void dispatchFloorPlanUpdate(locationId).catch(console.error)
+    }
+
+    if (toCancelIds.length > 0 || toResetTableIds.length > 0) {
+      pushUpstream()
     }
 
     return NextResponse.json({

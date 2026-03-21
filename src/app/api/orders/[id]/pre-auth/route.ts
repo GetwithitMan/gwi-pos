@@ -6,6 +6,7 @@ import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * POST /api/orders/[id]/pre-auth
@@ -123,6 +124,8 @@ export const POST = withVenue(async function POST(
       paymentId: orderCard.id,
       status: 'authorized',
     }).catch(() => {})
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {
