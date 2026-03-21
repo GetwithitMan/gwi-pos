@@ -51,6 +51,7 @@ const SLUGLESS_ALLOWED_PATTERNS = [
   '/api/order-events/',  // Order event batch (NUC-local)
   '/api/fleet/',         // Fleet endpoints (NUC heartbeat)
   '/api/cron/',          // Vercel cron jobs (authed via CRON_SECRET, not slug)
+  '/api/dashboard/',     // NUC Dashboard app (local monitoring)
   '/pay/',               // Payment links
   '/approve-void/',      // Void approval links
 ]

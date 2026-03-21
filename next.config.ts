@@ -75,22 +75,14 @@ const nextConfig: NextConfig = {
     return [
       { source: '/(.*)', headers: securityHeaders },
       // Installer files must never be cached — NUCs must always get the latest version
-      {
-        source: '/installer:path*',
+      ...['/installer.run', '/installer-bundle.run', '/setup-remote.sh', '/install.sh', '/uninstall.sh', '/usb-remote-setup.sh'].map(source => ({
+        source,
         headers: [
           { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, max-age=0' },
           { key: 'CDN-Cache-Control', value: 'no-store' },
           { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
         ],
-      },
-      {
-        source: '/setup-remote:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, max-age=0' },
-          { key: 'CDN-Cache-Control', value: 'no-store' },
-          { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
-        ],
-      },
+      })),
     ]
   },
 
