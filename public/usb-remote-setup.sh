@@ -25,6 +25,12 @@ echo "  GWI POS — Setting Up Remote Access"
 echo "══════════════════════════════════════════════"
 echo ""
 
+# Install curl if missing (fresh U24 doesn't have it)
+if ! command -v curl >/dev/null 2>&1; then
+  echo "Installing curl..."
+  apt-get update -qq && apt-get install -y curl >/dev/null 2>&1
+fi
+
 # Try the online version first (has RealVNC + full setup)
 if curl -fsSL --connect-timeout 5 https://app.thepasspos.com/setup-remote.sh -o /tmp/gwi-setup-remote.sh 2>/dev/null; then
   echo "Downloaded setup script. Running..."
