@@ -353,7 +353,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts`, `socket-event-buffer.ts` |
 | Socket / cloud relay | `docs/guides/SOCKET-REALTIME.md` | `src/lib/cloud-relay-client.ts`, `socket-event-buffer.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
-| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (source of truth) + `gwi-mission-control/scripts/installer.run` (served copy — MUST sync both) |
+| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (source of truth) — MC proxies installer from POS deployment, no copy needed |
 | Database / schema | `docs/guides/ARCHITECTURE-RULES.md` | `prisma/schema.prisma` |
 | UI / components | `docs/guides/CODING-STANDARDS.md` | `src/stores/` |
 | Splits | — | `src/app/api/orders/[id]/split/` |
