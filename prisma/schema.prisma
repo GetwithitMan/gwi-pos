@@ -658,9 +658,9 @@ model Location {
   spiritUpsellEvents SpiritUpsellEvent[]
 
   // Tip Sharing
-  tipOutRules    TipOutRule[]
-  tipShares      TipShare[]
-  tipPools       TipPool[]
+  tipOutRules TipOutRule[]
+  tipShares   TipShare[]
+  tipPools    TipPool[]
 
   // Tip Bank Ledger (Skill 250)
   tipLedgers       TipLedger[]
@@ -798,12 +798,12 @@ model Location {
   orderItemPizzas  OrderItemPizza[]
 
   // Payroll & Scheduling
-  payrollPeriods      PayrollPeriod[]
-  payStubs            PayStub[]
-  schedules           Schedule[]
-  scheduledShifts     ScheduledShift[]
-  shiftSwapRequests   ShiftSwapRequest[]
-  payrollSettings     PayrollSettings?
+  payrollPeriods    PayrollPeriod[]
+  payStubs          PayStub[]
+  schedules         Schedule[]
+  scheduledShifts   ScheduledShift[]
+  shiftSwapRequests ShiftSwapRequest[]
+  payrollSettings   PayrollSettings?
 
   // Course Configuration
   courseConfigs CourseConfig[]
@@ -919,8 +919,8 @@ model Customer {
   birthday       DateTime?
 
   // Reservation Engine — no-show tracking
-  noShowCount            Int      @default(0)
-  isBlacklisted          Boolean  @default(false)
+  noShowCount            Int       @default(0)
+  isBlacklisted          Boolean   @default(false)
   blacklistOverrideUntil DateTime? @db.Date
 
   isActive  Boolean   @default(true)
@@ -1112,8 +1112,8 @@ model Employee {
   tipDebts TipDebt[]
 
   // Payroll & Scheduling
-  payStubs            PayStub[]
-  scheduledShifts     ScheduledShift[]    @relation("ScheduledShiftEmployee")
+  payStubs        PayStub[]
+  scheduledShifts ScheduledShift[] @relation("ScheduledShiftEmployee")
 
   // Remote void approval relations
   voidApprovalsRequested RemoteVoidApproval[] @relation("VoidRequester")
@@ -1744,7 +1744,7 @@ model MenuItem {
   // Barcode scanning
   barcodes ItemBarcode[]
 
-  metadata  Json?  // Cake builder config (quickPick, capacityWeight, defaultTiers), future extensibility
+  metadata Json? // Cake builder config (quickPick, capacityWeight, defaultTiers), future extensibility
 
   @@unique([locationId, sku])
   // @@index([locationId]) — removed: redundant with compound indexes below
@@ -1774,9 +1774,9 @@ model ModifierGroup {
   modifierTypes Json @default("[\"universal\"]")
 
   // Requirements
-  minSelections Int     @default(0)
-  maxSelections Int     @default(1)
-  isRequired    Boolean @default(false)
+  minSelections    Int     @default(0)
+  maxSelections    Int     @default(1)
+  isRequired       Boolean @default(false)
   allowStacking    Boolean @default(false) // Allow selecting the same modifier multiple times
   stackDisplayMode String  @default("individual") // "individual" = separate lines, "combined" = "Ranch ×3"
 
@@ -1798,15 +1798,15 @@ model ModifierGroup {
   showOnline Boolean @default(true) // Whether this modifier group appears for online ordering
 
   // Open Entry — allow freeform custom modifiers on POS
-  allowOpenEntry Boolean @default(false)
+  allowOpenEntry      Boolean @default(false)
   // Allow None — show a "None" button on required groups so staff can skip selection
-  allowNone             Boolean @default(false)
+  allowNone           Boolean @default(false)
   // Whether "None" selection prints to kitchen tickets/KDS
-  nonePrintsToKitchen   Boolean @default(false)
+  nonePrintsToKitchen Boolean @default(false)
   // Whether "None" selection shows on customer receipts
-  noneShowOnReceipt     Boolean @default(false)
+  noneShowOnReceipt   Boolean @default(false)
   // Auto-advance — auto-dismiss single-select required group after selection
-  autoAdvance    Boolean @default(false)
+  autoAdvance         Boolean @default(false)
 
   // Liquor Builder - Spirit Group Configuration
   isSpiritGroup Boolean @default(false)
@@ -1828,7 +1828,7 @@ model ModifierGroup {
   // Liquor Builder - Spirit configuration
   spiritConfig SpiritModifierGroup?
 
-  metadata  Json?  // cakeGroupType (flavor/filling/frosting/decoration/dietary), future extensibility
+  metadata Json? // cakeGroupType (flavor/filling/frosting/decoration/dietary), future extensibility
 
   @@index([locationId])
   @@index([menuItemId])
@@ -1917,12 +1917,12 @@ model Modifier {
   printerIds     Json? // Array of printer IDs when routing is "also" or "only"
 
   // Swap — allow substituting this modifier with an alternate item at POS
-  swapEnabled            Boolean  @default(false)
-  swapTargets            Json?    // SwapTarget[] — targets with pricing modes
-  customPreModifiers     Json?    // CustomPreMod[] — custom pre-modifier options (Well Done, Blackened, etc.)
+  swapEnabled              Boolean  @default(false)
+  swapTargets              Json? // SwapTarget[] — targets with pricing modes
+  customPreModifiers       Json? // CustomPreMod[] — custom pre-modifier options (Well Done, Blackened, etc.)
   // Inventory deduction override
   inventoryDeductionAmount Decimal? // Amount of ingredient to deduct per selection
-  inventoryDeductionUnit   String?  // Unit for deduction (oz, ml, unit, g)
+  inventoryDeductionUnit   String? // Unit for deduction (oz, ml, unit, g)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1941,7 +1941,7 @@ model Modifier {
   // C-SCHEMA-1: Reverse relations (batch 2)
   ingredientSwaps OrderItemIngredient[] @relation("IngredientSwapModifier")
 
-  metadata  Json?  // perTier flag, requiredIngredients for stock tracking, future extensibility
+  metadata Json? // perTier flag, requiredIngredients for stock tracking, future extensibility
 
   @@unique([modifierGroupId, name])
   @@index([locationId])
@@ -2331,7 +2331,7 @@ model OrderType {
   sortOrder   Int     @default(0)
   isActive    Boolean @default(true)
   isSystem    Boolean @default(false) // True for built-in types (dine_in, bar_tab, takeout)
-  allowTips  Boolean  @default(true)  // false for cake_deposit_settlement, true for cake_balance_settlement
+  allowTips   Boolean @default(true) // false for cake_deposit_settlement, true for cake_balance_settlement
 
   // JSON Configuration Fields
   // Required fields: { "tableId": true, "tabName": true, "phone": true }
@@ -2440,9 +2440,9 @@ model Order {
   discountTotal    Decimal @default(0)
   taxTotal         Decimal @default(0)
   taxFromInclusive Decimal @default(0) // Tax backed out of inclusive items
-  taxFromExclusive  Decimal @default(0) // Tax added on top of exclusive items
-  inclusiveTaxRate  Decimal @default(0) // Inclusive tax rate snapshot at order creation (survives setting changes)
-  tipTotal          Decimal @default(0)
+  taxFromExclusive Decimal @default(0) // Tax added on top of exclusive items
+  inclusiveTaxRate Decimal @default(0) // Inclusive tax rate snapshot at order creation (survives setting changes)
+  tipTotal         Decimal @default(0)
   total            Decimal @default(0)
 
   // Dual Pricing (Skill 31)
@@ -2521,7 +2521,7 @@ model Order {
   lastMutatedBy    String? // 'cloud' | 'local' | null
   originTerminalId String?
 
-  metadata  Json?  // Settlement order linkage: { cakeOrderId, appliedTo }. Extensible.
+  metadata Json? // Settlement order linkage: { cakeOrderId, appliedTo }. Extensible.
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2653,8 +2653,8 @@ model OrderItem {
   // KDS completion tracking
   isCompleted            Boolean   @default(false)
   completedAt            DateTime?
-  completedBy            String?   // Who bumped this item (employee name or "system")
-  kdsForwardedToScreenId String?   // Screen this item was forwarded to (persists Expo visibility)
+  completedBy            String? // Who bumped this item (employee name or "system")
+  kdsForwardedToScreenId String? // Screen this item was forwarded to (persists Expo visibility)
   kdsFinalCompleted      Boolean   @default(false) // True only after final bump (no more send_to_next targets)
 
   // Resend tracking
@@ -2760,8 +2760,8 @@ model OrderItemModifier {
   modifier    Modifier? @relation(fields: [modifierId], references: [id])
 
   // Snapshot at time of sale
-  name        String
-  price       Decimal // Actual price charged (may differ from item price if discounted)
+  name             String
+  price            Decimal // Actual price charged (may differ from item price if discounted)
   preModifier      String? // "no", "lite", "extra", "side"
   depth            Int     @default(0) // Modifier hierarchy depth: 0=top, 1=child, 2=grandchild
   stackDisplayMode String  @default("individual") // Snapshot from ModifierGroup: "individual" or "combined"
@@ -2797,13 +2797,13 @@ model OrderItemModifier {
   customEntryPrice Decimal?
 
   // None Selection — explicit "None" chosen on a required modifier group
-  isNoneSelection    Boolean  @default(false)
-  noneShowOnReceipt  Boolean  @default(false)
+  isNoneSelection   Boolean @default(false)
+  noneShowOnReceipt Boolean @default(false)
 
   // Swap — substitution snapshot at time of order
   swapTargetName     String?
   swapTargetItemId   String?
-  swapPricingMode    String?  // 'target_price' | 'fixed_price' | 'no_charge'
+  swapPricingMode    String? // 'target_price' | 'fixed_price' | 'no_charge'
   swapEffectivePrice Decimal? // Resolved price at time of order
 
   @@index([locationId])
@@ -3149,7 +3149,7 @@ model Reservation {
   // Reservation Engine — guest details
   occasion            String?
   dietaryRestrictions String?
-  source              String?   @default("staff")
+  source              String? @default("staff")
   externalId          String?
   sectionPreference   String?
 
@@ -3162,18 +3162,18 @@ model Reservation {
   checkedInAt        DateTime?
 
   // Reservation Engine — booking management
-  manageToken        String?   @unique
-  tags               Json      @default("[]")
-  serviceDate        DateTime? @db.Date
-  holdExpiresAt      DateTime?
-  depositStatus      String?   @default("not_required")
-  depositAmountCents Int?
+  manageToken          String?   @unique
+  tags                 Json      @default("[]")
+  serviceDate          DateTime? @db.Date
+  holdExpiresAt        DateTime?
+  depositStatus        String?   @default("not_required")
+  depositAmountCents   Int?
   depositRulesSnapshot Json?
-  statusUpdatedAt    DateTime?
-  sourceMetadata     Json?
-  smsOptInSnapshot   Boolean?
-  depositRequired    Boolean?
-  depositAmount      Decimal?  @db.Decimal(10, 2)
+  statusUpdatedAt      DateTime?
+  sourceMetadata       Json?
+  smsOptInSnapshot     Boolean?
+  depositRequired      Boolean?
+  depositAmount        Decimal?  @db.Decimal(10, 2)
 
   // Tracking
   createdBy    String? // Employee who created
@@ -3189,12 +3189,13 @@ model Reservation {
   syncedAt  DateTime?
 
   // Reservation Engine — relations
-  reservationTables  ReservationTable[]
-  events             ReservationEvent[]
-  idempotencyKeys    ReservationIdempotencyKey[]
-  depositTokens      ReservationDepositToken[]
-  deposits           ReservationDeposit[]
+  reservationTables ReservationTable[]
+  events            ReservationEvent[]
+  idempotencyKeys   ReservationIdempotencyKey[]
+  depositTokens     ReservationDepositToken[]
+  deposits          ReservationDeposit[]
 
+  @@unique([locationId, source, externalId])
   // @@index([locationId]) — removed: redundant with @@index([locationId, reservationDate, status])
   @@index([reservationDate])
   @@index([status])
@@ -3205,7 +3206,6 @@ model Reservation {
   @@index([source])
   @@index([locationId, serviceDate])
   @@index([holdExpiresAt])
-  @@unique([locationId, source, externalId])
 }
 
 // ============================================
@@ -4570,7 +4570,9 @@ model ReasonAccess {
   reasonId    String // id of the reason or discount
   accessType  String @default("allow") // "allow" | "deny"
 
-  createdAt DateTime @default(now())
+  syncedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@unique([locationId, subjectType, subjectId, reasonType, reasonId])
   @@index([locationId])
@@ -5384,6 +5386,9 @@ model SpiritCategory {
   sortOrder    Int     @default(0)
   isActive     Boolean @default(true)
 
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -5441,6 +5446,9 @@ model BottleProduct {
   needsVerification Boolean   @default(false)
   verifiedAt        DateTime?
   verifiedBy        String?
+
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -5522,6 +5530,9 @@ model SpiritModifierGroup {
   upsellEnabled    Boolean @default(true)
   upsellPromptText String? // "Upgrade to {name} for ${diff}?"
   defaultTier      String  @default("well") // Default selection tier
+
+  // HA cellular sync — mutation origin tracking
+  lastMutatedBy String? // 'cloud' | 'local' | null
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -6227,15 +6238,15 @@ model KDSScreen {
   syncedAt  DateTime?
 
   // Display & Behavior (KDS Overhaul)
-  displayMode      String  @default("tiled") // "tiled" | "classic" | "split" | "takeout"
-  transitionTimes  Json?   // Per-order-type { "dine_in": { caution: 8, late: 15 }, ... }
-  orderBehavior    Json?   // All behavior toggles (tap-to-start, merge, etc.)
-  orderTypeFilters Json?   // Per-type visibility { "dine_in": true, "takeout": false, ... }
+  displayMode      String @default("tiled") // "tiled" | "classic" | "split" | "takeout"
+  transitionTimes  Json? // Per-order-type { "dine_in": { caution: 8, late: 15 }, ... }
+  orderBehavior    Json? // All behavior toggles (tap-to-start, merge, etc.)
+  orderTypeFilters Json? // Per-type visibility { "dine_in": true, "takeout": false, ... }
 
   // Relations
   stations    KDSScreenStation[]
-  sourceLinks KDSScreenLink[] @relation("SourceLinks")
-  targetLinks KDSScreenLink[] @relation("TargetLinks")
+  sourceLinks KDSScreenLink[]    @relation("SourceLinks")
+  targetLinks KDSScreenLink[]    @relation("TargetLinks")
   printRules  PrintRule[]
 
   @@unique([locationId, name])
@@ -6278,8 +6289,8 @@ model KDSScreenLink {
   targetScreenId String
   targetScreen   KDSScreen @relation("TargetLinks", fields: [targetScreenId], references: [id], onDelete: Cascade)
 
-  linkType  String  @default("send_to_next") // "send_to_next" | "multi_clear"
-  bumpAction String @default("bump")         // "bump" | "strike_through" | "no_action"
+  linkType                  String  @default("send_to_next") // "send_to_next" | "multi_clear"
+  bumpAction                String  @default("bump") // "bump" | "strike_through" | "no_action"
   resetStrikethroughsOnSend Boolean @default(false)
 
   isActive  Boolean @default(true)
@@ -6471,9 +6482,9 @@ model Scale {
   stopBits Int     @default(1)
 
   // Network Connection (serial device server — e.g., Moxa, USR-TCP232)
-  connectionType String @default("serial") // "serial" | "network"
+  connectionType String  @default("serial") // "serial" | "network"
   networkHost    String? // IP address of serial device server
-  networkPort    Int?    // TCP port of serial device server (typically 4001 or 8234)
+  networkPort    Int? // TCP port of serial device server (typically 4001 or 8234)
 
   // Weight Configuration
   maxCapacity Decimal? // Max weight capacity
@@ -7327,8 +7338,8 @@ model ShiftSwapRequest {
   requestedToEmployee   Employee?              @relation("SwapTarget", fields: [requestedToEmployeeId], references: [id])
   type                  ShiftRequestType       @default(swap)
   status                ShiftSwapRequestStatus @default(pending)
-  reason                String?                // Employee's reason for requesting
-  managerNote           String?                // Manager's note on approval/denial
+  reason                String? // Employee's reason for requesting
+  managerNote           String? // Manager's note on approval/denial
   respondedAt           DateTime?
   approvedAt            DateTime?
   approvedByEmployeeId  String?
@@ -7641,9 +7652,10 @@ model DigitalReceipt {
   // Archive lifecycle
   archivedAt DateTime? // When moved to cloud archive
 
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
   syncedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@index([locationId])
   @@index([locationId, createdAt])
@@ -7910,16 +7922,16 @@ model ErrorLog {
 model VenueLog {
   id         String   @id @default(cuid())
   locationId String
-  level      String   @default("info")    // info, warn, error, critical
-  source     String   @default("server")  // server, pos, kds, android, sync, pax
-  category   String   @default("system")  // payment, sync, hardware, auth, order, system
+  level      String   @default("info") // info, warn, error, critical
+  source     String   @default("server") // server, pos, kds, android, sync, pax
+  category   String   @default("system") // payment, sync, hardware, auth, order, system
   message    String
-  details    Json?                         // Arbitrary JSON context
+  details    Json? // Arbitrary JSON context
   employeeId String?
   deviceId   String?
   stackTrace String?
   createdAt  DateTime @default(now())
-  expiresAt  DateTime                      // Auto-cleanup target (30 days default)
+  expiresAt  DateTime // Auto-cleanup target (30 days default)
 
   @@index([locationId, createdAt(sort: Desc)])
   @@index([level])
@@ -8467,6 +8479,7 @@ model SevenShiftsDailySalesPush {
   status               String    @default("pending") // pending|pushed|error
   errorMessage         String?
   pushedAt             DateTime?
+  syncedAt             DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -8513,19 +8526,21 @@ model PmsChargeAttempt {
 
 // Ingredient cost change audit trail
 model IngredientCostHistory {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   locationId      String
   inventoryItemId String
-  oldCostPerUnit  Decimal  @db.Decimal(10, 4)
-  newCostPerUnit  Decimal  @db.Decimal(10, 4)
-  changePercent   Decimal  @db.Decimal(6, 2)
+  oldCostPerUnit  Decimal   @db.Decimal(10, 4)
+  newCostPerUnit  Decimal   @db.Decimal(10, 4)
+  changePercent   Decimal   @db.Decimal(6, 2)
   source          String // 'manual' | 'invoice' | 'marginedge' | 'api'
   invoiceId       String?
   invoiceNumber   String?
   vendorName      String?
   recordedById    String?
   effectiveDate   DateTime
-  createdAt       DateTime @default(now())
+  syncedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   location      Location      @relation(fields: [locationId], references: [id])
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
@@ -8551,6 +8566,7 @@ model VendorOrder {
   receivedById     String?
   linkedInvoiceId  String?
   deletedAt        DateTime?
+  syncedAt         DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -8573,6 +8589,7 @@ model VendorOrderLineItem {
   actualCost      Decimal?  @db.Decimal(10, 4)
   receivedQty     Decimal?  @db.Decimal(10, 4)
   notes           String?
+  syncedAt        DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   deletedAt       DateTime?
@@ -8590,20 +8607,21 @@ model VendorOrderLineItem {
 
 // Individual item counts (COGS-style — simpler than InventoryCountItem)
 model InventoryCountEntry {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   locationId       String
   inventoryCountId String
   inventoryItemId  String
-  expectedQty      Decimal? @db.Decimal(10, 4)
-  countedQty       Decimal  @db.Decimal(10, 4)
+  expectedQty      Decimal?  @db.Decimal(10, 4)
+  countedQty       Decimal   @db.Decimal(10, 4)
   unit             String
-  variance         Decimal? @db.Decimal(10, 4)
-  unitCost         Decimal  @db.Decimal(10, 4)
-  varianceCost     Decimal? @db.Decimal(10, 2)
+  variance         Decimal?  @db.Decimal(10, 4)
+  unitCost         Decimal   @db.Decimal(10, 4)
+  varianceCost     Decimal?  @db.Decimal(10, 2)
   notes            String?
   countedById      String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  syncedAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   location       Location       @relation(fields: [locationId], references: [id])
   inventoryCount InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
@@ -8627,6 +8645,7 @@ model WasteLog {
   notes           String?
   recordedById    String
   businessDate    DateTime
+  syncedAt        DateTime?
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -8650,6 +8669,7 @@ model MarginEdgeProductMapping {
   lastSyncAt            DateTime?
   isActive              Boolean   @default(true)
   deletedAt             DateTime?
+  syncedAt              DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -8678,6 +8698,7 @@ model PendingDeduction {
   lastError     String?
   lastAttemptAt DateTime?
   succeededAt   DateTime?
+  syncedAt      DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
@@ -8708,7 +8729,7 @@ model DeductionRun {
 // ============================================
 
 model BergPluMapping {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   locationId         String
   deviceId           String?
   mappingScopeKey    String // "device:{deviceId}" OR "location:{locationId}" — computed on create
@@ -8717,13 +8738,13 @@ model BergPluMapping {
   inventoryItemId    String?
   menuItemId         String?
   description        String?
-  pourSizeOzOverride Decimal? @db.Decimal(6, 3)
+  pourSizeOzOverride Decimal?  @db.Decimal(6, 3)
   modifierRule       Json?
   trailerRule        Json?
-  isActive           Boolean  @default(true)
+  isActive           Boolean   @default(true)
   deletedAt          DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   location       Location            @relation(fields: [locationId], references: [id])
   device         BergDevice?         @relation(fields: [deviceId], references: [id])
@@ -8807,6 +8828,8 @@ model BergDispenseEvent {
   resolutionStatus  BergResolutionStatus  @default(NONE)
   postProcessStatus BergPostProcessStatus @default(PENDING)
   postProcessError  String?
+  syncedAt          DateTime?
+  updatedAt         DateTime              @updatedAt
 
   location   Location        @relation(fields: [locationId], references: [id])
   device     BergDevice      @relation(fields: [deviceId], references: [id])
@@ -8904,20 +8927,20 @@ model BridgeCheckpoint {
 // flips from "cloud reachable" to "unreachable" and back. This enables tooling
 // to reason about "one outage window" and batch-resolve conflicts per outage.
 model OutageQueueEntry {
-  id             String             @id @default(cuid())
+  id             String            @id @default(cuid())
   locationId     String
   tableName      String
   recordId       String
-  operation      OutageOperation    // INSERT, UPDATE, DELETE
+  operation      OutageOperation // INSERT, UPDATE, DELETE
   payload        Json
-  localSeq       BigInt             // monotonic local sequence
-  idempotencyKey String             @unique // {locationId}:{tableName}:{recordId}:{localSeq}
-  status         OutageQueueStatus  @default(PENDING)
-  outageId       String?            // Groups entries by connectivity window (incremented on outage start)
+  localSeq       BigInt // monotonic local sequence
+  idempotencyKey String            @unique // {locationId}:{tableName}:{recordId}:{localSeq}
+  status         OutageQueueStatus @default(PENDING)
+  outageId       String? // Groups entries by connectivity window (incremented on outage start)
   metadata       Json?
-  createdAt      DateTime           @default(now())
+  createdAt      DateTime          @default(now())
   replayedAt     DateTime?
-  location       Location           @relation(fields: [locationId], references: [id])
+  location       Location          @relation(fields: [locationId], references: [id])
 
   @@index([locationId, status])
   @@index([outageId])
@@ -8941,6 +8964,7 @@ model ReservationBlock {
   blockedTableIds        Json      @default("[]")
   blockedSectionIds      Json      @default("[]")
   createdBy              String?
+  syncedAt               DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   deletedAt              DateTime?
@@ -9036,11 +9060,12 @@ model EmployeePermissionOverride {
   location      Location  @relation(fields: [locationId], references: [id])
   employeeId    String
   employee      Employee  @relation(fields: [employeeId], references: [id])
-  permissionKey String    // e.g., "manager.void_items"
-  allowed       Boolean   // true = grant extra, false = deny from role
-  reason        String?   // Why this override was set
-  setBy         String?   // Employee ID of who set this override
+  permissionKey String // e.g., "manager.void_items"
+  allowed       Boolean // true = grant extra, false = deny from role
+  reason        String? // Why this override was set
+  setBy         String? // Employee ID of who set this override
   deletedAt     DateTime?
+  syncedAt      DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
