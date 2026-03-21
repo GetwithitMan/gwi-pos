@@ -64,6 +64,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Allow installer files to be served without auth (NUC curl bootstrap)
+  if (pathname.startsWith('/installer') || pathname === '/install.sh' || pathname === '/schema.sql' || pathname === '/version-contract.json') {
+    return NextResponse.next()
+  }
+
   // Allow cellular nonce exchange without auth (nonce IS the credential)
   if (pathname === '/api/auth/cellular-exchange') {
     return NextResponse.next()
