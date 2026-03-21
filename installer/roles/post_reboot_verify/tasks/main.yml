@@ -87,7 +87,7 @@
     state: started
     daemon_reload: true
 
-# ── Baseline auto-retry (only retries if failed_required + batch closed) ──
+# ── Baseline retry on boot (only if last run was failed_required + batch closed) ──
 
 - name: Install baseline-retry.sh
   ansible.builtin.template:
@@ -97,7 +97,7 @@
     group: root
     mode: "0755"
 
-- name: Install gwi-pos-baseline-retry.service
+- name: Install gwi-pos-baseline-retry.service (boot-triggered, not timer)
   ansible.builtin.template:
     src: gwi-pos-baseline-retry.service.j2
     dest: /etc/systemd/system/gwi-pos-baseline-retry.service
@@ -106,18 +106,15 @@
     mode: "0644"
   notify: reload systemd daemon
 
-- name: Install gwi-pos-baseline-retry.timer
-  ansible.builtin.template:
-    src: gwi-pos-baseline-retry.timer.j2
-    dest: /etc/systemd/system/gwi-pos-baseline-retry.timer
-    owner: root
-    group: root
-    mode: "0644"
-  notify: reload systemd daemon
-
-- name: Enable and start gwi-pos-baseline-retry.timer
+- name: Disable baseline-retry timer if it exists (replaced by boot trigger)
   ansible.builtin.systemd:
     name: gwi-pos-baseline-retry.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+
+- name: Enable gwi-pos-baseline-retry.service (runs on boot)
+  ansible.builtin.systemd:
+    name: gwi-pos-baseline-retry.service
     enabled: true
-    state: started
     daemon_reload: true

@@ -1,11 +1,16 @@
 [Unit]
-Description=GWI POS Baseline Auto-Retry
-After=thepasspos.service
+Description=GWI POS Baseline Retry on Boot
+After=thepasspos.service gwi-pos-verify.service
 Wants=thepasspos.service
 
 [Service]
 Type=oneshot
+# Wait 5 minutes after boot for POS to stabilize and batch status to be available
+ExecStartPre=/bin/sleep 300
 ExecStart=/opt/gwi-pos/bin/baseline-retry.sh
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=gwi-pos-baseline-retry
+
+[Install]
+WantedBy=multi-user.target
