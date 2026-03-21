@@ -298,6 +298,26 @@ async function main() {
     logger.error({ err }, 'Bootstrap failed — continuing with degraded mode')
   }
 
+  // ── Set initial readiness BEFORE listen ─────────────────────────────────
+  // Ensures readiness is never `null` when health/heartbeat endpoints are hit.
+  // The listen callback will refine this with schema verification results.
+  const initialReadiness = computeReadiness({
+    localDbUp: bootstrapResult?.localDb ?? false,
+    localSchemaVerified: false,
+    neonConfigured: !!config.neonDatabaseUrl,
+    neonReachable: bootstrapResult?.neonReachable ?? false,
+    neonSchemaVersionOk: false,
+    neonCoreTablesExist: false,
+    neonRequiredEnumsExist: false,
+    baseSeedPresent: false,
+    syncEnabled: config.syncEnabled,
+    stationRole: config.stationRole,
+    initialSyncComplete: false,
+    seedComplete: true,
+  })
+  setReadinessState(initialReadiness)
+  logger.info({ level: initialReadiness.level }, 'Initial readiness set (pre-listen)')
+
   httpServer.listen(port, async () => {
     logger.info({ hostname, port, mode: dev ? 'development' : 'production' }, 'GWI POS ready')
     logger.info({ socketUrl: `ws://${hostname}:${port}/api/socket` }, 'Socket.io endpoint')
@@ -330,15 +350,11 @@ async function main() {
       // No seed status file — either dev env or pre-hardening install. Not an error.
     }
 
-    // Tenant model set validation — fatal in production, warning in dev
+    // Tenant model set validation — log error but never crash (readiness handles degradation)
     void import('./src/lib/tenant-validation').then(({ validateTenantModelSets }) =>
-      validateTenantModelSets(masterClient, { failOnStale: config.isProduction })
+      validateTenantModelSets(masterClient, { failOnStale: false })
     ).then(undefined, (err) => {
-      logger.error({ err: err instanceof Error ? err.message : err }, 'Tenant model set validation failed')
-      if (config.isProduction) {
-        logger.fatal('Cannot start with stale tenant model registry in production')
-        process.exit(1)
-      }
+      logger.error({ err: err instanceof Error ? err.message : err }, 'Tenant model set validation failed — continuing in degraded mode')
     })
 
     // ── Register workers ──────────────────────────────────────────────
@@ -362,27 +378,33 @@ async function main() {
     // Single source of truth for "is this venue ready?" — replaces inline
     // neonSchemaOk / localSchemaOk / syncReady logic that was duplicated
     // between server.ts, venue-bootstrap.ts, and health endpoints.
-    const neonReady = bootstrapResult?.neonSchemaReady
-    const neonSchemaVersionOk = neonReady
-      ? (neonReady.schemaVersionMatch || neonReady.schemaVersionAhead)
-      : false
+    // Wrapped in try/catch — initial readiness was set pre-listen, this refines it.
+    let readiness = initialReadiness
+    try {
+      const neonReady = bootstrapResult?.neonSchemaReady
+      const neonSchemaVersionOk = neonReady
+        ? (neonReady.schemaVersionMatch || neonReady.schemaVersionAhead)
+        : false
 
-    const readinessInputs: ReadinessInputs = {
-      localDbUp: bootstrapResult?.localDb ?? false,
-      localSchemaVerified: schemaResult.passed,
-      neonConfigured: !!config.neonDatabaseUrl,
-      neonReachable: bootstrapResult?.neonReachable ?? false,
-      neonSchemaVersionOk,
-      neonCoreTablesExist: neonReady?.coreTablesExist ?? false,
-      neonRequiredEnumsExist: neonReady?.requiredEnumsExist ?? false,
-      baseSeedPresent: neonReady?.baseSeedPresent ?? false,
-      syncEnabled: config.syncEnabled,
-      stationRole: config.stationRole,
-      initialSyncComplete: false,
-      seedComplete,
+      const readinessInputs: ReadinessInputs = {
+        localDbUp: bootstrapResult?.localDb ?? false,
+        localSchemaVerified: schemaResult.passed,
+        neonConfigured: !!config.neonDatabaseUrl,
+        neonReachable: bootstrapResult?.neonReachable ?? false,
+        neonSchemaVersionOk,
+        neonCoreTablesExist: neonReady?.coreTablesExist ?? false,
+        neonRequiredEnumsExist: neonReady?.requiredEnumsExist ?? false,
+        baseSeedPresent: neonReady?.baseSeedPresent ?? false,
+        syncEnabled: config.syncEnabled,
+        stationRole: config.stationRole,
+        initialSyncComplete: false,
+        seedComplete,
+      }
+      readiness = computeReadiness(readinessInputs)
+      setReadinessState(readiness)
+    } catch (err) {
+      logger.error({ err }, 'Readiness refinement failed — keeping initial BOOT state')
     }
-    const readiness = computeReadiness(readinessInputs)
-    setReadinessState(readiness)
 
     const syncReady = isReadyForSync()
 
