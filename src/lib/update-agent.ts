@@ -256,6 +256,16 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     log.info('[UpdateAgent] Running npm run build...')
     execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
 
+    // Update dashboard .deb (non-fatal — POS update still succeeds if dashboard fails)
+    const stationRole = process.env.STATION_ROLE || 'server'
+    if (stationRole !== 'terminal') {
+      try {
+        await updateDashboard()
+      } catch (dashErr) {
+        log.warn('[UpdateAgent] Dashboard update failed (non-fatal):', dashErr instanceof Error ? dashErr.message : dashErr)
+      }
+    }
+
     // Clean lock
     try { unlinkSync(UPDATE_LOCK_FILE) } catch {}
 
@@ -388,4 +398,110 @@ export function getUpdateAgentStatus(): {
     isUpdating,
     lockFileExists: existsSync(UPDATE_LOCK_FILE),
   }
+}
+
+// ── Dashboard .deb update ──────────────────────────────────────────────────
+
+const DASHBOARD_DEB_DIR = '/opt/gwi-pos/dashboard'
+const DASHBOARD_DEB_PATH = path.join(DASHBOARD_DEB_DIR, 'gwi-nuc-dashboard.deb')
+
+/**
+ * Download and install the latest NUC Dashboard .deb.
+ * Non-fatal — called from executeUpdate() but failures never block POS updates.
+ * Skips if dashboard is not already installed (initial install is Stage 12).
+ */
+async function updateDashboard(): Promise<void> {
+  // Only update if dashboard is already installed (Stage 12 handles first install)
+  try {
+    execSync('which gwi-nuc-dashboard', { encoding: 'utf8', stdio: 'pipe' })
+  } catch {
+    log.info('[UpdateAgent] Dashboard not installed — skipping (Stage 12 handles first install)')
+    return
+  }
+
+  log.info('[UpdateAgent] Checking for dashboard updates...')
+  try { execSync(`mkdir -p "${DASHBOARD_DEB_DIR}"`) } catch {}
+
+  let downloaded = false
+
+  // Method 1: Download from GitHub releases (primary — CI publishes here)
+  try {
+    const credFile = '/opt/gwi-pos/.git-credentials'
+    if (existsSync(credFile)) {
+      const creds = readFileSync(credFile, 'utf8')
+      // Format: https://TOKEN:x-oauth-basic@github.com
+      const tokenMatch = creds.match(/https:\/\/([^:]+):x-oauth-basic@github\.com/)
+      const token = tokenMatch?.[1]
+      if (token) {
+        const apiRes = await fetch('https://api.github.com/repos/GetwithitMan/gwi-dashboard/releases/latest', {
+          headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' },
+          signal: AbortSignal.timeout(30_000),
+        })
+        if (apiRes.ok) {
+          const release = await apiRes.json() as { assets?: Array<{ name: string; url: string }> }
+          const debAsset = release.assets?.find((a: { name: string }) => a.name.endsWith('.deb'))
+          if (debAsset?.url) {
+            const assetRes = await fetch(debAsset.url, {
+              headers: { Authorization: `token ${token}`, Accept: 'application/octet-stream' },
+              signal: AbortSignal.timeout(120_000),
+            })
+            if (assetRes.ok) {
+              const buffer = Buffer.from(await assetRes.arrayBuffer())
+              if (buffer.length > 100_000) {
+                writeFileSync(DASHBOARD_DEB_PATH, buffer)
+                downloaded = true
+                log.info(`[UpdateAgent] Dashboard .deb downloaded from GitHub (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`)
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    log.warn('[UpdateAgent] GitHub release download failed:', err instanceof Error ? err.message : err)
+  }
+
+  // Method 2: Fallback to POS base URL (Vercel)
+  if (!downloaded) {
+    try {
+      const baseUrl = process.env.POS_BASE_URL || 'https://app.thepasspos.com'
+      const res = await fetch(`${baseUrl}/gwi-nuc-dashboard.deb`, {
+        signal: AbortSignal.timeout(60_000),
+      })
+      if (res.ok) {
+        const buffer = Buffer.from(await res.arrayBuffer())
+        if (buffer.length > 100_000) {
+          writeFileSync(DASHBOARD_DEB_PATH, buffer)
+          downloaded = true
+          log.info(`[UpdateAgent] Dashboard .deb downloaded from Vercel (${(buffer.length / 1024 / 1024).toFixed(1)}MB)`)
+        }
+      }
+    } catch {}
+  }
+
+  if (!downloaded) {
+    log.warn('[UpdateAgent] Dashboard .deb download failed from all sources — skipping')
+    return
+  }
+
+  // Install the .deb
+  log.info('[UpdateAgent] Installing dashboard .deb...')
+  try {
+    execSync(`sudo dpkg -i "${DASHBOARD_DEB_PATH}"`, { timeout: 60_000, stdio: 'pipe' })
+  } catch {
+    try {
+      execSync('sudo apt-get install -f -y -qq', { timeout: 60_000, stdio: 'pipe' })
+      execSync(`sudo dpkg -i "${DASHBOARD_DEB_PATH}"`, { timeout: 60_000, stdio: 'pipe' })
+    } catch (installErr) {
+      log.warn('[UpdateAgent] Dashboard install failed:', installErr instanceof Error ? installErr.message : installErr)
+      return
+    }
+  }
+
+  // Restart the dashboard app if it's running (auto-starts via XDG on next login)
+  try {
+    execSync('pkill -f gwi-nuc-dashboard || true', { timeout: 5_000, stdio: 'pipe' })
+  } catch {}
+
+  log.info('[UpdateAgent] Dashboard updated successfully')
 }
