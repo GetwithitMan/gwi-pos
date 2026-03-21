@@ -72,7 +72,26 @@ const nextConfig: NextConfig = {
     if (process.env.NODE_ENV === 'production') {
       securityHeaders.unshift({ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' })
     }
-    return [{ source: '/(.*)', headers: securityHeaders }]
+    return [
+      { source: '/(.*)', headers: securityHeaders },
+      // Installer files must never be cached — NUCs must always get the latest version
+      {
+        source: '/installer:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, max-age=0' },
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
+        ],
+      },
+      {
+        source: '/setup-remote:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, max-age=0' },
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
+        ],
+      },
+    ]
   },
 
   // Proxy /admin routes to the Java backoffice service
