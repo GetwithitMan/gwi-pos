@@ -16,7 +16,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isClosed } from '@/lib/domain/order-status'
@@ -661,6 +661,9 @@ export const POST = withVenue(async function POST(
         }
       }
     }
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

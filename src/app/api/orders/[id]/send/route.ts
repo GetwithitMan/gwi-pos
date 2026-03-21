@@ -14,6 +14,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { parseSettings } from '@/lib/settings'
@@ -312,6 +313,9 @@ export const POST = withVenue(withTiming(async function POST(
         void queueOutageWrite('Order', fullOrder.id, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
       }
     }
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     // Fetch delivery info for kitchen tickets (DeliveryOrder is raw SQL, not in Prisma schema)
     let deliveryCustomerName: string | null = null

@@ -32,6 +32,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { enableSyncReplication } from '@/lib/db-helpers'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
@@ -1996,6 +1997,9 @@ export const POST = withVenue(withTiming(async function POST(
         }
       })()
     }
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     // Build receipt data via domain module (eliminates separate /receipt fetch)
     const receiptData = buildReceiptData(order as any, ingestResult.bridgedPayments, pointsEarned, settings as any)

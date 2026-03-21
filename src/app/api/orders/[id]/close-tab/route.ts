@@ -26,6 +26,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -623,6 +624,9 @@ export const POST = withVenue(async function POST(
       closedByEmployeeId: employeeId,
       locationId,
     }, { async: true }).catch(() => {})
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     return NextResponse.json({
       data: {

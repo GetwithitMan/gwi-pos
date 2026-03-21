@@ -13,6 +13,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { evaluateAutoDiscounts } from '@/lib/auto-discount-engine'
 import { checkOrderClaim } from '@/lib/order-claim'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
@@ -560,6 +561,9 @@ export const POST = withVenue(async function POST(
 
     // Evaluate auto-discount rules after items are added (fire-and-forget)
     void evaluateAutoDiscounts(result.updatedOrder.id, result.updatedOrder.locationId).catch(console.error)
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     return NextResponse.json({ data: {
       ...response,

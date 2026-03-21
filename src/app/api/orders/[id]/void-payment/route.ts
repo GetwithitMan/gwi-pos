@@ -16,6 +16,7 @@ import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
 import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
 
@@ -414,6 +415,9 @@ export const POST = withVenue(async function POST(
         console.error('[void-payment] Alert dispatch failed:', err)
       }
     })()
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     return NextResponse.json({
       data: {

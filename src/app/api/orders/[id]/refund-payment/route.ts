@@ -12,7 +12,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 
@@ -417,6 +417,9 @@ export const POST = withVenue(async function POST(
         }
       })()
     }
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     return NextResponse.json({
       data: {

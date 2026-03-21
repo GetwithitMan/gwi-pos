@@ -100,19 +100,23 @@ export function startCloudRelayClient(): void {
 
   // ── Inbound Events from Cloud ──────────────────────────────────────────
 
-  relaySocket.on('DATA_CHANGED', (models?: string[]) => {
-    log.info({ models: models || 'all' }, 'DATA_CHANGED received')
-    void triggerSync(models)
+  relaySocket.on('DATA_CHANGED', (data?: { models?: string[]; domain?: string } | string[]) => {
+    // Accept both { models, domain } object and legacy string[] format
+    const models = Array.isArray(data) ? data : data?.models
+    const domain = Array.isArray(data) ? undefined : data?.domain
+    log.info({ models: models || 'all', domain }, 'DATA_CHANGED received')
+    void triggerSync(models, domain)
   })
 
-  relaySocket.on('CONFIG_UPDATED', (models?: string[]) => {
-    log.info({ models: models || 'all' }, 'CONFIG_UPDATED received')
-    void triggerSync(models)
+  relaySocket.on('CONFIG_UPDATED', (data?: { models?: string[]; domain?: string } | string[]) => {
+    const models = Array.isArray(data) ? data : data?.models
+    const domain = Array.isArray(data) ? undefined : data?.domain
+    log.info({ models: models || 'all', domain }, 'CONFIG_UPDATED received')
+    void triggerSync(models, domain)
   })
 
   relaySocket.on('COMMAND', (commandType: string, payload: unknown) => {
     log.info({ commandType }, 'COMMAND received')
-    // Future: handle remote commands (FORCE_SYNC, etc.)
     if (commandType === 'FORCE_SYNC') {
       void triggerSync()
     }
@@ -172,10 +176,13 @@ export function getRelayHealth(): RelayHealthStats {
 
 // ── Internal Helpers ───────────────────────────────────────────────────────
 
-async function triggerSync(models?: string[]): Promise<void> {
+async function triggerSync(models?: string[], domain?: string): Promise<void> {
   try {
-    const { triggerImmediateDownstreamSync } = await import('./sync/downstream-sync-worker')
-    await triggerImmediateDownstreamSync(undefined, models)
+    // Route through data-changed-handler for domain-specific targeted sync
+    // (e.g., 'hardware' domain only syncs Terminal, Printer, KDS, etc.)
+    // Falls back to full sync if no domain or handler found.
+    const { handleDataChanged } = await import('./data-changed-handler')
+    await handleDataChanged({ domain, tables: models })
   } catch (err) {
     log.error({ err }, 'Downstream sync trigger failed')
   }

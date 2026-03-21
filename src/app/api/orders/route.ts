@@ -19,6 +19,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import type { AddItemInput } from '@/lib/domain/order-items/types'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { isTrainingEmployee } from '@/lib/training-mode'
 import { validateCellularEmployeeFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
@@ -792,6 +793,9 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     if (tableId) {
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
     }
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     return NextResponse.json({ data: response })
   } catch (error) {

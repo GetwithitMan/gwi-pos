@@ -14,10 +14,20 @@
  *     if (err instanceof OutageQueueFullError) return NextResponse.json(..., { status: 507 })
  *   }
  */
-import { isInOutageMode, queueOutageWrite } from './upstream-sync-worker'
+import { isInOutageMode, queueOutageWrite, triggerImmediateUpstreamSync } from './upstream-sync-worker'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('outage-safe-write')
+
+/**
+ * Fire-and-forget: trigger immediate upstream sync after a local mutation.
+ * Debounced at 100ms in the upstream worker — safe to call on every mutation.
+ * No-op during outage (sync worker handles retry on recovery).
+ */
+export function pushUpstream(): void {
+  if (isInOutageMode()) return
+  triggerImmediateUpstreamSync()
+}
 
 export function queueIfOutage(
   tableName: string,

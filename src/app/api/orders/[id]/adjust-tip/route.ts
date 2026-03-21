@@ -14,6 +14,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
 
 export const PATCH = withVenue(async function PATCH(
@@ -275,6 +276,9 @@ export const PATCH = withVenue(async function PATCH(
         console.error('Background tip allocation failed (adjust-tip):', err)
       })
     }
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     // Create audit log
     await db.auditLog.create({

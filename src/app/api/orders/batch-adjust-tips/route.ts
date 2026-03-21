@@ -13,6 +13,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { roundToCents } from '@/lib/pricing'
 import { getRequestLocationId } from '@/lib/request-context'
 
@@ -352,6 +353,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         locationId: info.locationId,
       }, { async: true }).catch(console.error)
     }
+
+    // Trigger upstream sync (fire-and-forget, debounced)
+    pushUpstream()
 
     const adjusted = results.filter(r => r.success).length
     const errors = results.filter(r => !r.success)
