@@ -183,6 +183,15 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
       try { unlinkSync(f) } catch {}
     }
 
+    // Fix ownership before git operations — previous sudo commands (installer, manual fixes)
+    // can leave files root-owned, causing git reset to fail with "Permission denied"
+    try {
+      const posUser = process.env.POSUSER || execSync('whoami', { encoding: 'utf8' }).trim()
+      execSync(`sudo chown -R ${posUser}:${posUser} "${APP_DIR}"`, { timeout: 30_000 })
+    } catch {
+      // Non-fatal — might not have sudo, or already correct
+    }
+
     // Fetch the target version
     execSync('git fetch --all --prune', { cwd: APP_DIR, timeout: 60_000 })
 
@@ -248,7 +257,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
             } catch {}
           }
         }
-        execSync('npx prisma db push', { cwd: APP_DIR, timeout: 180_000 })
+        execSync('npx prisma db push --accept-data-loss', { cwd: APP_DIR, timeout: 180_000 })
       }
     }
 
