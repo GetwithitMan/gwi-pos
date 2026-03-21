@@ -1,32 +1,53 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 
 export function OfflineDisconnectBanner() {
-  const [socketDisconnected, setSocketDisconnected] = useState(false)
+  const [showBanner, setShowBanner] = useState(false)
   const [browserOffline, setBrowserOffline] = useState(false)
+  const disconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Socket.io connection tracking
+  // Don't show socket banner on cloud/Vercel — no Socket.IO server there
+  const isCloud = typeof window !== 'undefined' &&
+    (window.location.hostname.includes('vercel') ||
+     window.location.hostname.includes('ordercontrolcenter') ||
+     window.location.hostname.includes('barpos.restaurant') ||
+     window.location.hostname.includes('thepasspos.com'))
+
+  // Socket.io connection tracking — only on local NUC
   useEffect(() => {
+    if (isCloud) return
+
     const socket = getSharedSocket()
 
-    const onDisconnect = () => setSocketDisconnected(true)
-    const onConnect = () => setSocketDisconnected(false)
+    const onDisconnect = () => {
+      // Grace period: only show banner after 10s of sustained disconnect
+      // Prevents flashing during brief reconnects
+      if (disconnectTimer.current) clearTimeout(disconnectTimer.current)
+      disconnectTimer.current = setTimeout(() => setShowBanner(true), 10000)
+    }
+    const onConnect = () => {
+      if (disconnectTimer.current) clearTimeout(disconnectTimer.current)
+      disconnectTimer.current = null
+      setShowBanner(false)
+    }
 
     socket.on('disconnect', onDisconnect)
     socket.on('connect', onConnect)
 
+    // Don't immediately show banner on mount — give socket time to connect
     if (!socket.connected) {
-      setSocketDisconnected(true)
+      disconnectTimer.current = setTimeout(() => setShowBanner(true), 15000)
     }
 
     return () => {
       socket.off('disconnect', onDisconnect)
       socket.off('connect', onConnect)
+      if (disconnectTimer.current) clearTimeout(disconnectTimer.current)
       releaseSharedSocket()
     }
-  }, [])
+  }, [isCloud])
 
   // Browser online/offline tracking
   useEffect(() => {
@@ -43,7 +64,10 @@ export function OfflineDisconnectBanner() {
     }
   }, [])
 
-  if (!socketDisconnected && !browserOffline) return null
+  // Cloud mode: only show if browser is actually offline
+  if (isCloud && !browserOffline) return null
+  // Local mode: show if socket disconnected for 10s+ or browser offline
+  if (!showBanner && !browserOffline) return null
 
   // Red for fully offline, amber for socket-only disconnect
   const isFullyOffline = browserOffline
