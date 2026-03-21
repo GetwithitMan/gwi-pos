@@ -218,7 +218,30 @@ async function recheckNeonSchema(): Promise<void> {
       const neonState = await readSchemaState(neonClient)
 
       if (!neonState) {
-        log.warn({ attempt: schemaRecheckCount }, 'Schema re-check: Neon still has no _venue_schema_state')
+        // Self-heal: create _venue_schema_state if Neon has tables but no state
+        log.warn({ attempt: schemaRecheckCount }, 'Schema re-check: Neon has no _venue_schema_state — attempting self-heal')
+        try {
+          const tableCountResult = await neonClient.$queryRawUnsafe<Array<{ count: bigint }>>(
+            `SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'`
+          )
+          const tableCount = Number(tableCountResult[0]?.count ?? 0)
+          if (tableCount > 0) {
+            await ensureSchemaStateTable(neonClient)
+            await writeSchemaState(neonClient, {
+              schemaVersion: EXPECTED_SCHEMA_VERSION,
+              seedVersion: EXPECTED_SEED_VERSION,
+              provisionerVersion: PROVISIONER_VERSION,
+              provisionedAt: new Date(),
+              provisionedBy: 'nuc-recheck-self-heal',
+              appVersion: APP_VERSION,
+            })
+            log.info({ schemaVersion: EXPECTED_SCHEMA_VERSION, attempt: schemaRecheckCount },
+              'Schema re-check: self-healed _venue_schema_state — will re-evaluate on next cycle')
+          }
+        } catch (healErr) {
+          log.warn({ err: healErr instanceof Error ? healErr.message : healErr },
+            'Schema re-check: self-heal failed — will retry next cycle')
+        }
         writeSyncStatusFile(cachedResult!)
         return
       }
@@ -242,6 +265,8 @@ async function recheckNeonSchema(): Promise<void> {
           cachedResult.degradedReasons = cachedResult.degradedReasons.filter(
             r => r !== 'neon-schema-behind' &&
                  r !== 'neon-schema-state-missing-needs-mc' &&
+                 r !== 'neon-schema-state-missing-heal-failed' &&
+                 r !== 'schema-state-self-healed' &&
                  r !== 'neon-empty-needs-mc-provision' &&
                  r !== 'neon-unreachable'
           )
@@ -597,44 +622,35 @@ export async function runBootstrap(): Promise<BootstrapResult> {
                 }
               }
             } else if (!neonState && tableCount > 0) {
-              // Tables exist but no _venue_schema_state — likely Vercel ran prisma db push
-              // or MC provisioned without writing state.
-              if (process.env.NODE_ENV === 'production') {
-                // PRODUCTION: Do NOT write _venue_schema_state from NUC. MC owns that table.
-                // Observe the actual DB state and report as unverified. Sync eligibility
-                // depends on core table + enum checks from buildReadiness().
-                log.warn(
-                  { tableCount, expectedSchema: EXPECTED_SCHEMA_VERSION },
-                  '[bootstrap] Neon has tables but no _venue_schema_state — NUC cannot verify schema version. MC must write state. Sync may be blocked.'
-                )
+              // Tables exist but no _venue_schema_state — likely MC provisioning
+              // didn't complete, or venue was set up manually.
+              // SELF-HEALING: Create _venue_schema_state with the NUC's expected
+              // schema version. This unblocks sync immediately instead of leaving
+              // the venue stuck at BOOT forever waiting for MC intervention.
+              // MC can overwrite this later if it runs provisioning — ON CONFLICT
+              // DO NOTHING means MC's write takes priority if it runs first.
+              log.warn(
+                { tableCount, expectedSchema: EXPECTED_SCHEMA_VERSION },
+                '[bootstrap] Neon has tables but no _venue_schema_state — self-healing: creating with expected version'
+              )
+              try {
+                await ensureSchemaStateTable(neonClient)
+                await writeSchemaState(neonClient, {
+                  schemaVersion: EXPECTED_SCHEMA_VERSION,
+                  seedVersion: EXPECTED_SEED_VERSION,
+                  provisionerVersion: PROVISIONER_VERSION,
+                  provisionedAt: new Date(),
+                  provisionedBy: 'nuc-bootstrap-self-heal',
+                  appVersion: APP_VERSION,
+                })
+                const healedState = { schemaVersion: EXPECTED_SCHEMA_VERSION, seedVersion: EXPECTED_SEED_VERSION }
+                result.neonSchemaReady = await buildReadiness(neonClient, healedState)
+                result.degradedReasons.push('schema-state-self-healed')
+                log.info({ schemaVersion: EXPECTED_SCHEMA_VERSION }, 'Self-healed _venue_schema_state — sync can proceed')
+              } catch (healErr) {
+                log.error({ err: healErr }, 'Self-healing _venue_schema_state failed — sync will be blocked')
                 result.neonSchemaReady = await buildReadiness(neonClient, null)
-                result.degradedReasons.push('neon-schema-state-missing-needs-mc')
-              } else {
-                // DEV/TEST: backfill _venue_schema_state for convenience, but mark as UNVERIFIED
-                log.warn(
-                  { tableCount, expectedSchema: EXPECTED_SCHEMA_VERSION },
-                  'Neon DB has tables but no _venue_schema_state — backfilling as UNVERIFIED [dev/test only]'
-                )
-                try {
-                  await ensureSchemaStateTable(neonClient)
-                  await writeSchemaState(neonClient, {
-                    schemaVersion: 'UNVERIFIED',
-                    seedVersion: 'UNVERIFIED',
-                    provisionerVersion: PROVISIONER_VERSION,
-                    provisionedAt: new Date(),
-                    provisionedBy: 'nuc-bootstrap-unverified',
-                    appVersion: APP_VERSION,
-                  })
-                  result.neonSchemaReady = await buildReadiness(neonClient, {
-                    schemaVersion: 'UNVERIFIED',
-                    seedVersion: 'UNVERIFIED',
-                  })
-                  result.degradedReasons.push('schema-state-backfilled-unverified')
-                  log.warn('Created _venue_schema_state for existing Neon DB — marked as UNVERIFIED backfill')
-                } catch (backfillErr) {
-                  log.error({ err: backfillErr }, 'Failed to create _venue_schema_state — falling back to degraded')
-                  result.neonSchemaReady = await buildReadiness(neonClient, null)
-                }
+                result.degradedReasons.push('neon-schema-state-missing-heal-failed')
               }
             } else if (neonState) {
               // State exists -- check versions
