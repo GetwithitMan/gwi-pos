@@ -239,8 +239,21 @@ if [[ -f "$ENV_FILE" ]]; then
            # DB_NAME/DB_USER are hardcoded here because they aren't set yet at this
            # point in the installer (they're set later in the .env canonicalization).
            if command -v psql >/dev/null 2>&1; then
+             log "WARNING: Re-registration will DROP and recreate the local database."
+             log "All local data will be lost. Cloud data in Neon is preserved."
+             echo ""
+             read -rp "Type YES to confirm database wipe: " CONFIRM_WIPE < /dev/tty
+             if [[ "$CONFIRM_WIPE" != "YES" ]]; then
+               err "Database wipe cancelled. Re-registration aborted."
+               exit 1
+             fi
              log "Wiping local database for clean re-registration..."
-             sudo -u postgres psql -c "DROP DATABASE IF EXISTS thepasspos;" 2>/dev/null || true
+             # DROP may fail if DB doesn't exist or has active connections — that's OK
+             sudo -u postgres psql -c "DROP DATABASE IF EXISTS thepasspos;" 2>/dev/null || {
+               warn "DROP DATABASE failed (may have active connections). Attempting with force..."
+               sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='thepasspos' AND pid <> pg_backend_pid();" 2>/dev/null || true
+               sudo -u postgres psql -c "DROP DATABASE IF EXISTS thepasspos;" 2>/dev/null || true
+             }
              sudo -u postgres psql -c "CREATE DATABASE thepasspos OWNER thepasspos;" 2>/dev/null || true
              sudo -u postgres psql -d "thepasspos" -c "
                GRANT ALL ON ALL TABLES IN SCHEMA public TO thepasspos;
@@ -283,7 +296,7 @@ read -rsp "VNC remote access password [press Enter to auto-generate]: " VNC_PASS
 echo ""
 if [[ -z "$VNC_PASSWORD" ]]; then
   VNC_PASSWORD=$(openssl rand -base64 20 | tr '+/' '-_' | cut -c1-20)
-  log "Generated VNC password: $VNC_PASSWORD  (also shown in summary at the end)"
+  log "VNC password auto-generated."
 fi
 
 # 5. Terminal: server URL
@@ -405,7 +418,9 @@ if [[ -d "$APP_BASE" ]]; then
       sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
       sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
       sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d; /^VIRTUAL_IP=/d; /^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
-      log "Scrubbed server-only identity and database keys from .env"
+      # Scrub ALL secrets — stale secrets from old role must not persist into terminal
+      sed -i '/^DB_PASSWORD=/d; /^REPL_PASSWORD=/d; /^VRRP_AUTH_PASS=/d; /^CELLULAR_TOKEN_SECRET=/d; /^SESSION_SECRET=/d; /^TENANT_SIGNING_KEY=/d; /^POS_VENUE_SLUG=/d' "$ENV_FILE" 2>/dev/null || true
+      log "Scrubbed server-only identity, database keys, and secrets from .env"
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
       log "Disabling terminal-only services..."
       systemctl disable --now thepasspos-kiosk 2>/dev/null || true
@@ -439,7 +454,9 @@ if [[ -d "$APP_BASE" ]]; then
       sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
       sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
       sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d; /^VIRTUAL_IP=/d; /^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
-      log "Scrubbed backup identity and database keys from .env"
+      # Scrub ALL secrets — stale secrets from old role must not persist into terminal
+      sed -i '/^DB_PASSWORD=/d; /^REPL_PASSWORD=/d; /^VRRP_AUTH_PASS=/d; /^CELLULAR_TOKEN_SECRET=/d; /^SESSION_SECRET=/d; /^TENANT_SIGNING_KEY=/d; /^POS_VENUE_SLUG=/d' "$ENV_FILE" 2>/dev/null || true
+      log "Scrubbed backup identity, database keys, and secrets from .env"
     elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "backup" ]]; then
       log "Disabling terminal-only services..."
       systemctl disable --now thepasspos-kiosk 2>/dev/null || true
@@ -504,7 +521,9 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" || "
     openssl rsa -in "$KEY_DIR/private.pem" -pubout -out "$KEY_DIR/public.pem" 2>/dev/null
   fi
   chmod 600 "$KEY_DIR/private.pem"
+  # App directory owned by POSUSER, but sensitive files carved out to root
   chown -R "$POSUSER":"$POSUSER" "$APP_BASE"
+  chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
   PUBLIC_KEY=$(cat "$KEY_DIR/public.pem")
   log "RSA keypair ready."
 
@@ -727,8 +746,8 @@ ENVEOF
     echo "POS_VENUE_SLUG=${VENUE_SLUG}" >> "$ENV_FILE"
   fi
 
-  chmod 600 "$ENV_FILE"
-  chown "$POSUSER":"$POSUSER" "$ENV_FILE"
+  # .env readable by POSUSER (for app) but owned by root (contains secrets)
+  chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
   log "Environment written to $ENV_FILE"
 
 elif [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "terminal" ]]; then
@@ -742,8 +761,8 @@ NODE_ENV=production
 PORT=3005
 ENVEOF
 
-  chmod 600 "$ENV_FILE"
-  chown "$POSUSER":"$POSUSER" "$ENV_FILE"
+  # .env readable by POSUSER (for app) but owned by root (contains secrets)
+  chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
   log "Terminal environment written to $ENV_FILE"
 
 else
@@ -832,19 +851,24 @@ else
   # Older installers set DATABASE_URL to Neon — this breaks offline-first architecture.
   # Move cloud URL to NEON_DATABASE_URL (sync + cellular ingress) and force local PG.
   if [[ -n "$DATABASE_URL" ]] && [[ "$DATABASE_URL" != *"localhost"* ]] && [[ "$DATABASE_URL" != *"127.0.0.1"* ]]; then
-    if [[ -z "$NEON_DATABASE_URL" ]]; then
-      NEON_DATABASE_URL="$DATABASE_URL"
-      NEON_DIRECT_URL="${DIRECT_URL:-}"
-      SYNC_ENABLED="true"
-      log "Migrating cloud DATABASE_URL → NEON_DATABASE_URL (offline-first fix)"
-    fi
+    # Always update NEON_DATABASE_URL from the cloud DATABASE_URL, even if
+    # NEON_DATABASE_URL already has a value (which may be stale from a prior install).
+    NEON_DATABASE_URL="$DATABASE_URL"
+    NEON_DIRECT_URL="${DIRECT_URL:-}"
+    SYNC_ENABLED="true"
+    log "Migrating cloud DATABASE_URL → NEON_DATABASE_URL (offline-first fix)"
     DATABASE_URL=""
     DIRECT_URL=""
     log "Cleared cloud DATABASE_URL — local PostgreSQL will be primary"
     # Rewrite .env to persist the fix (so future re-runs don't hit the same issue)
     sed -i '/^DATABASE_URL=/d' "$ENV_FILE"
     sed -i '/^DIRECT_URL=/d' "$ENV_FILE"
-    if ! grep -q "^NEON_DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
+    # Always update NEON_DATABASE_URL (handles both fresh writes and stale overwrites)
+    if grep -q "^NEON_DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s|^NEON_DATABASE_URL=.*|NEON_DATABASE_URL=$NEON_DATABASE_URL|" "$ENV_FILE"
+      sed -i "s|^NEON_DIRECT_URL=.*|NEON_DIRECT_URL=$NEON_DIRECT_URL|" "$ENV_FILE"
+      sed -i "s|^SYNC_ENABLED=.*|SYNC_ENABLED=$SYNC_ENABLED|" "$ENV_FILE"
+    else
       echo "" >> "$ENV_FILE"
       echo "# Neon cloud sync (offline-first — local PG is primary)" >> "$ENV_FILE"
       echo "NEON_DATABASE_URL=$NEON_DATABASE_URL" >> "$ENV_FILE"
@@ -1002,6 +1026,10 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]] && [[ -f "$E
 set -eo pipefail
 
 LOG="/opt/gwi-pos/heartbeat.log"
+
+# Guard: node is required for batch info parsing — skip silently if not yet installed
+command -v node >/dev/null 2>&1 || exit 0
+
 ENV_FILE="/opt/gwi-pos/.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "ERR no-env $(date -u +%H:%M:%S)" >> "$LOG"
@@ -1097,17 +1125,6 @@ HTTP_CODE=$(curl -sS --max-time 15 -o "$RESP_FILE" -w "%{http_code}" -X POST \
 # Log result — include response body on failures for debugging
 if [[ "$HTTP_CODE" == "200" ]] || [[ "$HTTP_CODE" == "201" ]]; then
   echo "OK $HTTP_CODE $(date -u +%H:%M:%S)" >> "$LOG"
-
-  # Self-heal: backfill POS_VENUE_SLUG from heartbeat response if missing from .env
-  if ! grep -q "^POS_VENUE_SLUG=" "$ENV_FILE" 2>/dev/null; then
-    HB_SLUG=$(jq -r '.data.venueSlug // empty' "$RESP_FILE" 2>/dev/null || true)
-    if [[ -n "$HB_SLUG" ]] && [[ "$HB_SLUG" != "null" ]]; then
-      echo "" >> "$ENV_FILE"
-      echo "# Venue identity (backfilled from heartbeat)" >> "$ENV_FILE"
-      echo "POS_VENUE_SLUG=${HB_SLUG}" >> "$ENV_FILE"
-      echo "HEAL POS_VENUE_SLUG=${HB_SLUG} $(date -u +%H:%M:%S)" >> "$LOG"
-    fi
-  fi
 else
   RESP_BODY=$(cat "$RESP_FILE" 2>/dev/null | head -c 200 || echo "")
   echo "FAIL $HTTP_CODE $(date -u +%H:%M:%S) $RESP_BODY" >> "$LOG"
@@ -1386,7 +1403,20 @@ REPLEOF
     fi
 
     # Create replication user (idempotent)
-    REPL_PASSWORD=$(openssl rand -hex 16)
+    # Only generate REPL_PASSWORD on first install, not re-runs.
+    # On re-runs, read the existing password from .env to avoid rotating
+    # the replication password (which would break the standby connection).
+    EXISTING_REPL_PW=""
+    if [[ -f "$ENV_FILE" ]]; then
+      EXISTING_REPL_PW=$(grep "^REPL_PASSWORD=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 | head -1 || echo "")
+    fi
+    if [[ -n "$EXISTING_REPL_PW" ]]; then
+      REPL_PASSWORD="$EXISTING_REPL_PW"
+      log "Reusing existing replication password from .env."
+    else
+      REPL_PASSWORD=$(openssl rand -hex 16)
+      log "Generated new replication password."
+    fi
     sudo -u postgres psql -v ON_ERROR_STOP=0 <<REPLSQL
 DO \$\$
 BEGIN
@@ -1405,11 +1435,24 @@ REPLSQL
       sed -i "s|^REPL_PASSWORD=.*|REPL_PASSWORD=$REPL_PASSWORD|" "$ENV_FILE"
     fi
 
+    # Create replication slot for the standby (prevents WAL recycling before standby catches up)
+    # Replication slots are more reliable than fixed wal_keep_size for WAL retention.
+    log "Creating replication slot 'standby_slot'..."
+    sudo -u postgres psql -c "SELECT pg_create_physical_replication_slot('standby_slot', true);" 2>/dev/null || true
+
     # Add pg_hba entry allowing replication connections from the local subnet only
     REPL_HBA_MARKER="# GWI POS HA — replication access"
-    # Get the local subnet for replication (e.g., 192.168.1.0/24 or 172.16.1.0/24)
+    # Detect actual subnet mask from the interface instead of hardcoding /24
     LOCAL_IP=$(hostname -I | awk '{print $1}')
-    LOCAL_SUBNET=$(echo "$LOCAL_IP" | sed 's/\.[0-9]*$/\.0\/24/')
+    LOCAL_CIDR=$(ip -o -4 addr show 2>/dev/null | awk -v ip="$LOCAL_IP" '$4 ~ ip {print $4; exit}')
+    if [[ -n "$LOCAL_CIDR" ]]; then
+      # Compute network address using the actual prefix length from the interface
+      LOCAL_SUBNET=$(python3 -c "import ipaddress; print(ipaddress.ip_network('${LOCAL_CIDR}', strict=False))" 2>/dev/null || echo "${LOCAL_CIDR}")
+    else
+      # Fallback: assume /24 if ip addr detection fails
+      LOCAL_SUBNET=$(echo "$LOCAL_IP" | sed 's/\.[0-9]*$/\.0\/24/')
+      warn "Could not detect subnet mask — defaulting to ${LOCAL_SUBNET}"
+    fi
     if ! grep -qF "$REPL_HBA_MARKER" "$PG_HBA" 2>/dev/null; then
       log "Adding replication access to pg_hba.conf (subnet: ${LOCAL_SUBNET})..."
       cat >> "$PG_HBA" <<REPHBA
@@ -1494,7 +1537,7 @@ if [[ "$STATION_ROLE" == "backup" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
   log "Running pg_basebackup from primary ($PRIMARY_NUC_IP)..."
   log "This may take several minutes depending on database size..."
   if ! PGPASSWORD="$REPL_PASSWORD" sudo -u postgres pg_basebackup \
-    -h "$PRIMARY_NUC_IP" -U replicator -D "$PG_DATA" -P -R -Xs; then
+    -h "$PRIMARY_NUC_IP" -U replicator -D "$PG_DATA" -P -R -Xs --slot=standby_slot; then
     err "pg_basebackup failed. Check:"
     err "  - Primary NUC IP ($PRIMARY_NUC_IP) is reachable"
     err "  - Replication password matches primary's REPL_PASSWORD"
@@ -1644,6 +1687,48 @@ HACHKEOF
     sed -i "s/^VRRP_AUTH_PASS=.*/VRRP_AUTH_PASS=$VRRP_AUTH_PASS/" "$ENV_FILE" || \
     echo "VRRP_AUTH_PASS=$VRRP_AUTH_PASS" >> "$ENV_FILE"
 
+  # Virtual router ID — must match between primary and backup.
+  # Configurable to avoid conflicts when multiple HA pairs share the same L2 segment.
+  VRRP_ROUTER_ID=$(grep "^VRRP_ROUTER_ID=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
+  if [[ -z "$VRRP_ROUTER_ID" ]]; then
+    VRRP_ROUTER_ID=51
+    echo "VRRP_ROUTER_ID=$VRRP_ROUTER_ID" >> "$ENV_FILE"
+  fi
+
+  # Detect VIP subnet prefix from the interface (for virtual_ipaddress in keepalived.conf)
+  VIP_PREFIX="24"
+  _VIP_IFACE_CIDR=$(ip -o -4 addr show "$HA_IFACE" 2>/dev/null | awk '{print $4; exit}')
+  if [[ -n "$_VIP_IFACE_CIDR" ]]; then
+    VIP_PREFIX="${_VIP_IFACE_CIDR#*/}"
+  fi
+
+  # Create promote.sh stub — called by keepalived notify_master on failover
+  cat > "$APP_BASE/scripts/promote.sh" <<'PROMOTE'
+#!/usr/bin/env bash
+# Promote this standby to primary
+set -euo pipefail
+echo "[HA] Promoting to primary..."
+sudo -u postgres pg_ctl promote -D /var/lib/postgresql/17/main 2>/dev/null || sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main 2>/dev/null || true
+sudo systemctl start thepasspos
+echo "[HA] Promotion complete"
+PROMOTE
+  chmod +x "$APP_BASE/scripts/promote.sh"
+
+  # Create rejoin-as-standby.sh stub — called by keepalived notify_backup on demotion
+  cat > "$APP_BASE/scripts/rejoin-as-standby.sh" <<'REJOIN'
+#!/usr/bin/env bash
+# Rejoin as standby after primary reclaims VIP
+set -euo pipefail
+echo "[HA] Rejoining as standby..."
+sudo systemctl stop thepasspos 2>/dev/null || true
+# Note: full rejoin requires pg_basebackup from the primary.
+# This stub stops the POS app to prevent stale writes.
+# A full rejoin procedure should be triggered manually or by a fleet command.
+echo "[HA] POS stopped. Manual pg_basebackup required to fully rejoin as standby."
+REJOIN
+  chmod +x "$APP_BASE/scripts/rejoin-as-standby.sh"
+  log "HA promotion/demotion scripts created."
+
   # Generate keepalived.conf
   cat > /etc/keepalived/keepalived.conf <<KAEOF
 # GWI POS HA — keepalived configuration
@@ -1660,7 +1745,7 @@ vrrp_script chk_gwi_pos {
 vrrp_instance GWI_POS {
     state $KA_STATE
     interface $HA_IFACE
-    virtual_router_id 51
+    virtual_router_id $VRRP_ROUTER_ID
     priority $KA_PRIORITY
     advert_int 1
     $([ "$STATION_ROLE" = "backup" ] && echo "nopreempt")
@@ -1671,12 +1756,15 @@ vrrp_instance GWI_POS {
     }
 
     virtual_ipaddress {
-        $VIRTUAL_IP/24
+        $VIRTUAL_IP/$VIP_PREFIX
     }
 
     track_script {
         chk_gwi_pos
     }
+
+    notify_master "/opt/gwi-pos/scripts/promote.sh"
+    notify_backup "/opt/gwi-pos/scripts/rejoin-as-standby.sh"
 }
 KAEOF
 
@@ -1723,8 +1811,7 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
   if [[ -n "${DEPLOY_TOKEN:-}" ]] && [[ "${DEPLOY_TOKEN:-}" != "null" ]]; then
     log "Configuring deploy token via git credential store."
     echo "https://${DEPLOY_TOKEN}:x-oauth-basic@github.com" > "$CRED_FILE"
-    chmod 600 "$CRED_FILE"
-    chown "$POSUSER":"$POSUSER" "$CRED_FILE"
+    chown root:"$POSUSER" "$CRED_FILE" && chmod 640 "$CRED_FILE"
   else
     log "No deploy token — using public repo URL."
   fi
@@ -1747,6 +1834,10 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     log "Cloning app from repository..."
     mkdir -p "$APP_DIR"
     chown -R "$POSUSER":"$POSUSER" "$APP_BASE"
+    # Re-lock sensitive files after bulk chown (root-owned, not app-user-owned)
+    [[ -f "$ENV_FILE" ]] && chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
+    [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
+    [[ -f "$CRED_FILE" ]] && chown root:"$POSUSER" "$CRED_FILE" && chmod 640 "$CRED_FILE"
     if ! sudo -u "$POSUSER" bash -c "
       git config --global credential.helper 'store --file=$CRED_FILE'
       git clone '$GIT_REPO' '$APP_DIR'
@@ -1936,6 +2027,31 @@ if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
 
   header "Configuring Systemd Services"
 
+  # ── RLS-disable script: root-owned, called by pre-start via sudo ──
+  # Replaces blanket `sudo -u postgres psql` with a fixed-purpose script.
+  RLS_SCRIPT="$APP_BASE/disable-rls.sh"
+  cat > "$RLS_SCRIPT" <<'RLSEOF'
+#!/usr/bin/env bash
+# Disable RLS on all tables in the POS database.
+# Root-owned, called via sudo from pre-start.sh. No user input accepted.
+set -euo pipefail
+DB="${1:-thepasspos}"
+# Validate DB name (alphanumeric + underscore only — no injection)
+if [[ ! "$DB" =~ ^[a-zA-Z0-9_]+$ ]]; then
+  echo "ERROR: invalid database name" >&2
+  exit 1
+fi
+sudo -u postgres psql -d "$DB" -c "
+  DO \$\$ DECLARE r RECORD; BEGIN
+    FOR r IN SELECT relname FROM pg_class WHERE relrowsecurity = true AND relkind = 'r'
+    LOOP EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', r.relname);
+    END LOOP;
+  END \$\$;
+" 2>/dev/null
+RLSEOF
+  chown root:root "$RLS_SCRIPT"
+  chmod 755 "$RLS_SCRIPT"
+
   # ── Pre-start script: auto-sync database schema on every boot ──
   PRE_START="$APP_BASE/pre-start.sh"
   cat > "$PRE_START" <<'PSEOF'
@@ -2014,14 +2130,7 @@ PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
 _DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|.*://[^/]*/\([^?]*\).*|\1|p')
 _DB_NAME="${_DB_NAME:-thepasspos}"
 echo "[pre-start] Disabling RLS on all tables (db=$_DB_NAME)..."
-sudo -u postgres psql -d "$_DB_NAME" -c "
-  DO $$ DECLARE r RECORD;
-  BEGIN
-    FOR r IN SELECT relname FROM pg_class WHERE relrowsecurity = true AND relkind = 'r'
-    LOOP EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', r.relname);
-    END LOOP;
-  END $$;
-" 2>/dev/null && echo "[pre-start] RLS disabled." || echo "[pre-start] WARNING: RLS disable had issues — continuing."
+sudo /opt/gwi-pos/disable-rls.sh "$_DB_NAME" && echo "[pre-start] RLS disabled." || echo "[pre-start] WARNING: RLS disable had issues — continuing."
 
 # Run custom migrations if the script exists
 # TIMEOUT: 300s (5min) matches the internal timeout in nuc-pre-migrate.js
@@ -2032,12 +2141,22 @@ if [[ -f scripts/nuc-pre-migrate.js ]]; then
     if [[ $EXIT_CODE -eq 124 ]]; then
       echo "[pre-start] WARNING: custom migrations timed out after 300s — continuing."
     else
-      echo "[pre-start] WARNING: custom migrations had issues (exit $EXIT_CODE) — continuing."
+      # First boot (no .first-boot-done marker): hard stop on migration failure
+      # Subsequent boots: warn and continue (venue is already operational)
+      if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
+        echo "[pre-start] CRITICAL: nuc-pre-migrate.js failed on first boot (exit $EXIT_CODE) — aborting."
+        echo "[pre-start] The database may be in an inconsistent state. Fix the issue and restart."
+        exit 1
+      else
+        echo "[pre-start] WARNING: custom migrations had issues (exit $EXIT_CODE) — continuing (not first boot)."
+      fi
     fi
   }
+else
+  echo "[pre-start] WARNING: scripts/nuc-pre-migrate.js not found — skipping custom migrations."
 fi
 
-# Check seed completion status — warn loudly if seed was incomplete
+# Check seed completion status — hard stop on first boot if incomplete
 _SEED_STATUS="/opt/gwi-pos/.seed-status"
 if [[ -f "$_SEED_STATUS" ]]; then
   _SEED_STATE=$(head -c 10 "$_SEED_STATUS")
@@ -2045,9 +2164,19 @@ if [[ -f "$_SEED_STATUS" ]]; then
     echo "[pre-start] CRITICAL: Seed from Neon is INCOMPLETE. Details: $(cat "$_SEED_STATUS")"
     echo "[pre-start] The venue may be missing critical data (Organization, Location, Employees, etc.)"
     echo "[pre-start] Re-run the installer or manually run: bash scripts/seed-from-neon.sh"
-    # Don't exit — let the app start so operators can diagnose via the UI/API.
-    # The schema-verify + readiness system will gate sync workers.
+    if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
+      echo "[pre-start] FATAL: Incomplete seed on first boot — refusing to start. Fix seed and retry."
+      exit 1
+    fi
+    # Subsequent boots: warn but allow start so operators can diagnose via the UI/API.
+    echo "[pre-start] WARNING: Allowing start on incomplete seed (not first boot) — sync/orders may fail."
   fi
+fi
+
+# Mark first boot as complete (all critical checks passed)
+if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
+  touch /opt/gwi-pos/.first-boot-done
+  echo "[pre-start] First boot completed successfully — future boots will be more lenient."
 fi
 PSEOF
   chmod +x "$PRE_START"
@@ -2078,7 +2207,7 @@ ExecStartPre=$APP_BASE/pre-start.sh
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always
 RestartSec=3
-TimeoutStartSec=180
+TimeoutStartSec=600
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=thepasspos
@@ -2181,11 +2310,13 @@ SVCEOF
     log "Starting POS server..."
     systemctl restart thepasspos || track_warn "POS service restart failed — will retry on reboot"
 
-    # Wait for POS to be ready before starting kiosk
-    log "Waiting for POS to start (up to 120s)..."
+    # Wait for POS to be order-ready, not just alive
+    # Check /api/health AND verify response contains "status":"healthy"
+    # (HTTP 200 alone is insufficient — POS may be booting but not ready for orders)
+    log "Waiting for POS to be order-ready (up to 120s)..."
     POS_READY=false
     for i in $(seq 1 60); do
-      if curl -fsS http://localhost:3005/api/health >/dev/null 2>&1; then
+      if curl -sf http://localhost:3005/api/health 2>/dev/null | grep -q '"status":"healthy"'; then
         log "POS is ready!"
         POS_READY=true
         break
@@ -2226,11 +2357,20 @@ SVCEOF
     mkdir -p "$BACKUP_DIR"
     chown "$POSUSER":"$POSUSER" "$BACKUP_DIR"
 
+    # Generate backup encryption key if it doesn't exist
+    if [[ ! -f "$APP_BASE/.backup-key" ]]; then
+      openssl rand -hex 32 > "$APP_BASE/.backup-key"
+      chmod 600 "$APP_BASE/.backup-key"
+      chown root:root "$APP_BASE/.backup-key"
+      log "Generated backup encryption key: $APP_BASE/.backup-key"
+    fi
+
     # Install backup script
     cat > "$BACKUP_SCRIPT" <<'BKEOF'
 #!/usr/bin/env bash
 set -euo pipefail
 BACKUP_DIR=/opt/gwi-pos/backups
+BACKUP_KEY="/opt/gwi-pos/.backup-key"
 RETENTION_DAYS=7
 
 if [ -f /opt/gwi-pos/.env ]; then
@@ -2243,23 +2383,38 @@ fi
 
 mkdir -p "$BACKUP_DIR"
 timestamp=$(date +%Y%m%d-%H%M%S)
-backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz"
 
-echo "[Backup] Starting PostgreSQL backup of '$DB_NAME'..."
-# Use pipefail to catch pg_dump failures (otherwise gzip succeeds on empty input)
-set -o pipefail
-if pg_dump -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip > "$backup_file"; then
-  size=$(du -h "$backup_file" | cut -f1)
-  echo "[Backup] Success: $backup_file ($size)"
+# Use encrypted backup if key exists, otherwise fall back to unencrypted
+if [[ -f "$BACKUP_KEY" ]]; then
+  backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz.enc"
+  echo "[Backup] Starting encrypted PostgreSQL backup of '$DB_NAME'..."
+  set -o pipefail
+  if pg_dump -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip | openssl enc -aes-256-cbc -pbkdf2 -pass file:"$BACKUP_KEY" -out "$backup_file"; then
+    size=$(du -h "$backup_file" | cut -f1)
+    echo "[Backup] Success (encrypted): $backup_file ($size)"
+  else
+    echo "[Backup] WARNING: pg_dump or encryption failed."
+    cat /tmp/pgdump_err 2>/dev/null || true
+    rm -f "$backup_file" /tmp/pgdump_err
+    exit 1
+  fi
 else
-  echo "[Backup] WARNING: pg_dump failed."
-  cat /tmp/pgdump_err 2>/dev/null || true
-  rm -f "$backup_file" /tmp/pgdump_err
-  exit 1
+  backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz"
+  echo "[Backup] Starting PostgreSQL backup of '$DB_NAME' (no encryption key found)..."
+  set -o pipefail
+  if pg_dump -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip > "$backup_file"; then
+    size=$(du -h "$backup_file" | cut -f1)
+    echo "[Backup] Success: $backup_file ($size)"
+  else
+    echo "[Backup] WARNING: pg_dump failed."
+    cat /tmp/pgdump_err 2>/dev/null || true
+    rm -f "$backup_file" /tmp/pgdump_err
+    exit 1
+  fi
 fi
 rm -f /tmp/pgdump_err
 
-find "$BACKUP_DIR" -type f -name 'pos-*.sql.gz' -mtime +"$RETENTION_DAYS" -delete
+find "$BACKUP_DIR" -type f \( -name 'pos-*.sql.gz' -o -name 'pos-*.sql.gz.enc' \) -mtime +"$RETENTION_DAYS" -delete
 echo "[Backup] Done."
 BKEOF
 
@@ -2286,7 +2441,7 @@ BKEOF
 
       log "Cloud backup upload configured (4:15 AM daily → S3)."
     else
-      track_warn "nuc-backup-upload.sh not found in repo — cloud backup upload not configured."
+      track_warn "nuc-backup-upload.sh not found at $APP_DIR/public/nuc-backup-upload.sh — cloud backup upload not configured."
     fi
   else
     log "Cloud database (Neon) — backups managed by provider. Skipping local backup."
@@ -2301,7 +2456,7 @@ BKEOF
     chown root:root "$RESTORE_SCRIPT"
     log "Restore script installed: $RESTORE_SCRIPT"
   else
-    track_warn "nuc-restore.sh not found in repo — restore script not installed."
+    track_warn "nuc-restore.sh not found at $APP_DIR/public/nuc-restore.sh — restore script not installed."
   fi
 
   # ── Deploy full ha-check.sh (replaces bootstrap version written before git clone) ──
@@ -2312,7 +2467,7 @@ BKEOF
     chown root:root "$APP_BASE/scripts/ha-check.sh"
     log "Full ha-check.sh deployed (pg_is_in_recovery, replication lag, MC alerting)."
   elif [[ -n "${VIRTUAL_IP:-}" ]]; then
-    track_warn "ha-check.sh not found in repo — using bootstrap version (no replication lag monitoring)."
+    track_warn "ha-check.sh not found at $APP_DIR/public/ha-check.sh — using bootstrap version (no replication lag monitoring)."
   fi
 
   # ───────────────────────────────────────────────────────────────────────────
@@ -2355,7 +2510,7 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start keepalived
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart postgresql
-$POSUSER ALL=(postgres) NOPASSWD: /usr/bin/psql
+$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/disable-rls.sh
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
 
@@ -2402,7 +2557,7 @@ SVCEOF
     systemctl restart thepasspos-sync || track_warn "Sync agent failed to start — check journalctl -u thepasspos-sync"
     log "Sync agent configured and started."
   else
-    track_warn "sync-agent.js not found in repo — sync agent will not start."
+    track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js — sync agent will not start."
     systemctl disable thepasspos-sync 2>/dev/null || true
   fi
 
@@ -2544,7 +2699,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', 'http://localhost:3005')
+        self.send_header('Access-Control-Allow-Origin', '*')  # localhost-only binding makes this safe
         self.end_headers()
         subprocess.Popen(['sudo', '/opt/gwi-pos/kiosk-control.sh', 'stop'])
     def do_OPTIONS(self):
@@ -2553,7 +2708,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', 'http://localhost:3005')
+        self.send_header('Access-Control-Allow-Origin', '*')  # localhost-only binding makes this safe
         self.send_header('Access-Control-Allow-Methods', 'POST')
         self.end_headers()
     def log_message(self, format, *args):
@@ -2897,7 +3052,11 @@ fi
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 if command -v x11vnc >/dev/null 2>&1; then
   echo -e "  ${GREEN}VNC:${NC}          localhost:5900 (SSH tunnel: ssh -L 5900:localhost:5900 $POSUSER@$LOCAL_IP)"
-  echo -e "  ${GREEN}VNC Password:${NC} $VNC_PASSWORD"
+  # Write VNC password to root-owned file instead of printing to console
+  echo "$VNC_PASSWORD" > /opt/gwi-pos/.vnc-password
+  chmod 600 /opt/gwi-pos/.vnc-password
+  chown root:root /opt/gwi-pos/.vnc-password
+  echo -e "  ${GREEN}VNC Password:${NC} stored in /opt/gwi-pos/.vnc-password (read with: sudo cat /opt/gwi-pos/.vnc-password)"
 fi
 if command -v vncserver-x11 >/dev/null 2>&1; then
   echo -e "  ${GREEN}RealVNC:${NC}      Installed — sign in via desktop icon or: vncserver-x11 -config"
