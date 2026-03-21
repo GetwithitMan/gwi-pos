@@ -11,7 +11,7 @@ import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const locationId = searchParams.get('locationId')
+    const locationId = searchParams.get('locationId') || process.env.POS_LOCATION_ID || process.env.LOCATION_ID
     const employeeId = searchParams.get('employeeId')
     const status = searchParams.get('status') as ShiftStatus | null
     const startDate = searchParams.get('startDate')
