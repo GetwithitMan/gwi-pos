@@ -202,6 +202,73 @@ Metrics are collected via an in-memory ring buffer in `socket-server.ts`. `recor
 
 ---
 
+## Socket Events Catalog (78 events as of 2026-03-21)
+
+The full socket events catalog is defined in `src/lib/socket-dispatch.ts` and `src/lib/socket-server.ts`. As of 2026-03-21, the system emits 78 distinct socket events across all features. Key event categories:
+
+| Category | Events | Examples |
+|----------|--------|----------|
+| Orders | 12 | `orders:list-changed`, `order:paid`, `order:totals-updated`, `order:summary-updated`, `order:item-added`, `order:sent` |
+| KDS | 6 | `kds:order-received`, `kds:item-status`, `kds:order-bumped`, `kds:order-forwarded`, `kds:multi-clear`, `kds:all-day-updated` |
+| Tabs | 5 | `tab:opened`, `tab:closed`, `tab:updated`, `tab:increment-failed`, `tab:transferred` |
+| Payments | 4 | `payment:completed`, `payment:failed`, `payment:voided`, `payment:refunded` |
+| Floor Plan | 3 | `floor-plan:updated`, `table:status-changed`, `section:updated` |
+| CFD | 4 | `cfd:show-order`, `cfd:payment-started`, `cfd:payment-complete`, `cfd:idle` |
+| Terminal | 3 | `terminal:status_changed`, `terminal:paired`, `terminal:unpaired` |
+| Sync | 4 | `sync:upstream-complete`, `sync:downstream-complete`, `data:changed`, `sync:bootstrap-ready` |
+| Settings | 3 | `settings:updated`, `schedules:changed`, `pricing-rules:changed` |
+| Shifts | 3 | `shift:opened`, `shift:closed`, `shift:break-started` |
+| Delivery | 5 | `delivery:status-changed`, `delivery:assigned`, `delivery:driver-location`, `delivery:exception`, `delivery:run-updated` |
+| Reservations | 4 | `reservation:created`, `reservation:updated`, `reservation:seated`, `reservation:cancelled` |
+| Other | 22 | Timers, drawers, inventory, customers, print, errors, etc. |
+
+**Reference files:** `src/lib/socket-dispatch.ts` (dispatch helpers), `src/lib/socket-server.ts` (emit infrastructure)
+
+---
+
+## Downstream Notification Handlers (11 handlers, added 2026-03-21)
+
+When `notifyDataChanged(modelName)` is called on a cloud-owned route, the NUC receives a `DATA_CHANGED` event via the cloud relay WebSocket. The downstream sync worker has 11 targeted handlers that prioritize the changed model:
+
+| Handler | Models | Trigger |
+|---------|--------|---------|
+| Menu items | MenuItem, Category | Menu edits in MC or back office |
+| Modifiers | Modifier, ModifierGroup | Modifier changes |
+| Employees | Employee, EmployeeRole | Staff adds/edits |
+| Settings | LocationSettings | Settings changes |
+| Schedules | Schedule, ScheduledShift | Schedule edits |
+| Pricing rules | PricingRule | Happy hour / time-based pricing |
+| Tax rules | TaxRule | Tax configuration |
+| Print routing | PrintRouting | Printer assignment changes |
+| Reservations | Reservation, ReservationTable | Booking changes |
+| Customers | Customer | Customer profile edits |
+| Organization | Organization, Location | Org-level config changes |
+
+Each handler invalidates relevant caches before running a targeted sync for the specific model, reducing sync latency from 5s (polling) to <500ms.
+
+---
+
+## Last-Sent-Batch Highlighting (added 2026-03-21)
+
+When items are sent to the kitchen (via the "Send" button), the POS highlights the most recently sent batch in the order panel. This provides visual confirmation of what was just transmitted.
+
+- **Socket event:** `order:sent` includes `sentItemIds[]` in the payload
+- **Client behavior:** Items matching `sentItemIds` receive a temporary highlight (3s fade)
+- **Cross-terminal:** All terminals viewing the same order see the highlight via socket broadcast
+
+---
+
+## New Events Added (2026-03-21)
+
+| Event | Purpose | Added In |
+|-------|---------|----------|
+| `schedules:changed` | Notify all terminals when employee schedules are modified | `d89fd54c` |
+| `settings:updated` | Notify all terminals when location settings change | `d89fd54c` |
+| `data:changed` | Internal event from cloud relay triggering immediate downstream sync | `f038f4a2` |
+| `sync:bootstrap-ready` | Signals Android devices that bootstrap data is available after schema change | `d89fd54c` |
+
+---
+
 ## Rules Summary
 
 1. **Server dispatches** via `emitToLocation()` / `emitToTags()` — never client-side relay

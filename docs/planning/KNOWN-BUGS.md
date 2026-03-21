@@ -4,7 +4,7 @@
 > Before working in any area, scan your section. Before closing a bug, update its status here.
 > When a bug is confirmed fixed, mark it ✅ FIXED with the commit hash.
 
-*Last updated: 2026-03-17*
+*Last updated: 2026-03-21*
 
 ---
 
@@ -373,4 +373,12 @@ These were requested but are not bugs — they're missing features. Track them i
 | **Sentry/OpenTelemetry deadlocking Next.js dev server on startup** | 2026-03-16 | Dynamic `import()` in `instrumentation.ts`, production-only init |
 | **Prisma tenant-scoping infinite recursion in `resolveTenantLocationId`** | 2026-03-16 | Request-scoped recursion guard via `AsyncLocalStorage` (`db.ts`, `request-context.ts`) |
 | **Duplicate items on Android devices (server + client generate different IDs)** | 2026-03-17 | Stable lineItemId contract: all 27 OrderItemRequest constructors send client-generated UUID; server uses it as OrderItem.id. NUC `52ee8e67`+`248c3265`, Register `aa5b85d`+`d1edebc`+`2efafe0`, PAX `4bb3627`+`2cd2e61`+`f68d33c` |
-| **Reservation engine: 8+ bugs found and fixed during build** | 2026-03-17 | Socket dispatch missing on 7/9 transition callers (`13d5029d`), multi-tenant isolation on 5 routes (`50e76f11`), customer linkage gaps (`6e74ac30`), SQL injection in deposit route (`61d49b40`), deposit ID Math.random→crypto.randomUUID (`bf1f3ddd`), expired holds blocking availability (`bf1f3ddd`), idempotency key race condition (`bf1f3ddd`), WCAG contrast violations (`0ccabcfa`) |
+| **Reservation engine: 8+ bugs found and fixed during build** | 2026-03-17 | Socket dispatch missing on 7/9 transition callers (`13d5029d`), multi-tenant isolation on 5 routes (`50e76f11`), customer linkage gaps (`6e74ac30`), SQL injection in deposit route (`61d49b40`), deposit ID Math.random()→crypto.randomUUID (`bf1f3ddd`), expired holds blocking availability (`bf1f3ddd`), idempotency key race condition (`bf1f3ddd`), WCAG contrast violations (`0ccabcfa`) |
+| **16 upstream models had silent sync failures (missing syncedAt/updatedAt/lastMutatedBy)** | 2026-03-21 | Migrations 090-092: `b3020a95` (16 models), `c2efdb75` (5 columns + composite PK), `68be79e4` (DeductionRun). 161/161 models now pass column verification. |
+| **Customer phone dedup crash on sync** | 2026-03-21 | `5d85bb29` — unique constraint violation on null phone numbers during customer sync |
+| **Tab lifecycle lastMutatedBy not set — tabs not syncing upstream** | 2026-03-21 | `5d85bb29` — tab mutations now set `lastMutatedBy: 'local'` |
+| **Standby NUC could process payments (no guard)** | 2026-03-21 | `8a2da67a` — standby guard blocks payments and order creation |
+| **12 pushUpstream routes missing — mutations not triggering immediate sync** | 2026-03-21 | `b2a587fb` — added pushUpstream() to 12 remaining upstream mutation routes |
+| **POS crash loop — CFD metadata column + stale tenant models** | 2026-03-21 | `3354e20f` — venue_schema_state guard, CFD metadata column existence check |
+
+> **2026-03-21 Note:** 16 upstream models had silent sync failures (missing `syncedAt`/`updatedAt`) — fixed in migrations 090-092. All 161 synced models now pass column verification. Instant sync (<500ms) achieved via `pushUpstream()` (40 routes) + `notifyDataChanged()` (99 routes).

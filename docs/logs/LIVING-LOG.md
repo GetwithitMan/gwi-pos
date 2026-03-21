@@ -5,6 +5,59 @@
 
 ---
 
+## 2026-03-21 — Sync Architecture Hardening — Instant Sync, Schema Fixes, Android Communication Audit
+
+### Summary
+Massive sync hardening session: instant sync in both directions (<500ms), 161/161 model column verification, readiness gates, Android communication gap closure, and schema fixes across 3 migrations. Also added Repeat Item button, last-sent-batch highlighting, and fixed a POS crash loop.
+
+### Commits
+- `f038f4a2` feat: instant downstream sync — notifyDataChanged on all cloud-owned routes (88 files)
+- `84984c37` fix: 6 architecture violations — readiness gates, neon safety, timestamps
+- `c6aea0e0` perf: zero-gap sync — wire immediate upstream push + targeted downstream handlers
+- `44e7380f` fix: add deletedAt to 6 synced config models + ReservationTable tenant scope
+- `b3020a95` fix: 16 models with broken sync — add missing syncedAt, updatedAt, lastMutatedBy
+- `c2efdb75` fix: final sync audit — 5 missing columns, composite PK, tenant scoping
+- `68be79e4` fix: DeductionRun missing updatedAt — last sync column gap (161/161 models pass)
+- `2f0bdd08` perf: add pushUpstream() to 20 remaining upstream mutation routes
+- `8a2da67a` fix: final hardening — standby guard, fail-hard payments, event buffer, cache clear
+- `5d85bb29` fix: tab lifecycle bugs + customer sync crash prevention
+- `b2a587fb` fix: 12 missing pushUpstream routes + tenant scoping model name fixes
+- `d89fd54c` perf: close Android communication gaps — bootstrap, sockets, targeted sync
+- `d40a622d` feat: Repeat Item button + last-sent-batch highlighting
+- `3354e20f` fix: POS crash loop — CFD metadata column, venue_schema_state guard, stale tenant models
+
+### Features Delivered
+- **Instant sync (<500ms both directions):** `pushUpstream()` on all 40 upstream mutation routes (100ms debounce), `notifyDataChanged()` on all 99 downstream cloud-owned routes
+- **161/161 model column verification:** Every synced model now has `syncedAt`, `updatedAt`, and `lastMutatedBy` columns verified
+- **Readiness gates:** BOOT → SYNC → ORDERS lifecycle enforced — venues cannot take orders until schema verified and first downstream sync complete
+- **Standby NUC guard:** Standby NUCs blocked from processing payments or taking orders
+- **DATA_CHANGED event buffering:** Socket event buffer persists to PG for restart recovery
+- **Android communication gaps closed:** Bootstrap payload extended, targeted sync handlers, socket event coverage
+- **Repeat Item button:** One-tap repeat of last item added to order
+- **Last-sent-batch highlighting:** Visual indicator on items in the most recently sent batch
+
+### Bugs Fixed
+- 16 upstream models had silent sync failures (missing `syncedAt`/`updatedAt`) — fixed in migrations 090-092
+- Customer phone dedup crash on sync (unique constraint violation on null phones)
+- Tab lifecycle `lastMutatedBy` not set — tabs not syncing upstream
+- Standby NUC could process payments (no guard)
+- 12 pushUpstream routes missing — mutations not triggering immediate upstream sync
+- POS crash loop from missing CFD metadata column + stale tenant model cache
+- `venue_schema_state` table guard added to prevent boot failures on fresh NUCs
+
+### Schema Changes
+- **Migration 090:** Add `deletedAt` to 6 synced config models (PricingRule, DailyPrepCount, Coupon, ScheduledShift, Schedule, PrintRouting)
+- **Migration 091:** Add `syncedAt`, `updatedAt`, `lastMutatedBy` to 16 models with broken sync
+- **Migration 092:** Final audit — 5 missing columns, composite PK fixes, tenant scoping corrections; DeductionRun `updatedAt` added
+
+### Docs Updated
+- `docs/logs/LIVING-LOG.md` — This entry
+- `docs/planning/KNOWN-BUGS.md` — Sync bugs marked fixed
+- `docs/features/offline-sync.md` — pushUpstream, notifyDataChanged, readiness gates, DATA_CHANGED buffering
+- `docs/guides/SOCKET-REALTIME.md` — 78 socket events catalog, 11 downstream handlers, last-sent-batch highlighting
+
+---
+
 ## 2026-03-20 — Installer Restructure, Pinned Deploys, Full Sync Hardening
 
 ### Summary

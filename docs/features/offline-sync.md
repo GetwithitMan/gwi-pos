@@ -292,6 +292,53 @@ These rules were hardened via penetration testing and production debugging:
 
 ---
 
+## Instant Sync — pushUpstream() + notifyDataChanged() (added 2026-03-21)
+
+### Instant Upstream Push (NUC → Neon)
+Every upstream mutation route calls `pushUpstream()` after the DB write. This triggers an immediate upstream sync cycle instead of waiting for the 5s polling interval.
+
+- **Mechanism:** `pushUpstream()` is a 100ms debounced call to the upstream sync worker's `syncNow()` method
+- **Coverage:** 40 upstream mutation routes (orders, payments, tabs, shifts, tips, inventory, time clock, etc.)
+- **Debounce:** 100ms — multiple rapid mutations (e.g., adding 5 items quickly) coalesce into a single sync cycle
+- **Fallback:** If `pushUpstream()` fails or is unavailable, the 5s polling interval picks up the mutations
+- **Pattern:**
+```typescript
+// In API route after DB write:
+import { pushUpstream } from '@/lib/sync/upstream-sync-worker'
+// ... mutation logic ...
+void pushUpstream().catch(console.error) // fire-and-forget
+```
+
+### Instant Downstream Push (Neon → NUC)
+All cloud-owned API routes call `notifyDataChanged()` after writing to Neon. This sends a `DATA_CHANGED` event through the cloud relay WebSocket, triggering an immediate downstream sync cycle on the NUC.
+
+- **Coverage:** 99 downstream cloud-owned routes (menu, employees, settings, categories, modifiers, schedules, etc.)
+- **Mechanism:** `notifyDataChanged(modelName)` → cloud relay → NUC receives `DATA_CHANGED` → immediate downstream sync
+- **Targeted sync:** The `modelName` parameter allows the downstream worker to prioritize the changed model
+- **11 downstream notification handlers:** Menu items, categories, modifiers, modifier groups, employees, schedules, settings, pricing rules, tax rules, print routing, reservations
+- **Fallback:** If cloud relay is disconnected, the 5s polling interval handles sync
+
+### Readiness Gates (BOOT → SYNC → ORDERS)
+The NUC enforces a strict boot sequence before accepting orders:
+
+1. **BOOT:** Local schema verified (`prisma db push`), seed data present, `_venue_schema_state` compatible
+2. **SYNC:** First downstream sync cycle complete — menu, employees, settings pulled from Neon
+3. **ORDERS:** All critical tables populated — venue can now take orders
+
+Venues cannot take orders or process payments until the readiness gate reaches ORDERS state. The `/api/system/readiness` endpoint exposes the current gate state.
+
+### Auto-Restart Workers After Schema Re-Check
+When the NUC detects a schema change (via `_venue_schema_state` or `prisma db push`), sync workers are automatically restarted to pick up new columns/tables. This prevents stale Prisma clients from failing on new schema.
+
+### DATA_CHANGED Event Buffering
+`DATA_CHANGED` events from the cloud relay are buffered in the PG-backed socket event buffer (`SocketEventLog`). This provides:
+- **Restart recovery:** If the NUC restarts while a `DATA_CHANGED` event is in flight, the event is replayed from PG on restart
+- **Dedup:** Duplicate `DATA_CHANGED` events for the same model within 500ms are coalesced
+- **TTL:** 30-minute retention in PG, cleanup every 5 minutes
+- **Cache clear:** When `DATA_CHANGED` arrives, relevant caches (location settings, menu, employees) are invalidated before the sync cycle runs
+
+---
+
 ## Related Docs
 - **Domain doc:** `docs/domains/OFFLINE-SYNC-DOMAIN.md`
 - **Algorithm spec:** `docs/features/OFFLINE-SYNC-ALGORITHM.md` (1456 lines)
@@ -301,4 +348,4 @@ These rules were hardened via penetration testing and production debugging:
 
 ---
 
-*Last updated: 2026-03-18*
+*Last updated: 2026-03-21*
