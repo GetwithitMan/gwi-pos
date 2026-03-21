@@ -412,8 +412,9 @@ const DASHBOARD_DEB_PATH = path.join(DASHBOARD_DEB_DIR, 'gwi-nuc-dashboard.deb')
  */
 async function updateDashboard(): Promise<void> {
   // Only update if dashboard is already installed (Stage 12 handles first install)
+  // Binary is "gwi-dashboard" (Tauri productName → binary name mapping)
   try {
-    execSync('which gwi-nuc-dashboard', { encoding: 'utf8', stdio: 'pipe' })
+    execSync('which gwi-dashboard', { encoding: 'utf8', stdio: 'pipe' })
   } catch {
     log.info('[UpdateAgent] Dashboard not installed — skipping (Stage 12 handles first install)')
     return
@@ -500,7 +501,7 @@ async function updateDashboard(): Promise<void> {
 
   // Restart the dashboard app if it's running (auto-starts via XDG on next login)
   try {
-    execSync('pkill -f gwi-nuc-dashboard || true', { timeout: 5_000, stdio: 'pipe' })
+    execSync('pkill -f gwi-dashboard || true', { timeout: 5_000, stdio: 'pipe' })
   } catch {}
 
   log.info('[UpdateAgent] Dashboard updated successfully')

@@ -120,8 +120,16 @@ run_dashboard() {
   # ─────────────────────────────────────────────────────────────────────────
   # Verify binary exists
   # ─────────────────────────────────────────────────────────────────────────
-  if command -v gwi-nuc-dashboard >/dev/null 2>&1; then
-    log "Dashboard binary verified: $(which gwi-nuc-dashboard)"
+  # Detect actual binary name (Tauri uses productName from tauri.conf.json)
+  local DASHBOARD_BIN=""
+  for candidate in gwi-dashboard gwi-nuc-dashboard; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      DASHBOARD_BIN="$candidate"
+      break
+    fi
+  done
+  if [[ -n "$DASHBOARD_BIN" ]]; then
+    log "Dashboard binary verified: $(which "$DASHBOARD_BIN")"
   else
     track_warn "Dashboard binary not found in PATH after install"
   fi
@@ -135,7 +143,7 @@ run_dashboard() {
 [Desktop Entry]
 Name=GWI NUC Dashboard
 Comment=Auto-start GWI system dashboard
-Exec=gwi-nuc-dashboard
+Exec=gwi-dashboard
 Type=Application
 X-GNOME-Autostart-enabled=true
 X-GNOME-Autostart-Delay=10
@@ -158,7 +166,7 @@ DESKTOP
 [Desktop Entry]
 Name=GWI Dashboard
 Comment=System health and device monitoring
-Exec=gwi-nuc-dashboard
+Exec=gwi-dashboard
 Icon=gwi-nuc-dashboard
 Type=Application
 Categories=System;Monitor;
