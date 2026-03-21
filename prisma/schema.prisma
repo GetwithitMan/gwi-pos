@@ -6400,8 +6400,9 @@ model Terminal {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   // Sync fields
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt      DateTime?
+  lastMutatedBy  String?
+  syncedAt       DateTime?
 
   // C-SCHEMA-1: Reverse relations
   processedPayments Payment[] @relation("PaymentTerminal")
@@ -7931,6 +7932,8 @@ model VenueLog {
   deviceId   String?
   stackTrace String?
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  syncedAt   DateTime?
   expiresAt  DateTime // Auto-cleanup target (30 days default)
 
   @@index([locationId, createdAt(sort: Desc)])
@@ -8512,6 +8515,7 @@ model PmsChargeAttempt {
   providerRequestId  String? // idempotency key sent to OPERA (if supported)
   employeeId         String? // optional audit trail
   lastErrorMessage   String?
+  syncedAt           DateTime?
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
@@ -8712,6 +8716,7 @@ model PendingDeduction {
 model DeductionRun {
   id                 String    @id @default(cuid())
   pendingDeductionId String
+  syncedAt           DateTime?
   startedAt          DateTime  @default(now())
   finishedAt         DateTime?
   success            Boolean?
@@ -8992,6 +8997,8 @@ model ReservationEvent {
   actorId       String?
   details       Json         @default("{}")
   createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  syncedAt      DateTime?
 
   @@index([reservationId])
   @@index([locationId, createdAt])

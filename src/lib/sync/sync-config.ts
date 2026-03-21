@@ -237,7 +237,7 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   ReservationBlock:       { direction: 'upstream', owner: 'nuc', priority: 257, batchSize: 100 },
   ReservationDeposit:     { direction: 'upstream', owner: 'nuc', priority: 258, batchSize: 100 },
   ReservationEvent:       { direction: 'upstream', owner: 'nuc', priority: 259, batchSize: 100 },
-  ReservationTable:       { direction: 'upstream', owner: 'nuc', priority: 260, batchSize: 100 },
+  ReservationTable:       { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 },
 
   // ── Misc Config (downstream — cloud-owned) ─────────────────────────
   ReasonAccess:           { direction: 'downstream', owner: 'cloud', priority: 275, batchSize: 50 },
@@ -342,8 +342,8 @@ export const LOCAL_ONLY_TABLES = new Set([
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
   'SyncConflict', 'SyncWatermark', // quarantine infrastructure
   'LocalSchemaState', 'LocalInstallState', // NUC-owned infrastructure (never synced)
-  // Reservation ephemeral tokens
-  'ReservationIdempotencyKey', 'ReservationDepositToken',
+  // Reservation ephemeral tokens + junction table (composite PK, no id column)
+  'ReservationIdempotencyKey', 'ReservationDepositToken', 'ReservationTable',
   // Delivery infrastructure
   'DeliveryZone', 'DeliveryDriver', 'DeliveryDriverDocument', 'DeliveryDriverSession',
   'DeliveryRun', 'DeliveryAddress', 'DeliveryProofOfDelivery', 'DeliveryTracking',
@@ -361,6 +361,8 @@ export const LOCAL_ONLY_TABLES = new Set([
   'ThirdPartyOrder', 'SharedReport', 'PaymentLink', 'CellularDevice',
   // Lowercase Prisma mapped tables
   'cloud_event_queue', 'order_events', 'order_snapshots', 'order_item_snapshots',
+  // NUC infrastructure (no cloud representation)
+  'GwiMigrations', 'GwiSyncState',
 ])
 
 /** System/internal tables that are not Prisma models */

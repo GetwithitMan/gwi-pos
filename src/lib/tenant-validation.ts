@@ -20,6 +20,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'InventoryItem', 'InventoryItemTransaction', 'InventoryCount',
   'InventoryCountItem', 'InventoryItemStorage', 'InventorySettings', 'InventoryTransaction',
   'ItemBarcode',
+  'IngredientCostHistory', 'InventoryCountEntry', 'PendingDeduction',
 
   // Ingredients & recipes
   'Ingredient', 'IngredientCategory', 'IngredientRecipe',
@@ -59,6 +60,7 @@ export const TENANT_SCOPED_MODELS = new Set([
 
   // Employees & roles
   'Employee', 'EmployeeRole', 'Role',
+  'EmployeePermissionOverride',
 
   // Shifts & time clock
   'Shift', 'ShiftSwapRequest', 'TimeClockEntry', 'Break',
@@ -80,6 +82,8 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Printer', 'PrintJob', 'PrintRoute', 'PrintRule',
   'Station', 'Terminal', 'Scale', 'PaymentReader', 'PaymentReaderLog',
   'RegisteredDevice', 'ServerRegistrationToken',
+  'HardwareCommand',
+  'BergDevice', 'BergPluMapping', 'BergDispenseEvent',
 
   // KDS
   'KDSScreen', 'KDSScreenLink', 'KDSScreenStation',
@@ -97,6 +101,7 @@ export const TENANT_SCOPED_MODELS = new Set([
 
   // Reservations
   'Reservation', 'ReservationBlock', 'ReservationDeposit', 'ReservationTable',
+  'ReservationEvent',
 
   // Customers
   'Customer', 'CardProfile', 'MobileSession',
@@ -114,15 +119,24 @@ export const TENANT_SCOPED_MODELS = new Set([
 
   // Settings & config
   'CfdSettings',
+  'QuickBarDefault', 'QuickBarPreference', 'ReasonAccess',
 
   // Chargebacks
   'ChargebackCase',
 
   // Audit & logging
   'AuditLog', 'ErrorLog', 'HealthCheck',
+  'VenueLog', 'WasteLog',
 
   // Cloud sync (@@map table names)
   'cloud_event_queue',
+
+  // Sync & operational
+  'SyncAuditEntry', 'SocketEventLog', 'SyncWatermark',
+  'BridgeCheckpoint', 'FulfillmentEvent', 'OutageQueueEntry',
+
+  // Integration mappings
+  'MarginEdgeProductMapping', 'SevenShiftsDailySalesPush', 'PmsChargeAttempt',
 
   // Waste
   'WasteLogEntry',
@@ -132,7 +146,7 @@ export const TENANT_SCOPED_MODELS = new Set([
 // Models that do NOT have a `deletedAt` column — skip soft-delete filtering.
 
 export const NO_SOFT_DELETE_MODELS = new Set([
-  'Organization', 'Location', 'SyncAuditEntry', 'HardwareCommand',
+  'Organization', 'Location',
   // Tables without deletedAt column — must skip soft-delete filter or queries crash
   'BergDispenseEvent',
   'DeductionRun', 'PendingDeduction', 'IngredientCostHistory',
