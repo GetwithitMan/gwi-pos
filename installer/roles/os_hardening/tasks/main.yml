@@ -116,18 +116,16 @@
 
 - name: "GNOME — Apply gsettings (idle-delay, screen lock, notifications)"
   ansible.builtin.shell: |
-    # Attempt to apply gsettings via the user's DBUS session.
-    # If no session is running (e.g., during install), this is harmless —
-    # the dconf database overlay below is the durable enforcement.
     export DISPLAY=:0
-    POSUSER_UID=$(id -u {{ gwi_posuser }} 2>/dev/null || echo "")
+    POSUSER_UID=$(id -u "{{ gwi_posuser }}" 2>/dev/null || echo "")
     if [ -n "$POSUSER_UID" ]; then
-      export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${POSUSER_UID}/bus"
+      export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$POSUSER_UID/bus"
     fi
-
     gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
     gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
     gsettings set org.gnome.desktop.notifications show-banners false 2>/dev/null || true
+  args:
+    executable: /bin/bash
   become_user: "{{ gwi_posuser }}"
   changed_when: false
   failed_when: false

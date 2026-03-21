@@ -125,9 +125,9 @@
 - name: "Wallpaper — GNOME — Set desktop background"
   ansible.builtin.shell: |
     export DISPLAY=:0
-    POSUSER_UID=$(id -u {{ gwi_posuser }} 2>/dev/null || echo "")
+    POSUSER_UID=$(id -u "{{ gwi_posuser }}" 2>/dev/null || echo "")
     if [ -n "$POSUSER_UID" ]; then
-      export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${POSUSER_UID}/bus"
+      export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$POSUSER_UID/bus"
     fi
     gsettings set org.gnome.desktop.background picture-uri 'file:///usr/share/backgrounds/gwi-wallpaper.png' 2>/dev/null || true
     gsettings set org.gnome.desktop.background picture-uri-dark 'file:///usr/share/backgrounds/gwi-wallpaper.png' 2>/dev/null || true
