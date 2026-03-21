@@ -114,12 +114,26 @@ VNCSVC
 
     log "RealVNC Server installed — FriendlyName: $FRIENDLY_NAME"
 
-    # ── RealVNC Cloud Sign-In (automatic, no prompts) ──
-    log "Signing in to RealVNC cloud..."
-    if vncserver-x11 -service -login -email "brian@get-with-it.com" -password "asdfkjbf;aofhfrgrfhW3*" 2>/dev/null; then
-      log "Signed in to RealVNC cloud — device: $FRIENDLY_NAME"
+    # ── RealVNC Cloud Sign-In (credentials from environment or .env) ──
+    REALVNC_EMAIL="${REALVNC_EMAIL:-}"
+    REALVNC_PASSWORD="${REALVNC_PASSWORD:-}"
+
+    # Try to read from /opt/gwi-pos/.env if not set
+    if [[ -z "$REALVNC_EMAIL" ]] && [[ -f /opt/gwi-pos/.env ]]; then
+      REALVNC_EMAIL=$(grep "^REALVNC_EMAIL=" /opt/gwi-pos/.env 2>/dev/null | cut -d= -f2- || echo "")
+      REALVNC_PASSWORD=$(grep "^REALVNC_PASSWORD=" /opt/gwi-pos/.env 2>/dev/null | cut -d= -f2- || echo "")
+    fi
+
+    if [[ -n "$REALVNC_EMAIL" ]] && [[ -n "$REALVNC_PASSWORD" ]]; then
+      log "Signing in to RealVNC cloud..."
+      if vncserver-x11 -service -login -email "$REALVNC_EMAIL" -password "$REALVNC_PASSWORD" 2>/dev/null; then
+        log "Signed in to RealVNC cloud — device: $FRIENDLY_NAME"
+      else
+        warn "RealVNC auto-sign-in failed. Sign in manually via desktop icon."
+      fi
     else
-      warn "RealVNC auto-sign-in failed. Sign in manually via the desktop icon."
+      log "No RealVNC credentials configured. Sign in manually via desktop icon."
+      log "To auto-sign-in, set REALVNC_EMAIL and REALVNC_PASSWORD in /opt/gwi-pos/.env"
     fi
 
     # Desktop shortcut for RealVNC Server settings
