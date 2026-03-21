@@ -118,7 +118,7 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   PricingOptionGroup:     { direction: 'downstream', owner: 'cloud', priority: 223, batchSize: 100 },
   PricingOption:          { direction: 'downstream', owner: 'cloud', priority: 224, batchSize: 100 },
   CourseConfig:           { direction: 'downstream', owner: 'cloud', priority: 225, batchSize: 50 },
-  Customer:               { direction: 'downstream', owner: 'cloud', priority: 226, batchSize: 100 },
+  Customer:               { direction: 'downstream', owner: 'cloud', priority: 226, batchSize: 100, businessKey: ['locationId', 'phone'] },
   Coupon:                 { direction: 'downstream', owner: 'cloud', priority: 227, batchSize: 50 },
   DiscountRule:           { direction: 'downstream', owner: 'cloud', priority: 228, batchSize: 50 },
   GiftCard:               { direction: 'downstream', owner: 'cloud', priority: 229, batchSize: 100 },

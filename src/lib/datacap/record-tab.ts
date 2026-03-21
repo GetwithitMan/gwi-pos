@@ -138,6 +138,7 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
         authCode,
         isDefault: true,
         status: 'authorized',
+        lastMutatedBy: 'local',
         // Datacap metadata for ByRecordNo operations + chargeback defense
         tokenFrequency: tokenFrequency || 'Recurring',
         acqRefData,
@@ -160,6 +161,7 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
         preAuthExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Pre-auths expire in ~24h
         preAuthRecordNo: recordNo,
         preAuthReaderId: readerId,
+        lastMutatedBy: 'local',
         version: { increment: 1 },
       },
     }),

@@ -6,6 +6,7 @@ import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { normalizePhone } from '@/lib/utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List customers with optional search
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -206,6 +207,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'customers', action: 'created', entityId: customer.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: customer.id,

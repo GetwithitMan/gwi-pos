@@ -7,6 +7,7 @@ import { normalizePhone } from '@/lib/utils'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get customer details with order history
 export const GET = withVenue(async function GET(
@@ -372,6 +373,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     void notifyDataChanged({ locationId, domain: 'customers', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: updated.id,
@@ -433,6 +435,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     void notifyDataChanged({ locationId, domain: 'customers', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

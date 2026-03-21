@@ -64,7 +64,7 @@ export const POST = withVenue(async function POST(
 
         await db.orderCard.update({
           where: { id: card.id },
-          data: { status: voided ? 'voided' : card.status },
+          data: { status: voided ? 'voided' : card.status, lastMutatedBy: 'local' },
         })
 
         results.push({
@@ -87,6 +87,7 @@ export const POST = withVenue(async function POST(
       tabStatus: allVoided ? 'closed' : order.tabStatus,
       status: allVoided ? 'voided' : order.status,
       notes: reason ? `Tab voided: ${reason}` : order.notes,
+      lastMutatedBy: 'local',
     })
 
     // Reset table to available when tab is fully voided

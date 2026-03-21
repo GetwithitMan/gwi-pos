@@ -130,10 +130,15 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // ── Transfer the order ──────────────────────────────────────────────
+    // ── Transfer the order (FOR UPDATE lock to prevent concurrent mutations) ──
     const previousEmployeeId = order.employeeId
-    await OrderRepository.updateOrder(orderId, order.locationId, {
-      employeeId: toEmployeeId,
+    await db.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+      await OrderRepository.updateOrder(orderId, order.locationId, {
+        employeeId: toEmployeeId,
+        lastMutatedBy: 'local',
+        version: { increment: 1 },
+      }, tx)
     })
     // Re-fetch with select for response (updateOrder returns count, not the record)
     const updatedOrder = await OrderRepository.getOrderByIdWithInclude(
