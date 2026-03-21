@@ -65,7 +65,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Allow installer files to be served without auth (NUC curl bootstrap)
-  if (pathname.startsWith('/installer') || pathname === '/install.sh' || pathname === '/schema.sql' || pathname === '/version-contract.json') {
+  if (pathname.startsWith('/installer') || pathname === '/install.sh' || pathname === '/schema.sql' || pathname === '/version-contract.json' || pathname === '/gwi-nuc-dashboard.deb') {
     return NextResponse.next()
   }
 

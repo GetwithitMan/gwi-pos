@@ -49,32 +49,35 @@ run_dashboard() {
     fi
   done
 
-  # If not found locally, download from GitHub releases
+  # If not found locally, download from POS deployment (Vercel) or GitHub releases
   if [[ -z "$DASHBOARD_DEB" ]]; then
-    log "Dashboard .deb not found locally — downloading latest from GitHub..."
+    log "Dashboard .deb not found locally — downloading..."
     local DOWNLOAD_DIR="$APP_BASE/dashboard"
     mkdir -p "$DOWNLOAD_DIR"
-    local DOWNLOAD_URL="https://github.com/GetwithitMan/gwi-dashboard/releases/latest/download/gwi-nuc-dashboard_amd64.deb"
 
-    # Try download with deploy token (private repo)
-    local GIT_TOKEN=""
-    if [[ -f "$APP_BASE/.git-credentials" ]]; then
-      GIT_TOKEN=$(grep 'github.com' "$APP_BASE/.git-credentials" 2>/dev/null | sed 's|https://||;s|:x-oauth-basic@github.com||' | head -1)
-    fi
+    # Method 1: Download from POS Vercel deployment (no auth needed)
+    _start_spinner "Downloading NUC Dashboard"
+    curl -sfL "${POS_BASE_URL:-https://app.thepasspos.com}/gwi-nuc-dashboard.deb" \
+      -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+    _stop_spinner
 
-    if [[ -n "$GIT_TOKEN" ]]; then
-      # Private repo — use token auth
-      local API_URL="https://api.github.com/repos/GetwithitMan/gwi-dashboard/releases/latest"
-      local ASSET_URL=$(curl -sfL -H "Authorization: token $GIT_TOKEN" "$API_URL" 2>/dev/null \
-        | python3 -c "import json,sys;d=json.load(sys.stdin);assets=d.get('assets',[]);print(next((a['url'] for a in assets if a['name'].endswith('.deb')),'')" 2>/dev/null)
-
-      if [[ -n "$ASSET_URL" ]]; then
-        curl -sfL -H "Authorization: token $GIT_TOKEN" -H "Accept: application/octet-stream" \
-          "$ASSET_URL" -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+    # Method 2: If Vercel download failed, try GitHub releases with deploy token
+    if [[ ! -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] || [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null || echo 0) -lt 100000 ]]; then
+      rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+      log "Vercel download failed — trying GitHub releases..."
+      local GIT_TOKEN=""
+      if [[ -f "$APP_BASE/.git-credentials" ]]; then
+        GIT_TOKEN=$(grep 'github.com' "$APP_BASE/.git-credentials" 2>/dev/null | sed 's|https://||;s|:x-oauth-basic@github.com||' | head -1)
       fi
-    else
-      # Public fallback
-      curl -sfL "$DOWNLOAD_URL" -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+      if [[ -n "$GIT_TOKEN" ]]; then
+        local API_URL="https://api.github.com/repos/GetwithitMan/gwi-dashboard/releases/latest"
+        local ASSET_URL=$(curl -sfL -H "Authorization: token $GIT_TOKEN" "$API_URL" 2>/dev/null \
+          | python3 -c "import json,sys;d=json.load(sys.stdin);assets=d.get('assets',[]);print(next((a['url'] for a in assets if a['name'].endswith('.deb')),'')" 2>/dev/null)
+        if [[ -n "$ASSET_URL" ]]; then
+          curl -sfL -H "Authorization: token $GIT_TOKEN" -H "Accept: application/octet-stream" \
+            "$ASSET_URL" -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+        fi
+      fi
     fi
 
     if [[ -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] && [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null) -gt 100000 ]]; then
