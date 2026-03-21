@@ -135,7 +135,7 @@ if [[ ! -d "$MODULES_DIR" ]]; then
     11-system-hardening.sh
   )
   for mod_name in "${MODULE_LIST[@]}"; do
-    if ! curl -fsSL "$POS_BASE_URL/installer-modules/$mod_name" -o "$MODULES_DIR/$mod_name"; then
+    if ! curl -fsSL "$POS_BASE_URL/api/installer/modules/$mod_name" -o "$MODULES_DIR/$mod_name"; then
       err "Failed to download module: $mod_name"
       err "Check network connectivity and that $POS_BASE_URL is reachable"
       exit 1
