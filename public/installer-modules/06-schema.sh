@@ -40,19 +40,24 @@ run_schema() {
     # ── Step 2: Apply schema to LOCAL PG using local tested migration path ──
     # prisma db push creates tables/columns from schema.prisma.
     # nuc-pre-migrate.js runs numbered migrations for data backfills + DDL patches.
-    log "Applying schema to local PostgreSQL..."
     # Timeout 120s: Prisma schema engine can hang when diffing large schemas already in sync.
     # --accept-data-loss: safe on re-install since data comes from Neon seed, not local-only tables.
-    if ! timeout 120 sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss" 2>&1 | tail -5; then
+    _start_spinner "Applying schema to local PostgreSQL"
+    if ! timeout 120 sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss" >/dev/null 2>&1; then
+      _stop_spinner
       warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
+    else
+      _stop_spinner
+      log "Schema applied successfully"
     fi
     log "Running local migrations..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1 | tail -5
 
     # Seed local PG from Neon cloud (offline-first mode)
     if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
-      log "Seeding local PostgreSQL from Neon cloud..."
-      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && APP_BASE='$APP_BASE' bash scripts/seed-from-neon.sh"; then
+      _start_spinner "Seeding local database from Neon cloud"
+      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && APP_BASE='$APP_BASE' bash scripts/seed-from-neon.sh" >/dev/null 2>&1; then
+        _stop_spinner
         # Check if seed wrote an INCOMPLETE marker
         if [[ -f "$APP_BASE/.seed-status" ]] && grep -q "^INCOMPLETE" "$APP_BASE/.seed-status"; then
           SEED_REASON=$(cat "$APP_BASE/.seed-status" | cut -d: -f3-)
@@ -63,6 +68,8 @@ run_schema() {
         else
           warn "Neon seed had warnings — check $APP_BASE/.seed-status"
         fi
+      else
+        _stop_spinner
       fi
       # Verify seed completed successfully
       if [[ -f "$APP_BASE/.seed-status" ]]; then
@@ -131,12 +138,14 @@ run_schema() {
     log "Skipping database migrations (backup standby — data replicated from primary)."
   fi
 
-  log "Building Next.js application..."
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build"; then
-    err "Application build failed. Check build logs above."
+  _start_spinner "Building POS application (this takes a few minutes)"
+  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build" >/dev/null 2>&1; then
+    _stop_spinner
+    err "Application build failed. Re-running with output..."
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build"
     return 1
   fi
-
+  _stop_spinner
   log "POS application built successfully!"
 
   # ── Post-build: update _local_install_state with freshly generated version ──
