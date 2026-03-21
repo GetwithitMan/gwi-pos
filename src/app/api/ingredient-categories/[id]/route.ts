@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -111,6 +112,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       },
     })
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+
     return NextResponse.json({
       data: {
         ...category,
@@ -207,6 +210,8 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       where: { id },
       data: { deletedAt: now },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
 
     return NextResponse.json({
       data: {

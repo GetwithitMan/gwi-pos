@@ -7,6 +7,7 @@ import { createReservationWithRules, CreateReservationError } from '@/lib/reserv
 import type { OperatingHours } from '@/lib/reservations/availability'
 import { SOURCE_TYPES, type SourceType } from '@/lib/reservations/state-machine'
 import { getLocationId } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List reservations
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -241,6 +242,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         baseUrl: process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006',
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'reservations', action: 'created', entityId: result.reservation.id })
 
     return NextResponse.json({
       data: result.reservation,

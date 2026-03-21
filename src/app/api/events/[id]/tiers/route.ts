@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List pricing tiers for an event
 export const GET = withVenue(async function GET(
@@ -153,6 +154,8 @@ export const POST = withVenue(async function POST(
         isActive: true,
       },
     })
+
+    void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'created', entityId: tier.id })
 
     return NextResponse.json({ data: {
       success: true,

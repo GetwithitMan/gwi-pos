@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List reservation blocks
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -76,6 +77,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
+    void notifyDataChanged({ locationId, domain: 'reservations', action: 'created', entityId: block.id })
+
     return NextResponse.json({
       data: block,
       warnings: conflicting.length > 0
@@ -129,6 +132,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     })
 
+    void notifyDataChanged({ locationId, domain: 'reservations', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: block })
   } catch (error) {
     console.error('[reservations/blocks] PUT error:', error)
@@ -166,6 +171,8 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId, domain: 'reservations', action: 'deleted', entityId: id })
 
     return NextResponse.json({ success: true })
   } catch (error) {

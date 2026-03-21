@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchQuickBarChanged } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET — returns location-level default quick bar items
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -59,6 +60,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // Notify all terminals to refresh quick bar
     void dispatchQuickBarChanged(locationId).catch(console.error)
+
+    void notifyDataChanged({ locationId, domain: 'quick-bar', action: 'updated' })
 
     return NextResponse.json({ data: { itemIds } })
   } catch (error) {

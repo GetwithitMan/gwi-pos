@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all prep stations for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -108,6 +109,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sortOrder: (maxSort?.sortOrder || 0) + 1,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'prep', action: 'created', entityId: station.id })
 
     return NextResponse.json({ data: {
       id: station.id,

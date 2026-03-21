@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 import { invalidateTaxCache } from '@/lib/tax-cache'
 import { emitToLocation } from '@/lib/socket-server'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List tax rules
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -92,6 +93,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Emit settings:updated so all terminals refresh tax configuration
     void emitToLocation(locationId, 'settings:updated', { trigger: 'tax-rule-created', taxRuleId: taxRule.id }).catch(console.error)
+
+    void notifyDataChanged({ locationId, domain: 'tax', action: 'created', entityId: taxRule.id })
 
     return NextResponse.json({ data: {
       taxRule: {

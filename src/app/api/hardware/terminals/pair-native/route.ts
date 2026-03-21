@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 
@@ -94,6 +95,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
 
     console.log(
       `[pair-native] Terminal ${updated.id} (${updated.name}) paired successfully — fingerprint: ${deviceFingerprint || 'none'}, platform: ${platform}, ip: ${clientIp}`

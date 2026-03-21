@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all discount rules for a location
 // Auth: session-verified employee with POS_ACCESS (read is needed by order screen)
@@ -147,6 +148,8 @@ export const POST = withVenue(withAuth('SETTINGS_MENU', async function POST(
         isEmployeeDiscount: isEmployeeDiscount ?? false,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'discounts', action: 'created', entityId: discount.id })
 
     return NextResponse.json({ data: {
       id: discount.id,

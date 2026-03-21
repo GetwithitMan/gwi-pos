@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a single event with full details
 export const GET = withVenue(async function GET(
@@ -218,6 +219,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       event: {
         id: event.id,
@@ -296,6 +299,8 @@ export const DELETE = withVenue(async function DELETE(
         db.event.update({ where: { id }, data: { deletedAt: now } }),
       ])
 
+      void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'deleted', entityId: id })
+
       return NextResponse.json({ data: {
         success: true,
         message: 'Event permanently deleted',
@@ -309,6 +314,8 @@ export const DELETE = withVenue(async function DELETE(
           isActive: false,
         },
       })
+
+      void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'deleted', entityId: id })
 
       return NextResponse.json({ data: {
         success: true,

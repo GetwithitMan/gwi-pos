@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST - Record a payment against a house account balance
 export const POST = withVenue(async function POST(
@@ -101,6 +102,8 @@ export const POST = withVenue(async function POST(
     }
 
     const { transaction, newBalance } = result
+
+    void notifyDataChanged({ locationId: transaction.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
 
     return NextResponse.json({
       data: {

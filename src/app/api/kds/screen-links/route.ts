@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { KDSScreenLinkCreateSchema, KDSScreenLinkUpdateSchema } from '@/lib/kds/types'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET — list screen links for a location or specific screen
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -139,6 +140,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: link.id })
+
     return NextResponse.json({
       data: {
         link: {
@@ -199,6 +202,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     })
 
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: id })
+
     return NextResponse.json({
       data: {
         link: {
@@ -246,6 +251,8 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

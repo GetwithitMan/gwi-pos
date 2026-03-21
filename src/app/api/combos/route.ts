@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all combos
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -214,6 +215,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         components: true,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'combos', action: 'created', entityId: menuItem.id })
 
     return NextResponse.json({ data: {
       combo: {

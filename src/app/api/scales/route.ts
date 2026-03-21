@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all scales for a location
 export const GET = withVenue(async function GET() {
@@ -112,6 +113,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: scale.id })
 
     return NextResponse.json({
       data: {

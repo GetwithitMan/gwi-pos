@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomBytes } from 'crypto'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
@@ -55,6 +56,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         deviceInfo: deviceInfo || null,
       },
     })
+
+    void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'updated', entityId: screen.id })
 
     // Create response with httpOnly cookie for security
     const response = NextResponse.json({ data: {

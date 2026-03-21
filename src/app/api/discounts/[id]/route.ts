@@ -4,6 +4,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a single discount by ID
 export const GET = withVenue(async function GET(
@@ -116,6 +117,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'discounts', action: 'updated', entityId: discount.id })
+
     return NextResponse.json({ data: {
       discount: {
         id: discount.id,
@@ -166,6 +169,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: discount.locationId, domain: 'discounts', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

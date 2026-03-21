@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET CFD settings for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -155,6 +156,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
       update: data,
     })
+
+    void notifyDataChanged({ locationId, domain: 'cfd', action: 'updated', entityId: settings.id })
 
     return NextResponse.json({ data: { settings } })
   } catch (error) {

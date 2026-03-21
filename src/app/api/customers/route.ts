@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { normalizePhone } from '@/lib/utils'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List customers with optional search
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -203,6 +204,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ...(welcomeBonus > 0 ? { loyaltyPoints: welcomeBonus } : {}),
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'customers', action: 'created', entityId: customer.id })
 
     return NextResponse.json({ data: {
       id: customer.id,

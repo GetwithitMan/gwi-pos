@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get schedule details
 export const GET = withVenue(async function GET(
@@ -149,6 +150,8 @@ export const PUT = withVenue(async function PUT(
       data: updateData,
     })
 
+    void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       schedule: {
         id: updated.id,
@@ -187,6 +190,8 @@ export const DELETE = withVenue(async function DELETE(
 
     // Soft delete the schedule
     await db.schedule.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { message: 'Schedule deleted' } })
   } catch (error) {

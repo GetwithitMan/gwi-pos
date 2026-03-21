@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET all payment readers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -161,6 +162,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         data: { paymentReaderId: reader.id, paymentProvider: 'DATACAP_DIRECT' },
       })
     }
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: reader.id })
 
     return NextResponse.json({ data: { reader } })
   } catch (error) {

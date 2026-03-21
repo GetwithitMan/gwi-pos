@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, clearPermissionCache } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
 import { emitToLocation } from '@/lib/socket-server'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -172,6 +173,8 @@ export const PUT = withVenue(async function PUT(
     // Emit employees:changed so all terminals refresh employee/permission data
     void emitToLocation(existing.locationId, 'employees:changed', { action: 'role_updated', roleId: id }).catch(console.error)
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'roles', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       role: {
         id: role.id,
@@ -238,6 +241,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: role.locationId, domain: 'roles', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

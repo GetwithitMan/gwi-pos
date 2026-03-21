@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST — Link a CFD terminal to a register terminal
 export const POST = withVenue(async function POST(
@@ -86,6 +87,8 @@ export const POST = withVenue(async function POST(
       console.error('Failed to update CFD terminal category:', err)
     }
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: { terminal } })
   } catch (error) {
     console.error('Failed to pair CFD terminal:', error)
@@ -117,6 +120,8 @@ export const DELETE = withVenue(async function DELETE(
         cfdConnectionMode: null,
       },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

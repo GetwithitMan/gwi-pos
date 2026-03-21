@@ -11,7 +11,12 @@ const log = createChildLogger('cloud-notify')
  * handles local updates directly).
  */
 
-type NotifyDomain = 'menu' | 'floorplan' | 'settings' | 'employees' | 'order-types' | 'sync'
+type NotifyDomain =
+  | 'menu' | 'floorplan' | 'settings' | 'employees' | 'order-types' | 'sync'
+  | 'hardware' | 'pricing' | 'tax' | 'customers' | 'inventory' | 'scheduling'
+  | 'combos' | 'roles' | 'coupons' | 'discounts' | 'gift-cards' | 'house-accounts'
+  | 'events' | 'reservations' | 'prep' | 'cfd' | 'barcodes' | 'reasons'
+  | 'quick-bar' | 'invoices' | 'liquor' | 'delivery'
 
 interface NotifyParams {
   locationId: string

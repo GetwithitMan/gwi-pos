@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET — returns employee's quick bar items and location defaults
 export const GET = withVenue(async function GET(
@@ -90,6 +91,8 @@ export const PUT = withVenue(async function PUT(
         itemIds: JSON.stringify(itemIds),
       },
     })
+
+    void notifyDataChanged({ locationId: putLocationId, domain: 'quick-bar', action: 'updated', entityId: employeeId })
 
     return NextResponse.json({ data: { itemIds } })
   } catch (error) {

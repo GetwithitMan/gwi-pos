@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a single print route by ID
 export const GET = withVenue(async function GET(
@@ -137,6 +138,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: existingRoute.locationId, domain: 'hardware', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: { route } })
   } catch (error) {
     console.error('Failed to update print route:', error)
@@ -166,6 +169,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: route.locationId, domain: 'hardware', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

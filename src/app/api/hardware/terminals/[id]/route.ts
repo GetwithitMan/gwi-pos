@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET single terminal
 export const GET = withVenue(async function GET(
@@ -358,6 +359,8 @@ export const PUT = withVenue(async function PUT(
       })
     }
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: { terminal } })
   } catch (error) {
     console.error('Failed to update terminal:', error)
@@ -394,6 +397,8 @@ export const DELETE = withVenue(async function DELETE(
         deviceToken: null,
       },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

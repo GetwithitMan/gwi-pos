@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST unpair a terminal (manager action)
 export const POST = withVenue(async function POST(
@@ -32,6 +33,8 @@ export const POST = withVenue(async function POST(
         // Keep lastKnownIp and lastSeenAt for audit trail
       },
     })
+
+    void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: id })
 
     return NextResponse.json({ data: {
       success: true,

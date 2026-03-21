@@ -45,19 +45,16 @@ export async function handleDataChanged(payload: DataChangedPayload): Promise<vo
   if (handler) {
     log.info({ domain, tables: payload.tables }, 'Dispatching to registered handler')
     await handler(payload)
-  } else if (payload.tables && payload.tables.length > 0) {
-    // No specific handler — trigger downstream sync for the listed tables
-    log.info({ domain, tables: payload.tables }, 'No handler registered — triggering generic downstream sync')
-    // The downstream sync worker will pick this up on its next cycle
-    // Signal it via the cloud relay trigger if available
+  } else {
+    // No specific handler — ALWAYS trigger immediate downstream sync.
+    // Every cloud change must reach the NUC as fast as possible.
+    log.info({ domain, tables: payload.tables }, 'Triggering immediate downstream sync')
     try {
       const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
-      triggerImmediateDownstreamSync()
+      await triggerImmediateDownstreamSync(domain, payload.tables ?? undefined)
     } catch {
-      // Cloud relay not available — downstream worker will catch up on next poll
+      // Downstream worker not available — will catch up on next poll
     }
-  } else {
-    log.warn({ domain, payload }, 'DATA_CHANGED with no handler and no tables — ignoring')
   }
 }
 
@@ -86,4 +83,59 @@ registerDataChangedHandler('floorplan', async () => {
 registerDataChangedHandler('order-types', async () => {
   const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
   triggerImmediateDownstreamSync()
+})
+
+registerDataChangedHandler('hardware', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['Terminal', 'Printer', 'PrintRoute', 'PrintRule', 'KDSScreen', 'KDSScreenStation', 'KDSScreenLink', 'PaymentReader', 'Scale', 'Station'])
+})
+
+registerDataChangedHandler('pricing', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['PricingOptionGroup', 'PricingOption', 'PricingOptionInventoryLink', 'DiscountRule'])
+})
+
+registerDataChangedHandler('tax', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['TaxRule'])
+})
+
+registerDataChangedHandler('customers', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['Customer', 'Coupon', 'GiftCard', 'HouseAccount'])
+})
+
+registerDataChangedHandler('inventory', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['InventoryItem', 'InventoryItemStorage', 'Ingredient', 'IngredientCategory', 'MenuItemRecipe', 'Vendor', 'StorageLocation', 'InventorySettings'])
+})
+
+registerDataChangedHandler('scheduling', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['Schedule', 'ScheduledShift'])
+})
+
+registerDataChangedHandler('combos', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['ComboTemplate', 'ComboComponent', 'ComboComponentOption'])
+})
+
+registerDataChangedHandler('roles', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['Role', 'EmployeeRole'])
+})
+
+registerDataChangedHandler('events', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['Event', 'EventPricingTier', 'EventTableConfig'])
+})
+
+registerDataChangedHandler('reservations', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['Reservation'])
+})
+
+registerDataChangedHandler('cfd', async () => {
+  const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
+  await triggerImmediateDownstreamSync(undefined, ['CfdSettings'])
 })

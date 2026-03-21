@@ -6,6 +6,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { normalizePhone } from '@/lib/utils'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get customer details with order history
 export const GET = withVenue(async function GET(
@@ -370,6 +371,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId, domain: 'customers', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       id: updated.id,
       firstName: updated.firstName,
@@ -428,6 +431,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id, locationId },
       data: { isActive: false, deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId, domain: 'customers', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

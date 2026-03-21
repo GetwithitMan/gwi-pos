@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /**
  * Check for overlapping shifts for the same employee on the same date.
@@ -153,6 +154,8 @@ export const PUT = withVenue(async function PUT(
       response.warning = `This shift overlaps with an existing shift for this employee (${overlap.startTime}-${overlap.endTime})`
     }
 
+    void notifyDataChanged({ locationId: shift.locationId, domain: 'scheduling', action: 'updated', entityId: shiftId })
+
     return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to update shift:', error)
@@ -188,6 +191,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id: shiftId },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: shift.locationId, domain: 'scheduling', action: 'deleted', entityId: shiftId })
 
     return NextResponse.json({ data: { message: 'Shift deleted' } })
   } catch (error) {

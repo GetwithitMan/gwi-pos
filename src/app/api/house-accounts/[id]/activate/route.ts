@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST - Activate a pending house account
 // Requires: customer has a linked CardProfile (card on file) AND phone verified
@@ -80,6 +81,8 @@ export const POST = withVenue(async function POST(
       where: { id },
       data: { status: 'active' },
     })
+
+    void notifyDataChanged({ locationId: account.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
 
     return NextResponse.json({
       data: {

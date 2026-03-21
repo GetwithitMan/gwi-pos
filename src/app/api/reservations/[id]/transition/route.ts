@@ -7,6 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { transition, TransitionError, type ReservationStatus, type OverrideType } from '@/lib/reservations/state-machine'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -78,6 +79,8 @@ export const POST = withVenue(async function POST(
     if (to === 'cancelled') {
       void triggerWaitlistBridge(reservation, id).catch(console.error)
     }
+
+    void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'updated', entityId: id })
 
     return NextResponse.json({ data: updated })
   } catch (error) {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List schedules
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -125,6 +126,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         notes,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'scheduling', action: 'created', entityId: schedule.id })
 
     return NextResponse.json({ data: {
       schedule: {

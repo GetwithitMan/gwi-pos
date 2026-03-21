@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List table configurations for an event
 export const GET = withVenue(async function GET(
@@ -208,6 +209,8 @@ export const POST = withVenue(async function POST(
         })
       )
     )
+
+    void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'updated', entityId: id })
 
     return NextResponse.json({ data: {
       success: true,

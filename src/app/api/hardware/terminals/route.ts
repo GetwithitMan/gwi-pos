@@ -4,6 +4,7 @@ import { TerminalCategory } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /** Validate IPv4 address — each octet must be 0-255 with no leading zeros */
 function isValidIPv4(ip: string): boolean {
@@ -342,6 +343,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
     }
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: terminal.id })
 
     return NextResponse.json({ data: { terminal } })
   } catch (error: any) {

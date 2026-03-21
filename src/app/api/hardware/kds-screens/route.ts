@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema, KDSOrderTypeFiltersSchema } from '@/lib/kds/types'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET all KDS screens for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -222,6 +223,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: screen.id })
 
     return NextResponse.json({ data: { screen: completeScreen } })
   } catch (error) {

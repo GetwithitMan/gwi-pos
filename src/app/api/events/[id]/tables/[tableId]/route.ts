@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get table configuration for an event
 export const GET = withVenue(async function GET(
@@ -274,6 +275,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: event.locationId, domain: 'events', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       success: true,
       configuration: {
@@ -342,6 +345,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id: config.id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: config.locationId, domain: 'events', action: 'deleted', entityId: config.id })
 
     return NextResponse.json({ data: {
       success: true,

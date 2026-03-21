@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET all pricing option groups + nested options for a menu item
 export const GET = withVenue(async function GET(
@@ -215,6 +216,8 @@ export const POST = withVenue(async function POST(
       action: 'updated',
       menuItemId,
     }).catch(() => {})
+
+    void notifyDataChanged({ locationId, domain: 'pricing', action: 'created', entityId: group.id })
 
     return NextResponse.json({
       data: {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST complete terminal pairing with code
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -86,6 +87,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
 
     // Create response with httpOnly cookie for the token
     const response = NextResponse.json({ data: {

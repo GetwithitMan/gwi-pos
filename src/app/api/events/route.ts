@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -250,6 +251,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         pricingTiers: true,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'events', action: 'created', entityId: event.id })
 
     return NextResponse.json({ data: {
       event: {

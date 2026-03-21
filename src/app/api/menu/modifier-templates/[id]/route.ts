@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -149,6 +150,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       })
     })
 
+    void notifyDataChanged({ locationId, domain: 'menu', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: formatTemplate(template) })
   } catch (error) {
     console.error('Error updating modifier template:', error)
@@ -182,6 +185,8 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId, domain: 'menu', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

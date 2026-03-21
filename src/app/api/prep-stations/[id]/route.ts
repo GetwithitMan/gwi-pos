@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a single prep station
 export const GET = withVenue(async function GET(
@@ -55,6 +56,8 @@ export const PUT = withVenue(async function PUT(
       include: { categories: { select: { id: true, name: true } } },
     })
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'prep', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: { station } })
   } catch (error) {
     console.error('Failed to update prep station:', error)
@@ -76,6 +79,9 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await db.prepStation.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    void notifyDataChanged({ locationId: station.locationId, domain: 'prep', action: 'deleted', entityId: id })
+
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete prep station:', error)

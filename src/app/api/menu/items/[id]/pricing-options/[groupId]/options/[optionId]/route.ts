@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // PUT update an option
 export const PUT = withVenue(async function PUT(
@@ -78,6 +79,8 @@ export const PUT = withVenue(async function PUT(
       menuItemId,
     }).catch(() => {})
 
+    void notifyDataChanged({ locationId, domain: 'pricing', action: 'updated', entityId: optionId })
+
     return NextResponse.json({
       data: {
         option: {
@@ -149,6 +152,8 @@ export const DELETE = withVenue(async function DELETE(
       action: 'updated',
       menuItemId,
     }).catch(() => {})
+
+    void notifyDataChanged({ locationId, domain: 'pricing', action: 'deleted', entityId: optionId })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

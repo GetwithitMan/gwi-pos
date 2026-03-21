@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a single order type
 export const GET = withVenue(async function GET(
@@ -80,6 +81,8 @@ export const PUT = withVenue(async function PUT(
         data: updates,
       })
 
+      void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
+
       return NextResponse.json({ data: { orderType } })
     }
 
@@ -99,7 +102,7 @@ export const PUT = withVenue(async function PUT(
       printConfig,
     } = body
 
-    const orderType = await db.orderType.update({
+    const updatedOrderType = await db.orderType.update({
       where: { id },
       data: {
         ...(name !== undefined && { name }),
@@ -117,7 +120,9 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({ data: { orderType } })
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
+
+    return NextResponse.json({ data: { orderType: updatedOrderType } })
   } catch (error) {
     console.error('Failed to update order type:', error)
     return NextResponse.json(
@@ -152,6 +157,7 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { isActive: false },
       })
+      void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
       return NextResponse.json({ data: {
         message: 'System order type deactivated',
         orderType,
@@ -169,6 +175,7 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { isActive: false },
       })
+      void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
       return NextResponse.json({ data: {
         message: 'Order type deactivated (orders exist using this type)',
         orderType,
@@ -180,6 +187,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: {
       message: 'Order type deleted',

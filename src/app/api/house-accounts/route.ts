@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLocationId } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List house accounts (no admin perm needed — read-only POS query)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -138,6 +139,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       }
     })
+
+    void notifyDataChanged({ locationId, domain: 'house-accounts', action: 'created', entityId: account.id })
 
     return NextResponse.json({ data: {
       ...account,

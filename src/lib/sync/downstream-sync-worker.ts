@@ -1136,7 +1136,95 @@ function initDownstreamNotifications(): void {
     errorPolicy: 'skip',
   })
 
-  log.info('Notification pipeline initialized (4 handlers)')
+  // 5. Menu/catalog change dispatch — emit socket events so POS terminals refresh menu caches
+  registerDownstreamHandler({
+    name: 'menu-change-dispatch',
+    models: ['MenuItem', 'Category', 'ModifierGroup', 'Modifier', 'ComboTemplate', 'ComboComponent', 'ComboComponentOption', 'ModifierGroupTemplate', 'ModifierTemplate', 'PricingOptionGroup', 'PricingOption', 'ItemBarcode'],
+    handler: async (tableName, row, locationId) => {
+      if (!locationId) return
+      const { dispatchMenuUpdate } = await import('../socket-dispatch')
+      await dispatchMenuUpdate(locationId, {
+        action: 'updated',
+        menuItemId: (row.id as string) || undefined,
+        name: (row.name as string) || undefined,
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 6. Employee/role change dispatch — terminals refresh employee lists and permissions
+  registerDownstreamHandler({
+    name: 'employee-change-dispatch',
+    models: ['Employee', 'Role', 'EmployeeRole'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'employees:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 7. Hardware change dispatch — terminals refresh printer/terminal/KDS config
+  registerDownstreamHandler({
+    name: 'hardware-change-dispatch',
+    models: ['Terminal', 'Printer', 'PrintRoute', 'PrintRule', 'KDSScreen', 'KDSScreenStation', 'KDSScreenLink', 'PaymentReader', 'Scale', 'Station'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'hardware:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 8. Settings/pricing/tax change dispatch — terminals refresh settings caches
+  registerDownstreamHandler({
+    name: 'settings-change-dispatch',
+    models: ['TaxRule', 'DiscountRule', 'CourseConfig', 'OrderType', 'CfdSettings', 'InventorySettings', 'VoidReason', 'CompReason', 'ReasonAccess', 'QuickBarPreference', 'QuickBarDefault'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'settings:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 9. Floor plan change dispatch — terminals refresh floor plan display
+  registerDownstreamHandler({
+    name: 'floorplan-change-dispatch',
+    models: ['Table', 'Section', 'SectionAssignment', 'FloorPlanElement'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { dispatchFloorPlanUpdate } = await import('../socket-dispatch')
+      await dispatchFloorPlanUpdate(locationId)
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 10. Customer/loyalty change dispatch
+  registerDownstreamHandler({
+    name: 'customer-change-dispatch',
+    models: ['Customer', 'Coupon', 'GiftCard', 'HouseAccount'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'customers:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 11. Schedule change dispatch
+  registerDownstreamHandler({
+    name: 'schedule-change-dispatch',
+    models: ['Schedule', 'ScheduledShift'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'schedules:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  log.info('Notification pipeline initialized (11 handlers)')
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

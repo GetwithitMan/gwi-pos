@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all coupons for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -179,6 +180,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         createdBy: actor.employeeId,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'coupons', action: 'created', entityId: coupon.id })
 
     return NextResponse.json({ data: {
       ...coupon,

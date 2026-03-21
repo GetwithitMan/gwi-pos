@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get gift card details (by ID or card number)
 export const GET = withVenue(async function GET(
@@ -118,6 +119,7 @@ export const PUT = withVenue(async function PUT(
             frozenReason: reason || 'Manual freeze',
           }
         })
+        void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         return NextResponse.json({ data: {
           ...frozen,
           initialBalance: Number(frozen.initialBalance),
@@ -140,6 +142,7 @@ export const PUT = withVenue(async function PUT(
             frozenReason: null,
           }
         })
+        void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         return NextResponse.json({ data: {
           ...unfrozen,
           initialBalance: Number(unfrozen.initialBalance),
@@ -183,6 +186,8 @@ export const PUT = withVenue(async function PUT(
           },
           include: { transactions: { take: 1, orderBy: { createdAt: 'desc' } } }
         })
+
+        void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
 
         return NextResponse.json({ data: {
           ...reloaded,
@@ -237,6 +242,8 @@ export const PUT = withVenue(async function PUT(
           include: { transactions: { take: 1, orderBy: { createdAt: 'desc' } } }
         })
 
+        void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
+
         return NextResponse.json({ data: {
           ...redeemed,
           initialBalance: Number(redeemed.initialBalance),
@@ -277,6 +284,8 @@ export const PUT = withVenue(async function PUT(
           },
           include: { transactions: { take: 1, orderBy: { createdAt: 'desc' } } }
         })
+
+        void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
 
         return NextResponse.json({ data: {
           ...refunded,

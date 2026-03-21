@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
@@ -364,6 +365,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       },
     })
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+
     // Real-time cross-terminal update
     void emitToLocation(existing.locationId, 'inventory:changed', { ingredientId: id }).catch(() => {})
 
@@ -510,6 +513,9 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+
     return NextResponse.json({ data: { message: 'Ingredient deleted' } })
   } catch (error) {
     console.error('Error deleting ingredient:', error)

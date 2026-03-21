@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchIngredientLibraryUpdate } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/ingredients - List ingredients with filtering and grouping
@@ -510,6 +511,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: ingredient.id })
 
     // Real-time cross-terminal update
     void dispatchIngredientLibraryUpdate(locationId, {

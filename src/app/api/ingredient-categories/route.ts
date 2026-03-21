@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET /api/ingredient-categories - List all categories for location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -105,6 +106,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         needsVerification: needsVerification ?? false,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: category.id })
 
     return NextResponse.json({
       data: {

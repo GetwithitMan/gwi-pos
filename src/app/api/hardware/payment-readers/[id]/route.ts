@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET single payment reader
 export const GET = withVenue(async function GET(
@@ -172,6 +173,8 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'hardware', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       reader: {
         ...reader,
@@ -229,6 +232,8 @@ export const DELETE = withVenue(async function DELETE(
         serialNumber: `${reader.serialNumber}__deleted__${id}`,
       },
     })
+
+    void notifyDataChanged({ locationId: reader.locationId, domain: 'hardware', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

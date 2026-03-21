@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /**
  * Smart Terminal Auto-Reconnect
@@ -106,6 +107,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
 
     console.log(
       `[reconnect] Terminal ${updated.id} (${updated.name}) auto-reconnected via fingerprint — ip: ${clientIp}`

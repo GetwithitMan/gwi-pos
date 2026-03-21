@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST add a new option to a group
 export const POST = withVenue(async function POST(
@@ -87,6 +88,8 @@ export const POST = withVenue(async function POST(
       action: 'updated',
       menuItemId,
     }).catch(() => {})
+
+    void notifyDataChanged({ locationId, domain: 'pricing', action: 'created', entityId: option.id })
 
     return NextResponse.json({
       data: {

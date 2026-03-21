@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List void reasons
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -72,6 +73,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sortOrder: order,
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'reasons', action: 'created', entityId: voidReason.id })
 
     return NextResponse.json({ data: { voidReason } })
   } catch (error) {

@@ -4,6 +4,7 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a single floor plan element
 export const GET = withVenue(async function GET(
@@ -174,6 +175,8 @@ export const PUT = withVenue(async function PUT(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(element.locationId, { async: true })
 
+    void notifyDataChanged({ locationId: element.locationId, domain: 'floorplan', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: { element } })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] PUT error:', error)
@@ -213,6 +216,8 @@ export const DELETE = withVenue(async function DELETE(
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(element.locationId, { async: true })
+
+    void notifyDataChanged({ locationId: element.locationId, domain: 'floorplan', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

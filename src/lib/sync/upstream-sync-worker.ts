@@ -483,3 +483,26 @@ export function stopUpstreamSyncWorker(): void {
 export function getUpstreamSyncMetrics(): SyncMetrics {
   return { ...metrics }
 }
+
+/**
+ * Trigger an immediate upstream sync cycle (non-blocking).
+ * Call after local mutations (orders, payments, tips) to push to Neon
+ * instantly instead of waiting for the 5s timer.
+ *
+ * Debounced: if called multiple times within 100ms, only one cycle runs.
+ */
+let immediateUpstreamPending = false
+let immediateUpstreamTimer: ReturnType<typeof setTimeout> | null = null
+
+export function triggerImmediateUpstreamSync(): void {
+  if (immediateUpstreamPending) return
+  immediateUpstreamPending = true
+
+  // Debounce 100ms — batch rapid-fire mutations into one cycle
+  if (immediateUpstreamTimer) clearTimeout(immediateUpstreamTimer)
+  immediateUpstreamTimer = setTimeout(() => {
+    immediateUpstreamPending = false
+    immediateUpstreamTimer = null
+    void runSyncCycle()
+  }, 100)
+}

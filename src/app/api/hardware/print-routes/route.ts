@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all print routes for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -136,6 +137,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: route.id })
 
     return NextResponse.json({ data: { route } })
   } catch (error) {

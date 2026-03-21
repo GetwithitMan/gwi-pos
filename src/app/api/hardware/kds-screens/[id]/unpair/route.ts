@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST /api/hardware/kds-screens/[id]/unpair - Remove device pairing
 export const POST = withVenue(async function POST(
@@ -31,6 +32,8 @@ export const POST = withVenue(async function POST(
         // Keep lastKnownIp for troubleshooting history
       },
     })
+
+    void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'updated', entityId: id })
 
     return NextResponse.json({ data: {
       success: true,

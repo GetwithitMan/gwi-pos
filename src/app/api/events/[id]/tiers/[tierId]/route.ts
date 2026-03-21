@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a single pricing tier
 export const GET = withVenue(async function GET(
@@ -172,6 +173,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'updated', entityId: tierId })
+
     return NextResponse.json({ data: {
       success: true,
       tier: {
@@ -254,6 +257,8 @@ export const DELETE = withVenue(async function DELETE(
         db.eventPricingTier.update({ where: { id: tierId }, data: { deletedAt: now } }),
       ])
 
+      void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'deleted', entityId: tierId })
+
       return NextResponse.json({ data: {
         success: true,
         message: 'Pricing tier permanently deleted',
@@ -267,6 +272,8 @@ export const DELETE = withVenue(async function DELETE(
           deletedAt: new Date(),
         },
       })
+
+      void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'deleted', entityId: tierId })
 
       return NextResponse.json({ data: {
         success: true,

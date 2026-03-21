@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get a specific coupon
 export const GET = withVenue(async function GET(
@@ -78,6 +79,7 @@ export const PUT = withVenue(async function PUT(
             where: { id },
             data: { isActive: true },
           })
+          void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
           return NextResponse.json({ data: {
             ...activated,
             discountValue: Number(activated.discountValue),
@@ -88,6 +90,7 @@ export const PUT = withVenue(async function PUT(
             where: { id },
             data: { isActive: false },
           })
+          void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
           return NextResponse.json({ data: {
             ...deactivated,
             discountValue: Number(deactivated.discountValue),
@@ -222,6 +225,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       ...updated,
       discountValue: Number(updated.discountValue),
@@ -252,20 +257,23 @@ export const DELETE = withVenue(async function DELETE(
 
     if (redemptionCount > 0) {
       // Soft delete by deactivating
-      await db.coupon.update({
+      const deactivated = await db.coupon.update({
         where: { id },
         data: { isActive: false },
       })
+      void notifyDataChanged({ locationId: deactivated.locationId, domain: 'coupons', action: 'deleted', entityId: id })
       return NextResponse.json({ data: {
         success: true,
         message: 'Coupon has redemptions and was deactivated instead of deleted',
       } })
     }
 
-    await db.coupon.update({
+    const deleted = await db.coupon.update({
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: deleted.locationId, domain: 'coupons', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

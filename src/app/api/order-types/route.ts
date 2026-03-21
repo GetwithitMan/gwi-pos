@@ -3,6 +3,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { SYSTEM_ORDER_TYPES } from '@/types/order-types'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all order types for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -97,6 +98,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
+    void notifyDataChanged({ locationId, domain: 'order-types', action: 'created', entityId: orderType.id })
+
     return NextResponse.json({ data: { orderType } }, { status: 201 })
   } catch (error) {
     console.error('Failed to create order type:', error)
@@ -157,6 +160,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         },
       })
       createdTypes.push(orderType)
+    }
+
+    for (const ot of createdTypes) {
+      void notifyDataChanged({ locationId, domain: 'order-types', action: 'created', entityId: ot.id })
     }
 
     return NextResponse.json({ data: {

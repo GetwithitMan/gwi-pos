@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /**
  * POST /api/hardware/payment-readers/register-direct
@@ -89,6 +90,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
     }
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: existing ? 'updated' : 'created', entityId: reader.id })
 
     // Assign to this terminal (only if no conflict, or overriding)
     if (!conflict) {

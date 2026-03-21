@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List inventory items with filtering and pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -220,6 +221,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: item.id })
 
     return NextResponse.json({ data: {
       item: {

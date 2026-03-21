@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { InventoryStockChangePayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - Get single inventory item
 export const GET = withVenue(async function GET(
@@ -177,6 +178,8 @@ export const PUT = withVenue(async function PUT(
       })
     }
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: {
       item: {
         ...item,
@@ -237,6 +240,8 @@ export const DELETE = withVenue(async function DELETE(
     void flushSocketOutbox(existing.locationId).catch((err) => {
       console.warn('[inventory/items/delete] Outbox flush failed, catch-up will deliver:', err)
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

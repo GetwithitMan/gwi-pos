@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /**
  * Check for overlapping shifts for the same employee on the same date.
@@ -149,6 +150,8 @@ export const POST = withVenue(async function POST(
       response.warning = `This shift overlaps with an existing shift for this employee (${overlap.startTime}-${overlap.endTime})`
     }
 
+    void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'created', entityId: shift.id })
+
     return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to create shift:', error)
@@ -258,6 +261,8 @@ export const PUT = withVenue(async function PUT(
     if (warnings.length > 0) {
       response.warnings = warnings
     }
+
+    void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'updated', entityId: scheduleId })
 
     return NextResponse.json({ data: response })
   } catch (error) {

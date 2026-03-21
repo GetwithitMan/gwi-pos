@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST - Quick-create a house account for a customer
 export const POST = withVenue(async function POST(
@@ -51,6 +52,8 @@ export const POST = withVenue(async function POST(
         status: 'pending',
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'house-accounts', action: 'created', entityId: account.id })
 
     return NextResponse.json({ data: {
       id: account.id,

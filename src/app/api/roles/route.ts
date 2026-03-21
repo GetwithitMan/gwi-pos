@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { requirePermission } from '@/lib/api-auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -141,6 +142,8 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
         ...(tipWeight !== undefined ? { tipWeight: Number(tipWeight) } : {}),
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'roles', action: 'created', entityId: role.id })
 
     return NextResponse.json({ data: {
       id: role.id,

@@ -7,6 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { repriceAndRevalidate } from '@/lib/reservations/revalidate'
 import { transition, TransitionError } from '@/lib/reservations/state-machine'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import type { OperatingHours } from '@/lib/reservations/availability'
 
@@ -107,6 +108,8 @@ export const PUT = withVenue(async function PUT(
         void dispatchReservationChanged(current.locationId, {
           reservationId: id, action: body.status, reservation: updated,
         }).catch(console.error)
+
+        void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
 
         return NextResponse.json({ data: { reservation: updated } })
       } catch (err) {
@@ -228,6 +231,8 @@ export const PUT = withVenue(async function PUT(
       reservation: updated,
     }).catch(console.error)
 
+    void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: { reservation: updated } })
   } catch (error) {
     console.error('[reservations/[id]] PUT error:', error)
@@ -305,6 +310,8 @@ export const DELETE = withVenue(async function DELETE(
           })
         })().catch(console.error)
 
+        void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
+
         return NextResponse.json({ data: { success: true, message: 'Reservation cancelled' } })
       } catch (err) {
         if (err instanceof TransitionError) {
@@ -315,6 +322,9 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await db.reservation.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
+
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('[reservations/[id]] DELETE error:', error)
