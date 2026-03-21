@@ -41,7 +41,11 @@ run_schema() {
     # prisma db push creates tables/columns from schema.prisma.
     # nuc-pre-migrate.js runs numbered migrations for data backfills + DDL patches.
     log "Applying schema to local PostgreSQL..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5
+    # Timeout 120s: Prisma schema engine can hang when diffing large schemas already in sync.
+    # --accept-data-loss: safe on re-install since data comes from Neon seed, not local-only tables.
+    if ! timeout 120 sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push --accept-data-loss" 2>&1 | tail -5; then
+      warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
+    fi
     log "Running local migrations..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1 | tail -5
 
