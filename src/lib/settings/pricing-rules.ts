@@ -6,9 +6,9 @@ import type { PricingRule, PricingAdjustment, HappyHourSettings } from './types'
 
 // Lazy logger — avoids module-scope side effects that inflate middleware bundles
 let _log: GwiLogger | null = null
-function log() {
+function log(): GwiLogger {
   if (!_log) { _log = require('@/lib/logger').createChildLogger('settings') }
-  return _log
+  return _log!
 }
 
 // ─── Legacy Happy Hour Functions (Deprecated) ───────────────────────────────

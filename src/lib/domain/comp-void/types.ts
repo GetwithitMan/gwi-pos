@@ -79,6 +79,7 @@ export interface CompVoidTxResult {
   shouldAutoClose: boolean
   parentTotals: ParentTotals | null
   cardPayments: CardPaymentInfo[]
+  voidLogId: string
 }
 
 export interface RestoreTxResult {
