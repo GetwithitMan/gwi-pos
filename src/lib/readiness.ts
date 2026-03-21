@@ -185,7 +185,7 @@ if (globalThis.__gwi_readiness_state === undefined) {
  * Returns null if readiness has never been computed (pre-boot).
  */
 export function getReadinessState(): ReadinessState | null {
-  return globalThis.__gwi_readiness_state
+  return globalThis.__gwi_readiness_state ?? null
 }
 
 /**

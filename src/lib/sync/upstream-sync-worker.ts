@@ -29,15 +29,37 @@ interface SyncMetrics {
   errorCount: number
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// ── Shared singleton state via globalThis ─────────────────────────────────────
+// CRITICAL: server.js (esbuild) and Next.js API routes (Turbopack/Webpack) load
+// separate module copies. Module-level variables create TWO independent singletons.
+// Using globalThis ensures both module systems share the same state.
 
-const metrics: SyncMetrics = {
-  running: false,
-  lastSyncAt: null,
-  pendingCount: 0,
-  rowsSyncedTotal: 0,
-  errorCount: 0,
+declare global {
+  // eslint-disable-next-line no-var
+  var __gwi_upstream_metrics: SyncMetrics | undefined
+  // eslint-disable-next-line no-var
+  var __gwi_upstream_outage: { isInOutage: boolean; consecutiveFailures: number } | undefined
 }
+
+if (globalThis.__gwi_upstream_metrics === undefined) {
+  globalThis.__gwi_upstream_metrics = {
+    running: false,
+    lastSyncAt: null,
+    pendingCount: 0,
+    rowsSyncedTotal: 0,
+    errorCount: 0,
+  }
+}
+
+if (globalThis.__gwi_upstream_outage === undefined) {
+  globalThis.__gwi_upstream_outage = {
+    isInOutage: false,
+    consecutiveFailures: 0,
+  }
+}
+
+const metrics = globalThis.__gwi_upstream_metrics
+const outageState = globalThis.__gwi_upstream_outage
 
 /** Monotonic counter for outage queue ordering (resets on server restart — fine per outage period) */
 let outageSeqCounter = 0
@@ -47,15 +69,12 @@ let outageSeqCounter = 0
 /** Number of consecutive sync failures before declaring outage */
 const OUTAGE_THRESHOLD = 3
 
-let consecutiveFailures = 0
-let isInOutage = false
-
 /**
  * Check whether the upstream sync is currently in outage mode.
  * When true, Neon is unreachable and writes should be queued locally.
  */
 export function isInOutageMode(): boolean {
-  return isInOutage
+  return outageState.isInOutage
 }
 
 /**
@@ -341,11 +360,11 @@ async function runSyncCycle(): Promise<void> {
     try {
       await neonClient!.$queryRawUnsafe<unknown[]>(`SELECT 1`)
     } catch (connErr) {
-      consecutiveFailures++
+      outageState.consecutiveFailures++
       metrics.errorCount++
-      if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
-        isInOutage = true
-        log.warn({ consecutiveFailures }, 'OUTAGE DETECTED — queuing writes')
+      if (outageState.consecutiveFailures >= OUTAGE_THRESHOLD && !outageState.isInOutage) {
+        outageState.isInOutage = true
+        log.warn({ consecutiveFailures: outageState.consecutiveFailures }, 'OUTAGE DETECTED — queuing writes')
         const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
         if (locId) void dispatchOutageStatus(locId, true).catch((err) => log.error({ err }, 'Failed to dispatch outage status'))
       }
@@ -353,13 +372,13 @@ async function runSyncCycle(): Promise<void> {
     }
 
     // Connectivity restored — clear outage if active
-    if (isInOutage) {
-      log.info({ consecutiveFailures }, 'Connectivity restored — exiting outage mode')
-      isInOutage = false
+    if (outageState.isInOutage) {
+      log.info({ consecutiveFailures: outageState.consecutiveFailures }, 'Connectivity restored — exiting outage mode')
+      outageState.isInOutage = false
       const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
       if (locId) void dispatchOutageStatus(locId, false).catch((err) => log.error({ err }, 'Failed to dispatch outage-cleared status'))
     }
-    consecutiveFailures = 0
+    outageState.consecutiveFailures = 0
 
     const models = getUpstreamModels()
     let totalSynced = 0
@@ -414,7 +433,7 @@ async function runSyncCycle(): Promise<void> {
             locationId: process.env.POS_LOCATION_ID || process.env.LOCATION_ID || '',
             rowsSynced: totalSynced,
             pendingCount: metrics.pendingCount,
-            isOutage: isInOutage,
+            isOutage: outageState.isInOutage,
             timestamp: new Date().toISOString(),
           })
         } catch { /* relay not available */ }
@@ -427,23 +446,23 @@ async function runSyncCycle(): Promise<void> {
   } catch (err) {
     log.error({ cycleId, err }, 'Cycle error')
     metrics.errorCount++
-    consecutiveFailures++
+    outageState.consecutiveFailures++
 
     // Write to venue diagnostic log (fire-and-forget, dynamic import to avoid circular deps)
     void import('../venue-logger').then(({ logVenueEvent }) =>
       logVenueEvent({
-        level: consecutiveFailures >= 3 ? 'error' : 'warn',
+        level: outageState.consecutiveFailures >= 3 ? 'error' : 'warn',
         source: 'sync',
         category: 'sync',
-        message: `Upstream sync cycle failed (attempt ${consecutiveFailures}): ${err instanceof Error ? err.message : String(err)}`,
-        details: { consecutiveFailures, totalSynced: 0 },
+        message: `Upstream sync cycle failed (attempt ${outageState.consecutiveFailures}): ${err instanceof Error ? err.message : String(err)}`,
+        details: { consecutiveFailures: outageState.consecutiveFailures, totalSynced: 0 },
         stackTrace: err instanceof Error ? err.stack : undefined,
       })
     ).catch((venueErr) => log.error({ err: venueErr }, 'Venue logger failed'))
 
-    if (consecutiveFailures >= OUTAGE_THRESHOLD && !isInOutage) {
-      isInOutage = true
-      log.warn({ consecutiveFailures }, 'OUTAGE DETECTED — queuing writes')
+    if (outageState.consecutiveFailures >= OUTAGE_THRESHOLD && !outageState.isInOutage) {
+      outageState.isInOutage = true
+      log.warn({ consecutiveFailures: outageState.consecutiveFailures }, 'OUTAGE DETECTED — queuing writes')
       const locId = process.env.POS_LOCATION_ID || process.env.LOCATION_ID
       if (locId) void dispatchOutageStatus(locId, true).catch((err2) => log.error({ err: err2 }, 'Failed to dispatch outage status'))
     }

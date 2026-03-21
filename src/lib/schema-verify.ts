@@ -22,19 +22,29 @@ interface SchemaCheckResult {
   error?: string
 }
 
-// ── Module-level verification state ──────────────────────────────────────────
-// Other modules (e.g., server.ts worker registration) can check this flag
-// to decide whether to start sync workers. Defaults to null (not yet run).
-let _lastSchemaResult: SchemaCheckResult | null = null
+// ── Shared singleton state via globalThis ────────────────────────────────────
+// CRITICAL: server.js (esbuild) and Next.js API routes (Turbopack/Webpack) load
+// separate module copies. A module-level `let _lastSchemaResult` creates TWO
+// independent singletons — server.ts sets one, API routes read the other (always null).
+// Using globalThis ensures both module systems share the same schema verification state.
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __gwi_schema_result: SchemaCheckResult | null | undefined
+}
+
+if (globalThis.__gwi_schema_result === undefined) {
+  globalThis.__gwi_schema_result = null
+}
 
 /** Returns the most recent schema verification result, or null if not yet run. */
 export function getSchemaVerificationResult(): SchemaCheckResult | null {
-  return _lastSchemaResult
+  return globalThis.__gwi_schema_result ?? null
 }
 
 /** Returns true only if schema verification has run AND passed. */
 export function isSchemaVerified(): boolean {
-  return _lastSchemaResult?.passed === true
+  return globalThis.__gwi_schema_result?.passed === true
 }
 
 /**
@@ -139,7 +149,7 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
       checked: 0,
       error: errorMsg,
     }
-    _lastSchemaResult = result
+    globalThis.__gwi_schema_result = result
     return result
   }
 
@@ -156,6 +166,6 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
   }
 
   const result: SchemaCheckResult = { passed, missing, checked }
-  _lastSchemaResult = result
+  globalThis.__gwi_schema_result = result
   return result
 }

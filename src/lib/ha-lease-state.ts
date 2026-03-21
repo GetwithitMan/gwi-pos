@@ -9,14 +9,27 @@
  * The primary's health check loop renews the lease every 10 seconds.
  */
 
-let mcLeaseExpiry: Date | null = null
+// ── Shared singleton state via globalThis ────────────────────────────────────
+// CRITICAL: server.js (esbuild) and Next.js API routes (Turbopack/Webpack) load
+// separate module copies. A module-level `let mcLeaseExpiry` creates TWO
+// independent singletons — server.ts sets one, API routes read the other (always null).
+// Using globalThis ensures both module systems share the same lease state.
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __gwi_lease_expiry: Date | null | undefined
+}
+
+if (globalThis.__gwi_lease_expiry === undefined) {
+  globalThis.__gwi_lease_expiry = null
+}
 
 /** Called by ha-check.sh lease renewal (via health route) to update local lease cache */
 export function updateLocalLeaseExpiry(expiry: Date | null): void {
-  mcLeaseExpiry = expiry
+  globalThis.__gwi_lease_expiry = expiry
 }
 
 /** Read the current local lease expiry (used by health route) */
 export function getLocalLeaseExpiry(): Date | null {
-  return mcLeaseExpiry
+  return globalThis.__gwi_lease_expiry ?? null
 }

@@ -50,14 +50,27 @@ interface DownstreamMetrics {
   conflictCount: number
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
+// ── Shared singleton state via globalThis ─────────────────────────────────────
+// CRITICAL: server.js (esbuild) and Next.js API routes (Turbopack/Webpack) load
+// separate module copies. A module-level `const metrics` creates TWO independent
+// singletons — server.ts sets one, API routes read the other (always default).
+// Using globalThis ensures both module systems share the same metrics state.
 
-const metrics: DownstreamMetrics = {
-  running: false,
-  lastSyncAt: null,
-  rowsSyncedTotal: 0,
-  conflictCount: 0,
+declare global {
+  // eslint-disable-next-line no-var
+  var __gwi_downstream_metrics: DownstreamMetrics | undefined
 }
+
+if (globalThis.__gwi_downstream_metrics === undefined) {
+  globalThis.__gwi_downstream_metrics = {
+    running: false,
+    lastSyncAt: null,
+    rowsSyncedTotal: 0,
+    conflictCount: 0,
+  }
+}
+
+const metrics = globalThis.__gwi_downstream_metrics
 
 /** High-water mark per table — only fetch rows newer than this */
 const highWaterMarks = new Map<string, Date>()
