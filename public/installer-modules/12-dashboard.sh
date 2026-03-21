@@ -49,10 +49,43 @@ run_dashboard() {
     fi
   done
 
+  # If not found locally, download from GitHub releases
   if [[ -z "$DASHBOARD_DEB" ]]; then
-    track_warn "Dashboard .deb not found — skipping (can be installed later via: sudo dpkg -i gwi-nuc-dashboard_*.deb)"
-    end_timer "Stage 12 (dashboard)"
-    return 0  # Non-fatal: dashboard is optional
+    log "Dashboard .deb not found locally — downloading latest from GitHub..."
+    local DOWNLOAD_DIR="$APP_BASE/dashboard"
+    mkdir -p "$DOWNLOAD_DIR"
+    local DOWNLOAD_URL="https://github.com/GetwithitMan/gwi-dashboard/releases/latest/download/gwi-nuc-dashboard_amd64.deb"
+
+    # Try download with deploy token (private repo)
+    local GIT_TOKEN=""
+    if [[ -f "$APP_BASE/.git-credentials" ]]; then
+      GIT_TOKEN=$(grep 'github.com' "$APP_BASE/.git-credentials" 2>/dev/null | sed 's|https://||;s|:x-oauth-basic@github.com||' | head -1)
+    fi
+
+    if [[ -n "$GIT_TOKEN" ]]; then
+      # Private repo — use token auth
+      local API_URL="https://api.github.com/repos/GetwithitMan/gwi-dashboard/releases/latest"
+      local ASSET_URL=$(curl -sfL -H "Authorization: token $GIT_TOKEN" "$API_URL" 2>/dev/null \
+        | python3 -c "import json,sys;d=json.load(sys.stdin);assets=d.get('assets',[]);print(next((a['url'] for a in assets if a['name'].endswith('.deb')),'')" 2>/dev/null)
+
+      if [[ -n "$ASSET_URL" ]]; then
+        curl -sfL -H "Authorization: token $GIT_TOKEN" -H "Accept: application/octet-stream" \
+          "$ASSET_URL" -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+      fi
+    else
+      # Public fallback
+      curl -sfL "$DOWNLOAD_URL" -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+    fi
+
+    if [[ -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] && [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null) -gt 100000 ]]; then
+      DASHBOARD_DEB="$DOWNLOAD_DIR/gwi-nuc-dashboard.deb"
+      log "Downloaded dashboard: $(ls -lh "$DASHBOARD_DEB" | awk '{print $5}')"
+    else
+      rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
+      track_warn "Dashboard download failed — skipping (can be installed later)"
+      end_timer "Stage 12 (dashboard)"
+      return 0
+    fi
   fi
 
   log "Found dashboard package: ${DASHBOARD_DEB}"
