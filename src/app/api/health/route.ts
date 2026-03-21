@@ -18,6 +18,7 @@ import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync
 import { getUpdateAgentStatus } from '@/lib/update-agent'
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
 import { getReadinessState, type ReadinessLevel } from '@/lib/readiness'
+import { APP_VERSION } from '@/lib/version-contract'
 
 export const dynamic = 'force-dynamic'
 
@@ -110,7 +111,7 @@ let failoverSince: string | null = null
 export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: HealthResponse }>> {
   const timestamp = new Date().toISOString()
   const uptime = Math.floor((Date.now() - startTime) / 1000)
-  const version = process.env.npm_package_version || '1.0.0'
+  const version = APP_VERSION
 
   // Check database connection + PG recovery state
   let databaseStatus: HealthResponse['database'] = 'disconnected'

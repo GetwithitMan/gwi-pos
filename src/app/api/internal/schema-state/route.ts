@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { config } from '@/lib/system-config'
 import { ensureSchemaStateTable, writeSchemaState, readSchemaState } from '@/lib/venue-schema-state'
-import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION } from '@/lib/version-contract'
+import { EXPECTED_SCHEMA_VERSION, EXPECTED_SEED_VERSION, APP_VERSION } from '@/lib/version-contract'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -60,7 +60,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       provisionerVersion,
       provisionedAt: new Date(),
       provisionedBy,
-      appVersion: process.env.npm_package_version || null,
+      appVersion: APP_VERSION,
     })
 
     // Read back to confirm

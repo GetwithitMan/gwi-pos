@@ -17,6 +17,7 @@ import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
 import { getReadinessState } from '@/lib/readiness'
+import { APP_VERSION } from '@/lib/version-contract'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ const startTime = Date.now()
 export const GET = withVenue(async function GET(): Promise<NextResponse> {
   const generatedAt = new Date().toISOString()
   const uptime = Math.floor((Date.now() - startTime) / 1000)
-  const version = process.env.npm_package_version || '1.0.0'
+  const version = APP_VERSION
 
   // ── Health data ─────────────────────────────────────────────────────────────
   let databaseStatus: 'connected' | 'disconnected' | 'error' = 'disconnected'
