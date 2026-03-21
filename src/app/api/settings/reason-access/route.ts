@@ -113,6 +113,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     const authResult = await requirePermission(actor.employeeId, existing.locationId, PERMISSIONS.SETTINGS_SECURITY)
     if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
 
+    // Hard delete: ReasonAccess has no deletedAt column
     await db.reasonAccess.delete({ where: { id } })
 
     return NextResponse.json({ data: { success: true } })

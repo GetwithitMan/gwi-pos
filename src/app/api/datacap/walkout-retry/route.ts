@@ -84,22 +84,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       const error = parseError(response)
       const approved = response.cmdStatus === 'Approved'
-      const now = new Date()
 
       if (approved) {
         // BUG #459 FIX: Atomic guard — use updateMany with status filter to prevent double-charge.
         // If another request already collected this retry, the updateMany matches 0 rows.
-        const { count: updatedCount } = await db.walkoutRetry.updateMany({
-          where: { id: walkoutRetryId, status: 'pending' },
-          data: {
-            status: 'collected',
-            collectedAt: now,
-            lastRetryAt: now,
-            retryCount: retry.retryCount + 1,
-          },
-        })
+        // Clock discipline: use DB-generated NOW() for payment-critical timestamps.
+        const updatedRows = await db.$executeRawUnsafe(
+          `UPDATE "WalkoutRetry"
+           SET status = 'collected', "collectedAt" = NOW(), "lastRetryAt" = NOW(),
+               "retryCount" = $1, "updatedAt" = NOW()
+           WHERE id = $2 AND status = 'pending'`,
+          retry.retryCount + 1,
+          walkoutRetryId,
+        )
 
-        if (updatedCount === 0) {
+        if (updatedRows === 0) {
           // Another request already collected — this is a duplicate
           return NextResponse.json({
             data: { success: true, duplicate: true, status: 'collected', amount: Number(retry.amount) },
@@ -107,52 +106,45 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
 
         // BUG #459 FIX: Update OrderCard, Order status, and create Payment record
+        // Clock discipline: use DB-generated NOW() for capturedAt, paidAt, closedAt.
         const captureAmount = Number(retry.amount)
-        const [, , createdPayment] = await db.$transaction([
-          db.orderCard.update({
-            where: { id: orderCard.id },
-            data: {
-              status: 'captured',
-              capturedAmount: captureAmount,
-              capturedAt: now,
-            },
-          }),
-          // Update order status to 'paid' so it no longer appears as open/walkout
-          db.order.update({
-            where: { id: retry.orderId },
-            data: {
-              status: 'paid',
-              tabStatus: 'closed',
-              paidAt: now,
-              closedAt: now,
-            },
-          }),
-          // Create Payment record for reconciliation and reports
-          db.payment.create({
-            data: {
-              locationId,
-              orderId: retry.orderId,
-              employeeId: employeeId || null,
-              amount: captureAmount,
-              tipAmount: 0,
-              totalAmount: captureAmount,
-              paymentMethod: orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
-              cardBrand: orderCard.cardType || 'unknown',
-              cardLast4: orderCard.cardLast4,
-              authCode: response.authCode || null,
-              datacapRecordNo: orderCard.recordNo,
-              status: 'completed',
-            },
-          }),
-        ])
+        const paymentMethod = orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
+        const cardBrand = orderCard.cardType || 'unknown'
+
+        // Use raw SQL transaction for DB-generated timestamps on payment-critical fields
+        const paymentRows = await db.$queryRawUnsafe<Array<{ id: string }>>(
+          `WITH oc AS (
+            UPDATE "OrderCard"
+            SET status = 'captured', "capturedAmount" = $1, "capturedAt" = NOW(), "updatedAt" = NOW()
+            WHERE id = $2
+          ), ord AS (
+            UPDATE "Order"
+            SET status = 'paid', "tabStatus" = 'closed', "paidAt" = NOW(), "closedAt" = NOW(), "updatedAt" = NOW()
+            WHERE id = $3
+          )
+          INSERT INTO "Payment" (id, "locationId", "orderId", "employeeId", amount, "tipAmount", "totalAmount",
+            "paymentMethod", "cardBrand", "cardLast4", "authCode", "datacapRecordNo", status, "createdAt", "updatedAt")
+          VALUES (gen_random_uuid()::text, $4, $3, $5, $1, 0, $1, $6, $7, $8, $9, $10, 'completed', NOW(), NOW())
+          RETURNING id`,
+          captureAmount,
+          orderCard.id,
+          retry.orderId,
+          locationId,
+          employeeId || null,
+          paymentMethod,
+          cardBrand,
+          orderCard.cardLast4,
+          response.authCode || null,
+          orderCard.recordNo,
+        )
+        const createdPaymentId = paymentRows[0]?.id
 
         // Emit PAYMENT_APPLIED + ORDER_CLOSED events (fire-and-forget)
-        const paymentMethod = orderCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit'
         void emitOrderEvents(locationId, retry.orderId, [
           {
             type: 'PAYMENT_APPLIED',
             payload: {
-              paymentId: createdPayment.id,
+              paymentId: createdPaymentId,
               method: paymentMethod,
               amountCents: Math.round(captureAmount * 100),
               tipCents: 0,
@@ -177,7 +169,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         })
       } else {
-        // Calculate next retry
+        // Calculate next retry using DB time
+        const now = new Date()
         const nextRetry = new Date(now)
         nextRetry.setDate(nextRetry.getDate() + walkoutRetryFrequencyDays)
 
@@ -186,17 +179,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         maxDate.setDate(maxDate.getDate() + walkoutMaxRetryDays)
 
         const exhausted = nextRetry > maxDate
+        const lastRetryError = error?.text || response.textResponse || 'Declined'
 
-        await db.walkoutRetry.update({
-          where: { id: walkoutRetryId },
-          data: {
-            retryCount: retry.retryCount + 1,
-            lastRetryAt: now,
-            lastRetryError: error?.text || response.textResponse || 'Declined',
-            status: exhausted ? 'exhausted' : 'pending',
-            nextRetryAt: exhausted ? retry.nextRetryAt : nextRetry,
-          },
-        })
+        // Clock discipline: use DB-generated NOW() for lastRetryAt
+        await db.$executeRawUnsafe(
+          `UPDATE "WalkoutRetry"
+           SET "retryCount" = $1, "lastRetryAt" = NOW(), "lastRetryError" = $2,
+               status = $3, "nextRetryAt" = $4, "updatedAt" = NOW()
+           WHERE id = $5`,
+          retry.retryCount + 1,
+          lastRetryError,
+          exhausted ? 'exhausted' : 'pending',
+          exhausted ? retry.nextRetryAt : nextRetry,
+          walkoutRetryId,
+        )
 
         return NextResponse.json({
           data: {
@@ -211,14 +207,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Retry failed'
 
-      await db.walkoutRetry.update({
-        where: { id: walkoutRetryId },
-        data: {
-          retryCount: retry.retryCount + 1,
-          lastRetryAt: new Date(),
-          lastRetryError: errorMsg,
-        },
-      })
+      // Clock discipline: use DB-generated NOW() for lastRetryAt
+      await db.$executeRawUnsafe(
+        `UPDATE "WalkoutRetry"
+         SET "retryCount" = $1, "lastRetryAt" = NOW(), "lastRetryError" = $2, "updatedAt" = NOW()
+         WHERE id = $3`,
+        retry.retryCount + 1,
+        errorMsg,
+        walkoutRetryId,
+      )
 
       return NextResponse.json({
         data: { success: false, error: errorMsg },

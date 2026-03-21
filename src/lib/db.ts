@@ -24,6 +24,17 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required')
 }
 
+// SAFETY: Prevent NUC from accidentally connecting to Neon as its primary DB.
+// If DATABASE_URL points to neon.tech, the entire offline-first architecture breaks —
+// every POS API route would depend on internet connectivity.
+if (!isVercel && process.env.DATABASE_URL.includes('neon.tech')) {
+  throw new Error(
+    'FATAL: DATABASE_URL must NOT point to neon.tech on NUC. ' +
+    'Use local PostgreSQL (e.g., postgres://user:pass@localhost:5432/thepasspos). ' +
+    'Neon should only be in NEON_DATABASE_URL for sync workers.'
+  )
+}
+
 // ============================================================================
 // PrismaClient factory — shared by master, admin, and venue clients
 // ============================================================================

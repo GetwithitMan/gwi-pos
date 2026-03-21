@@ -151,7 +151,7 @@ export const DELETE = withVenue(async function DELETE(
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
-    // Delete the override (if it exists)
+    // Hard delete: EmployeePermissionOverride has no deletedAt column
     try {
       await db.employeePermissionOverride.delete({
         where: {

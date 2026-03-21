@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
-import * as OrderItemRepository from '@/lib/repositories/order-item-repository'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
@@ -150,14 +149,20 @@ export const POST = withVenue(withTiming(async function POST(
       return true
     })
 
-    const now = new Date()
+    // Clock discipline: use DB-generated NOW() for all timestamps written to the database.
+    // `jsNow` is used ONLY for in-memory calculations (entertainment session end, socket payloads)
+    // that don't get persisted as timestamps. All DB writes use SQL NOW().
+    const jsNow = new Date()
 
     // Stamp delayStartedAt on delayed items so countdown survives page reload
+    // Clock discipline: DB-generated NOW()
     if (delayedItems.length > 0) {
-      await db.orderItem.updateMany({
-        where: { id: { in: delayedItems.map(i => i.id) } },
-        data: { delayStartedAt: now },
-      })
+      const delayedIds = delayedItems.map(i => i.id)
+      await db.$executeRawUnsafe(
+        `UPDATE "OrderItem" SET "delayStartedAt" = NOW(), "updatedAt" = NOW()
+         WHERE id = ANY($1::text[])`,
+        delayedIds,
+      )
     }
 
     // Short-circuit: if no items to process, return early without dispatching events.
@@ -191,7 +196,7 @@ export const POST = withVenue(withTiming(async function POST(
 
       // Check if entertainment item with timer
       if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
-        const sessionEnd = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000)
+        const sessionEnd = new Date(jsNow.getTime() + item.blockTimeMinutes * 60 * 1000)
         entertainmentUpdates.push({
           itemId: item.id,
           menuItemId: item.menuItem.id,
@@ -211,29 +216,44 @@ export const POST = withVenue(withTiming(async function POST(
     // for voids within 30s of sentAt to prevent send→void→pocket-cash attacks).
     timing.start('db-update')
     const newStatus = order.status === 'draft' ? 'open' : order.status
-    const orderUpdateData: Record<string, unknown> = { version: { increment: 1 }, sentAt: now }
-    if (order.status === 'draft') {
-      orderUpdateData.status = 'open'
-    }
 
     // Atomic transaction: order update + item status + socket event outbox
+    // Clock discipline: all DB timestamps use SQL NOW()
     await db.$transaction(async (tx) => {
-      await OrderRepository.updateOrder(id, order.locationId, orderUpdateData as any, tx)
-
-      // Batch update regular items
-      if (regularItemIds.length > 0) {
-        await OrderItemRepository.updateItemsByIds(regularItemIds, order.locationId, { kitchenStatus: 'sent', firedAt: now }, tx)
+      // Update order: increment version, set sentAt = NOW(), optionally transition draft → open
+      if (order.status === 'draft') {
+        await tx.$executeRawUnsafe(
+          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "updatedAt" = NOW()
+           WHERE id = $1 AND "locationId" = $2`,
+          id, order.locationId,
+        )
+      } else {
+        await tx.$executeRawUnsafe(
+          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "updatedAt" = NOW()
+           WHERE id = $1 AND "locationId" = $2`,
+          id, order.locationId,
+        )
       }
 
-      // Batch update entertainment items with sessions
+      // Batch update regular items: kitchenStatus = 'sent', firedAt = NOW()
+      if (regularItemIds.length > 0) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "OrderItem" SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "updatedAt" = NOW()
+           WHERE id = ANY($1::text[]) AND "locationId" = $2`,
+          regularItemIds, order.locationId,
+        )
+      }
+
+      // Batch update entertainment items with sessions: firedAt + blockTime timestamps = NOW()
       if (entertainmentUpdates.length > 0) {
         for (const { itemId, sessionEnd } of entertainmentUpdates) {
-          await OrderItemRepository.updateItem(itemId, order.locationId, {
-            kitchenStatus: 'sent',
-            firedAt: now,
-            blockTimeStartedAt: now,
-            blockTimeExpiresAt: sessionEnd,
-          }, tx)
+          await tx.$executeRawUnsafe(
+            `UPDATE "OrderItem"
+             SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "blockTimeStartedAt" = NOW(),
+                 "blockTimeExpiresAt" = $1, "updatedAt" = NOW()
+             WHERE id = $2 AND "locationId" = $3`,
+            sessionEnd, itemId, order.locationId,
+          )
         }
       }
 
@@ -277,7 +297,7 @@ export const POST = withVenue(withTiming(async function POST(
     if (entertainmentUpdates.length > 0) {
       await Promise.all(
         entertainmentUpdates.map(({ itemId, menuItemId, sessionEnd }) =>
-          startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
+          startEntertainmentSession(menuItemId, order.id, itemId, jsNow, sessionEnd)
         )
       )
     }
@@ -439,7 +459,7 @@ export const POST = withVenue(withTiming(async function POST(
     // For entertainment items, dispatch session updates and status changes (non-critical UI)
     for (const item of itemsToProcess) {
       if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
-        const sessionExpiresAt = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString()
+        const sessionExpiresAt = new Date(jsNow.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString()
 
         void dispatchEntertainmentUpdate(order.locationId, {
           sessionId: item.id,
@@ -447,7 +467,7 @@ export const POST = withVenue(withTiming(async function POST(
           tableName: order.tabName || `Order #${order.orderNumber}`,
           action: 'started',
           expiresAt: sessionExpiresAt,
-          startedAt: now.toISOString(),
+          startedAt: jsNow.toISOString(),
         }, { async: true }).catch((err) => {
           console.error('[API /orders/[id]/send] Entertainment dispatch failed:', err)
         })

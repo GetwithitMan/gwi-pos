@@ -242,7 +242,8 @@ async function recheckNeonSchema(): Promise<void> {
           cachedResult.degradedReasons = cachedResult.degradedReasons.filter(
             r => r !== 'neon-schema-behind' &&
                  r !== 'neon-schema-state-missing-needs-mc' &&
-                 r !== 'neon-empty-needs-mc-provision'
+                 r !== 'neon-empty-needs-mc-provision' &&
+                 r !== 'neon-unreachable'
           )
 
           // Re-evaluate syncContractReady
@@ -297,8 +298,26 @@ async function recheckNeonSchema(): Promise<void> {
           }
         }
 
-        // Schema is now OK — stop re-checking
+        // Schema is now OK — stop re-checking and auto-start sync workers
         stopSchemaRecheck()
+
+        // Auto-start sync workers without requiring NUC restart
+        try {
+          const { startUpstreamSyncWorker } = await import('@/lib/sync/upstream-sync-worker')
+          const { startDownstreamSyncWorker } = await import('@/lib/sync/downstream-sync-worker')
+          const { startOutageReplayWorker } = await import('@/lib/sync/outage-replay-worker')
+          const { startCloudRelayClient } = await import('@/lib/cloud-relay-client')
+
+          startUpstreamSyncWorker()
+          startDownstreamSyncWorker()
+          startOutageReplayWorker()
+          startCloudRelayClient()
+
+          log.info('Sync workers auto-started after schema re-check unblocked sync')
+        } catch (workerErr) {
+          log.error({ err: workerErr instanceof Error ? workerErr.message : workerErr },
+            'Failed to auto-start sync workers after schema unblock — NUC restart required')
+        }
       } else {
         log.warn({
           attempt: schemaRecheckCount,
@@ -332,14 +351,16 @@ export function startSchemaRecheckIfBlocked(): void {
   if (cachedResult.syncContractReady) return
   if (schemaRecheckTimer) return // already running
 
-  // Only start re-check for schema-related blocks (not backup mode, not sync disabled, etc.)
-  const schemaBlocks = [
+  // Start re-check for schema-related blocks AND neon-unreachable
+  // (not backup mode, not sync disabled, etc.)
+  const recheckableBlocks = [
     'neon-schema-behind',
     'neon-schema-state-missing-needs-mc',
     'neon-empty-needs-mc-provision',
+    'neon-unreachable',
   ]
-  const hasSchemaBlock = cachedResult.degradedReasons.some(r => schemaBlocks.includes(r))
-  if (!hasSchemaBlock) return
+  const hasRecheckableBlock = cachedResult.degradedReasons.some(r => recheckableBlocks.includes(r))
+  if (!hasRecheckableBlock) return
 
   log.info({
     interval: SCHEMA_RECHECK_INTERVAL_MS,

@@ -86,6 +86,30 @@ export function withVenue(handler: RouteHandler): RouteHandler {
         }
       }
 
+      // ── Readiness gate ──────────────────────────────────────────────────
+      // On NUC production, block mutating requests until readiness >= ORDERS.
+      // This prevents pairing, order creation, and payments from running
+      // against an empty local DB before the first downstream sync completes.
+      if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
+        const method = request?.method?.toUpperCase?.() || ''
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+          const pathname = request?.nextUrl?.pathname || request?.url?.split('?')[0] || ''
+          const isExempt = SLUGLESS_ALLOWED_PATTERNS.some(p => pathname.startsWith(p))
+          if (!isExempt) {
+            const { isReadyForOrders } = await import('./readiness')
+            if (!isReadyForOrders()) {
+              return new Response(
+                JSON.stringify({
+                  error: 'Server initializing — not ready for operations. Try again in 10 seconds.',
+                  code: 'NOT_READY_FOR_ORDERS',
+                }),
+                { status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '10' } }
+              )
+            }
+          }
+        }
+      }
+
       // Fast path: if already inside a request context (NUC server.ts wraps
       // every request in requestStore.run()), skip the headers() lookup entirely.
       // This avoids the async overhead of await headers() on local POS.
