@@ -138,24 +138,15 @@ if command -v vncserver-x11 >/dev/null 2>&1; then
 
   log "RealVNC Server installed."
 
-  # Prompt for cloud join
-  echo ""
-  echo -e "${CYAN}RealVNC Cloud Join${NC}"
-  echo "  Get a token from: connect.realvnc.com → Deployment → Cloud join token"
-  echo ""
-  read -rp "  Enter RealVNC cloud join token (or Enter to skip): " REALVNC_TOKEN < /dev/tty
-  if [[ -n "$REALVNC_TOKEN" ]]; then
-    log "Joining RealVNC cloud..."
-    if vncserver-x11 -service -joinCloud "$REALVNC_TOKEN" 2>/dev/null; then
-      log "Joined RealVNC cloud — device will appear in your portal."
-      # Save token for the POS installer to reuse
-      mkdir -p /opt/gwi-pos
-      echo "REALVNC_CLOUD_TOKEN=$REALVNC_TOKEN" >> /opt/gwi-pos/.env 2>/dev/null || true
-    else
-      warn "Cloud join failed. Sign in manually via the RealVNC desktop icon."
-    fi
+  # Auto-sign-in to RealVNC cloud (no prompts)
+  log "Signing in to RealVNC cloud..."
+  if vncserver-x11 -service -login -email "brian@get-with-it.com" -password "asdfkjbf;aofhfrgrfhW3*" 2>/dev/null; then
+    log "Signed in to RealVNC — device visible in your cloud portal."
+  elif vncserver-x11 -service -joinCloud "brian@get-with-it.com" 2>/dev/null; then
+    log "Joined RealVNC cloud."
   else
-    log "Skipped. You can join later from the desktop icon."
+    warn "RealVNC auto-sign-in failed. Sign in manually via the desktop icon."
+    warn "Email: brian@get-with-it.com"
   fi
 fi
 

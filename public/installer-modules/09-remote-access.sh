@@ -114,46 +114,12 @@ VNCSVC
 
     log "RealVNC Server installed — FriendlyName: $FRIENDLY_NAME"
 
-    # ── RealVNC Cloud Join ──
-    # Check for REALVNC_CLOUD_TOKEN in .env (auto-join without prompting)
-    if [[ -z "${REALVNC_CLOUD_TOKEN:-}" ]] && [[ -f "$APP_BASE/.env" ]]; then
-      REALVNC_CLOUD_TOKEN=$(grep "^REALVNC_CLOUD_TOKEN=" "$APP_BASE/.env" 2>/dev/null | cut -d= -f2- | head -1 || echo "")
-    fi
-
-    if [[ -n "${REALVNC_CLOUD_TOKEN:-}" ]]; then
-      # Auto-join using token from .env
-      log "Auto-joining RealVNC cloud (token from .env)..."
-      if vncserver-x11 -service -joinCloud "$REALVNC_CLOUD_TOKEN" 2>/dev/null; then
-        log "Successfully joined RealVNC cloud — device will appear in your portal."
-      else
-        warn "RealVNC cloud auto-join failed — sign in manually via desktop icon or: vncserver-x11 -config"
-      fi
+    # ── RealVNC Cloud Sign-In (automatic, no prompts) ──
+    log "Signing in to RealVNC cloud..."
+    if vncserver-x11 -service -login -email "brian@get-with-it.com" -password "asdfkjbf;aofhfrgrfhW3*" 2>/dev/null; then
+      log "Signed in to RealVNC cloud — device: $FRIENDLY_NAME"
     else
-      # Interactive prompt (no token in .env)
-      echo ""
-      echo "RealVNC Cloud Join (optional)"
-      echo "  Get a token from: connect.realvnc.com -> Deployment -> Cloud join token"
-      read -rp "  Enter RealVNC cloud join token (or press Enter to skip): " REALVNC_TOKEN < /dev/tty
-      if [[ -n "$REALVNC_TOKEN" ]]; then
-        log "Joining RealVNC cloud account..."
-        if vncserver-x11 -service -joinCloud "$REALVNC_TOKEN" 2>/dev/null; then
-          log "Successfully joined RealVNC cloud — device will appear in your portal."
-          # Save token to .env for future re-runs
-          if [[ -f "$APP_BASE/.env" ]]; then
-            if ! grep -q "^REALVNC_CLOUD_TOKEN=" "$APP_BASE/.env" 2>/dev/null; then
-              echo "" >> "$APP_BASE/.env"
-              echo "# RealVNC cloud join token (auto-join on re-installs)" >> "$APP_BASE/.env"
-              echo "REALVNC_CLOUD_TOKEN=$REALVNC_TOKEN" >> "$APP_BASE/.env"
-              log "Saved RealVNC token to .env for future re-installs."
-            fi
-          fi
-        else
-          warn "Cloud join failed — sign in manually via desktop icon or: vncserver-x11 -config"
-        fi
-      else
-        log "Skipping RealVNC cloud join."
-        log "Sign in later: Open 'RealVNC Server' from the desktop, or run: vncserver-x11 -config"
-      fi
+      warn "RealVNC auto-sign-in failed. Sign in manually via the desktop icon."
     fi
 
     # Desktop shortcut for RealVNC Server settings
