@@ -30,16 +30,16 @@ run_database() {
   cat > /opt/gwi-pos/wait-for-pos.sh <<'WAITEOF'
 #!/bin/bash
 URL="${1:-http://localhost:3005/login}"
-TIMEOUT=120
+TIMEOUT=300
 ELAPSED=0
 while [ $ELAPSED -lt $TIMEOUT ]; do
   if curl -sf -o /dev/null "$URL" 2>/dev/null; then
     exit 0
   fi
-  sleep 2
-  ELAPSED=$((ELAPSED + 2))
+  sleep 5
+  ELAPSED=$((ELAPSED + 5))
 done
-echo "POS server not ready after ${TIMEOUT}s" >&2
+echo "POS server not ready after ${TIMEOUT}s — kiosk will retry via systemd" >&2
 exit 1
 WAITEOF
   chmod +x /opt/gwi-pos/wait-for-pos.sh

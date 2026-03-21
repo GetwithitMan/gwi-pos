@@ -276,8 +276,8 @@ SVCEOF
 Description=ThePassPOS Kiosk
 After=graphical.target thepasspos.service
 Wants=thepasspos.service
-StartLimitIntervalSec=60
-StartLimitBurst=5
+StartLimitIntervalSec=600
+StartLimitBurst=10
 
 [Service]
 Type=simple
@@ -289,7 +289,7 @@ ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh
 ExecStart=$CHROMIUM_FULL_PATH --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile http://localhost:3005
 Restart=always
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=graphical.target
