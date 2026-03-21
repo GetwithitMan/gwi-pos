@@ -33,7 +33,7 @@ import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-rel
 import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
-import { runBootstrap } from './src/lib/venue-bootstrap'
+import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
 import { computeReadiness, setReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
 
 const dev = config.nodeEnv !== 'production'
@@ -407,8 +407,17 @@ async function main() {
           schemaVersion: neonReady.schemaVersion,
           readinessLevel: readiness.level,
           degradedReasons: readiness.degradedReasons,
-        }, 'Sync workers NOT started — readiness check failed. Fix schema and restart.')
+        }, 'Sync workers NOT started — readiness check failed. Schema re-check will retry every 5 minutes.')
       }
+    }
+
+    // If sync is blocked due to schema mismatch, start periodic re-check.
+    // When MC pushes the schema update, the re-check will detect it and
+    // update the cached bootstrap result + readiness state. Sync workers
+    // must still be started manually (restart) after unblock, but at least
+    // the heartbeat will report the unblocked state immediately.
+    if (!syncReady) {
+      startSchemaRecheckIfBlocked()
     }
 
     if (syncReady) {
@@ -522,6 +531,7 @@ async function main() {
     await masterClient.$disconnect()
     logger.info('Prisma disconnected')
 
+    stopSchemaRecheck()
     await stopAllWorkers()
     await disconnectNeon()
     logger.info('Neon client disconnected')

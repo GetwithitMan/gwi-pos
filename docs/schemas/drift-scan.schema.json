@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GWI POS Drift Scan",
+  "description": "Records the result of a periodic drift scan comparing observed node state against the applied baseline/policy. Written by the drift scanner timer (runs every 30 minutes). Lives at /opt/gwi-pos/state/drift-scan.json. Drifted items are classified using the deprecation taxonomy codes. Example: {\"schema_version\":\"1.0\",\"producer\":\"drift-scanner\",\"generated_at\":\"2026-03-20T15:00:00Z\",\"node_id\":\"nuc-venue-001\",\"baseline_version\":\"baseline-2026.03.20.1\",\"drift_detected\":true,\"drifted_items\":[\"FIREWALL_DISABLED\",\"SLEEP_TARGETS_UNMASKED\"],\"config_checksums\":{\"ufw_rules\":\"sha256:abc123\",\"sshd_config\":\"sha256:def456\"},\"clock\":{\"synced\":true,\"offset_ms\":1.2}}",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "producer",
+    "generated_at",
+    "node_id",
+    "baseline_version",
+    "drift_detected",
+    "drifted_items"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility."
+    },
+    "producer": {
+      "type": "string",
+      "description": "Name of the script that wrote this file.",
+      "examples": ["drift-scanner"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when this scan completed."
+    },
+    "node_id": {
+      "type": "string",
+      "description": "Unique node identifier from SERVER_NODE_ID in .env."
+    },
+    "baseline_version": {
+      "type": "string",
+      "description": "Baseline version from installer/VERSION."
+    },
+    "drift_detected": {
+      "type": "boolean",
+      "description": "True if any drifted items were found."
+    },
+    "drifted_items": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Deprecation taxonomy code identifying the drift. See the deprecation taxonomy in the spec for the full list of codes and their severity/remediation mode."
+      },
+      "description": "List of deprecation codes for detected drift. Empty array if no drift. Codes include: APP_VERSION_OLD, BASELINE_VERSION_OLD, POLICY_VERSION_OLD, OS_VERSION_UNSUPPORTED, SERVICE_SET_MISMATCH, FIREWALL_DISABLED, SLEEP_TARGETS_UNMASKED, CLOCK_UNSYNCED, TIME_SOURCE_UNHEALTHY, DESKTOP_ENV_UNSUPPORTED, PRINTER_MODEL_UNCERTIFIED, HARDWARE_PROFILE_UNKNOWN."
+    },
+    "config_checksums": {
+      "type": "object",
+      "description": "SHA-256 checksums of key config files for change detection between scans.",
+      "additionalProperties": {
+        "type": "string",
+        "description": "Checksum in format 'sha256:<hex>'"
+      },
+      "examples": [
+        {
+          "ufw_rules": "sha256:abc123def456",
+          "sshd_config": "sha256:789abc012def",
+          "logind_conf": "sha256:345678abcdef",
+          "sddm_autologin": "sha256:fedcba987654"
+        }
+      ]
+    },
+    "clock": {
+      "type": "object",
+      "description": "Clock health at scan time. Must always be reported per Rule 12 (never suppressed).",
+      "required": ["synced", "offset_ms"],
+      "properties": {
+        "synced": {
+          "type": "boolean",
+          "description": "True if chrony reports normal leap status. False if chrony is unavailable or unhealthy."
+        },
+        "offset_ms": {
+          "type": ["number", "null"],
+          "description": "System clock offset from NTP source in milliseconds. Null if chrony is unavailable."
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

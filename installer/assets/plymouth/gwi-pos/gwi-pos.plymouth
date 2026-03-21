@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=GWI POS
+Description=GWI POS Boot Splash
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/gwi-pos
+ScriptFile=/usr/share/plymouth/themes/gwi-pos/gwi-pos.script

@@ -1,0 +1,17 @@
+# =============================================================================
+# GWI POS — USB Peripheral Device udev Rules
+# =============================================================================
+# Managed by Ansible — do not edit manually
+#
+# Grants appropriate permissions for POS peripheral devices so the
+# application can communicate without requiring root access.
+# =============================================================================
+
+# ID Tech card readers (Datacap VP3300/VP3350 payment terminals)
+SUBSYSTEM=="usb", ATTR{idVendor}=="0acd", MODE="0666", GROUP="plugdev"
+
+# CAS PDN scales (FTDI USB-to-serial)
+SUBSYSTEM=="usb", ATTR{idVendor}=="0403", MODE="0666", GROUP="dialout"
+
+# Prolific PL2303 USB-to-serial adapters (scale adapter cables)
+SUBSYSTEM=="usb", ATTR{idVendor}=="067b", MODE="0666", GROUP="dialout"

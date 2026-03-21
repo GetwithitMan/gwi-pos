@@ -1,0 +1,485 @@
+# =============================================================================
+# GWI POS — Master Baseline Enforcement Playbook
+# =============================================================================
+# Converges a NUC to the declared baseline. Executed by Stage 11 wrapper
+# (11-system-hardening.sh) under flock. All roles must be idempotent.
+#
+# Execution: ANSIBLE_STDOUT_CALLBACK=json ansible-playbook site.yml \
+#   --extra-vars "gwi_posuser=gwipos gwi_station_role=server"
+# =============================================================================
+---
+- name: GWI POS Node Baseline Enforcement
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # PRE-TASKS — Detection, fact gathering, bootstrap policy
+  # ═══════════════════════════════════════════════════════════════════════════
+  pre_tasks:
+
+    # ── Read baseline version ──────────────────────────────────────────────
+    - name: Read baseline version from installer/VERSION
+      ansible.builtin.slurp:
+        src: "{{ playbook_dir }}/VERSION"
+      register: _version_file
+      ignore_errors: true
+
+    - name: Set baseline version fact
+      ansible.builtin.set_fact:
+        gwi_baseline_version: "{{ (_version_file.content | default('dW5rbm93bg==') | b64decode).strip() }}"
+
+    # ── Detect POS user from .env ownership ────────────────────────────────
+    - name: Stat .env file for owner detection
+      ansible.builtin.stat:
+        path: "{{ gwi_env_file }}"
+      register: _env_stat
+
+    - name: Detect POS user from .env ownership (fallback to extra-var or gwipos)
+      ansible.builtin.set_fact:
+        gwi_posuser: >-
+          {%- if _env_stat.stat.exists | default(false) -%}
+            {{ _env_stat.stat.pw_name }}
+          {%- elif gwi_posuser is defined and gwi_posuser != '' -%}
+            {{ gwi_posuser }}
+          {%- else -%}
+            gwipos
+          {%- endif -%}
+
+    - name: Strip whitespace from gwi_posuser
+      ansible.builtin.set_fact:
+        gwi_posuser: "{{ gwi_posuser | trim }}"
+
+    # ── Detect POS user home directory ─────────────────────────────────────
+    - name: Look up POS user home directory
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ gwi_posuser }}"
+      register: _posuser_getent
+      ignore_errors: true
+
+    - name: Set POS user home directory fact
+      ansible.builtin.set_fact:
+        gwi_posuser_home: >-
+          {%- if _posuser_getent is succeeded and getent_passwd is defined -%}
+            {{ getent_passwd[gwi_posuser][4] }}
+          {%- else -%}
+            /home/{{ gwi_posuser }}
+          {%- endif -%}
+
+    - name: Strip whitespace from gwi_posuser_home
+      ansible.builtin.set_fact:
+        gwi_posuser_home: "{{ gwi_posuser_home | trim }}"
+
+    # ── Detect desktop environment (KDE vs GNOME) ─────────────────────────
+    - name: Check for SDDM (KDE Plasma)
+      ansible.builtin.command: dpkg-query -W -f='${Status}' sddm
+      register: _sddm_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check for GDM3 (GNOME)
+      ansible.builtin.command: dpkg-query -W -f='${Status}' gdm3
+      register: _gdm3_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set desktop environment fact
+      ansible.builtin.set_fact:
+        gwi_desktop_env: >-
+          {%- if _sddm_check.rc == 0 and 'install ok installed' in _sddm_check.stdout -%}
+            kde
+          {%- elif _gdm3_check.rc == 0 and 'install ok installed' in _gdm3_check.stdout -%}
+            gnome
+          {%- else -%}
+            unknown
+          {%- endif -%}
+
+    - name: Strip whitespace from gwi_desktop_env
+      ansible.builtin.set_fact:
+        gwi_desktop_env: "{{ gwi_desktop_env | trim }}"
+
+    # ── Read station role from extra-vars ──────────────────────────────────
+    - name: Validate station role
+      ansible.builtin.assert:
+        that:
+          - gwi_station_role in ['server', 'backup', 'terminal']
+        fail_msg: >
+          Invalid gwi_station_role '{{ gwi_station_role }}'.
+          Must be one of: server, backup, terminal.
+        quiet: true
+
+    # ── Read .env variables ────────────────────────────────────────────────
+    - name: Read .env file contents
+      ansible.builtin.slurp:
+        src: "{{ gwi_env_file }}"
+      register: _env_contents
+      ignore_errors: true
+
+    - name: Parse .env variables
+      ansible.builtin.set_fact:
+        _env_lines: "{{ (_env_contents.content | default('') | b64decode).split('\n') }}"
+      when: _env_contents is succeeded
+
+    - name: Extract VIRTUAL_IP from .env
+      ansible.builtin.set_fact:
+        gwi_virtual_ip: "{{ item.split('=', 1)[1] | default('') }}"
+      loop: "{{ _env_lines | default([]) }}"
+      when:
+        - _env_lines is defined
+        - item is match('^VIRTUAL_IP=')
+      no_log: true
+
+    - name: Extract MC_URL from .env
+      ansible.builtin.set_fact:
+        gwi_mc_url: "{{ item.split('=', 1)[1] | default('https://app.thepasspos.com') }}"
+      loop: "{{ _env_lines | default([]) }}"
+      when:
+        - _env_lines is defined
+        - item is match('^MC_URL=')
+      no_log: true
+
+    - name: Extract SERVER_NODE_ID from .env
+      ansible.builtin.set_fact:
+        gwi_server_node_id: "{{ item.split('=', 1)[1] | default('') }}"
+      loop: "{{ _env_lines | default([]) }}"
+      when:
+        - _env_lines is defined
+        - item is match('^SERVER_NODE_ID=')
+      no_log: true
+
+    - name: Extract SERVER_API_KEY from .env
+      ansible.builtin.set_fact:
+        gwi_server_api_key: "{{ item.split('=', 1)[1] | default('') }}"
+      loop: "{{ _env_lines | default([]) }}"
+      when:
+        - _env_lines is defined
+        - item is match('^SERVER_API_KEY=')
+      no_log: true
+
+    - name: Extract ROLLOUT_CHANNEL from .env
+      ansible.builtin.set_fact:
+        gwi_rollout_channel: "{{ item.split('=', 1)[1] | default('stable') }}"
+      loop: "{{ _env_lines | default([]) }}"
+      when:
+        - _env_lines is defined
+        - item is match('^ROLLOUT_CHANNEL=')
+      no_log: true
+
+    - name: Extract gwi_telemetry_enabled from .env
+      ansible.builtin.set_fact:
+        gwi_telemetry_enabled: "{{ (item.split('=', 1)[1] | default('true')) | bool }}"
+      loop: "{{ _env_lines | default([]) }}"
+      when:
+        - _env_lines is defined
+        - item is match('^gwi_telemetry_enabled=')
+      no_log: true
+
+    # ── Detect touchscreen hardware ────────────────────────────────────────
+    - name: Check for touchscreen input devices
+      ansible.builtin.shell: |
+        if command -v xinput >/dev/null 2>&1; then
+          xinput list 2>/dev/null | grep -iq 'touch' && echo "true" || echo "false"
+        elif [ -d /proc/bus/input ]; then
+          grep -riq 'touch' /proc/bus/input/devices 2>/dev/null && echo "true" || echo "false"
+        else
+          echo "false"
+        fi
+      register: _touchscreen_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set touchscreen fact
+      ansible.builtin.set_fact:
+        gwi_has_touchscreen: "{{ _touchscreen_check.stdout | default('false') | trim | bool }}"
+
+    # ── Detect thermal printer ─────────────────────────────────────────────
+    - name: Check for Epson thermal printer via USB
+      ansible.builtin.shell: |
+        if command -v lsusb >/dev/null 2>&1; then
+          lsusb 2>/dev/null | grep -q '04b8:' && echo "true" || echo "false"
+        else
+          echo "false"
+        fi
+      register: _printer_check
+      changed_when: false
+      failed_when: false
+
+    - name: Set printer fact
+      ansible.builtin.set_fact:
+        gwi_has_printer: "{{ _printer_check.stdout | default('false') | trim | bool }}"
+
+    # ── Check clock health (chronyc) ───────────────────────────────────────
+    - name: Check chrony tracking status
+      ansible.builtin.command: chronyc tracking
+      register: _chrony_tracking
+      changed_when: false
+      failed_when: false
+
+    - name: Parse clock sync status
+      ansible.builtin.set_fact:
+        gwi_clock_synced: >-
+          {%- if _chrony_tracking.rc == 0 and 'Leap status     : Normal' in _chrony_tracking.stdout -%}
+            true
+          {%- else -%}
+            false
+          {%- endif -%}
+        gwi_clock_source: >-
+          {%- if _chrony_tracking.rc == 0 -%}
+            chrony
+          {%- elif _chrony_tracking.rc != 0 -%}
+            unavailable
+          {%- else -%}
+            unknown
+          {%- endif -%}
+
+    - name: Strip whitespace from clock facts
+      ansible.builtin.set_fact:
+        gwi_clock_synced: "{{ gwi_clock_synced | trim | bool }}"
+        gwi_clock_source: "{{ gwi_clock_source | trim }}"
+
+    # ── Initialize reboot flag ─────────────────────────────────────────────
+    - name: Initialize reboot_needed flag
+      ansible.builtin.set_fact:
+        gwi_reboot_needed: false
+
+    # ── Ensure state directory exists ──────────────────────────────────────
+    - name: Create state directory
+      ansible.builtin.file:
+        path: "{{ gwi_state_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # ── Bootstrap-policy for legacy nodes ──────────────────────────────────
+    # If no policy-applied.json exists but .env has SERVER_NODE_ID, this is
+    # a pre-existing node being baselined for the first time. Write a
+    # bootstrap-auto policy so it doesn't appear drifted on day 1.
+    - name: Check for existing policy-applied.json
+      ansible.builtin.stat:
+        path: "{{ gwi_state_dir }}/policy-applied.json"
+      register: _policy_file
+
+    - name: Bootstrap-auto policy for legacy nodes
+      when:
+        - not _policy_file.stat.exists | default(false)
+        - gwi_server_node_id | default('') | length > 0
+      block:
+        - name: Collect inventory snapshot for bootstrap policy
+          ansible.builtin.shell: |
+            cat <<INVENTORY_EOF
+            {
+              "schema_version": "1.0",
+              "producer": "baseline-bootstrap",
+              "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "node_id": "{{ gwi_server_node_id }}",
+              "station_role": "{{ gwi_station_role }}",
+              "desktop_env": "{{ gwi_desktop_env }}",
+              "has_touchscreen": {{ gwi_has_touchscreen | lower }},
+              "has_printer": {{ gwi_has_printer | lower }},
+              "clock_synced": {{ gwi_clock_synced | lower }},
+              "clock_source": "{{ gwi_clock_source }}",
+              "os_version": "{{ ansible_distribution_version | default('unknown') }}",
+              "kernel": "{{ ansible_kernel | default('unknown') }}"
+            }
+            INVENTORY_EOF
+          register: _bootstrap_inventory
+          changed_when: false
+
+        - name: Write bootstrap-auto policy-applied.json
+          ansible.builtin.copy:
+            content: |
+              {
+                "schema_version": "1.0",
+                "producer": "baseline-bootstrap",
+                "generated_at": "{{ ansible_date_time.iso8601 }}",
+                "node_id": "{{ gwi_server_node_id }}",
+                "baseline_version": "{{ gwi_baseline_version }}",
+                "policy_version": "bootstrap-auto",
+                "policy_source": "bootstrap-auto",
+                "station_role": "{{ gwi_station_role }}",
+                "observed_state": {{ _bootstrap_inventory.stdout }},
+                "last_known_good_at": null
+              }
+            dest: "{{ gwi_state_dir }}/policy-applied.json"
+            owner: root
+            group: root
+            mode: "0644"
+
+    # ── Load station manifest ──────────────────────────────────────────────
+    - name: Load station role manifest
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/manifests/{{ gwi_station_role }}.json"
+        name: gwi_manifest
+      ignore_errors: true
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # ROLES — Baseline enforcement in defined order
+  # ═══════════════════════════════════════════════════════════════════════════
+  roles:
+
+    # ── Required baseline ────────────────────────────────────────────────
+    - role: os_hardening
+      tags: ['required', 'os_hardening']
+
+    - role: firewall
+      tags: ['required', 'firewall']
+
+    - role: display_manager
+      tags: ['required', 'display_manager']
+
+    - role: sshd_hardening
+      tags: ['required', 'sshd_hardening']
+
+    # ── Optional operational ─────────────────────────────────────────────
+    - role: network_hardening
+      tags: ['optional', 'network_hardening']
+
+    - role: kiosk_hardening
+      tags: ['optional', 'kiosk_hardening']
+
+    - role: log_rotation
+      tags: ['optional', 'log_rotation']
+
+    - role: security_updates
+      tags: ['optional', 'security_updates']
+
+    # ── Hardware (required_if_applicable per manifest) ───────────────────
+    - role: thermal_printer
+      tags: ['hardware', 'thermal_printer']
+      when: gwi_station_role != 'terminal'
+
+    - role: touchscreen
+      tags: ['hardware', 'touchscreen']
+
+    - role: usb_devices
+      tags: ['hardware', 'usb_devices']
+      when: gwi_station_role != 'terminal'
+
+    # ── Branding ─────────────────────────────────────────────────────────
+    - role: branding
+      tags: ['optional', 'branding']
+
+    # ── Observability ────────────────────────────────────────────────────
+    - role: node_inventory
+      tags: ['optional', 'node_inventory']
+
+    - role: post_reboot_verify
+      tags: ['required', 'post_reboot_verify']
+
+    - role: mc_phone_home
+      tags: ['optional', 'mc_phone_home']
+      when: gwi_station_role != 'terminal'
+
+    # ── Must be last ─────────────────────────────────────────────────────
+    - role: reboot_manager
+      tags: ['required', 'reboot_manager']
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # POST-TASKS — Write structured state artifacts
+  # ═══════════════════════════════════════════════════════════════════════════
+  post_tasks:
+
+    # ── Collect role execution results ─────────────────────────────────────
+    - name: Build roles_applied list
+      ansible.builtin.set_fact:
+        _roles_applied:
+          - os_hardening
+          - firewall
+          - display_manager
+          - sshd_hardening
+          - network_hardening
+          - kiosk_hardening
+          - log_rotation
+          - security_updates
+          - thermal_printer
+          - touchscreen
+          - usb_devices
+          - branding
+          - node_inventory
+          - post_reboot_verify
+          - mc_phone_home
+          - reboot_manager
+
+    # ── Write baseline-applied.json ────────────────────────────────────────
+    - name: Write baseline-applied.json
+      ansible.builtin.copy:
+        content: |
+          {
+            "schema_version": "1.0",
+            "producer": "ansible-site-yml",
+            "generated_at": "{{ ansible_date_time.iso8601 }}",
+            "node_id": "{{ gwi_server_node_id | default('') }}",
+            "baseline_version": "{{ gwi_baseline_version }}",
+            "roles_applied": {{ _roles_applied | to_json }},
+            "station_role": "{{ gwi_station_role }}",
+            "desktop_env": "{{ gwi_desktop_env }}",
+            "last_known_good_at": "{{ ansible_date_time.iso8601 }}"
+          }
+        dest: "{{ gwi_state_dir }}/baseline-applied.json"
+        owner: root
+        group: root
+        mode: "0644"
+
+    # ── Capture package versions for artifact manifest ─────────────────────
+    - name: Get app commit SHA
+      ansible.builtin.command: git -C {{ gwi_app_dir }} rev-parse --short HEAD
+      register: _app_sha
+      changed_when: false
+      failed_when: false
+
+    - name: Get baseline commit SHA
+      ansible.builtin.command: git -C {{ gwi_app_dir }} log -1 --format=%h -- installer/
+      register: _baseline_sha
+      changed_when: false
+      failed_when: false
+
+    - name: Get ansible-core version
+      ansible.builtin.command: ansible --version
+      register: _ansible_version_output
+      changed_when: false
+      failed_when: false
+
+    - name: Get PostgreSQL version
+      ansible.builtin.shell: psql --version 2>/dev/null | head -1 || echo "not installed"
+      register: _pg_version
+      changed_when: false
+      failed_when: false
+
+    - name: Get Node.js version
+      ansible.builtin.command: node --version
+      register: _node_version
+      changed_when: false
+      failed_when: false
+
+    - name: Get Chromium version
+      ansible.builtin.shell: chromium-browser --version 2>/dev/null || chromium --version 2>/dev/null || echo "not installed"
+      register: _chromium_version
+      changed_when: false
+      failed_when: false
+
+    # ── Write artifact-manifest.json ───────────────────────────────────────
+    - name: Write artifact-manifest.json
+      ansible.builtin.copy:
+        content: |
+          {
+            "schema_version": "1.0",
+            "producer": "ansible-site-yml",
+            "generated_at": "{{ ansible_date_time.iso8601 }}",
+            "node_id": "{{ gwi_server_node_id | default('') }}",
+            "baseline_version": "{{ gwi_baseline_version }}",
+            "app_commit_sha": "{{ _app_sha.stdout | default('unknown') | trim }}",
+            "baseline_commit_sha": "{{ _baseline_sha.stdout | default('unknown') | trim }}",
+            "ansible_version": "{{ ansible_version.full | default('unknown') }}",
+            "package_versions": {
+              "postgresql": "{{ _pg_version.stdout | default('unknown') | trim }}",
+              "nodejs": "{{ _node_version.stdout | default('unknown') | trim }}",
+              "chromium": "{{ _chromium_version.stdout | default('unknown') | trim }}"
+            }
+          }
+        dest: "{{ gwi_state_dir }}/artifact-manifest.json"
+        owner: root
+        group: root
+        mode: "0644"

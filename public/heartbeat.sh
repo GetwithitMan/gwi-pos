@@ -61,6 +61,16 @@ if [ -n "$NUC_READINESS" ]; then
   NUC_READINESS_FRAGMENT="\"nucReadiness\": $NUC_READINESS,"
 fi
 
+# Fallback: if POS app is not running, read sync-status.json state file directly.
+# This ensures MC sees schema block state even when the app is down.
+SYNC_STATUS_FRAGMENT=""
+if [ -z "$NUC_READINESS" ] && [ -f /opt/gwi-pos/state/sync-status.json ]; then
+  SYNC_STATUS_FILE=$(cat /opt/gwi-pos/state/sync-status.json 2>/dev/null || echo "")
+  if [ -n "$SYNC_STATUS_FILE" ] && echo "$SYNC_STATUS_FILE" | jq empty 2>/dev/null; then
+    SYNC_STATUS_FRAGMENT="\"syncStatusFile\": $SYNC_STATUS_FILE,"
+  fi
+fi
+
 # Build payload
 BODY=$(cat <<EOJSON
 {
@@ -74,6 +84,7 @@ BODY=$(cat <<EOJSON
   "syncEnabled": $SYNC_ENABLED,
   "neonConfigured": $NEON_CONFIGURED,
   $NUC_READINESS_FRAGMENT
+  $SYNC_STATUS_FRAGMENT
   "syncStatus": $SYNC_STATUS
 }
 EOJSON

@@ -1,0 +1,193 @@
+---
+# =============================================================================
+# GWI POS — os_hardening role
+# =============================================================================
+# Disables suspend/hibernate/sleep, screen lock, and desktop notifications.
+# Handles both KDE Plasma and GNOME desktops. Fully idempotent.
+# =============================================================================
+
+# ── logind drop-in: disable all power management keys ────────────────────────
+
+- name: Create logind drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/logind.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy GWI POS logind power-management override
+  ansible.builtin.copy:
+    dest: /etc/systemd/logind.conf.d/gwi-pos.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — disable all suspend/hibernate/lid/idle actions
+      # Managed by Ansible os_hardening role — do not edit manually
+      [Login]
+      HandleSuspendKey=ignore
+      HandleHibernateKey=ignore
+      HandleLidSwitch=ignore
+      HandleLidSwitchExternalPower=ignore
+      IdleAction=ignore
+  notify: restart systemd-logind
+
+# ── Mask systemd sleep/suspend/hibernate targets ────────────────────────────
+
+- name: Mask sleep-related systemd targets
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+  loop:
+    - sleep.target
+    - suspend.target
+    - hibernate.target
+    - hybrid-sleep.target
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KDE Plasma specific (when: gwi_desktop_env == 'kde')
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "KDE — Mask plasma-powerdevil.service (user scope)"
+  ansible.builtin.command:
+    cmd: systemctl --user --global mask plasma-powerdevil.service
+  register: _kde_powerdevil_mask
+  changed_when: "'Created symlink' in _kde_powerdevil_mask.stderr"
+  failed_when: false
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Ensure ~/.config directory exists"
+  ansible.builtin.file:
+    path: "{{ gwi_posuser_home }}/.config"
+    state: directory
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0700"
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Disable screen locker (kscreenlockerrc)"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.config/kscreenlockerrc"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      # GWI POS — disable screen locking
+      # Managed by Ansible os_hardening role — do not edit manually
+      [Daemon]
+      Autolock=false
+      LockOnResume=false
+      Timeout=0
+  become_user: "{{ gwi_posuser }}"
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Set empty session on login (ksmserverrc)"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.config/ksmserverrc"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      # GWI POS — empty session on login (no restore)
+      # Managed by Ansible os_hardening role — do not edit manually
+      [General]
+      loginMode=emptySession
+  become_user: "{{ gwi_posuser }}"
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Mute notification sounds (plasmanotifyrc)"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.config/plasmanotifyrc"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      # GWI POS — mute notification sounds
+      # Managed by Ansible os_hardening role — do not edit manually
+      [DoNotDisturb]
+      NotificationSoundsMuted=true
+  become_user: "{{ gwi_posuser }}"
+  when: gwi_desktop_env == 'kde'
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GNOME specific (when: gwi_desktop_env == 'gnome')
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "GNOME — Apply gsettings (idle-delay, screen lock, notifications)"
+  ansible.builtin.shell: |
+    # Attempt to apply gsettings via the user's DBUS session.
+    # If no session is running (e.g., during install), this is harmless —
+    # the dconf database overlay below is the durable enforcement.
+    export DISPLAY=:0
+    POSUSER_UID=$(id -u {{ gwi_posuser }} 2>/dev/null || echo "")
+    if [ -n "$POSUSER_UID" ]; then
+      export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${POSUSER_UID}/bus"
+    fi
+
+    gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
+    gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
+    gsettings set org.gnome.desktop.notifications show-banners false 2>/dev/null || true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  failed_when: false
+  when: gwi_desktop_env == 'gnome'
+
+# ── Persist GNOME settings via dconf database (offline fallback) ─────────────
+# gsettings may fail if no session is active. Write dconf db as a safety net.
+
+- name: "GNOME — Ensure dconf profile directory exists"
+  ansible.builtin.file:
+    path: /etc/dconf/profile
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GNOME — Write dconf user profile"
+  ansible.builtin.copy:
+    dest: /etc/dconf/profile/user
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      user-db:user
+      system-db:gwi-pos
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GNOME — Ensure dconf db directory exists"
+  ansible.builtin.file:
+    path: /etc/dconf/db/gwi-pos.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GNOME — Write dconf power/lock overrides"
+  ansible.builtin.copy:
+    dest: /etc/dconf/db/gwi-pos.d/00-gwi-pos-hardening
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — GNOME hardening overrides
+      # Managed by Ansible os_hardening role — do not edit manually
+      [org/gnome/desktop/session]
+      idle-delay=uint32 0
+
+      [org/gnome/desktop/screensaver]
+      lock-enabled=false
+
+      [org/gnome/desktop/notifications]
+      show-banners=false
+  register: _gnome_dconf_override
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GNOME — Update dconf database"
+  ansible.builtin.command: dconf update
+  changed_when: _gnome_dconf_override is changed
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _gnome_dconf_override is changed

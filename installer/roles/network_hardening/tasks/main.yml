@@ -1,0 +1,88 @@
+---
+# =============================================================================
+# network_hardening — Optional
+# =============================================================================
+# Ensures chrony is running, disables IPv6, configures DNS fallback,
+# disables mDNS/LLMNR. All changes are idempotent.
+# =============================================================================
+
+# ── Chrony (NTP) — verify installed and running ────────────────────────────
+# 01-preflight.sh already installs chrony. We just ensure it's started.
+
+- name: Verify chrony is installed
+  ansible.builtin.package:
+    name: chrony
+    state: present
+
+- name: Ensure chrony service is enabled and running
+  ansible.builtin.systemd:
+    name: chronyd
+    state: started
+    enabled: true
+  register: _chrony_service
+  failed_when: false
+
+- name: Fall back to chrony.service name (Ubuntu variation)
+  ansible.builtin.systemd:
+    name: chrony
+    state: started
+    enabled: true
+  when: _chrony_service is failed
+
+# ── Disable IPv6 via sysctl ────────────────────────────────────────────────
+
+- name: Write sysctl config to disable IPv6
+  ansible.builtin.copy:
+    content: |
+      # GWI POS — Disable IPv6 (not required for POS operations)
+      # Managed by Ansible — do not edit manually
+      net.ipv6.conf.all.disable_ipv6 = 1
+      net.ipv6.conf.default.disable_ipv6 = 1
+    dest: /etc/sysctl.d/99-gwi-pos.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: _sysctl_written
+
+- name: Apply sysctl changes immediately
+  ansible.builtin.command: sysctl --system
+  changed_when: _sysctl_written is changed
+  when: _sysctl_written is changed
+
+# ── DNS fallback via systemd-resolved ──────────────────────────────────────
+
+- name: Check if systemd-resolved is running
+  ansible.builtin.systemd:
+    name: systemd-resolved
+  register: _resolved_status
+  failed_when: false
+  changed_when: false
+
+- name: Configure DNS fallback and disable mDNS/LLMNR
+  when:
+    - _resolved_status is succeeded
+    - _resolved_status.status is defined
+    - _resolved_status.status.ActiveState | default('inactive') == 'active'
+  block:
+    - name: Create resolved drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Write resolved drop-in config
+      ansible.builtin.copy:
+        content: |
+          # GWI POS — DNS fallback + disable mDNS/LLMNR
+          # Managed by Ansible — do not edit manually
+          [Resolve]
+          FallbackDNS=1.1.1.1 8.8.8.8
+          MulticastDNS=no
+          LLMNR=no
+        dest: /etc/systemd/resolved.conf.d/gwi-pos.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart systemd-resolved

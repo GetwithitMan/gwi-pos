@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "producer": "gwi-pos-baseline",
+  "role": "terminal",
+  "description": "Kiosk terminal — Chromium pointing at the server NUC. No local DB, no printer, no card reader.",
+  "services": {
+    "required": [
+      {
+        "name": "thepasspos-kiosk",
+        "tier": "degraded",
+        "description": "Chromium kiosk displaying POS UI from server"
+      }
+    ],
+    "optional": [
+      {
+        "name": "thepasspos-exit-kiosk",
+        "tier": "informational",
+        "description": "Exit kiosk service for maintenance access"
+      },
+      {
+        "name": "x11vnc",
+        "tier": "informational",
+        "description": "VNC remote access"
+      }
+    ]
+  },
+  "ports": {
+    "required": [
+      { "port": 22, "protocol": "tcp", "description": "SSH remote access" },
+      { "port": 5900, "protocol": "tcp", "description": "VNC remote access" }
+    ]
+  },
+  "peripherals": {
+    "optional": [
+      {
+        "type": "touchscreen",
+        "description": "Any libinput-compatible touchscreen",
+        "vendor_ids": ["0eef"]
+      }
+    ]
+  }
+}

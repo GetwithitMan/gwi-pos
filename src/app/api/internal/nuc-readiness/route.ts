@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { config } from '@/lib/system-config'
-import { getBootstrapResult } from '@/lib/venue-bootstrap'
+import { getBootstrapResult, getSchemaRecheckCount } from '@/lib/venue-bootstrap'
 import { getWorkerHealth } from '@/lib/worker-registry'
 import { getReadinessState } from '@/lib/readiness'
+import { EXPECTED_SCHEMA_VERSION } from '@/lib/version-contract'
 
 /**
  * GET /api/internal/nuc-readiness
@@ -28,11 +29,24 @@ export async function GET(request: Request) {
       w.name.toLowerCase().includes('sync') && w.running
   )
 
+  // Determine sync block state for MC visibility
+  const syncBlocked = !readiness?.syncContractReady && (bootstrap?.degradedReasons?.length ?? 0) > 0
+  const syncBlockReason = syncBlocked
+    ? (bootstrap?.degradedReasons?.join(', ') ?? null)
+    : null
+
   return NextResponse.json({
     // Canonical readiness level — ONE source of truth
     readinessLevel: readiness?.level ?? null,
     syncContractReady: readiness?.syncContractReady ?? false,
     initialSyncComplete: readiness?.initialSyncComplete ?? false,
+    // Schema block reporting — MC uses these to auto-remediate
+    syncBlocked,
+    syncBlockReason,
+    expectedSchemaVersion: EXPECTED_SCHEMA_VERSION,
+    observedNeonSchemaVersion: nr?.schemaVersion ?? null,
+    schemaRecheckCount: getSchemaRecheckCount(),
+    degradedReasons: bootstrap?.degradedReasons ?? [],
     // Existing fields (kept for backward compat with heartbeat consumers)
     localDb: bootstrap?.localDb ?? false,
     neonReachable: bootstrap?.neonReachable ?? false,

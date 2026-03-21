@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GWI POS Stage 11 Result",
+  "description": "Records the outcome of a Stage 11 (system hardening) baseline run. Written by the Stage 11 wrapper after Ansible completes. Lives at /opt/gwi-pos/state/stage11-result.json. Source of truth for whether the last baseline run succeeded, with classified outcomes and per-role failure details. Example: {\"schema_version\":\"1.0\",\"producer\":\"11-system-hardening.sh\",\"generated_at\":\"2026-03-20T14:35:00Z\",\"node_id\":\"nuc-venue-001\",\"baseline_version\":\"baseline-2026.03.20.1\",\"outcome\":\"success_with_warnings\",\"ansible_exit_code\":0,\"duration_seconds\":142,\"station_role\":\"server\",\"triggered_by\":\"installer\",\"changed_count\":3,\"failed_tasks\":[],\"required_roles_passed\":true,\"optional_warnings\":[\"branding: plymouth theme not installed\"]}",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "producer",
+    "generated_at",
+    "node_id",
+    "baseline_version",
+    "outcome",
+    "ansible_exit_code",
+    "duration_seconds",
+    "station_role",
+    "triggered_by",
+    "changed_count",
+    "failed_tasks",
+    "required_roles_passed"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility."
+    },
+    "producer": {
+      "type": "string",
+      "description": "Name of the script that wrote this file.",
+      "examples": ["11-system-hardening.sh"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when this result was written."
+    },
+    "node_id": {
+      "type": "string",
+      "description": "Unique node identifier from SERVER_NODE_ID in .env."
+    },
+    "baseline_version": {
+      "type": "string",
+      "description": "Baseline version string from installer/VERSION."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "success",
+        "success_with_warnings",
+        "failed_required",
+        "skipped_unavailable"
+      ],
+      "description": "Classified outcome. 'success' = all roles passed. 'success_with_warnings' = required passed but optional had issues. 'failed_required' = at least one required/required_if_applicable role failed (node health degrades). 'skipped_unavailable' = baseline was not available (pre-baseline node)."
+    },
+    "ansible_exit_code": {
+      "type": "integer",
+      "description": "Raw exit code from the ansible-playbook process. 0=success, 2=failures, 4=unreachable, etc."
+    },
+    "duration_seconds": {
+      "type": "number",
+      "description": "Wall-clock duration of the Ansible run in seconds."
+    },
+    "station_role": {
+      "type": "string",
+      "description": "Station role that was used for this run (server, backup, terminal).",
+      "examples": ["server", "backup", "terminal"]
+    },
+    "triggered_by": {
+      "type": "string",
+      "enum": ["installer", "mc", "support", "verify", "cron"],
+      "description": "What initiated this baseline execution."
+    },
+    "changed_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of Ansible tasks that reported 'changed'. For idempotency gate: second run should have changed_count=0 for non-observational roles."
+    },
+    "failed_tasks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of task names that failed. Empty array if all passed. Each entry is the Ansible task name (e.g., 'firewall : Enable ufw')."
+    },
+    "required_roles_passed": {
+      "type": "boolean",
+      "description": "True if all required and required_if_applicable roles passed. False triggers node health degradation in MC."
+    },
+    "optional_warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of warnings from optional roles. Informational only — does not affect overall outcome classification beyond 'success_with_warnings'."
+    }
+  },
+  "additionalProperties": true
+}

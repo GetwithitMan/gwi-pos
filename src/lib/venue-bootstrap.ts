@@ -15,7 +15,7 @@
  * Dev/test environments retain auto-repair for convenience (applySchemaToEmptyDb).
  */
 
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync } from 'fs'
 import path from 'path'
 import { createChildLogger } from '@/lib/logger'
 import { config } from '@/lib/system-config'
@@ -127,9 +127,235 @@ export interface BootstrapResult {
 }
 
 let cachedResult: BootstrapResult | null = null
+let schemaRecheckTimer: ReturnType<typeof setInterval> | null = null
+let schemaRecheckCount = 0
+
+/** How often to re-check Neon schema when sync is blocked (5 minutes). */
+const SCHEMA_RECHECK_INTERVAL_MS = 5 * 60 * 1000
 
 export function getBootstrapResult(): BootstrapResult | null {
   return cachedResult
+}
+
+/** Returns the number of schema re-check attempts since boot. */
+export function getSchemaRecheckCount(): number {
+  return schemaRecheckCount
+}
+
+// ---------------------------------------------------------------------------
+// sync-status.json — Writes degraded state to /opt/gwi-pos/state/ for baseline
+// enforcement integration (verify-health.sh, drift-scanner.sh).
+// ---------------------------------------------------------------------------
+
+const SYNC_STATUS_DIR = '/opt/gwi-pos/state'
+const SYNC_STATUS_PATH = path.join(SYNC_STATUS_DIR, 'sync-status.json')
+
+function writeSyncStatusFile(result: BootstrapResult): void {
+  // Only write on NUC (production) — skip in dev/Vercel where /opt doesn't exist
+  if (process.env.VERCEL || process.env.NODE_ENV !== 'production') return
+
+  try {
+    if (!existsSync(SYNC_STATUS_DIR)) {
+      mkdirSync(SYNC_STATUS_DIR, { recursive: true })
+    }
+
+    const syncReady = result.syncContractReady
+    const blockReason = !syncReady && result.degradedReasons.length > 0
+      ? result.degradedReasons.join(', ')
+      : null
+
+    const status = {
+      schema_version: '1.0',
+      producer: 'venue-bootstrap',
+      generated_at: new Date().toISOString(),
+      syncReady,
+      blockReason,
+      expectedVersion: EXPECTED_SCHEMA_VERSION,
+      observedVersion: result.neonSchemaReady?.schemaVersion ?? null,
+      neonReachable: result.neonReachable,
+      lastCheckAt: new Date().toISOString(),
+      retryCount: schemaRecheckCount,
+      degradedReasons: result.degradedReasons,
+    }
+
+    writeFileSync(SYNC_STATUS_PATH, JSON.stringify(status, null, 2) + '\n', 'utf-8')
+  } catch (err) {
+    // Non-fatal — state file is for observability, not critical path
+    log.warn({ err: err instanceof Error ? err.message : err }, 'Failed to write sync-status.json')
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Schema re-check — periodically re-checks Neon schema version when sync is
+// blocked due to schema mismatch. If MC pushes a schema update, this unblocks
+// sync without requiring a NUC restart.
+// ---------------------------------------------------------------------------
+
+export function stopSchemaRecheck(): void {
+  if (schemaRecheckTimer) {
+    clearInterval(schemaRecheckTimer)
+    schemaRecheckTimer = null
+    log.info('Schema re-check timer stopped')
+  }
+}
+
+async function recheckNeonSchema(): Promise<void> {
+  schemaRecheckCount++
+  log.info({ attempt: schemaRecheckCount }, 'Re-checking Neon schema version (sync blocked)')
+
+  try {
+    const neonUrl = process.env.NEON_DATABASE_URL
+    if (!neonUrl) return
+
+    const { PrismaClient } = await import('@/generated/prisma/client')
+    const directUrl = process.env.NEON_DIRECT_URL || neonUrl
+    const { PrismaPg } = await import('@prisma/adapter-pg')
+    const neonAdapter = new PrismaPg({ connectionString: directUrl, max: 1, connectionTimeoutMillis: 30000 })
+    const neonClient = new PrismaClient({ adapter: neonAdapter })
+
+    try {
+      await neonClient.$queryRawUnsafe('SELECT 1')
+      const neonState = await readSchemaState(neonClient)
+
+      if (!neonState) {
+        log.warn({ attempt: schemaRecheckCount }, 'Schema re-check: Neon still has no _venue_schema_state')
+        writeSyncStatusFile(cachedResult!)
+        return
+      }
+
+      const versionOk = neonState.schemaVersion === EXPECTED_SCHEMA_VERSION ||
+        neonState.schemaVersion > EXPECTED_SCHEMA_VERSION
+
+      if (versionOk) {
+        // Schema is now compatible — update cached result and unblock sync
+        log.info({
+          attempt: schemaRecheckCount,
+          neonVersion: neonState.schemaVersion,
+          expectedVersion: EXPECTED_SCHEMA_VERSION,
+        }, 'Neon schema version is now compatible — unblocking sync')
+
+        const newReadiness = await buildReadiness(neonClient, neonState)
+
+        if (cachedResult) {
+          cachedResult.neonReachable = true
+          cachedResult.neonSchemaReady = newReadiness
+          cachedResult.degradedReasons = cachedResult.degradedReasons.filter(
+            r => r !== 'neon-schema-behind' &&
+                 r !== 'neon-schema-state-missing-needs-mc' &&
+                 r !== 'neon-empty-needs-mc-provision'
+          )
+
+          // Re-evaluate syncContractReady
+          const nsr = cachedResult.neonSchemaReady
+          const schemaVersionOk = nsr.schemaVersionMatch || nsr.schemaVersionAhead
+          cachedResult.syncContractReady = cachedResult.localDb && !!neonUrl &&
+            nsr.coreTablesExist && nsr.requiredEnumsExist && schemaVersionOk && nsr.baseSeedPresent
+
+          // Update _local_schema_state
+          try {
+            const { masterClient } = await import('@/lib/db')
+            await writeLocalSchemaState(masterClient, {
+              schemaVersion: EXPECTED_SCHEMA_VERSION,
+              observedNeonVersion: neonState.schemaVersion,
+              appVersion: APP_VERSION,
+              bootedAt: new Date(),
+              neonReachable: true,
+              syncBlocked: !cachedResult.syncContractReady,
+              blockReason: !cachedResult.syncContractReady
+                ? cachedResult.degradedReasons.join(', ')
+                : null,
+            })
+          } catch { /* non-fatal */ }
+
+          writeSyncStatusFile(cachedResult)
+
+          // Re-compute and update readiness state
+          try {
+            const { computeReadiness, setReadinessState, getReadinessState } = await import('@/lib/readiness')
+            const currentReadiness = getReadinessState()
+            if (currentReadiness && cachedResult.syncContractReady) {
+              const newReadinessState = computeReadiness({
+                localDbUp: cachedResult.localDb,
+                localSchemaVerified: true, // was verified at boot
+                neonConfigured: true,
+                neonReachable: true,
+                neonSchemaVersionOk: schemaVersionOk,
+                neonCoreTablesExist: nsr.coreTablesExist,
+                neonRequiredEnumsExist: nsr.requiredEnumsExist,
+                baseSeedPresent: nsr.baseSeedPresent,
+                syncEnabled: config.syncEnabled,
+                stationRole: config.stationRole,
+                initialSyncComplete: currentReadiness.initialSyncComplete,
+                seedComplete: currentReadiness.seedComplete,
+              })
+              setReadinessState(newReadinessState)
+              log.info({ level: newReadinessState.level }, 'Readiness state updated after schema re-check')
+            }
+          } catch (readinessErr) {
+            log.warn({ err: readinessErr instanceof Error ? readinessErr.message : readinessErr },
+              'Failed to update readiness state after schema re-check')
+          }
+        }
+
+        // Schema is now OK — stop re-checking
+        stopSchemaRecheck()
+      } else {
+        log.warn({
+          attempt: schemaRecheckCount,
+          neonVersion: neonState.schemaVersion,
+          expectedVersion: EXPECTED_SCHEMA_VERSION,
+        }, 'Schema re-check: Neon schema still behind — will retry')
+
+        if (cachedResult) {
+          cachedResult.neonReachable = true
+          writeSyncStatusFile(cachedResult)
+        }
+      }
+    } finally {
+      await neonClient.$disconnect()
+    }
+  } catch (err) {
+    log.warn({ err: err instanceof Error ? err.message : err, attempt: schemaRecheckCount },
+      'Schema re-check failed (Neon unreachable?) — will retry')
+    if (cachedResult) {
+      writeSyncStatusFile(cachedResult)
+    }
+  }
+}
+
+/**
+ * Start periodic schema re-check if sync is blocked due to schema issues.
+ * Called after initial bootstrap when sync cannot start.
+ */
+export function startSchemaRecheckIfBlocked(): void {
+  if (!cachedResult) return
+  if (cachedResult.syncContractReady) return
+  if (schemaRecheckTimer) return // already running
+
+  // Only start re-check for schema-related blocks (not backup mode, not sync disabled, etc.)
+  const schemaBlocks = [
+    'neon-schema-behind',
+    'neon-schema-state-missing-needs-mc',
+    'neon-empty-needs-mc-provision',
+  ]
+  const hasSchemaBlock = cachedResult.degradedReasons.some(r => schemaBlocks.includes(r))
+  if (!hasSchemaBlock) return
+
+  log.info({
+    interval: SCHEMA_RECHECK_INTERVAL_MS,
+    blockReasons: cachedResult.degradedReasons,
+  }, 'Starting periodic schema re-check (sync blocked due to schema mismatch)')
+
+  schemaRecheckTimer = setInterval(() => {
+    void recheckNeonSchema().catch(err => {
+      log.error({ err: err instanceof Error ? err.message : err }, 'Schema re-check unexpected error')
+    })
+  }, SCHEMA_RECHECK_INTERVAL_MS)
+
+  // Unref so it doesn't prevent process exit
+  if (schemaRecheckTimer && typeof schemaRecheckTimer === 'object' && 'unref' in schemaRecheckTimer) {
+    schemaRecheckTimer.unref()
+  }
 }
 
 async function checkCoreTablesExist(
@@ -467,6 +693,10 @@ export async function runBootstrap(): Promise<BootstrapResult> {
     }, 'Bootstrap complete')
 
     cachedResult = result
+
+    // Write sync-status.json for baseline enforcement integration
+    writeSyncStatusFile(result)
+
     return result
   } catch (err) {
     log.error({ err }, 'Bootstrap failed with unexpected error')

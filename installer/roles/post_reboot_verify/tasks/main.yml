@@ -1,0 +1,88 @@
+# =============================================================================
+# GWI POS — post_reboot_verify Role
+# =============================================================================
+# Installs and enables:
+#   1. verify-health.sh — post-boot health check (systemd oneshot)
+#   2. drift-scanner.sh — periodic drift detection (systemd timer, 30min)
+#
+# Classification: required
+# Idempotency: safe (template + enable are idempotent)
+# =============================================================================
+---
+# ── Ensure directories exist ─────────────────────────────────────────────────
+- name: Ensure bin directory exists
+  ansible.builtin.file:
+    path: "{{ gwi_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure state directory exists
+  ansible.builtin.file:
+    path: "{{ gwi_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── Install verify-health.sh ────────────────────────────────────────────────
+- name: Install verify-health.sh from template
+  ansible.builtin.template:
+    src: verify-health.sh.j2
+    dest: "{{ gwi_bin_dir }}/verify-health.sh"
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── Install gwi-pos-verify.service ──────────────────────────────────────────
+- name: Install gwi-pos-verify.service
+  ansible.builtin.template:
+    src: gwi-pos-verify.service.j2
+    dest: /etc/systemd/system/gwi-pos-verify.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload systemd daemon
+
+- name: Enable gwi-pos-verify.service
+  ansible.builtin.systemd:
+    name: gwi-pos-verify.service
+    enabled: true
+    daemon_reload: true
+
+# ── Install drift-scanner.sh ────────────────────────────────────────────────
+- name: Install drift-scanner.sh from template
+  ansible.builtin.template:
+    src: drift-scanner.sh.j2
+    dest: "{{ gwi_bin_dir }}/drift-scanner.sh"
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── Install gwi-pos-drift.service ───────────────────────────────────────────
+- name: Install gwi-pos-drift.service
+  ansible.builtin.template:
+    src: gwi-pos-drift.service.j2
+    dest: /etc/systemd/system/gwi-pos-drift.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload systemd daemon
+
+# ── Install gwi-pos-drift.timer ─────────────────────────────────────────────
+- name: Install gwi-pos-drift.timer
+  ansible.builtin.template:
+    src: gwi-pos-drift.timer.j2
+    dest: /etc/systemd/system/gwi-pos-drift.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload systemd daemon
+
+- name: Enable and start gwi-pos-drift.timer
+  ansible.builtin.systemd:
+    name: gwi-pos-drift.timer
+    enabled: true
+    state: started
+    daemon_reload: true

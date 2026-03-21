@@ -1,0 +1,242 @@
+---
+# =============================================================================
+# touchscreen — Required If Applicable
+# =============================================================================
+# Configures touchscreen input via libinput, disables right-click,
+# sets up on-screen keyboard, handles eGTouch vendor devices, and
+# installs a calibration helper script.
+#
+# Skip logic:
+#   - If touchscreen not detected AND manifest says optional → skip cleanly
+#   - If touchscreen not detected AND manifest says expected → FAIL
+#   - If touchscreen detected → configure regardless
+# =============================================================================
+
+# ── Determine if touchscreen configuration is expected ─────────────────────
+
+- name: Check manifest for touchscreen expectation
+  ansible.builtin.set_fact:
+    _touchscreen_expected: >-
+      {%- set peripherals = gwi_manifest.peripherals | default({}) -%}
+      {%- set optional = peripherals.optional | default([]) -%}
+      {%- set required = peripherals.required | default([]) -%}
+      {%- set all_peripherals = optional + required -%}
+      {%- set ts_items = all_peripherals | selectattr('type', 'equalto', 'touchscreen') | list -%}
+      {%- if ts_items | length > 0 -%}
+        true
+      {%- else -%}
+        false
+      {%- endif -%}
+  when: gwi_manifest is defined
+
+- name: Default touchscreen expectation to false
+  ansible.builtin.set_fact:
+    _touchscreen_expected: "false"
+  when: _touchscreen_expected is not defined
+
+- name: Strip whitespace from touchscreen expectation
+  ansible.builtin.set_fact:
+    _touchscreen_expected: "{{ _touchscreen_expected | trim }}"
+
+# ── Fail if expected but not detected ──────────────────────────────────────
+
+- name: Fail if touchscreen expected by manifest but not detected
+  ansible.builtin.fail:
+    msg: >
+      Touchscreen is expected by station manifest ({{ gwi_station_role }})
+      but no touchscreen hardware was detected. Check USB connections
+      and re-run the touchscreen role.
+  when:
+    - not (gwi_has_touchscreen | bool)
+    - _touchscreen_expected | bool
+    - gwi_manifest is defined
+    - gwi_manifest.peripherals is defined
+    - gwi_manifest.peripherals.required is defined
+    - gwi_manifest.peripherals.required | selectattr('type', 'equalto', 'touchscreen') | list | length > 0
+
+# ── Skip if not detected and not required ──────────────────────────────────
+
+- name: Skip touchscreen configuration if not detected
+  ansible.builtin.debug:
+    msg: "No touchscreen detected — skipping touchscreen configuration"
+  when: not (gwi_has_touchscreen | bool)
+
+# ── All touchscreen configuration tasks ────────────────────────────────────
+
+- name: Configure touchscreen
+  when: gwi_has_touchscreen | bool
+  block:
+
+    # ── Install libinput driver ──────────────────────────────────────────
+    - name: Install xserver-xorg-input-libinput
+      ansible.builtin.package:
+        name: xserver-xorg-input-libinput
+        state: present
+
+    # ── Ensure xorg.conf.d directory exists ──────────────────────────────
+    - name: Ensure /etc/X11/xorg.conf.d directory exists
+      ansible.builtin.file:
+        path: /etc/X11/xorg.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # ── Deploy touchscreen xorg config ───────────────────────────────────
+    - name: Deploy touchscreen X11 configuration
+      ansible.builtin.copy:
+        src: 99-gwi-touchscreen.conf
+        dest: /etc/X11/xorg.conf.d/99-gwi-touchscreen.conf
+        owner: root
+        group: root
+        mode: "0644"
+
+    # ── GNOME: Disable right-click on touchscreen ────────────────────────
+    - name: "GNOME — Disable touchscreen right-click (long-press)"
+      ansible.builtin.command: >
+        dbus-launch gsettings set org.gnome.desktop.peripherals.touchscreen long-press-duration 0
+      become: true
+      become_user: "{{ gwi_posuser }}"
+      changed_when: false
+      failed_when: false
+      when: gwi_desktop_env == 'gnome'
+
+    - name: "GNOME — Disable secondary click emulation"
+      ansible.builtin.command: >
+        dbus-launch gsettings set org.gnome.settings-daemon.peripherals.touchscreen orientation-lock true
+      become: true
+      become_user: "{{ gwi_posuser }}"
+      changed_when: false
+      failed_when: false
+      when: gwi_desktop_env == 'gnome'
+
+    # ── KDE: Disable right-click on touchscreen ─────────────────────────
+    - name: "KDE — Disable touchscreen long-press (right-click)"
+      ansible.builtin.command: >
+        kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/kwinrc"
+        --group PlasmaTouch --key LongPressAction "none"
+      become: true
+      become_user: "{{ gwi_posuser }}"
+      changed_when: false
+      when: gwi_desktop_env == 'kde'
+
+    # ── On-screen keyboard: GNOME ────────────────────────────────────────
+    - name: "GNOME — Install onboard on-screen keyboard"
+      ansible.builtin.package:
+        name: onboard
+        state: present
+      when: gwi_desktop_env == 'gnome'
+
+    - name: "GNOME — Enable on-screen keyboard auto-show"
+      ansible.builtin.command: >
+        dbus-launch gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true
+      become: true
+      become_user: "{{ gwi_posuser }}"
+      changed_when: false
+      failed_when: false
+      when: gwi_desktop_env == 'gnome'
+
+    # ── On-screen keyboard: KDE ──────────────────────────────────────────
+    - name: "KDE — Install maliit on-screen keyboard"
+      ansible.builtin.package:
+        name:
+          - maliit-keyboard
+          - maliit-framework
+        state: present
+      failed_when: false
+      when: gwi_desktop_env == 'kde'
+
+    - name: "KDE — Enable maliit virtual keyboard"
+      ansible.builtin.command: >
+        kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/kwinrc"
+        --group Wayland --key InputMethod "/usr/share/applications/maliit-server.desktop"
+      become: true
+      become_user: "{{ gwi_posuser }}"
+      changed_when: false
+      failed_when: false
+      when: gwi_desktop_env == 'kde'
+
+    # ── eGTouch: Check for vendor 0eef in lsusb ─────────────────────────
+    - name: Check for eGalax/eGTouch USB device (vendor 0eef)
+      ansible.builtin.shell: |
+        if command -v lsusb >/dev/null 2>&1; then
+          lsusb 2>/dev/null | grep -qi '0eef' && echo "true" || echo "false"
+        else
+          echo "false"
+        fi
+      register: _egtouch_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install evdev driver for eGTouch devices
+      ansible.builtin.package:
+        name: xserver-xorg-input-evdev
+        state: present
+      when: _egtouch_check.stdout | default('false') | trim | bool
+
+    # ── Install calibration helper script ────────────────────────────────
+    - name: Ensure bin directory exists
+      ansible.builtin.file:
+        path: "{{ gwi_bin_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy touchscreen calibration helper
+      ansible.builtin.copy:
+        content: |
+          #!/usr/bin/env bash
+          # =============================================================================
+          # GWI POS — Touchscreen Calibration Helper
+          # =============================================================================
+          # Usage: sudo /opt/gwi-pos/bin/calibrate-touchscreen.sh
+          # Managed by Ansible — do not edit manually
+          # =============================================================================
+          set -euo pipefail
+
+          echo "=== GWI POS Touchscreen Calibration ==="
+          echo ""
+
+          # Check for xinput_calibrator
+          if ! command -v xinput_calibrator >/dev/null 2>&1; then
+            echo "Installing xinput_calibrator..."
+            apt-get install -y xinput-calibrator
+          fi
+
+          # Find touchscreen devices
+          echo "Detected input devices:"
+          if command -v xinput >/dev/null 2>&1; then
+            xinput list | grep -i touch || echo "  No touchscreen found via xinput"
+          fi
+          echo ""
+
+          # Check for eGTouch
+          if command -v lsusb >/dev/null 2>&1 && lsusb | grep -qi '0eef'; then
+            echo "eGalax/eGTouch device detected (vendor 0eef)"
+            echo "Using evdev driver for calibration"
+          fi
+          echo ""
+
+          echo "Starting calibration..."
+          echo "Touch the crosshairs as they appear on screen."
+          echo ""
+
+          # Run calibration (must be run from an X session)
+          if [ -z "${DISPLAY:-}" ]; then
+            export DISPLAY=:0
+          fi
+
+          xinput_calibrator --output-type xorg.conf.d 2>&1 | tee /tmp/gwi-touchscreen-calibration.log
+
+          echo ""
+          echo "Calibration complete. Review output above."
+          echo "If calibration data was generated, it has been logged to:"
+          echo "  /tmp/gwi-touchscreen-calibration.log"
+          echo ""
+          echo "To apply permanently, copy the generated Section to:"
+          echo "  /etc/X11/xorg.conf.d/99-gwi-touchscreen-calibration.conf"
+        dest: "{{ gwi_bin_dir }}/calibrate-touchscreen.sh"
+        owner: root
+        group: root
+        mode: "0755"

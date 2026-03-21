@@ -1,0 +1,37 @@
+# =============================================================================
+# GWI POS — xbindkeys configuration
+# =============================================================================
+# Suppresses keyboard shortcuts that could escape the POS kiosk.
+# Managed by Ansible — do not edit manually.
+# =============================================================================
+
+# Disable ALT+F4 (close window)
+"/bin/true"
+  Alt + F4
+
+# Disable CTRL+W (close tab/window)
+"/bin/true"
+  Control + w
+
+# Disable CTRL+Q (quit application)
+"/bin/true"
+  Control + q
+
+# Disable CTRL+ALT+DELETE (task manager / logout)
+"/bin/true"
+  Control + Alt + Delete
+
+# Disable ALT+TAB (window switcher)
+"/bin/true"
+  Alt + Tab
+
+# Disable CTRL+ALT+T (terminal)
+"/bin/true"
+  Control + Alt + t
+
+# Disable Super key (application menu)
+"/bin/true"
+  Super_L
+
+"/bin/true"
+  Super_R

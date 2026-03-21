@@ -198,3 +198,109 @@ The installer exists in **two** repos and both must stay in sync:
 - **Skill 345:** Installer
 - **Skill 346:** Kiosk Exit Zone
 - **Skill 347:** Heartbeat IP + Auto-Provisioning
+
+---
+
+## Baseline Enforcement (Stage 11)
+
+### Verification Commands
+```bash
+# Check if baseline was applied
+cat /opt/gwi-pos/state/baseline-applied.json | jq .baseline_version
+
+# Check last Stage 11 result
+cat /opt/gwi-pos/state/stage11-result.json | jq '{outcome, changed_count, duration_seconds}'
+
+# Check hardening status (post-boot verification)
+cat /opt/gwi-pos/state/hardening-status.json | jq '{overall, checks}'
+
+# Check for drift
+cat /opt/gwi-pos/state/drift-scan.json | jq '{drift_detected, drifted_items}'
+
+# Check sync status (schema mismatch detection)
+cat /opt/gwi-pos/state/sync-status.json | jq '{syncReady, blockReason}'
+
+# Check current run state
+cat /opt/gwi-pos/state/run-state.json | jq '{state, last_outcome}'
+```
+
+### OS Hardening Verification
+```bash
+# Sleep targets masked
+systemctl is-enabled sleep.target    # should be "masked"
+systemctl is-enabled suspend.target  # should be "masked"
+
+# Firewall active
+sudo ufw status verbose
+
+# Autologin configured
+cat /etc/sddm.conf.d/gwi-autologin.conf 2>/dev/null || grep AutomaticLogin /etc/gdm3/custom.conf
+
+# Screen lock disabled
+cat ~/.config/kscreenlockerrc 2>/dev/null  # KDE
+# or: gsettings get org.gnome.desktop.screensaver lock-enabled  # GNOME
+
+# SSH hardened
+cat /etc/ssh/sshd_config.d/99-gwi-pos.conf
+systemctl is-active fail2ban
+
+# Unattended upgrades
+apt-config dump | grep Unattended-Upgrade::Allowed-Origins
+```
+
+### Device Verification
+```bash
+# udev rules installed
+ls /etc/udev/rules.d/99-epson-tm.rules /etc/udev/rules.d/99-gwi-pos-devices.rules
+
+# User groups
+groups $(stat -c '%U' /opt/gwi-pos/.env)  # should include lpadmin, plugdev, dialout
+
+# Plymouth theme
+plymouth-set-default-theme -l | grep gwi
+```
+
+### Support Tools
+```bash
+# Generate support bundle (for field techs / escalations)
+sudo /opt/gwi-pos/bin/generate-support-bundle.sh
+# Output: /opt/gwi-pos/support-bundle-YYYYMMDD-HHMMSS.tar.gz
+
+# Check baseline drift (human-readable)
+/opt/gwi-pos/bin/baseline-diff
+# or JSON: /opt/gwi-pos/bin/baseline-diff --json
+
+# Restore baseline config from snapshot (emergency only)
+sudo /opt/gwi-pos/bin/gwi-baseline-restore.sh                    # list snapshots
+sudo /opt/gwi-pos/bin/gwi-baseline-restore.sh <snapshot> --confirm  # restore
+```
+
+### Re-running Baseline
+```bash
+# Re-run all hardening roles
+sudo ./installer.run --resume-from=system_hardening
+
+# Re-run specific roles only
+HARDENING_TAGS=firewall,os_hardening sudo ./installer.run --resume-from=system_hardening
+
+# Skip specific roles
+SKIP_HARDENING_TAGS=branding sudo ./installer.run --resume-from=system_hardening
+
+# Dry-run (check mode, no changes)
+HARDENING_DRY_RUN=1 sudo ./installer.run --resume-from=system_hardening
+```
+
+### Troubleshooting
+```bash
+# Check Ansible output from last run
+cat /opt/gwi-pos/state/ansible-stderr.log
+
+# Check baseline lock state (if runs seem stuck)
+cat /opt/gwi-pos/state/run-state.json | jq '{state, lock_pid, triggered_by}'
+
+# Force unlock (only if PID is dead)
+# Manual: rm /opt/gwi-pos/state/baseline.lock
+
+# Check offline report queue
+ls /opt/gwi-pos/state/report-queue/
+```

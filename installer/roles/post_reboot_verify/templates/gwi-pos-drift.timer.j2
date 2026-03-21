@@ -1,0 +1,12 @@
+# Managed by GWI POS Ansible — do not edit manually
+[Unit]
+Description=GWI POS Drift Scanner Timer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

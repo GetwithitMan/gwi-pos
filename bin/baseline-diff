@@ -1,0 +1,380 @@
+#!/usr/bin/env bash
+# baseline-diff — Compare observed node state vs manifest expectations
+# Part of the GWI POS Node Baseline Enforcement System
+# Installed to /opt/gwi-pos/bin/baseline-diff
+#
+# Usage:
+#   sudo baseline-diff            # Human-readable output
+#   sudo baseline-diff --json     # Machine-readable JSON output
+#
+# Exit codes:
+#   0 = PASS (all checks OK)
+#   1 = DRIFT DETECTED (one or more checks failed)
+#   2 = ERROR (script could not complete)
+
+set -euo pipefail
+
+readonly BASE_DIR="/opt/gwi-pos"
+readonly ENV_FILE="${BASE_DIR}/.env"
+readonly STATE_DIR="${BASE_DIR}/state"
+readonly MANIFESTS_DIR="${BASE_DIR}/app/installer/manifests"
+
+# --- Parse arguments ---
+
+JSON_OUTPUT=false
+for arg in "$@"; do
+    case "$arg" in
+        --json) JSON_OUTPUT=true ;;
+        --help|-h)
+            echo "Usage: baseline-diff [--json]"
+            echo "  Compare observed node state vs manifest expectations."
+            echo "  --json   Output machine-readable JSON"
+            echo ""
+            echo "Exit codes: 0=pass, 1=drift, 2=error"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# --- Read station role from .env ---
+
+STATION_ROLE="server"
+if [[ -f "$ENV_FILE" ]]; then
+    role=$(grep -E '^STATION_ROLE=' "$ENV_FILE" | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+    if [[ -n "$role" ]]; then
+        STATION_ROLE="$role"
+    fi
+fi
+
+# --- Load manifest ---
+
+MANIFEST_FILE="${MANIFESTS_DIR}/${STATION_ROLE}.json"
+if [[ ! -f "$MANIFEST_FILE" ]]; then
+    MANIFEST_FILE="${MANIFESTS_DIR}/server.json"
+fi
+
+MANIFEST_LOADED=false
+if [[ -f "$MANIFEST_FILE" ]]; then
+    MANIFEST_LOADED=true
+fi
+
+# --- Load inventory and drift-scan if they exist ---
+
+INVENTORY_FILE="${STATE_DIR}/inventory.json"
+DRIFT_FILE="${STATE_DIR}/drift-scan.json"
+
+# --- Check result tracking ---
+
+declare -a CHECK_RESULTS=()    # "OK|WARN|ERROR|description|fix"
+DRIFT_COUNT=0
+ERROR_COUNT=0
+
+# Helper: record a check result
+# Args: severity(OK|WARN|ERROR) description [fix_command]
+record_check() {
+    local severity="$1"
+    local description="$2"
+    local fix="${3:-}"
+
+    CHECK_RESULTS+=("${severity}|${description}|${fix}")
+
+    case "$severity" in
+        ERROR) ((DRIFT_COUNT++)) || true; ((ERROR_COUNT++)) || true ;;
+        WARN)  ((DRIFT_COUNT++)) || true ;;
+    esac
+}
+
+# --- Check: Required services running ---
+
+check_service_running() {
+    local service="$1"
+    local tier="$2"
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+        record_check "OK" "Service ${service} is running"
+    else
+        local sev="ERROR"
+        [[ "$tier" == "informational" ]] && sev="WARN"
+        [[ "$tier" == "degraded" ]] && sev="WARN"
+        record_check "$sev" "SERVICE_SET_MISMATCH — ${service} is not running" \
+            "sudo systemctl start ${service}"
+    fi
+}
+
+echo_progress() {
+    if [[ "$JSON_OUTPUT" == false ]]; then
+        echo "$@" >&2
+    fi
+}
+
+echo_progress "Checking services..."
+
+# Critical tier
+check_service_running "thepasspos" "critical"
+check_service_running "postgresql" "critical"
+
+# Degraded tier
+check_service_running "thepasspos-kiosk" "degraded"
+check_service_running "thepasspos-sync" "degraded"
+
+# --- Check: Firewall active ---
+
+echo_progress "Checking firewall..."
+
+ufw_status=$(ufw status 2>/dev/null || echo "inactive")
+if echo "$ufw_status" | grep -q "Status: active"; then
+    record_check "OK" "Firewall (ufw) is active"
+else
+    record_check "ERROR" "FIREWALL_DISABLED — ufw is inactive" \
+        "sudo ufw --force enable"
+fi
+
+# --- Check: Required ports open (from ufw status) ---
+
+check_ufw_port() {
+    local port="$1"
+    local description="$2"
+    if echo "$ufw_status" | grep -qE "^${port}" 2>/dev/null; then
+        record_check "OK" "Port ${port} open (${description})"
+    else
+        record_check "WARN" "Port ${port} not found in ufw rules (${description})" \
+            "sudo ufw allow ${port}"
+    fi
+}
+
+echo_progress "Checking ports..."
+check_ufw_port "22/tcp" "SSH"
+check_ufw_port "3005/tcp" "POS application"
+
+# --- Check: Sleep targets masked ---
+
+echo_progress "Checking sleep targets..."
+
+sleep_masked=true
+for target in sleep.target suspend.target hibernate.target hybrid-sleep.target; do
+    state=$(systemctl is-enabled "$target" 2>/dev/null || echo "unknown")
+    if [[ "$state" != "masked" ]]; then
+        sleep_masked=false
+        break
+    fi
+done
+
+if [[ "$sleep_masked" == true ]]; then
+    record_check "OK" "Sleep targets are masked"
+else
+    record_check "ERROR" "SLEEP_TARGETS_UNMASKED — system may enter sleep/suspend" \
+        "sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target"
+fi
+
+# --- Check: Autologin configured ---
+
+echo_progress "Checking autologin..."
+
+autologin_ok=false
+# Check SDDM (KDE)
+if [[ -f /etc/sddm.conf.d/gwi-autologin.conf ]]; then
+    if grep -q "Autologin" /etc/sddm.conf.d/gwi-autologin.conf 2>/dev/null; then
+        autologin_ok=true
+    fi
+fi
+# Check GDM3 (GNOME)
+if [[ -f /etc/gdm3/custom.conf ]]; then
+    if grep -q "AutomaticLoginEnable.*true" /etc/gdm3/custom.conf 2>/dev/null; then
+        autologin_ok=true
+    fi
+fi
+
+if [[ "$autologin_ok" == true ]]; then
+    record_check "OK" "Autologin is configured"
+else
+    record_check "ERROR" "Autologin is not configured for display manager" \
+        "sudo ./installer.run --resume-from=system_hardening HARDENING_TAGS=display_manager"
+fi
+
+# --- Check: Clock synced ---
+
+echo_progress "Checking clock..."
+
+clock_synced=false
+clock_offset_ms=""
+clock_source=""
+
+if command -v chronyc &>/dev/null; then
+    chrony_output=$(chronyc tracking 2>/dev/null || true)
+    if echo "$chrony_output" | grep -q "Leap status.*Normal"; then
+        clock_synced=true
+    fi
+    # Extract offset (System time line shows offset in seconds)
+    offset_line=$(echo "$chrony_output" | grep "System time" || true)
+    if [[ -n "$offset_line" ]]; then
+        # Extract the numeric value (seconds) and convert to ms
+        offset_sec=$(echo "$offset_line" | grep -oE '[0-9]+\.[0-9]+' | head -1 || echo "")
+        if [[ -n "$offset_sec" ]]; then
+            # Convert to ms (bash can't do float math, use awk)
+            clock_offset_ms=$(awk "BEGIN { printf \"%.1f\", $offset_sec * 1000 }" 2>/dev/null || echo "")
+        fi
+    fi
+    source_line=$(echo "$chrony_output" | grep "Reference ID" || true)
+    if [[ -n "$source_line" ]]; then
+        clock_source=$(echo "$source_line" | sed 's/.*(\(.*\))/\1/' || echo "unknown")
+    fi
+fi
+
+if [[ "$clock_synced" == true ]]; then
+    record_check "OK" "Clock is synced via chrony (offset: ${clock_offset_ms:-unknown}ms)"
+else
+    if command -v chronyc &>/dev/null; then
+        record_check "ERROR" "CLOCK_UNSYNCED — chrony reports unhealthy clock" \
+            "sudo systemctl restart chrony && chronyc makestep"
+    else
+        record_check "ERROR" "TIME_SOURCE_UNHEALTHY — chrony not installed" \
+            "sudo apt install -y chrony && sudo systemctl enable --now chrony"
+    fi
+fi
+
+# --- Check: Expected peripherals present (from manifest + inventory) ---
+
+echo_progress "Checking peripherals..."
+
+if [[ "$MANIFEST_LOADED" == true ]] && command -v python3 &>/dev/null; then
+    # Use python3 to parse manifest for expected peripherals
+    expected_printers=$(python3 -c "
+import json, sys
+try:
+    m = json.load(open('$MANIFEST_FILE'))
+    print(m.get('expected_peripherals', {}).get('thermal_printer', {}).get('required', 'false'))
+except: print('false')
+" 2>/dev/null || echo "false")
+
+    if [[ "$expected_printers" == "true" || "$expected_printers" == "True" ]]; then
+        # Check if any Epson printer is connected via lsusb
+        if lsusb 2>/dev/null | grep -qi "04b8"; then
+            record_check "OK" "Expected thermal printer detected (Epson)"
+        else
+            record_check "WARN" "PRINTER_MISSING — manifest expects thermal printer, none detected" \
+                "Check USB connection, then re-run thermal_printer role"
+        fi
+    else
+        record_check "OK" "Thermal printer not required by manifest"
+    fi
+else
+    if [[ "$MANIFEST_LOADED" == false ]]; then
+        record_check "WARN" "No manifest found at ${MANIFEST_FILE} — cannot verify peripheral expectations" \
+            "Ensure installer/manifests/${STATION_ROLE}.json exists"
+    fi
+fi
+
+# --- Check: Drift scan results (if available) ---
+
+if [[ -f "$DRIFT_FILE" ]] && command -v python3 &>/dev/null; then
+    drift_detected=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$DRIFT_FILE'))
+    print(str(d.get('drift_detected', False)).lower())
+except: print('false')
+" 2>/dev/null || echo "false")
+
+    if [[ "$drift_detected" == "true" ]]; then
+        # Extract drifted items
+        drifted_items=$(python3 -c "
+import json
+try:
+    d = json.load(open('$DRIFT_FILE'))
+    items = d.get('drifted_items', [])
+    for item in items:
+        print(item)
+except: pass
+" 2>/dev/null || true)
+
+        while IFS= read -r item; do
+            if [[ -n "$item" ]]; then
+                record_check "WARN" "DRIFT: ${item} (from drift-scan.json)" \
+                    "Review drift-scan.json and re-run affected role"
+            fi
+        done <<< "$drifted_items"
+    fi
+fi
+
+# --- Output results ---
+
+if [[ "$JSON_OUTPUT" == true ]]; then
+    # --- JSON output mode ---
+    echo "{"
+    echo "  \"schema_version\": \"1.0\","
+    echo "  \"generated_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+    echo "  \"station_role\": \"${STATION_ROLE}\","
+    echo "  \"manifest_loaded\": ${MANIFEST_LOADED},"
+
+    if [[ "$DRIFT_COUNT" -eq 0 ]]; then
+        echo "  \"overall\": \"pass\","
+    else
+        echo "  \"overall\": \"drift_detected\","
+    fi
+
+    echo "  \"drift_count\": ${DRIFT_COUNT},"
+    echo "  \"error_count\": ${ERROR_COUNT},"
+    echo "  \"checks\": ["
+
+    first=true
+    for result in "${CHECK_RESULTS[@]}"; do
+        IFS='|' read -r severity description fix <<< "$result"
+
+        if [[ "$first" == true ]]; then
+            first=false
+        else
+            echo ","
+        fi
+
+        # Escape quotes in strings for valid JSON
+        description=$(echo "$description" | sed 's/"/\\"/g')
+        fix=$(echo "$fix" | sed 's/"/\\"/g')
+
+        printf '    {"severity": "%s", "description": "%s"' "$severity" "$description"
+        if [[ -n "$fix" ]]; then
+            printf ', "fix": "%s"' "$fix"
+        fi
+        printf '}'
+    done
+
+    echo ""
+    echo "  ]"
+    echo "}"
+else
+    # --- Human-readable output mode ---
+    echo ""
+    if [[ "$DRIFT_COUNT" -eq 0 ]]; then
+        echo "BASELINE STATUS: PASS"
+    else
+        echo "BASELINE STATUS: DRIFT DETECTED (${DRIFT_COUNT} items)"
+    fi
+    echo "  Station role: ${STATION_ROLE}"
+    echo "  Manifest: ${MANIFEST_FILE}"
+    echo ""
+
+    for result in "${CHECK_RESULTS[@]}"; do
+        IFS='|' read -r severity description fix <<< "$result"
+
+        case "$severity" in
+            OK)    printf "  [OK]    %s\n" "$description" ;;
+            WARN)  printf "  [WARN]  %s\n" "$description" ;;
+            ERROR) printf "  [ERROR] %s\n" "$description" ;;
+        esac
+
+        if [[ -n "$fix" ]]; then
+            printf "            FIX: %s\n" "$fix"
+        fi
+    done
+    echo ""
+fi
+
+# --- Exit code ---
+
+if [[ "$DRIFT_COUNT" -eq 0 ]]; then
+    exit 0
+else
+    exit 1
+fi

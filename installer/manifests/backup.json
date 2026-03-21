@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "producer": "gwi-pos-baseline",
+  "role": "backup",
+  "description": "Hot standby NUC — PostgreSQL streaming replica with keepalived VIP failover.",
+  "services": {
+    "required": [
+      {
+        "name": "postgresql",
+        "tier": "critical",
+        "description": "PostgreSQL streaming replica"
+      },
+      {
+        "name": "keepalived",
+        "tier": "critical",
+        "description": "HA virtual IP failover"
+      }
+    ],
+    "optional": [
+      {
+        "name": "thepasspos",
+        "tier": "degraded",
+        "description": "POS application (standby — started on failover promotion)"
+      },
+      {
+        "name": "thepasspos-sync",
+        "tier": "degraded",
+        "description": "Sync agent (standby — started on failover promotion)"
+      },
+      {
+        "name": "x11vnc",
+        "tier": "informational",
+        "description": "VNC remote access"
+      }
+    ]
+  },
+  "ports": {
+    "required": [
+      { "port": 22, "protocol": "tcp", "description": "SSH remote access" },
+      { "port": 5432, "protocol": "tcp", "description": "PostgreSQL replication" },
+      { "port": 5900, "protocol": "tcp", "description": "VNC remote access" }
+    ],
+    "optional": [
+      { "port": 3005, "protocol": "tcp", "description": "POS application (after promotion)" }
+    ]
+  },
+  "peripherals": {
+    "optional": []
+  }
+}

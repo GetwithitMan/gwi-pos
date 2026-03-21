@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "producer": "gwi-pos-baseline",
+  "role": "server",
+  "description": "Primary POS server — runs the application, kiosk, sync agent, and manages peripherals.",
+  "services": {
+    "required": [
+      {
+        "name": "thepasspos",
+        "tier": "critical",
+        "description": "POS application server (Node.js + Next.js)"
+      },
+      {
+        "name": "thepasspos-kiosk",
+        "tier": "degraded",
+        "description": "Chromium kiosk displaying POS UI"
+      },
+      {
+        "name": "thepasspos-sync",
+        "tier": "degraded",
+        "description": "Sync agent for MC deploy commands and upstream replication"
+      }
+    ],
+    "optional": [
+      {
+        "name": "x11vnc",
+        "tier": "informational",
+        "description": "VNC remote access"
+      },
+      {
+        "name": "keepalived",
+        "tier": "degraded",
+        "description": "HA virtual IP failover (only if HA configured)",
+        "condition": "gwi_virtual_ip is defined and gwi_virtual_ip != ''"
+      }
+    ]
+  },
+  "ports": {
+    "required": [
+      { "port": 22, "protocol": "tcp", "description": "SSH remote access" },
+      { "port": 3005, "protocol": "tcp", "description": "POS application" },
+      { "port": 5900, "protocol": "tcp", "description": "VNC remote access" }
+    ],
+    "optional": [
+      { "port": 5432, "protocol": "tcp", "description": "PostgreSQL (if local PG)" }
+    ]
+  },
+  "peripherals": {
+    "optional": [
+      {
+        "type": "printer",
+        "description": "Epson thermal receipt printer",
+        "vendor_ids": ["04b8"],
+        "supported_models": ["TM-T20III", "TM-T88V", "TM-T88VI", "TM-m30III"]
+      },
+      {
+        "type": "touchscreen",
+        "description": "Any libinput-compatible touchscreen; eGalax/eGTouch preferred",
+        "vendor_ids": ["0eef"]
+      },
+      {
+        "type": "card_reader",
+        "description": "ID Tech VP3300/VP3350 payment terminal",
+        "vendor_ids": ["0acd"]
+      },
+      {
+        "type": "scale",
+        "description": "CAS PDN scale via FTDI or Prolific adapter",
+        "vendor_ids": ["0403", "067b"]
+      }
+    ]
+  }
+}

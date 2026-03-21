@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GWI POS Node Inventory",
+  "description": "Complete hardware and software inventory of the node. Written by the node_inventory Ansible role and the drift scanner. Lives at /opt/gwi-pos/state/inventory.json. Used for fleet hardware tracking, peripheral expectation validation, and deprecation classification (HARDWARE_PROFILE_UNKNOWN, PRINTER_MODEL_UNCERTIFIED, OS_VERSION_UNSUPPORTED). Example: {\"schema_version\":\"1.0\",\"producer\":\"node_inventory\",\"generated_at\":\"2026-03-20T14:35:00Z\",\"node_id\":\"nuc-venue-001\",\"baseline_version\":\"baseline-2026.03.20.1\",\"os_version\":\"Ubuntu 22.04.4 LTS\",\"desktop_env\":\"KDE\",\"usb_devices\":[{\"vendor_id\":\"04b8\",\"product_id\":\"0202\",\"description\":\"Epson TM-T20III\"}]}",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "producer",
+    "generated_at",
+    "node_id",
+    "baseline_version",
+    "os_version",
+    "desktop_env"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility."
+    },
+    "producer": {
+      "type": "string",
+      "description": "Name of the role or script that wrote this file.",
+      "examples": ["node_inventory", "drift-scanner"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when this inventory was collected."
+    },
+    "node_id": {
+      "type": "string",
+      "description": "Unique node identifier from SERVER_NODE_ID in .env."
+    },
+    "baseline_version": {
+      "type": "string",
+      "description": "Baseline version from installer/VERSION."
+    },
+    "os_version": {
+      "type": "string",
+      "description": "Full OS version string (e.g., 'Ubuntu 22.04.4 LTS'). Used for OS_VERSION_UNSUPPORTED deprecation check.",
+      "examples": ["Ubuntu 22.04.4 LTS", "Ubuntu 24.04.1 LTS"]
+    },
+    "desktop_env": {
+      "type": "string",
+      "description": "Detected desktop environment (KDE, GNOME, or unknown). Used for DESKTOP_ENV_UNSUPPORTED deprecation check.",
+      "examples": ["KDE", "GNOME", "unknown"]
+    },
+    "usb_devices": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/usb_device"
+      },
+      "description": "All detected USB devices from lsusb."
+    },
+    "printers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/printer"
+      },
+      "description": "Detected thermal printers (CUPS + USB). Matched against supported hardware list (Decision 6): Epson TM-T20III, TM-T88V, TM-T88VI, TM-m30III."
+    },
+    "touchscreens": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/touchscreen"
+      },
+      "description": "Detected touchscreen devices from libinput."
+    },
+    "card_readers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/card_reader"
+      },
+      "description": "Detected card readers. Matched against supported hardware list: ID Tech VP3300, VP3350."
+    },
+    "scales": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scale"
+      },
+      "description": "Detected scales. Matched against supported hardware list: CAS PDN (FTDI), Prolific PL2303 adapter."
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/service_info"
+      },
+      "description": "Running systemd services relevant to GWI POS."
+    },
+    "network_interfaces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/network_interface"
+      },
+      "description": "Network interfaces from ip addr."
+    },
+    "clock": {
+      "type": "object",
+      "description": "Clock synchronization status at inventory time.",
+      "properties": {
+        "synced": {
+          "type": "boolean",
+          "description": "True if chrony reports normal sync."
+        },
+        "offset_ms": {
+          "type": ["number", "null"],
+          "description": "Clock offset in milliseconds."
+        },
+        "source": {
+          "type": ["string", "null"],
+          "description": "NTP source identifier."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "usb_device": {
+      "type": "object",
+      "required": ["vendor_id", "product_id"],
+      "properties": {
+        "vendor_id": {
+          "type": "string",
+          "description": "USB vendor ID (hex, lowercase).",
+          "pattern": "^[0-9a-f]{4}$"
+        },
+        "product_id": {
+          "type": "string",
+          "description": "USB product ID (hex, lowercase).",
+          "pattern": "^[0-9a-f]{4}$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable device description from lsusb."
+        },
+        "bus": {
+          "type": "string",
+          "description": "USB bus number."
+        },
+        "device": {
+          "type": "string",
+          "description": "USB device number."
+        }
+      }
+    },
+    "printer": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Printer name as reported by CUPS or USB."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model string if detectable."
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "USB vendor ID."
+        },
+        "product_id": {
+          "type": "string",
+          "description": "USB product ID."
+        },
+        "uri": {
+          "type": "string",
+          "description": "CUPS device URI."
+        },
+        "certified": {
+          "type": "boolean",
+          "description": "True if model is in the supported hardware list (Decision 6)."
+        }
+      }
+    },
+    "touchscreen": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Device name from libinput."
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "USB vendor ID (0eef for eGalax/eGTouch)."
+        },
+        "type": {
+          "type": "string",
+          "description": "Touchscreen type (libinput, egalax, etc.)."
+        }
+      }
+    },
+    "card_reader": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Device name."
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "USB vendor ID (0acd for ID Tech)."
+        },
+        "product_id": {
+          "type": "string",
+          "description": "USB product ID."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model name (VP3300, VP3350)."
+        }
+      }
+    },
+    "scale": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Device name."
+        },
+        "vendor_id": {
+          "type": "string",
+          "description": "USB vendor ID (0403 for FTDI, 067b for Prolific)."
+        },
+        "product_id": {
+          "type": "string",
+          "description": "USB product ID."
+        },
+        "serial_port": {
+          "type": "string",
+          "description": "Serial device path (e.g., /dev/ttyUSB0)."
+        }
+      }
+    },
+    "service_info": {
+      "type": "object",
+      "required": ["name", "active"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "systemd service unit name."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "True if service is active."
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "True if service is enabled."
+        },
+        "sub_state": {
+          "type": "string",
+          "description": "systemd sub-state."
+        }
+      }
+    },
+    "network_interface": {
+      "type": "object",
+      "required": ["name", "state"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Interface name (eth0, wlan0, etc.)."
+        },
+        "state": {
+          "type": "string",
+          "description": "Link state (UP, DOWN, etc.)."
+        },
+        "ipv4": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IPv4 addresses assigned."
+        },
+        "ipv6": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IPv6 addresses assigned."
+        },
+        "mac": {
+          "type": "string",
+          "description": "MAC address."
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

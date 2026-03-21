@@ -1,0 +1,105 @@
+---
+# =============================================================================
+# thermal_printer — Required If Applicable
+# =============================================================================
+# Installs CUPS, configures udev rules for Epson thermal printers,
+# and ensures the POS user has lpadmin group access.
+#
+# Skip logic:
+#   - If printer not detected AND manifest says optional → skip cleanly
+#   - If printer not detected AND manifest says expected/required → FAIL
+#   - If printer detected → configure regardless
+#
+# Supported printers:
+#   - Epson TM-T20III  (04b8:0e28)
+#   - Epson TM-T88VI   (04b8:0e15)
+#   - Epson TM-T88V    (04b8:0e11)
+#   - Epson TM-m30III  (04b8:0e36)
+# =============================================================================
+
+# ── Determine if printer is expected by manifest ──────────────────────────
+
+- name: Check manifest for printer expectation
+  ansible.builtin.set_fact:
+    _printer_expected: >-
+      {%- set peripherals = gwi_manifest.peripherals | default({}) -%}
+      {%- set optional = peripherals.optional | default([]) -%}
+      {%- set required = peripherals.required | default([]) -%}
+      {%- set all_peripherals = optional + required -%}
+      {%- set pr_items = all_peripherals | selectattr('type', 'equalto', 'printer') | list -%}
+      {%- if pr_items | length > 0 -%}
+        true
+      {%- else -%}
+        false
+      {%- endif -%}
+  when: gwi_manifest is defined
+
+- name: Default printer expectation to false
+  ansible.builtin.set_fact:
+    _printer_expected: "false"
+  when: _printer_expected is not defined
+
+- name: Strip whitespace from printer expectation
+  ansible.builtin.set_fact:
+    _printer_expected: "{{ _printer_expected | trim }}"
+
+# ── Fail if required by manifest but not detected ─────────────────────────
+
+- name: Fail if printer required by manifest but not detected
+  ansible.builtin.fail:
+    msg: >
+      Thermal printer is expected by station manifest ({{ gwi_station_role }})
+      but no Epson USB printer (vendor 04b8) was detected.
+      Check USB connections and re-run the thermal_printer role.
+  when:
+    - not (gwi_has_printer | bool)
+    - _printer_expected | bool
+    - gwi_manifest is defined
+    - gwi_manifest.peripherals is defined
+    - gwi_manifest.peripherals.required is defined
+    - gwi_manifest.peripherals.required | selectattr('type', 'equalto', 'printer') | list | length > 0
+
+# ── Skip if not detected and not required ──────────────────────────────────
+
+- name: Skip printer configuration if not detected
+  ansible.builtin.debug:
+    msg: "No Epson thermal printer detected — skipping printer configuration"
+  when: not (gwi_has_printer | bool)
+
+# ── All printer configuration tasks ───────────────────────────────────────
+
+- name: Configure thermal printer
+  when: gwi_has_printer | bool
+  block:
+
+    # ── Install CUPS ─────────────────────────────────────────────────────
+    - name: Install CUPS packages
+      ansible.builtin.package:
+        name:
+          - cups
+          - cups-client
+        state: present
+
+    # ── Enable and start CUPS ────────────────────────────────────────────
+    - name: Enable and start CUPS service
+      ansible.builtin.systemd:
+        name: cups
+        state: started
+        enabled: true
+
+    # ── Add POS user to lpadmin group ────────────────────────────────────
+    - name: Add POS user to lpadmin group
+      ansible.builtin.user:
+        name: "{{ gwi_posuser }}"
+        groups: lpadmin
+        append: true
+
+    # ── Deploy Epson udev rules ──────────────────────────────────────────
+    - name: Deploy Epson thermal printer udev rules
+      ansible.builtin.copy:
+        src: 99-epson-tm.rules
+        dest: /etc/udev/rules.d/99-epson-tm.rules
+        owner: root
+        group: root
+        mode: "0644"
+      notify: reload udev rules

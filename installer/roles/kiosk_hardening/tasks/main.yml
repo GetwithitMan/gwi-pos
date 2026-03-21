@@ -1,0 +1,153 @@
+---
+# =============================================================================
+# kiosk_hardening — Optional
+# =============================================================================
+# Disables keyboard shortcuts that could escape the POS kiosk, suppresses
+# desktop chrome, disables USB auto-mount, and prevents screen blanking.
+# Handles both KDE and GNOME desktop environments.
+# =============================================================================
+
+# ── Install xbindkeys for keyboard shortcut suppression ────────────────────
+
+- name: Install xbindkeys
+  ansible.builtin.package:
+    name: xbindkeys
+    state: present
+
+# ── Write xbindkeysrc to disable ALT+F4, CTRL+W, CTRL+Q ──────────────────
+
+- name: Deploy xbindkeysrc for POS user
+  ansible.builtin.copy:
+    src: xbindkeysrc
+    dest: "{{ gwi_posuser_home }}/.xbindkeysrc"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+
+# ── KDE: Disable desktop toolbox ──────────────────────────────────────────
+
+- name: "KDE — Disable desktop toolbox"
+  ansible.builtin.command: >
+    kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    --group Containments --group 1 --group General
+    --key ToolBoxButtonState "toBeHidden"
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Disable desktop toolbox (immutability)"
+  ansible.builtin.command: >
+    kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/kdeglobals"
+    --group KDE --key ShowDesktopToolbox "false"
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  when: gwi_desktop_env == 'kde'
+
+# ── GNOME: Disable desktop icons ─────────────────────────────────────────
+
+- name: "GNOME — Disable desktop icons"
+  ansible.builtin.command: >
+    dbus-launch gsettings set org.gnome.desktop.background show-desktop-icons false
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  failed_when: false
+  when: gwi_desktop_env == 'gnome'
+
+# ── Disable USB auto-mount ────────────────────────────────────────────────
+
+- name: "GNOME — Disable USB auto-mount"
+  ansible.builtin.command: >
+    dbus-launch gsettings set org.gnome.desktop.media-handling automount false
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  failed_when: false
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GNOME — Disable auto-mount open"
+  ansible.builtin.command: >
+    dbus-launch gsettings set org.gnome.desktop.media-handling automount-open false
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  failed_when: false
+  when: gwi_desktop_env == 'gnome'
+
+- name: "KDE — Disable removable devices auto-mount"
+  ansible.builtin.command: >
+    kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/kaborupdate"
+    --group General --key AutoMount "false"
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Disable removable devices auto-mount (Solid)"
+  ansible.builtin.command: >
+    kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/solid_device_automounter"
+    --group General --key AutomountEnabled "false"
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Disable removable devices auto-mount on login"
+  ansible.builtin.command: >
+    kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/solid_device_automounter"
+    --group General --key AutomountOnLogin "false"
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Disable removable devices auto-mount on attach"
+  ansible.builtin.command: >
+    kwriteconfig5 --file "{{ gwi_posuser_home }}/.config/solid_device_automounter"
+    --group General --key AutomountOnPlugin "false"
+  become: true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  when: gwi_desktop_env == 'kde'
+
+# ── Disable screen blanking ──────────────────────────────────────────────
+
+- name: Ensure .xprofile exists for POS user
+  ansible.builtin.file:
+    path: "{{ gwi_posuser_home }}/.xprofile"
+    state: touch
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Check if screen blanking disable already in .xprofile
+  ansible.builtin.command: >
+    grep -q 'xset s off' "{{ gwi_posuser_home }}/.xprofile"
+  register: _xprofile_check
+  changed_when: false
+  failed_when: false
+
+- name: Append screen blanking disable to .xprofile
+  ansible.builtin.lineinfile:
+    path: "{{ gwi_posuser_home }}/.xprofile"
+    line: "# GWI POS — Disable screen blanking and DPMS (managed by Ansible)"
+    state: present
+    create: true
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+  when: _xprofile_check.rc != 0
+
+- name: Append xset s off to .xprofile
+  ansible.builtin.lineinfile:
+    path: "{{ gwi_posuser_home }}/.xprofile"
+    line: "xset s off && xset -dpms"
+    state: present
+    create: true
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"

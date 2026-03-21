@@ -1,0 +1,70 @@
+# =============================================================================
+# GWI POS — Shared Ansible Variables
+# =============================================================================
+# Default values for all roles. Overridden by extra-vars from Stage 11 wrapper
+# or by role-specific defaults.
+# =============================================================================
+
+# ── Application paths ────────────────────────────────────────────────────────
+gwi_app_base: /opt/gwi-pos
+gwi_app_dir: /opt/gwi-pos/app
+gwi_env_file: /opt/gwi-pos/.env
+gwi_state_dir: /opt/gwi-pos/state
+gwi_backup_dir: /opt/gwi-pos/backups
+gwi_bin_dir: /opt/gwi-pos/bin
+gwi_keys_dir: /opt/gwi-pos/keys
+
+# ── Network ports ────────────────────────────────────────────────────────────
+gwi_pos_port: 3005
+gwi_vnc_port: 5900
+gwi_ssh_port: 22
+gwi_pg_port: 5432
+
+# ── Ansible version (pinned for reproducibility) ────────────────────────────
+gwi_ansible_version: "2.16.4"
+
+# ── Station role (set via extra-vars: gwi_station_role) ──────────────────────
+# Valid values: server, backup, terminal
+# Default: server (safest assumption if not provided)
+gwi_station_role: server
+
+# ── POS user (set via extra-vars: gwi_posuser) ──────────────────────────────
+gwi_posuser: gwipos
+gwi_posuser_home: "/home/{{ gwi_posuser }}"
+
+# ── Desktop environment (detected in site.yml pre_tasks) ────────────────────
+# Values: kde, gnome, unknown
+gwi_desktop_env: unknown
+
+# ── Supported OS versions ───────────────────────────────────────────────────
+gwi_supported_os_versions:
+  - "22.04"
+  - "24.04"
+
+# ── Reboot policy ───────────────────────────────────────────────────────────
+gwi_reboot_needed: false
+gwi_reboot_grace_seconds: 60
+gwi_reboot_max_per_run: 1
+
+# ── Telemetry ───────────────────────────────────────────────────────────────
+gwi_telemetry_enabled: true
+
+# ── Rollout channel ─────────────────────────────────────────────────────────
+gwi_rollout_channel: stable
+
+# ── Baseline version (read from installer/VERSION in pre_tasks) ─────────────
+gwi_baseline_version: "unknown"
+
+# ── MC / cloud vars (read from .env in pre_tasks) ───────────────────────────
+gwi_virtual_ip: ""
+gwi_mc_url: "https://app.thepasspos.com"
+gwi_server_node_id: ""
+gwi_server_api_key: ""
+
+# ── Hardware detection facts (set in pre_tasks) ─────────────────────────────
+gwi_has_touchscreen: false
+gwi_has_printer: false
+
+# ── Clock health (set in pre_tasks) ─────────────────────────────────────────
+gwi_clock_synced: false
+gwi_clock_source: "unknown"

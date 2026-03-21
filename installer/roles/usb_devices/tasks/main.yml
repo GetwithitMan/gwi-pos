@@ -1,0 +1,126 @@
+---
+# =============================================================================
+# usb_devices — Required If Applicable
+# =============================================================================
+# Configures udev rules for POS peripheral USB devices:
+#   - ID Tech card readers (Datacap payment terminals)
+#   - CAS PDN scales (FTDI serial)
+#   - Prolific PL2303 serial adapters (scale adapters)
+#
+# Adds the POS user to plugdev and dialout groups for device access.
+# =============================================================================
+
+# ── Detect USB peripherals ────────────────────────────────────────────────
+
+- name: Check for ID Tech card reader (vendor 0acd)
+  ansible.builtin.shell: |
+    if command -v lsusb >/dev/null 2>&1; then
+      lsusb 2>/dev/null | grep -qi '0acd' && echo "true" || echo "false"
+    else
+      echo "false"
+    fi
+  register: _card_reader_check
+  changed_when: false
+  failed_when: false
+
+- name: Check for FTDI serial device (vendor 0403 — CAS PDN scale)
+  ansible.builtin.shell: |
+    if command -v lsusb >/dev/null 2>&1; then
+      lsusb 2>/dev/null | grep -qi '0403' && echo "true" || echo "false"
+    else
+      echo "false"
+    fi
+  register: _ftdi_check
+  changed_when: false
+  failed_when: false
+
+- name: Check for Prolific PL2303 adapter (vendor 067b)
+  ansible.builtin.shell: |
+    if command -v lsusb >/dev/null 2>&1; then
+      lsusb 2>/dev/null | grep -qi '067b' && echo "true" || echo "false"
+    else
+      echo "false"
+    fi
+  register: _prolific_check
+  changed_when: false
+  failed_when: false
+
+- name: Determine if any USB peripherals are present
+  ansible.builtin.set_fact:
+    _has_usb_peripherals: >-
+      {{ (_card_reader_check.stdout | default('false') | trim | bool) or
+         (_ftdi_check.stdout | default('false') | trim | bool) or
+         (_prolific_check.stdout | default('false') | trim | bool) }}
+
+# ── Check manifest for expected peripherals ────────────────────────────────
+
+- name: Check manifest for card reader expectation
+  ansible.builtin.set_fact:
+    _card_reader_expected: >-
+      {%- set peripherals = gwi_manifest.peripherals | default({}) -%}
+      {%- set required = peripherals.required | default([]) -%}
+      {%- set cr_items = required | selectattr('type', 'equalto', 'card_reader') | list -%}
+      {%- if cr_items | length > 0 -%}
+        true
+      {%- else -%}
+        false
+      {%- endif -%}
+  when: gwi_manifest is defined
+
+- name: Default card reader expectation to false
+  ansible.builtin.set_fact:
+    _card_reader_expected: "false"
+  when: _card_reader_expected is not defined
+
+- name: Strip whitespace from card reader expectation
+  ansible.builtin.set_fact:
+    _card_reader_expected: "{{ _card_reader_expected | trim }}"
+
+# ── Fail if required by manifest but not detected ─────────────────────────
+
+- name: Fail if card reader required by manifest but not detected
+  ansible.builtin.fail:
+    msg: >
+      Card reader is marked as required by station manifest ({{ gwi_station_role }})
+      but no ID Tech device (vendor 0acd) was detected.
+      Check USB connections and re-run the usb_devices role.
+  when:
+    - not (_card_reader_check.stdout | default('false') | trim | bool)
+    - _card_reader_expected | trim | bool
+
+# ── Deploy udev rules (always — even if no devices currently attached) ────
+# Rules are static and cost nothing. Having them pre-deployed means
+# hot-plugged devices work immediately without a re-run.
+
+- name: Deploy USB peripheral udev rules
+  ansible.builtin.copy:
+    src: 99-gwi-pos-devices.rules
+    dest: /etc/udev/rules.d/99-gwi-pos-devices.rules
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload udev rules
+
+# ── Add POS user to device access groups ──────────────────────────────────
+
+- name: Add POS user to plugdev group (card readers)
+  ansible.builtin.user:
+    name: "{{ gwi_posuser }}"
+    groups: plugdev
+    append: true
+
+- name: Add POS user to dialout group (serial scales)
+  ansible.builtin.user:
+    name: "{{ gwi_posuser }}"
+    groups: dialout
+    append: true
+
+# ── Log detected peripherals ─────────────────────────────────────────────
+
+- name: Log detected USB peripherals
+  ansible.builtin.debug:
+    msg: >
+      USB peripheral status —
+      Card reader (0acd): {{ _card_reader_check.stdout | default('false') | trim }},
+      FTDI/CAS scale (0403): {{ _ftdi_check.stdout | default('false') | trim }},
+      Prolific adapter (067b): {{ _prolific_check.stdout | default('false') | trim }}

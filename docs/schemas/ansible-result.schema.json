@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GWI POS Ansible Result",
+  "description": "Schema for the raw Ansible JSON callback output file. Written by the Stage 11 wrapper using ANSIBLE_STDOUT_CALLBACK=json. Lives at /opt/gwi-pos/state/ansible-result.json (overwritten each run; history lives in install-events.jsonl). This file MUST always be valid JSON — stdout goes ONLY to this file (no tee mixing), stderr is captured separately to ansible-stderr.log. This is the source of truth for stage11-result.json generation. NOTE: This schema documents the key fields; see Ansible documentation for the full JSON callback structure. Key fields: stats (per-host ok/changed/failures/skipped counts), plays (array of play results with per-task details).",
+  "type": "object",
+  "required": [
+    "stats",
+    "plays"
+  ],
+  "properties": {
+    "stats": {
+      "type": "object",
+      "description": "Per-host summary statistics. Key is the hostname (typically 'localhost' for local execution). Each host has ok, changed, failures, unreachable, skipped, rescued, ignored counts.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tasks that completed successfully without changes."
+          },
+          "changed": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tasks that made changes."
+          },
+          "failures": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tasks that failed."
+          },
+          "unreachable": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of unreachable hosts (should be 0 for local execution)."
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tasks that were skipped."
+          },
+          "rescued": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of tasks rescued by rescue blocks."
+          },
+          "ignored": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of failures that were ignored."
+          }
+        }
+      },
+      "examples": [
+        {
+          "localhost": {
+            "ok": 45,
+            "changed": 3,
+            "failures": 0,
+            "unreachable": 0,
+            "skipped": 8,
+            "rescued": 0,
+            "ignored": 0
+          }
+        }
+      ]
+    },
+    "plays": {
+      "type": "array",
+      "description": "Array of play results. Each play contains tasks, which contain per-host results with status, changed, msg, and other fields. Use this to determine which specific roles/tasks failed.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "play": {
+            "type": "object",
+            "description": "Play metadata (name, id, etc.).",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Play name from site.yml."
+              },
+              "id": {
+                "type": "string",
+                "description": "Ansible-generated play UUID."
+              }
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "description": "Array of task results within this play.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "task": {
+                  "type": "object",
+                  "description": "Task metadata.",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "description": "Task name (e.g., 'firewall : Enable ufw')."
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "Ansible-generated task UUID."
+                    }
+                  }
+                },
+                "hosts": {
+                  "type": "object",
+                  "description": "Per-host results for this task.",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "changed": {
+                        "type": "boolean",
+                        "description": "Whether this task made changes."
+                      },
+                      "failed": {
+                        "type": "boolean",
+                        "description": "Whether this task failed."
+                      },
+                      "skipped": {
+                        "type": "boolean",
+                        "description": "Whether this task was skipped."
+                      },
+                      "msg": {
+                        "type": "string",
+                        "description": "Task result message."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "custom_stats": {
+      "type": "object",
+      "description": "Custom statistics set by tasks via set_stats module. May be empty.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

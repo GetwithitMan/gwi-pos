@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GWI POS Report Queue Item",
+  "description": "Schema for queued report files under /opt/gwi-pos/state/report-queue/. Used for offline retry of reports to Mission Control. Queue retention limits: max 50 files, max 10 MB total, prune entries older than 7 days. When entries are pruned, a warning is logged to install-events.jsonl. Flushed on next successful heartbeat. Example: {\"schema_version\":\"1.0\",\"report_type\":\"baseline_drift\",\"created_at\":\"2026-03-20T15:00:00Z\",\"retry_count\":2,\"next_retry_at\":\"2026-03-20T15:04:00Z\",\"payload\":{\"drift_detected\":true,\"drifted_items\":[\"FIREWALL_DISABLED\"]}}",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "report_type",
+    "created_at",
+    "retry_count",
+    "next_retry_at",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility."
+    },
+    "report_type": {
+      "type": "string",
+      "enum": ["baseline_drift", "inventory", "install_event"],
+      "description": "Type of report being queued. Determines which MC endpoint will receive it."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when this queue entry was first created."
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of delivery attempts so far. Incremented on each failed attempt. Used for exponential backoff calculation: delay = min(60 * 2^retry_count, 3600) seconds."
+    },
+    "next_retry_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the next delivery attempt. Calculated using exponential backoff: 60s, 120s, 240s, 480s, ... max 3600s (1 hour)."
+    },
+    "payload": {
+      "type": "object",
+      "description": "The actual report content to be delivered to MC. Structure depends on report_type. For baseline_drift: drift-scan data. For inventory: inventory data. For install_event: single event entry.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,214 @@
+---
+# =============================================================================
+# GWI POS — reboot_manager role (MUST BE LAST ROLE)
+# =============================================================================
+# Conditionally reboots the node after baseline enforcement. Implements
+# Decision 1, Option C: auto-approved if no active orders in last 30 min.
+# Creates baseline config snapshot before reboot. Keeps last 3 snapshots.
+# Maximum 1 reboot per baseline run, 60s grace period.
+# =============================================================================
+
+# ── Check if reboot is needed ────────────────────────────────────────────────
+
+- name: Check gwi_reboot_needed flag
+  ansible.builtin.debug:
+    msg: "Reboot needed: {{ gwi_reboot_needed | bool }}"
+
+- name: Skip reboot — not needed
+  ansible.builtin.debug:
+    msg: "No reboot required — all baseline changes applied without reboot."
+  when: not (gwi_reboot_needed | bool)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REBOOT SEQUENCE (only when gwi_reboot_needed is true)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Step 1: Check venue hours / active orders (Decision 1, Option C) ────────
+
+- name: Query batch status for active orders
+  ansible.builtin.uri:
+    url: "http://localhost:{{ gwi_pos_port }}/api/system/batch-status"
+    method: GET
+    return_content: true
+    timeout: 10
+    status_code: [200, -1]
+  register: _batch_status
+  failed_when: false
+  when: gwi_reboot_needed | bool
+
+- name: Parse active order status
+  ansible.builtin.set_fact:
+    _has_active_orders: >-
+      {%- if _batch_status.status | default(-1) == 200 -%}
+        {%- set data = _batch_status.content | default('{}') | from_json -%}
+        {%- if data.activeOrdersCount | default(0) | int > 0 -%}
+          true
+        {%- elif data.lastOrderAt | default('') | length > 0 -%}
+          {# Check if last order was within 30 minutes #}
+          true
+        {%- else -%}
+          false
+        {%- endif -%}
+      {%- else -%}
+        {# API unavailable — safe to proceed (service not running or starting) #}
+        false
+      {%- endif -%}
+  when: gwi_reboot_needed | bool
+
+- name: Strip whitespace from active orders flag
+  ansible.builtin.set_fact:
+    _has_active_orders: "{{ _has_active_orders | default('false') | trim | bool }}"
+  when: gwi_reboot_needed | bool
+
+# ── Step 2: Defer reboot if active orders (write pending flag) ──────────────
+
+- name: Defer reboot — active orders detected
+  when:
+    - gwi_reboot_needed | bool
+    - _has_active_orders | default(false) | bool
+  block:
+    - name: Write reboot-pending flag file
+      ansible.builtin.copy:
+        dest: "{{ gwi_app_base }}/.reboot-pending"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          {
+            "schema_version": "1.0",
+            "producer": "reboot_manager",
+            "generated_at": "{{ ansible_date_time.iso8601 }}",
+            "node_id": "{{ gwi_server_node_id | default('') }}",
+            "baseline_version": "{{ gwi_baseline_version }}",
+            "reason": "baseline_enforcement",
+            "deferred": true,
+            "deferred_reason": "active_orders_detected"
+          }
+
+    - name: Write deferred reboot install event
+      ansible.builtin.lineinfile:
+        path: "{{ gwi_state_dir }}/install-events.jsonl"
+        line: >-
+          {"schema_version":"1.0","producer":"reboot_manager","generated_at":"{{ ansible_date_time.iso8601 }}","node_id":"{{ gwi_server_node_id | default('') }}","baseline_version":"{{ gwi_baseline_version }}","event":"reboot_deferred","reason":"active_orders_detected"}
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Log reboot deferral
+      ansible.builtin.debug:
+        msg: >
+          Reboot deferred — active orders detected. A .reboot-pending flag
+          has been written. Reboot will be retried on next baseline run or
+          when orders clear.
+
+# ── Step 3: Proceed with reboot (no active orders) ──────────────────────────
+
+- name: Proceed with guarded reboot
+  when:
+    - gwi_reboot_needed | bool
+    - not (_has_active_orders | default(false) | bool)
+  block:
+
+    # ── 3a: Ensure backup directory exists ──────────────────────────────────
+
+    - name: Ensure backup directory exists
+      ansible.builtin.file:
+        path: "{{ gwi_backup_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # ── 3b: Create baseline config snapshot ─────────────────────────────────
+
+    - name: Create baseline config snapshot
+      ansible.builtin.shell: |
+        SNAPSHOT_NAME="baseline-snapshot-$(date +%Y%m%d-%H%M%S).tar.gz"
+        tar czf "{{ gwi_backup_dir }}/${SNAPSHOT_NAME}" \
+          {{ gwi_state_dir }}/ \
+          /etc/systemd/logind.conf.d/gwi-pos.conf \
+          /etc/ufw/ \
+          /etc/ssh/sshd_config.d/ \
+          /etc/sddm.conf.d/gwi-autologin.conf \
+          /etc/gdm3/custom.conf \
+          /etc/udev/rules.d/99-*.rules \
+          /var/log/journal/ \
+          2>/dev/null || true
+        echo "${SNAPSHOT_NAME}"
+      register: _snapshot_name
+      changed_when: true
+
+    - name: Log snapshot creation
+      ansible.builtin.debug:
+        msg: "Baseline snapshot created: {{ _snapshot_name.stdout | trim }}"
+
+    # ── 3c: Prune old snapshots (keep last 3) ──────────────────────────────
+
+    - name: List baseline snapshots sorted by age
+      ansible.builtin.shell: |
+        ls -1t {{ gwi_backup_dir }}/baseline-snapshot-*.tar.gz 2>/dev/null
+      register: _snapshot_list
+      changed_when: false
+      failed_when: false
+
+    - name: Prune old baseline snapshots (keep 3 newest)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ (_snapshot_list.stdout_lines | default([]))[3:] }}"
+      when: (_snapshot_list.stdout_lines | default([]) | length) > 3
+
+    # ── 3d: Remove any stale reboot-pending flag ────────────────────────────
+
+    - name: Remove reboot-pending flag (reboot proceeding)
+      ansible.builtin.file:
+        path: "{{ gwi_app_base }}/.reboot-pending"
+        state: absent
+
+    # ── 3e: Write reboot-pending flag (for post-reboot verify) ──────────────
+
+    - name: Write reboot-pending state flag
+      ansible.builtin.copy:
+        dest: "{{ gwi_app_base }}/.reboot-pending"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          {
+            "schema_version": "1.0",
+            "producer": "reboot_manager",
+            "generated_at": "{{ ansible_date_time.iso8601 }}",
+            "node_id": "{{ gwi_server_node_id | default('') }}",
+            "baseline_version": "{{ gwi_baseline_version }}",
+            "reason": "baseline_enforcement",
+            "deferred": false,
+            "snapshot": "{{ _snapshot_name.stdout | trim }}"
+          }
+
+    # ── 3f: Write install event for reboot ──────────────────────────────────
+
+    - name: Write reboot install event
+      ansible.builtin.lineinfile:
+        path: "{{ gwi_state_dir }}/install-events.jsonl"
+        line: >-
+          {"schema_version":"1.0","producer":"reboot_manager","generated_at":"{{ ansible_date_time.iso8601 }}","node_id":"{{ gwi_server_node_id | default('') }}","baseline_version":"{{ gwi_baseline_version }}","event":"reboot_scheduled","reason":"baseline_enforcement","snapshot":"{{ _snapshot_name.stdout | trim }}","grace_seconds":{{ gwi_reboot_grace_seconds | default(60) }}}
+        create: true
+        owner: root
+        group: root
+        mode: "0644"
+
+    # ── 3g: Schedule the reboot (60s grace period = +1 minute) ──────────────
+
+    - name: Schedule system reboot
+      ansible.builtin.command: >
+        shutdown -r +1 "GWI POS baseline enforcement requires reboot"
+      changed_when: true
+
+    - name: Log reboot scheduling
+      ansible.builtin.debug:
+        msg: >
+          System reboot scheduled in 1 minute. Baseline config snapshot
+          saved to {{ gwi_backup_dir }}/{{ _snapshot_name.stdout | trim }}.
+          Post-reboot verification will run automatically via
+          post_reboot_verify role on next boot.

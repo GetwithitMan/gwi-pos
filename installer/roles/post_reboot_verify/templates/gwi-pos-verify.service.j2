@@ -1,0 +1,16 @@
+# Managed by GWI POS Ansible — do not edit manually
+[Unit]
+Description=GWI POS Post-Boot Verification
+After=thepasspos.service thepasspos-kiosk.service
+Wants=thepasspos.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={{ gwi_bin_dir }}/verify-health.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gwi-pos-verify
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,101 @@
+# =============================================================================
+# GWI POS — mc_phone_home Role
+# =============================================================================
+# Installs report-hardening.sh and runs the initial report at install time.
+# Post-task prunes the report queue (enforces 50 file / 10MB / 7-day limits).
+#
+# Classification: optional
+# Idempotency: safe (template is idempotent; report is observational)
+# =============================================================================
+---
+# ── Ensure directories exist ─────────────────────────────────────────────────
+- name: Ensure bin directory exists
+  ansible.builtin.file:
+    path: "{{ gwi_bin_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure state directory exists
+  ansible.builtin.file:
+    path: "{{ gwi_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure report-queue directory exists
+  ansible.builtin.file:
+    path: "{{ gwi_state_dir }}/report-queue"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── Install report-hardening.sh ──────────────────────────────────────────────
+- name: Install report-hardening.sh from template
+  ansible.builtin.template:
+    src: report-hardening.sh.j2
+    dest: "{{ gwi_bin_dir }}/report-hardening.sh"
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── Run initial report ───────────────────────────────────────────────────────
+- name: Run initial hardening report to MC
+  ansible.builtin.command: "{{ gwi_bin_dir }}/report-hardening.sh"
+  changed_when: false
+  failed_when: false
+
+# ── Post-task: prune report queue ────────────────────────────────────────────
+- name: Prune report queue (enforce 50 file / 10MB / 7-day limits)
+  ansible.builtin.shell: |
+    set -o pipefail
+    QUEUE_DIR="{{ gwi_state_dir }}/report-queue"
+    EVENTS_LOG="{{ gwi_state_dir }}/install-events.jsonl"
+    MAX_FILES=50
+    MAX_BYTES=$((10 * 1024 * 1024))
+    MAX_AGE_DAYS=7
+    PRUNED=0
+
+    if [ ! -d "$QUEUE_DIR" ] || [ -z "$(ls -A "$QUEUE_DIR" 2>/dev/null)" ]; then
+      exit 0
+    fi
+
+    # Prune files older than 7 days
+    while IFS= read -r -d '' old_file; do
+      rm -f "$old_file"
+      PRUNED=$((PRUNED + 1))
+    done < <(find "$QUEUE_DIR" -name '*.json' -type f -mtime +${MAX_AGE_DAYS} -print0 2>/dev/null)
+
+    # Prune to max file count (oldest first)
+    FILE_COUNT=$(find "$QUEUE_DIR" -name '*.json' -type f 2>/dev/null | wc -l)
+    if [ "$FILE_COUNT" -gt "$MAX_FILES" ]; then
+      EXCESS=$((FILE_COUNT - MAX_FILES))
+      find "$QUEUE_DIR" -name '*.json' -type f -printf '%T+ %p\n' 2>/dev/null \
+        | sort | head -n "$EXCESS" | awk '{print $2}' \
+        | while read -r f; do rm -f "$f"; PRUNED=$((PRUNED + 1)); done
+    fi
+
+    # Prune to max total size (oldest first)
+    TOTAL_SIZE=$(du -sb "$QUEUE_DIR" 2>/dev/null | awk '{print $1}')
+    while [ "${TOTAL_SIZE:-0}" -gt "$MAX_BYTES" ]; do
+      OLDEST=$(find "$QUEUE_DIR" -name '*.json' -type f -printf '%T+ %p\n' 2>/dev/null \
+        | sort | head -1 | awk '{print $2}')
+      if [ -z "$OLDEST" ]; then break; fi
+      rm -f "$OLDEST"
+      PRUNED=$((PRUNED + 1))
+      TOTAL_SIZE=$(du -sb "$QUEUE_DIR" 2>/dev/null | awk '{print $1}')
+    done
+
+    # Log pruning event if anything was removed
+    if [ "$PRUNED" -gt 0 ]; then
+      PRUNE_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+      echo "{\"event\":\"queue_pruned\",\"timestamp\":\"${PRUNE_TS}\",\"count\":${PRUNED},\"reason\":\"limit_exceeded\",\"producer\":\"mc_phone_home\"}" \
+        >> "$EVENTS_LOG"
+    fi
+  args:
+    executable: /bin/bash
+  changed_when: false
+  failed_when: false

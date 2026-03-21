@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# =============================================================================
+# GWI POS — Drift Scanner
+# =============================================================================
+# Installed by Ansible post_reboot_verify role.
+# Runs every 30 minutes via gwi-pos-drift.timer.
+# Compares observed system state against expected baseline configuration.
+#
+# Writes: {{ gwi_state_dir }}/drift-scan.json
+# =============================================================================
+# Managed by GWI POS Ansible — do not edit manually
+
+STATE_DIR="{{ gwi_state_dir }}"
+ENV_FILE="{{ gwi_env_file }}"
+APP_DIR="{{ gwi_app_dir }}"
+MANIFEST_DIR="{{ gwi_app_dir }}/installer/manifests"
+
+# Load node identity
+NODE_ID=""
+if [ -f "$ENV_FILE" ]; then
+  NODE_ID=$(grep '^SERVER_NODE_ID=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")
+fi
+
+# Read baseline version
+BASELINE_VERSION="unknown"
+if [ -f "$APP_DIR/installer/VERSION" ]; then
+  BASELINE_VERSION=$(cat "$APP_DIR/installer/VERSION" 2>/dev/null | tr -d '[:space:]')
+fi
+
+# Read station role from .env
+STATION_ROLE="server"
+if [ -f "$ENV_FILE" ]; then
+  SR=$(grep '^GWI_STATION_ROLE=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")
+  if [ -n "$SR" ]; then
+    STATION_ROLE="$SR"
+  fi
+fi
+
+# ── Drift detection ─────────────────────────────────────────────────────────
+DRIFT_DETECTED="false"
+DRIFTED_ITEMS="[]"
+DRIFT_LIST=()
+
+add_drift() {
+  local code="$1"
+  local detail="$2"
+  DRIFT_DETECTED="true"
+  DRIFT_LIST+=("{\"code\":\"${code}\",\"detail\":\"${detail}\"}")
+}
+
+# ── Check 1: Sleep targets still masked ──────────────────────────────────────
+for target in sleep.target suspend.target hibernate.target hybrid-sleep.target; do
+  STATE=$(systemctl is-enabled "$target" 2>/dev/null || echo "unknown")
+  if [ "$STATE" != "masked" ]; then
+    add_drift "SLEEP_TARGETS_UNMASKED" "${target} is ${STATE}, expected masked"
+    break
+  fi
+done
+
+# ── Check 2: Firewall still active with expected rules ──────────────────────
+UFW_STATUS=$(ufw status 2>/dev/null | head -1 || echo "")
+if ! echo "$UFW_STATUS" | grep -q "Status: active"; then
+  add_drift "FIREWALL_DISABLED" "ufw is not active"
+else
+  # Check that expected ports are allowed
+  UFW_RULES=$(ufw status numbered 2>/dev/null || echo "")
+  for port in 22 {{ gwi_pos_port }} 5900; do
+    if ! echo "$UFW_RULES" | grep -q "$port"; then
+      add_drift "FIREWALL_RULE_MISSING" "Expected port ${port} not found in ufw rules"
+    fi
+  done
+fi
+
+# ── Check 3: Autologin still configured ─────────────────────────────────────
+autologin_found="false"
+if [ -f /etc/sddm.conf.d/gwi-autologin.conf ]; then
+  if grep -q 'Autologin' /etc/sddm.conf.d/gwi-autologin.conf 2>/dev/null; then
+    autologin_found="true"
+  fi
+elif [ -f /etc/gdm3/custom.conf ]; then
+  if grep -q 'AutomaticLoginEnable\s*=\s*[Tt]rue' /etc/gdm3/custom.conf 2>/dev/null; then
+    autologin_found="true"
+  fi
+fi
+if [ "$autologin_found" = "false" ]; then
+  add_drift "AUTOLOGIN_MISSING" "No autologin configuration found for SDDM or GDM3"
+fi
+
+# ── Check 4: Expected services running ──────────────────────────────────────
+# Read manifest for the station role
+MANIFEST_FILE="${MANIFEST_DIR}/${STATION_ROLE}.json"
+if [ -f "$MANIFEST_FILE" ] && command -v jq >/dev/null 2>&1; then
+  # Check required services from manifest
+  REQUIRED_SERVICES=$(jq -r '.services.required[]?.name' "$MANIFEST_FILE" 2>/dev/null || echo "")
+  for svc in $REQUIRED_SERVICES; do
+    IS_ACTIVE=$(systemctl is-active "${svc}.service" 2>/dev/null || echo "inactive")
+    if [ "$IS_ACTIVE" != "active" ]; then
+      add_drift "SERVICE_SET_MISMATCH" "Required service ${svc} is ${IS_ACTIVE}"
+    fi
+  done
+fi
+
+# ── Check 5: Clock health ───────────────────────────────────────────────────
+CLOCK_SYNCED="false"
+CLOCK_OFFSET_MS="0"
+
+CHRONYC_OUTPUT=$(chronyc tracking 2>/dev/null || echo "")
+if [ -n "$CHRONYC_OUTPUT" ]; then
+  LEAP_STATUS=$(echo "$CHRONYC_OUTPUT" | grep '^Leap status' | sed 's/^Leap status\s*:\s*//')
+  OFFSET_RAW=$(echo "$CHRONYC_OUTPUT" | grep '^Last offset' | sed 's/^Last offset\s*:\s*\([^ ]*\).*/\1/')
+
+  if [ "$LEAP_STATUS" = "Normal" ]; then
+    CLOCK_SYNCED="true"
+  else
+    add_drift "CLOCK_UNSYNCED" "Leap status: ${LEAP_STATUS:-unknown}"
+  fi
+
+  if [ -n "$OFFSET_RAW" ]; then
+    CLOCK_OFFSET_MS=$(awk "BEGIN { printf \"%.3f\", $OFFSET_RAW * 1000 }" 2>/dev/null || echo "0")
+    # Warn if offset exceeds 500ms
+    OFFSET_ABS=$(awk "BEGIN { v=$OFFSET_RAW; print (v<0 ? -v : v) }" 2>/dev/null || echo "0")
+    OFFSET_THRESHOLD="0.5"
+    if awk "BEGIN { exit !($OFFSET_ABS > $OFFSET_THRESHOLD) }" 2>/dev/null; then
+      add_drift "TIME_SOURCE_UNHEALTHY" "Clock offset ${CLOCK_OFFSET_MS}ms exceeds 500ms threshold"
+    fi
+  fi
+else
+  add_drift "CLOCK_UNSYNCED" "chronyc not available or not responding"
+fi
+
+# ── Check 6: Config checksums ───────────────────────────────────────────────
+# Compute SHA256 checksums for key configuration files
+CONFIG_CHECKSUMS="{"
+FIRST_CS="true"
+
+compute_checksum() {
+  local filepath="$1"
+  local label="$2"
+  local checksum=""
+
+  if [ -f "$filepath" ]; then
+    checksum=$(sha256sum "$filepath" 2>/dev/null | awk '{print $1}')
+  elif [ -d "$filepath" ]; then
+    # For directories, hash all files concatenated
+    checksum=$(find "$filepath" -type f 2>/dev/null | sort | xargs cat 2>/dev/null | sha256sum | awk '{print $1}')
+  fi
+
+  if [ -n "$checksum" ]; then
+    if [ "$FIRST_CS" = "true" ]; then
+      FIRST_CS="false"
+    else
+      CONFIG_CHECKSUMS="${CONFIG_CHECKSUMS},"
+    fi
+    CONFIG_CHECKSUMS="${CONFIG_CHECKSUMS}\"${label}\":\"${checksum}\""
+  fi
+}
+
+# UFW config directory
+if [ -d /etc/ufw ]; then
+  compute_checksum "/etc/ufw" "ufw_config"
+fi
+
+# SDDM autologin config
+if [ -d /etc/sddm.conf.d ]; then
+  compute_checksum "/etc/sddm.conf.d" "sddm_config"
+fi
+
+# GDM3 config
+compute_checksum "/etc/gdm3/custom.conf" "gdm3_config"
+
+# SSH hardening config
+compute_checksum "/etc/ssh/sshd_config.d/99-gwi-pos.conf" "sshd_config"
+
+CONFIG_CHECKSUMS="${CONFIG_CHECKSUMS}}"
+
+# ── Build drifted items JSON array ───────────────────────────────────────────
+if [ ${#DRIFT_LIST[@]} -gt 0 ]; then
+  DRIFTED_ITEMS="["
+  for i in "${!DRIFT_LIST[@]}"; do
+    if [ "$i" -gt 0 ]; then
+      DRIFTED_ITEMS="${DRIFTED_ITEMS},"
+    fi
+    DRIFTED_ITEMS="${DRIFTED_ITEMS}${DRIFT_LIST[$i]}"
+  done
+  DRIFTED_ITEMS="${DRIFTED_ITEMS}]"
+fi
+
+# ── Write drift-scan.json ───────────────────────────────────────────────────
+GENERATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+cat > "${STATE_DIR}/drift-scan.json" <<EOJSON
+{
+  "schema_version": "1.0",
+  "producer": "drift-scanner",
+  "generated_at": "${GENERATED_AT}",
+  "node_id": "${NODE_ID}",
+  "baseline_version": "${BASELINE_VERSION}",
+  "drift_detected": ${DRIFT_DETECTED},
+  "drifted_items": ${DRIFTED_ITEMS},
+  "config_checksums": ${CONFIG_CHECKSUMS},
+  "clock": {
+    "synced": ${CLOCK_SYNCED},
+    "offset_ms": ${CLOCK_OFFSET_MS}
+  }
+}
+EOJSON
+
+# Log the result
+if [ "$DRIFT_DETECTED" = "true" ]; then
+  logger -t gwi-pos-drift "Drift scan detected ${#DRIFT_LIST[@]} drifted item(s)"
+else
+  logger -t gwi-pos-drift "Drift scan clean — no drift detected"
+fi
+
+exit 0

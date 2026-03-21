@@ -1,0 +1,11 @@
+---
+# =============================================================================
+# GWI POS — branding role handlers
+# =============================================================================
+# Local handlers only (no cross-role imports per spec).
+# =============================================================================
+
+- name: update-initramfs
+  ansible.builtin.command:
+    cmd: update-initramfs -u
+  ignore_errors: true

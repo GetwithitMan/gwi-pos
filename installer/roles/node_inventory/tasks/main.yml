@@ -1,0 +1,266 @@
+# =============================================================================
+# GWI POS — node_inventory Role
+# =============================================================================
+# Observes and reports system state. Does NOT configure anything.
+# Produces /opt/gwi-pos/state/inventory.json with structured facts about
+# hardware, OS, services, network, and clock health.
+#
+# Classification: optional
+# Idempotency: safe (observation only — timestamps change, no config drift)
+# =============================================================================
+---
+# ── Ensure state directory exists ────────────────────────────────────────────
+- name: Ensure state directory exists
+  ansible.builtin.file:
+    path: "{{ gwi_state_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ── Enumerate USB devices ────────────────────────────────────────────────────
+- name: Enumerate USB devices via lsusb
+  ansible.builtin.command: lsusb
+  register: _lsusb_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse USB device list into structured facts
+  ansible.builtin.set_fact:
+    _usb_devices: >-
+      {{
+        _lsusb_raw.stdout_lines | default([])
+        | map('regex_replace', '^Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-fA-F]+):([0-9a-fA-F]+)\s+(.*)',
+               '{"bus": "\1", "device": "\2", "vendor_id": "\3", "product_id": "\4", "description": "\5"}')
+        | select('match', '^\{')
+        | map('from_json')
+        | list
+      }}
+
+# ── Detect touchscreen ──────────────────────────────────────────────────────
+- name: Find input event devices
+  ansible.builtin.find:
+    paths: /sys/class/input
+    patterns: "event*"
+    file_type: directory
+  register: _input_events
+  failed_when: false
+
+- name: Check each input device for touchscreen capability
+  ansible.builtin.shell: |
+    set -o pipefail
+    UEVENT="/sys/class/input/{{ item.path | basename }}/device/uevent"
+    if [ -f "$UEVENT" ] && grep -q 'ID_INPUT_TOUCHSCREEN=1' "$UEVENT" 2>/dev/null; then
+      NAME=$(grep '^NAME=' "$UEVENT" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "unknown")
+      echo "{\"event_device\": \"{{ item.path | basename }}\", \"model\": \"$NAME\"}"
+    fi
+  args:
+    executable: /bin/bash
+  loop: "{{ _input_events.files | default([]) }}"
+  register: _touchscreen_checks
+  changed_when: false
+  failed_when: false
+
+- name: Aggregate touchscreen detection results
+  ansible.builtin.set_fact:
+    _touchscreens: >-
+      {{
+        _touchscreen_checks.results | default([])
+        | map(attribute='stdout')
+        | select('match', '^\{')
+        | map('from_json')
+        | list
+      }}
+
+- name: Set touchscreen presence fact
+  ansible.builtin.set_fact:
+    _has_touchscreen: "{{ (_touchscreens | length) > 0 }}"
+
+# ── Detect printers (Epson vendor 04b8) ─────────────────────────────────────
+- name: Detect Epson printers from USB devices
+  ansible.builtin.set_fact:
+    _printers: >-
+      {{
+        _usb_devices | default([])
+        | selectattr('vendor_id', 'equalto', '04b8')
+        | list
+      }}
+
+- name: Set printer presence fact
+  ansible.builtin.set_fact:
+    _has_printer: "{{ (_printers | length) > 0 }}"
+
+# ── Detect card readers (vendor 0acd) ───────────────────────────────────────
+- name: Detect card readers from USB devices
+  ansible.builtin.set_fact:
+    _card_readers: >-
+      {{
+        _usb_devices | default([])
+        | selectattr('vendor_id', 'equalto', '0acd')
+        | list
+      }}
+
+# ── Detect scales (vendors 0403, 067b) ──────────────────────────────────────
+- name: Detect scales from USB devices
+  ansible.builtin.set_fact:
+    _scales: >-
+      {{
+        _usb_devices | default([])
+        | selectattr('vendor_id', 'in', ['0403', '067b'])
+        | list
+      }}
+
+# ── Capture OS version ──────────────────────────────────────────────────────
+- name: Capture OS version
+  ansible.builtin.command: lsb_release -rs
+  register: _os_version
+  changed_when: false
+  failed_when: false
+
+- name: Capture OS codename
+  ansible.builtin.command: lsb_release -cs
+  register: _os_codename
+  changed_when: false
+  failed_when: false
+
+- name: Capture OS description
+  ansible.builtin.command: lsb_release -ds
+  register: _os_description
+  changed_when: false
+  failed_when: false
+
+# ── Capture running services ────────────────────────────────────────────────
+- name: List running systemd services
+  ansible.builtin.command: systemctl list-units --type=service --state=running --no-pager --no-legend
+  register: _systemd_services_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse running services into structured list
+  ansible.builtin.set_fact:
+    _running_services: >-
+      {{
+        _systemd_services_raw.stdout_lines | default([])
+        | map('regex_replace', '^\s*(\S+\.service)\s+\S+\s+\S+\s+(\S+)\s+(.*)', '{"name": "\1", "state": "\2", "description": "\3"}')
+        | select('match', '^\{')
+        | map('from_json')
+        | list
+      }}
+
+# ── Capture network interfaces ──────────────────────────────────────────────
+- name: Capture network interfaces as JSON
+  ansible.builtin.command: ip -j addr
+  register: _network_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse network interfaces
+  ansible.builtin.set_fact:
+    _network_interfaces: "{{ _network_raw.stdout | default('[]') | from_json }}"
+
+# ── Check clock health ──────────────────────────────────────────────────────
+- name: Check chronyc tracking
+  ansible.builtin.command: chronyc tracking
+  register: _chronyc_raw
+  changed_when: false
+  failed_when: false
+
+- name: Parse clock health from chronyc output
+  ansible.builtin.set_fact:
+    _clock_leap_status: >-
+      {{ _chronyc_raw.stdout_lines | default([])
+         | select('match', '^Leap status\s*:')
+         | map('regex_replace', '^Leap status\s*:\s*(.*)', '\1')
+         | first | default('unknown') }}
+    _clock_offset_raw: >-
+      {{ _chronyc_raw.stdout_lines | default([])
+         | select('match', '^Last offset\s*:')
+         | map('regex_replace', '^Last offset\s*:\s*([+-]?[\d.e+-]+)\s+seconds', '\1')
+         | first | default('0') }}
+    _clock_source: >-
+      {{ _chronyc_raw.stdout_lines | default([])
+         | select('match', '^Reference ID\s*:')
+         | map('regex_replace', '^Reference ID\s*:\s*(.*)', '\1')
+         | first | default('unknown') }}
+
+- name: Compute clock offset in milliseconds
+  ansible.builtin.set_fact:
+    _clock_offset_ms: "{{ (_clock_offset_raw | float * 1000) | round(3) }}"
+
+- name: Determine clock synced status
+  ansible.builtin.set_fact:
+    _clock_synced: "{{ _clock_leap_status == 'Normal' }}"
+
+# ── Read node ID from .env ──────────────────────────────────────────────────
+- name: Read SERVER_NODE_ID from .env
+  ansible.builtin.shell: |
+    set -o pipefail
+    grep '^SERVER_NODE_ID=' "{{ gwi_env_file }}" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo ""
+  args:
+    executable: /bin/bash
+  register: _node_id_raw
+  changed_when: false
+  failed_when: false
+
+- name: Set node_id fact
+  ansible.builtin.set_fact:
+    _node_id: "{{ _node_id_raw.stdout | default(gwi_server_node_id) | trim }}"
+
+# ── Read baseline version ───────────────────────────────────────────────────
+- name: Read baseline version from VERSION file
+  ansible.builtin.slurp:
+    src: "{{ gwi_app_dir }}/installer/VERSION"
+  register: _baseline_version_raw
+  failed_when: false
+
+- name: Set baseline version fact
+  ansible.builtin.set_fact:
+    _baseline_version: >-
+      {{ (_baseline_version_raw.content | default('') | b64decode | trim)
+         | default(gwi_baseline_version, true) }}
+
+# ── Write inventory.json ────────────────────────────────────────────────────
+- name: Write inventory.json
+  ansible.builtin.copy:
+    dest: "{{ gwi_state_dir }}/inventory.json"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ {
+        "schema_version": "1.0",
+        "producer": "node_inventory",
+        "generated_at": ansible_date_time.iso8601,
+        "node_id": _node_id,
+        "baseline_version": _baseline_version,
+        "os": {
+          "version": _os_version.stdout | default("unknown"),
+          "codename": _os_codename.stdout | default("unknown"),
+          "description": _os_description.stdout | default("unknown"),
+          "supported": (_os_version.stdout | default("unknown")) in gwi_supported_os_versions
+        },
+        "desktop_env": gwi_desktop_env,
+        "hardware": {
+          "usb_devices": _usb_devices | default([]),
+          "touchscreens": _touchscreens | default([]),
+          "has_touchscreen": _has_touchscreen | bool,
+          "printers": _printers | default([]),
+          "has_printer": _has_printer | bool,
+          "card_readers": _card_readers | default([]),
+          "has_card_reader": (_card_readers | default([]) | length) > 0,
+          "scales": _scales | default([]),
+          "has_scale": (_scales | default([]) | length) > 0
+        },
+        "services": {
+          "running": _running_services | default([])
+        },
+        "network": {
+          "interfaces": _network_interfaces | default([])
+        },
+        "clock": {
+          "synced": _clock_synced | bool,
+          "offset_ms": _clock_offset_ms | float,
+          "source": _clock_source,
+          "leap_status": _clock_leap_status
+        }
+      } | to_nice_json(indent=2) }}

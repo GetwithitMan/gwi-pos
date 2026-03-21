@@ -1,0 +1,15 @@
+---
+# =============================================================================
+# GWI POS — display_manager handlers
+# =============================================================================
+# Note: restarting the display manager mid-baseline is disruptive. We notify
+# but let the reboot_manager handle the actual restart via system reboot when
+# gwi_reboot_needed is true. If no reboot is needed, the handler is safe.
+# =============================================================================
+
+- name: restart display-manager
+  ansible.builtin.debug:
+    msg: >
+      Display manager configuration changed. Changes will take effect
+      on next reboot or service restart. If gwi_reboot_needed is true,
+      reboot_manager will handle this automatically.

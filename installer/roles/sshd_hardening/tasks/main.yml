@@ -1,0 +1,80 @@
+---
+# =============================================================================
+# GWI POS — sshd_hardening role
+# =============================================================================
+# Hardens SSH with a drop-in config and installs/configures fail2ban for
+# brute-force protection. Fully idempotent.
+# =============================================================================
+
+# ── SSH drop-in configuration ────────────────────────────────────────────────
+
+- name: Ensure sshd_config.d directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy GWI POS SSH hardening config
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-gwi-pos.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — SSH hardening configuration
+      # Managed by Ansible sshd_hardening role — do not edit manually
+      PermitRootLogin prohibit-password
+      MaxAuthTries 3
+      AllowUsers {{ gwi_posuser }} root
+      ClientAliveInterval 300
+      ClientAliveCountMax 2
+  notify: restart sshd
+
+# ── Validate SSH config before restart ───────────────────────────────────────
+
+- name: Validate sshd configuration
+  ansible.builtin.command: sshd -t
+  changed_when: false
+
+# ── fail2ban installation and configuration ──────────────────────────────────
+
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure fail2ban jail.d directory exists
+  ansible.builtin.file:
+    path: /etc/fail2ban/jail.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure fail2ban SSH jail
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/gwi-pos.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — fail2ban SSH jail configuration
+      # Managed by Ansible sshd_hardening role — do not edit manually
+      [sshd]
+      enabled = true
+      maxretry = 5
+      bantime = 600
+      findtime = 600
+  notify: restart fail2ban
+
+# ── Ensure fail2ban is enabled and running ───────────────────────────────────
+
+- name: Enable and start fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    enabled: true
+    state: started

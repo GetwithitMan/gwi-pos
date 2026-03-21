@@ -1,0 +1,10 @@
+---
+# =============================================================================
+# GWI POS — os_hardening handlers
+# =============================================================================
+
+- name: restart systemd-logind
+  ansible.builtin.systemd:
+    name: systemd-logind
+    state: restarted
+    daemon_reload: true

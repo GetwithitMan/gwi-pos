@@ -1,0 +1,99 @@
+---
+# =============================================================================
+# GWI POS — display_manager role
+# =============================================================================
+# Configures auto-login for the POS user. KDE uses SDDM, GNOME uses GDM3.
+# GNOME: forces X11 (disables Wayland) — sets gwi_reboot_needed if changed.
+# Fully idempotent.
+# =============================================================================
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SDDM / KDE Plasma
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "SDDM — Create drop-in directory"
+  ansible.builtin.file:
+    path: /etc/sddm.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: gwi_desktop_env == 'kde'
+
+- name: "SDDM — Configure auto-login for POS user"
+  ansible.builtin.copy:
+    dest: /etc/sddm.conf.d/gwi-autologin.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — SDDM auto-login configuration
+      # Managed by Ansible display_manager role — do not edit manually
+      [Autologin]
+      User={{ gwi_posuser }}
+      Session=plasma.desktop
+  notify: restart display-manager
+  when: gwi_desktop_env == 'kde'
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GDM3 / GNOME
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Read current Wayland state before making changes ─────────────────────────
+
+- name: "GDM3 — Check current WaylandEnable value"
+  ansible.builtin.shell: |
+    if [ -f /etc/gdm3/custom.conf ]; then
+      grep -E '^\s*WaylandEnable\s*=' /etc/gdm3/custom.conf 2>/dev/null | tail -1 | \
+        sed 's/.*=\s*//' | tr -d ' ' || echo "not_set"
+    else
+      echo "not_set"
+    fi
+  register: _gdm3_wayland_before
+  changed_when: false
+  failed_when: false
+  when: gwi_desktop_env == 'gnome'
+
+# ── Configure GDM3 auto-login and X11 ───────────────────────────────────────
+
+- name: "GDM3 — Enable automatic login"
+  community.general.ini_file:
+    path: /etc/gdm3/custom.conf
+    section: daemon
+    option: AutomaticLoginEnable
+    value: "true"
+    no_extra_spaces: true
+    mode: "0644"
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GDM3 — Set automatic login user"
+  community.general.ini_file:
+    path: /etc/gdm3/custom.conf
+    section: daemon
+    option: AutomaticLogin
+    value: "{{ gwi_posuser }}"
+    no_extra_spaces: true
+    mode: "0644"
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GDM3 — Disable Wayland (force X11)"
+  community.general.ini_file:
+    path: /etc/gdm3/custom.conf
+    section: daemon
+    option: WaylandEnable
+    value: "false"
+    no_extra_spaces: true
+    mode: "0644"
+  register: _gdm3_wayland_change
+  notify: restart display-manager
+  when: gwi_desktop_env == 'gnome'
+
+# ── Flag reboot needed if Wayland was previously active ──────────────────────
+
+- name: "GDM3 — Set reboot flag if Wayland was enabled"
+  ansible.builtin.set_fact:
+    gwi_reboot_needed: true
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _gdm3_wayland_before.stdout | default('not_set') | trim not in ['false', 'False', 'FALSE']
+    - _gdm3_wayland_change is changed

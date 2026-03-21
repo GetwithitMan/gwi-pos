@@ -1,0 +1,12 @@
+# Managed by GWI POS Ansible — do not edit manually
+[Unit]
+Description=GWI POS Drift Scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ gwi_bin_dir }}/drift-scanner.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gwi-pos-drift

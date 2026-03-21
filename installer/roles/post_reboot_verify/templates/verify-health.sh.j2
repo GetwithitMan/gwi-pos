@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+# =============================================================================
+# GWI POS — Post-Boot Health Verification
+# =============================================================================
+# Installed by Ansible post_reboot_verify role.
+# Runs as systemd oneshot after thepasspos.service starts.
+# Checks POS health, kiosk, PostgreSQL, firewall, sleep masks, autologin,
+# clock health, and 3-tier service readiness.
+#
+# Writes: {{ gwi_state_dir }}/hardening-status.json
+# =============================================================================
+# Managed by GWI POS Ansible — do not edit manually
+
+STATE_DIR="{{ gwi_state_dir }}"
+ENV_FILE="{{ gwi_env_file }}"
+APP_DIR="{{ gwi_app_dir }}"
+POS_PORT="{{ gwi_pos_port }}"
+
+# Load node identity
+NODE_ID=""
+if [ -f "$ENV_FILE" ]; then
+  NODE_ID=$(grep '^SERVER_NODE_ID=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")
+fi
+
+# Read baseline version
+BASELINE_VERSION="unknown"
+if [ -f "$APP_DIR/installer/VERSION" ]; then
+  BASELINE_VERSION=$(cat "$APP_DIR/installer/VERSION" 2>/dev/null | tr -d '[:space:]')
+fi
+
+# ── Helper: record a check result ───────────────────────────────────────────
+declare -A CHECKS
+check_pass() { CHECKS["$1"]="true"; }
+check_fail() { CHECKS["$1"]="false"; }
+
+# ── Check 1: POS health endpoint ────────────────────────────────────────────
+# Retry loop with timeout — POS may still be starting after boot
+pos_healthy="false"
+MAX_WAIT=120
+ELAPSED=0
+INTERVAL=5
+while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
+  HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+    "http://localhost:${POS_PORT}/api/health" 2>/dev/null || echo "000")
+  if [ "$HTTP_CODE" = "200" ]; then
+    pos_healthy="true"
+    break
+  fi
+  sleep "$INTERVAL"
+  ELAPSED=$((ELAPSED + INTERVAL))
+done
+if [ "$pos_healthy" = "true" ]; then
+  check_pass "pos_health"
+else
+  check_fail "pos_health"
+fi
+
+# ── Check 2: Kiosk Chromium process ─────────────────────────────────────────
+if pgrep -f 'chromium.*kiosk' >/dev/null 2>&1; then
+  check_pass "kiosk_chromium"
+else
+  check_fail "kiosk_chromium"
+fi
+
+# ── Check 3: PostgreSQL accepting connections ────────────────────────────────
+if pg_isready -q 2>/dev/null; then
+  check_pass "postgresql"
+else
+  check_fail "postgresql"
+fi
+
+# ── Check 4: Firewall active ────────────────────────────────────────────────
+UFW_STATUS=$(ufw status 2>/dev/null | head -1 || echo "")
+if echo "$UFW_STATUS" | grep -q "Status: active"; then
+  check_pass "firewall"
+else
+  check_fail "firewall"
+fi
+
+# ── Check 5: Sleep targets masked ───────────────────────────────────────────
+sleep_masked="true"
+for target in sleep.target suspend.target hibernate.target hybrid-sleep.target; do
+  STATE=$(systemctl is-enabled "$target" 2>/dev/null || echo "unknown")
+  if [ "$STATE" != "masked" ]; then
+    sleep_masked="false"
+    break
+  fi
+done
+if [ "$sleep_masked" = "true" ]; then
+  check_pass "sleep_targets_masked"
+else
+  check_fail "sleep_targets_masked"
+fi
+
+# ── Check 6: Autologin configured ───────────────────────────────────────────
+autologin_ok="false"
+# Check SDDM (KDE)
+if [ -f /etc/sddm.conf.d/gwi-autologin.conf ]; then
+  if grep -q 'Autologin' /etc/sddm.conf.d/gwi-autologin.conf 2>/dev/null; then
+    autologin_ok="true"
+  fi
+# Check GDM3 (GNOME)
+elif [ -f /etc/gdm3/custom.conf ]; then
+  if grep -q 'AutomaticLoginEnable\s*=\s*true\|AutomaticLoginEnable\s*=\s*True' /etc/gdm3/custom.conf 2>/dev/null; then
+    autologin_ok="true"
+  fi
+fi
+if [ "$autologin_ok" = "true" ]; then
+  check_pass "autologin"
+else
+  check_fail "autologin"
+fi
+
+# ── Check 7: Clock health ───────────────────────────────────────────────────
+CLOCK_SYNCED="false"
+CLOCK_OFFSET_MS="0"
+CLOCK_SOURCE="unknown"
+
+CHRONYC_OUTPUT=$(chronyc tracking 2>/dev/null || echo "")
+if [ -n "$CHRONYC_OUTPUT" ]; then
+  LEAP_STATUS=$(echo "$CHRONYC_OUTPUT" | grep '^Leap status' | sed 's/^Leap status\s*:\s*//')
+  OFFSET_RAW=$(echo "$CHRONYC_OUTPUT" | grep '^Last offset' | sed 's/^Last offset\s*:\s*\([^ ]*\).*/\1/')
+  REF_SOURCE=$(echo "$CHRONYC_OUTPUT" | grep '^Reference ID' | sed 's/^Reference ID\s*:\s*//')
+
+  if [ "$LEAP_STATUS" = "Normal" ]; then
+    CLOCK_SYNCED="true"
+  fi
+
+  if [ -n "$OFFSET_RAW" ]; then
+    # Convert seconds to milliseconds using awk (handles scientific notation)
+    CLOCK_OFFSET_MS=$(awk "BEGIN { printf \"%.3f\", $OFFSET_RAW * 1000 }" 2>/dev/null || echo "0")
+  fi
+
+  if [ -n "$REF_SOURCE" ]; then
+    CLOCK_SOURCE="$REF_SOURCE"
+  fi
+fi
+
+if [ "$CLOCK_SYNCED" = "true" ]; then
+  check_pass "clock_health"
+else
+  check_fail "clock_health"
+fi
+
+# ── Check 8: 3-tier systemd service readiness ───────────────────────────────
+# Service tier definitions from manifest
+# Critical: thepasspos, postgresql
+# Degraded: thepasspos-kiosk, thepasspos-sync, keepalived
+# Informational: x11vnc, gwi-pos-verify, gwi-pos-drift
+
+declare -A SERVICE_TIERS
+SERVICE_TIERS=(
+  ["thepasspos"]="critical"
+  ["postgresql"]="critical"
+  ["thepasspos-kiosk"]="degraded"
+  ["thepasspos-sync"]="degraded"
+  ["keepalived"]="degraded"
+  ["x11vnc"]="informational"
+  ["gwi-pos-verify"]="informational"
+  ["gwi-pos-drift"]="informational"
+)
+
+CRITICAL_OK="true"
+DEGRADED_OK="true"
+INFORMATIONAL_OK="true"
+CRITICAL_SERVICES="[]"
+DEGRADED_SERVICES="[]"
+INFO_SERVICES="[]"
+
+build_tier_json() {
+  local tier="$1"
+  local result="["
+  local first="true"
+  for svc in "${!SERVICE_TIERS[@]}"; do
+    if [ "${SERVICE_TIERS[$svc]}" = "$tier" ]; then
+      # Check if the service unit exists before checking its state
+      if systemctl list-unit-files "${svc}.service" >/dev/null 2>&1; then
+        IS_ACTIVE=$(systemctl is-active "${svc}.service" 2>/dev/null || echo "inactive")
+      else
+        IS_ACTIVE="not-found"
+      fi
+
+      if [ "$first" = "true" ]; then
+        first="false"
+      else
+        result="${result},"
+      fi
+      result="${result}{\"name\":\"${svc}\",\"active\":\"${IS_ACTIVE}\"}"
+
+      if [ "$IS_ACTIVE" != "active" ] && [ "$IS_ACTIVE" != "not-found" ]; then
+        case "$tier" in
+          critical) CRITICAL_OK="false" ;;
+          degraded) DEGRADED_OK="false" ;;
+          informational) INFORMATIONAL_OK="false" ;;
+        esac
+      fi
+    fi
+  done
+  result="${result}]"
+  echo "$result"
+}
+
+CRITICAL_SERVICES=$(build_tier_json "critical")
+DEGRADED_SERVICES=$(build_tier_json "degraded")
+INFO_SERVICES=$(build_tier_json "informational")
+
+# ── Determine overall status ────────────────────────────────────────────────
+OVERALL="pass"
+if [ "$CRITICAL_OK" = "false" ]; then
+  OVERALL="fail"
+elif [ "$DEGRADED_OK" = "false" ]; then
+  OVERALL="degraded"
+fi
+
+# If any required check failed, degrade or fail
+for key in pos_health postgresql firewall sleep_targets_masked; do
+  if [ "${CHECKS[$key]:-false}" = "false" ]; then
+    if [ "$key" = "pos_health" ] || [ "$key" = "postgresql" ]; then
+      OVERALL="fail"
+    elif [ "$OVERALL" = "pass" ]; then
+      OVERALL="degraded"
+    fi
+  fi
+done
+
+# ── Build checks JSON ───────────────────────────────────────────────────────
+CHECKS_JSON="{"
+CHECKS_JSON="${CHECKS_JSON}\"pos_health\":${CHECKS[pos_health]:-false},"
+CHECKS_JSON="${CHECKS_JSON}\"kiosk_chromium\":${CHECKS[kiosk_chromium]:-false},"
+CHECKS_JSON="${CHECKS_JSON}\"postgresql\":${CHECKS[postgresql]:-false},"
+CHECKS_JSON="${CHECKS_JSON}\"firewall\":${CHECKS[firewall]:-false},"
+CHECKS_JSON="${CHECKS_JSON}\"sleep_targets_masked\":${CHECKS[sleep_targets_masked]:-false},"
+CHECKS_JSON="${CHECKS_JSON}\"autologin\":${CHECKS[autologin]:-false},"
+CHECKS_JSON="${CHECKS_JSON}\"clock_health\":${CHECKS[clock_health]:-false}"
+CHECKS_JSON="${CHECKS_JSON}}"
+
+# ── Write hardening-status.json ──────────────────────────────────────────────
+GENERATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+cat > "${STATE_DIR}/hardening-status.json" <<EOJSON
+{
+  "schema_version": "1.0",
+  "producer": "verify-health",
+  "generated_at": "${GENERATED_AT}",
+  "node_id": "${NODE_ID}",
+  "baseline_version": "${BASELINE_VERSION}",
+  "checks": ${CHECKS_JSON},
+  "service_tiers": {
+    "critical": ${CRITICAL_SERVICES},
+    "degraded": ${DEGRADED_SERVICES},
+    "informational": ${INFO_SERVICES}
+  },
+  "clock": {
+    "synced": ${CLOCK_SYNCED},
+    "offset_ms": ${CLOCK_OFFSET_MS},
+    "source": "${CLOCK_SOURCE}"
+  },
+  "overall": "${OVERALL}"
+}
+EOJSON
+
+# Log the result
+if [ "$OVERALL" = "pass" ]; then
+  logger -t gwi-pos-verify "Post-boot verification PASSED — all checks healthy"
+elif [ "$OVERALL" = "degraded" ]; then
+  logger -t gwi-pos-verify "Post-boot verification DEGRADED — some non-critical checks failed"
+else
+  logger -t gwi-pos-verify "Post-boot verification FAILED — critical checks failed"
+fi
+
+# Exit 0 even on degraded/fail so systemd oneshot stays RemainAfterExit=yes.
+# The JSON artifact communicates the real status to MC.
+exit 0

@@ -1,0 +1,63 @@
+---
+# =============================================================================
+# log_rotation — Optional
+# =============================================================================
+# Configures logrotate for POS application logs, limits journald storage,
+# and ensures persistent boot logs are available.
+# =============================================================================
+
+# ── Logrotate for POS application logs ─────────────────────────────────────
+
+- name: Write logrotate config for GWI POS logs
+  ansible.builtin.copy:
+    content: |
+      # GWI POS — Application log rotation
+      # Managed by Ansible — do not edit manually
+      /opt/gwi-pos/*.log {
+          daily
+          missingok
+          rotate 7
+          compress
+          delaycompress
+          notifempty
+          create 0644 {{ gwi_posuser }} {{ gwi_posuser }}
+      }
+    dest: /etc/logrotate.d/gwi-pos
+    owner: root
+    group: root
+    mode: "0644"
+
+# ── Journald storage limits ───────────────────────────────────────────────
+
+- name: Create journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write journald storage limit config
+  ansible.builtin.copy:
+    content: |
+      # GWI POS — Journald storage limits
+      # Managed by Ansible — do not edit manually
+      [Journal]
+      SystemMaxUse=500M
+      MaxRetentionSec=7day
+    dest: /etc/systemd/journald.conf.d/gwi-pos.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart journald
+
+# ── Persistent boot logs ─────────────────────────────────────────────────
+
+- name: Ensure /var/log/journal exists for persistent boot logs
+  ansible.builtin.file:
+    path: /var/log/journal
+    state: directory
+    owner: root
+    group: systemd-journal
+    mode: "2755"
+  notify: restart journald

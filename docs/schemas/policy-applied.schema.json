@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GWI POS Policy Applied",
+  "description": "Records the policy version and contents currently applied to this node. In Phase A, written by the Stage 11 wrapper from shipped manifests. In Phase C, written by MC sync. Only one writer is authoritative at any given phase. Lives at /opt/gwi-pos/state/policy-applied.json. Example: {\"schema_version\":\"1.0\",\"producer\":\"11-system-hardening.sh\",\"generated_at\":\"2026-03-20T14:30:00Z\",\"node_id\":\"nuc-venue-001\",\"baseline_version\":\"baseline-2026.03.20.1\",\"policy_version\":\"policy-2026.03.20.1\",\"policy_source\":\"manifest\",\"policy_content\":{\"station_role\":\"server\",\"expected_peripherals\":{\"thermal_printer\":{\"required\":true}}}}",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "producer",
+    "generated_at",
+    "node_id",
+    "baseline_version",
+    "policy_version",
+    "policy_source",
+    "policy_content"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Schema version for forward compatibility."
+    },
+    "producer": {
+      "type": "string",
+      "description": "Name of the script or service that wrote this file.",
+      "examples": ["11-system-hardening.sh", "mc-sync"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when this file was written."
+    },
+    "node_id": {
+      "type": "string",
+      "description": "Unique node identifier from SERVER_NODE_ID in .env."
+    },
+    "baseline_version": {
+      "type": "string",
+      "description": "Baseline version from installer/VERSION."
+    },
+    "policy_version": {
+      "type": "string",
+      "description": "Policy version identifier. For shipped manifests: matches baseline version. For bootstrap: 'bootstrap-auto'. For MC-managed: MC-assigned version.",
+      "examples": ["policy-2026.03.20.1", "bootstrap-auto"]
+    },
+    "policy_source": {
+      "type": "string",
+      "enum": ["manifest", "bootstrap-auto", "mission-control"],
+      "description": "Where this policy originated. 'manifest' = shipped in git repo. 'bootstrap-auto' = auto-generated for legacy nodes on first baseline encounter. 'mission-control' = pushed by MC (Phase C). Once a real policy replaces bootstrap-auto, bootstrap-auto must never be re-created automatically."
+    },
+    "policy_content": {
+      "type": "object",
+      "description": "The actual policy content. Structure depends on policy_source. For manifests, this is the content of the station role manifest file.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

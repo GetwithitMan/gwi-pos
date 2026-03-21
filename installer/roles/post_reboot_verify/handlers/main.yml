@@ -1,0 +1,7 @@
+# =============================================================================
+# GWI POS — post_reboot_verify Handlers
+# =============================================================================
+---
+- name: reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true

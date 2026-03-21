@@ -100,6 +100,14 @@ curl installer.run | sudo bash
         │
         ├─ Desktop launcher (.desktop file)
         │
+        ├─ Stage 11: System Hardening (Ansible Baseline Enforcement)
+        │   ├─ Bootstrap Ansible venv in /opt/gwi-pos/.ansible-venv/
+        │   ├─ Acquire flock on /opt/gwi-pos/state/baseline.lock
+        │   ├─ Run 16 Ansible roles (ANSIBLE_STDOUT_CALLBACK=json)
+        │   ├─ Write structured state artifacts to /opt/gwi-pos/state/
+        │   ├─ Install support tools to /opt/gwi-pos/bin/
+        │   └─ Non-fatal during Phase A rollout (track_warn on failure)
+        │
         └─ Summary + useful commands
 ```
 
@@ -116,13 +124,62 @@ curl installer.run | sudo bash
 ├── clear-kiosk-session.sh  # Clears stale Chromium session data
 ├── exit-kiosk-server.py    # Terminal-only: localhost:3006 kiosk exit micro-service
 ├── backups/                # pg_dump .sql.gz files (7-day retention)
+│   └── baseline-snapshot-*.tar.gz  # Config snapshots before reboot (last 3 kept)
 ├── keys/                   # RSA keypair (server_key.pem, server_key_pub.pem)
+├── .ansible-venv/          # Pinned Ansible virtual environment (ansible-core 2.16.4)
+├── bin/                    # Support tools (installed by Stage 11)
+│   ├── generate-support-bundle.sh  # Packages state JSONs + redacted logs into tarball
+│   ├── baseline-diff               # Compares observed state vs manifest (human + --json)
+│   └── gwi-baseline-restore.sh     # Restores selected configs from baseline snapshot
+├── state/                  # Structured local state artifacts (all JSON, schema-versioned)
+│   ├── run-state.json              # Current execution state + lock metadata
+│   ├── stage11-result.json         # Last baseline run outcome + per-role results
+│   ├── baseline-applied.json       # Baseline version + roles applied
+│   ├── policy-applied.json         # Policy version + source + contents
+│   ├── ansible-result.json         # Raw Ansible JSON callback output (last run only)
+│   ├── ansible-stderr.log          # Ansible stderr (last run only)
+│   ├── artifact-manifest.json      # App SHA, baseline SHA, package versions
+│   ├── hardening-status.json       # Per-check pass/fail from verify-health.sh
+│   ├── inventory.json              # USB, printers, touchscreen, OS, services
+│   ├── drift-scan.json             # Drift items + config checksums (30min timer)
+│   ├── sync-status.json            # Sync readiness + schema block state
+│   ├── install-events.jsonl        # Append-only event log (one JSON object per line)
+│   ├── baseline.lock               # flock target (not JSON, just an fd target)
+│   └── report-queue/               # Queued reports for offline retry (max 50 / 10MB / 7d)
 └── app/                    # GWI POS application (server role only)
     ├── .env.local          # Symlink to /opt/gwi-pos/.env
     ├── server.js           # Compiled server (from server.ts)
     ├── preload.js          # AsyncLocalStorage polyfill
     ├── .next/              # Next.js build output
     ├── prisma/             # Prisma schema + migrations
+    ├── installer/          # Ansible project (pulled with app code)
+    │   ├── VERSION                     # e.g., baseline-2026.03.20.1
+    │   ├── site.yml                    # Master playbook (16 roles)
+    │   ├── ansible.cfg                 # Local execution, JSON output, no retry files
+    │   ├── inventory/local.yml         # Localhost-only inventory
+    │   ├── group_vars/all.yml          # Shared variables
+    │   ├── manifests/                  # Device expectation manifests
+    │   │   ├── server.json
+    │   │   ├── backup.json
+    │   │   └── terminal.json
+    │   ├── roles/                      # 16 Ansible roles
+    │   │   ├── os_hardening/
+    │   │   ├── firewall/
+    │   │   ├── display_manager/
+    │   │   ├── sshd_hardening/
+    │   │   ├── network_hardening/
+    │   │   ├── kiosk_hardening/
+    │   │   ├── log_rotation/
+    │   │   ├── security_updates/
+    │   │   ├── thermal_printer/
+    │   │   ├── touchscreen/
+    │   │   ├── usb_devices/
+    │   │   ├── branding/
+    │   │   ├── node_inventory/
+    │   │   ├── post_reboot_verify/
+    │   │   ├── mc_phone_home/
+    │   │   └── reboot_manager/
+    │   └── assets/plymouth/gwi-pos/    # Plymouth boot theme assets
     └── ...
 ```
 
@@ -327,3 +384,376 @@ sudo bash /opt/gwi-pos/installer.run
 | 6 | Service recovery | `sudo reboot` → all services auto-start |
 | 7 | Backup rotation | Check `/opt/gwi-pos/backups/` for daily .sql.gz, 7-day retention |
 | 8 | MC registration | POST with valid code → 200; POST with bad code → 400/401 |
+| 9 | Stage 11 baseline | `cat /opt/gwi-pos/state/stage11-result.json` → outcome not `failed_required` |
+| 10 | Stage 11 idempotency | Re-run Stage 11 → `changed_count: 0` for non-observational roles |
+| 11 | Stage 11 reboot recovery | Pending reboot persisted, reboots once, verify fires, lock not stranded |
+| 12 | Stage 11 offline | MC unreachable → baseline runs, reports queue, support bundle works |
+| 13 | Drift detection | Manual config change → `baseline-diff` detects and classifies correctly |
+| 14 | Support bundle | `generate-support-bundle.sh` → tarball with redacted secrets, valid manifest |
+
+---
+
+## Stage 11: System Hardening (Ansible Baseline Enforcement)
+
+### Purpose
+
+Stage 11 adds idempotent OS hardening, device configuration, branding, post-reboot verification, and drift detection to every NUC. It runs after all existing stages (1-10) complete and uses Ansible to enforce a baseline configuration that can be re-applied safely at any time.
+
+The system is designed around three principles:
+1. **Machine-readable** — All output uses `ANSIBLE_STDOUT_CALLBACK=json`. No logic depends on parsing human log text.
+2. **Idempotent** — Second run produces zero meaningful changes unless the machine actually drifted.
+3. **Offline-safe** — MC being unreachable never bricks the node. Reports queue locally with bounded backoff.
+
+### Entry Point
+
+**Function:** `run_system_hardening()` in `public/installer-modules/11-system-hardening.sh`
+
+**Module contract:** Same as stages 1-10 — single `run_*()` entry function, returns 0 on success, non-zero on failure. The orchestrator (`installer.run`) calls it as the last stage.
+
+### Prerequisites
+
+- Stages 1-10 completed successfully
+- Python 3.8+ available (Ubuntu 22.04/24.04 ship with it)
+- Ansible bootstrapped in `/opt/gwi-pos/.ansible-venv/` — the wrapper creates a Python venv and installs `ansible-core==2.16.4` (pinned) on first run; subsequent runs reuse the existing venv
+
+### Execution Flow
+
+```
+run_system_hardening()
+    │
+    ├─ Bootstrap Ansible venv (if not present)
+    │   python3 -m venv /opt/gwi-pos/.ansible-venv/
+    │   pip install ansible-core==2.16.4
+    │
+    ├─ Scaffold /opt/gwi-pos/state/ directory
+    │
+    ├─ Acquire execution lock
+    │   flock -w 300 /opt/gwi-pos/state/baseline.lock
+    │   (wait up to 5 minutes, then fail)
+    │
+    ├─ Write run-state.json (state: running, triggered_by: installer)
+    │
+    ├─ Resolve tag filters
+    │   HARDENING_TAGS env → --tags (run only these roles)
+    │   SKIP_HARDENING_TAGS env → --skip-tags (skip these roles)
+    │
+    ├─ Execute Ansible playbook
+    │   ANSIBLE_STDOUT_CALLBACK=json \
+    │     ansible-playbook -i inventory/local.yml site.yml \
+    │     --extra-vars "gwi_station_role=server gwi_posuser=..." \
+    │     > state/ansible-result.json 2> state/ansible-stderr.log
+    │
+    ├─ Parse ansible-result.json
+    │   Classify per-role outcomes (ok/changed/failed/skipped)
+    │   Determine overall outcome based on role classification
+    │
+    ├─ Write stage11-result.json
+    │   outcome: success | success_with_warnings | failed_required | failed_optional
+    │   per_role_results: [{ role, class, status, changed_count }]
+    │
+    ├─ Append to install-events.jsonl
+    │
+    ├─ Install support tools → /opt/gwi-pos/bin/
+    │
+    └─ Return exit code
+        Phase A: track_warn on failure (non-fatal)
+        Future: fail-closed for required roles after rollout stabilizes
+```
+
+### Phase A Rollout Protection
+
+During Phase A (initial rollout to fleet), Stage 11 failures are **non-fatal** — the wrapper calls `track_warn` rather than returning non-zero. This prevents a hardening bug from bricking production NUCs. However, failures are still fully recorded:
+
+- `stage11-result.json` reports the real classified outcome (e.g., `failed_required`)
+- `install-events.jsonl` gets an append entry
+- `run-state.json` transitions to `degraded`
+- Heartbeat carries the degraded state to MC
+
+After 3+ venues and 2+ weeks of stable operation, required roles are promoted to fail-closed (non-zero exit halts the installer).
+
+### Tag Filtering
+
+Operators can scope which roles run using environment variables:
+
+```bash
+# Run only firewall and os_hardening roles
+HARDENING_TAGS=firewall,os_hardening sudo ./installer.run --resume-from=system_hardening
+
+# Run everything except security_updates
+SKIP_HARDENING_TAGS=security_updates sudo ./installer.run --resume-from=system_hardening
+```
+
+Tags map to the Ansible tags assigned in `site.yml`: `required`, `optional`, `hardware`, plus each role name as an implicit tag.
+
+---
+
+## Ansible Roles (16 Total)
+
+Roles execute in the order listed in `installer/site.yml`. Each role is idempotent and must converge cleanly on second run.
+
+### Role Classification
+
+| Class | Failure Behavior | "Applicable" Source |
+|-------|-----------------|---------------------|
+| required | Fail-closed (after Phase A rollout stabilizes) | Always applicable |
+| required_if_applicable | Fail if manifest says expected, skip if not | `installer/manifests/*.json` |
+| optional | Warn only | N/A |
+
+### Required Roles
+
+| Role | Purpose |
+|------|---------|
+| `os_hardening` | Mask sleep/suspend/hibernate targets, disable automatic suspend, configure kernel parameters. Supports both KDE (logind.conf.d) and GNOME (gsettings). |
+| `firewall` | Configure UFW: allow SSH (22), POS (3005), kiosk exit (3006), HA (VRRP/112). Deny everything else by default. HA-aware and role-aware (terminal rules differ from server). |
+| `display_manager` | Configure autologin for POS user on SDDM (KDE) or GDM3 (GNOME). Force X11 session type (Wayland causes touchscreen/kiosk issues). Detect desktop environment at runtime. |
+| `sshd_hardening` | Disable root login, disable password auth (key-only), install and configure fail2ban with sane defaults. Drop config in `/etc/ssh/sshd_config.d/`. |
+| `post_reboot_verify` | Post-reboot health check: verify 3-tier service readiness (critical/degraded/informational), clock health via chronyc, baseline state persistence. Writes `hardening-status.json`. |
+| `reboot_manager` | Conditional reboot controller. Maximum 1 reboot per baseline run, 60-second grace period (`shutdown -r +1`). Snapshots config before reboot. Venue-hours-aware: checks local `/api/system/batch-status` — proceeds only if no active orders in 30 minutes, otherwise defers (max 3 attempts, then queues for MC approval). Must be the last role in site.yml. |
+
+### Hardware Roles (required_if_applicable)
+
+These roles check the device expectation manifest (`installer/manifests/server.json` or `terminal.json`). If the manifest says a device is expected but the device is missing, the role **fails** (not skips). If the manifest says the device is optional or absent, the role skips cleanly.
+
+| Role | Purpose |
+|------|---------|
+| `thermal_printer` | Configure CUPS and udev rules for Epson TM-T20III/T88V/T88VI/TM-m30III (vendor 04b8). Server only (`when: gwi_station_role != 'terminal'`). |
+| `touchscreen` | Configure libinput for touch input, disable right-click-on-hold, set up on-screen keyboard. Handles eGalax/eGTouch (vendor 0eef) specifically. |
+| `usb_devices` | Configure udev rules for card readers (ID Tech VP3300/VP3350, vendor 0acd) and CAS PDN scales (FTDI 0403, Prolific 067b). Server only. |
+
+### Optional Roles
+
+| Role | Purpose |
+|------|---------|
+| `network_hardening` | Configure chrony (NTP), disable IPv6 if not needed, harden DNS settings. Reports clock health status (`CLOCK_UNSYNCED`, `TIME_SOURCE_UNHEALTHY`). |
+| `kiosk_hardening` | Disable ALT+F4, hide taskbar, disable USB auto-mount in desktop environment. Prevents accidental kiosk escape. |
+| `log_rotation` | Configure logrotate for POS logs + journald persistent storage with size limits. Ensures journal survives reboot for diagnostics. |
+| `security_updates` | Configure unattended-upgrades for security patches only. Conservative policy — security updates only, no feature upgrades. |
+| `branding` | Apply Plymouth boot theme, desktop wallpaper, legal/consent banner (MOTD + `/etc/issue.net`). Uses placeholder assets from `installer/assets/plymouth/gwi-pos/`. |
+| `node_inventory` | Collect hardware inventory (USB devices, printers, touchscreens, OS version, services) and clock health. Writes `inventory.json`. Observational — always produces `changed` timestamps (does not fail idempotency). |
+| `mc_phone_home` | Report baseline status, drift results, and install events to Mission Control via heartbeat piggyback. Manages offline report queue under `state/report-queue/` with bounded retry (60s, 120s, 240s... max 1h). Enforces queue limits: 50 files, 10 MB, 7-day retention. Server only. |
+
+---
+
+## Local State Files
+
+All files live under `/opt/gwi-pos/state/`. Every JSON file includes a standard header:
+
+```json
+{
+  "schema_version": "1.0",
+  "producer": "<service-or-script-name>",
+  "generated_at": "<ISO8601>",
+  "node_id": "<from .env SERVER_NODE_ID>",
+  "baseline_version": "<from installer/VERSION>"
+}
+```
+
+| File | Producer | Purpose |
+|------|----------|---------|
+| `run-state.json` | Stage 11 wrapper | Current execution state (`idle`, `running`, `degraded`, `pending_reboot`), lock PID, `triggered_by` (`installer`, `mc`, `support`, `verify`, `cron`), `host_boot_id` |
+| `stage11-result.json` | Stage 11 wrapper | Last run outcome (`success`, `success_with_warnings`, `failed_required`, `failed_optional`), Ansible exit code, per-role results with classification, `triggered_by` |
+| `baseline-applied.json` | Ansible post_tasks | Baseline version, list of roles applied, `last_known_good_at` timestamp |
+| `policy-applied.json` | Stage 11 wrapper | Policy version, `policy_source` (`manifest`, `bootstrap-auto`, `mission-control`), policy contents |
+| `ansible-result.json` | Stage 11 wrapper | Raw Ansible JSON callback output. Last run only (overwritten each run). History lives in `install-events.jsonl`. |
+| `ansible-stderr.log` | Stage 11 wrapper | Ansible stderr capture. Last run only (overwritten each run). |
+| `artifact-manifest.json` | Stage 11 post-run | App commit SHA, baseline version + SHA, ansible-core version, key package versions (postgresql, nodejs, chromium) |
+| `hardening-status.json` | verify-health.sh | Per-check pass/fail results, 3-tier service health (critical/degraded/informational), clock health |
+| `inventory.json` | node_inventory role | USB devices, printers, touchscreen, OS version, systemd services |
+| `drift-scan.json` | Drift scanner timer (30min) | Drift items, config file checksums, clock health, comparison against manifest/policy |
+| `sync-status.json` | venue-bootstrap (POS app) | Sync readiness, schema block state, retry count. Read by verify-health.sh and heartbeat.sh |
+| `install-events.jsonl` | Stage 11 wrapper | Append-only event log. Each line is one independent JSON object. Entries include `triggered_by` and event type |
+| `baseline.lock` | flock | Lock target file (not JSON). Used by `flock -w 300` for mutual exclusion across all baseline entrypoints |
+| `report-queue/*.json` | mc_phone_home | Queued reports for offline retry. Max 50 files, 10 MB total, 7-day retention. Pruned entries logged to `install-events.jsonl` |
+
+---
+
+## Execution Lock
+
+All baseline execution entrypoints share a single lock to prevent concurrent runs:
+
+- **Lock file:** `/opt/gwi-pos/state/baseline.lock` (used by `flock`, not a JSON file)
+- **Lock metadata:** Stored in `run-state.json` (PID, `started_at`, `triggered_by`)
+- **Acquisition:** `flock -w 300` — wait up to 5 minutes, then fail
+- **Entrypoints sharing the lock:** Installer Stage 11, MC-triggered re-baseline, support-invoked run, scheduled audit
+- **Stale lock:** Warn after 15 minutes, stale after 60 minutes (PID dead or age exceeded)
+- **Force unlock:** Explicit `baseline-force-unlock` command + audit log entry
+- **Reboot:** Kernel releases the fd, so reboot clears the lock automatically
+
+**Run-state machine:**
+```
+idle → running → success → idle
+              → success_with_warnings → idle
+              → failed_required → degraded
+              → pending_reboot → (reboot) → running_verify → idle | degraded
+```
+
+---
+
+## Support Tools
+
+Installed to `/opt/gwi-pos/bin/` by Stage 11.
+
+### generate-support-bundle.sh
+
+Packages all state JSONs, journal excerpts (10,000 lines max), service statuses, `ufw status verbose`, `chronyc tracking`, `lsusb -v`, `lsblk -f`, `dmesg | tail -200`, `ip addr`, and a redacted `.env` into a single tarball.
+
+**Output:** `support-bundle-YYYYMMDD-HHMMSS.tar.gz`
+
+**Redaction rules:**
+- Redact all `.env` values matching `SECRET|TOKEN|PASSWORD|PRIVATE|KEY|API_KEY`
+- Redact bearer tokens and JWTs in logs
+- Hash hardware fingerprint for external sharing
+- Never include database dumps
+
+The tarball includes a top-level `bundle-manifest.json` listing all included files, truncated logs, redaction status, and tool version.
+
+```bash
+sudo /opt/gwi-pos/bin/generate-support-bundle.sh
+# → /opt/gwi-pos/support-bundle-20260320-143022.tar.gz
+```
+
+### baseline-diff
+
+Compares observed node state against the device expectation manifest. Produces human-readable output by default, or structured JSON with `--json`.
+
+```bash
+sudo /opt/gwi-pos/bin/baseline-diff
+# DRIFT DETECTED (2 items):
+#   [ERROR] FIREWALL_DISABLED — ufw is inactive
+#     FIX: sudo ./installer.run --resume-from=system_hardening HARDENING_TAGS=firewall
+#   [WARN]  PRINTER_MISSING — manifest expects 1 Epson TM, found 0
+#     FIX: check USB connection, then re-run thermal_printer role
+
+sudo /opt/gwi-pos/bin/baseline-diff --json
+# → structured JSON with drift items, severity, remediation suggestions
+```
+
+### gwi-baseline-restore.sh
+
+Restores selected config files from the most recent baseline snapshot (`/opt/gwi-pos/backups/baseline-snapshot-*.tar.gz`). This is **config file restore only** — it does not roll back packages, kernels, apt state, or database state. For emergency recovery use.
+
+```bash
+sudo /opt/gwi-pos/bin/gwi-baseline-restore.sh
+# Lists available snapshots and prompts for selection
+```
+
+---
+
+## Reinstall / Recovery Behavior
+
+### Core Rule
+
+On install, reinstall, and boot, the node converges to the **latest approved app release for its rollout channel** and the compatible schema state required by that release. The installer never hardcodes schema versions or deployment tags.
+
+### What Reinstall Preserves
+
+| Preserved | Location |
+|-----------|----------|
+| Node identity + secrets | `/opt/gwi-pos/.env` |
+| RSA keypair | `/opt/gwi-pos/keys/` |
+| PostgreSQL data | Local database |
+| Baseline + policy state | `/opt/gwi-pos/state/` |
+| Backups + config snapshots | `/opt/gwi-pos/backups/` |
+| MC registration | `SERVER_NODE_ID`, `API_KEY` in `.env` |
+| Rollout channel | `ROLLOUT_CHANNEL` in `.env` |
+
+### What Reinstall Re-applies
+
+- App code (`git fetch` + checkout approved version for rollout channel)
+- npm dependencies (`npm ci`)
+- Prisma client generation + schema migrations (via `pre-start.sh`)
+- All 16 Ansible baseline roles (idempotent — only changes what drifted)
+- Systemd service files (`07-services.sh` recreates idempotently)
+- Support tools (`bin/*`)
+
+### Safety Guarantees
+
+- **Idempotent:** Re-running on an already-provisioned node is safe
+- **No silent downgrade:** App, schema, and baseline versions are never silently downgraded
+- **Degraded visibility:** If app version and schema are incompatible after deploy, a visible degraded state is produced in `stage11-result.json` and reported to MC
+- **No hardcoded versions:** Desired app version comes from rollout policy. Schema version comes from the app release. Baseline version comes from `installer/VERSION`.
+
+### Legacy NUC Migration
+
+Existing NUCs deployed before baseline enforcement receive a bootstrap-auto policy on first Stage 11 run:
+
+1. Detect: no `state/policy-applied.json` but `.env` has `SERVER_NODE_ID` (already provisioned)
+2. Collect current observed state via inventory collector
+3. Write observed state as `policy-applied.json` with `policy_version: "bootstrap-auto"`, `policy_source: "bootstrap-auto"`
+4. MC treats `bootstrap-auto` as "initial baseline adopted, not drifted"
+5. Once MC pushes a real policy version, `bootstrap-auto` is never re-created automatically
+
+---
+
+## Stage 11 Verification Commands
+
+After Stage 11 runs, use these commands to verify correct operation:
+
+```bash
+# --- Overall result ---
+cat /opt/gwi-pos/state/stage11-result.json | jq '.outcome'
+# Expected: "success" or "success_with_warnings"
+
+cat /opt/gwi-pos/state/run-state.json | jq '.state'
+# Expected: "idle" (or "degraded" if required roles failed)
+
+# --- Sleep targets masked ---
+systemctl is-enabled sleep.target suspend.target hibernate.target
+# Expected: all "masked"
+
+# --- Firewall active ---
+sudo ufw status verbose
+# Expected: Status: active, default deny incoming, allow 22/3005/3006
+
+# --- Autologin configured ---
+# KDE (SDDM):
+cat /etc/sddm.conf.d/gwi-autologin.conf
+# GNOME (GDM3):
+grep -A5 '\[daemon\]' /etc/gdm3/custom.conf
+
+# --- X11 session (not Wayland) ---
+echo $XDG_SESSION_TYPE
+# Expected: "x11"
+
+# --- SSH hardened ---
+sudo sshd -T | grep -E 'permitrootlogin|passwordauthentication'
+# Expected: permitrootlogin no, passwordauthentication no
+sudo systemctl is-active fail2ban
+# Expected: active
+
+# --- USB udev rules ---
+ls /etc/udev/rules.d/99-*.rules
+# Expected: rules for thermal printer, card reader, scale (server role)
+
+# --- Log rotation ---
+ls /etc/logrotate.d/gwi-pos
+# Expected: exists
+
+journalctl --disk-usage
+# Expected: within configured limits
+
+# --- Ansible venv ---
+/opt/gwi-pos/.ansible-venv/bin/ansible --version
+# Expected: ansible-core 2.16.4
+
+# --- Baseline applied ---
+cat /opt/gwi-pos/state/baseline-applied.json | jq '.baseline_version'
+# Expected: matches installer/VERSION
+
+# --- Drift scan ---
+sudo /opt/gwi-pos/bin/baseline-diff
+# Expected: "NO DRIFT DETECTED" (or known acceptable items)
+
+# --- Support bundle ---
+sudo /opt/gwi-pos/bin/generate-support-bundle.sh
+ls -lh /opt/gwi-pos/support-bundle-*.tar.gz
+# Expected: tarball created, reasonable size
+
+# --- Clock health ---
+chronyc tracking
+# Expected: "Leap status: Normal"
+
+# --- Install event history ---
+tail -5 /opt/gwi-pos/state/install-events.jsonl | jq .
+# Expected: structured JSON entries with event type and triggered_by
+```

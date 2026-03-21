@@ -1,0 +1,283 @@
+---
+# =============================================================================
+# GWI POS — branding role (OPTIONAL)
+# =============================================================================
+# Applies GWI POS visual branding: Plymouth boot splash, desktop wallpaper,
+# legal/consent banners (MOTD + issue.net), and login screen customization.
+# All tasks use ignore_errors: true since assets may be placeholders.
+# Fully idempotent.
+# =============================================================================
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plymouth Boot Splash
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Plymouth — Create theme directory"
+  ansible.builtin.file:
+    path: /usr/share/plymouth/themes/gwi-pos
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  ignore_errors: true
+
+- name: "Plymouth — Copy theme descriptor (gwi-pos.plymouth)"
+  ansible.builtin.copy:
+    src: "{{ gwi_app_dir }}/installer/assets/plymouth/gwi-pos/gwi-pos.plymouth"
+    dest: /usr/share/plymouth/themes/gwi-pos/gwi-pos.plymouth
+    owner: root
+    group: root
+    mode: "0644"
+  register: _plymouth_descriptor
+  ignore_errors: true
+
+- name: "Plymouth — Copy boot script (gwi-pos.script)"
+  ansible.builtin.copy:
+    src: "{{ gwi_app_dir }}/installer/assets/plymouth/gwi-pos/gwi-pos.script"
+    dest: /usr/share/plymouth/themes/gwi-pos/gwi-pos.script
+    owner: root
+    group: root
+    mode: "0644"
+  register: _plymouth_script
+  ignore_errors: true
+
+- name: "Plymouth — Copy splash image"
+  ansible.builtin.copy:
+    src: "{{ gwi_app_dir }}/installer/assets/plymouth/gwi-pos/splash.png"
+    dest: /usr/share/plymouth/themes/gwi-pos/splash.png
+    owner: root
+    group: root
+    mode: "0644"
+  register: _plymouth_splash
+  ignore_errors: true
+
+- name: "Plymouth — Set default theme to gwi-pos"
+  ansible.builtin.command:
+    cmd: plymouth-set-default-theme gwi-pos
+  register: _plymouth_set_theme
+  changed_when: _plymouth_set_theme.rc == 0
+  when:
+    - _plymouth_descriptor is succeeded
+    - _plymouth_script is succeeded
+    - _plymouth_splash is succeeded
+  ignore_errors: true
+
+- name: "Plymouth — Update initramfs"
+  ansible.builtin.command:
+    cmd: update-initramfs -u
+  register: _plymouth_initramfs
+  when:
+    - _plymouth_set_theme is changed
+  changed_when: _plymouth_initramfs.rc == 0
+  ignore_errors: true
+
+- name: "Plymouth — Flag reboot needed after initramfs update"
+  ansible.builtin.set_fact:
+    gwi_reboot_needed: true
+  when:
+    - _plymouth_initramfs is defined
+    - _plymouth_initramfs is changed
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Desktop Wallpaper
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Wallpaper — Ensure /usr/share/backgrounds exists"
+  ansible.builtin.file:
+    path: /usr/share/backgrounds
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  ignore_errors: true
+
+- name: "Wallpaper — Copy gwi-wallpaper.png"
+  ansible.builtin.copy:
+    src: gwi-wallpaper.png
+    dest: /usr/share/backgrounds/gwi-wallpaper.png
+    owner: root
+    group: root
+    mode: "0644"
+  register: _wallpaper_copy
+  ignore_errors: true
+
+# ── KDE Plasma wallpaper ─────────────────────────────────────────────────────
+
+- name: "Wallpaper — KDE — Set plasma wallpaper"
+  ansible.builtin.command:
+    cmd: >-
+      kwriteconfig5
+      --file plasmarc
+      --group Wallpapers
+      --group org.kde.image
+      --group General
+      --key Image
+      file:///usr/share/backgrounds/gwi-wallpaper.png
+  become_user: "{{ gwi_posuser }}"
+  changed_when: true
+  when:
+    - gwi_desktop_env == 'kde'
+    - _wallpaper_copy is succeeded
+  ignore_errors: true
+
+# ── GNOME wallpaper ──────────────────────────────────────────────────────────
+
+- name: "Wallpaper — GNOME — Set desktop background"
+  ansible.builtin.shell: |
+    export DISPLAY=:0
+    POSUSER_UID=$(id -u {{ gwi_posuser }} 2>/dev/null || echo "")
+    if [ -n "$POSUSER_UID" ]; then
+      export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${POSUSER_UID}/bus"
+    fi
+    gsettings set org.gnome.desktop.background picture-uri 'file:///usr/share/backgrounds/gwi-wallpaper.png' 2>/dev/null || true
+    gsettings set org.gnome.desktop.background picture-uri-dark 'file:///usr/share/backgrounds/gwi-wallpaper.png' 2>/dev/null || true
+  become_user: "{{ gwi_posuser }}"
+  changed_when: false
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _wallpaper_copy is succeeded
+  ignore_errors: true
+
+# ── Persist GNOME wallpaper via dconf (offline fallback) ──────────────────────
+
+- name: "Wallpaper — GNOME — Ensure dconf db directory exists"
+  ansible.builtin.file:
+    path: /etc/dconf/db/gwi-pos.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _wallpaper_copy is succeeded
+  ignore_errors: true
+
+- name: "Wallpaper — GNOME — Write dconf wallpaper override"
+  ansible.builtin.copy:
+    dest: /etc/dconf/db/gwi-pos.d/01-gwi-pos-wallpaper
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — desktop wallpaper override
+      # Managed by Ansible branding role — do not edit manually
+      [org/gnome/desktop/background]
+      picture-uri='file:///usr/share/backgrounds/gwi-wallpaper.png'
+      picture-uri-dark='file:///usr/share/backgrounds/gwi-wallpaper.png'
+  register: _gnome_wallpaper_dconf
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _wallpaper_copy is succeeded
+  ignore_errors: true
+
+- name: "Wallpaper — GNOME — Update dconf database"
+  ansible.builtin.command: dconf update
+  changed_when: _gnome_wallpaper_dconf is changed
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _gnome_wallpaper_dconf is defined
+    - _gnome_wallpaper_dconf is changed
+  ignore_errors: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Legal / Consent Banner
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Legal — Write /etc/motd"
+  ansible.builtin.copy:
+    dest: /etc/motd
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      This device is managed by GWI POS Fleet Management.
+      Unauthorized changes are logged and reported to Mission Control.
+  ignore_errors: true
+
+- name: "Legal — Write /etc/issue.net"
+  ansible.builtin.copy:
+    dest: /etc/issue.net
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      This device is managed by GWI POS Fleet Management.
+      Unauthorized changes are logged and reported to Mission Control.
+  ignore_errors: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Login Screen Customization
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── SDDM login background (KDE) ─────────────────────────────────────────────
+
+- name: "Login — SDDM — Copy login logo"
+  ansible.builtin.copy:
+    src: gwi-logo.png
+    dest: /usr/share/sddm/themes/gwi-logo.png
+    owner: root
+    group: root
+    mode: "0644"
+  register: _sddm_logo_copy
+  when: gwi_desktop_env == 'kde'
+  ignore_errors: true
+
+- name: "Login — SDDM — Configure theme background"
+  ansible.builtin.copy:
+    dest: /etc/sddm.conf.d/gwi-branding.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — SDDM branding configuration
+      # Managed by Ansible branding role — do not edit manually
+      [Theme]
+      Current=breeze
+      [Theme-breeze]
+      Background=/usr/share/backgrounds/gwi-wallpaper.png
+  when:
+    - gwi_desktop_env == 'kde'
+    - _wallpaper_copy is succeeded
+  ignore_errors: true
+
+# ── GDM3 login background (GNOME) ───────────────────────────────────────────
+
+- name: "Login — GDM3 — Ensure CSS override directory exists"
+  ansible.builtin.file:
+    path: /etc/gdm3
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: gwi_desktop_env == 'gnome'
+  ignore_errors: true
+
+- name: "Login — GDM3 — Write CSS background override"
+  ansible.builtin.copy:
+    dest: /etc/gdm3/greeter.dconf-defaults
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # GWI POS — GDM3 login background override
+      # Managed by Ansible branding role — do not edit manually
+      [org/gnome/desktop/background]
+      picture-uri='file:///usr/share/backgrounds/gwi-wallpaper.png'
+      picture-uri-dark='file:///usr/share/backgrounds/gwi-wallpaper.png'
+
+      [org/gnome/login-screen]
+      logo='/usr/share/backgrounds/gwi-wallpaper.png'
+  register: _gdm3_branding
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _wallpaper_copy is succeeded
+  ignore_errors: true
+
+- name: "Login — GDM3 — Refresh dconf for greeter"
+  ansible.builtin.command: dconf update
+  changed_when: _gdm3_branding is changed
+  when:
+    - gwi_desktop_env == 'gnome'
+    - _gdm3_branding is defined
+    - _gdm3_branding is changed
+  ignore_errors: true
