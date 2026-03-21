@@ -40,7 +40,9 @@ echo "" >> "$INSTALLER"
 echo "# End of installer — payload below" >> "$INSTALLER"
 echo "exit 0" >> "$INSTALLER"
 echo "__MODULES_PAYLOAD__" >> "$INSTALLER"
-tar czf - -C "$PUBLIC_DIR" installer-modules | base64 >> "$INSTALLER"
+# COPYFILE_DISABLE=1 prevents macOS from including ._* resource fork files
+# which cause "Permission denied" errors on Linux
+COPYFILE_DISABLE=1 tar czf - -C "$PUBLIC_DIR" installer-modules | base64 >> "$INSTALLER"
 
 MODULE_COUNT=$(ls "$MODULES_DIR"/*.sh | wc -l)
 INSTALLER_SIZE=$(du -h "$INSTALLER" | cut -f1)
