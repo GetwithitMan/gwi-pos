@@ -8723,6 +8723,7 @@ model DeductionRun {
   resultSummary      Json? // { liquorDeductions: N, foodDeductions: N, totalCost: X }
   error              String?
   durationMs         Int?
+  updatedAt          DateTime  @updatedAt
 
   pendingDeduction PendingDeduction @relation(fields: [pendingDeductionId], references: [id], onDelete: Cascade)
 

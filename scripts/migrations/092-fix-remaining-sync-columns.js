@@ -6,7 +6,7 @@
  * - PmsChargeAttempt: syncedAt (upstream sync tracking)
  * - ReservationEvent: updatedAt + syncedAt (upstream sync)
  * - VenueLog: updatedAt + syncedAt (upstream sync)
- * - DeductionRun: syncedAt (upstream sync tracking)
+ * - DeductionRun: syncedAt + updatedAt (upstream sync tracking)
  */
 
 async function up(prisma) {
@@ -19,6 +19,7 @@ async function up(prisma) {
     ['VenueLog', 'updatedAt', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()'],
     ['VenueLog', 'syncedAt', 'TIMESTAMPTZ'],
     ['DeductionRun', 'syncedAt', 'TIMESTAMPTZ'],
+    ['DeductionRun', 'updatedAt', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()'],
   ]
 
   for (const [table, column, type] of additions) {
