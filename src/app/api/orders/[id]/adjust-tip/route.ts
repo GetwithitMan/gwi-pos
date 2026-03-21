@@ -13,8 +13,8 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
-import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
-import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
 
 export const PATCH = withVenue(async function PATCH(
@@ -236,16 +236,26 @@ export const PATCH = withVenue(async function PATCH(
     // Dispatch open orders changed for cross-terminal awareness (fire-and-forget)
     void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }).catch(console.error)
 
-    // Queue outage writes if Neon is unreachable — read back full rows to
-    // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
+    // Queue outage writes if Neon is unreachable (fail-hard — tip data loss is unacceptable)
+    // Read back full rows to avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
-      const fullPayment = await PaymentRepository.getPaymentById(payment.id, order.locationId)
-      if (fullPayment) {
-        void queueOutageWrite('Payment', fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
-      }
-      const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
-      if (fullOrder) {
-        void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      try {
+        const fullPayment = await PaymentRepository.getPaymentById(payment.id, order.locationId)
+        if (fullPayment) {
+          await queueIfOutageOrFail('Payment', order.locationId, fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>)
+        }
+        const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
+        if (fullOrder) {
+          await queueIfOutageOrFail('Order', order.locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>)
+        }
+      } catch (err) {
+        if (err instanceof OutageQueueFullError) {
+          return NextResponse.json(
+            { error: 'Tip adjusted but outage queue is full — manual reconciliation required', critical: true },
+            { status: 507 }
+          )
+        }
+        throw err
       }
     }
 

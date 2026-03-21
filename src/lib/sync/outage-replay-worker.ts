@@ -403,13 +403,28 @@ export function startOutageReplayWorker(): void {
     return
   }
 
-  replayTimer = setInterval(() => {
-    void processOutageQueue().catch((err) => log.error({ err }, 'processOutageQueue cycle error'))
-  }, 10_000) // every 10s
-  replayTimer.unref()
+  void (async () => {
+    // Guard: don't start sync workers on standby NUC (INV-6)
+    try {
+      const [{ is_standby }] = await masterClient.$queryRawUnsafe<[{ is_standby: boolean }]>(
+        'SELECT pg_is_in_recovery() as is_standby'
+      )
+      if (is_standby) {
+        log.warn('Standby PostgreSQL detected — sync workers NOT started (INV-6)')
+        return
+      }
+    } catch {
+      // If we can't check, assume primary (safe default — PG will reject writes if standby)
+    }
 
-  metrics.running = true
-  log.info('Worker started (interval: 10s)')
+    replayTimer = setInterval(() => {
+      void processOutageQueue().catch((err) => log.error({ err }, 'processOutageQueue cycle error'))
+    }, 10_000) // every 10s
+    replayTimer.unref()
+
+    metrics.running = true
+    log.info('Worker started (interval: 10s)')
+  })()
 }
 
 export function stopOutageReplayWorker(): void {

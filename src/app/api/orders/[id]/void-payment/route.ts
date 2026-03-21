@@ -15,8 +15,8 @@ import { enableSyncReplication } from '@/lib/db-helpers'
 import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
-import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
-import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
 import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
 
@@ -304,17 +304,27 @@ export const POST = withVenue(async function POST(
       throw dbError
     }
 
-    // Queue outage writes if in outage mode (fire-and-forget)
+    // Queue outage writes if in outage mode (fail-hard — payment data loss is unacceptable)
     if (isInOutageMode()) {
       // Flag void processed during outage for reconciliation
       void PaymentRepository.updatePayment(paymentId, order.locationId, {
         needsReconciliation: true,
       }).catch(console.error)
 
-      const fullPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId)
-      if (fullPayment) void queueOutageWrite('Payment', paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
-      const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
-      if (fullOrder) void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+      try {
+        const fullPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId)
+        if (fullPayment) await queueIfOutageOrFail('Payment', order.locationId, paymentId, 'UPDATE', fullPayment as unknown as Record<string, unknown>)
+        const fullOrder = await OrderRepository.getOrderById(orderId, order.locationId)
+        if (fullOrder) await queueIfOutageOrFail('Order', order.locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>)
+      } catch (err) {
+        if (err instanceof OutageQueueFullError) {
+          return NextResponse.json(
+            { error: 'Payment voided but outage queue is full — manual reconciliation required', critical: true },
+            { status: 507 }
+          )
+        }
+        throw err
+      }
     }
 
     // Emit order event for voided payment (fire-and-forget)

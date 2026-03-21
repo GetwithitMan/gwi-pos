@@ -25,8 +25,8 @@ import type { ZeroTabReleaseResult, BottleServiceTier } from '@/lib/domain/tab-c
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { checkOrderClaim } from '@/lib/order-claim'
-import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
-import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -455,15 +455,25 @@ export const POST = withVenue(async function POST(
       })
     })
 
-    // Queue outage writes if in outage mode (fire-and-forget)
+    // Queue outage writes if in outage mode (fail-hard — payment data loss is unacceptable)
     if (isInOutageMode()) {
       // Flag payment processed during outage for reconciliation
       void PaymentRepository.updatePayment(createdPaymentId, locationId, { needsReconciliation: true }).catch(console.error)
 
-      const fullPayment = await PaymentRepository.getPaymentById(createdPaymentId, locationId)
-      if (fullPayment) void queueOutageWrite('Payment', createdPaymentId, 'INSERT', fullPayment as unknown as Record<string, unknown>, locationId).catch(console.error)
-      const fullOrder = await OrderRepository.getOrderById(orderId, locationId)
-      if (fullOrder) void queueOutageWrite('Order', orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>, locationId).catch(console.error)
+      try {
+        const fullPayment = await PaymentRepository.getPaymentById(createdPaymentId, locationId)
+        if (fullPayment) await queueIfOutageOrFail('Payment', locationId, createdPaymentId, 'INSERT', fullPayment as unknown as Record<string, unknown>)
+        const fullOrder = await OrderRepository.getOrderById(orderId, locationId)
+        if (fullOrder) await queueIfOutageOrFail('Order', locationId, orderId, 'UPDATE', fullOrder as unknown as Record<string, unknown>)
+      } catch (err) {
+        if (err instanceof OutageQueueFullError) {
+          return NextResponse.json(
+            { error: 'Payment captured but outage queue is full — manual reconciliation required', critical: true },
+            { status: 507 }
+          )
+        }
+        throw err
+      }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

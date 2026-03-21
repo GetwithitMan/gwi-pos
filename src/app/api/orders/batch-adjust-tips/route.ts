@@ -12,8 +12,8 @@ import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
-import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
+import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { roundToCents } from '@/lib/pricing'
 import { getRequestLocationId } from '@/lib/request-context'
 
@@ -266,27 +266,36 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
-    // Queue outage writes if in outage mode (fire-and-forget)
+    // Queue outage writes if in outage mode (fail-hard — tip data loss is unacceptable)
     if (isInOutageMode() && eligibleEntries.length > 0) {
       // Batch-fetch all updated payments and orders in two queries instead of N+1
       const eligiblePaymentIds = eligibleEntries.map(([, { adj }]) => adj.paymentId)
       const eligibleOrderIds = [...new Set(eligibleEntries.map(([, { adj }]) => adj.orderId))]
 
       // TODO: Add batch getPaymentsByIds / getOrdersByIds to repositories for tenant-safe batch fetch
-      // TODO: Add batch getPaymentsByIds / getOrdersByIds to repositories for tenant-safe batch fetch
       const [fullPayments, fullOrders] = await Promise.all([
         db.payment.findMany({ where: { id: { in: eligiblePaymentIds }, locationId: firstOrder.locationId } }),
         db.order.findMany({ where: { id: { in: eligibleOrderIds }, locationId: firstOrder.locationId } }),
       ])
 
-      for (const fp of fullPayments) {
-        const entry = eligibleEntries.find(([, { adj }]) => adj.paymentId === fp.id)
-        if (entry) {
-          void queueOutageWrite('Payment', fp.id, 'UPDATE', fp as unknown as Record<string, unknown>, entry[1].order.locationId).catch(console.error)
+      try {
+        for (const fp of fullPayments) {
+          const entry = eligibleEntries.find(([, { adj }]) => adj.paymentId === fp.id)
+          if (entry) {
+            await queueIfOutageOrFail('Payment', entry[1].order.locationId, fp.id, 'UPDATE', fp as unknown as Record<string, unknown>)
+          }
         }
-      }
-      for (const fo of fullOrders) {
-        void queueOutageWrite('Order', fo.id, 'UPDATE', fo as unknown as Record<string, unknown>, fo.locationId).catch(console.error)
+        for (const fo of fullOrders) {
+          await queueIfOutageOrFail('Order', fo.locationId, fo.id, 'UPDATE', fo as unknown as Record<string, unknown>)
+        }
+      } catch (err) {
+        if (err instanceof OutageQueueFullError) {
+          return NextResponse.json(
+            { error: 'Tips adjusted but outage queue is full — manual reconciliation required', critical: true },
+            { status: 507 }
+          )
+        }
+        throw err
       }
     }
 

@@ -69,6 +69,8 @@ const columnTypeMap = new Map<string, Map<string, string>>()
 
 let timer: ReturnType<typeof setInterval> | null = null
 let immediateRunning = false
+/** Buffered DATA_CHANGED request — replayed after current immediate cycle completes */
+let pendingImmediateModels: string[] | null = null
 /** Guard against overlapping sync cycles */
 let cycleRunning = false
 /** Per-table-batch deduplication for open-orders socket dispatch (cleared in syncTableDown) */
@@ -1240,12 +1242,27 @@ export function startDownstreamSyncWorker(): void {
   metrics.running = true
   initDownstreamNotifications()
 
-  void Promise.all([initHighWaterMarks(), loadColumnMetadata(), loadWatermarks()]).then(() => {
+  void (async () => {
+    // Guard: don't start sync workers on standby NUC (INV-6)
+    try {
+      const [{ is_standby }] = await masterClient.$queryRawUnsafe<[{ is_standby: boolean }]>(
+        'SELECT pg_is_in_recovery() as is_standby'
+      )
+      if (is_standby) {
+        log.warn('Standby PostgreSQL detected — sync workers NOT started (INV-6)')
+        metrics.running = false
+        return
+      }
+    } catch {
+      // If we can't check, assume primary (safe default — PG will reject writes if standby)
+    }
+
+    await Promise.all([initHighWaterMarks(), loadColumnMetadata(), loadWatermarks()])
     columnCacheTimestamp = Date.now()
     void runDownstreamCycle()
     timer = setInterval(() => void runDownstreamCycle(), DOWNSTREAM_INTERVAL_MS)
     timer.unref()
-  })
+  })()
 }
 
 export function stopDownstreamSyncWorker(): void {
@@ -1261,6 +1278,14 @@ export function getDownstreamSyncMetrics(): DownstreamMetrics {
   return { ...metrics }
 }
 
+/** Clear the column metadata cache. Called when schema changes are detected. */
+export function clearColumnCache(): void {
+  columnCache.clear()
+  columnTypeMap.clear()
+  columnCacheTimestamp = 0
+  log.info('Column metadata cache cleared — will reload on next cycle')
+}
+
 /**
  * Trigger an immediate downstream sync cycle (non-blocking).
  * Called when DATA_CHANGED arrives from the sync agent.
@@ -1268,7 +1293,15 @@ export function getDownstreamSyncMetrics(): DownstreamMetrics {
  * @param modelNames - Optional specific model names to sync (e.g., ['Order', 'Payment'])
  */
 export async function triggerImmediateDownstreamSync(_domain?: string, modelNames?: string[]): Promise<void> {
-  if (immediateRunning) return
+  if (immediateRunning) {
+    // Buffer the request — will replay after current cycle completes
+    if (modelNames && modelNames.length > 0) {
+      pendingImmediateModels = [...new Set([...(pendingImmediateModels || []), ...modelNames])]
+    } else {
+      pendingImmediateModels = [] // empty = full sync
+    }
+    return
+  }
   immediateRunning = true
   try {
     if (modelNames && modelNames.length > 0) {
@@ -1278,6 +1311,13 @@ export async function triggerImmediateDownstreamSync(_domain?: string, modelName
     }
   } finally {
     immediateRunning = false
+    // Replay any buffered DATA_CHANGED events
+    if (pendingImmediateModels !== null) {
+      const buffered = pendingImmediateModels
+      pendingImmediateModels = null
+      // Fire-and-forget: don't await (prevents recursion depth issues)
+      void triggerImmediateDownstreamSync(undefined, buffered.length > 0 ? buffered : undefined).catch(console.error)
+    }
   }
 }
 

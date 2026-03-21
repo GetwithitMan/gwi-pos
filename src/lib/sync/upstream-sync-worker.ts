@@ -464,11 +464,26 @@ export function startUpstreamSyncWorker(): void {
   log.info({ intervalMs: UPSTREAM_INTERVAL_MS }, 'Starting')
   metrics.running = true
 
-  void loadColumnMetadata().then(() => {
+  void (async () => {
+    // Guard: don't start sync workers on standby NUC (INV-6)
+    try {
+      const [{ is_standby }] = await masterClient.$queryRawUnsafe<[{ is_standby: boolean }]>(
+        'SELECT pg_is_in_recovery() as is_standby'
+      )
+      if (is_standby) {
+        log.warn('Standby PostgreSQL detected — sync workers NOT started (INV-6)')
+        metrics.running = false
+        return
+      }
+    } catch {
+      // If we can't check, assume primary (safe default — PG will reject writes if standby)
+    }
+
+    await loadColumnMetadata()
     void runSyncCycle()
     timer = setInterval(() => void runSyncCycle(), UPSTREAM_INTERVAL_MS)
     timer.unref()
-  })
+  })()
 }
 
 export function stopUpstreamSyncWorker(): void {

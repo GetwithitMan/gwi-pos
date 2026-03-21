@@ -301,6 +301,13 @@ async function recheckNeonSchema(): Promise<void> {
         // Schema is now OK — stop re-checking and auto-start sync workers
         stopSchemaRecheck()
 
+        // Clear downstream column cache so new schema columns are picked up immediately
+        try {
+          const { clearColumnCache } = await import('@/lib/sync/downstream-sync-worker')
+          clearColumnCache()
+          log.info('Downstream column cache cleared after schema unblock')
+        } catch { /* non-fatal */ }
+
         // Auto-start sync workers without requiring NUC restart
         try {
           const { startUpstreamSyncWorker } = await import('@/lib/sync/upstream-sync-worker')
