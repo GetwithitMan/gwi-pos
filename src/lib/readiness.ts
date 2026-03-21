@@ -162,16 +162,30 @@ export function computeReadiness(inputs: ReadinessInputs): ReadinessState {
   return state
 }
 
-// ── Module-level singleton state ─────────────────────────────────────────────
+// ── Shared singleton state via globalThis ────────────────────────────────────
+// CRITICAL: server.js (esbuild) and Next.js API routes (Turbopack/Webpack) load
+// separate module copies. A module-level `let _state` creates TWO independent
+// singletons — server.ts sets one, API routes read the other (always null).
+// Using globalThis ensures both module systems share the same readiness state.
 
-let _state: ReadinessState | null = null
+const READINESS_KEY = '__gwi_readiness_state' as const
+
+// Declare on globalThis for cross-module sharing
+declare global {
+  // eslint-disable-next-line no-var
+  var __gwi_readiness_state: ReadinessState | null | undefined
+}
+
+if (globalThis.__gwi_readiness_state === undefined) {
+  globalThis.__gwi_readiness_state = null
+}
 
 /**
  * Get the current cached readiness state.
  * Returns null if readiness has never been computed (pre-boot).
  */
 export function getReadinessState(): ReadinessState | null {
-  return _state
+  return globalThis.__gwi_readiness_state
 }
 
 /**
@@ -179,8 +193,8 @@ export function getReadinessState(): ReadinessState | null {
  * Also called when readiness advances (e.g., initial sync completes).
  */
 export function setReadinessState(state: ReadinessState): void {
-  const prev = _state?.level
-  _state = state
+  const prev = globalThis.__gwi_readiness_state?.level
+  globalThis.__gwi_readiness_state = state
   if (prev !== state.level) {
     log.info({ from: prev ?? 'INIT', to: state.level, degraded: state.degradedReasons }, 'Readiness level changed')
   }
@@ -195,6 +209,7 @@ export function setReadinessState(state: ReadinessState): void {
  * so the venue doesn't accept customer traffic with an incomplete catalog.
  */
 export function advanceToOrders(criticalTableCounts?: Record<string, number>): void {
+  const _state = globalThis.__gwi_readiness_state
   if (!_state || _state.level !== 'SYNC') return
 
   // If counts provided, verify critical tables have data
@@ -203,7 +218,7 @@ export function advanceToOrders(criticalTableCounts?: Record<string, number>): v
     const missing = required.filter(t => !criticalTableCounts[t] || criticalTableCounts[t] === 0)
     if (missing.length > 0) {
       // Don't advance — critical tables empty after first sync
-      _state = {
+      globalThis.__gwi_readiness_state = {
         ..._state,
         level: 'DEGRADED',
         degradedReasons: [..._state.degradedReasons, `critical-tables-empty: ${missing.join(', ')}`],
@@ -215,7 +230,7 @@ export function advanceToOrders(criticalTableCounts?: Record<string, number>): v
     }
   }
 
-  _state = {
+  globalThis.__gwi_readiness_state = {
     ..._state,
     level: 'ORDERS',
     initialSyncComplete: true,
@@ -230,7 +245,7 @@ export function advanceToOrders(criticalTableCounts?: Record<string, number>): v
  * initial sync has completed.
  */
 export function isReadyForOrders(): boolean {
-  return _state?.level === 'ORDERS'
+  return globalThis.__gwi_readiness_state?.level === 'ORDERS'
 }
 
 /**
@@ -238,8 +253,9 @@ export function isReadyForOrders(): boolean {
  * Use this to gate sync worker startup.
  */
 export function isReadyForSync(): boolean {
-  if (!_state) return false
-  return LEVEL_RANK[_state.level] >= LEVEL_RANK['SYNC']
+  const s = globalThis.__gwi_readiness_state
+  if (!s) return false
+  return LEVEL_RANK[s.level] >= LEVEL_RANK['SYNC']
 }
 
 /**
