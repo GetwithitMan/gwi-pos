@@ -7,6 +7,12 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PKG="$REPO_DIR/package.json"
 
+# Skip if package.json is not writable (NUC runs build as gwipos, file may be root-owned)
+if [[ ! -w "$PKG" ]]; then
+  echo "[bump-version] package.json not writable — skipping (version set at deploy time)"
+  exit 0
+fi
+
 # Count total commits on current branch
 COMMIT_COUNT=$(cd "$REPO_DIR" && git rev-list --count HEAD 2>/dev/null || echo "0")
 
@@ -19,7 +25,6 @@ NEW_VERSION="${MAJOR}.${MINOR}.${COMMIT_COUNT}"
 CURRENT=$(python3 -c "import json; print(json.load(open('$PKG')).get('version','0.0.0'))" 2>/dev/null || echo "0.0.0")
 
 if [ "$CURRENT" != "$NEW_VERSION" ]; then
-  # Update package.json in-place
   python3 -c "
 import json
 with open('$PKG', 'r') as f:
