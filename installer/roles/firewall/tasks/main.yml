@@ -4,7 +4,10 @@
 # =============================================================================
 # Configures ufw with deny-incoming/allow-outgoing defaults, then opens
 # only the ports needed for the station role. HA-aware (VRRP + Postgres).
-# Fully idempotent — ufw module is naturally idempotent.
+# Fully idempotent — ufw CLI commands are naturally idempotent.
+#
+# NOTE: Uses ansible.builtin.command with ufw CLI instead of
+# community.general.ufw to avoid Galaxy dependency. ansible-core only.
 # =============================================================================
 
 # ── Install ufw ──────────────────────────────────────────────────────────────
@@ -19,85 +22,84 @@
 # ── Default policies ─────────────────────────────────────────────────────────
 
 - name: Set ufw default deny incoming
-  community.general.ufw:
-    direction: incoming
-    default: deny
+  ansible.builtin.command: ufw default deny incoming
+  register: _ufw_default_deny
+  changed_when: "'Default incoming policy changed' in _ufw_default_deny.stdout"
 
 - name: Set ufw default allow outgoing
-  community.general.ufw:
-    direction: outgoing
-    default: allow
+  ansible.builtin.command: ufw default allow outgoing
+  register: _ufw_default_allow
+  changed_when: "'Default outgoing policy changed' in _ufw_default_allow.stdout"
 
 # ── Core rules (all station roles) ──────────────────────────────────────────
 
-- name: Allow SSH ({{ gwi_ssh_port }}/tcp)
-  community.general.ufw:
-    rule: allow
-    port: "{{ gwi_ssh_port | string }}"
-    proto: tcp
-    comment: "GWI POS — SSH"
+- name: "Allow SSH ({{ gwi_ssh_port }}/tcp)"
+  ansible.builtin.command: "ufw allow {{ gwi_ssh_port }}/tcp comment 'GWI POS — SSH'"
+  register: _ufw_ssh
+  changed_when: "'Rule added' in _ufw_ssh.stdout or 'Rules updated' in _ufw_ssh.stdout"
+  failed_when: _ufw_ssh.rc != 0 and 'Skipping' not in _ufw_ssh.stdout
 
-- name: Allow VNC ({{ gwi_vnc_port }}/tcp)
-  community.general.ufw:
-    rule: allow
-    port: "{{ gwi_vnc_port | string }}"
-    proto: tcp
-    comment: "GWI POS — VNC remote support"
+- name: "Allow VNC ({{ gwi_vnc_port }}/tcp)"
+  ansible.builtin.command: "ufw allow {{ gwi_vnc_port }}/tcp comment 'GWI POS — VNC remote support'"
+  register: _ufw_vnc
+  changed_when: "'Rule added' in _ufw_vnc.stdout or 'Rules updated' in _ufw_vnc.stdout"
+  failed_when: _ufw_vnc.rc != 0 and 'Skipping' not in _ufw_vnc.stdout
 
 # ── POS port (servers and backups only, skip for terminals) ──────────────────
 
-- name: Allow POS application port ({{ gwi_pos_port }}/tcp)
-  community.general.ufw:
-    rule: allow
-    port: "{{ gwi_pos_port | string }}"
-    proto: tcp
-    comment: "GWI POS — application"
+- name: "Allow POS application port ({{ gwi_pos_port }}/tcp)"
+  ansible.builtin.command: "ufw allow {{ gwi_pos_port }}/tcp comment 'GWI POS — application'"
+  register: _ufw_pos
+  changed_when: "'Rule added' in _ufw_pos.stdout or 'Rules updated' in _ufw_pos.stdout"
+  failed_when: _ufw_pos.rc != 0 and 'Skipping' not in _ufw_pos.stdout
   when: gwi_station_role != 'terminal'
 
 # ── HA mode rules (only when VIRTUAL_IP is set) ─────────────────────────────
 
 - name: Detect local subnet for HA rules
   ansible.builtin.shell: |
-    # Get the primary network interface's subnet in CIDR notation
-    ip -4 route show default 2>/dev/null | awk '{print $5}' | head -1 | \
-      xargs -I{} ip -4 addr show dev {} 2>/dev/null | \
-      grep -oP 'inet \K[\d.]+/\d+' | head -1 || echo ""
+    set -o pipefail
+    DEFAULT_IF=$(ip -4 route show default 2>/dev/null | awk '{print $5}' | head -1)
+    if [ -n "$DEFAULT_IF" ]; then
+      ip -4 addr show dev "$DEFAULT_IF" 2>/dev/null | grep -oP 'inet \K[\d.]+/\d+' | head -1 || echo ""
+    else
+      echo ""
+    fi
+  args:
+    executable: /bin/bash
   register: _local_subnet
   changed_when: false
   failed_when: false
   when: gwi_virtual_ip | default('') | length > 0
 
-- name: Allow PostgreSQL ({{ gwi_pg_port }}/tcp) on local subnet (HA mode)
-  community.general.ufw:
-    rule: allow
-    port: "{{ gwi_pg_port | string }}"
-    proto: tcp
-    from_ip: "{{ _local_subnet.stdout | trim }}"
-    comment: "GWI POS — PostgreSQL HA replication"
+- name: "Allow PostgreSQL ({{ gwi_pg_port }}/tcp) on local subnet (HA mode)"
+  ansible.builtin.command: >-
+    ufw allow from {{ _local_subnet.stdout | trim }}
+    to any port {{ gwi_pg_port }} proto tcp
+    comment 'GWI POS — PostgreSQL HA replication'
+  register: _ufw_pg
+  changed_when: "'Rule added' in _ufw_pg.stdout or 'Rules updated' in _ufw_pg.stdout"
+  failed_when: _ufw_pg.rc != 0 and 'Skipping' not in _ufw_pg.stdout
   when:
     - gwi_virtual_ip | default('') | length > 0
     - _local_subnet.stdout | default('') | trim | length > 0
 
 - name: Allow VRRP protocol 112 (HA mode)
   ansible.builtin.shell: |
-    # ufw module does not support raw IP protocol numbers — use CLI directly
-    # This is idempotent: ufw skips duplicate rules
-    ufw allow proto 112 from any to any comment 'GWI POS — VRRP keepalived' 2>/dev/null || \
-    ufw allow in on any to any proto gre comment 'GWI POS — VRRP keepalived' 2>/dev/null || true
-    # Fallback: allow VRRP via iptables if ufw does not support protocol 112
-    if ! ufw status verbose | grep -q '112'; then
-      # Allow VRRP multicast (224.0.0.18) protocol 112 via before.rules
-      BEFORE_RULES="/etc/ufw/before.rules"
-      VRRP_RULE="-A ufw-before-input -p 112 -j ACCEPT"
-      if ! grep -qF -- "$VRRP_RULE" "$BEFORE_RULES" 2>/dev/null; then
-        sed -i "/^COMMIT/i $VRRP_RULE" "$BEFORE_RULES"
-        echo "changed"
-      else
-        echo "ok"
-      fi
+    {% raw %}
+    set -o pipefail
+    # ufw does not support raw IP protocol 112 directly — use before.rules
+    BEFORE_RULES="/etc/ufw/before.rules"
+    VRRP_RULE="-A ufw-before-input -p 112 -j ACCEPT"
+    if ! grep -qF -- "$VRRP_RULE" "$BEFORE_RULES" 2>/dev/null; then
+      sed -i "/^COMMIT/i $VRRP_RULE" "$BEFORE_RULES"
+      echo "changed"
     else
       echo "ok"
     fi
+    {% endraw %}
+  args:
+    executable: /bin/bash
   register: _vrrp_result
   changed_when: "'changed' in _vrrp_result.stdout"
   when: gwi_virtual_ip | default('') | length > 0
@@ -105,5 +107,6 @@
 # ── Enable ufw ───────────────────────────────────────────────────────────────
 
 - name: Enable ufw
-  community.general.ufw:
-    state: enabled
+  ansible.builtin.command: ufw --force enable
+  register: _ufw_enable
+  changed_when: "'Firewall is active' in _ufw_enable.stdout"

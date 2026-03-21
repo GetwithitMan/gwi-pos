@@ -190,7 +190,7 @@
           # =============================================================================
           # GWI POS — Touchscreen Calibration Helper
           # =============================================================================
-          # Usage: sudo /opt/gwi-pos/bin/calibrate-touchscreen.sh
+          # Usage: sudo {{ gwi_bin_dir }}/calibrate-touchscreen.sh
           # Managed by Ansible — do not edit manually
           # =============================================================================
           set -euo pipefail
@@ -223,7 +223,7 @@
           echo ""
 
           # Run calibration (must be run from an X session)
-          if [ -z "${DISPLAY:-}" ]; then
+          {% raw %}if [ -z "${DISPLAY:-}" ]; then{% endraw %}
             export DISPLAY=:0
           fi
 

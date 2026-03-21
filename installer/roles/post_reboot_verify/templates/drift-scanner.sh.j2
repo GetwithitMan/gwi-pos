@@ -14,7 +14,9 @@ STATE_DIR="{{ gwi_state_dir }}"
 ENV_FILE="{{ gwi_env_file }}"
 APP_DIR="{{ gwi_app_dir }}"
 MANIFEST_DIR="{{ gwi_app_dir }}/installer/manifests"
+POS_PORT="{{ gwi_pos_port }}"
 
+{% raw %}
 # Load node identity
 NODE_ID=""
 if [ -f "$ENV_FILE" ]; then
@@ -64,7 +66,7 @@ if ! echo "$UFW_STATUS" | grep -q "Status: active"; then
 else
   # Check that expected ports are allowed
   UFW_RULES=$(ufw status numbered 2>/dev/null || echo "")
-  for port in 22 {{ gwi_pos_port }} 5900; do
+  for port in 22 $POS_PORT 5900; do
     if ! echo "$UFW_RULES" | grep -q "$port"; then
       add_drift "FIREWALL_RULE_MISSING" "Expected port ${port} not found in ufw rules"
     fi
@@ -213,3 +215,4 @@ else
 fi
 
 exit 0
+{% endraw %}

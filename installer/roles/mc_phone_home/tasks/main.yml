@@ -51,9 +51,10 @@
 # ── Post-task: prune report queue ────────────────────────────────────────────
 - name: Prune report queue (enforce 50 file / 10MB / 7-day limits)
   ansible.builtin.shell: |
+    {% raw %}
     set -o pipefail
-    QUEUE_DIR="{{ gwi_state_dir }}/report-queue"
-    EVENTS_LOG="{{ gwi_state_dir }}/install-events.jsonl"
+    QUEUE_DIR="{% endraw %}{{ gwi_state_dir }}{% raw %}/report-queue"
+    EVENTS_LOG="{% endraw %}{{ gwi_state_dir }}{% raw %}/install-events.jsonl"
     MAX_FILES=50
     MAX_BYTES=$((10 * 1024 * 1024))
     MAX_AGE_DAYS=7
@@ -67,7 +68,7 @@
     while IFS= read -r -d '' old_file; do
       rm -f "$old_file"
       PRUNED=$((PRUNED + 1))
-    done < <(find "$QUEUE_DIR" -name '*.json' -type f -mtime +${MAX_AGE_DAYS} -print0 2>/dev/null)
+    done < <(find "$QUEUE_DIR" -name '*.json' -type f -mtime +"$MAX_AGE_DAYS" -print0 2>/dev/null)
 
     # Prune to max file count (oldest first)
     FILE_COUNT=$(find "$QUEUE_DIR" -name '*.json' -type f 2>/dev/null | wc -l)
@@ -92,9 +93,10 @@
     # Log pruning event if anything was removed
     if [ "$PRUNED" -gt 0 ]; then
       PRUNE_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-      echo "{\"event\":\"queue_pruned\",\"timestamp\":\"${PRUNE_TS}\",\"count\":${PRUNED},\"reason\":\"limit_exceeded\",\"producer\":\"mc_phone_home\"}" \
+      echo "{\"event\":\"queue_pruned\",\"timestamp\":\"$PRUNE_TS\",\"count\":$PRUNED,\"reason\":\"limit_exceeded\",\"producer\":\"mc_phone_home\"}" \
         >> "$EVENTS_LOG"
     fi
+    {% endraw %}
   args:
     executable: /bin/bash
   changed_when: false

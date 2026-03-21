@@ -131,6 +131,8 @@
     fi
     gsettings set org.gnome.desktop.background picture-uri 'file:///usr/share/backgrounds/gwi-wallpaper.png' 2>/dev/null || true
     gsettings set org.gnome.desktop.background picture-uri-dark 'file:///usr/share/backgrounds/gwi-wallpaper.png' 2>/dev/null || true
+  args:
+    executable: /bin/bash
   become_user: "{{ gwi_posuser }}"
   changed_when: false
   when:

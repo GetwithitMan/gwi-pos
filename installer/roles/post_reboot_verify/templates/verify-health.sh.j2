@@ -16,6 +16,7 @@ ENV_FILE="{{ gwi_env_file }}"
 APP_DIR="{{ gwi_app_dir }}"
 POS_PORT="{{ gwi_pos_port }}"
 
+{% raw %}
 # Load node identity
 NODE_ID=""
 if [ -f "$ENV_FILE" ]; then
@@ -271,3 +272,4 @@ fi
 # Exit 0 even on degraded/fail so systemd oneshot stays RemainAfterExit=yes.
 # The JSON artifact communicates the real status to MC.
 exit 0
+{% endraw %}

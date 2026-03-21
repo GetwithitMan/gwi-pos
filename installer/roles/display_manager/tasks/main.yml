@@ -5,6 +5,9 @@
 # Configures auto-login for the POS user. KDE uses SDDM, GNOME uses GDM3.
 # GNOME: forces X11 (disables Wayland) — sets gwi_reboot_needed if changed.
 # Fully idempotent.
+#
+# NOTE: Uses ansible.builtin.lineinfile instead of community.general.ini_file
+# to avoid Galaxy dependency. ansible-core only.
 # =============================================================================
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -49,42 +52,38 @@
     else
       echo "not_set"
     fi
+  args:
+    executable: /bin/bash
   register: _gdm3_wayland_before
   changed_when: false
   failed_when: false
   when: gwi_desktop_env == 'gnome'
 
 # ── Configure GDM3 auto-login and X11 ───────────────────────────────────────
+# Write the complete custom.conf to avoid dependency on community.general.ini_file
 
-- name: "GDM3 — Enable automatic login"
-  community.general.ini_file:
-    path: /etc/gdm3/custom.conf
-    section: daemon
-    option: AutomaticLoginEnable
-    value: "true"
-    no_extra_spaces: true
+- name: "GDM3 — Write complete custom.conf with auto-login and X11"
+  ansible.builtin.copy:
+    dest: /etc/gdm3/custom.conf
+    owner: root
+    group: root
     mode: "0644"
-  when: gwi_desktop_env == 'gnome'
+    content: |
+      # GWI POS — GDM3 configuration
+      # Managed by Ansible display_manager role — do not edit manually
+      [daemon]
+      AutomaticLoginEnable=true
+      AutomaticLogin={{ gwi_posuser }}
+      WaylandEnable=false
 
-- name: "GDM3 — Set automatic login user"
-  community.general.ini_file:
-    path: /etc/gdm3/custom.conf
-    section: daemon
-    option: AutomaticLogin
-    value: "{{ gwi_posuser }}"
-    no_extra_spaces: true
-    mode: "0644"
-  when: gwi_desktop_env == 'gnome'
+      [security]
 
-- name: "GDM3 — Disable Wayland (force X11)"
-  community.general.ini_file:
-    path: /etc/gdm3/custom.conf
-    section: daemon
-    option: WaylandEnable
-    value: "false"
-    no_extra_spaces: true
-    mode: "0644"
-  register: _gdm3_wayland_change
+      [xdmcp]
+
+      [chooser]
+
+      [debug]
+  register: _gdm3_config_change
   notify: restart display-manager
   when: gwi_desktop_env == 'gnome'
 
@@ -96,4 +95,4 @@
   when:
     - gwi_desktop_env == 'gnome'
     - _gdm3_wayland_before.stdout | default('not_set') | trim not in ['false', 'False', 'FALSE']
-    - _gdm3_wayland_change is changed
+    - _gdm3_config_change is changed

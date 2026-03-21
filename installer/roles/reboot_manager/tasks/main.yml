@@ -124,8 +124,10 @@
 
     - name: Create baseline config snapshot
       ansible.builtin.shell: |
+        {% raw %}
         SNAPSHOT_NAME="baseline-snapshot-$(date +%Y%m%d-%H%M%S).tar.gz"
-        tar czf "{{ gwi_backup_dir }}/${SNAPSHOT_NAME}" \
+        {% endraw %}
+        tar czf "{{ gwi_backup_dir }}/$SNAPSHOT_NAME" \
           {{ gwi_state_dir }}/ \
           /etc/systemd/logind.conf.d/gwi-pos.conf \
           /etc/ufw/ \
@@ -135,7 +137,9 @@
           /etc/udev/rules.d/99-*.rules \
           /var/log/journal/ \
           2>/dev/null || true
-        echo "${SNAPSHOT_NAME}"
+        echo "$SNAPSHOT_NAME"
+      args:
+        executable: /bin/bash
       register: _snapshot_name
       changed_when: true
 

@@ -18,6 +18,7 @@ APP_DIR="{{ gwi_app_dir }}"
 QUEUE_DIR="{{ gwi_state_dir }}/report-queue"
 EVENTS_LOG="{{ gwi_state_dir }}/install-events.jsonl"
 
+{% raw %}
 # ── Load environment ─────────────────────────────────────────────────────────
 NODE_ID=""
 API_KEY=""
@@ -162,7 +163,7 @@ prune_queue() {
   while IFS= read -r -d '' old_file; do
     rm -f "$old_file"
     pruned=$((pruned + 1))
-  done < <(find "$QUEUE_DIR" -name '*.json' -type f -mtime +${max_age_days} -print0 2>/dev/null)
+  done < <(find "$QUEUE_DIR" -name '*.json' -type f -mtime +"$max_age_days" -print0 2>/dev/null)
 
   # Prune to max file count
   local file_count
@@ -192,7 +193,7 @@ prune_queue() {
   if [ "$pruned" -gt 0 ]; then
     local prune_ts
     prune_ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    echo "{\"event\":\"queue_pruned\",\"timestamp\":\"${prune_ts}\",\"count\":${pruned},\"reason\":\"limit_exceeded\",\"producer\":\"report-hardening\"}" \
+    echo "{\"event\":\"queue_pruned\",\"timestamp\":\"$prune_ts\",\"count\":$pruned,\"reason\":\"limit_exceeded\",\"producer\":\"report-hardening\"}" \
       >> "$EVENTS_LOG"
     logger -t gwi-pos-report "Pruned ${pruned} queued report(s) — retention limit exceeded"
   fi
@@ -256,15 +257,15 @@ except:
 
         local next_retry
         next_retry=$(date -u -d "+${backoff} seconds" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
-          || date -u -v+${backoff}S +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
+          || date -u -v+"${backoff}"S +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
           || date -u +"%Y-%m-%dT%H:%M:%SZ")
 
         python3 -c "
 import json
 try:
     data = json.load(open('$queue_file'))
-    data['retry_count'] = ${new_count}
-    data['next_retry_at'] = '${next_retry}'
+    data['retry_count'] = $new_count
+    data['next_retry_at'] = '$next_retry'
     with open('$queue_file', 'w') as f:
         json.dump(data, f, indent=2)
 except:
@@ -297,3 +298,4 @@ fi
 prune_queue
 
 exit 0
+{% endraw %}

@@ -15,10 +15,14 @@
     state: present
 
 # ── Configure allowed origins (security only) ─────────────────────────────
+# NOTE: The ${distro_id} and ${distro_codename} are APT config variables,
+# NOT shell/Jinja2 variables. We use {% raw %} to prevent Jinja2 from
+# trying to parse them.
 
 - name: Write unattended-upgrades config
   ansible.builtin.copy:
     content: |
+      {% raw %}
       // GWI POS — Unattended security upgrades
       // Managed by Ansible — do not edit manually
       //
@@ -43,6 +47,7 @@
 
       // Minimal install step (no restart of services during business hours)
       Unattended-Upgrade::MinimalSteps "true";
+      {% endraw %}
     dest: /etc/apt/apt.conf.d/50unattended-upgrades
     owner: root
     group: root

@@ -74,13 +74,13 @@
 
     # ── Detect desktop environment (KDE vs GNOME) ─────────────────────────
     - name: Check for SDDM (KDE Plasma)
-      ansible.builtin.command: dpkg-query -W -f='${Status}' sddm
+      ansible.builtin.shell: dpkg-query -W -f='{% raw %}${Status}{% endraw %}' sddm
       register: _sddm_check
       changed_when: false
       failed_when: false
 
     - name: Check for GDM3 (GNOME)
-      ansible.builtin.command: dpkg-query -W -f='${Status}' gdm3
+      ansible.builtin.shell: dpkg-query -W -f='{% raw %}${Status}{% endraw %}' gdm3
       register: _gdm3_check
       changed_when: false
       failed_when: false
