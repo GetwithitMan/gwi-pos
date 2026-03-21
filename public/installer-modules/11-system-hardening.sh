@@ -35,7 +35,9 @@ run_system_hardening() {
   local VERSION_FILE="$ANSIBLE_DIR/VERSION"
   local VENV_DIR="$APP_BASE/.ansible-venv"
   local ANSIBLE_BIN="$VENV_DIR/bin/ansible-playbook"
-  local PINNED_ANSIBLE_VERSION="2.16.4"
+  # Full ansible package version (includes json callback + community collections)
+  # ansible 11.x bundles ansible-core 2.18.x; ansible 10.x bundles ansible-core 2.17.x
+  local PINNED_ANSIBLE_VERSION="10.7.0"
   local TRIGGERED_BY="installer"
   local RUN_START
   RUN_START=$(date +%s)
@@ -289,9 +291,11 @@ except Exception as e:
     fi
 
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip >/dev/null 2>&1
-    "$VENV_DIR/bin/pip" install --quiet "ansible-core==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1
+    # Install full ansible (not just ansible-core) — includes json callback plugin
+    "$VENV_DIR/bin/pip" install --quiet "ansible==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1 \
+      || "$VENV_DIR/bin/pip" install --quiet "ansible" >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
-      warn "Failed to install ansible-core==$PINNED_ANSIBLE_VERSION"
+      warn "Failed to install ansible==$PINNED_ANSIBLE_VERSION"
       _write_run_state "degraded"
       _write_result "failed_required" 1 0
       _write_event "baseline_run" "failed_required" 1 0
