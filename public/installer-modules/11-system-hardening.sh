@@ -267,7 +267,9 @@ PARSE_EOF
     # Ensure python3-venv is available
     if ! python3 -m venv --help >/dev/null 2>&1; then
       log "Installing python3-venv..."
-      apt-get update -qq && apt-get install -y -qq python3-venv >/dev/null 2>&1
+      local PY_VERSION
+      PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")
+      apt-get update -qq && apt-get install -y -qq "python${PY_VERSION}-venv" python3-venv >/dev/null 2>&1
       if [[ $? -ne 0 ]]; then
         warn "Failed to install python3-venv — cannot bootstrap Ansible"
         _write_run_state "degraded"

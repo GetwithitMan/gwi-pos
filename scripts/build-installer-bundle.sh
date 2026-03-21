@@ -22,12 +22,23 @@ fi
 
 echo "Building self-contained installer.run..."
 
-# Strip any existing payload (from previous builds)
+# Strip any existing payload + exit marker (from previous builds)
 if grep -q '^__MODULES_PAYLOAD__$' "$INSTALLER"; then
-  sed -i '/^__MODULES_PAYLOAD__$/,$d' "$INSTALLER"
+  # Remove everything from "exit 0" before the marker onwards
+  MARKER_LINE=$(grep -n '^__MODULES_PAYLOAD__$' "$INSTALLER" | head -1 | cut -d: -f1)
+  # Also remove the "exit 0" and comment line before the marker
+  CUT_LINE=$((MARKER_LINE - 3))
+  if [[ $CUT_LINE -gt 10 ]]; then
+    head -n "$CUT_LINE" "$INSTALLER" > "${INSTALLER}.tmp" && mv "${INSTALLER}.tmp" "$INSTALLER"
+  else
+    sed -i '/^__MODULES_PAYLOAD__$/,$d' "$INSTALLER"
+  fi
 fi
 
-# Append marker + base64 tar.gz of installer-modules/
+# Append exit + marker + base64 tar.gz of installer-modules/
+echo "" >> "$INSTALLER"
+echo "# End of installer — payload below" >> "$INSTALLER"
+echo "exit 0" >> "$INSTALLER"
 echo "__MODULES_PAYLOAD__" >> "$INSTALLER"
 tar czf - -C "$PUBLIC_DIR" installer-modules | base64 >> "$INSTALLER"
 
