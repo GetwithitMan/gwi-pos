@@ -34,6 +34,7 @@ run_dashboard() {
     "$APP_BASE/dashboard"
     "$APP_DIR/packaging"
     "$APP_DIR/dashboard"
+    "$APP_DIR/public"
     "$(dirname "$0")"
   )
 
@@ -145,6 +146,31 @@ DESKTOP
     log "Autostart entry created at ${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop"
   else
     track_warn "Autostart directory ${AUTOSTART_DIR} not found — dashboard won't auto-start"
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Create desktop shortcut (clickable icon on desktop for manual launch)
+  # ─────────────────────────────────────────────────────────────────────────
+  local DESKTOP_DIR
+  DESKTOP_DIR=$(eval echo "~${POSUSER}/Desktop")
+  if [[ -d "$DESKTOP_DIR" ]]; then
+    cat > "${DESKTOP_DIR}/gwi-nuc-dashboard.desktop" << 'DESKTOP'
+[Desktop Entry]
+Name=GWI Dashboard
+Comment=System health and device monitoring
+Exec=gwi-nuc-dashboard
+Icon=gwi-nuc-dashboard
+Type=Application
+Categories=System;Monitor;
+Terminal=false
+DESKTOP
+    chmod 755 "${DESKTOP_DIR}/gwi-nuc-dashboard.desktop"
+    chown "${POSUSER}:${POSUSER}" "${DESKTOP_DIR}/gwi-nuc-dashboard.desktop"
+    # Mark as trusted so GNOME doesn't show "untrusted" warning
+    sudo -u "${POSUSER}" gio set "${DESKTOP_DIR}/gwi-nuc-dashboard.desktop" metadata::trusted true 2>/dev/null || true
+    log "Desktop shortcut created at ${DESKTOP_DIR}/gwi-nuc-dashboard.desktop"
+  else
+    log "Desktop directory not found at ${DESKTOP_DIR} — skipping shortcut"
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
