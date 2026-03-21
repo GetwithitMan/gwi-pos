@@ -189,40 +189,35 @@ except Exception:
 
     # Parse the JSON callback output for failure/unreachable counts
     local parse_result
-    parse_result=$(python3 <<'PARSE_EOF'
+    parse_result=$(python3 -c "
 import json, sys
 
 try:
     with open(sys.argv[1]) as f:
         data = json.load(f)
 
-    stats = data.get("stats", {})
+    stats = data.get('stats', {})
     has_failures = False
     has_unreachable = False
+    has_ignored = False
 
     for host, host_stats in stats.items():
-        if host_stats.get("failures", 0) > 0:
+        if host_stats.get('failures', 0) > 0:
             has_failures = True
-        if host_stats.get("unreachable", 0) > 0:
+        if host_stats.get('unreachable', 0) > 0:
             has_unreachable = True
-
-    # Check for rescued tasks (warnings)
-    has_rescued = False
-    for host, host_stats in stats.items():
-        if host_stats.get("rescued", 0) > 0:
-            has_rescued = True
+        if host_stats.get('ignored', 0) > 0:
+            has_ignored = True
 
     if has_failures or has_unreachable:
-        print("failed_required")
-    elif has_rescued:
-        print("success_with_warnings")
+        print('failed_required')
+    elif has_ignored:
+        print('success_with_warnings')
     else:
-        print("success")
+        print('success')
 except Exception as e:
-    print("failed_required", file=sys.stderr)
-    print("failed_required")
-PARSE_EOF
-    "$result_file" 2>/dev/null)
+    print('failed_required')
+" "$result_file" 2>/dev/null)
 
     echo "${parse_result:-failed_required}"
   }
