@@ -117,8 +117,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODULES_DIR="$SCRIPT_DIR/installer-modules"
 POS_BASE_URL="${POS_BASE_URL:-https://app.thepasspos.com}"
 
-# If modules aren't alongside installer.run, download them
-if [[ ! -d "$MODULES_DIR" ]]; then
+# If modules aren't alongside installer.run (or are empty/corrupt), download them
+if [[ ! -f "$MODULES_DIR/01-preflight.sh" ]] || ! grep -q 'run_preflight' "$MODULES_DIR/01-preflight.sh" 2>/dev/null; then
+  rm -rf "$MODULES_DIR"
   log "Modules not found locally — downloading from $POS_BASE_URL..."
   mkdir -p "$MODULES_DIR"
   MODULE_LIST=(
