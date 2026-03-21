@@ -16,7 +16,6 @@ import { getLocalLeaseExpiry } from '@/lib/ha-lease-state'
 import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
-import { getWorkerHealth } from '@/lib/worker-registry'
 import { getReadinessState } from '@/lib/readiness'
 
 export const dynamic = 'force-dynamic'
@@ -111,14 +110,6 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   // Schema verified flag
   const schemaVerified = isSchemaVerified()
 
-  // Sync workers running
-  const syncWorkersRunning = (() => {
-    const workers = getWorkerHealth()
-    const syncWorkerNames = ['upstreamSync', 'downstreamSync']
-    const syncWorkers = workers.filter(w => syncWorkerNames.includes(w.name))
-    return syncWorkers.length > 0 && syncWorkers.every(w => w.running)
-  })()
-
   // ── Sync data ───────────────────────────────────────────────────────────────
   let downstreamSync: {
     running: boolean
@@ -159,6 +150,10 @@ export const GET = withVenue(async function GET(): Promise<NextResponse> {
   } catch {
     // Worker not initialized
   }
+
+  // Sync workers running — read directly from worker metrics (not registry flag, which can go stale
+  // when the 5-min schema recheck unblocks sync but the registry flag isn't updated).
+  const syncWorkersRunning = (downstreamSync?.running ?? false) && (upstreamSync?.running ?? false)
 
   // ── Batch data ──────────────────────────────────────────────────────────────
   let batch: {

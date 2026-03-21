@@ -239,13 +239,15 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     path: process.env.SOCKET_PATH || '/api/socket',
     cors: {
       origin: process.env.NODE_ENV !== 'production'
-        ? ['http://localhost:3000', 'http://localhost:3005', 'http://127.0.0.1:3005']
+        ? ['http://localhost:3000', 'http://localhost:3005', 'http://127.0.0.1:3005', 'tauri://localhost']
         : (origin, callback) => {
             // No origin (same-origin / server-to-server) — allow
             if (!origin) return callback(null, true)
             if (allowedOrigins.length > 0 && allowedOrigins.includes(origin)) {
               return callback(null, true)
             }
+            // Allow Tauri webviews (NUC Dashboard)
+            if (origin.startsWith('tauri://')) return callback(null, true)
             // ALLOWED_ORIGINS not set or origin not in list — reject
             callback(new Error('CORS rejected'), false)
           },

@@ -17,7 +17,6 @@ import { getDownstreamSyncMetrics } from '@/lib/sync/downstream-sync-worker'
 import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { getUpdateAgentStatus } from '@/lib/update-agent'
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
-import { getWorkerHealth } from '@/lib/worker-registry'
 import { getReadinessState, type ReadinessLevel } from '@/lib/readiness'
 
 export const dynamic = 'force-dynamic'
@@ -299,11 +298,11 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     schemaVerification: getSchemaVerificationResult(),
     schemaVerified: isSchemaVerified(),
     syncWorkersRunning: (() => {
-      const workers = getWorkerHealth()
-      const syncWorkerNames = ['upstreamSync', 'downstreamSync']
-      const syncWorkers = workers.filter(w => syncWorkerNames.includes(w.name))
-      // True only if at least one sync worker exists AND all registered sync workers are running
-      return syncWorkers.length > 0 && syncWorkers.every(w => w.running)
+      // Read running state directly from worker metrics (not registry flag, which can go stale
+      // when the 5-min schema recheck unblocks sync but the registry flag isn't updated).
+      const ds = downstreamSync
+      const us = upstreamSync
+      return (ds?.running ?? false) && (us?.running ?? false)
     })(),
     readiness: (() => {
       const rs = getReadinessState()
