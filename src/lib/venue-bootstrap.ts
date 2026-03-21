@@ -514,9 +514,18 @@ export async function runBootstrap(): Promise<BootstrapResult> {
       return result
     }
 
-    // 2. Read local _venue_schema_state
-    const localState = await readSchemaState(masterClient)
-    result.localSchemaVersion = localState?.schemaVersion ?? null
+    // 2. Read local schema version from _local_schema_state (NUC-owned).
+    // NOTE: _venue_schema_state is MC-owned and only exists on Neon — never query it on local PG.
+    try {
+      await ensureLocalSchemaStateTable(masterClient)
+      const localRows = await masterClient.$queryRawUnsafe<Array<{ schemaVersion: string }>>(
+        `SELECT "schemaVersion" FROM "_local_schema_state" WHERE id = 1`
+      )
+      result.localSchemaVersion = localRows.length > 0 ? localRows[0].schemaVersion : null
+    } catch {
+      // _local_schema_state may not exist on first boot — safe to ignore
+      result.localSchemaVersion = null
+    }
 
     // 3. Check Neon if configured
     const neonUrl = process.env.NEON_DATABASE_URL

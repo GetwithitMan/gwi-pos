@@ -45,7 +45,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   // Orders & line items
   'Order', 'OrderItem', 'OrderItemModifier', 'OrderItemIngredient', 'OrderItemPizza',
   'OrderDiscount', 'OrderItemDiscount', 'OrderCard',
-  'order_events', 'OrderEvent', 'order_snapshots', 'OrderSnapshot', 'order_item_snapshots', 'OrderItemSnapshot',
+  'order_events', 'order_snapshots', 'order_item_snapshots',
   'OrderOwnership', 'OrderOwnershipEntry', 'OrderType',
 
   // Payments & financials
@@ -128,8 +128,8 @@ export const TENANT_SCOPED_MODELS = new Set([
   'AuditLog', 'ErrorLog', 'HealthCheck',
   'VenueLog', 'WasteLog',
 
-  // Cloud sync (@@map table names — keep both table name + Prisma model name)
-  'cloud_event_queue', 'CloudEventQueue',
+  // Cloud sync (@@map table names — use actual DB table names, not Prisma model names)
+  'cloud_event_queue',
 
   // Sync & operational
   'SyncAuditEntry', 'SocketEventLog', 'SyncWatermark',

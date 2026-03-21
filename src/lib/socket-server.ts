@@ -160,10 +160,10 @@ function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void 
     const oldestKey = cfdToRegisterMap.keys().next().value
     if (oldestKey) cfdToRegisterMap.delete(oldestKey)
   }
-  // Persist CFD pairing to Terminal.metadata for restart recovery
+  // Persist CFD pairing to Terminal.cfdTerminalId for restart recovery
   void db.$executeRawUnsafe(
-    `UPDATE "Terminal" SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{cfdTerminalId}', $1::jsonb) WHERE id = $2`,
-    JSON.stringify(cfdTerminalId), registerTerminalId
+    `UPDATE "Terminal" SET "cfdTerminalId" = $1 WHERE id = $2`,
+    cfdTerminalId, registerTerminalId
   ).catch((err) => log.warn({ err }, 'CFD pairing persist failed'))
 }
 
@@ -260,21 +260,21 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     maxHttpBufferSize: 100 * 1024, // 100KB
   })
 
-  // Rehydrate CFD-to-register map from Terminal.metadata (survives restarts)
+  // Rehydrate CFD-to-register map from Terminal.cfdTerminalId (survives restarts)
   void (async () => {
     try {
       // NUCs are single-tenant (one locationId per server), so no cross-tenant risk here.
       // All terminals on this NUC belong to the same location.
-      const pairings = await db.$queryRawUnsafe<Array<{ id: string; metadata: { cfdTerminalId?: string } }>>(
-        `SELECT id, metadata FROM "Terminal" WHERE metadata->>'cfdTerminalId' IS NOT NULL AND "deletedAt" IS NULL`
+      const pairings = await db.$queryRawUnsafe<Array<{ id: string; cfdTerminalId: string }>>(
+        `SELECT id, "cfdTerminalId" FROM "Terminal" WHERE "cfdTerminalId" IS NOT NULL AND "deletedAt" IS NULL`
       )
       for (const t of pairings) {
-        if (t.metadata?.cfdTerminalId) {
-          cfdToRegisterMap.set(t.metadata.cfdTerminalId, t.id)
+        if (t.cfdTerminalId) {
+          cfdToRegisterMap.set(t.cfdTerminalId, t.id)
         }
       }
       if (pairings.length > 0) {
-        log.info(`Rehydrated ${pairings.length} CFD-to-register pairings from Terminal.metadata`)
+        log.info(`Rehydrated ${pairings.length} CFD-to-register pairings from Terminal.cfdTerminalId`)
       }
     } catch (err) {
       log.warn({ err }, 'CFD pairing rehydration failed')
