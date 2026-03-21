@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { emitToLocation } from '@/lib/socket-server'
 
 /**
  * Check for overlapping shifts for the same employee on the same date.
@@ -151,6 +152,7 @@ export const POST = withVenue(async function POST(
     }
 
     void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'created', entityId: shift.id })
+    void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'shift-created' }).catch(() => {})
 
     return NextResponse.json({ data: response })
   } catch (error) {
@@ -263,6 +265,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'updated', entityId: scheduleId })
+    void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'shifts-bulk-updated' }).catch(() => {})
 
     return NextResponse.json({ data: response })
   } catch (error) {

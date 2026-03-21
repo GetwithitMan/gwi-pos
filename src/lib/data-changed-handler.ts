@@ -61,8 +61,8 @@ export async function handleDataChanged(payload: DataChangedPayload): Promise<vo
 // Register default handlers for known domains
 registerDataChangedHandler('menu', async (payload) => {
   const { triggerImmediateDownstreamSync } = await import('@/lib/sync/downstream-sync-worker')
-  triggerImmediateDownstreamSync()
-  log.info({ tables: payload.tables }, 'Menu change — triggered immediate downstream sync')
+  await triggerImmediateDownstreamSync(undefined, ['MenuItem', 'Category', 'ModifierGroup', 'Modifier', 'ComboTemplate', 'ComboComponent', 'ComboComponentOption', 'ModifierGroupTemplate', 'ModifierTemplate', 'PricingOptionGroup', 'PricingOption', 'ItemBarcode'])
+  log.info({ tables: payload.tables }, 'Menu change — triggered targeted downstream sync')
 })
 
 registerDataChangedHandler('employees', async () => {

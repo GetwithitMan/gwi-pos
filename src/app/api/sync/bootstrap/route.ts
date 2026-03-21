@@ -132,7 +132,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         status: { notIn: ['closed', 'voided', 'paid', 'cancelled'] },
         deletedAt: null,
       },
-      take: 100,
+      take: 500,
       include: {
         items: {
           where: { deletedAt: null },
@@ -525,6 +525,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Void/comp reasons: required for item void/comp operations
       voidReasons,
       compReasons,
+      // Flag: true if there are more open orders beyond the 500 limit
+      hasMoreOrders: openOrders.length >= 500,
       // Open orders: allows device to rebuild state after mid-service reboot
       // without relying solely on socket catch-up (which may miss events).
       // Includes items, modifiers, ingredient mods, and payments.

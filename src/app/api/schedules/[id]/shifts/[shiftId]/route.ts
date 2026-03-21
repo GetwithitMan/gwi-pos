@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { emitToLocation } from '@/lib/socket-server'
 
 /**
  * Check for overlapping shifts for the same employee on the same date.
@@ -155,6 +156,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     void notifyDataChanged({ locationId: shift.locationId, domain: 'scheduling', action: 'updated', entityId: shiftId })
+    void emitToLocation(shift.locationId, 'schedules:changed', { trigger: 'shift-updated' }).catch(() => {})
 
     return NextResponse.json({ data: response })
   } catch (error) {
@@ -193,6 +195,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     void notifyDataChanged({ locationId: shift.locationId, domain: 'scheduling', action: 'deleted', entityId: shiftId })
+    void emitToLocation(shift.locationId, 'schedules:changed', { trigger: 'shift-deleted' }).catch(() => {})
 
     return NextResponse.json({ data: { message: 'Shift deleted' } })
   } catch (error) {

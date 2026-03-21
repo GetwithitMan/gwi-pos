@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { emitToLocation } from '@/lib/socket-server'
 
 export const GET = withVenue(async function GET() {
   try {
@@ -52,6 +54,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         timezone: true,
       },
     })
+
+    void notifyDataChanged({ locationId: location.id, domain: 'location', action: 'updated' })
+    void emitToLocation(location.id, 'settings:updated', { trigger: 'location-metadata-changed' }).catch(() => {})
 
     return NextResponse.json({ data: updated })
   } catch (error) {

@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET - List schedules
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -128,6 +129,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'scheduling', action: 'created', entityId: schedule.id })
+    void emitToLocation(locationId, 'schedules:changed', { trigger: 'schedule-created' }).catch(() => {})
 
     return NextResponse.json({ data: {
       schedule: {
