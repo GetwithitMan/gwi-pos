@@ -84,6 +84,13 @@ ENVEOF
       echo "POS_VENUE_SLUG=${VENUE_SLUG}" >> "$ENV_FILE"
     fi
 
+    # Append LOCATION_NAME if available from registration (used by RealVNC + desktop launcher)
+    if [[ -n "${LOCATION_NAME:-}" ]]; then
+      echo "" >> "$ENV_FILE"
+      echo "# Venue display name (from MC registration, used for RealVNC + desktop)" >> "$ENV_FILE"
+      echo "LOCATION_NAME=${LOCATION_NAME}" >> "$ENV_FILE"
+    fi
+
     # .env readable by POSUSER (for app) but owned by root (contains secrets)
     chown root:"$POSUSER" "$ENV_FILE" && chmod 640 "$ENV_FILE"
     log "Environment written to $ENV_FILE"
@@ -122,6 +129,8 @@ ENVEOF
         SERVER_URL)   [[ -z "$SERVER_URL" ]] && SERVER_URL="$val" ;;
         PRIMARY_NUC_IP) [[ -z "$PRIMARY_NUC_IP" ]] && PRIMARY_NUC_IP="$val" ;;
         VIRTUAL_IP)   [[ -z "$VIRTUAL_IP" ]] && VIRTUAL_IP="$val" ;;
+        LOCATION_NAME) [[ -z "${LOCATION_NAME:-}" ]] && LOCATION_NAME="$val" && VENUE_NAME="$val" ;;
+        REALVNC_CLOUD_TOKEN) REALVNC_CLOUD_TOKEN="$val" ;;
       esac
     done < "$ENV_FILE"
 

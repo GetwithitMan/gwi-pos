@@ -85,6 +85,25 @@ run_preflight() {
 
   log "Essential tools + NTP (chrony) installed."
 
+  # ── Force X11 on GNOME (kiosk requires X11, Wayland not supported) ──
+  # Must happen BEFORE Stage 7 creates kiosk services. On Ubuntu 24.04+, GDM3
+  # defaults to Wayland which breaks Chromium kiosk in systemd.
+  if [[ -f /etc/gdm3/custom.conf ]]; then
+    if ! grep -q "WaylandEnable=false" /etc/gdm3/custom.conf 2>/dev/null; then
+      log "Disabling Wayland in GDM3 (kiosk requires X11)..."
+      # Add WaylandEnable=false under the [daemon] section
+      if grep -q "\[daemon\]" /etc/gdm3/custom.conf; then
+        sed -i '/\[daemon\]/a WaylandEnable=false' /etc/gdm3/custom.conf
+      else
+        echo -e "\n[daemon]\nWaylandEnable=false" >> /etc/gdm3/custom.conf
+      fi
+      log "Wayland disabled. X11 will be used on next login."
+      track_warn "Wayland was disabled for X11 kiosk support. A reboot may be needed after install."
+    else
+      log "Wayland already disabled in GDM3 — OK."
+    fi
+  fi
+
   # ── Network check (after curl is guaranteed installed) ──
   log "Checking network connectivity..."
   if ! curl -fsS --max-time 10 "$MC_URL" >/dev/null 2>&1; then

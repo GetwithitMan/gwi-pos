@@ -212,14 +212,18 @@ SVCEOF
 
     # ── Kiosk preflight: verify X11 session is available ──
     KIOSK_OK=true
-    CHROMIUM_BIN=""
-    if command -v chromium-browser >/dev/null 2>&1; then
-      CHROMIUM_BIN="chromium-browser"
-    elif command -v chromium >/dev/null 2>&1; then
-      CHROMIUM_BIN="chromium"
-    else
-      track_warn "Chromium not found — kiosk mode will not work."
-      KIOSK_OK=false
+    # CHROMIUM_BIN may already be set by 04-database.sh (native, snap wrapper, etc.)
+    if [[ -z "${CHROMIUM_BIN:-}" ]]; then
+      if command -v chromium-kiosk >/dev/null 2>&1; then
+        CHROMIUM_BIN="chromium-kiosk"
+      elif command -v chromium-browser >/dev/null 2>&1; then
+        CHROMIUM_BIN="chromium-browser"
+      elif command -v chromium >/dev/null 2>&1; then
+        CHROMIUM_BIN="chromium"
+      else
+        track_warn "Chromium not found — kiosk mode will not work."
+        KIOSK_OK=false
+      fi
     fi
 
     # Check for Wayland vs X11 (filter by POSUSER, prefer graphical sessions)
@@ -239,10 +243,22 @@ SVCEOF
         fi
       done < <(loginctl list-sessions --no-legend 2>/dev/null)
       if [[ "$SESSION_TYPE" == "wayland" ]]; then
-        warn "Wayland session detected. GWI POS kiosk requires X11."
-        warn "Reconfigure Ubuntu for X11 auto-login, then re-run the installer."
-        warn "  1. Edit /etc/gdm3/custom.conf and set: WaylandEnable=false"
-        warn "  2. Reboot and re-run the installer."
+        # Wayland was detected despite preflight fix — this means the session
+        # started before the installer ran, or preflight didn't cover this DM.
+        # Try to fix it now for next reboot.
+        if [[ -f /etc/gdm3/custom.conf ]]; then
+          if ! grep -q "WaylandEnable=false" /etc/gdm3/custom.conf 2>/dev/null; then
+            log "Disabling Wayland in GDM3 for next reboot..."
+            if grep -q "\[daemon\]" /etc/gdm3/custom.conf; then
+              sed -i '/\[daemon\]/a WaylandEnable=false' /etc/gdm3/custom.conf
+            else
+              echo -e "\n[daemon]\nWaylandEnable=false" >> /etc/gdm3/custom.conf
+            fi
+          fi
+        fi
+        warn "Wayland session is currently active. Kiosk requires X11."
+        warn "Wayland has been disabled in GDM3 — a REBOOT is required."
+        warn "After reboot, the kiosk will start automatically on X11."
         KIOSK_OK=false
       elif [[ "$SESSION_TYPE" == "unknown" ]]; then
         warn "No active graphical session detected."
@@ -253,6 +269,8 @@ SVCEOF
     fi
 
     # thepasspos-kiosk.service — Chromium in kiosk mode
+    # Resolve full path to Chromium binary (may be /usr/bin, /usr/local/bin, or /snap/bin)
+    CHROMIUM_FULL_PATH=$(command -v "${CHROMIUM_BIN:-chromium-browser}" 2>/dev/null || echo "/usr/bin/${CHROMIUM_BIN:-chromium-browser}")
     cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Kiosk
@@ -269,7 +287,7 @@ Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
 ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
 ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh
-ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile http://localhost:3005
+ExecStart=$CHROMIUM_FULL_PATH --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile http://localhost:3005
 Restart=always
 RestartSec=10
 
@@ -566,14 +584,19 @@ SVCEOF
 
     # ── Terminal kiosk preflight ──
     TERM_KIOSK_OK=true
-    TERM_CHROMIUM="chromium-browser"
-    if command -v chromium-browser >/dev/null 2>&1; then
-      TERM_CHROMIUM="chromium-browser"
-    elif command -v chromium >/dev/null 2>&1; then
-      TERM_CHROMIUM="chromium"
-    else
-      track_warn "Chromium not found — terminal kiosk will not work."
-      TERM_KIOSK_OK=false
+    # CHROMIUM_BIN may already be set by 04-database.sh (native, snap wrapper, etc.)
+    TERM_CHROMIUM="${CHROMIUM_BIN:-}"
+    if [[ -z "$TERM_CHROMIUM" ]]; then
+      if command -v chromium-kiosk >/dev/null 2>&1; then
+        TERM_CHROMIUM="chromium-kiosk"
+      elif command -v chromium-browser >/dev/null 2>&1; then
+        TERM_CHROMIUM="chromium-browser"
+      elif command -v chromium >/dev/null 2>&1; then
+        TERM_CHROMIUM="chromium"
+      else
+        track_warn "Chromium not found — terminal kiosk will not work."
+        TERM_KIOSK_OK=false
+      fi
     fi
 
     # Check for graphical session on terminals too (prefer x11 over wayland)
@@ -592,7 +615,18 @@ SVCEOF
         fi
       done < <(loginctl list-sessions --no-legend 2>/dev/null)
       if [[ "$TERM_SESSION" == "wayland" ]]; then
-        warn "Wayland detected on terminal — kiosk requires X11."
+        # Fix Wayland for next reboot
+        if [[ -f /etc/gdm3/custom.conf ]]; then
+          if ! grep -q "WaylandEnable=false" /etc/gdm3/custom.conf 2>/dev/null; then
+            log "Disabling Wayland in GDM3 for next reboot (terminal)..."
+            if grep -q "\[daemon\]" /etc/gdm3/custom.conf; then
+              sed -i '/\[daemon\]/a WaylandEnable=false' /etc/gdm3/custom.conf
+            else
+              echo -e "\n[daemon]\nWaylandEnable=false" >> /etc/gdm3/custom.conf
+            fi
+          fi
+        fi
+        warn "Wayland detected on terminal — kiosk requires X11. Reboot after install."
         TERM_KIOSK_OK=false
       elif [[ "$TERM_SESSION" == "unknown" ]]; then
         warn "No graphical session detected on terminal — kiosk may not start until login."
@@ -605,6 +639,8 @@ SVCEOF
     sleep 1
 
     # thepasspos-kiosk.service — Chromium pointing at server (SERVER_URL via Environment for safety)
+    # Resolve full path to Chromium binary (may be /usr/bin, /usr/local/bin, or /snap/bin)
+    TERM_CHROMIUM_PATH=$(command -v "${TERM_CHROMIUM:-chromium-browser}" 2>/dev/null || echo "/usr/bin/${TERM_CHROMIUM:-chromium-browser}")
     cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Kiosk (Terminal)
@@ -622,7 +658,7 @@ Environment=POS_SERVER_URL=$SERVER_URL
 ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
 ExecStartPre=/opt/gwi-pos/clear-kiosk-session.sh
 ExecStartPre=/opt/gwi-pos/wait-for-pos.sh ${SERVER_URL}/login
-ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile $SERVER_URL
+ExecStart=$TERM_CHROMIUM_PATH --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile $SERVER_URL
 Restart=always
 RestartSec=10
 

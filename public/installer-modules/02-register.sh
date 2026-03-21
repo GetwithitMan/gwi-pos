@@ -429,6 +429,12 @@ run_register() {
     CLOUD_ORGANIZATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.organizationId // empty')
     CLOUD_ENTERPRISE_ID=$(echo "$REG_RESPONSE" | jq -r '.data.enterpriseId // empty')
     VENUE_SLUG=$(echo "$REG_RESPONSE" | jq -r '.data.venueSlug // empty')
+    # Extract venue/location name for RealVNC friendly name + desktop launcher
+    LOCATION_NAME=$(echo "$REG_RESPONSE" | jq -r '.data.locationName // .data.venueName // empty')
+    if [[ -n "$LOCATION_NAME" ]]; then
+      VENUE_NAME="$LOCATION_NAME"
+      log "Venue name from registration: $LOCATION_NAME"
+    fi
     LOCATION_ID="${POS_LOCATION_ID:-$MC_LOCATION_ID}"
     ENCRYPTED_API_KEY=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedApiKey // empty')
     ENCRYPTED_DB_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDatabaseUrl // empty')

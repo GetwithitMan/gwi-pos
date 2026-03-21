@@ -4,8 +4,9 @@
 # =============================================================================
 # Entry: run_remote_access
 # Expects: STATION_ROLE, POSUSER, POSUSER_HOME, APP_BASE, VNC_PASSWORD,
-#          SERVER_URL, CHROMIUM_BIN
-# Sets: VENUE_NAME (for finalize)
+#          SERVER_URL, CHROMIUM_BIN, LOCATION_NAME, VENUE_NAME,
+#          REALVNC_CLOUD_TOKEN (optional, from .env)
+# Sets: VENUE_NAME, LOCATION_NAME (for finalize)
 # =============================================================================
 
 run_remote_access() {
@@ -85,16 +86,22 @@ VNCSVC
     systemctl enable vncserver-x11-serviced 2>/dev/null || true
     systemctl start vncserver-x11-serviced 2>/dev/null || true
 
-    # Set friendly name from venue name (query local POS if running)
+    # Set friendly name from venue name
+    # Priority: LOCATION_NAME from MC registration (Stage 2) > local POS API > hostname
     ROLE_SUFFIX="Server"
     [[ "$STATION_ROLE" == "terminal" ]] && ROLE_SUFFIX="Terminal"
     [[ "$STATION_ROLE" == "backup" ]] && ROLE_SUFFIX="Backup"
-    VENUE_NAME=""
-    if curl -sf --max-time 3 "http://localhost:3005/api/settings" >/dev/null 2>&1; then
-      VENUE_NAME=$(curl -sf --max-time 5 "http://localhost:3005/api/settings" 2>/dev/null \
-        | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));process.stdout.write(d?.data?.locationName||'')}catch(e){}" 2>/dev/null || echo "")
+
+    # Use LOCATION_NAME/VENUE_NAME from registration if available (set by 02-register.sh)
+    if [[ -z "${VENUE_NAME:-}" ]]; then
+      # Fall back to querying local POS API (may not be running yet on first install)
+      if curl -sf --max-time 3 "http://localhost:3005/api/settings" >/dev/null 2>&1; then
+        VENUE_NAME=$(curl -sf --max-time 5 "http://localhost:3005/api/settings" 2>/dev/null \
+          | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));process.stdout.write(d?.data?.locationName||'')}catch(e){}" 2>/dev/null || echo "")
+      fi
     fi
-    if [[ -n "$VENUE_NAME" ]]; then
+
+    if [[ -n "${VENUE_NAME:-}" ]]; then
       FRIENDLY_NAME="ThePassPOS-${VENUE_NAME}-${ROLE_SUFFIX}"
     else
       FRIENDLY_NAME="ThePassPOS-$(hostname)-${ROLE_SUFFIX}"
@@ -107,21 +114,46 @@ VNCSVC
 
     log "RealVNC Server installed — FriendlyName: $FRIENDLY_NAME"
 
-    # Optional: auto-join to RealVNC cloud account
-    echo ""
-    echo "RealVNC Cloud Join (optional)"
-    echo "  Get a token from: connect.realvnc.com -> Deployment -> Cloud join token"
-    read -rp "  Enter RealVNC cloud join token (or press Enter to skip): " REALVNC_TOKEN < /dev/tty
-    if [[ -n "$REALVNC_TOKEN" ]]; then
-      log "Joining RealVNC cloud account..."
-      if vncserver-x11 -service -joinCloud "$REALVNC_TOKEN" 2>/dev/null; then
+    # ── RealVNC Cloud Join ──
+    # Check for REALVNC_CLOUD_TOKEN in .env (auto-join without prompting)
+    if [[ -z "${REALVNC_CLOUD_TOKEN:-}" ]] && [[ -f "$APP_BASE/.env" ]]; then
+      REALVNC_CLOUD_TOKEN=$(grep "^REALVNC_CLOUD_TOKEN=" "$APP_BASE/.env" 2>/dev/null | cut -d= -f2- | head -1 || echo "")
+    fi
+
+    if [[ -n "${REALVNC_CLOUD_TOKEN:-}" ]]; then
+      # Auto-join using token from .env
+      log "Auto-joining RealVNC cloud (token from .env)..."
+      if vncserver-x11 -service -joinCloud "$REALVNC_CLOUD_TOKEN" 2>/dev/null; then
         log "Successfully joined RealVNC cloud — device will appear in your portal."
       else
-        warn "Cloud join failed — sign in manually via desktop icon or: vncserver-x11 -config"
+        warn "RealVNC cloud auto-join failed — sign in manually via desktop icon or: vncserver-x11 -config"
       fi
     else
-      log "Skipping RealVNC cloud join."
-      log "Sign in later: Open 'RealVNC Server' from the desktop, or run: vncserver-x11 -config"
+      # Interactive prompt (no token in .env)
+      echo ""
+      echo "RealVNC Cloud Join (optional)"
+      echo "  Get a token from: connect.realvnc.com -> Deployment -> Cloud join token"
+      read -rp "  Enter RealVNC cloud join token (or press Enter to skip): " REALVNC_TOKEN < /dev/tty
+      if [[ -n "$REALVNC_TOKEN" ]]; then
+        log "Joining RealVNC cloud account..."
+        if vncserver-x11 -service -joinCloud "$REALVNC_TOKEN" 2>/dev/null; then
+          log "Successfully joined RealVNC cloud — device will appear in your portal."
+          # Save token to .env for future re-runs
+          if [[ -f "$APP_BASE/.env" ]]; then
+            if ! grep -q "^REALVNC_CLOUD_TOKEN=" "$APP_BASE/.env" 2>/dev/null; then
+              echo "" >> "$APP_BASE/.env"
+              echo "# RealVNC cloud join token (auto-join on re-installs)" >> "$APP_BASE/.env"
+              echo "REALVNC_CLOUD_TOKEN=$REALVNC_TOKEN" >> "$APP_BASE/.env"
+              log "Saved RealVNC token to .env for future re-installs."
+            fi
+          fi
+        else
+          warn "Cloud join failed — sign in manually via desktop icon or: vncserver-x11 -config"
+        fi
+      else
+        log "Skipping RealVNC cloud join."
+        log "Sign in later: Open 'RealVNC Server' from the desktop, or run: vncserver-x11 -config"
+      fi
     fi
 
     # Desktop shortcut for RealVNC Server settings
@@ -162,16 +194,20 @@ RVNCEOF
   POS_URL="http://localhost:3005"
   [[ "$STATION_ROLE" == "terminal" ]] && POS_URL="$SERVER_URL"
 
-  # Reuse venue name from RealVNC setup if available, else query POS, else hostname
+  # Reuse venue name from registration/RealVNC setup if available, else query POS, else default
   if [[ -z "${VENUE_NAME:-}" ]]; then
-    VENUE_NAME=$(curl -sf --max-time 3 "http://localhost:3005/api/settings" 2>/dev/null \
-      | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));process.stdout.write(d?.data?.locationName||'')}catch(e){}" 2>/dev/null || echo "")
+    if curl -sf --max-time 3 "http://localhost:3005/api/settings" >/dev/null 2>&1; then
+      VENUE_NAME=$(curl -sf --max-time 5 "http://localhost:3005/api/settings" 2>/dev/null \
+        | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));process.stdout.write(d?.data?.locationName||'')}catch(e){}" 2>/dev/null || echo "")
+    fi
   fi
   LOCATION_NAME="${VENUE_NAME:-ThePassPOS}"
 
-  # Detect Chromium binary (may already be set from kiosk section)
+  # Detect Chromium binary (may already be set from 04-database.sh / 07-services.sh)
   if [[ -z "${CHROMIUM_BIN:-}" ]]; then
-    if command -v chromium-browser >/dev/null 2>&1; then
+    if command -v chromium-kiosk >/dev/null 2>&1; then
+      CHROMIUM_BIN="chromium-kiosk"
+    elif command -v chromium-browser >/dev/null 2>&1; then
       CHROMIUM_BIN="chromium-browser"
     elif command -v chromium >/dev/null 2>&1; then
       CHROMIUM_BIN="chromium"
@@ -190,7 +226,8 @@ RVNCEOF
 
   # Build Exec command: use Chromium with fullscreen if available, else xdg-open
   if [[ -n "${CHROMIUM_BIN:-}" ]]; then
-    LAUNCHER_EXEC="/usr/bin/${CHROMIUM_BIN} --start-fullscreen --noerrdialogs --disable-infobars --disable-session-crashed-bubble $POS_URL"
+    LAUNCHER_CHROMIUM_PATH=$(command -v "$CHROMIUM_BIN" 2>/dev/null || echo "/usr/bin/$CHROMIUM_BIN")
+    LAUNCHER_EXEC="$LAUNCHER_CHROMIUM_PATH --start-fullscreen --noerrdialogs --disable-infobars --disable-session-crashed-bubble $POS_URL"
   else
     LAUNCHER_EXEC="xdg-open $POS_URL"
   fi

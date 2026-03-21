@@ -220,12 +220,95 @@ HBEOF
     log "Heartbeat configured (every 60 seconds)."
   fi
 
-  # Install Chromium (try both package names)
-  apt-get install -y chromium-browser 2>/dev/null \
-    || apt-get install -y chromium 2>/dev/null \
-    || track_warn "Chromium install failed — kiosk mode may not work."
+  # ── Install Chromium (prefer native .deb over snap for systemd compatibility) ──
+  # On Ubuntu 24.04, `apt-get install chromium` installs the SNAP version, which
+  # cannot run inside a systemd service due to AppArmor sandboxing. We try multiple
+  # methods to get a native .deb Chromium that works as a kiosk service.
+  log "Installing Chromium browser..."
+  CHROMIUM_BIN=""
 
-  log "Browser installed."
+  # Method 1: Try native chromium-browser package (exists on some Ubuntu flavors)
+  if apt-get install -y chromium-browser 2>/dev/null; then
+    if command -v chromium-browser >/dev/null 2>&1 && ! snap list chromium-browser >/dev/null 2>&1; then
+      CHROMIUM_BIN="chromium-browser"
+      log "Chromium installed (native chromium-browser)"
+    fi
+  fi
+
+  # Method 2: Try native chromium, avoiding snap redirect
+  if [[ -z "$CHROMIUM_BIN" ]]; then
+    # Remove snap Chromium if present (can't run in systemd)
+    if snap list chromium >/dev/null 2>&1; then
+      log "Removing snap Chromium (incompatible with systemd kiosk)..."
+      snap remove chromium 2>/dev/null || true
+    fi
+
+    # Check if a native chromium exists after snap removal
+    if command -v chromium-browser >/dev/null 2>&1 && ! snap list chromium-browser >/dev/null 2>&1; then
+      CHROMIUM_BIN="chromium-browser"
+      log "Chromium available (native chromium-browser after snap removal)"
+    elif command -v chromium >/dev/null 2>&1 && ! snap list chromium >/dev/null 2>&1; then
+      CHROMIUM_BIN="chromium"
+      log "Chromium available (native chromium after snap removal)"
+    else
+      # Pin apt to avoid snap redirect, then install
+      log "Pinning apt to avoid snap redirect for Chromium..."
+      cat > /etc/apt/preferences.d/chromium-no-snap.pref <<'APTPIN'
+Package: chromium*
+Pin: release a=*
+Pin-Priority: -1
+
+Package: chromium*
+Pin: origin "*.ubuntu.com"
+Pin-Priority: 500
+
+Package: chromium*
+Pin: origin "*.debian.org"
+Pin-Priority: 500
+APTPIN
+
+      apt-get update -qq 2>/dev/null || true
+      apt-get install -y --no-install-recommends chromium 2>/dev/null || true
+
+      if command -v chromium >/dev/null 2>&1 && ! snap list chromium >/dev/null 2>&1; then
+        CHROMIUM_BIN="chromium"
+        log "Chromium installed (native .deb via apt pinning)"
+      elif command -v chromium-browser >/dev/null 2>&1 && ! snap list chromium-browser >/dev/null 2>&1; then
+        CHROMIUM_BIN="chromium-browser"
+        log "Chromium installed (native chromium-browser via apt pinning)"
+      else
+        # Last resort: install snap but create a wrapper that works in systemd
+        log "No native Chromium available — installing snap with systemd wrapper..."
+        snap install chromium 2>/dev/null || apt-get install -y chromium 2>/dev/null || true
+
+        if snap list chromium >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
+          # Create wrapper script that runs snap chromium with proper environment
+          cat > /usr/local/bin/chromium-kiosk <<'WRAPPER'
+#!/bin/bash
+# Wrapper for snap Chromium to work in systemd services.
+# Snap apps need HOME and XDG_RUNTIME_DIR set correctly.
+export HOME="${HOME:-/home/$(whoami)}"
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+# Use snap binary if available, fall back to PATH
+if [[ -x /snap/bin/chromium ]]; then
+  exec /snap/bin/chromium "$@"
+else
+  exec chromium "$@"
+fi
+WRAPPER
+          chmod +x /usr/local/bin/chromium-kiosk
+          CHROMIUM_BIN="chromium-kiosk"
+          log "Chromium installed (snap with systemd wrapper at /usr/local/bin/chromium-kiosk)"
+        fi
+      fi
+    fi
+  fi
+
+  if [[ -z "$CHROMIUM_BIN" ]]; then
+    track_warn "Chromium install failed — kiosk mode may not work."
+  else
+    log "Browser ready: $CHROMIUM_BIN"
+  fi
 
   # Install Node.js 20 via pinned apt repo (no shell script execution)
   install_node20() {
