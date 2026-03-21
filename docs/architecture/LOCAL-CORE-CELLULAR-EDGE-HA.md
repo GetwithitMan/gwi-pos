@@ -272,13 +272,19 @@ When the old primary comes back online, it detects it no longer owns the VIP and
 
 ### Installer Changes
 
-The installer (`public/installer.run`) gains a new `backup` station role (option 3 in the interactive menu):
+The installer is now a **modular system**: a thin orchestrator (`public/installer.run`) + 10 independent stage modules under `public/installer-modules/`. HA setup is handled by `08-ha.sh`.
 
+**HA-specific behavior (module `08-ha.sh`):**
+- Detects `backup` station role (option 3 in the interactive menu)
 - Prompts for `PRIMARY_NUC_IP` and `VIRTUAL_IP`
 - Registers with Mission Control as `role=backup` with `pairedNodeId` pointing to the primary
 - Configures PG streaming replication (pg_basebackup from primary)
 - Installs and configures keepalived on both primary and backup
 - Sets `.env`: `STATION_ROLE=backup`, `PRIMARY_NUC_IP`, `VIRTUAL_IP` (all unquoted per convention)
+
+**Resumability:** If the installer fails at any stage, re-run with `--resume-from=08-ha` to restart from the HA stage without repeating earlier steps. Each module is idempotent and returns 0/non-zero (orchestrator halts on failure).
+
+See `docs/architecture/AUTHORITY-MODEL.md` Section 8 for the full modular installer specification.
 
 ---
 
@@ -713,15 +719,18 @@ CLOUD INGRESS (Cellular):
 
 ### Installer Authority Model
 
-The installer (`public/installer.run`) is **pointer-only**. It gives the NUC its venue identity but asserts no schema or provisioning authority:
+The installer is **pointer-only** and **modular**. The thin orchestrator (`public/installer.run`) calls 10 independent stage modules under `public/installer-modules/` (01-preflight through 10-finalize). It gives the NUC its venue identity but asserts no schema or provisioning authority:
 
-- Registration provides: venue slug, location ID, Neon URL, server API key
+- Registration provides: venue slug, location ID, Neon URL, server API key (via `02-register.sh`)
 - `.env.local` is a **symlink** to `/opt/gwi-pos/.env` (never a copy)
 - Installer NEVER writes `_venue_schema_state` — that is MC-only
 - Installer NEVER uses `--accept-data-loss`
 - Installer NEVER hardcodes URLs — all URLs come from MC registration response
 - Schema updates follow: MC rollout → Neon schema update → NUC downstream sync picks up new data
 - NUC NEVER mutates Neon schema in production — it observes and reports only
+- Each module returns 0/non-zero — orchestrator halts on failure (hard stop between stages)
+- Supports `--resume-from=STAGE` for resumable installs after failure
+- MC proxies the installer from POS deployment — single source of truth, no separate copy
 
 ---
 

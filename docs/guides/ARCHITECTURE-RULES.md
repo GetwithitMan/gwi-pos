@@ -109,7 +109,7 @@ Neon receives writes from **two ingress paths**:
 
 ### Installer Authority Model
 
-The installer (`public/installer.run`) is **pointer-only** — it gives the NUC its identity but never asserts schema or provisioning authority:
+The installer is a **thin orchestrator** (`public/installer.run`) + **10 independent stage modules** under `public/installer-modules/`. It is **pointer-only** — it gives the NUC its identity but never asserts schema or provisioning authority:
 
 | Installer DOES | Installer NEVER |
 |----------------|-----------------|
@@ -117,8 +117,14 @@ The installer (`public/installer.run`) is **pointer-only** — it gives the NUC 
 | Set Neon URL (`NEON_DATABASE_URL`) | Use `--accept-data-loss` |
 | Symlink `.env.local` → `/opt/gwi-pos/.env` | Hardcode URLs (always from MC registration) |
 | Register with Mission Control | Run schema migrations directly against Neon |
+| Support `--resume-from=STAGE` for resumable installs | Add `\|\| true` to critical operations |
+| Halt on any stage failure (hard stop) | Silently continue past failures |
+
+**Modules:** `01-preflight`, `02-register`, `03-secrets`, `04-database`, `05-deploy-app`, `06-schema`, `07-services`, `08-ha`, `09-remote-access`, `10-finalize`. Each has a single `run_*()` entry function.
 
 Schema updates flow: MC rollout → Neon schema update → NUC downstream sync picks up new data. The NUC NEVER mutates Neon schema in production — it observes and reports only.
+
+See `docs/architecture/AUTHORITY-MODEL.md` Section 8 for the full deploy pipeline and modular installer specification.
 
 ### Mission Control as Schema/Provisioning Authority
 
@@ -310,6 +316,10 @@ The NUC deploy pipeline is orchestrated by MC via fleet commands and executed by
 4. **Terminal pairing fields use `skipFields` in sync config.** Models like `Terminal` have NUC-local operational state (e.g., `lastSeenAt`, `isOnline`) that must not be overwritten by downstream sync. The sync config `skipFields` array prevents this.
 5. **Pre-start script is the safety gate.** Before the NUC server starts, the pre-start script: (a) verifies `.env.local` symlink, (b) runs `nuc-pre-migrate.js` for pending migrations, (c) runs `prisma db push` for schema alignment. If any step fails, the service does not start.
 6. **`--accept-data-loss` is banned.** Neither the pre-start script, the sync agent, nor any deploy step may use this flag. Schema must only move forward.
+7. **Installer is modular — 10 stages with hard stops.** Never add new functionality inline to the orchestrator (`public/installer.run`); create a new module under `public/installer-modules/`. Each module has a single `run_*()` entry function and must return 0/non-zero. The orchestrator halts on failure.
+8. **Sync agent prefers pinned git tags over `origin/main` for deterministic deploys.** When MC provides a `targetVersion` (e.g., `v1.0.60`), the sync agent checks out that tag. Falls back to `origin/main` only if the tag does not exist.
+9. **Each installer stage must return 0/non-zero — orchestrator halts on failure.** Never add `|| true` to critical operations. The `--resume-from=STAGE` flag allows re-running from a specific stage after fixing a failure.
+10. **`version-contract.json` verified after checkout.** The sync agent confirms the checked-out code matches the expected release version before proceeding with build steps.
 
 ### Order-Ready Gate
 

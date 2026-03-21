@@ -240,7 +240,8 @@ gwi-pos/
 ├── preload.js           # AsyncLocalStorage polyfill (loaded via -r flag)
 ├── prisma/              # Schema, seed, migrations
 ├── public/
-│   └── installer.run    # NUC provisioning script (~1,454 lines)
+│   ├── installer.run    # NUC provisioning orchestrator (thin — calls modules)
+│   └── installer-modules/  # 10 stage modules (01-preflight through 10-finalize)
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/      # Login pages
@@ -389,6 +390,20 @@ Models like `Terminal` contain fields that are written locally on the NUC (e.g.,
 ### Bidirectional Model Ownership
 
 For bidirectional models (Employee, MenuItem, Category, etc.), MC owns **config** (name, permissions, menu structure) and NUC owns **operational state** (clock entries, order counts, last-active timestamps). Every NUC mutation to a bidirectional model MUST set `lastMutatedBy: 'local'` so upstream sync picks it up. See `docs/architecture/AUTHORITY-MODEL.md` Section 3 for conflict resolution rules.
+
+---
+
+## Installer Development Rules
+
+| Rule | Detail |
+|------|--------|
+| New functionality | Goes in the appropriate module under `public/installer-modules/`, never inline in the orchestrator |
+| No silent continue | Never add `|| true` to critical installer operations — each module must return 0/non-zero accurately |
+| Entry function | Each module has a single `run_*()` entry function called by the orchestrator |
+| Resumability | Modules must be idempotent — `--resume-from=STAGE` re-runs the module from scratch |
+| Hard stops | Orchestrator halts on any non-zero exit. Never swallow failures between stages |
+
+See `docs/deployment/INSTALLER-SPEC.md` for the full module contract and `public/installer-modules/` for implementations.
 
 ---
 

@@ -116,8 +116,9 @@ Only after Steps 1–5:
 - **Cloud-primary architecture:** Neon is the canonical SOR. NUC writes replicate upstream (5s). During outage, NUC queues writes in OutageQueueEntry for FIFO replay. Conflict resolution: neon-wins (default). See `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` Phase 6.
 - **Dual-ingress model:** Neon receives writes from TWO paths: (1) NUC upstream sync (LAN devices → NUC → Neon), and (2) cellular terminals writing directly through Vercel → Neon. Downstream sync (5s) delivers cellular-originated data to the NUC for fulfillment (kitchen prints, KDS).
 - **Authority boundaries:** MC owns schema version, provisioning, `_venue_schema_state`, and rollout. NUC owns local runtime during internet outage. NUC NEVER mutates Neon schema in production — observe and report only.
-- **Installer is pointer-only:** Registration gives the NUC its venue identity + Neon URL. `.env.local` is a symlink to `/opt/gwi-pos/.env` (never a copy). Installer never writes `_venue_schema_state` (MC-only), never uses `--accept-data-loss`, never hardcodes URLs. Schema updates follow MC rollout → Neon → NUC downstream sync.
-- **Deploy pipeline is pointer-only:** MC creates a release → fleet command → sync agent on NUC pulls from git, runs `prisma generate` → `nuc-pre-migrate.js` → `prisma db push` → `npm run build` → restart → ACKs back to MC. No hardcoded schema, URLs, or secrets in the pipeline.
+- **Installer is pointer-only and modular:** Registration gives the NUC its venue identity + Neon URL. `.env.local` is a symlink to `/opt/gwi-pos/.env` (never a copy). Installer never writes `_venue_schema_state` (MC-only), never uses `--accept-data-loss`, never hardcodes URLs. Schema updates follow MC rollout → Neon → NUC downstream sync. The installer is a thin orchestrator (`public/installer.run`) + 10 independently callable modules under `public/installer-modules/`. Supports `--resume-from=STAGE` for resumable installs. Each stage returns 0/non-zero; orchestrator halts on failure (hard stop, no silent continue).
+- **Installer modules: each stage is independently callable, resumable on failure.** Never add new functionality inline to the orchestrator; create a new module under `public/installer-modules/`.
+- **Deploy pipeline is pointer-only:** MC creates a release → fleet command → sync agent on NUC pulls from git (prefers pinned git tags like `v1.0.60`, falls back to `origin/main`), runs `prisma generate` → `nuc-pre-migrate.js` → `prisma db push` → `npm run build` → restart → ACKs back to MC with deploy path (pinned vs fallback). No hardcoded schema, URLs, or secrets in the pipeline. `version-contract.json` verified after checkout.
 - **All infrastructure tables in Prisma schema:** `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state`, and similar operational tables MUST be defined in `prisma/schema.prisma` so that `prisma db push` never blocks or drops them.
 - **Universal outage queue:** ALL upstream model writes MUST use outage queue protection (`OutageQueueEntry`). No upstream write may silently fail during an internet outage.
 - **Canonical authority doc:** `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` (Phases 6-8)
@@ -198,6 +199,16 @@ npm run build        # Production build
 npm run lint         # Lint
 npx tsc --noEmit     # Type check
 npm run db:studio    # Prisma Studio
+```
+
+```bash
+# Installer (modular — 10 stages under public/installer-modules/)
+public/installer.run                  # Thin orchestrator — calls each module in order
+public/installer.run --resume-from=STAGE  # Resume from a specific stage (e.g., 04-database)
+# Modules: 01-preflight, 02-register, 03-secrets, 04-database, 05-deploy-app,
+#          06-schema, 07-services, 08-ha, 09-remote-access, 10-finalize
+# Each module has a single run_*() entry function and returns 0/non-zero.
+# Orchestrator halts on any non-zero exit (hard stop between stages).
 ```
 
 ```bash
@@ -353,7 +364,7 @@ Tech: Kotlin, Jetpack Compose, Hilt DI, Retrofit 2, Socket.IO, Room DB, Moshi. M
 | Socket / real-time | `docs/guides/SOCKET-REALTIME.md` | `src/lib/socket-server.ts`, `shared-socket.ts`, `socket-event-buffer.ts` |
 | Socket / cloud relay | `docs/guides/SOCKET-REALTIME.md` | `src/lib/cloud-relay-client.ts`, `socket-event-buffer.ts` |
 | Android interop | `docs/guides/ANDROID-INTEGRATION.md` | `src/app/api/sync/` |
-| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (source of truth) — MC proxies installer from POS deployment, no copy needed |
+| NUC deployment / installer | `docs/guides/NUC-OPERATIONS.md`, `docs/deployment/INSTALLER-SPEC.md` | `public/installer.run` (thin orchestrator) + `public/installer-modules/` (10 stage modules) — MC proxies installer from POS deployment, no copy needed |
 | Database / schema | `docs/guides/ARCHITECTURE-RULES.md` | `prisma/schema.prisma` |
 | UI / components | `docs/guides/CODING-STANDARDS.md` | `src/stores/` |
 | Splits | — | `src/app/api/orders/[id]/split/` |

@@ -5,6 +5,51 @@
 
 ---
 
+## 2026-03-20 — Installer Restructure, Pinned Deploys, Full Sync Hardening
+
+### Summary
+Major infrastructure sprint: installer restructured from 3116-line monolith to 10 composable modules, sync agent upgraded with pinned release deploys, 28 sync failure points fixed, and comprehensive security/ops hardening across HA, secrets, readiness, and deploy pipelines.
+
+### Features Delivered
+
+**Installer Restructure:**
+- Installer split from monolithic `installer.run` (3116 lines) into thin orchestrator + 10 independent stage modules under `public/installer-modules/`
+- Modules: `01-preflight`, `02-register`, `03-secrets`, `04-database`, `05-deploy-app`, `06-schema`, `07-services`, `08-ha`, `09-remote-access`, `10-finalize`
+- Each module has a single `run_*()` entry function, returns 0/non-zero
+- Orchestrator halts on failure (hard stop between stages, no silent continue)
+- `--resume-from=STAGE` support for resumable installs after failure
+- Single installer source — MC proxies from POS deployment, no separate copy
+
+**Sync Agent Pinned Release Deploys:**
+- Sync agent now tries pinned git tags (e.g., `v1.0.60`) before falling back to `origin/main`
+- `version-contract.json` verified after checkout to confirm code matches expected release
+- Deploy path (pinned vs fallback) reported in ACK to MC
+- Provisioning pipeline fixed with version-contract.json fallback
+
+**Security & Ops Hardening (20 issues fixed):**
+- HA failover hardening
+- Secrets management improvements
+- Readiness gate tightening
+- Deploy pipeline safety
+- Shadow MC admin mode (invisible cloud users with full permissions)
+- Cellular auth hardening
+
+**Full Sync Hardening (28 failure points fixed):**
+- Terminal bidirectional sync with `skipFields` to preserve NUC-local state
+- Auto-reconnect endpoint for stale connections
+- Comprehensive upstream/downstream sync failure point audit and fix
+
+### Docs Updated
+- `CLAUDE.md` — Dev commands (installer modules), hard rules (modular installer, pinned deploys), project structure, doc routing table
+- `docs/architecture/AUTHORITY-MODEL.md` — Section 8 rewritten: pinned releases, modular installer table, version-contract verification
+- `docs/architecture/LOCAL-CORE-CELLULAR-EDGE-HA.md` — Installer Changes and Installer Authority Model sections updated for modular structure
+- `docs/guides/ARCHITECTURE-RULES.md` — 4 new deploy pipeline rules (modular installer, pinned tags, hard stops, version-contract)
+- `docs/guides/CODING-STANDARDS.md` — New "Installer Development Rules" section, project structure updated
+- `docs/features/mission-control.md` — Release & Deploy Pipeline updated for pinned releases and version-contract
+- `docs/logs/LIVING-LOG.md` — This entry
+
+---
+
 ## 2026-03-18 — KDS Overhaul (10 Phases) + Android KDS App
 
 ### Summary

@@ -285,15 +285,54 @@ The deploy pipeline is **pointer-only** — the sync agent reads everything from
 MC creates release (targetVersion + release channel)
   → FleetCommand (DEPLOY_UPDATE) sent via SSE stream
     → Sync agent on NUC receives command
-      → git pull
+      → git fetch --tags
+      → Try pinned git tag (e.g., v1.0.60) first; fall back to origin/main if no tag
+      → Verify version-contract.json matches expected version after checkout
       → npm install
       → npx prisma generate
       → node scripts/nuc-pre-migrate.js   (numbered migrations)
       → npx prisma db push  # --accept-data-loss is NEVER used
       → npm run build
       → systemctl restart gwi-pos
-      → POST /fleet/commands/{id}/ack (SUCCESS or FAILED + error details)
+      → POST /fleet/commands/{id}/ack (SUCCESS or FAILED + deploy path + error details)
 ```
+
+### Pinned Release Deploys
+
+The sync agent prefers **pinned git tags** over `origin/main` for deterministic deploys:
+
+1. MC sets `targetVersion` (e.g., `v1.0.60`) on the FleetCommand payload
+2. Sync agent runs `git fetch --tags` then attempts `git checkout v1.0.60`
+3. If the tag exists → pinned deploy (deterministic, reproducible)
+4. If the tag does not exist → falls back to `git pull origin main` (current behavior)
+5. After checkout, `version-contract.json` is verified to confirm the checked-out code matches the expected version
+6. The ACK payload reports the deploy path (`pinned` or `fallback`) back to MC for fleet visibility
+
+**Note:** For full pinned release support, MC must create git tags when publishing a release. Until MC creates tags, deploys fall back to `origin/main`.
+
+### Modular Installer
+
+The installer (`public/installer.run`) is a **thin orchestrator** that calls 10 independent modules under `public/installer-modules/`:
+
+| Module | Purpose |
+|--------|---------|
+| `01-preflight.sh` | System prerequisites, disk space, network checks |
+| `02-register.sh` | MC registration, venue identity |
+| `03-secrets.sh` | Credential delivery, key exchange |
+| `04-database.sh` | PostgreSQL setup, local DB creation |
+| `05-deploy-app.sh` | Git clone, npm install, build |
+| `06-schema.sh` | Prisma generate, migrations, schema push |
+| `07-services.sh` | systemd services, sync agent, workers |
+| `08-ha.sh` | HA setup (keepalived, PG replication, backup role) |
+| `09-remote-access.sh` | Tailscale, SSH hardening |
+| `10-finalize.sh` | Readiness check, MC heartbeat, completion report |
+
+**Key properties:**
+- Each module has a single `run_*()` entry function
+- Each returns 0 (success) or non-zero (failure) — orchestrator halts on failure (hard stop)
+- `--resume-from=STAGE` skips completed stages for resumable installs (e.g., `--resume-from=04-database`)
+- Modules are idempotent — safe to re-run on resume
+- MC proxies the installer from POS deployment (single source of truth, no copy needed)
 
 ### Key Invariants
 
@@ -303,7 +342,9 @@ MC creates release (targetVersion + release channel)
 4. **Pre-start script checks schema** — `prisma db push` ensures the local PG schema matches `prisma/schema.prisma`. This catches drift without destructive reshaping.
 5. **All infrastructure tables must be in Prisma schema** — `SyncWatermark`, `SocketEventLog`, `_gwi_sync_state`, `_local_schema_state`, `_local_install_state` are all defined in `prisma/schema.prisma`. If an operational table exists only as raw SQL, `prisma db push` will attempt to drop it.
 6. **Readiness gate prevents traffic** — the NUC does not accept POS traffic until the deploy completes and the Order-Ready Gate (Section 5) is satisfied.
-7. **ACK status reporting** — the sync agent reports deploy outcome (SUCCESS/FAILED) back to MC via the command ACK endpoint. MC uses this to track fleet-wide rollout progress and abort unhealthy rollouts.
+7. **ACK status reporting** — the sync agent reports deploy outcome (SUCCESS/FAILED), deploy path (pinned/fallback), and version info back to MC via the command ACK endpoint. MC uses this to track fleet-wide rollout progress and abort unhealthy rollouts.
+8. **Sync agent prefers pinned git tags** — deterministic deploys via versioned tags; `origin/main` is a fallback only.
+9. **version-contract.json verified after checkout** — confirms the code matches the expected release before proceeding with build.
 
 ### What the Pipeline Never Does
 
@@ -311,6 +352,7 @@ MC creates release (targetVersion + release channel)
 - Never uses `--accept-data-loss`
 - Never writes `_venue_schema_state` (MC-only)
 - Never skips `prisma generate` (generated client must match schema)
+- Never deploys without verifying `version-contract.json` (when present)
 
 ---
 

@@ -187,13 +187,19 @@ MC orchestrates the full deploy lifecycle for the NUC fleet:
 1. Admin creates a release in MC (assigns `targetVersion` to a release channel: dev → canary → production)
 2. MC creates `FleetCommand` (type: `DEPLOY_UPDATE`) for each target NUC
 3. Command delivered via SSE stream (`GET /fleet/commands/stream`)
-4. Sync agent on NUC receives command → executes: `git pull → npm install → prisma generate → nuc-pre-migrate.js → prisma db push → npm run build → restart`
-5. Sync agent sends ACK (`POST /fleet/commands/{id}/ack`) with SUCCESS or FAILED + error details
+4. Sync agent on NUC receives command → tries pinned git tag (e.g., `v1.0.60`) first, falls back to `origin/main` → verifies `version-contract.json` → `npm install → prisma generate → nuc-pre-migrate.js → prisma db push → npm run build → restart`
+5. Sync agent sends ACK (`POST /fleet/commands/{id}/ack`) with SUCCESS or FAILED + deploy path (pinned/fallback) + error details
 6. MC tracks fleet-wide rollout progress; can abort unhealthy rollouts
+
+**Pinned Release Support:**
+- Sync agent prefers pinned git tags (e.g., `v1.0.60`) over `origin/main` for deterministic, reproducible deploys
+- `version-contract.json` is verified after checkout to confirm the code matches the expected release
+- Deploy path (pinned vs fallback) is reported in the ACK to MC for fleet visibility
+- **Note:** For full pinned release support, MC needs to create git tags when publishing a release. Currently the sync agent will fall back to `origin/main` if no tag exists for the target version.
 
 **ACK Status Reporting:**
 - The sync agent must `await` all async deploy steps before sending the ACK. A missing `await` (discovered and fixed 2026-03-20) caused false SUCCESS reports — MC believed deploys succeeded while the build was still running.
-- ACK payload includes: status (SUCCESS/FAILED), duration, error message (if failed), new version hash
+- ACK payload includes: status (SUCCESS/FAILED), deploy path (pinned/fallback), duration, error message (if failed), new version hash
 - MC uses ACK data for the fleet rollout dashboard (per-venue deploy status, health-gated progression)
 
 **Fleet Command Delivery:**
