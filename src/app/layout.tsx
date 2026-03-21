@@ -56,7 +56,7 @@ export default function RootLayout({
         <StockChangeListener />
         <IdleTimerProvider />
         <ServiceWorkerRegistration />
-        <OfflineDisconnectBanner />
+        {/* OfflineDisconnectBanner removed — was blocking UI and showing false positives on cloud access */}
         <FailoverBanner />
         <OutageBanner />
         <CellularModeBanner />
