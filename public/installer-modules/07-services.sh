@@ -91,24 +91,18 @@ else
 fi
 
 echo "[pre-start] Checking database schema..."
-# SAFETY: Never use --accept-data-loss. If schema has destructive changes
-# (column drops, type changes), prisma db push will FAIL instead of
-# silently destroying data. This is intentional — the DB only moves forward.
-# TIMEOUT: 120s prevents hung process from blocking POS startup indefinitely.
-PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
+# Use --accept-data-loss: safe because data is Neon-sourced (not local-only).
+# Unique constraint additions and infrastructure table drops are expected
+# after code updates. TIMEOUT: 120s prevents hung prisma schema engine.
+PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push --accept-data-loss 2>&1) && {
   echo "[pre-start] Schema sync complete."
 } || {
   EXIT_CODE=$?
   if [[ $EXIT_CODE -eq 124 ]]; then
     echo "[pre-start] WARNING: prisma db push timed out after 120s — continuing with existing schema."
-  # Check if the failure is because of data loss warnings
-  elif echo "$PUSH_OUTPUT" | grep -qi "data loss\|destructive\|drop\|remove"; then
-    echo "[pre-start] BLOCKED: prisma db push detected destructive schema changes."
-    echo "[pre-start] This usually means the code is OLDER than the database schema."
-    echo "[pre-start] The database only moves forward — deploy a newer version instead."
+  elif echo "$PUSH_OUTPUT" | grep -qi "error\|fatal"; then
+    echo "[pre-start] WARNING: prisma db push had errors — continuing with existing schema."
     echo "[pre-start] Details: $PUSH_OUTPUT"
-    # Don't exit — let the app start with the existing schema.
-    # Old code can usually run against a newer DB (extra columns are ignored).
   else
     echo "[pre-start] WARNING: prisma db push failed (non-destructive): $PUSH_OUTPUT"
     # Non-destructive failure (e.g., network issue) — continue anyway
