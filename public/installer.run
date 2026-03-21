@@ -115,11 +115,33 @@ FREE_MB=""
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODULES_DIR="$SCRIPT_DIR/installer-modules"
+POS_BASE_URL="${POS_BASE_URL:-https://app.thepasspos.com}"
 
+# If modules aren't alongside installer.run, download them
 if [[ ! -d "$MODULES_DIR" ]]; then
-  err "Module directory not found: $MODULES_DIR"
-  err "Ensure installer-modules/ is alongside installer.run"
-  exit 1
+  log "Modules not found locally — downloading from $POS_BASE_URL..."
+  mkdir -p "$MODULES_DIR"
+  MODULE_LIST=(
+    01-preflight.sh
+    02-register.sh
+    03-secrets.sh
+    04-database.sh
+    05-deploy-app.sh
+    06-schema.sh
+    07-services.sh
+    08-ha.sh
+    09-remote-access.sh
+    10-finalize.sh
+    11-system-hardening.sh
+  )
+  for mod_name in "${MODULE_LIST[@]}"; do
+    if ! curl -fsSL "$POS_BASE_URL/installer-modules/$mod_name" -o "$MODULES_DIR/$mod_name"; then
+      err "Failed to download module: $mod_name"
+      err "Check network connectivity and that $POS_BASE_URL is reachable"
+      exit 1
+    fi
+  done
+  log "Downloaded ${#MODULE_LIST[@]} modules"
 fi
 
 for mod in "$MODULES_DIR"/*.sh; do
