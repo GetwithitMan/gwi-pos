@@ -352,6 +352,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
           onItemDiscount={handleItemDiscount}
           onItemDiscountRemove={handleItemDiscountRemove}
           onItemResend={panelCallbacks.onItemResend}
+          onItemRepeat={panelCallbacks.onItemRepeat}
           onItemSplit={editingChildSplit || orderSplitChips.some(c => c.id === orderId) ? undefined : panelCallbacks.onItemSplit}
           onQuickSplitEvenly={savedOrderId && !editingChildSplit && !orderSplitChips.some(c => c.id === orderId) ? handleQuickSplitEvenly : undefined}
           onItemSeatChange={panelCallbacks.onItemSeatChange}

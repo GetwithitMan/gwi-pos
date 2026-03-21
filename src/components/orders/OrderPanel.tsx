@@ -68,6 +68,7 @@ export interface OrderPanelProps {
   onItemDiscount?: (itemId: string) => void
   onItemDiscountRemove?: (itemId: string, discountId: string) => void
   onItemResend?: (item: OrderPanelItemData) => void
+  onItemRepeat?: (item: OrderPanelItemData) => void
   onItemSplit?: (itemId: string) => void
   onSessionEnded?: () => void
   onTimerStarted?: () => void
@@ -165,6 +166,8 @@ export interface OrderPanelProps {
   onMergeOrders?: () => void
   // Upsell prompt integration
   onAddUpsellItem?: (menuItemId: string) => void
+  // Last-sent-batch highlight
+  lastSentItemIds?: Set<string>
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -208,6 +211,7 @@ export const OrderPanel = memo(function OrderPanel({
   onItemDiscount,
   onItemDiscountRemove,
   onItemResend,
+  onItemRepeat,
   onItemSplit,
   onSessionEnded,
   onTimerStarted,
@@ -295,6 +299,8 @@ export const OrderPanel = memo(function OrderPanel({
   onMergeOrders,
   // Upsell prompt integration
   onAddUpsellItem,
+  // Last-sent-batch highlight
+  lastSentItemIds,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -628,19 +634,21 @@ export const OrderPanel = memo(function OrderPanel({
       onItemDiscount={onItemDiscount}
       onItemDiscountRemove={onItemDiscountRemove}
       onResend={onItemResend}
+      onRepeat={onItemRepeat}
       isExpanded={expandedItemId === item.id}
       onToggleExpand={onItemToggleExpand}
       maxSeats={maxSeats}
       maxCourses={maxCourses}
       onSeatChange={onItemSeatChange}
       isNewest={newestItemId === item.id}
+      isLastSent={lastSentItemIds?.has(item.id)}
       isSelected={selectedItemIds ? selectedItemIds.has(item.id) : selectedItemId === item.id}
       onSelect={onItemSelect}
       onFireItem={onFireItem}
       onCancelItemDelay={onCancelItemDelay}
       cardPriceMultiplier={cardPriceMultiplier}
     />
-  ), [locationId, showItemControls, showEntertainmentTimers, onItemClick, onItemRemove, onQuantityChange, onSessionEnded, onTimerStarted, onTimeExtended, onItemHoldToggle, onItemNoteEdit, onItemCourseChange, onItemEditModifiers, onItemCompVoid, onItemDiscount, onItemDiscountRemove, onItemResend, expandedItemId, onItemToggleExpand, maxSeats, maxCourses, onItemSeatChange, newestItemId, selectedItemIds, selectedItemId, onItemSelect, onFireItem, onCancelItemDelay, cardPriceMultiplier])
+  ), [locationId, showItemControls, showEntertainmentTimers, onItemClick, onItemRemove, onQuantityChange, onSessionEnded, onTimerStarted, onTimeExtended, onItemHoldToggle, onItemNoteEdit, onItemCourseChange, onItemEditModifiers, onItemCompVoid, onItemDiscount, onItemDiscountRemove, onItemResend, onItemRepeat, expandedItemId, onItemToggleExpand, maxSeats, maxCourses, onItemSeatChange, newestItemId, lastSentItemIds, selectedItemIds, selectedItemId, onItemSelect, onFireItem, onCancelItemDelay, cardPriceMultiplier])
 
   // Build a match key for condensing like items
   const getCondenseKey = (item: OrderPanelItemData): string => {

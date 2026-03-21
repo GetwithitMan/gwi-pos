@@ -123,6 +123,20 @@ export function useOrderPanelCallbacks({
     onOpenSplit?.(itemId)
   }, [onOpenSplit])
 
+  const onItemRepeat = useCallback((item: OrderPanelItemData) => {
+    engine.addItemDirectly({
+      menuItemId: item.menuItemId || '',
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      modifiers: item.modifiers?.map(m => ({
+        id: m.id || '',
+        name: m.name,
+        price: m.price || 0,
+      })) || [],
+    })
+  }, [engine])
+
   const onItemSeatChange = useCallback((itemId: string, seat: number | null) => {
     // Persist to DB + update local state (not just local)
     activeOrder.handleSeatChange(itemId, seat)
@@ -143,6 +157,7 @@ export function useOrderPanelCallbacks({
     onItemEditModifiers,
     onItemCompVoid,
     onItemResend,
+    onItemRepeat,
     onItemSplit,
     onItemSeatChange,
     onItemToggleExpand,

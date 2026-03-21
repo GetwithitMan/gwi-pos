@@ -78,6 +78,7 @@ interface OrderPanelItemProps {
   onEditModifiers?: (itemId: string) => void
   onCompVoid?: (item: OrderPanelItemData) => void
   onResend?: (item: OrderPanelItemData) => void
+  onRepeat?: (item: OrderPanelItemData) => void
   onSplit?: (itemId: string) => void
   // Props for the More expandable section
   isExpanded?: boolean
@@ -99,6 +100,8 @@ interface OrderPanelItemProps {
   // Item-level discounts (P2-D01)
   onItemDiscount?: (itemId: string) => void
   onItemDiscountRemove?: (itemId: string, discountId: string) => void
+  // Last-sent-batch highlight
+  isLastSent?: boolean
 }
 
 export const OrderPanelItem = memo(function OrderPanelItem({
@@ -118,6 +121,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
   onEditModifiers,
   onCompVoid,
   onResend,
+  onRepeat,
   onSplit,
   isExpanded,
   onToggleExpand,
@@ -132,6 +136,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
   cardPriceMultiplier,
   onItemDiscount,
   onItemDiscountRemove,
+  isLastSent,
 }: OrderPanelItemProps) {
   const isVoided = item.status === 'voided'
   const isComped = item.status === 'comped'
@@ -243,7 +248,9 @@ export const OrderPanelItem = memo(function OrderPanelItem({
       borderTop: isSelected ? selectedBorder : defaultBorder,
       borderRight: isSelected ? selectedBorder : defaultBorder,
       borderBottom: isSelected ? selectedBorder : defaultBorder,
-      borderLeft: hasActiveDelay
+      borderLeft: isLastSent
+        ? '3px solid rgba(34, 197, 94, 0.6)'
+        : hasActiveDelay
         ? '3px solid rgba(251, 191, 36, 0.7)'
         : hasDelayPreset
         ? '3px solid rgba(59, 130, 246, 0.6)'
@@ -273,7 +280,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
       // Compensate for 2px border so layout doesn't shift
       margin: isSelected ? '-1px' : undefined,
     }
-  }, [isVoided, isComped, isCompedOrVoided, isNewest, isSelected, hasActiveDelay, hasDelayPreset, isReady, isSent, onClick, onSelect])
+  }, [isVoided, isComped, isCompedOrVoided, isNewest, isSelected, hasActiveDelay, hasDelayPreset, isReady, isSent, onClick, onSelect, isLastSent])
 
   return (
     <div
@@ -1061,6 +1068,21 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                   Resend
                 </button>
               )}
+              {onRepeat && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onRepeat(item) }}
+                  style={{
+                    padding: '5px 10px',
+                    background: 'rgba(34, 197, 94, 0.15)',
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    borderRadius: '6px', color: '#4ade80',
+                    fontSize: '11px', fontWeight: 500, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                  }}
+                >
+                  ↻ Repeat
+                </button>
+              )}
               {onCompVoid && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onCompVoid(item) }}
@@ -1075,6 +1097,24 @@ export const OrderPanelItem = memo(function OrderPanelItem({
               )}
             </div>
           )}
+        </div>
+      )}
+      {/* Repeat button for PENDING items when selected */}
+      {showControls && isSelected && !isSent && onRepeat && (
+        <div style={{ marginTop: '6px' }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onRepeat(item) }}
+            style={{
+              padding: '5px 10px',
+              background: 'rgba(34, 197, 94, 0.15)',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+              borderRadius: '6px', color: '#4ade80',
+              fontSize: '11px', fontWeight: 500, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '4px',
+            }}
+          >
+            ↻ Repeat
+          </button>
         </div>
       )}
     </div>
