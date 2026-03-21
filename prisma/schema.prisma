@@ -8430,21 +8430,24 @@ model OrderItemSnapshot {
 // ============================================
 
 model QuickBarPreference {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   locationId String
-  employeeId String   @unique
+  employeeId String    @unique
   itemIds    String // JSON array of menuItem IDs
-  updatedAt  DateTime @updatedAt
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  deletedAt  DateTime?
+  updatedAt  DateTime  @updatedAt
+  employee   Employee  @relation(fields: [employeeId], references: [id])
 
   @@index([locationId])
+  @@index([locationId, deletedAt])
 }
 
 model QuickBarDefault {
-  id         String   @id @default(cuid())
-  locationId String   @unique
+  id         String    @id @default(cuid())
+  locationId String    @unique
   itemIds    String // JSON array of menuItem IDs
-  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+  updatedAt  DateTime  @updatedAt
 }
 
 // ============================================
@@ -8646,6 +8649,7 @@ model MarginEdgeProductMapping {
   marginEdgeUnit        String?
   lastSyncAt            DateTime?
   isActive              Boolean   @default(true)
+  deletedAt             DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -8654,6 +8658,7 @@ model MarginEdgeProductMapping {
 
   @@unique([locationId, marginEdgeProductId])
   @@index([locationId, inventoryItemId])
+  @@index([locationId, deletedAt])
 }
 
 // ============================================
@@ -8716,6 +8721,7 @@ model BergPluMapping {
   modifierRule       Json?
   trailerRule        Json?
   isActive           Boolean  @default(true)
+  deletedAt          DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -8726,6 +8732,7 @@ model BergPluMapping {
   @@unique([mappingScopeKey, pluNumber])
   @@index([locationId])
   @@index([locationId, isActive])
+  @@index([locationId, deletedAt])
 }
 
 // ============================================
@@ -8754,6 +8761,7 @@ model BergDevice {
   bridgeSecretEncrypted           String?
   bridgeSecretKeyVersion          Int?                @default(1)
   autoRingOnlyWhenSingleOpenOrder Boolean             @default(false)
+  deletedAt                       DateTime?
   createdAt                       DateTime            @default(now())
   updatedAt                       DateTime            @updatedAt
 
@@ -8763,6 +8771,7 @@ model BergDevice {
 
   @@index([locationId])
   @@index([locationId, isActive])
+  @@index([locationId, deletedAt])
 }
 
 model BergDispenseEvent {
@@ -9022,20 +9031,22 @@ model ReservationDeposit {
 // ============================================
 
 model EmployeePermissionOverride {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   locationId    String
-  location      Location @relation(fields: [locationId], references: [id])
+  location      Location  @relation(fields: [locationId], references: [id])
   employeeId    String
-  employee      Employee @relation(fields: [employeeId], references: [id])
-  permissionKey String   // e.g., "manager.void_items"
-  allowed       Boolean  // true = grant extra, false = deny from role
-  reason        String?  // Why this override was set
-  setBy         String?  // Employee ID of who set this override
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  permissionKey String    // e.g., "manager.void_items"
+  allowed       Boolean   // true = grant extra, false = deny from role
+  reason        String?   // Why this override was set
+  setBy         String?   // Employee ID of who set this override
+  deletedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([employeeId, permissionKey])
   @@index([locationId])
+  @@index([locationId, deletedAt])
   @@index([employeeId])
 }
 

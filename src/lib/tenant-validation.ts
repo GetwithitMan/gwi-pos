@@ -96,7 +96,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Event', 'EventPricingTier', 'EventTableConfig', 'Ticket',
 
   // Reservations
-  'Reservation', 'ReservationBlock', 'ReservationDeposit',
+  'Reservation', 'ReservationBlock', 'ReservationDeposit', 'ReservationTable',
 
   // Customers
   'Customer', 'CardProfile', 'MobileSession',
@@ -134,14 +134,13 @@ export const TENANT_SCOPED_MODELS = new Set([
 export const NO_SOFT_DELETE_MODELS = new Set([
   'Organization', 'Location', 'SyncAuditEntry', 'HardwareCommand',
   // Tables without deletedAt column — must skip soft-delete filter or queries crash
-  'BergDevice', 'BergPluMapping', 'BergDispenseEvent',
-  'QuickBarPreference', 'QuickBarDefault',
+  'BergDispenseEvent',
   'DeductionRun', 'PendingDeduction', 'IngredientCostHistory',
-  'InventoryCountEntry', 'MarginEdgeProductMapping',
+  'InventoryCountEntry',
   'PmsChargeAttempt', 'SevenShiftsDailySalesPush', 'WasteLog',
   'ReasonAccess',
   'OutageQueueEntry', 'FulfillmentEvent', 'BridgeCheckpoint',
-  // locationId but no deletedAt
+  // locationId but no deletedAt (append-only logs)
   'ReservationEvent', 'VenueLog',
 ])
 
