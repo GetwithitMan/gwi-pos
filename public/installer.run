@@ -280,7 +280,7 @@ if [[ -n "$RESUME_FROM" ]]; then
 fi
 
 # Define stages in order
-STAGES=(preflight register secrets database deploy_app schema services ha remote_access finalize system_hardening)
+STAGES=(preflight register secrets database deploy_app schema services ha remote_access finalize system_hardening dashboard)
 
 CHECKPOINT_FILE="$APP_BASE/.install-checkpoint"
 SKIPPING=false
