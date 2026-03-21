@@ -237,32 +237,56 @@ async function handleForceUpdate(payload) {
     lockFiles.forEach(function(f) { try { fs.unlinkSync(f) } catch (e) {} })
   } catch (e) {}
 
-  step('git fetch', 'git fetch origin', true, 60)
+  step('git fetch', 'git fetch origin --tags', true, 60)
 
-  // Version-targeted: if targetVersion has a git tag, use it; otherwise origin/main
-  var gitRef = 'origin/main'
-  if (targetVersion) {
-    var tagRef = 'v' + targetVersion
+  // Version-targeted: try pinned tag first, fall back to origin/main
+  var tagRef = targetVersion ? 'v' + targetVersion : null
+  var tagExists = false
+  if (tagRef) {
     try {
-      execSync('git rev-parse ' + tagRef, { cwd: APP_DIR, timeout: 5000, stdio: 'pipe' })
-      gitRef = tagRef
-      log('  Using tag: ' + tagRef)
+      execSync('git rev-parse --verify refs/tags/' + tagRef, { cwd: APP_DIR, timeout: 5000, stdio: 'pipe' })
+      tagExists = true
+    } catch (e) { /* tag doesn't exist */ }
+  }
+
+  var gitCheckoutError = ''
+  if (tagExists) {
+    // Pinned release: deterministic checkout of the exact tagged commit
+    log('  Deploying pinned release: ' + tagRef)
+    try {
+      execSync('git checkout ' + tagRef, { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
+      steps.push('pinned-release: ' + tagRef)
     } catch (e) {
-      log('  Tag ' + tagRef + ' not found, using origin/main')
+      gitCheckoutError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
+      steps.push('git checkout FAIL: ' + gitCheckoutError.slice(0, 100))
+      log('  FAILED: ' + gitCheckoutError)
+      return { ok: false, error: 'git checkout failed: ' + gitCheckoutError, steps: steps }
+    }
+  } else {
+    // Fallback: use origin/main (backward compatible)
+    if (tagRef) {
+      log('  Tag ' + tagRef + ' not found, falling back to origin/main')
+    }
+    log('  git reset to origin/main...')
+    try {
+      execSync('git reset --hard origin/main', { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
+      steps.push('fallback: origin/main')
+    } catch (e) {
+      gitCheckoutError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
+      steps.push('git reset FAIL: ' + gitCheckoutError.slice(0, 100))
+      log('  FAILED: ' + gitCheckoutError)
+      return { ok: false, error: 'git pull failed: ' + gitCheckoutError, steps: steps }
     }
   }
 
-  // Run git reset and capture the actual error output for diagnostics
-  log('  git reset to ' + gitRef + '...')
-  var gitResetError = ''
+  // Verify version-contract.json after checkout (schema + seed versions for diagnostics)
   try {
-    execSync('git reset --hard ' + gitRef, { cwd: APP_DIR, timeout: 30000, stdio: 'pipe', encoding: 'utf-8' })
-    steps.push('git reset OK')
+    var contract = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'public', 'version-contract.json'), 'utf-8'))
+    log('  Version contract: schema=' + contract.schemaVersion + ' seed=' + contract.seedVersion +
+        ' migrations=' + contract.migrationCount + ' generated=' + contract.generatedAt)
+    steps.push('contract: schema=' + contract.schemaVersion)
   } catch (e) {
-    gitResetError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
-    steps.push('git reset FAIL: ' + gitResetError.slice(0, 100))
-    log('  FAILED: ' + gitResetError)
-    return { ok: false, error: 'git pull failed: ' + gitResetError, steps: steps }
+    log('  Warning: could not read version-contract.json')
   }
 
   // Re-copy env files in case they were updated
