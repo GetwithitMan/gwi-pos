@@ -725,7 +725,7 @@ export function GroupedIngredientHierarchy({
         {/* Categorized ingredients - sorted alphabetically */}
         {sortedCategories.map(category => {
           const categoryIngredients = grouped.get(category.id) || []
-          if (categoryIngredients.length === 0 && !category.needsVerification) return null
+          // Always show active categories — they need to be visible so users can add ingredients to them
 
           return (
             <CategoryHierarchySection
