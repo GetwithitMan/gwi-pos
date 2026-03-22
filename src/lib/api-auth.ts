@@ -294,23 +294,25 @@ export async function requirePermission(
     }
   }
 
-  if (!employee) {
-    // Cloud super-admin bypass — MC super_admin/sub_admin users are god-mode
-    // even if no local Employee record exists (e.g., fresh venue with no provisioned employee)
-    if (cloudRole && ['super_admin', 'sub_admin'].includes(cloudRole)) {
-      log.info(`[api-auth] Cloud super-admin bypass: role=${cloudRole}, permission=${permission}, locationId=${locationId}`)
-      return {
-        authorized: true,
-        employee: {
-          id: employeeId,
-          firstName: 'Cloud',
-          lastName: 'Admin',
-          displayName: 'Cloud Admin',
-          locationId,
-          permissions: ['all'],
-        },
-      }
+  // Cloud super-admin bypass — MC super_admin/sub_admin users are god-mode
+  // regardless of whether a local Employee record exists or its role permissions.
+  // Owners verified through MC/Clerk always get full venue access.
+  if (cloudRole && ['super_admin', 'sub_admin'].includes(cloudRole)) {
+    log.info(`[api-auth] Cloud super-admin bypass: role=${cloudRole}, permission=${permission}, locationId=${locationId}, hasEmployee=${!!employee}`)
+    return {
+      authorized: true,
+      employee: {
+        id: employee?.id || employeeId,
+        firstName: employee?.firstName || 'Cloud',
+        lastName: employee?.lastName || 'Admin',
+        displayName: employee?.displayName || 'Cloud Admin',
+        locationId,
+        permissions: ['all'],
+      },
     }
+  }
+
+  if (!employee) {
     return {
       authorized: false,
       error: 'Employee not found',

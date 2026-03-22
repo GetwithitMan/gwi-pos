@@ -146,16 +146,59 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               include: { role: true },
             })
 
+            // If owner exists but their role lacks 'all' permissions, upgrade them
+            if (ownerEmployee) {
+              const existingPerms = (ownerEmployee.role?.permissions as string[]) || []
+              const hasFullAccess = existingPerms.includes('all') || existingPerms.includes('admin') || existingPerms.includes('super_admin')
+              if (!hasFullAccess) {
+                // Find or create an Owner role with 'all' and reassign
+                const allRoles = await db.role.findMany({
+                  where: { locationId: location.id, deletedAt: null },
+                })
+                let adminRole = allRoles.find(r => {
+                  const perms = (r.permissions as string[]) || []
+                  return perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')
+                })
+                if (!adminRole) {
+                  adminRole = await db.role.create({
+                    data: { locationId: location.id, name: 'Owner', permissions: ['all'], isTipped: false },
+                  })
+                }
+                await db.employee.update({
+                  where: { id: ownerEmployee.id },
+                  data: { roleId: adminRole.id },
+                })
+                ownerEmployee = await db.employee.findFirst({
+                  where: { id: ownerEmployee.id, deletedAt: null },
+                  include: { role: true },
+                })
+                console.log(`[venue-login] Upgraded MC owner ${normalizedEmail} to role ${adminRole.name} (${adminRole.id})`)
+              }
+            }
+
             if (!ownerEmployee) {
-              // Find admin role for this location
+              // Find or create an admin role with full permissions for this location.
+              // Seeded roles may not have 'all'/'admin'/'super_admin' — they have granular keys.
               const allRoles = await db.role.findMany({
                 where: { locationId: location.id, deletedAt: null },
                 orderBy: { createdAt: 'asc' },
               })
-              const adminRole = allRoles.find(r => {
+              let adminRole = allRoles.find(r => {
                 const perms = (r.permissions as string[]) || []
                 return perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')
-              }) || allRoles[0]
+              })
+              if (!adminRole) {
+                // No role with 'all' — create a dedicated Owner role
+                adminRole = await db.role.create({
+                  data: {
+                    locationId: location.id,
+                    name: 'Owner',
+                    permissions: ['all'],
+                    isTipped: false,
+                  },
+                })
+                console.log(`[venue-login] Created Owner role ${adminRole.id} for location ${location.id}`)
+              }
 
               if (adminRole) {
                 const rawPin = String(randomInt(100000, 1000000))
@@ -194,7 +237,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 name: ownerName,
                 slug: venueSlug,
                 orgId: 'venue-local',
-                role: ownerEmployee.role?.name || 'Owner Manager',
+                role: 'super_admin', // MC-verified owners get full god-mode via cloudRole bypass
                 posLocationId: location.id,
               },
               secret
