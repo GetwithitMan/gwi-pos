@@ -13,6 +13,16 @@ if [[ ! -w "$PKG" ]]; then
   exit 0
 fi
 
+# Read current version
+CURRENT=$(python3 -c "import json; print(json.load(open('$PKG')).get('version','0.0.0'))" 2>/dev/null || echo "0.0.0")
+
+# If version was set by MC deploy pipeline (doesn't match auto-bump 1.1.X pattern),
+# preserve it — the deploy pipeline is the authority for release versions.
+if [[ "$CURRENT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ ! "$CURRENT" =~ ^1\.1\. ]] && [[ "$CURRENT" != "0.0.0" ]]; then
+  echo "[bump-version] Version $CURRENT was set by deploy pipeline — preserving"
+  exit 0
+fi
+
 # Count total commits on current branch
 COMMIT_COUNT=$(cd "$REPO_DIR" && git rev-list --count HEAD 2>/dev/null || echo "0")
 
@@ -20,9 +30,6 @@ COMMIT_COUNT=$(cd "$REPO_DIR" && git rev-list --count HEAD 2>/dev/null || echo "
 MAJOR=1
 MINOR=1
 NEW_VERSION="${MAJOR}.${MINOR}.${COMMIT_COUNT}"
-
-# Read current version
-CURRENT=$(python3 -c "import json; print(json.load(open('$PKG')).get('version','0.0.0'))" 2>/dev/null || echo "0.0.0")
 
 if [ "$CURRENT" != "$NEW_VERSION" ]; then
   python3 -c "
