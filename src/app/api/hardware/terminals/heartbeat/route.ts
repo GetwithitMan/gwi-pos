@@ -52,6 +52,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             isPaired: false,
             isOnline: false,
             deviceToken: null,
+            lastMutatedBy: 'local',
           },
         })
 

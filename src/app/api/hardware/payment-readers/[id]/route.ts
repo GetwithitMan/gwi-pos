@@ -162,13 +162,13 @@ export const PUT = withVenue(async function PUT(
       // Remove this reader from all terminals that currently have it
       await db.terminal.updateMany({
         where: { paymentReaderId: id, locationId: existing.locationId },
-        data: { paymentReaderId: null },
+        data: { paymentReaderId: null, lastMutatedBy: 'local' },
       })
       // Assign to the new list
       if (assignTerminalIds.length > 0) {
         await db.terminal.updateMany({
           where: { id: { in: assignTerminalIds }, locationId: existing.locationId },
-          data: { paymentReaderId: id, paymentProvider: 'DATACAP_DIRECT' },
+          data: { paymentReaderId: id, paymentProvider: 'DATACAP_DIRECT', lastMutatedBy: 'local' },
         })
       }
     }

@@ -159,7 +159,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (Array.isArray(assignTerminalIds) && assignTerminalIds.length > 0) {
       await db.terminal.updateMany({
         where: { id: { in: assignTerminalIds }, locationId },
-        data: { paymentReaderId: reader.id, paymentProvider: 'DATACAP_DIRECT' },
+        data: { paymentReaderId: reader.id, paymentProvider: 'DATACAP_DIRECT', lastMutatedBy: 'local' },
       })
     }
 

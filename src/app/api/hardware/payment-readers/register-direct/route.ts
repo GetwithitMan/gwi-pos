@@ -97,7 +97,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!conflict) {
       await db.terminal.update({
         where: { id: terminalId },
-        data: { paymentReaderId: reader.id, paymentProvider: 'DATACAP_DIRECT' },
+        data: { paymentReaderId: reader.id, paymentProvider: 'DATACAP_DIRECT', lastMutatedBy: 'local' },
       })
     }
 
