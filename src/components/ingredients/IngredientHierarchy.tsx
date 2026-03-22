@@ -152,12 +152,13 @@ function HierarchyNode({
   const [showLinkedItems, setShowLinkedItems] = useState(false)
   const [linkedItems, setLinkedItems] = useState<LinkedMenuItem[]>([])
   const [linkedModifiers, setLinkedModifiers] = useState<LinkedModifier[]>([])
+  const [linkedPizzaComponents, setLinkedPizzaComponents] = useState<{ id: string; name: string; type: string }[]>([])
   // For inventory items: show recipe components
   const [showRecipe, setShowRecipe] = useState(false)
   const [recipeComponents, setRecipeComponents] = useState<RecipeComponent[]>([])
 
   // Use caching hooks for data fetching (5 min TTL)
-  const linkedItemsCache = useCachedFetch<{ menuItemIngredients: LinkedMenuItem[]; linkedModifiers?: LinkedModifier[] }>(5 * 60 * 1000)
+  const linkedItemsCache = useCachedFetch<{ menuItemIngredients: LinkedMenuItem[]; linkedModifiers?: LinkedModifier[]; pizzaToppings?: { id: string; name: string }[]; pizzaSizes?: { id: string; name: string }[]; pizzaCrusts?: { id: string; name: string }[]; pizzaSauces?: { id: string; name: string }[]; pizzaCheeses?: { id: string; name: string }[] }>(5 * 60 * 1000)
   const recipeCache = useCachedFetch<RecipeComponent[]>(5 * 60 * 1000)
 
   const hasChildren = (ingredient.childIngredients?.length || 0) > 0 || (ingredient.childCount || 0) > 0
@@ -192,6 +193,14 @@ function HierarchyNode({
       if (cached?.linkedModifiers) {
         setLinkedModifiers(cached.linkedModifiers)
       }
+      // Collect pizza component links
+      const pizzaLinks: { id: string; name: string; type: string }[] = []
+      for (const t of cached?.pizzaToppings || []) pizzaLinks.push({ ...t, type: 'Topping' })
+      for (const s of cached?.pizzaSizes || []) pizzaLinks.push({ ...s, type: 'Size' })
+      for (const c of cached?.pizzaCrusts || []) pizzaLinks.push({ ...c, type: 'Crust' })
+      for (const s of cached?.pizzaSauces || []) pizzaLinks.push({ ...s, type: 'Sauce' })
+      for (const c of cached?.pizzaCheeses || []) pizzaLinks.push({ ...c, type: 'Cheese' })
+      setLinkedPizzaComponents(pizzaLinks)
     }
   }
 
@@ -528,7 +537,7 @@ function HierarchyNode({
                     </div>
                     {linkedItems.length === 0 ? (
                       <div className="text-xs text-indigo-500 italic">
-                        {linkedModifiers.length > 0 ? 'None (connected via modifiers above)' : 'No menu items linked yet'}
+                        {linkedModifiers.length > 0 ? 'None (connected via modifiers above)' : linkedPizzaComponents.length > 0 ? 'None (connected via pizza components below)' : 'No menu items linked yet'}
                       </div>
                     ) : (
                       <div className="flex flex-wrap gap-1">
@@ -543,6 +552,25 @@ function HierarchyNode({
                         ))}
                       </div>
                     )}
+                  </>
+                )}
+
+                {/* Pizza Component Links */}
+                {linkedPizzaComponents.length > 0 && (
+                  <>
+                    <div className="text-xs font-medium text-orange-800 mb-1 mt-2">
+                      Pizza Components Using This Ingredient:
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {linkedPizzaComponents.map(comp => (
+                        <span
+                          key={comp.id}
+                          className="px-2 py-0.5 bg-white border border-orange-200 rounded text-xs text-orange-700"
+                        >
+                          {comp.name} ({comp.type})
+                        </span>
+                      ))}
+                    </div>
                   </>
                 )}
               </>

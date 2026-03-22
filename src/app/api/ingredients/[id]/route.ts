@@ -43,6 +43,27 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
             },
           },
         },
+        // Pizza components that link to this ingredient
+        pizzaToppings: {
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+        },
+        pizzaSizes: {
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+        },
+        pizzaCrusts: {
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+        },
+        pizzaSauces: {
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+        },
+        pizzaCheeses: {
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+        },
         // Modifiers that link to this ingredient (via Modifier.ingredientId)
         linkedModifiers: {
           where: { deletedAt: null },
