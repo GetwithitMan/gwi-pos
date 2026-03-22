@@ -51,6 +51,8 @@ export interface SyncModelConfig {
  */
 export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   // ── Bidirectional (NUC ↔ Neon, filtered by lastMutatedBy) ─────────────
+  // RULE: Cloud routes MUST set lastMutatedBy:'cloud', NUC routes MUST set lastMutatedBy:'local'.
+  // Downstream sync only pulls rows WHERE lastMutatedBy='cloud'. See docs/features/offline-sync.md "Bidirectional Sync Protocol".
   Order:                  { direction: 'bidirectional', owner: 'both', priority: 10, batchSize: 200, conflictStrategy: 'quarantine' },
   OrderItem:              { direction: 'bidirectional', owner: 'both', priority: 20, batchSize: 200, conflictStrategy: 'quarantine' },
   OrderDiscount:          { direction: 'bidirectional', owner: 'both', priority: 22, batchSize: 100, conflictStrategy: 'quarantine' },
@@ -110,6 +112,8 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   PrintRule:              { direction: 'downstream', owner: 'cloud', priority: 215, batchSize: 50 },
   KDSScreen:              { direction: 'downstream', owner: 'cloud', priority: 216, batchSize: 50 },
   KDSScreenStation:       { direction: 'downstream', owner: 'cloud', priority: 217, batchSize: 50 },
+  // CRITICAL: Terminal is bidirectional — any cloud/Vercel API route that mutates Terminal MUST set lastMutatedBy: 'cloud'.
+  // Without it, downstream sync will never deliver the change to the NUC. See docs/features/offline-sync.md "Bidirectional Sync Protocol".
   Terminal:               { direction: 'bidirectional', owner: 'cloud', priority: 218, batchSize: 50, skipFields: ['isPaired', 'deviceToken', 'deviceFingerprint', 'deviceInfo', 'platform', 'appVersion', 'osVersion', 'pushToken', 'lastKnownIp', 'lastSeenAt', 'isOnline'] },
   PaymentReader:          { direction: 'downstream', owner: 'cloud', priority: 219, batchSize: 50 },
   Scale:                  { direction: 'downstream', owner: 'cloud', priority: 220, batchSize: 10 },

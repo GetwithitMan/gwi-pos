@@ -281,6 +281,65 @@ These rules were hardened via penetration testing and production debugging:
 
 ---
 
+## Bidirectional Sync Protocol — Required Fields
+
+Models with `direction: 'bidirectional'` in `sync-config.ts` sync both ways between Neon and the NUC. The downstream sync worker (Neon to NUC) ONLY pulls rows where `lastMutatedBy = 'cloud'`. This filtering mechanism is what makes bidirectional sync work without infinite loops, but it also means cloud mutations are invisible to downstream sync unless explicitly marked.
+
+### Rules
+
+1. **Any cloud/Vercel API route that mutates a bidirectional model MUST set `lastMutatedBy: 'cloud'`** in the Prisma `update()` or `create()` call. Without this, the change will exist in Neon but will never be delivered to the NUC via downstream sync.
+
+2. **NUC-side mutations should set `lastMutatedBy: 'local'`** (or leave it null). This prevents the downstream sync from overwriting locally-made changes. The upstream sync worker picks up rows where `lastMutatedBy != 'cloud'`.
+
+3. **The `skipFields` array** in sync-config.ts lists fields that are included in INSERT (new rows) but excluded from ON CONFLICT UPDATE. Use this for fields set locally on the NUC (e.g., `isPaired`, `deviceToken`, `lastSeenAt`) that should not be overwritten by downstream sync even though the model is otherwise cloud-owned.
+
+4. **The bidirectional conflict guard** additionally checks `WHERE lastMutatedBy = 'cloud' OR lastMutatedBy IS NULL` on the ON CONFLICT UPDATE clause. This means locally-mutated rows will not be overwritten by downstream sync even if Neon has newer data for those rows.
+
+### Current Bidirectional Models (as of 2026-03-22)
+
+| Model | Owner | Conflict Strategy | skipFields | Notes |
+|-------|-------|-------------------|------------|-------|
+| Order, OrderItem, OrderDiscount, OrderCard, OrderItemModifier | both | quarantine | — | Core order data, dual-ingress |
+| Payment | both | quarantine | — | Must set `lastMutatedBy: 'local'` on every NUC write |
+| Terminal | cloud | neon-wins | isPaired, deviceToken, deviceFingerprint, deviceInfo, platform, appVersion, osVersion, pushToken, lastKnownIp, lastSeenAt, isOnline | Cloud-owned config with NUC-local operational state |
+| BottleProduct | both | neon-wins | — | |
+| SpiritCategory | both | neon-wins | — | |
+| SpiritModifierGroup | both | neon-wins | — | |
+
+### Anti-Pattern That Caused a 3-Day Outage
+
+Cloud API routes that mutate bidirectional models without setting `lastMutatedBy: 'cloud'` will write to Neon successfully, but the downstream sync worker will never pick up the change (it filters on `lastMutatedBy = 'cloud'`). The NUC will never see the mutation.
+
+```typescript
+// WRONG — cloud mutation without lastMutatedBy
+await db.terminal.update({
+  where: { id },
+  data: { pairingCode, pairingCodeExpiresAt: expiresAt },
+})
+
+// CORRECT — marks as cloud-originated so downstream sync delivers it to the NUC
+await db.terminal.update({
+  where: { id },
+  data: { pairingCode, pairingCodeExpiresAt: expiresAt, lastMutatedBy: 'cloud' },
+})
+```
+
+This is especially dangerous because:
+- The Neon database has the correct data (the write succeeded)
+- Cloud admin UI shows the correct state (it reads from Neon)
+- But the NUC never receives the update, so the POS terminal never sees the change
+- There is no error, no warning, no log entry — it is a silent data divergence
+
+### Checklist for New Bidirectional Models
+
+- [ ] Add `lastMutatedBy String?` column to the Prisma model
+- [ ] Add model to `SYNC_MODELS` in `sync-config.ts` with `direction: 'bidirectional'`
+- [ ] Audit ALL cloud API routes that write to this model — every one must set `lastMutatedBy: 'cloud'`
+- [ ] Audit ALL NUC API routes that write to this model — every one must set `lastMutatedBy: 'local'`
+- [ ] If the model has NUC-local operational fields, add them to `skipFields`
+
+---
+
 ## Android-Specific Notes
 - Bootstrap on startup: full payload via `GET /api/sync/bootstrap`
 - Periodic delta sync via `GET /api/sync/delta`
@@ -348,4 +407,4 @@ When the NUC detects a schema change (via `_venue_schema_state` or `prisma db pu
 
 ---
 
-*Last updated: 2026-03-21*
+*Last updated: 2026-03-22*
