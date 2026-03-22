@@ -64,6 +64,7 @@ export const POST = withVenue(async function POST(request: Request): Promise<Nex
         isPaired: false,
         pairingCode,
         pairingCodeExpiresAt,
+        lastMutatedBy: 'local',
       },
       select: {
         id: true,

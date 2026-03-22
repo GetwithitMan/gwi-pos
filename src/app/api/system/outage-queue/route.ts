@@ -47,11 +47,11 @@ export const GET = withVenue(async () => {
     return NextResponse.json({
       success: true,
       data: {
-        pending: statusCounts['pending'] || 0,
-        failed: statusCounts['failed'] || 0,
-        deadLetter: statusCounts['dead_letter'] || 0,
-        replayed: statusCounts['replayed'] || 0,
-        conflict: statusCounts['conflict'] || 0,
+        pending: statusCounts['PENDING'] || 0,
+        failed: statusCounts['FAILED'] || 0,
+        deadLetter: statusCounts['DEAD_LETTER'] || 0,
+        replayed: statusCounts['REPLAYED'] || 0,
+        conflict: statusCounts['CONFLICT'] || 0,
         total,
         recent: recent.map(r => ({
           id: r.id,

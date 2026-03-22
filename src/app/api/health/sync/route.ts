@@ -177,19 +177,19 @@ export async function GET(req: NextRequest) {
 
   try {
     const [depthResult] = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
-      `SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'pending'`
+      `SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'PENDING'`
     )
     queueDepth = Number(depthResult.count)
 
     if (queueDepth > 0) {
       const [oldestResult] = await masterClient.$queryRawUnsafe<[{ age_seconds: number }]>(
-        `SELECT EXTRACT(EPOCH FROM (NOW() - MIN("createdAt")))::int as age_seconds FROM "OutageQueueEntry" WHERE status = 'pending'`
+        `SELECT EXTRACT(EPOCH FROM (NOW() - MIN("createdAt")))::int as age_seconds FROM "OutageQueueEntry" WHERE status = 'PENDING'`
       )
       oldestEntryAge = oldestResult.age_seconds
     }
 
     const [dlResult] = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
-      `SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'dead_letter'`
+      `SELECT COUNT(*) as count FROM "OutageQueueEntry" WHERE status = 'DEAD_LETTER'`
     )
     deadLetterCount = Number(dlResult.count)
   } catch {

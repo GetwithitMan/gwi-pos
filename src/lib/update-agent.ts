@@ -9,7 +9,7 @@
  */
 
 import { execSync } from 'child_process'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync } from 'fs'
 import path from 'path'
 import { createChildLogger } from '@/lib/logger'
 
@@ -101,7 +101,19 @@ export async function runPreflightChecks(): Promise<PreflightResult> {
     checks.push({ name: 'git_available', passed: false, detail: 'git not available or repo corrupt' })
   }
 
-  // 5. Not already updating
+  // 5. Stale lock detection: if lock file is older than 30 minutes, it's from a crashed update
+  if (existsSync(UPDATE_LOCK_FILE)) {
+    try {
+      const lockStat = statSync(UPDATE_LOCK_FILE)
+      const lockAgeMs = Date.now() - lockStat.mtimeMs
+      if (lockAgeMs > 30 * 60 * 1000) {
+        log.warn(`[UpdateAgent] Stale lock file detected (${Math.round(lockAgeMs / 60000)}m old) — removing`)
+        unlinkSync(UPDATE_LOCK_FILE)
+      }
+    } catch {}
+  }
+
+  // 6. Not already updating
   checks.push({
     name: 'not_already_updating',
     passed: !isUpdating && !existsSync(UPDATE_LOCK_FILE),
@@ -324,6 +336,15 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
           log.error('[UpdateAgent] POS failed health check after update — rolling back')
           try {
             execSync(`cd ${APP_DIR} && git reset --hard ${previousSha}`, { timeout: 30_000 })
+            // Rebuild from the previous code to ensure .next/ and node_modules match
+            try {
+              execSync('npm ci', { cwd: APP_DIR, timeout: 300_000 })
+              execSync('npx prisma generate', { cwd: APP_DIR, timeout: 60_000 })
+              execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
+              log.info('[UpdateAgent] Rollback rebuild complete')
+            } catch (rebuildErr) {
+              log.error({ err: rebuildErr }, '[UpdateAgent] Rollback rebuild failed — restarting with whatever is available')
+            }
             execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
             log.info('[UpdateAgent] Rollback complete — reverted to previous version')
           } catch (rollbackErr) {

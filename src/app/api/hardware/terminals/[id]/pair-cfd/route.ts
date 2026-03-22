@@ -57,6 +57,7 @@ export const POST = withVenue(async function POST(
         cfdIpAddress: cfdIpAddress || null,
         cfdConnectionMode: cfdConnectionMode || 'usb',
         cfdSerialNumber: cfdSerialNumber || null,
+        lastMutatedBy: 'local',
       },
       include: {
         cfdTerminal: {
@@ -80,7 +81,7 @@ export const POST = withVenue(async function POST(
          
         await (db.terminal.update as any)({
           where: { id: cfdTerminalId },
-          data: { category: 'CFD_DISPLAY' },
+          data: { category: 'CFD_DISPLAY', lastMutatedBy: 'local' },
         })
       }
     } catch (err) {
@@ -118,6 +119,7 @@ export const DELETE = withVenue(async function DELETE(
         cfdTerminalId: null,
         cfdIpAddress: null,
         cfdConnectionMode: null,
+        lastMutatedBy: 'local',
       },
     })
 

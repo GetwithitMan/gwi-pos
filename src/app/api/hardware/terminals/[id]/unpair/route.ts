@@ -30,7 +30,7 @@ export const POST = withVenue(async function POST(
         deviceToken: null,
         deviceFingerprint: null,
         deviceInfo: Prisma.JsonNull,
-        lastMutatedBy: 'cloud',
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         // Keep lastKnownIp and lastSeenAt for audit trail
       },
     })

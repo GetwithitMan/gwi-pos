@@ -82,6 +82,7 @@ export const PATCH = withVenue(async function PATCH(
         pairingCode: null,
         pairingCodeExpiresAt: null,
         deviceToken: null,
+        lastMutatedBy: 'local',
       },
       select: {
         id: true,

@@ -94,7 +94,7 @@ export async function queueOutageWrite(
   // Check queue size before inserting
   try {
     const [{ count }] = await masterClient.$queryRawUnsafe<{ count: number }[]>(
-      `SELECT COUNT(*)::int as count FROM "OutageQueueEntry" WHERE status = 'pending'`
+      `SELECT COUNT(*)::int as count FROM "OutageQueueEntry" WHERE status = 'PENDING'`
     )
     if (count >= MAX_OUTAGE_QUEUE_SIZE) {
       log.error({
@@ -122,7 +122,7 @@ export async function queueOutageWrite(
 
     await masterClient.$executeRawUnsafe(
       `INSERT INTO "OutageQueueEntry" (id, "tableName", "recordId", operation, payload, "locationId", status, "localSeq", "idempotencyKey", "createdAt")
-       VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, 'pending', $6, $7, NOW())`,
+       VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, 'PENDING', $6, $7, NOW())`,
       tableName,
       recordId,
       operation,

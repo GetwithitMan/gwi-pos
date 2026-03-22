@@ -95,6 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lastSeenAt: new Date(),
         lastKnownIp: clientIp,
         isOnline: true,
+        lastMutatedBy: 'local',
       },
       include: {
         receiptPrinter: {

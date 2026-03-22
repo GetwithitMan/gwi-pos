@@ -84,6 +84,7 @@ export const POST = withVenue(async function POST(
       data: {
         pairingCode,
         pairingCodeExpiresAt,
+        lastMutatedBy: 'local',
       },
     })
 

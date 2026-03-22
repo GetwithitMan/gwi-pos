@@ -167,7 +167,7 @@ export const PUT = withVenue(async function PUT(
       // This is a warning only — it does not block the close.
       try {
         const outageResult = await db.$queryRawUnsafe<[{ cnt: number }]>(
-          `SELECT COUNT(*)::int as cnt FROM "OutageQueueEntry" WHERE status IN ('pending', 'processing')`
+          `SELECT COUNT(*)::int as cnt FROM "OutageQueueEntry" WHERE status IN ('PENDING', 'PROCESSING')`
         )
         const pendingCount = outageResult?.[0]?.cnt ?? 0
         if (pendingCount > 0) {
