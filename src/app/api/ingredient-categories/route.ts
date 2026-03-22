@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 // GET /api/ingredient-categories - List all categories for location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -13,6 +15,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (!locationId) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
+
+    const actor = await getActorFromRequest(request)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const categories = await db.ingredientCategory.findMany({
       where: {
@@ -66,6 +75,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    const actor = await getActorFromRequest(request)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     // Check for duplicate name
     const existing = await db.ingredientCategory.findFirst({
       where: { locationId, name, deletedAt: null },
@@ -108,6 +124,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: category.id })
+
+    try {
+      const { emitToLocation } = await import('@/lib/socket-dispatch')
+      void emitToLocation(locationId, 'inventory:changed', { action: 'category_created', entityId: category.id })
+    } catch {}
 
     return NextResponse.json({
       data: {

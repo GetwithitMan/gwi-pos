@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -37,6 +39,13 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
     if (!category || category.deletedAt) {
       return NextResponse.json({ error: 'Category not found' }, { status: 404 })
     }
+
+    const actor = await getActorFromRequest(request)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, category.locationId, PERMISSIONS.MENU_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     return NextResponse.json({
       data: {
@@ -76,6 +85,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       return NextResponse.json({ error: 'Category not found' }, { status: 404 })
     }
 
+    const actor = await getActorFromRequest(request)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, existing.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     // Check for duplicate name (if name is being changed)
     if (name && name !== existing.name) {
       const duplicate = await db.ingredientCategory.findFirst({
@@ -113,6 +129,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+
+    try {
+      const { emitToLocation } = await import('@/lib/socket-dispatch')
+      void emitToLocation(existing.locationId, 'inventory:changed', { action: 'category_updated', entityId: id })
+    } catch {}
 
     return NextResponse.json({
       data: {
@@ -164,6 +185,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       return NextResponse.json({ error: 'Category not found' }, { status: 404 })
     }
 
+    const actor = await getActorFromRequest(request)
+    if (!actor.employeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
+    const auth = await requirePermission(actor.employeeId, existing.locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     const ingredientCount = existing.ingredients.length
     const childCount = existing.ingredients.reduce(
       (sum, ing) => sum + (ing.childIngredients?.length || 0), 0
@@ -212,6 +240,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+
+    try {
+      const { emitToLocation } = await import('@/lib/socket-dispatch')
+      void emitToLocation(existing.locationId, 'inventory:changed', { action: 'category_deleted', entityId: id })
+    } catch {}
 
     return NextResponse.json({
       data: {

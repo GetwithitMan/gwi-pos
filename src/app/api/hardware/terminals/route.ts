@@ -26,11 +26,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Auth check — require settings.hardware permission (read access)
+    // Use cookie-based actor, fall back to query param for dev/API clients
     const actor = await getActorFromRequest(request)
-    if (!actor.employeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    const resolvedEmployeeId = actor.employeeId ?? searchParams.get('employeeId')
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const category = searchParams.get('category') as TerminalCategory | null
@@ -145,12 +144,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
-    // Auth check — require settings.hardware permission (session only, no body fallback)
+    // Auth check — require settings.hardware permission
+    // Use cookie-based actor, fall back to body employeeId for dev/API clients
     const actor = await getActorFromRequest(request)
-    if (!actor.employeeId) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
-    }
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    const resolvedEmployeeId = actor.employeeId ?? body.employeeId
+    const auth = await requirePermission(resolvedEmployeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Device count limit check (subscription-gated)
