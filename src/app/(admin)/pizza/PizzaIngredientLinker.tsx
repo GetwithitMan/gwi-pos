@@ -74,7 +74,13 @@ export function PizzaIngredientLinker({
       setInventoryItemId(resolvedInventoryItemId)
       setSelectedItemName(ingredient.name)
     } else {
-      toast.warning(`No matching inventory item for "${ingredient.name}". Create one in Inventory Management first.`)
+      // No InventoryItem linked yet — use the ingredient ID as the reference.
+      // The ingredient hierarchy (INV → PREP) provides the tracking chain.
+      // inventoryItemId on PizzaTopping is optional — inventory deduction
+      // will resolve through the ingredient when stock tracking is set up.
+      setInventoryItemId(ingredientId)
+      setSelectedItemName(ingredient.name)
+      toast.info(`Linked "${ingredient.name}" — add an inventory item later for stock tracking.`)
     }
   }
 
