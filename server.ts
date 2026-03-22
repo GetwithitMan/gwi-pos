@@ -406,8 +406,8 @@ async function main() {
     // If sync is blocked due to schema mismatch, start periodic re-check.
     // When MC pushes the schema update, the re-check will detect it and
     // update the cached bootstrap result + readiness state. Sync workers
-    // must still be started manually (restart) after unblock, but at least
-    // the heartbeat will report the unblocked state immediately.
+    // are auto-started via the worker registry when the re-check succeeds
+    // (see recheckNeonSchema in venue-bootstrap.ts) — no restart required.
     if (!syncReady) {
       startSchemaRecheckIfBlocked()
     }

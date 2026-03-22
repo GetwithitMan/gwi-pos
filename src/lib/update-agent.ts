@@ -217,8 +217,8 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env.local')) } catch {}
 
     // Install dependencies
-    log.info('[UpdateAgent] Running npm install...')
-    execSync('npm install --production=false', { cwd: APP_DIR, timeout: 180_000 })
+    log.info('[UpdateAgent] Running npm ci...')
+    execSync('npm ci', { cwd: APP_DIR, timeout: 180_000 })
 
     // Prisma generate
     log.info('[UpdateAgent] Running prisma generate...')
@@ -293,8 +293,13 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
               signal: AbortSignal.timeout(5000),
             })
             if (res.ok) {
-              const data = await res.json() as { data?: { database?: string } }
+              const data = await res.json() as { data?: { database?: string; readiness?: { level?: string } } }
               if (data.data?.database === 'connected') {
+                const readiness = data.data?.readiness
+                if (!readiness || readiness.level === 'FAILED') {
+                  // DB is up but readiness failed — keep retrying
+                  continue
+                }
                 healthy = true
                 break
               }
