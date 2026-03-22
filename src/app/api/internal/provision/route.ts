@@ -285,6 +285,13 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   // Roles — use deterministic IDs so upserts are idempotent on retries
   const roles = [
     {
+      id: 'role-super-admin',
+      name: 'Super Admin',
+      permissions: ['all'],
+      isTipped: false,
+      cashHandlingMode: CashHandlingMode.none,
+    },
+    {
       id: 'role-mgr',
       name: 'Manager',
       permissions: [
@@ -296,9 +303,9 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
         'reports.view_daily', 'reports.view_sales', 'reports.view_labor',
         'reports.view_tips', 'reports.view_inventory', 'reports.export',
         'menu.view', 'menu.edit', 'menu.create', 'menu.delete', 'menu.manage_modifiers',
-        'staff.view', 'staff.edit', 'staff.create', 'staff.manage_roles', 'staff.manage_schedule',
+        'staff.view', 'staff.edit_profile', 'staff.create', 'staff.assign_roles', 'staff.manage_schedule',
         'tables.view', 'tables.edit', 'tables.manage_sections',
-        'settings.view', 'settings.edit', 'settings.manage_hardware', 'settings.manage_payments',
+        'settings.view', 'settings.edit', 'settings.hardware', 'settings.integrations',
         'tips.view_own', 'tips.view_all', 'tips.share', 'tips.manage_rules', 'tips.manage_bank',
       ],
       isTipped: false,
@@ -358,14 +365,14 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   const pinHash = await hash(ownerPin, 10)
   const insertResult = await venueDb.$queryRawUnsafe<{ id: string }[]>(
     `INSERT INTO "Employee" ("id", "locationId", "roleId", "firstName", "lastName", "pin", "isActive", "createdAt", "updatedAt")
-     SELECT gen_random_uuid()::text, $1, $2, 'Owner', 'Manager', $3, true, NOW(), NOW()
+     SELECT gen_random_uuid()::text, $1, $2, 'Owner', 'Admin', $3, true, NOW(), NOW()
      WHERE NOT EXISTS (
        SELECT 1 FROM "Employee"
-       WHERE "locationId" = $1 AND "firstName" = 'Owner' AND "lastName" = 'Manager' AND "deletedAt" IS NULL
+       WHERE "locationId" = $1 AND "roleId" = $2 AND "deletedAt" IS NULL
      )
      RETURNING "id"`,
     locationId,
-    createdRoles['Manager'],
+    createdRoles['Super Admin'],
     pinHash,
   )
   let owner: { id: string }
@@ -374,7 +381,7 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
   } else {
     // Already exists from a prior or concurrent request — fetch it
     const existingOwner = await venueDb.employee.findFirst({
-      where: { locationId, firstName: 'Owner', lastName: 'Manager', deletedAt: null },
+      where: { locationId, roleId: createdRoles['Super Admin'], deletedAt: null },
       select: { id: true },
     })
     owner = existingOwner!

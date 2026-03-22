@@ -134,101 +134,80 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
           // Single venue or MC-only owner — check if they have access to this venue
           const hasAccess = venues.some(v => v.slug === venueSlug)
-          if (hasAccess && !employee) {
-            // No local Employee record — auto-provision a real Employee so
-            // all API routes that require employeeId work correctly.
+          if (hasAccess) {
+            // MC-verified owner — ensure they have a real Employee with Super Admin role.
+            // This handles both new owners (auto-provision) and existing owners (role upgrade).
             const ownerName = venueData.data?.name || normalizedEmail.split('@')[0]
             const nameParts = ownerName.split(' ')
 
-            // Find or create a real employee for this MC owner
-            let ownerEmployee = await db.employee.findFirst({
+            // Find or create the Super Admin role (protected, only MC can assign)
+            const allRoles = await db.role.findMany({
+              where: { locationId: location.id, deletedAt: null },
+            })
+            let superAdminRole = allRoles.find(r => {
+              const perms = (r.permissions as string[]) || []
+              return perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')
+            })
+            if (!superAdminRole) {
+              superAdminRole = await db.role.create({
+                data: {
+                  locationId: location.id,
+                  name: 'Super Admin',
+                  permissions: ['all'],
+                  isTipped: false,
+                },
+              })
+              console.log(`[venue-login] Created Super Admin role ${superAdminRole.id} for location ${location.id}`)
+            }
+
+            // Use the existing Employee found at top of handler, or check by email
+            let ownerEmployee = employee || await db.employee.findFirst({
               where: { locationId: location.id, email: { equals: normalizedEmail, mode: 'insensitive' }, deletedAt: null },
               include: { role: true },
             })
 
-            // If owner exists but their role lacks 'all' permissions, upgrade them
             if (ownerEmployee) {
-              const existingPerms = (ownerEmployee.role?.permissions as string[]) || []
-              const hasFullAccess = existingPerms.includes('all') || existingPerms.includes('admin') || existingPerms.includes('super_admin')
-              if (!hasFullAccess) {
-                // Find or create an Owner role with 'all' and reassign
-                const allRoles = await db.role.findMany({
-                  where: { locationId: location.id, deletedAt: null },
-                })
-                let adminRole = allRoles.find(r => {
-                  const perms = (r.permissions as string[]) || []
-                  return perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')
-                })
-                if (!adminRole) {
-                  adminRole = await db.role.create({
-                    data: { locationId: location.id, name: 'Owner', permissions: ['all'], isTipped: false },
-                  })
-                }
+              // Existing employee — upgrade to Super Admin if not already
+              if (ownerEmployee.roleId !== superAdminRole.id) {
                 await db.employee.update({
                   where: { id: ownerEmployee.id },
-                  data: { roleId: adminRole.id },
+                  data: { roleId: superAdminRole.id },
                 })
                 ownerEmployee = await db.employee.findFirst({
                   where: { id: ownerEmployee.id, deletedAt: null },
                   include: { role: true },
                 })
-                console.log(`[venue-login] Upgraded MC owner ${normalizedEmail} to role ${adminRole.name} (${adminRole.id})`)
+                console.log(`[venue-login] Upgraded MC owner ${normalizedEmail} to Super Admin role`)
+              }
+            } else {
+              // New owner — auto-provision Employee with Super Admin role
+              const rawPin = String(randomInt(100000, 1000000))
+              const hashedPin = await hash(rawPin, 10)
+              const createdOwner = await EmployeeRepository.createEmployee(location.id, {
+                firstName: nameParts[0] || ownerName,
+                lastName: nameParts.slice(1).join(' ') || '',
+                displayName: ownerName,
+                email: normalizedEmail,
+                roleId: superAdminRole.id,
+                isActive: true,
+                pin: hashedPin,
+              })
+              ownerEmployee = await EmployeeRepository.getEmployeeByIdWithInclude(
+                createdOwner.id,
+                location.id,
+                { role: true },
+              )
+              if (ownerEmployee) {
+                console.log(`[venue-login] Auto-provisioned MC owner ${normalizedEmail} as Super Admin at location ${location.id}`)
               }
             }
 
             if (!ownerEmployee) {
-              // Find or create an admin role with full permissions for this location.
-              // Seeded roles may not have 'all'/'admin'/'super_admin' — they have granular keys.
-              const allRoles = await db.role.findMany({
-                where: { locationId: location.id, deletedAt: null },
-                orderBy: { createdAt: 'asc' },
-              })
-              let adminRole = allRoles.find(r => {
-                const perms = (r.permissions as string[]) || []
-                return perms.includes('all') || perms.includes('admin') || perms.includes('super_admin')
-              })
-              if (!adminRole) {
-                // No role with 'all' — create a dedicated Owner role
-                adminRole = await db.role.create({
-                  data: {
-                    locationId: location.id,
-                    name: 'Owner',
-                    permissions: ['all'],
-                    isTipped: false,
-                  },
-                })
-                console.log(`[venue-login] Created Owner role ${adminRole.id} for location ${location.id}`)
-              }
-
-              if (adminRole) {
-                const rawPin = String(randomInt(100000, 1000000))
-                const hashedPin = await hash(rawPin, 10)
-                const createdOwner = await EmployeeRepository.createEmployee(location.id, {
-                  firstName: nameParts[0] || ownerName,
-                  lastName: nameParts.slice(1).join(' ') || '',
-                  displayName: ownerName,
-                  email: normalizedEmail,
-                  roleId: adminRole.id,
-                  isActive: true,
-                  pin: hashedPin,
-                })
-                // Re-fetch with role include for session data
-                ownerEmployee = await EmployeeRepository.getEmployeeByIdWithInclude(
-                  createdOwner.id,
-                  location.id,
-                  { role: true },
-                )
-                if (ownerEmployee) {
-                  console.log(`[venue-login] Auto-provisioned employee ${ownerEmployee.id} for MC owner ${normalizedEmail} at location ${location.id}`)
-                }
-              }
-            }
-
-            // If auto-provisioning failed, do not proceed with a fake ID
-            if (!ownerEmployee) {
-              console.error(`[venue-login] Failed to auto-provision employee for MC owner ${normalizedEmail} at location ${location.id}`)
+              console.error(`[venue-login] Failed to provision MC owner ${normalizedEmail} at location ${location.id}`)
               return NextResponse.json({ error: 'Failed to provision employee account. Contact support.' }, { status: 500 })
             }
+
+            recordLoginSuccess(ip, ownerEmployee.id)
 
             const token = await signVenueToken(
               {
@@ -237,7 +216,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 name: ownerName,
                 slug: venueSlug,
                 orgId: 'venue-local',
-                role: 'super_admin', // MC-verified owners get full god-mode via cloudRole bypass
+                role: 'super_admin',
                 posLocationId: location.id,
               },
               secret
@@ -248,9 +227,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
               firstName: ownerEmployee.firstName,
               lastName: ownerEmployee.lastName,
               displayName: ownerEmployee.displayName || ownerName,
-              role: { id: ownerEmployee.role?.id || '', name: ownerEmployee.role?.name || 'Owner Manager' },
+              role: { id: ownerEmployee.role?.id || superAdminRole.id, name: ownerEmployee.role?.name || 'Super Admin' },
               location: { id: location.id, name: location.name },
-              permissions: ['admin'],
+              permissions: ['all'],
               isDevAccess: false,
             }
 
