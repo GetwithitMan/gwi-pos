@@ -21,6 +21,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ...(category && { category }),
         ...(!includeInactive && { isActive: true }),
       },
+      include: {
+        ingredient: { select: { id: true, name: true } },
+        inventoryItem: { select: { id: true, name: true } },
+      },
       orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }]
     })
 
@@ -28,6 +32,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
+      inventoryItemName: topping.inventoryItem?.name || topping.ingredient?.name || null,
+      ingredient: undefined,
+      inventoryItem: undefined,
     })))
   } catch (error) {
     console.error('Failed to get pizza toppings:', error)

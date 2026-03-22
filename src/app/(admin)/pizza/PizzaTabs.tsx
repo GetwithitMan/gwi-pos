@@ -414,13 +414,13 @@ export function SizesTab({ sizes, onAdd, onEdit, onDelete }: SizesTabProps) {
                       {size.displayName || `${size.inches || '?'}"`} • {size.slices} slices
                       {size.isDefault && <span className="ml-2 text-orange-600 font-medium">Default</span>}
                     </div>
-                    {size.inventoryItemName ? (
+                    {(size.inventoryItemName || size.ingredientId) ? (
                       <div className="text-xs text-blue-600">
                         Linked: {size.inventoryItemName}
                         {size.usageQuantity ? ` (${size.usageQuantity} ${size.usageUnit || 'ea'})` : ''}
                       </div>
                     ) : (
-                      <div className="text-xs text-amber-500">No inventory link</div>
+                      <div className="text-xs text-amber-500">No ingredient link</div>
                     )}
                   </div>
                 </div>
@@ -473,13 +473,13 @@ export function CrustsTab({ crusts, onAdd, onEdit, onDelete }: CrustsTabProps) {
                   {crust.isDefault && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded">Default</span>}
                 </div>
                 {crust.description && <p className="text-sm text-gray-900 mb-2">{crust.description}</p>}
-                {crust.inventoryItemName ? (
+                {(crust.inventoryItemName || crust.ingredientId) ? (
                   <div className="text-xs text-blue-600 mb-1">
                     Linked: {crust.inventoryItemName}
                     {crust.usageQuantity ? ` (${crust.usageQuantity} ${crust.usageUnit || 'ea'})` : ''}
                   </div>
                 ) : (
-                  <div className="text-xs text-amber-500 mb-1">No inventory link</div>
+                  <div className="text-xs text-amber-500 mb-1">No ingredient link</div>
                 )}
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-bold">
@@ -532,13 +532,13 @@ export function SaucesTab({ sauces, onAdd, onEdit, onDelete }: SaucesTabProps) {
                   {sauce.allowLight && <span className="bg-gray-100 px-2 py-0.5 rounded">Light</span>}
                   {sauce.allowExtra && <span className="bg-gray-100 px-2 py-0.5 rounded">Extra +{formatCurrency(sauce.extraPrice)}</span>}
                 </div>
-                {sauce.inventoryItemName ? (
+                {(sauce.inventoryItemName || sauce.ingredientId) ? (
                   <div className="text-xs text-blue-600 mb-1">
                     Linked: {sauce.inventoryItemName}
                     {sauce.usageQuantity ? ` (${sauce.usageQuantity} ${sauce.usageUnit || 'ea'})` : ''}
                   </div>
                 ) : (
-                  <div className="text-xs text-amber-500 mb-1">No inventory link</div>
+                  <div className="text-xs text-amber-500 mb-1">No ingredient link</div>
                 )}
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-bold">
@@ -591,13 +591,13 @@ export function CheesesTab({ cheeses, onAdd, onEdit, onDelete }: CheesesTabProps
                   {cheese.allowLight && <span className="bg-gray-100 px-2 py-0.5 rounded">Light</span>}
                   {cheese.allowExtra && <span className="bg-gray-100 px-2 py-0.5 rounded">Extra +{formatCurrency(cheese.extraPrice)}</span>}
                 </div>
-                {cheese.inventoryItemName ? (
+                {(cheese.inventoryItemName || cheese.ingredientId) ? (
                   <div className="text-xs text-blue-600 mb-1">
                     Linked: {cheese.inventoryItemName}
                     {cheese.usageQuantity ? ` (${cheese.usageQuantity} ${cheese.usageUnit || 'ea'})` : ''}
                   </div>
                 ) : (
-                  <div className="text-xs text-amber-500 mb-1">No inventory link</div>
+                  <div className="text-xs text-amber-500 mb-1">No ingredient link</div>
                 )}
                 <div className="flex items-center justify-between">
                   <div className="text-lg font-bold">
@@ -688,13 +688,13 @@ export function ToppingsTab({ toppings, onAdd, onEdit, onDelete }: ToppingsTabPr
                             Extra: +{formatCurrency(topping.extraPrice)}
                           </div>
                         )}
-                        {topping.inventoryItemName ? (
+                        {(topping.inventoryItemName || topping.ingredientId) ? (
                           <div className="text-xs text-blue-600 mb-1">
                             Linked: {topping.inventoryItemName}
                             {topping.usageQuantity ? ` (${topping.usageQuantity} ${topping.usageUnit || 'ea'})` : ''}
                           </div>
                         ) : (
-                          <div className="text-xs text-amber-500 mb-1">No inventory link</div>
+                          <div className="text-xs text-amber-500 mb-1">No ingredient link</div>
                         )}
                         <div className="flex gap-2">
                           <Button variant="ghost" size="sm" onClick={() => onEdit(topping)}>Edit</Button>
