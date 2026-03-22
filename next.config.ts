@@ -53,11 +53,13 @@ const nextConfig: NextConfig = {
           ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
           : "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'",
       },
-      // Report-only CSP without unsafe-inline on scripts — catches any inline script
-      // violations that the enforced CSP allows. Logs to /api/csp-report.
+      // Report-only CSP — catches inline script violations. In dev, allow eval/inline
+      // so webpack HMR doesn't flood the console with false positives.
       {
         key: 'Content-Security-Policy-Report-Only',
-        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'; report-uri /api/csp-report",
+        value: process.env.NODE_ENV === 'production'
+          ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'; report-uri /api/csp-report"
+          : "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss: https:; frame-ancestors 'none'",
       },
       // Restrict unused browser APIs — POS has no camera/microphone/geolocation needs
       {
