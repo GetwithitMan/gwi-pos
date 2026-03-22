@@ -1,4 +1,17 @@
 import type { NextConfig } from "next";
+import { readFileSync } from "fs";
+import { join } from "path";
+
+// Read version from package.json at build time (avoids CJS require in ESM config).
+// Falls back to env var or '0.0.0' if package.json is unreadable.
+let _pkgVersion = '0.0.0'
+try {
+  const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8'))
+  _pkgVersion = pkg.version || '0.0.0'
+} catch {
+  // Fallback: env var from CI/Docker
+  _pkgVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
+}
 
 const nextConfig: NextConfig = {
   // Standalone output: used by Vercel for serverless deployment.
@@ -30,10 +43,11 @@ const nextConfig: NextConfig = {
   // Prevent source code from being exposed in production browser bundles
   productionBrowserSourceMaps: false,
 
-  // App version — set by CI / Docker build arg, or falls back to '0.0.0' in dev.
-  // Removed require('./package.json') to avoid CJS require in ESM config.
+  // App version — read from package.json at build time.
+  // The update-agent stamps the MC-provided version into package.json after each deploy,
+  // so this always reflects the deployed version after a build + restart cycle.
   env: {
-    NEXT_PUBLIC_APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0',
+    NEXT_PUBLIC_APP_VERSION: _pkgVersion,
   },
 
   // Security headers for all routes

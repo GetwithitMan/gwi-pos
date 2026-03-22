@@ -1,4 +1,27 @@
 #!/usr/bin/env bash
+# ┌─────────────────────────────────────────────────────────────────────────────┐
+# │  DEPRECATED — This file is legacy dead code. Do NOT use or modify.         │
+# │                                                                            │
+# │  The REAL heartbeat script is written inline by the installer at:          │
+# │    public/installer-modules/04-database.sh  (lines ~82-197)               │
+# │  That script is embedded directly into /opt/gwi-pos/heartbeat.sh at       │
+# │  install time. It sends the correct MC Zod-validated payload:              │
+# │    version, cpuPercent, memoryUsedMb, memoryTotalMb, diskUsedGb,           │
+# │    diskTotalGb, uptime, localIp, etc.                                      │
+# │                                                                            │
+# │  This file (public/heartbeat.sh) is NEVER copied to the NUC. It has       │
+# │  wrong field names (cpu, memoryPercent, diskPercent, uptimeSeconds,        │
+# │  nodeId) that fail MC Zod validation. It exists only as a historical       │
+# │  artifact.                                                                 │
+# │                                                                            │
+# │  The sync-agent (public/sync-agent.js) does NOT send heartbeats —         │
+# │  it handles fleet commands via SSE. The cron-based shell heartbeat         │
+# │  (from 04-database.sh) is the sole heartbeat sender.                      │
+# │                                                                            │
+# │  Safe to delete once confirmed no external tooling references this file.   │
+# └─────────────────────────────────────────────────────────────────────────────┘
+#
+# ORIGINAL DESCRIPTION (historical):
 # GWI POS Heartbeat — sends system + sync status to Mission Control every 60s
 # Installed by installer.run as a cron job
 #
