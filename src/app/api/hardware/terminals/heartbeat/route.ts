@@ -76,6 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isOnline: true,
         lastSeenAt: new Date(),
         lastKnownIp: clientIp,
+        lastMutatedBy: 'local',
       },
     })
 

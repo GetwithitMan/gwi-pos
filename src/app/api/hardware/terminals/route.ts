@@ -265,6 +265,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           barPrinterId: barPrinterId || null,
           roleSkipRules: roleSkipRules || {},
           scaleId: cleanScaleId,
+          lastMutatedBy: 'cloud',
         },
         include: {
           receiptPrinter: {
@@ -314,6 +315,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           kitchenPrinterId: kitchenPrinterId || null,
           barPrinterId: barPrinterId || null,
           roleSkipRules: roleSkipRules || {},
+          lastMutatedBy: 'cloud',
         },
         include: {
           receiptPrinter: {

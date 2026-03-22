@@ -278,6 +278,7 @@ export const PUT = withVenue(async function PUT(
       ...(cfdIpAddress !== undefined && { cfdIpAddress: cfdIpAddress || null }),
       ...(cfdConnectionMode !== undefined && { cfdConnectionMode: cfdConnectionMode || null }),
       ...(cfdSerialNumber !== undefined && { cfdSerialNumber: cfdSerialNumber || null }),
+      lastMutatedBy: 'cloud',
     }
     const baseInclude = {
       receiptPrinter: {

@@ -83,6 +83,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // Clear pairing code after successful pair
         pairingCode: null,
         pairingCodeExpiresAt: null,
+        lastMutatedBy: 'local',
       },
       include: {
         receiptPrinter: {

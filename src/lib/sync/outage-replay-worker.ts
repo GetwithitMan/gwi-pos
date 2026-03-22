@@ -220,17 +220,17 @@ async function processOutageQueue(): Promise<void> {
 
     // Dead-letter entries that have exceeded max retry attempts
     const deadLettered = await masterClient.$executeRawUnsafe(
-      `UPDATE "OutageQueueEntry" SET status = 'dead_letter'
-       WHERE status = 'failed'
+      `UPDATE "OutageQueueEntry" SET status = 'DEAD_LETTER'
+       WHERE status = 'FAILED'
          AND COALESCE(("metadata"->>'retryCount')::int, 0) >= $1`,
       MAX_RETRY_ATTEMPTS
     ) as number
 
     // M4: Also dead-letter failed entries older than 24h regardless of retry count
-    // (prevents entries with retryCount < MAX from being stuck forever in 'failed')
+    // (prevents entries with retryCount < MAX from being stuck forever in 'FAILED')
     const agedOut = await masterClient.$executeRawUnsafe(
-      `UPDATE "OutageQueueEntry" SET status = 'dead_letter'
-       WHERE status = 'failed'
+      `UPDATE "OutageQueueEntry" SET status = 'DEAD_LETTER'
+       WHERE status = 'FAILED'
          AND "createdAt" < NOW() - INTERVAL '24 hours'
          AND COALESCE(("metadata"->>'retryCount')::int, 0) < $1`,
       MAX_RETRY_ATTEMPTS
@@ -252,7 +252,7 @@ async function processOutageQueue(): Promise<void> {
         }>>(
           `SELECT id, "tableName", "recordId", COALESCE(("metadata"->>'retryCount')::int, 0) as "retryCount"
            FROM "OutageQueueEntry"
-           WHERE status = 'dead_letter'
+           WHERE status = 'DEAD_LETTER'
            ORDER BY "createdAt" DESC
            LIMIT 20`
         )
@@ -260,7 +260,7 @@ async function processOutageQueue(): Promise<void> {
           void notifyDataChanged({
             locationId: locId,
             domain: 'sync',
-            action: 'dead_letter',
+            action: 'DEAD_LETTER',
             entityId: entry.id,
           })
           log.error({
@@ -289,7 +289,7 @@ async function processOutageQueue(): Promise<void> {
           }>>(
             `SELECT id, "tableName", "recordId", operation, "createdAt", metadata
              FROM "OutageQueueEntry"
-             WHERE status = 'dead_letter'
+             WHERE status = 'DEAD_LETTER'
              ORDER BY "createdAt" DESC
              LIMIT 10`
           )
@@ -316,13 +316,13 @@ async function processOutageQueue(): Promise<void> {
     // Reset failed entries < 24h old back to pending for retry, incrementing retry count
     await masterClient.$executeRawUnsafe(
       `UPDATE "OutageQueueEntry"
-       SET status = 'pending',
+       SET status = 'PENDING',
            metadata = jsonb_set(
              COALESCE(metadata, '{}'::jsonb),
              '{retryCount}',
              to_jsonb(COALESCE(("metadata"->>'retryCount')::int, 0) + 1)
            )
-       WHERE status = 'failed'
+       WHERE status = 'FAILED'
          AND "createdAt" > NOW() - INTERVAL '24 hours'
          AND COALESCE(("metadata"->>'retryCount')::int, 0) < $1`,
       MAX_RETRY_ATTEMPTS
@@ -340,7 +340,7 @@ async function processOutageQueue(): Promise<void> {
     }>>(
       `SELECT id, "tableName", "recordId", operation, payload, "localSeq"
        FROM "OutageQueueEntry"
-       WHERE status = 'pending'
+       WHERE status = 'PENDING'
        ORDER BY "localSeq" ASC
        LIMIT 50
        FOR UPDATE SKIP LOCKED`
@@ -360,25 +360,25 @@ async function processOutageQueue(): Promise<void> {
       try {
         await replayEntry(entry)
         await masterClient.$executeRawUnsafe(
-          `UPDATE "OutageQueueEntry" SET status = 'replayed', "replayedAt" = NOW() WHERE id = $1`,
+          `UPDATE "OutageQueueEntry" SET status = 'REPLAYED', "replayedAt" = NOW() WHERE id = $1`,
           entry.id,
         )
         metrics.replayedCount++
       } catch (err: unknown) {
         if (isConnectivityError(err)) {
-          // Leave as 'pending' — will retry next cycle when internet returns
+          // Leave as 'PENDING' — will retry next cycle when internet returns
           log.warn(`Connectivity lost during replay, will retry: ${entry.tableName}:${entry.recordId}`)
           break // Stop processing this batch — internet is down
         } else if (isConflictError(err)) {
           await masterClient.$executeRawUnsafe(
-            `UPDATE "OutageQueueEntry" SET status = 'conflict' WHERE id = $1`,
+            `UPDATE "OutageQueueEntry" SET status = 'CONFLICT' WHERE id = $1`,
             entry.id,
           )
           metrics.conflictCount++
           log.warn({ cycleId, err, tableName: entry.tableName, recordId: entry.recordId }, 'Conflict during replay')
         } else {
           await masterClient.$executeRawUnsafe(
-            `UPDATE "OutageQueueEntry" SET status = 'failed' WHERE id = $1`,
+            `UPDATE "OutageQueueEntry" SET status = 'FAILED' WHERE id = $1`,
             entry.id,
           )
           metrics.failedCount++
