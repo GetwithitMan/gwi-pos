@@ -380,8 +380,8 @@ async function main() {
     // between server.ts, venue-bootstrap.ts, and health endpoints.
     // Wrapped in try/catch — initial readiness was set pre-listen, this refines it.
     let readiness = initialReadiness
+    const neonReady = bootstrapResult?.neonSchemaReady
     try {
-      const neonReady = bootstrapResult?.neonSchemaReady
       const neonSchemaVersionOk = neonReady
         ? (neonReady.schemaVersionMatch || neonReady.schemaVersionAhead)
         : false

@@ -42,6 +42,26 @@ export async function ensureSchemaStateTable(client: { $executeRawUnsafe: (sql: 
       "updatedAt"           TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `)
+  // Add missing columns to existing tables (handles manually-created or old schema)
+  const columns = [
+    { name: 'lastRepairAt', type: 'TIMESTAMPTZ' },
+    { name: 'lastRepairBy', type: 'TEXT' },
+    { name: 'lastRepairReason', type: 'TEXT' },
+    { name: 'repairCount', type: 'INTEGER DEFAULT 0' },
+    { name: 'appVersion', type: 'TEXT' },
+    { name: 'provisionedAt', type: 'TIMESTAMPTZ' },
+    { name: 'provisionedBy', type: 'TEXT' },
+    { name: 'updatedAt', type: 'TIMESTAMPTZ DEFAULT NOW()' },
+  ]
+  for (const col of columns) {
+    try {
+      await client.$executeRawUnsafe(
+        `ALTER TABLE "_venue_schema_state" ADD COLUMN IF NOT EXISTS "${col.name}" ${col.type}`
+      )
+    } catch {
+      // Column already exists or DB doesn't support IF NOT EXISTS — fine
+    }
+  }
 }
 
 /**
