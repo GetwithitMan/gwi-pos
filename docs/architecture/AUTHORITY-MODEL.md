@@ -356,6 +356,51 @@ The installer (`public/installer.run`) is a **thin orchestrator** that calls 10 
 
 ---
 
+## 9. globalThis Singleton Pattern (Module Isolation)
+
+### Problem
+
+`server.js` is compiled by **esbuild** (single bundle), while Next.js API routes are compiled by **Turbopack** (separate module graph). When both import the same module (e.g., `src/lib/readiness.ts`), they get **separate module copies** with **isolated module-level state**. This means:
+
+- A singleton created in `server.js` (e.g., readiness state set to ORDERS) is invisible to API routes
+- API routes see their own copy of the module, still at the default/initial state
+- Health endpoints report stale data; sync metrics show zeros; schema verify runs twice
+
+### Solution
+
+Use `globalThis.__gwi_*` namespaced properties for any state that must be shared across the esbuild and Turbopack module boundaries. The pattern:
+
+```typescript
+// Instead of module-level state:
+// let readiness = { level: 'BOOT' };  // BROKEN — isolated per bundle
+
+// Use globalThis:
+const KEY = '__gwi_readiness';
+function getReadiness() {
+  if (!globalThis[KEY]) globalThis[KEY] = { level: 'BOOT' };
+  return globalThis[KEY];
+}
+```
+
+### Currently Applied To
+
+| globalThis Key | Purpose |
+|---------------|---------|
+| `__gwi_readiness` | Readiness state machine (BOOT → SYNC → ORDERS) |
+| `__gwi_schema_verify` | Schema verification status and cache |
+| `__gwi_upstream_sync_metrics` | Upstream sync worker metrics (last run, queue depth) |
+| `__gwi_downstream_sync_metrics` | Downstream sync worker metrics (last run, models synced) |
+| `__gwi_ha_lease_state` | HA lease state (active/standby, lease expiry) |
+
+### Rules
+
+1. **Only use globalThis for cross-module shared state.** Normal module-level state is fine when only one bundle accesses it.
+2. **Always namespace with `__gwi_` prefix** to avoid collisions with Node.js or library globals.
+3. **Initialize lazily** — the first accessor creates the default state. No startup ordering dependency.
+4. **Never store functions or class instances** on globalThis — only plain data objects. Functions from different module copies have different closures.
+
+---
+
 ## Appendix: Decision Record
 
 | Decision | Rationale |

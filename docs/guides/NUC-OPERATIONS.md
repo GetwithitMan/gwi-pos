@@ -180,6 +180,41 @@ The installer exists in **two** repos and both must stay in sync:
 
 ---
 
+## Self-Healing and Auto-Recovery
+
+### Update-Agent File Permission Recovery
+
+The update-agent (sync-agent.js) now auto-heals file permission issues before git operations:
+
+```bash
+# Runs before git fetch/checkout to prevent EACCES failures
+sudo chown -R smarttab:smarttab /opt/gwi-pos/app/
+```
+
+This prevents the recurring issue where `sudo npm run build` or root-owned files block subsequent deploys.
+
+### Dashboard .deb Auto-Update
+
+During POS deploys, the update-agent checks for a new `gwi-dashboard.deb` in the repo and installs it automatically:
+
+- The dashboard binary is included in the POS git repo
+- After `npm ci` + build, the agent runs `sudo dpkg -i gwi-dashboard.deb` if a newer version exists
+- No separate deploy pipeline needed for the dashboard
+
+### _venue_schema_state Self-Healing (3-Layer Protection)
+
+The `_venue_schema_state` row in local PG is critical for schema version tracking. Three layers prevent it from going missing or stale:
+
+1. **Installer fallback:** If the row doesn't exist after Stage 6 (schema), the installer creates a fallback row with the current schema version
+2. **Bootstrap self-heal:** On every POS boot, if the row is missing or has a stale version, the bootstrap process re-creates it from the current Prisma schema
+3. **5-minute periodic recheck:** A background timer verifies the row every 5 minutes and self-heals if needed
+
+### Installer Auto-Reboot
+
+After a full install (all stages complete), the installer automatically reboots the NUC to ensure all services start cleanly with the correct systemd configuration. This only triggers on fresh installs, not on `--resume-from` partial runs.
+
+---
+
 ## Key Files
 
 | File | Purpose |

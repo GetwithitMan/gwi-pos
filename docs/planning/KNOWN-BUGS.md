@@ -382,3 +382,10 @@ These were requested but are not bugs — they're missing features. Track them i
 | **POS crash loop — CFD metadata column + stale tenant models** | 2026-03-21 | `3354e20f` — venue_schema_state guard, CFD metadata column existence check |
 
 > **2026-03-21 Note:** 16 upstream models had silent sync failures (missing `syncedAt`/`updatedAt`) — fixed in migrations 090-092. All 161 synced models now pass column verification. Instant sync (<500ms) achieved via `pushUpstream()` (40 routes) + `notifyDataChanged()` (99 routes).
+
+> **2026-03-21 (Session 2) — NUC Infrastructure Bugs Fixed:**
+> - **Readiness permanently null on deployed NUCs** — race condition: readiness was set after `httpServer.listen()`. Fixed by setting BOOT before listen.
+> - **Sync showing "Degraded/Never" despite workers running** — module isolation: esbuild (server.js) and Turbopack (API routes) had separate module copies. Fixed with `globalThis.__gwi_*` singletons.
+> - **Dashboard showing "v1.0.0"** — version was hardcoded. Now reads from package.json at runtime.
+> - **Installer syntax error at line 342** — missing quote/bracket in installer.run. Fixed.
+> - **Update-agent silently failing on `prisma db push`** — schema drift blocked push. Added `--accept-data-loss` in deploy path only (not pre-start), plus auto-chown and deterministic SHA rollback.

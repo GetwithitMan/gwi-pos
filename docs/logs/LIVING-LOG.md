@@ -5,6 +5,39 @@
 
 ---
 
+## 2026-03-21 (Session 2) — NUC Dashboard, Installer Fixes, Self-Healing, Module Isolation, Deploy Hardening
+
+### Summary
+~20 commits across gwi-pos and gwi-dashboard. NUC Dashboard fixes, installer hardening, self-healing _venue_schema_state, module isolation fix for globalThis singletons, readiness null race condition, update-agent hardening, code review fixes, and dashboard UX improvements. Deployed to 3 venues; tagged v1.0.61 through v1.0.63.
+
+### Commits (~20 across gwi-pos and gwi-dashboard)
+
+### Features Delivered
+- **NUC Dashboard fixes:** WS path corrected to `/api/socket`, version reporting from package.json, CORS configured for Tauri Linux origin
+- **Installer fixes:** Syntax error in installer.run fixed, macOS resource fork prevention (`COPYFILE_DISABLE=1`), Stage 12 dashboard binary name fix, desktop shortcut for dashboard, auto-reboot after full install
+- **Self-healing _venue_schema_state:** 3-layer protection — installer fallback row, bootstrap self-heal on missing/stale row, 5-minute periodic recheck
+- **Module isolation fix (globalThis):** server.js (esbuild) and Next.js API routes (Turbopack) load separate module copies, creating isolated singletons. Fixed by using `globalThis.__gwi_*` for readiness, sync metrics, schema verify, and HA lease state
+- **Readiness null race condition:** Set readiness to BOOT before `httpServer.listen()` to prevent permanently-null readiness on deployed NUCs
+- **Update-agent hardening:** `prisma db push --accept-data-loss` for deploy recovery, auto-chown file permissions before git operations, deterministic SHA-based rollback, `npm ci` instead of `npm install`, deeper health gate, dashboard .deb auto-update during POS deploys
+- **Code review hardening:** Removed duplicate migration, removed Express compression middleware, single `httpServer.close()` path, DEGRADED rank fix, numeric schema version comparison, worker registry restart on schema unblock
+- **Dashboard UX:** Friendly status meter (green/yellow/red segments) replacing raw "Degraded" text
+
+### Deployments
+- Shaunel's Steakhouse (.50), Fruita Steakhouse, Monument Bar & Grill
+- Tagged: v1.0.61, v1.0.62, v1.0.63
+
+### Bugs Fixed
+- Readiness permanently null on deployed NUCs (race condition — set BOOT before listen)
+- Sync showing "Degraded/Never" despite workers running (module isolation — globalThis fix)
+- Dashboard showing "v1.0.0" instead of actual version (version reporting from package.json)
+- Installer syntax error at line 342 (missing quote/bracket)
+- Update-agent silently failing on `prisma db push` (added --accept-data-loss for deploy path only)
+- DEGRADED rank ordering incorrect in readiness state machine
+- Numeric vs string schema version comparison bug
+- Duplicate migration file causing idempotency issues
+
+---
+
 ## 2026-03-21 — Sync Architecture Hardening — Instant Sync, Schema Fixes, Android Communication Audit
 
 ### Summary
