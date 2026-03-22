@@ -25,6 +25,7 @@ export const POST = withVenue(async function POST(
       data: {
         pairingCode,
         pairingCodeExpiresAt: expiresAt,
+        lastMutatedBy: 'cloud',
         // Don't unpair existing device - code generation doesn't unpair
       },
     })
