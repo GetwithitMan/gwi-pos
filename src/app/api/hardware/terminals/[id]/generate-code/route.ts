@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST generate a new pairing code for this terminal
 export const POST = withVenue(async function POST(
@@ -27,6 +28,8 @@ export const POST = withVenue(async function POST(
         // Don't unpair existing device - code generation doesn't unpair
       },
     })
+
+    void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
 
     return NextResponse.json({ data: {
       pairingCode,
