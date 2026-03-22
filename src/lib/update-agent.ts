@@ -8,6 +8,7 @@
  * version MC has approved for this venue's release channel.
  */
 
+import { createHmac } from 'crypto'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync } from 'fs'
 import path from 'path'
@@ -384,6 +385,62 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
 }
 
 /**
+ * Report deploy result directly to MC's /api/fleet/deploy-health endpoint.
+ * Uses the same fleet HMAC auth as heartbeat.sh (Authorization: Bearer, X-Server-Node-Id,
+ * X-Hardware-Fingerprint, X-Request-Signature).
+ */
+export async function reportDeployHealth(result: UpdateResult): Promise<void> {
+  const mcUrl = (process.env.MISSION_CONTROL_URL || process.env.BACKOFFICE_API_URL || '').replace(/\/+$/, '')
+  const apiKey = process.env.SERVER_API_KEY || ''
+  const nodeId = process.env.SERVER_NODE_ID || ''
+  const fingerprint = process.env.HARDWARE_FINGERPRINT || ''
+
+  if (!mcUrl || !apiKey || !nodeId) {
+    log.warn('[UpdateAgent] Cannot report deploy health — missing MISSION_CONTROL_URL, SERVER_API_KEY, or SERVER_NODE_ID')
+    return
+  }
+
+  const body: Record<string, unknown> = {
+    success: result.success,
+    previousVersion: result.previousVersion,
+    targetVersion: result.targetVersion,
+    preflightResult: result.preflightResult,
+    durationMs: result.durationMs,
+    version: result.targetVersion,
+  }
+  if (result.error) {
+    body.error = result.error
+  }
+
+  const bodyString = JSON.stringify(body)
+  const signature = createHmac('sha256', apiKey).update(bodyString).digest('hex')
+
+  try {
+    const res = await fetch(`${mcUrl}/api/fleet/deploy-health`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'X-Server-Node-Id': nodeId,
+        'X-Hardware-Fingerprint': fingerprint,
+        'X-Request-Signature': signature,
+      },
+      body: bodyString,
+      signal: AbortSignal.timeout(10_000),
+    })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`HTTP ${res.status} ${res.statusText}: ${text.slice(0, 200)}`)
+    }
+
+    log.info(`[UpdateAgent] Deploy health reported to MC: success=${result.success} version=${result.targetVersion}`)
+  } catch (err) {
+    log.error({ err }, '[UpdateAgent] Failed to report deploy health to MC')
+  }
+}
+
+/**
  * Check heartbeat response and trigger update if needed.
  * Called after each fleet heartbeat.
  */
@@ -407,16 +464,8 @@ export function checkForUpdate(heartbeatResponse: {
       log.error(`[UpdateAgent] Update failed: ${result.error}`)
     }
 
-    // Report result back to MC via cloud event
-    void (async () => {
-      try {
-        const { emitCloudEvent } = await import('./cloud-events')
-        await emitCloudEvent('UPDATE_RESULT', {
-          locationId: process.env.POS_LOCATION_ID || process.env.LOCATION_ID || '',
-          ...result,
-        })
-      } catch {}
-    })().catch((err) => log.error({ err }, 'emitCloudEvent failed'))
+    // Report result back to MC deploy-health endpoint (fleet-authenticated)
+    void reportDeployHealth(result).catch((err) => log.error({ err }, 'reportDeployHealth failed'))
   }).catch((err) => log.error({ err }, 'operation failed'))
 }
 

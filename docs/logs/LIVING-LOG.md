@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-03-22 — Deploy Pipeline Fix + Terminal Pairing + Sync Hardening
+
+### Summary
+Fixed broken deploy pipeline (builds failing silently for 36+ hours), terminal pairing codes not syncing from cloud to NUC, and comprehensive sync protocol hardening.
+
+### Root Causes Found
+- **NUC builds always failed**: `esbuild` and `tsx` were devDependencies, skipped by `npm ci` with `NODE_ENV=production`
+- **Pairing codes never synced**: `lastMutatedBy: 'cloud'` was missing on cloud Terminal mutations — bidirectional sync filtered them out
+- **Version numbers disconnected**: MC releases didn't create git tags, `bump-version.sh` overwrote MC versions
+- **OutageQueueStatus enum**: raw SQL used lowercase values but PostgreSQL enum is uppercase
+
+### Commits (gwi-pos, 14 commits)
+- Pairing code sync (skipFields + lastMutatedBy + notifyDataChanged)
+- Deploy pipeline (esbuild/tsx deps, bump-version guard, version stamping after build)
+- Update agent (pulse-pos removal, lock TTL, full rollback rebuild)
+- OutageQueueStatus enum fix (uppercase + DEAD_LETTER + migration 093)
+- lastMutatedBy on all 19 Terminal mutation sites (cloud/local/conditional)
+- Bidirectional sync protocol documentation
+
+### Commits (gwi-mission-control, 3 commits)
+- Git tag creation on release via GitHub API
+- gitCommitSha on Release model + deploy payload
+- Fetch timeouts, correct 422 handling, transactional release creation
+
+### Key Architectural Rule
+Cloud routes mutating bidirectional models MUST set `lastMutatedBy: 'cloud'`. Shared routes use `process.env.VERCEL ? 'cloud' : 'local'`. See `docs/features/offline-sync.md` § Bidirectional Sync Protocol.
+
+---
+
 ## 2026-03-21 (Session 2) — NUC Dashboard, Installer Fixes, Self-Healing, Module Isolation, Deploy Hardening
 
 ### Summary

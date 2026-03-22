@@ -96,12 +96,13 @@ If a future PR touches the areas below, check the corresponding invariant before
 - **PAY4**: All Payment mutations on NUC (adjust-tip, refund, void) MUST set `lastMutatedBy: 'local'` — required for upstream sync replication
 - **PAY5**: All Order total mutations on NUC (tip adjust, refund tip reduction, commission recalc) MUST set `lastMutatedBy: 'local'`
 
-### Sync Safety (5)
+### Sync Safety (6)
 - **SYNC1**: Downstream sync HWM (`maxSyncedAt`) MUST only advance for successfully synced rows — failed rows must retry on next cycle
 - **SYNC2**: FulfillmentEvent creation in `handleCloudFulfillment` MUST check for existing events by orderId — prevents duplicate printing
 - **SYNC3**: `handleCloudDeduction` MUST NOT use SELECT-before-INSERT pattern — rely solely on `ON CONFLICT ("orderId") DO NOTHING`
 - **SYNC4**: Socket dispatch in downstream sync MUST emit at most one `dispatchOpenOrdersChanged` per location per sync cycle — prevents client-side event storms
 - **SYNC5**: Upstream sync `syncedAt` stamps MUST be individually try/caught — one failure must not block stamping of other rows in the batch
+- **SYNC6**: Shared API routes executing on both NUC and Vercel MUST use `process.env.VERCEL ? 'cloud' : 'local'` for `lastMutatedBy` — hardcoding either value causes silent sync loss in the other environment
 
 ### Cellular Auth (4)
 - **AUTH1**: `CELLULAR_CLAIM_KEY` env var MUST be non-empty for cellular-exchange endpoint to function — returns 503 if unconfigured
@@ -196,4 +197,4 @@ See `docs/guides/DATABASE-CONNECTION-RULES.md` for the full history.
 2. **After a schema change** to `Payment`, `Order`, `Shift`, or `TipLedgerEntry` — re-run P1–P5 and T1–T5.
 3. **After any event sourcing change** — re-run O2 and O3.
 
-The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. The 9 tax-inclusive invariants (2026-03-15) cover the full-stack tax-inclusive pricing implementation. The 1 client-generated ID invariant (2026-03-16) prevents duplicate entities from ID mismatch. The 3 dev infrastructure invariants (2026-03-16) prevent dev environment regressions. The 6 reservation system invariants (2026-03-17) protect the reservation state machine, deposits, and customer matching. The 6 delivery management invariants (2026-03-17) protect the delivery state machine, feature gating, and tip flow. All 75 represent the highest re-regression risk.
+The original 31 invariants cover bugs found during the Android bartender audit (2026-03-03). The 16 sync & security invariants (2026-03-10) cover vulnerabilities found during the 6-agent penetration test. The 9 tax-inclusive invariants (2026-03-15) cover the full-stack tax-inclusive pricing implementation. The 1 client-generated ID invariant (2026-03-16) prevents duplicate entities from ID mismatch. The 3 dev infrastructure invariants (2026-03-16) prevent dev environment regressions. The 6 reservation system invariants (2026-03-17) protect the reservation state machine, deposits, and customer matching. The 6 delivery management invariants (2026-03-17) protect the delivery state machine, feature gating, and tip flow. All 76 represent the highest re-regression risk.

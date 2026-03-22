@@ -215,6 +215,7 @@ KdsScreen {
 - Card readers: VP3300 (USB) and VP3350 (USB + Bluetooth) — Datacap only
 - Cash drawer opens via ESC/POS kick command through receipt printer
 - KDS heartbeat every 30s; marked offline after 60s stale
+- **Terminal is a bidirectional sync model** — every Terminal mutation MUST set `lastMutatedBy`. NUC-only routes (heartbeat, pair-native, pair-cfd, reconnect) use `'local'`. Shared routes (Terminal CRUD, unpair, generate-code) use `process.env.VERCEL ? 'cloud' : 'local'`. Missing this causes silent sync data loss. See `docs/features/offline-sync.md` § Bidirectional Sync Protocol.
 
 ---
 

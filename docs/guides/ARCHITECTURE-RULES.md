@@ -159,7 +159,7 @@ The NUC defers to MC for all provisioning decisions. See `docs/features/mission-
 | **Orders & Line Items** | Order, OrderItem, OrderDiscount, OrderCard, OrderItemModifier | Bidirectional | Both (neon-wins) | `lastMutatedBy` determines sync direction; conflict resolution favors Neon |
 | **Payments** | Payment | Bidirectional | Both (neon-wins) | `lastMutatedBy` required on every NUC write |
 | **Bottle & Spirit** | BottleProduct, SpiritCategory, SpiritModifierGroup | Bidirectional | Both (neon-wins) | |
-| **Cake Orders** | CakeOrder, CakeQuote | Bidirectional | Both (neon-wins) | |
+| **Cake Orders** | CakeOrder, CakeQuote | Bidirectional | Both (neon-wins) | (planned — not yet in schema) |
 | **Order Events & Snapshots** | OrderEvent, OrderSnapshot, OrderItemSnapshot, Seat | NUC | NUC → Neon | Event-sourced, append-only |
 | **Order Details** | OrderItemIngredient, OrderItemPizza, OrderOwnership, OrderOwnershipEntry, Ticket, OrderItemDiscount, RefundLog | NUC | NUC → Neon | |
 | **Shifts & Time** | Shift, Drawer, TimeClockEntry, Break | NUC | NUC → Neon | |
@@ -254,7 +254,7 @@ NEON_DATABASE_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
 NEON_DIRECT_URL="postgresql://...@neon.tech/gwi_pos_{slug}?sslmode=require"
 SYNC_ENABLED=true
 SYNC_UPSTREAM_INTERVAL_MS=5000    # NUC → Neon every 5s
-SYNC_DOWNSTREAM_INTERVAL_MS=15000 # Neon → NUC every 15s
+SYNC_DOWNSTREAM_INTERVAL_MS=5000  # Neon → NUC every 5s
 ```
 
 **If a NUC's `DATABASE_URL` points at `neon.tech` — that is a BUG. Fix it immediately.**

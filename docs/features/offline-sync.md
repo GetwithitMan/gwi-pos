@@ -291,9 +291,11 @@ Models with `direction: 'bidirectional'` in `sync-config.ts` sync both ways betw
 
 2. **NUC-side mutations should set `lastMutatedBy: 'local'`** (or leave it null). This prevents the downstream sync from overwriting locally-made changes. The upstream sync worker picks up rows where `lastMutatedBy != 'cloud'`.
 
-3. **The `skipFields` array** in sync-config.ts lists fields that are included in INSERT (new rows) but excluded from ON CONFLICT UPDATE. Use this for fields set locally on the NUC (e.g., `isPaired`, `deviceToken`, `lastSeenAt`) that should not be overwritten by downstream sync even though the model is otherwise cloud-owned.
+3. **Shared routes** that run on BOTH NUC and Vercel (e.g., Terminal CRUD, unpair, generate-code) MUST use `lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local'` to dynamically set the correct origin. Hardcoding either value causes silent sync loss in the other environment.
 
-4. **The bidirectional conflict guard** additionally checks `WHERE lastMutatedBy = 'cloud' OR lastMutatedBy IS NULL` on the ON CONFLICT UPDATE clause. This means locally-mutated rows will not be overwritten by downstream sync even if Neon has newer data for those rows.
+4. **The `skipFields` array** in sync-config.ts lists fields that are included in INSERT (new rows) but excluded from ON CONFLICT UPDATE. Use this for fields set locally on the NUC (e.g., `isPaired`, `deviceToken`, `lastSeenAt`) that should not be overwritten by downstream sync even though the model is otherwise cloud-owned.
+
+5. **The bidirectional conflict guard** additionally checks `WHERE lastMutatedBy = 'cloud' OR lastMutatedBy IS NULL` on the ON CONFLICT UPDATE clause. This means locally-mutated rows will not be overwritten by downstream sync even if Neon has newer data for those rows.
 
 ### Current Bidirectional Models (as of 2026-03-22)
 

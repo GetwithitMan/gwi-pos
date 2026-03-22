@@ -9,8 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { executeUpdate, getUpdateAgentStatus } from '@/lib/update-agent'
-import { emitCloudEvent } from '@/lib/cloud-events'
+import { executeUpdate, getUpdateAgentStatus, reportDeployHealth } from '@/lib/update-agent'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,12 +56,9 @@ export async function POST(req: NextRequest) {
       console.error(`[UpdateAgent] Update failed: ${result.error}`)
     }
 
-    // Report result back to MC
+    // Report result back to MC deploy-health endpoint
     try {
-      await emitCloudEvent('UPDATE_RESULT', {
-        locationId: process.env.POS_LOCATION_ID || process.env.LOCATION_ID || '',
-        ...result,
-      })
+      await reportDeployHealth(result)
     } catch {}
   }).catch(console.error)
 
