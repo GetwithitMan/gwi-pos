@@ -45,6 +45,28 @@
     - hibernate.target
     - hybrid-sleep.target
 
+# ── Disable X11 screen blanking and DPMS (all roles, all desktops) ───────────
+
+- name: Ensure .xprofile exists for POS user
+  ansible.builtin.file:
+    path: "{{ gwi_posuser_home }}/.xprofile"
+    state: touch
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve
+
+- name: Disable X11 screen blanking and DPMS in .xprofile
+  ansible.builtin.lineinfile:
+    path: "{{ gwi_posuser_home }}/.xprofile"
+    line: "xset s off && xset -dpms  # GWI POS — screen stays on (managed by Ansible)"
+    state: present
+    create: true
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # KDE Plasma specific (when: gwi_desktop_env == 'kde')
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -79,6 +101,29 @@
       Autolock=false
       LockOnResume=false
       Timeout=0
+  become_user: "{{ gwi_posuser }}"
+  when: gwi_desktop_env == 'kde'
+
+- name: "KDE — Disable all power management (powermanagementprofilesrc)"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.config/powermanagementprofilesrc"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      # GWI POS — disable all power management (screen stays on forever)
+      # Managed by Ansible os_hardening role — do not edit manually
+      [AC][DPMSControl]
+      idleTime=0
+      lockBeforeTurnOff=0
+
+      [AC][DimDisplay]
+      idleTime=0
+
+      [AC][SuspendSession]
+      idleTime=0
+      suspendThenHibernate=false
+      suspendType=0
   become_user: "{{ gwi_posuser }}"
   when: gwi_desktop_env == 'kde'
 
