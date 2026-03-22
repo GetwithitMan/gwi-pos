@@ -254,6 +254,21 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     log.info('[UpdateAgent] Running npm run build...')
     execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
 
+    // Stamp the MC-provided version into package.json AFTER successful build.
+    // bump-version.sh may overwrite during build — this ensures the final version
+    // matches what MC deployed, and only on success.
+    try {
+      const pkgPath = path.join(APP_DIR, 'package.json')
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
+      if (pkg.version !== targetVersion) {
+        pkg.version = targetVersion
+        writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
+        log.info(`[UpdateAgent] Stamped final version ${targetVersion} into package.json`)
+      }
+    } catch (stampErr) {
+      log.warn('[UpdateAgent] Version stamp failed (non-fatal):', stampErr instanceof Error ? stampErr.message : stampErr)
+    }
+
     // Update dashboard .deb (non-fatal — POS update still succeeds if dashboard fails)
     const stationRole = process.env.STATION_ROLE || 'server'
     if (stationRole !== 'terminal') {
@@ -274,13 +289,9 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
       log.info('[UpdateAgent] Requesting service restart...')
       try {
         execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
-      } catch {
-        try {
-          execSync('sudo systemctl restart pulse-pos', { timeout: 30_000 })
-        } catch (err) {
-          log.error({ err: err }, '[UpdateAgent] Restart failed:')
-          return
-        }
+      } catch (err) {
+        log.error({ err: err }, '[UpdateAgent] Restart failed:')
+        return
       }
 
       // Health gate: verify POS boots successfully after update
