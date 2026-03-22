@@ -51,6 +51,7 @@ export function SizeModal({
   const [inventoryMultiplier, setInventoryMultiplier] = useState(size?.inventoryMultiplier?.toString() || '1.0')
   const [freeToppings, setFreeToppings] = useState(size?.freeToppings?.toString() || '0')
   const [isDefault, setIsDefault] = useState(size?.isDefault || false)
+  const [ingredientId, setIngredientId] = useState(size?.ingredientId || '')
   const [inventoryItemId, setInventoryItemId] = useState(size?.inventoryItemId || '')
   const [usageQuantity, setUsageQuantity] = useState(size?.usageQuantity?.toString() || '')
   const [usageUnit, setUsageUnit] = useState(size?.usageUnit || 'oz')
@@ -68,6 +69,7 @@ export function SizeModal({
       inventoryMultiplier: parseFloat(inventoryMultiplier) || 1.0,
       freeToppings: parseInt(freeToppings) || 0,
       isDefault,
+      ingredientId: ingredientId || null,
       inventoryItemId: inventoryItemId || null,
       usageQuantity: usageQuantity ? parseFloat(usageQuantity) : null,
       usageUnit: usageUnit || null,
@@ -175,6 +177,8 @@ export function SizeModal({
             <label htmlFor="isDefault" className="text-sm font-medium">Default Size</label>
           </div>
           <PizzaIngredientLinker
+            ingredientId={ingredientId}
+            setIngredientId={setIngredientId}
             inventoryItemId={inventoryItemId}
             setInventoryItemId={setInventoryItemId}
             selectedItemName={selectedItemName}
@@ -217,6 +221,7 @@ export function CrustModal({
   const [description, setDescription] = useState(crust?.description || '')
   const [price, setPrice] = useState(crust?.price?.toString() || '0')
   const [isDefault, setIsDefault] = useState(crust?.isDefault || false)
+  const [ingredientId, setIngredientId] = useState(crust?.ingredientId || '')
   const [inventoryItemId, setInventoryItemId] = useState(crust?.inventoryItemId || '')
   const [usageQuantity, setUsageQuantity] = useState(crust?.usageQuantity?.toString() || '')
   const [usageUnit, setUsageUnit] = useState(crust?.usageUnit || 'oz')
@@ -230,6 +235,7 @@ export function CrustModal({
       description: description.trim() || null,
       price: parseFloat(price) || 0,
       isDefault,
+      ingredientId: ingredientId || null,
       inventoryItemId: inventoryItemId || null,
       usageQuantity: usageQuantity ? parseFloat(usageQuantity) : null,
       usageUnit: usageUnit || null,
@@ -289,6 +295,8 @@ export function CrustModal({
             <label htmlFor="crustDefault" className="text-sm font-medium">Default Crust</label>
           </div>
           <PizzaIngredientLinker
+            ingredientId={ingredientId}
+            setIngredientId={setIngredientId}
             inventoryItemId={inventoryItemId}
             setInventoryItemId={setInventoryItemId}
             selectedItemName={selectedItemName}
@@ -333,6 +341,7 @@ export function SauceModal({
   const [allowExtra, setAllowExtra] = useState(sauce?.allowExtra ?? true)
   const [extraPrice, setExtraPrice] = useState(sauce?.extraPrice?.toString() || '0')
   const [isDefault, setIsDefault] = useState(sauce?.isDefault || false)
+  const [ingredientId, setIngredientId] = useState(sauce?.ingredientId || '')
   const [inventoryItemId, setInventoryItemId] = useState(sauce?.inventoryItemId || '')
   const [usageQuantity, setUsageQuantity] = useState(sauce?.usageQuantity?.toString() || '')
   const [usageUnit, setUsageUnit] = useState(sauce?.usageUnit || 'oz')
@@ -348,6 +357,7 @@ export function SauceModal({
       allowExtra,
       extraPrice: parseFloat(extraPrice) || 0,
       isDefault,
+      ingredientId: ingredientId || null,
       inventoryItemId: inventoryItemId || null,
       usageQuantity: usageQuantity ? parseFloat(usageQuantity) : null,
       usageUnit: usageUnit || null,
@@ -431,6 +441,8 @@ export function SauceModal({
             <label htmlFor="sauceDefault" className="text-sm font-medium">Default Sauce</label>
           </div>
           <PizzaIngredientLinker
+            ingredientId={ingredientId}
+            setIngredientId={setIngredientId}
             inventoryItemId={inventoryItemId}
             setInventoryItemId={setInventoryItemId}
             selectedItemName={selectedItemName}
@@ -475,6 +487,7 @@ export function CheeseModal({
   const [allowExtra, setAllowExtra] = useState(cheese?.allowExtra ?? true)
   const [extraPrice, setExtraPrice] = useState(cheese?.extraPrice?.toString() || '0')
   const [isDefault, setIsDefault] = useState(cheese?.isDefault || false)
+  const [ingredientId, setIngredientId] = useState(cheese?.ingredientId || '')
   const [inventoryItemId, setInventoryItemId] = useState(cheese?.inventoryItemId || '')
   const [usageQuantity, setUsageQuantity] = useState(cheese?.usageQuantity?.toString() || '')
   const [usageUnit, setUsageUnit] = useState(cheese?.usageUnit || 'oz')
@@ -490,6 +503,7 @@ export function CheeseModal({
       allowExtra,
       extraPrice: parseFloat(extraPrice) || 0,
       isDefault,
+      ingredientId: ingredientId || null,
       inventoryItemId: inventoryItemId || null,
       usageQuantity: usageQuantity ? parseFloat(usageQuantity) : null,
       usageUnit: usageUnit || null,
@@ -573,6 +587,8 @@ export function CheeseModal({
             <label htmlFor="cheeseDefault" className="text-sm font-medium">Default Cheese</label>
           </div>
           <PizzaIngredientLinker
+            ingredientId={ingredientId}
+            setIngredientId={setIngredientId}
             inventoryItemId={inventoryItemId}
             setInventoryItemId={setInventoryItemId}
             selectedItemName={selectedItemName}
@@ -617,6 +633,7 @@ export function ToppingModal({
   const [price, setPrice] = useState(topping?.price?.toString() || '')
   const [extraPrice, setExtraPrice] = useState(topping?.extraPrice?.toString() || '')
   const [color, setColor] = useState(topping?.color || '')
+  const [ingredientId, setIngredientId] = useState(topping?.ingredientId || '')
   const [inventoryItemId, setInventoryItemId] = useState(topping?.inventoryItemId || '')
   const [usageQuantity, setUsageQuantity] = useState(topping?.usageQuantity?.toString() || '')
   const [usageUnit, setUsageUnit] = useState(topping?.usageUnit || 'oz')
@@ -632,6 +649,7 @@ export function ToppingModal({
       price: parseFloat(price),
       extraPrice: extraPrice ? parseFloat(extraPrice) : null,
       color: color || null,
+      ingredientId: ingredientId || null,
       inventoryItemId: inventoryItemId || null,
       usageQuantity: usageQuantity ? parseFloat(usageQuantity) : null,
       usageUnit: usageUnit || null,
@@ -697,6 +715,8 @@ export function ToppingModal({
             </div>
           </div>
           <PizzaIngredientLinker
+            ingredientId={ingredientId}
+            setIngredientId={setIngredientId}
             inventoryItemId={inventoryItemId}
             setInventoryItemId={setInventoryItemId}
             selectedItemName={selectedItemName}

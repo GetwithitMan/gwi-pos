@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, displayName, description, category, price, extraPrice, color, iconUrl, inventoryItemId, usageQuantity, usageUnit } = body
+    const { name, displayName, description, category, price, extraPrice, color, iconUrl, ingredientId, inventoryItemId, usageQuantity, usageUnit } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -69,6 +69,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         extraPrice: extraPrice || null,
         color: color || null,
         iconUrl: iconUrl || null,
+        ingredientId: ingredientId || null,
         inventoryItemId: inventoryItemId || null,
         usageQuantity: usageQuantity ?? null,
         usageUnit: usageUnit || null,

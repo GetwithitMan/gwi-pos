@@ -5813,6 +5813,11 @@ model Ingredient {
   // C-SCHEMA-1: Added reverse relations
   orderItemIngredients        OrderItemIngredient[]
   pricingOptionInventoryLinks PricingOptionInventoryLink[]
+  pizzaToppings               PizzaTopping[] @relation("PizzaToppingIngredient")
+  pizzaSizes                  PizzaSize[] @relation("PizzaSizeIngredient")
+  pizzaCrusts                 PizzaCrust[] @relation("PizzaCrustIngredient")
+  pizzaSauces                 PizzaSauce[] @relation("PizzaSauceIngredient")
+  pizzaCheeses                PizzaCheese[] @relation("PizzaCheeseIngredient")
 
   @@index([locationId])
   @@index([locationId, name])
@@ -6815,6 +6820,11 @@ model PizzaSize {
   // Small=0.75, Medium=1.0, Large=1.3, XL=1.6 (example)
   inventoryMultiplier Decimal @default(1.0)
 
+  // Ingredient link — connects size to the ingredient library for
+  // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
+  ingredientId    String?
+  ingredient      Ingredient? @relation("PizzaSizeIngredient", fields: [ingredientId], references: [id])
+
   // Direct inventory linkage (e.g., dough ball per size)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaSizeInventory", fields: [inventoryItemId], references: [id])
@@ -6848,6 +6858,11 @@ model PizzaCrust {
   displayName String?
   description String?
   price       Decimal @default(0) // Upcharge for specialty crusts
+
+  // Ingredient link — connects crust to the ingredient library for
+  // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
+  ingredientId    String?
+  ingredient      Ingredient? @relation("PizzaCrustIngredient", fields: [ingredientId], references: [id])
 
   // Inventory tracking (Skill 115)
   // Links to dough inventory - usage is for MEDIUM size, scaled by size multiplier
@@ -6890,6 +6905,11 @@ model PizzaSauce {
   allowExtra Boolean @default(true)
   extraPrice Decimal @default(0)
 
+  // Ingredient link — connects sauce to the ingredient library for
+  // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
+  ingredientId    String?
+  ingredient      Ingredient? @relation("PizzaSauceIngredient", fields: [ingredientId], references: [id])
+
   // Inventory tracking (Skill 115)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaSauceInventory", fields: [inventoryItemId], references: [id])
@@ -6929,6 +6949,11 @@ model PizzaCheese {
   allowLight Boolean @default(true)
   allowExtra Boolean @default(true)
   extraPrice Decimal @default(0)
+
+  // Ingredient link — connects cheese to the ingredient library for
+  // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
+  ingredientId    String?
+  ingredient      Ingredient? @relation("PizzaCheeseIngredient", fields: [ingredientId], references: [id])
 
   // Inventory tracking (Skill 115)
   inventoryItemId String?
@@ -6975,7 +7000,12 @@ model PizzaTopping {
   color   String? // Hex color for visual builder representation
   iconUrl String? // Optional icon image
 
-  // Inventory tracking (Skill 115)
+  // Ingredient link — connects topping to the ingredient library for
+  // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
+  ingredientId String?
+  ingredient   Ingredient? @relation("PizzaToppingIngredient", fields: [ingredientId], references: [id])
+
+  // Inventory tracking (Skill 115) — resolved from ingredient chain when available
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation("PizzaToppingInventory", fields: [inventoryItemId], references: [id])
   usageQuantity   Decimal? // Base usage for medium whole pizza (e.g., 2 oz pepperoni)

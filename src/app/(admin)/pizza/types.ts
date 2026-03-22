@@ -37,6 +37,7 @@ export interface PizzaSize {
   toppingMultiplier: number
   freeToppings: number
   inventoryMultiplier: number
+  ingredientId: string | null
   inventoryItemId: string | null
   inventoryItemName?: string | null
   usageQuantity: number | null
@@ -52,6 +53,7 @@ export interface PizzaCrust {
   displayName: string | null
   description: string | null
   price: number
+  ingredientId: string | null
   inventoryItemId: string | null
   inventoryItemName?: string | null
   usageQuantity: number | null
@@ -70,6 +72,7 @@ export interface PizzaSauce {
   allowLight: boolean
   allowExtra: boolean
   extraPrice: number
+  ingredientId: string | null
   inventoryItemId: string | null
   inventoryItemName?: string | null
   usageQuantity: number | null
@@ -88,6 +91,7 @@ export interface PizzaCheese {
   allowLight: boolean
   allowExtra: boolean
   extraPrice: number
+  ingredientId: string | null
   inventoryItemId: string | null
   inventoryItemName?: string | null
   usageQuantity: number | null
@@ -108,6 +112,8 @@ export interface PizzaTopping {
   color: string | null
   isActive: boolean
   sortOrder: number
+  // Ingredient library link
+  ingredientId: string | null
   // Inventory linkage for cost tracking & deductions
   inventoryItemId: string | null
   inventoryItemName?: string | null

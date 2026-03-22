@@ -7,6 +7,8 @@ import { IngredientHierarchyPicker } from '@/components/menu/IngredientHierarchy
 import type { IngredientLibraryItem, IngredientCategory } from '@/components/menu/IngredientHierarchyPicker'
 
 export interface PizzaIngredientLinkerProps {
+  ingredientId: string
+  setIngredientId: (id: string) => void
   inventoryItemId: string
   setInventoryItemId: (id: string) => void
   selectedItemName: string
@@ -26,6 +28,7 @@ export interface PizzaIngredientLinkerProps {
 }
 
 export function PizzaIngredientLinker({
+  ingredientId, setIngredientId,
   inventoryItemId, setInventoryItemId,
   selectedItemName, setSelectedItemName,
   usageQuantity, setUsageQuantity,
@@ -47,17 +50,19 @@ export function PizzaIngredientLinker({
   const [newPrepName, setNewPrepName] = useState('')
   const [creatingIngredientLoading, setCreatingIngredientLoading] = useState(false)
 
-  const handleLinkIngredient = async (ingredientId: string) => {
-    const ingredient = ingredientsLibrary.find(i => i.id === ingredientId)
+  const handleLinkIngredient = async (selectedIngredientId: string) => {
+    const ingredient = ingredientsLibrary.find(i => i.id === selectedIngredientId)
     if (!ingredient) return
 
-    let resolvedInventoryItemId = ingredientInventoryMap[ingredientId]
+    // Always link the ingredient
+    setIngredientId(selectedIngredientId)
+    setSelectedItemName(ingredient.name)
 
+    // Also resolve inventoryItemId if available (for stock deduction)
+    let resolvedInventoryItemId = ingredientInventoryMap[selectedIngredientId]
     if (!resolvedInventoryItemId && ingredient.parentIngredientId) {
       resolvedInventoryItemId = ingredientInventoryMap[ingredient.parentIngredientId]
     }
-
-    // Fallback: search InventoryItem by exact name match
     if (!resolvedInventoryItemId) {
       try {
         const res = await fetch(`/api/inventory/items?search=${encodeURIComponent(ingredient.name)}&activeOnly=true&limit=10`)
@@ -69,19 +74,7 @@ export function PizzaIngredientLinker({
         }
       } catch { /* ignore */ }
     }
-
-    if (resolvedInventoryItemId) {
-      setInventoryItemId(resolvedInventoryItemId)
-      setSelectedItemName(ingredient.name)
-    } else {
-      // No InventoryItem record linked — clear the inventoryItemId (FK constraint
-      // prevents using ingredient IDs here) but still set the display name so the
-      // user sees their selection. Inventory deduction is skipped for toppings
-      // without a linked InventoryItem — safe to link later from Ingredients page.
-      setInventoryItemId('')
-      setSelectedItemName(ingredient.name)
-      toast.info(`Linked "${ingredient.name}" for display. To enable stock tracking, link an inventory item from the Ingredients page.`)
-    }
+    setInventoryItemId(resolvedInventoryItemId || '')
   }
 
   const handleCreateCategory = async () => {
@@ -184,7 +177,7 @@ export function PizzaIngredientLinker({
     finally { setCreatingIngredientLoading(false) }
   }
 
-  if (selectedItemName && inventoryItemId) {
+  if (selectedItemName && (inventoryItemId || ingredientId)) {
     return (
       <div className="border-t pt-4 mt-2">
         <p className="text-sm font-semibold text-gray-900 mb-3">Inventory & Cost Tracking</p>
@@ -194,6 +187,7 @@ export function PizzaIngredientLinker({
           <button
             type="button"
             onClick={() => {
+              setIngredientId('')
               setInventoryItemId('')
               setSelectedItemName('')
               setUsageQuantity('')
