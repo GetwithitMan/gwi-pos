@@ -25,6 +25,16 @@ import { checkBaseSeedPresent } from '@/lib/base-seed-check'
 
 const log = createChildLogger('venue-bootstrap')
 
+/** Compare schema versions numerically. Returns -1, 0, or 1. */
+function compareSchemaVersion(a: string | null, b: string): number {
+  if (a === null) return -1
+  const numA = parseInt(a, 10)
+  const numB = parseInt(b, 10)
+  if (!isNaN(numA) && !isNaN(numB)) return numA < numB ? -1 : numA > numB ? 1 : 0
+  // Fallback to string comparison for non-numeric versions
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
 // ---------------------------------------------------------------------------
 // _local_schema_state — NUC-owned local PG tracking (NOT Neon)
 //
@@ -247,7 +257,7 @@ async function recheckNeonSchema(): Promise<void> {
       }
 
       const versionOk = neonState.schemaVersion === EXPECTED_SCHEMA_VERSION ||
-        neonState.schemaVersion > EXPECTED_SCHEMA_VERSION
+        compareSchemaVersion(neonState.schemaVersion, EXPECTED_SCHEMA_VERSION) > 0
 
       if (versionOk) {
         // Schema is now compatible — update cached result and unblock sync
@@ -333,19 +343,31 @@ async function recheckNeonSchema(): Promise<void> {
           log.info('Downstream column cache cleared after schema unblock')
         } catch { /* non-fatal */ }
 
-        // Auto-start sync workers without requiring NUC restart
+        // Auto-start sync workers via worker registry (proper lifecycle management)
+        // This allows advanceToOrders() to fire when downstream sync completes.
         try {
-          const { startUpstreamSyncWorker } = await import('@/lib/sync/upstream-sync-worker')
-          const { startDownstreamSyncWorker } = await import('@/lib/sync/downstream-sync-worker')
-          const { startOutageReplayWorker } = await import('@/lib/sync/outage-replay-worker')
-          const { startCloudRelayClient } = await import('@/lib/cloud-relay-client')
+          const { registerWorker, startAllWorkers, getWorkerHealth } = await import('@/lib/worker-registry')
+          const { startUpstreamSyncWorker, stopUpstreamSyncWorker } = await import('@/lib/sync/upstream-sync-worker')
+          const { startDownstreamSyncWorker, stopDownstreamSyncWorker } = await import('@/lib/sync/downstream-sync-worker')
+          const { startOutageReplayWorker, stopOutageReplayWorker } = await import('@/lib/sync/outage-replay-worker')
+          const { startFulfillmentBridge, stopFulfillmentBridge } = await import('@/lib/fulfillment-bridge-worker')
+          const { startBridgeCheckpoint, stopBridgeCheckpoint } = await import('@/lib/bridge-checkpoint')
+          const { startCloudRelayClient, stopCloudRelayClient } = await import('@/lib/cloud-relay-client')
 
-          startUpstreamSyncWorker()
-          startDownstreamSyncWorker()
-          startOutageReplayWorker()
-          startCloudRelayClient()
+          // Guard against duplicate registration (should not happen, but defensive)
+          const existingWorkers = getWorkerHealth().map(w => w.name)
+          if (!existingWorkers.includes('upstreamSync')) {
+            registerWorker('upstreamSync', 'degraded', () => startUpstreamSyncWorker(), () => stopUpstreamSyncWorker())
+            registerWorker('downstreamSync', 'degraded', () => startDownstreamSyncWorker(), () => stopDownstreamSyncWorker())
+            registerWorker('outageReplay', 'degraded', () => startOutageReplayWorker(), () => stopOutageReplayWorker())
+            registerWorker('fulfillmentBridge', 'degraded', () => startFulfillmentBridge(), () => stopFulfillmentBridge())
+            registerWorker('bridgeCheckpoint', 'degraded', () => startBridgeCheckpoint(), () => stopBridgeCheckpoint())
+            registerWorker('cloudRelay', 'optional', () => startCloudRelayClient(), () => stopCloudRelayClient())
+          }
 
-          log.info('Sync workers auto-started after schema re-check unblocked sync')
+          await startAllWorkers()
+
+          log.info('Sync workers registered and started via worker registry after schema unblock')
         } catch (workerErr) {
           log.error({ err: workerErr instanceof Error ? workerErr.message : workerErr },
             'Failed to auto-start sync workers after schema unblock — NUC restart required')
@@ -458,8 +480,8 @@ async function buildReadiness(
 
   return {
     schemaVersionMatch: schemaVersion === EXPECTED_SCHEMA_VERSION,
-    schemaVersionBehind: schemaVersion !== null && schemaVersion < EXPECTED_SCHEMA_VERSION,
-    schemaVersionAhead: schemaVersion !== null && schemaVersion > EXPECTED_SCHEMA_VERSION,
+    schemaVersionBehind: schemaVersion !== null && compareSchemaVersion(schemaVersion, EXPECTED_SCHEMA_VERSION) < 0,
+    schemaVersionAhead: schemaVersion !== null && compareSchemaVersion(schemaVersion, EXPECTED_SCHEMA_VERSION) > 0,
     coreTablesExist,
     requiredEnumsExist,
     baseSeedPresent: seedResult.ok,
@@ -654,7 +676,7 @@ export async function runBootstrap(): Promise<BootstrapResult> {
               }
             } else if (neonState) {
               // State exists -- check versions
-              if (neonState.schemaVersion < EXPECTED_SCHEMA_VERSION) {
+              if (compareSchemaVersion(neonState.schemaVersion, EXPECTED_SCHEMA_VERSION) < 0) {
                 // Neon is behind — this is MC's responsibility to fix.
                 // NUC cannot and should not advance Neon schema.
                 // Report the issue and block sync until MC pushes the update.
@@ -665,7 +687,7 @@ export async function runBootstrap(): Promise<BootstrapResult> {
                 }, 'Neon schema version behind — sync blocked. MC must push schema update to this venue.')
                 result.neonSchemaReady = await buildReadiness(neonClient, neonState)
                 result.degradedReasons.push('neon-schema-behind')
-              } else if (neonState.schemaVersion > EXPECTED_SCHEMA_VERSION) {
+              } else if (compareSchemaVersion(neonState.schemaVersion, EXPECTED_SCHEMA_VERSION) > 0) {
                 log.warn(
                   { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
                   'Neon schema version ahead of this POS build — safe to proceed'

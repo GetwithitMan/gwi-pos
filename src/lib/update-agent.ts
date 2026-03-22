@@ -192,6 +192,9 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
       // Non-fatal — might not have sudo, or already correct
     }
 
+    // Capture current SHA before fetching — used for deterministic rollback
+    const previousSha = execSync('git rev-parse HEAD', { cwd: APP_DIR, encoding: 'utf8' }).trim()
+
     // Fetch the target version
     execSync('git fetch --all --prune', { cwd: APP_DIR, timeout: 60_000 })
 
@@ -212,20 +215,6 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     const envFile = '/opt/gwi-pos/.env'
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env')) } catch {}
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env.local')) } catch {}
-
-    // Stamp target version into package.json so NUC reports correct version to MC
-    try {
-      const pkgPath = path.join(APP_DIR, 'package.json')
-      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-      if (pkg.version !== targetVersion) {
-        pkg.version = targetVersion
-        const { writeFileSync } = await import('fs')
-        writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n')
-        log.info(`[UpdateAgent] Stamped version ${targetVersion} into package.json`)
-      }
-    } catch (err) {
-      log.warn('[UpdateAgent] Version stamp failed:', err instanceof Error ? err.message : err)
-    }
 
     // Install dependencies
     log.info('[UpdateAgent] Running npm install...')
@@ -318,7 +307,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
         if (!healthy) {
           log.error('[UpdateAgent] POS failed health check after update — rolling back')
           try {
-            execSync(`cd ${APP_DIR} && git reset --hard HEAD~1`, { timeout: 30_000 })
+            execSync(`cd ${APP_DIR} && git reset --hard ${previousSha}`, { timeout: 30_000 })
             execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
             log.info('[UpdateAgent] Rollback complete — reverted to previous version')
           } catch (rollbackErr) {

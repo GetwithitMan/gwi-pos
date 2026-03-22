@@ -24,13 +24,14 @@ const log = createChildLogger('readiness')
 
 export type ReadinessLevel = 'FAILED' | 'BOOT' | 'SYNC' | 'ORDERS' | 'DEGRADED'
 
-/** Numeric ordering for comparison: FAILED < BOOT < SYNC < ORDERS. DEGRADED is separate. */
+/** Numeric ordering for comparison: FAILED < BOOT < SYNC < ORDERS.
+ *  DEGRADED is a condition overlay, not a stage — ranks same as BOOT (minimum readiness). */
 const LEVEL_RANK: Record<ReadinessLevel, number> = {
   FAILED: 0,
   BOOT: 1,
-  DEGRADED: 2,
-  SYNC: 3,
-  ORDERS: 4,
+  SYNC: 2,
+  ORDERS: 3,
+  DEGRADED: 1,
 }
 
 export interface ReadinessInputs {

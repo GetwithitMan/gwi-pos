@@ -10,10 +10,8 @@
  */
 
 import { createServer, IncomingMessage, ServerResponse } from 'http'
-import { execSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import next from 'next'
-import compression from 'compression'
 import { initializeSocketServer, getSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
@@ -187,37 +185,13 @@ async function main() {
   const app = next({ dev, hostname, port })
   const handle = app.getRequestHandler()
 
-  // ── Run migrations before anything else (NUC only) ───────────────────
-  // Vercel handles migrations in vercel-build.js; NUC must run them on boot
-  // so the schema is current before app.prepare(), validateSyncCoverage(), etc.
-  if (!process.env.VERCEL) {
-    try {
-      console.log('[server] Running pre-start migrations on local PG...')
-      execSync('node scripts/nuc-pre-migrate.js', {
-        stdio: 'inherit',
-        timeout: 300000, // 5 minute timeout (matches the script's internal timeout)
-        cwd: process.cwd()
-      })
-      console.log('[server] Local PG migrations complete')
-    } catch (err) {
-      console.error('[server] Local PG migration failed:', err)
-      // Don't exit — server should still start for recovery access
-      // Schema verification will catch issues and block sync workers
-    }
-
-    // NOTE: NUC does NOT migrate Neon. That is MC's responsibility.
-    // Neon is the canonical schema source of record — MC advances it.
-    // NUC reads Neon version truth via venue-bootstrap and blocks sync if behind.
-    // If Neon is behind, MC must push the schema update to this venue.
-  }
+  // NOTE: Migrations are handled by systemd ExecStartPre (pre-start.sh).
+  // server.ts does NOT run nuc-pre-migrate.js — single migration authority.
+  // Neon schema is MC's responsibility — NUC observes and blocks sync if behind.
 
   await app.prepare()
 
   const socketPath = process.env.SOCKET_PATH || '/api/socket'
-
-  // Compression middleware — reduces JSON response sizes by ~70%
-  // Threshold 1KB: don't compress tiny responses (overhead > benefit)
-  const compress = compression({ threshold: 1024 })
 
   const httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
     // Let Socket.io handle its own HTTP polling requests — the [orderCode]/[slug]
@@ -227,27 +201,23 @@ async function main() {
       return // Socket.io's own request listener handles this
     }
 
-    // Apply compression to all non-socket responses
-    // Cast to any — compression types expect Express but work fine with raw http
-    compress(req as any, res as any, () => {
-      // Multi-tenant: wrap request in AsyncLocalStorage with the correct
-      // PrismaClient so that `import { db } from '@/lib/db'` automatically
-      // routes to the venue's Neon database.
-      const slug = req.headers['x-venue-slug'] as string | undefined
-      const requestId = (req.headers['x-request-id'] as string) || randomUUID()
-      if (slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-        getDbForVenue(slug).then((prisma) => {
-          requestStore.run({ slug, prisma, requestId }, () => handle(req, res))
-        }).catch(() => {
-          res.statusCode = 502
-          res.end(JSON.stringify({ error: 'Venue database not available' }))
-        })
-      } else {
-        // Local/NUC mode (no slug header): still wrap in requestStore so
-        // withVenue() fast-path fires and skips await headers() entirely.
-        requestStore.run({ slug: '', prisma: masterClient, requestId }, () => handle(req, res))
-      }
-    })
+    // Multi-tenant: wrap request in AsyncLocalStorage with the correct
+    // PrismaClient so that `import { db } from '@/lib/db'` automatically
+    // routes to the venue's Neon database.
+    const slug = req.headers['x-venue-slug'] as string | undefined
+    const requestId = (req.headers['x-request-id'] as string) || randomUUID()
+    if (slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+      getDbForVenue(slug).then((prisma) => {
+        requestStore.run({ slug, prisma, requestId }, () => handle(req, res))
+      }).catch(() => {
+        res.statusCode = 502
+        res.end(JSON.stringify({ error: 'Venue database not available' }))
+      })
+    } else {
+      // Local/NUC mode (no slug header): still wrap in requestStore so
+      // withVenue() fast-path fires and skips await headers() entirely.
+      requestStore.run({ slug: '', prisma: masterClient, requestId }, () => handle(req, res))
+    }
   })
 
   // Initialize Socket.io (skip if standalone ws-server handles sockets)
@@ -534,10 +504,13 @@ async function main() {
       logger.info('Socket.io closed')
     }
 
-    // Stop accepting new connections. Existing connections stay alive
-    // until they finish or the drain timeout fires.
-    httpServer.close(() => {
-      logger.info('HTTP server closed — all connections drained')
+    // Stop accepting new connections. The close promise resolves when
+    // all in-flight connections have drained.
+    const serverClosed = new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        logger.info('HTTP server closed — all connections drained')
+        resolve()
+      })
     })
     logger.info('HTTP server draining in-flight requests (10s max)...')
 
@@ -558,12 +531,9 @@ async function main() {
     await disconnectNeon()
     logger.info('Neon client disconnected')
 
-    // If we get here before drain timeout, all services are cleaned up.
     // Wait for the HTTP server to fully close (connections drained) or
     // the drain timeout — whichever comes first.
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => resolve())
-    })
+    await serverClosed
     clearTimeout(drainTimeout)
     logger.info('Clean shutdown complete')
     process.exit(0)
