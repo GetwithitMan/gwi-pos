@@ -31,6 +31,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { timingSafeEqual } from 'crypto'
 import { getSessionFromCookie, refreshSessionCookie } from './auth-session'
 import { verifyCellularToken, recordActivity } from './cellular-auth'
 import { verifyCloudToken } from './cloud-auth'
@@ -114,7 +115,11 @@ function validateInternalApiKey(request: NextRequest): string | null {
   const expectedKey = process.env.INTERNAL_API_KEY || process.env.MC_API_KEY
   if (!expectedKey) return null
 
-  if (apiKey === expectedKey) {
+  // Constant-time comparison to prevent timing side-channel attacks.
+  // Length check first — timingSafeEqual requires equal-length buffers.
+  if (apiKey.length !== expectedKey.length) return null
+  const isValid = timingSafeEqual(Buffer.from(apiKey), Buffer.from(expectedKey))
+  if (isValid) {
     // For internal routes, we need a locationId from the request
     // Internal callers must supply it as a header or query param
     return apiKey

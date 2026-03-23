@@ -91,10 +91,9 @@ else
 fi
 
 echo "[pre-start] Checking database schema..."
-# Use --accept-data-loss: safe because data is Neon-sourced (not local-only).
-# Unique constraint additions and infrastructure table drops are expected
-# after code updates. TIMEOUT: 120s prevents hung prisma schema engine.
-PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push --accept-data-loss 2>&1) && {
+# --accept-data-loss is BANNED — schema must only move forward.
+# Pre-push migrations handle all data safety. TIMEOUT: 120s prevents hung prisma schema engine.
+PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
   echo "[pre-start] Schema sync complete."
 } || {
   EXIT_CODE=$?

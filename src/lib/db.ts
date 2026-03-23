@@ -176,7 +176,7 @@ function createAdminClient(url?: string): PrismaClient {
   const connectionString = url || process.env.DATABASE_URL || ''
   // See CONNECTION_BUDGET — admin pool is sized for cross-tenant ops, MC sync, cron
   const adminPoolSize = isVercel ? CONNECTION_BUDGET.VERCEL_PER_FUNCTION : CONNECTION_BUDGET.LOCAL_ADMIN_POOL
-  const adapter: any = new PrismaPg({ connectionString, max: adminPoolSize, connectionTimeoutMillis: isVercel ? 60000 : 10000 })
+  const adapter: any = new PrismaPg({ connectionString, max: adminPoolSize, connectionTimeoutMillis: isVercel ? 60000 : 10000, idleTimeoutMillis: isVercel ? 0 : 30000 })
   const client = new PrismaClient({
     adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],

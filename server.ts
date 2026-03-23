@@ -34,6 +34,12 @@ import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/dataca
 import { runBootstrap, startSchemaRecheckIfBlocked, stopSchemaRecheck } from './src/lib/venue-bootstrap'
 import { computeReadiness, setReadinessState, advanceToOrders, isReadyForSync, type ReadinessInputs } from './src/lib/readiness'
 
+// Normalize POS_LOCATION_ID early — some NUC .env files only set LOCATION_ID.
+// This ensures all downstream code reading process.env.POS_LOCATION_ID gets the value.
+if (!process.env.POS_LOCATION_ID && process.env.LOCATION_ID) {
+  process.env.POS_LOCATION_ID = process.env.LOCATION_ID
+}
+
 const dev = config.nodeEnv !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
 const port = config.port
@@ -512,14 +518,14 @@ async function main() {
         resolve()
       })
     })
-    logger.info('HTTP server draining in-flight requests (10s max)...')
+    logger.info('HTTP server draining in-flight requests (30s max)...')
 
-    // Allow up to 10 seconds for in-flight requests to complete.
+    // Allow up to 30 seconds for in-flight requests to complete.
     // If connections don't close naturally, we exit anyway.
     const drainTimeout = setTimeout(() => {
       logger.warn('Drain timeout reached — forcing exit')
       process.exit(0)
-    }, 10_000)
+    }, 30_000)
     drainTimeout.unref()
 
     // While draining, disconnect background services in parallel
@@ -551,8 +557,8 @@ async function main() {
       logger.warn({ code: err.code }, 'Connection reset (harmless)')
       return
     }
-    logger.fatal({ err }, 'Uncaught exception')
-    process.exit(1)
+    logger.fatal({ err }, 'Uncaught exception — initiating graceful shutdown')
+    void shutdown('uncaughtException')
   })
 }
 

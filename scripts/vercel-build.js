@@ -45,11 +45,11 @@ async function main() {
   // 3. Push full Prisma schema to master
   // Pre-push migrations (step 2) handle all data safety (column renames, type casts,
   // constraint changes). By the time db push runs, the schema diff is safe.
-  // NOTE: --accept-data-loss is required because Prisma db push treats some migration-safe
-  // operations (enum changes, column type casts) as destructive. Pre-push migrations (step 2)
-  // handle all actual data safety. This flag only affects the master Neon DB, not venue DBs.
+  // Pre-push migrations (step 2) handle all data safety (column renames, type casts,
+  // constraint changes). By the time db push runs, the schema diff is safe.
+  // --accept-data-loss is BANNED — schema must only move forward. See ARCHITECTURE-RULES.md.
   console.log('[vercel-build] Running prisma db push (master)...')
-  execSync('npx prisma db push --accept-data-loss', { stdio: 'inherit' })
+  execSync('npx prisma db push', { stdio: 'inherit' })
 
   // 4. REGENERATE schema.sql AFTER db push — this is the FINAL truth.
   // The schema.sql generated in step 1b may be stale if prisma db push applied

@@ -111,7 +111,7 @@ if ! node scripts/nuc-pre-migrate.js; then
 fi
 
 log "Pushing Prisma schema..."
-if ! timeout 120 npx prisma db push --accept-data-loss; then
+if ! timeout 120 npx prisma db push; then
   warn "prisma db push timed out or had warnings — schema likely already applied by Stage 6"
 fi
 

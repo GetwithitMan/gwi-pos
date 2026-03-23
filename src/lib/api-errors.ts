@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('api-errors')
@@ -121,4 +121,27 @@ export function createdResponse<T>(data: T): NextResponse {
 
 export function noContentResponse(): NextResponse {
   return new NextResponse(null, { status: 204 })
+}
+
+// ============================================
+// Error-catching route wrapper
+// ============================================
+
+/**
+ * Wraps an API route handler with automatic error catching.
+ * Logs the error with method + path context and returns a structured
+ * error response via handleApiError().
+ *
+ * Usage:
+ *   export const GET = withErrorHandler(async (req, ctx) => { ... })
+ */
+export function withErrorHandler(handler: (req: NextRequest, ctx: any) => Promise<NextResponse>) {
+  return async (req: NextRequest, ctx: any) => {
+    try {
+      return await handler(req, ctx);
+    } catch (error) {
+      console.error(`[API Error] ${req.method} ${req.nextUrl.pathname}:`, error);
+      return handleApiError(error);
+    }
+  };
 }

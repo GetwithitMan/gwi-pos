@@ -259,13 +259,51 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
             } catch {}
           }
         }
-        execSync('npx prisma db push --accept-data-loss', { cwd: APP_DIR, timeout: 180_000 })
+        execSync('npx prisma db push', { cwd: APP_DIR, timeout: 180_000 })
       }
     }
 
-    // Build
+    // Build — back up .next first so a failed build doesn't leave the server without a working build
+    const nextDir = path.join(APP_DIR, '.next')
+    const nextBackup = path.join(APP_DIR, '.next.backup')
+    try {
+      if (existsSync(nextDir)) {
+        // Remove stale backup, then rename current build to backup
+        if (existsSync(nextBackup)) {
+          execSync(`rm -rf "${nextBackup}"`, { cwd: APP_DIR, timeout: 30_000 })
+        }
+        execSync(`mv "${nextDir}" "${nextBackup}"`, { cwd: APP_DIR, timeout: 30_000 })
+        log.info('[UpdateAgent] Backed up .next to .next.backup')
+      }
+    } catch (backupErr) {
+      log.warn('[UpdateAgent] .next backup failed (non-fatal):', backupErr instanceof Error ? backupErr.message : backupErr)
+    }
+
     log.info('[UpdateAgent] Running npm run build...')
-    execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
+    try {
+      execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
+      // Build succeeded — remove backup
+      try {
+        if (existsSync(nextBackup)) {
+          execSync(`rm -rf "${nextBackup}"`, { cwd: APP_DIR, timeout: 30_000 })
+        }
+      } catch {}
+    } catch (buildErr) {
+      // Build failed — restore backup so the previous build can still serve
+      log.error('[UpdateAgent] Build failed — restoring .next.backup')
+      try {
+        if (existsSync(nextBackup)) {
+          if (existsSync(nextDir)) {
+            execSync(`rm -rf "${nextDir}"`, { cwd: APP_DIR, timeout: 30_000 })
+          }
+          execSync(`mv "${nextBackup}" "${nextDir}"`, { cwd: APP_DIR, timeout: 30_000 })
+          log.info('[UpdateAgent] Restored .next from backup')
+        }
+      } catch (restoreErr) {
+        log.error('[UpdateAgent] .next restore failed:', restoreErr instanceof Error ? restoreErr.message : restoreErr)
+      }
+      throw buildErr
+    }
 
     // Stamp the MC-provided version into package.json AFTER successful build.
     // bump-version.sh may overwrite during build — this ensures the final version

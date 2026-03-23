@@ -894,11 +894,17 @@ export async function verifyPlayIntegrity(
 ): Promise<PlayIntegrityResult> {
   const projectNumber = process.env.GOOGLE_CLOUD_PROJECT_NUMBER
   if (!projectNumber) {
-    // In production, missing Play Integrity config is a security risk — log a critical warning
-    // but still allow the request (blocking all cellular terminals is worse than skipping attestation)
     const isProduction = process.env.NODE_ENV === 'production'
     if (isProduction) {
-      log.error('[PlayIntegrity] CRITICAL: GOOGLE_CLOUD_PROJECT_NUMBER not set in production — attestation bypassed. Configure immediately.')
+      // Fail-closed in production — missing Play Integrity config is a security risk.
+      // Do NOT allow attestation bypass; block the request until configured.
+      log.error('[PlayIntegrity] CRITICAL: GOOGLE_CLOUD_PROJECT_NUMBER not set in production — attestation DENIED. Configure immediately.')
+      return {
+        valid: false,
+        verdict: 'denied_no_config',
+        deviceRecognitionVerdict: [],
+        error: 'Play Integrity not configured in production',
+      }
     } else {
       log.warn('[PlayIntegrity] GOOGLE_CLOUD_PROJECT_NUMBER not set — attestation skipped (non-production)')
     }
@@ -915,7 +921,14 @@ export async function verifyPlayIntegrity(
     if (!accessToken) {
       const isProduction = process.env.NODE_ENV === 'production'
       if (isProduction) {
-        log.error('[PlayIntegrity] CRITICAL: Could not obtain Google access token in production — attestation bypassed. Configure GOOGLE_SERVICE_ACCOUNT_KEY immediately.')
+        // Fail-closed in production — cannot verify integrity without credentials.
+        log.error('[PlayIntegrity] CRITICAL: Could not obtain Google access token in production — attestation DENIED. Configure GOOGLE_SERVICE_ACCOUNT_KEY immediately.')
+        return {
+          valid: false,
+          verdict: 'denied_no_credentials',
+          deviceRecognitionVerdict: [],
+          error: 'Google access token not available in production',
+        }
       } else {
         log.warn('[PlayIntegrity] Could not obtain Google access token — attestation skipped (non-production)')
       }
