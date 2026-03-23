@@ -43,7 +43,7 @@ function createNeonClient(): PrismaClient | null {
     log: ['error'],
     transactionOptions: {
       maxWait: 10000,
-      timeout: 15000,
+      timeout: 30000, // 30s — extra headroom for payment transactions
     },
   })
 }

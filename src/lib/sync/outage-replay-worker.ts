@@ -13,6 +13,7 @@ import { neonClient, hasNeonConnection } from '../neon-client'
 import { masterClient } from '../db'
 import { createChildLogger } from '@/lib/logger'
 import { notifyDataChanged } from '../cloud-notify'
+import { emitToLocation } from '../socket-server'
 
 const log = createChildLogger('outage-replay')
 
@@ -50,10 +51,14 @@ const processingEntryIds = new Set<string>()
 /** Maximum retry attempts before an entry is dead-lettered */
 const MAX_RETRY_ATTEMPTS = 10
 
-/** Cached column names per table (loaded on first access) */
+/** Cached column names per table (loaded on first access, refreshed periodically) */
 const columnCache = new Map<string, string[]>()
 /** Cached column PG casts: tableName → columnName → cast expression */
 const columnTypeMap = new Map<string, Map<string, string>>()
+
+// P3-3: Periodic column metadata refresh (every 10 minutes)
+const REPLAY_COLUMN_CACHE_TTL = 10 * 60 * 1000
+let replayColumnCacheLastRefresh = 0
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -116,6 +121,16 @@ function serializeValue(val: unknown): unknown {
   return val
 }
 
+/** P3-3: Refresh all cached column metadata (clears cache so next access reloads) */
+function refreshColumnCacheIfStale(): void {
+  if (Date.now() - replayColumnCacheLastRefresh > REPLAY_COLUMN_CACHE_TTL) {
+    columnCache.clear()
+    columnTypeMap.clear()
+    replayColumnCacheLastRefresh = Date.now()
+    log.info('Column metadata cache cleared for refresh (TTL expired)')
+  }
+}
+
 /** Load column metadata for a table (lazy, cached) */
 async function ensureColumnMetadata(tableName: string): Promise<void> {
   if (columnCache.has(tableName)) return
@@ -148,6 +163,7 @@ async function replayEntry(entry: {
   recordId: string
   operation: string
   payload: unknown
+  createdAt?: Date | string
 }): Promise<void> {
   if (!neonClient) throw new Error('Neon client not available')
 
@@ -193,6 +209,32 @@ async function replayEntry(entry: {
     }
 
     case 'DELETE': {
+      // P2-3: Check if the record was recreated/modified on Neon during the outage.
+      // If a newer version exists on Neon, skip the delete to avoid data loss.
+      try {
+        const neonRow = await neonClient.$queryRawUnsafe<Array<{ updatedAt: Date }>>(
+          `SELECT "updatedAt" FROM "${tableName}" WHERE id = $1`,
+          recordId,
+        )
+        if (neonRow.length > 0) {
+          const neonUpdatedAt = neonRow[0].updatedAt instanceof Date
+            ? neonRow[0].updatedAt
+            : new Date(neonRow[0].updatedAt as unknown as string)
+          const entryCreatedAt = entry.createdAt
+            ? (entry.createdAt instanceof Date ? entry.createdAt : new Date(entry.createdAt))
+            : new Date(0)
+          if (neonUpdatedAt > entryCreatedAt) {
+            log.warn(
+              { tableName, recordId, neonUpdatedAt: neonUpdatedAt.toISOString(), entryCreatedAt: entryCreatedAt.toISOString() },
+              'Skipping DELETE — record was modified on Neon after outage delete was queued'
+            )
+            break
+          }
+        }
+      } catch {
+        // If the check fails (table doesn't have updatedAt, etc.), proceed with delete
+      }
+
       await neonClient.$executeRawUnsafe(
         `DELETE FROM "${tableName}" WHERE id = $1`,
         recordId,
@@ -270,6 +312,12 @@ async function processOutageQueue(): Promise<void> {
             attempts: entry.retryCount,
           }, 'Outage queue entry moved to dead letter — data may be lost')
         }
+
+        // Emit local socket event so POS UI can show an on-screen alert
+        void emitToLocation(locId, 'sync:dead-letter', {
+          totalDeadLettered,
+          timestamp: new Date().toISOString(),
+        }).catch((err) => log.error({ err }, 'Failed to emit local dead-letter socket event'))
       }
 
       // Emit cloud event for MC alerting
@@ -337,8 +385,9 @@ async function processOutageQueue(): Promise<void> {
       operation: string
       payload: unknown
       localSeq: bigint
+      createdAt: Date
     }>>(
-      `SELECT id, "tableName", "recordId", operation, payload, "localSeq"
+      `SELECT id, "tableName", "recordId", operation, payload, "localSeq", "createdAt"
        FROM "OutageQueueEntry"
        WHERE status = 'PENDING'
        ORDER BY "localSeq" ASC

@@ -85,7 +85,7 @@ export function useIdleTimer(timeoutMinutes: number = 0) {
       document.addEventListener(event, onActivity, { passive: true })
     }
 
-    // Check idle state every 30 seconds
+    // Check idle state every 30 seconds + auto-save draft order
     timerRef.current = setInterval(() => {
       const idle = Date.now() - lastActivityRef.current
 
@@ -99,6 +99,13 @@ export function useIdleTimer(timeoutMinutes: number = 0) {
         warningShownRef.current = true
         const remaining = Math.ceil((timeoutMs - idle) / 60000)
         toast.warning(`Session expiring in ${remaining} minute${remaining !== 1 ? 's' : ''} due to inactivity`, 10000)
+      }
+
+      // Periodic auto-save: persist in-progress draft every 30s (silent, no toast)
+      const auth = useAuthStore.getState()
+      const order = useOrderStore.getState().currentOrder
+      if (auth.locationId && auth.employee?.id && order && order.items.length > 0) {
+        saveDraftOrder(auth.locationId, auth.employee.id, order)
       }
     }, 30_000)
 

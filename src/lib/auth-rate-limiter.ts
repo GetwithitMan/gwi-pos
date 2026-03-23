@@ -2,8 +2,8 @@
  * In-memory rate limiter for PIN login attempts.
  *
  * Two layers of protection:
- *   1. Per-IP: 10 failed attempts → 5-minute lockout
- *   2. Per-employee: 5 failed attempts → 60-second lockout
+ *   1. Per-IP: 5 failed attempts → 5-minute lockout
+ *   2. Per-employee: 5 failed attempts → 5-minute lockout
  *
  * Designed for local POS servers (single process, in-memory is fine).
  * TTL cleanup prevents unbounded growth.
@@ -15,11 +15,11 @@ interface RateLimitEntry {
   lastFailure: number // timestamp ms
 }
 
-const IP_MAX_FAILURES = 10
+const IP_MAX_FAILURES = 5
 const IP_LOCKOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 const EMPLOYEE_MAX_FAILURES = 5
-const EMPLOYEE_LOCKOUT_MS = 60 * 1000 // 60 seconds
+const EMPLOYEE_LOCKOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 // Stale entries are cleaned up after 10 minutes of inactivity
 const CLEANUP_INTERVAL_MS = 60 * 1000 // Check every minute

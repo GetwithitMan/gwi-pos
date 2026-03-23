@@ -38,7 +38,7 @@ class OfflineManagerClass {
       // Start retry interval (every 30 seconds)
       this.startRetryInterval()
 
-      // Start health check interval (every 60 seconds)
+      // Start health check interval (every 15 seconds)
       // This detects "Zombie Wi-Fi" - connected to router but no internet
       this.startHealthCheckInterval()
 
@@ -99,13 +99,13 @@ class OfflineManagerClass {
   private startHealthCheckInterval() {
     if (this.healthCheckInterval) return
 
-    // Check server health every 60 seconds
+    // Check server health every 15 seconds (fast Zombie Wi-Fi detection)
     this.healthCheckInterval = setInterval(() => {
       // Only check if navigator thinks we're online
       if (navigator.onLine) {
         this.checkServerHealth()
       }
-    }, 60000)
+    }, 15000)
   }
 
   // Subscribe to sync status changes

@@ -57,8 +57,13 @@ const nextConfig: NextConfig = {
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-      // Enforced CSP — strict policy. unsafe-inline kept for styles only (Tailwind).
-      // unsafe-eval added in dev for webpack HMR, removed in production.
+      // Enforced CSP — strict policy.
+      // script-src 'unsafe-inline': Required by Next.js for inline script tags it
+      //   injects (data hydration, next/script). Removing requires nonce-based CSP
+      //   which needs Next.js middleware nonce injection on every response.
+      // style-src 'unsafe-inline': Required by Tailwind CSS and shadcn/ui runtime
+      //   style injection. Cannot be removed without a full CSS extraction strategy.
+      // unsafe-eval: ONLY in dev for webpack HMR. NEVER in production.
       // DEBT: Move to nonce-based CSP to remove script unsafe-inline — requires
       // Next.js nonce injection on all Script components. Target: post-React 19 migration.
       {
