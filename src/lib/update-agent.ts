@@ -187,29 +187,79 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     // Write lock file
     writeFileSync(UPDATE_LOCK_FILE, JSON.stringify({ targetVersion, startedAt: new Date().toISOString() }))
 
-    // Clear stale git lock files
+    // ── Git self-repair ──────────────────────────────────────────────
+    // Clear stale git lock files (left by interrupted fetch/reset/merge)
     const lockFiles = [
       path.join(APP_DIR, '.git', 'index.lock'),
       path.join(APP_DIR, '.git', 'refs', 'remotes', 'origin', 'main.lock'),
+      path.join(APP_DIR, '.git', 'HEAD.lock'),
+      path.join(APP_DIR, '.git', 'config.lock'),
+      path.join(APP_DIR, '.git', 'shallow.lock'),
+      path.join(APP_DIR, '.git', 'refs', 'heads', 'main.lock'),
     ]
     for (const f of lockFiles) {
-      try { unlinkSync(f) } catch {}
+      try {
+        if (existsSync(f)) {
+          unlinkSync(f)
+          log.info(`[UpdateAgent] Removed stale lock: ${f}`)
+        }
+      } catch {}
+    }
+
+    // Abort interrupted merge/rebase/cherry-pick state
+    const gitDir = path.join(APP_DIR, '.git')
+    if (existsSync(path.join(gitDir, 'MERGE_HEAD'))) {
+      log.info('[UpdateAgent] Aborting interrupted merge')
+      try { execSync('git merge --abort', { cwd: APP_DIR, timeout: 10_000 }) } catch {}
+    }
+    if (existsSync(path.join(gitDir, 'rebase-merge')) || existsSync(path.join(gitDir, 'rebase-apply'))) {
+      log.info('[UpdateAgent] Aborting interrupted rebase')
+      try { execSync('git rebase --abort', { cwd: APP_DIR, timeout: 10_000 }) } catch {}
+    }
+    if (existsSync(path.join(gitDir, 'CHERRY_PICK_HEAD'))) {
+      log.info('[UpdateAgent] Aborting interrupted cherry-pick')
+      try { execSync('git cherry-pick --abort', { cwd: APP_DIR, timeout: 10_000 }) } catch {}
     }
 
     // Fix ownership before git operations — previous sudo commands (installer, manual fixes)
     // can leave files root-owned, causing git reset to fail with "Permission denied"
-    try {
-      const posUser = process.env.POSUSER || execSync('whoami', { encoding: 'utf8' }).trim()
-      execSync(`sudo chown -R ${posUser}:${posUser} "${APP_DIR}"`, { timeout: 30_000 })
-    } catch {
-      // Non-fatal — might not have sudo, or already correct
+    // Safety: validate APP_DIR is the expected path before running chown -R
+    if (APP_DIR.startsWith('/opt/gwi-pos/') && APP_DIR.length > 15) {
+      try {
+        const posUser = process.env.POSUSER || execSync('whoami', { encoding: 'utf8' }).trim()
+        if (posUser && posUser !== 'root' && /^[a-zA-Z0-9_-]+$/.test(posUser)) {
+          execSync(`sudo chown -R ${posUser}:${posUser} "${APP_DIR}"`, { timeout: 30_000 })
+          // Re-lock sensitive files
+          try { execSync(`sudo chown root:${posUser} /opt/gwi-pos/.env && sudo chmod 640 /opt/gwi-pos/.env`, { timeout: 5_000, stdio: 'pipe' }) } catch {}
+          try { execSync('sudo chown -R root:root /opt/gwi-pos/keys && sudo chmod 700 /opt/gwi-pos/keys', { timeout: 5_000, stdio: 'pipe' }) } catch {}
+          try { execSync(`sudo chown root:${posUser} /opt/gwi-pos/.git-credentials && sudo chmod 640 /opt/gwi-pos/.git-credentials`, { timeout: 5_000, stdio: 'pipe' }) } catch {}
+        }
+      } catch {
+        // Non-fatal — might not have sudo, or already correct
+      }
     }
 
     // Capture current SHA before fetching — used for deterministic rollback
     const previousSha = execSync('git rev-parse HEAD', { cwd: APP_DIR, encoding: 'utf8' }).trim()
 
-    // Fetch the target version
-    execSync('git fetch --all --prune', { cwd: APP_DIR, timeout: 60_000 })
+    // Fetch with retry (transient network failures)
+    let fetchSuccess = false
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        execSync('git fetch --all --prune', { cwd: APP_DIR, timeout: 60_000 })
+        fetchSuccess = true
+        break
+      } catch (fetchErr) {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+        log.warn(`[UpdateAgent] git fetch failed (attempt ${attempt}/3): ${msg.slice(0, 200)}`)
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 5_000))
+        }
+      }
+    }
+    if (!fetchSuccess) {
+      throw new Error('git fetch failed after 3 attempts')
+    }
 
     // Check if the target version exists as a tag or use origin/main
     let ref = `v${targetVersion}`
@@ -229,9 +279,16 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env')) } catch {}
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env.local')) } catch {}
 
-    // Install dependencies
+    // Install dependencies (with retry on failure)
     log.info('[UpdateAgent] Running npm ci...')
-    execSync('npm ci', { cwd: APP_DIR, timeout: 180_000 })
+    try {
+      execSync('npm ci', { cwd: APP_DIR, timeout: 180_000 })
+    } catch {
+      log.warn('[UpdateAgent] npm ci failed — clearing cache and retrying...')
+      try { execSync('npm cache clean --force', { cwd: APP_DIR, timeout: 30_000 }) } catch {}
+      try { execSync('rm -rf node_modules', { cwd: APP_DIR, timeout: 30_000 }) } catch {}
+      execSync('npm ci', { cwd: APP_DIR, timeout: 300_000 })
+    }
 
     // Prisma generate
     log.info('[UpdateAgent] Running prisma generate...')

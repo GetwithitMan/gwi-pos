@@ -228,16 +228,77 @@ async function handleForceUpdate(payload) {
     return ok || failOk
   }
 
-  // Clear any stale git lock files left by previously interrupted operations
+  // ── Git self-repair before any git operations ──
+  // Fix ownership: previous sudo/root operations leave files root-owned,
+  // causing git (running as service user) to fail with "Permission denied"
+  try {
+    var posUser = env.POSUSER || 'gwipos'
+    try { posUser = execSync('stat -c %U ' + APP_DIR, { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }).trim() } catch (e) {}
+    if (posUser && posUser !== 'root') {
+      execSync('sudo chown -R ' + posUser + ':' + posUser + ' "' + APP_DIR + '"', { timeout: 30000, stdio: 'pipe' })
+      // Re-lock sensitive files
+      try { execSync('sudo chown root:' + posUser + ' /opt/gwi-pos/.env && sudo chmod 640 /opt/gwi-pos/.env', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
+      try { execSync('sudo chown -R root:root /opt/gwi-pos/keys && sudo chmod 700 /opt/gwi-pos/keys', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
+      try { execSync('sudo chown root:' + posUser + ' /opt/gwi-pos/.git-credentials && sudo chmod 640 /opt/gwi-pos/.git-credentials', { timeout: 5000, stdio: 'pipe' }) } catch (e) {}
+      log('  Fixed file ownership for ' + posUser)
+      steps.push('ownership-fix OK')
+    }
+  } catch (e) {
+    log('  Ownership fix failed (non-fatal): ' + (e.message || '').slice(0, 100))
+  }
+
+  // Clear stale git lock files left by interrupted operations
   try {
     var lockFiles = [
       path.join(APP_DIR, '.git', 'index.lock'),
       path.join(APP_DIR, '.git', 'refs', 'remotes', 'origin', 'main.lock'),
+      path.join(APP_DIR, '.git', 'HEAD.lock'),
+      path.join(APP_DIR, '.git', 'config.lock'),
+      path.join(APP_DIR, '.git', 'shallow.lock'),
+      path.join(APP_DIR, '.git', 'refs', 'heads', 'main.lock'),
     ]
-    lockFiles.forEach(function(f) { try { fs.unlinkSync(f) } catch (e) {} })
+    lockFiles.forEach(function(f) {
+      try {
+        if (fs.existsSync(f)) {
+          fs.unlinkSync(f)
+          log('  Removed stale lock: ' + f)
+        }
+      } catch (e) {}
+    })
   } catch (e) {}
 
-  step('git fetch', 'git fetch origin --tags', true, 60)
+  // Abort interrupted merge/rebase/cherry-pick state
+  try {
+    if (fs.existsSync(path.join(APP_DIR, '.git', 'MERGE_HEAD'))) {
+      log('  Aborting interrupted merge')
+      run('git merge --abort', APP_DIR, 10)
+    }
+    if (fs.existsSync(path.join(APP_DIR, '.git', 'rebase-merge')) || fs.existsSync(path.join(APP_DIR, '.git', 'rebase-apply'))) {
+      log('  Aborting interrupted rebase')
+      run('git rebase --abort', APP_DIR, 10)
+    }
+    if (fs.existsSync(path.join(APP_DIR, '.git', 'CHERRY_PICK_HEAD'))) {
+      log('  Aborting interrupted cherry-pick')
+      run('git cherry-pick --abort', APP_DIR, 10)
+    }
+  } catch (e) {}
+  steps.push('git-repair OK')
+
+  // ── Git fetch with retry ──
+  var fetchOk = false
+  for (var fetchAttempt = 1; fetchAttempt <= 3; fetchAttempt++) {
+    if (step('git fetch (attempt ' + fetchAttempt + ')', 'git fetch origin --tags --prune', true, 60)) {
+      fetchOk = true
+      break
+    }
+    if (fetchAttempt < 3) {
+      log('  Retrying fetch in 5s...')
+      execSync('sleep 5', { timeout: 10000 })
+    }
+  }
+  if (!fetchOk) {
+    log('  WARNING: All fetch attempts failed — attempting checkout with existing refs')
+  }
 
   // Version-targeted: try pinned tag first, fall back to origin/main
   var tagRef = targetVersion ? 'v' + targetVersion : null
@@ -273,9 +334,24 @@ async function handleForceUpdate(payload) {
       steps.push('fallback: origin/main')
     } catch (e) {
       gitCheckoutError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
-      steps.push('git reset FAIL: ' + gitCheckoutError.slice(0, 100))
-      log('  FAILED: ' + gitCheckoutError)
-      return { ok: false, error: 'git pull failed: ' + gitCheckoutError, steps: steps }
+      // Nuclear recovery: if reset fails, nuke and re-clone
+      log('  git reset failed — attempting nuclear recovery (re-clone)...')
+      steps.push('git reset FAIL — nuclear recovery')
+      try {
+        var repoUrl = ''
+        try { repoUrl = execSync('git remote get-url origin', { cwd: APP_DIR, timeout: 5000, stdio: 'pipe', encoding: 'utf-8' }).trim() } catch (e) {}
+        if (!repoUrl) repoUrl = 'https://github.com/GetwithitMan/gwi-pos.git'
+        execSync('rm -rf "' + APP_DIR + '"', { timeout: 30000 })
+        execSync('git clone --depth 1 "' + repoUrl + '" "' + APP_DIR + '"', { timeout: 120000, stdio: 'pipe' })
+        log('  Nuclear re-clone succeeded')
+        steps.push('nuclear-reclone OK')
+        // Re-copy env files
+        try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
+        try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
+      } catch (cloneErr) {
+        log('  Nuclear re-clone FAILED: ' + ((cloneErr.message || '') + '').slice(0, 200))
+        return { ok: false, error: 'git recovery failed: ' + gitCheckoutError, steps: steps }
+      }
     }
   }
 
@@ -309,8 +385,13 @@ async function handleForceUpdate(payload) {
     }
   }
 
-  if (!step('npm install', 'npm install --production=false', false, 180)) {
-    return { ok: false, error: 'npm install failed', steps: steps }
+  if (!step('npm install', 'npm ci --production=false', false, 180)) {
+    log('  npm ci failed — clearing cache and retrying...')
+    run('npm cache clean --force', APP_DIR, 30)
+    run('rm -rf node_modules', APP_DIR, 30)
+    if (!step('npm install (retry)', 'npm ci --production=false', false, 300)) {
+      return { ok: false, error: 'npm install failed after retry', steps: steps }
+    }
   }
   // Clean stale Prisma v6 cache (Prisma 7 generates to src/generated/prisma/)
   step('clean-prisma-cache', 'rm -rf node_modules/.prisma', true, 10)
