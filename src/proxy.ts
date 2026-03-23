@@ -27,6 +27,25 @@ export async function proxy(request: NextRequest) {
   const hostname = host.split(':')[0]
   const pathname = request.nextUrl.pathname
 
+  // ═══════════════════════════════════════════════════════════
+  // CORS for API routes (merged from middleware.ts)
+  // ═══════════════════════════════════════════════════════════
+  if (pathname.startsWith('/api/')) {
+    const origin = request.headers.get('origin')
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? []
+
+    if (request.method === 'OPTIONS') {
+      const preflight = new NextResponse(null, { status: 204 })
+      if (origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))) {
+        preflight.headers.set('Access-Control-Allow-Origin', origin)
+      }
+      preflight.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+      preflight.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-venue-slug, x-terminal-id')
+      preflight.headers.set('Access-Control-Max-Age', '86400')
+      return preflight
+    }
+  }
+
   // Generate request ID at edge — flows through to server.ts via request headers.
   // All handlers that create `new Headers(request.headers)` inherit this automatically.
   // server.ts reads `req.headers['x-request-id']` and stores it in AsyncLocalStorage.
@@ -103,7 +122,16 @@ export async function proxy(request: NextRequest) {
   const localResponse = await handleLocalMode(request, hostname, pathname)
   if (localResponse) return localResponse
 
-  return NextResponse.next()
+  // Set CORS headers on non-preflight API responses
+  const response = NextResponse.next()
+  if (pathname.startsWith('/api/')) {
+    const origin = request.headers.get('origin')
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? []
+    if (origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))) {
+      response.headers.set('Access-Control-Allow-Origin', origin)
+    }
+  }
+  return response
 }
 
 export const config = {
