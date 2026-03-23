@@ -96,36 +96,38 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
     refNo,
   } = params
 
-  // Duplicate check: does this recordNo already have an open bar_tab at this location?
-  const existingByRecordNo = await db.orderCard.findFirst({
-    where: {
-      recordNo,
-      deletedAt: null,
-      order: { status: 'open', orderType: 'bar_tab', locationId },
-    },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      order: { select: { id: true, tabName: true, orderNumber: true } },
-    },
-  })
-
-  if (existingByRecordNo) {
-    throw new DuplicateTabError({
-      orderId: existingByRecordNo.order.id,
-      tabName: existingByRecordNo.order.tabName ?? `Tab #${existingByRecordNo.order.orderNumber}`,
-      tabNumber: existingByRecordNo.order.orderNumber,
-      authAmount: Number(existingByRecordNo.authAmount),
-      brand: existingByRecordNo.cardType,
-      last4: existingByRecordNo.cardLast4,
-    })
-  }
-
   // Resolve the display tab name
   const resolvedTabName = cardholderName || fallbackTabName
 
-  // Create OrderCard + update Order in a single transaction
-  const [orderCard] = await db.$transaction([
-    db.orderCard.create({
+  // Duplicate check + create OrderCard + update Order in a single transaction
+  // The FOR UPDATE lock on OrderCard prevents two concurrent open-tab requests
+  // for the same card from both succeeding (race condition → duplicate tabs).
+  const orderCard = await db.$transaction(async (tx) => {
+    // Lock any existing OrderCard row for this recordNo to prevent race conditions
+    const existingByRecordNo = await tx.$queryRawUnsafe<any[]>(
+      `SELECT oc.id, oc."authAmount", oc."cardType", oc."cardLast4",
+              o.id AS "orderId", o."tabName", o."orderNumber"
+       FROM "OrderCard" oc
+       JOIN "Order" o ON o.id = oc."orderId"
+       WHERE oc."recordNo" = $1 AND oc."deletedAt" IS NULL
+       AND o.status = 'open' AND o."orderType" = 'bar_tab' AND o."locationId" = $2
+       FOR UPDATE OF oc LIMIT 1`,
+      recordNo, locationId
+    )
+
+    if (existingByRecordNo.length > 0) {
+      const existing = existingByRecordNo[0]
+      throw new DuplicateTabError({
+        orderId: existing.orderId,
+        tabName: existing.tabName ?? `Tab #${existing.orderNumber}`,
+        tabNumber: existing.orderNumber,
+        authAmount: Number(existing.authAmount),
+        brand: existing.cardType,
+        last4: existing.cardLast4,
+      })
+    }
+
+    const created = await tx.orderCard.create({
       data: {
         locationId,
         orderId,
@@ -148,8 +150,9 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
         avsResult,
         refNo,
       },
-    }),
-    db.order.update({
+    })
+
+    await tx.order.update({
       where: { id: orderId },
       data: {
         tabStatus: 'open',
@@ -164,8 +167,10 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
         lastMutatedBy: 'local',
         version: { increment: 1 },
       },
-    }),
-  ])
+    })
+
+    return created
+  })
 
   // Emit order event for tab opened (fire-and-forget)
   void emitOrderEvent(locationId, orderId, 'TAB_OPENED', {

@@ -98,9 +98,9 @@ function handleVisibilityChange() {
 
   const timeSinceLastPong = now - lastPongAt
 
-  // If we haven't received any server data in >30s, the socket is likely stale
-  // (server pings every 25s, so 30s without a pong = zombie connection)
-  if (sharedSocket.connected && timeSinceLastPong > 30_000) {
+  // If we haven't received any server data in >10s, the socket is likely stale
+  // (faster detection for terminal WiFi reconnects — 10s catches zombie connections sooner)
+  if (sharedSocket.connected && timeSinceLastPong > 10_000) {
     console.log('[SharedSocket] Foreground return — socket stale (no pong in', Math.round(timeSinceLastPong / 1000), 's). Forcing reconnect.')
     lastReconnectAttempt = now
     sharedSocket.disconnect()

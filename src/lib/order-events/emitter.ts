@@ -117,7 +117,7 @@ export async function emitOrderEvents(
   }>,
   opts?: EmitOptions
 ): Promise<void> {
-  for (const evt of events) {
-    await emitOrderEvent(locationId, orderId, evt.type, evt.payload, opts)
-  }
+  await Promise.all(events.map(evt =>
+    emitOrderEvent(locationId, orderId, evt.type, evt.payload, opts)
+  ))
 }

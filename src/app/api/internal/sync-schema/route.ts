@@ -92,36 +92,72 @@ export async function POST(request: NextRequest) {
     // ── Existing database — incremental diff sync ───────────────────────
     const masterPool = new Pool({ connectionString: masterUrl })
     const venuePool = new Pool({ connectionString: venueUrl })
+    const errors: string[] = []
 
     try {
+      // Each sync step is wrapped in try/catch so a failure in one step
+      // (e.g. missing table during column introspection) doesn't abort
+      // the entire batch. Errors are collected and reported.
+
       // 1. Sync enums
-      const enumChanges = await syncEnums(masterPool, venuePool)
-      changes.push(...enumChanges)
+      try {
+        const enumChanges = await syncEnums(masterPool, venuePool)
+        changes.push(...enumChanges)
+      } catch (e: unknown) {
+        const msg = (e as { message?: string }).message || 'Unknown error'
+        console.error(`[sync-schema] ${slug} enum sync failed:`, msg)
+        errors.push(`Enum sync failed: ${msg}`)
+      }
 
       // 2. Sync tables (create missing ones from schema.sql)
-      const tableChanges = await syncTables(masterPool, venuePool)
-      changes.push(...tableChanges)
+      try {
+        const tableChanges = await syncTables(masterPool, venuePool)
+        changes.push(...tableChanges)
+      } catch (e: unknown) {
+        const msg = (e as { message?: string }).message || 'Unknown error'
+        console.error(`[sync-schema] ${slug} table sync failed:`, msg)
+        errors.push(`Table sync failed: ${msg}`)
+      }
 
       // 3. Sync columns (add missing columns to existing tables)
-      const columnChanges = await syncColumns(masterPool, venuePool)
-      changes.push(...columnChanges)
+      try {
+        const columnChanges = await syncColumns(masterPool, venuePool)
+        changes.push(...columnChanges)
+      } catch (e: unknown) {
+        const msg = (e as { message?: string }).message || 'Unknown error'
+        console.error(`[sync-schema] ${slug} column sync failed:`, msg)
+        errors.push(`Column sync failed: ${msg}`)
+      }
 
       // 4. Sync indexes
-      const indexChanges = await syncIndexes(masterPool, venuePool)
-      changes.push(...indexChanges)
+      try {
+        const indexChanges = await syncIndexes(masterPool, venuePool)
+        changes.push(...indexChanges)
+      } catch (e: unknown) {
+        const msg = (e as { message?: string }).message || 'Unknown error'
+        console.error(`[sync-schema] ${slug} index sync failed:`, msg)
+        errors.push(`Index sync failed: ${msg}`)
+      }
 
       // 5. Sync foreign keys
-      const fkChanges = await syncForeignKeys(masterPool, venuePool)
-      changes.push(...fkChanges)
+      try {
+        const fkChanges = await syncForeignKeys(masterPool, venuePool)
+        changes.push(...fkChanges)
+      } catch (e: unknown) {
+        const msg = (e as { message?: string }).message || 'Unknown error'
+        console.error(`[sync-schema] ${slug} FK sync failed:`, msg)
+        errors.push(`FK sync failed: ${msg}`)
+      }
     } finally {
       await Promise.all([masterPool.end(), venuePool.end()])
     }
 
     return Response.json({
-      success: true,
+      success: errors.length === 0,
       slug,
       databaseName: dbName,
       changes,
+      ...(errors.length > 0 ? { errors } : {}),
     })
   } catch (error: unknown) {
     const err = error as { message?: string }
