@@ -35,7 +35,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET() {
     console.error('Failed to fetch scales:', error)
     return NextResponse.json({ error: 'Failed to fetch scales' }, { status: 500 })
   }
-})
+}))
 
 const createScaleSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -51,7 +51,7 @@ const createScaleSchema = z.object({
   weightUnit: z.enum(['lb', 'kg', 'oz', 'g']).default('lb'),
   maxCapacity: z.number().positive().optional(),
   precision: z.number().int().min(0).max(6).default(2),
-}))
+})
 
 // POST - Create a new scale
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
