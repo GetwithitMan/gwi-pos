@@ -1,9 +1,12 @@
 /**
- * Public Online Menu API
+ * Public Online Menu API — Lightweight Browse
  *
- * GET /api/online/menu?locationId=xxx
+ * GET /api/online/menu?slug=xxx          (preferred — resolves locationId)
+ * GET /api/online/menu?locationId=xxx    (legacy — direct locationId)
+ *
  *   Returns active, online-orderable menu items grouped by category.
  *   No authentication required — this is a public endpoint.
+ *   Modifier groups are NOT included — use GET /api/online/menu/[itemId] for detail.
  *
  * Security:
  *   - Rate limited per IP+location (BUG #388)
@@ -15,10 +18,9 @@
  *   This route does NOT use withVenue() because it is a public route.
  *   In the multi-tenant model, withVenue() reads x-venue-slug set by
  *   proxy.ts (which only runs on authenticated routes). Instead,
- *   we accept locationId directly in the query string and use the db
- *   proxy with the masterClient context — which works for local dev and
- *   single-tenant NUC deployments. The locationId filter provides
- *   sufficient tenant isolation for the public menu endpoint.
+ *   we accept slug or locationId in the query string. When slug is provided,
+ *   we resolve the venue DB via getDbForVenue() and find the location automatically.
+ *   The locationId filter provides sufficient tenant isolation.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -29,14 +31,35 @@ import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl
-    const locationId = searchParams.get('locationId')
+    let locationId = searchParams.get('locationId')
     const slug = searchParams.get('slug')
 
-    if (!locationId) {
+    if (!locationId && !slug) {
       return NextResponse.json(
-        { error: 'locationId query parameter is required' },
+        { error: 'Either slug or locationId query parameter is required' },
         { status: 400 }
       )
+    }
+
+    // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
+    // Falls back to db proxy (NUC local mode where DATABASE_URL already points
+    // to the venue database).
+    const venueDb = slug ? await getDbForVenue(slug) : db
+
+    // When slug is provided without locationId, resolve it from the venue DB
+    if (!locationId && slug) {
+      const loc = await venueDb.location.findFirst({
+        where: { isActive: true, deletedAt: null },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      })
+      if (!loc) {
+        return NextResponse.json(
+          { error: 'Venue not found' },
+          { status: 404 }
+        )
+      }
+      locationId = loc.id
     }
 
     // ── Rate limit (BUG #388) ───────────────────────────────────────────────
@@ -45,7 +68,7 @@ export async function GET(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    const rateCheck = checkOnlineRateLimit(ip, locationId, 'menu')
+    const rateCheck = checkOnlineRateLimit(ip, locationId!, 'menu')
     if (!rateCheck.allowed) {
       const resp = NextResponse.json(
         { error: 'Too many requests. Please try again shortly.' },
@@ -55,14 +78,9 @@ export async function GET(request: NextRequest) {
       return resp
     }
 
-    // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
-    // Falls back to db proxy (NUC local mode where DATABASE_URL already points
-    // to the venue database).
-    const venueDb = slug ? await getDbForVenue(slug) : db
-
     // ── Check online ordering is enabled (BUG #394) ─────────────────────────
     const locationRec = await venueDb.location.findFirst({
-      where: { id: locationId },
+      where: { id: locationId! },
       select: { settings: true },
     })
     const locSettings = locationRec?.settings as Record<string, unknown> | null
@@ -77,9 +95,10 @@ export async function GET(request: NextRequest) {
 
     // Fetch all active categories that are shown online for this location
     // BUG #387: filter deletedAt: null on categories and items
+    // Lightweight browse — no modifierGroups (moved to item detail endpoint)
     const categories = await venueDb.category.findMany({
       where: {
-        locationId,
+        locationId: locationId!,
         isActive: true,
         showOnline: true,
         deletedAt: null,
@@ -106,6 +125,7 @@ export async function GET(request: NextRequest) {
             price: true,
             onlinePrice: true,
             imageUrl: true,
+            itemType: true,
             showOnline: true,
             isAvailable: true,
             availableFrom: true,
@@ -114,31 +134,6 @@ export async function GET(request: NextRequest) {
             trackInventory: true,
             currentStock: true,
             lowStockAlert: true,
-            // Modifier groups via direct ownership (ownedModifierGroups)
-            ownedModifierGroups: {
-              where: { deletedAt: null, showOnline: true },
-              orderBy: { sortOrder: 'asc' },
-              select: {
-                id: true,
-                name: true,
-                displayName: true,
-                minSelections: true,
-                maxSelections: true,
-                isRequired: true,
-                allowStacking: true,
-                sortOrder: true,
-                modifiers: {
-                  where: { isActive: true, showOnline: true, deletedAt: null },
-                  orderBy: { sortOrder: 'asc' },
-                  select: {
-                    id: true,
-                    name: true,
-                    displayName: true,
-                    price: true,
-                  },
-                },
-              },
-            },
           },
         },
       },
@@ -181,21 +176,7 @@ export async function GET(request: NextRequest) {
               lowStockAlert: item.lowStockAlert,
               isAvailable: item.isAvailable,
             }),
-            modifierGroups: item.ownedModifierGroups
-              .filter(mg => mg.modifiers.length > 0)
-              .map(mg => ({
-                id: mg.id,
-                name: mg.displayName ?? mg.name,
-                minSelections: mg.minSelections,
-                maxSelections: mg.maxSelections,
-                isRequired: mg.isRequired,
-                allowStacking: mg.allowStacking,
-                options: mg.modifiers.map(mod => ({
-                  id: mod.id,
-                  name: mod.displayName ?? mod.name,
-                  price: Number(mod.price),
-                })),
-              })),
+            itemType: item.itemType,
           })),
         }
       })
