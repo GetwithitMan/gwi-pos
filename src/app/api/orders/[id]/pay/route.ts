@@ -908,7 +908,9 @@ export const POST = withVenue(withTiming(async function POST(
           : finalIdempotencyKey,
         // Pricing tier detection (Payment & Pricing Redesign)
         // appliedPricingTier is NOT NULL with default 'cash' — always set it
-        appliedPricingTier: payment.method === 'cash'
+        // Non-card methods (cash, gift_card, house_account, room_charge, loyalty) = 'cash' tier
+        // Card methods (credit, debit) use client-detected tier or default to 'credit'
+        appliedPricingTier: (['cash', 'gift_card', 'house_account', 'room_charge', 'loyalty', 'loyalty_points'] as string[]).includes(payment.method)
           ? 'cash'
           : ((payment as any).appliedPricingTier || 'credit'),
         ...(((payment as any).detectedCardType) && { detectedCardType: (payment as any).detectedCardType }),
