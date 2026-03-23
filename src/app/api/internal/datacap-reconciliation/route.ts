@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// TODO (PAY-P2-4): Add a scheduled cron route (/api/cron/datacap-reconciliation) that:
+// 1. Finds orphaned _pending_datacap_sales rows older than 5 minutes with status='pending'
+// 2. Logs them at CRITICAL level for operator review
+// 3. Optionally auto-voids via DatacapClient.voidSale() using the stored datacapRecordNo
+//    (requires careful orchestration — currently manual-only via POST resolution below)
+// 4. Marks them as status='orphaned' so the existing GET endpoint surfaces them
+// The eod-batch-close cron already handles batch settlement, so this should run more
+// frequently (every 5 minutes) as a separate Vercel cron.
+
 /**
  * GET /api/internal/datacap-reconciliation
  *
@@ -87,6 +96,67 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ count: 0, sales: [], note: 'Table not yet created — run migrations' })
     }
     return NextResponse.json({ error: 'Failed to query reconciliation data' }, { status: 500 })
+  }
+}
+
+/**
+ * PUT /api/internal/datacap-reconciliation
+ *
+ * PAY-P2-4: Auto-detect and mark orphaned pending Datacap sales.
+ * Finds pending sales older than 5 minutes and marks them as 'orphaned'.
+ * Logs at CRITICAL level for operator awareness. Designed to be called
+ * periodically (e.g., every 5 minutes from a health check or cron).
+ */
+export async function PUT(request: NextRequest) {
+  if (!authorize(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    // Find and mark stale pending sales as orphaned (older than 5 minutes)
+    const orphaned = await db.$queryRawUnsafe<Array<{
+      id: string
+      orderId: string
+      terminalId: string
+      amount: unknown
+      datacapRecordNo: string | null
+      locationId: string
+      createdAt: Date
+    }>>(
+      `UPDATE "_pending_datacap_sales"
+       SET "status" = 'orphaned'
+       WHERE "status" = 'pending'
+         AND "createdAt" < NOW() - INTERVAL '5 minutes'
+       RETURNING id, "orderId", "terminalId", amount, "datacapRecordNo", "locationId", "createdAt"`
+    )
+
+    if (orphaned.length > 0) {
+      console.error(
+        `[DATACAP-RECONCILIATION] CRITICAL: ${orphaned.length} orphaned pending Datacap sale(s) detected. ` +
+        `These may represent charges where the server died before recording the result. ` +
+        `IDs: ${orphaned.map(o => o.id).join(', ')}. ` +
+        `RecordNos: ${orphaned.map(o => o.datacapRecordNo || 'none').join(', ')}. ` +
+        `Manual review required via GET /api/internal/datacap-reconciliation`
+      )
+    }
+
+    return NextResponse.json({
+      orphanedCount: orphaned.length,
+      orphaned: orphaned.map(o => ({
+        id: o.id,
+        orderId: o.orderId,
+        terminalId: o.terminalId,
+        amount: Number(o.amount),
+        datacapRecordNo: o.datacapRecordNo,
+        locationId: o.locationId,
+      })),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('_pending_datacap_sales')) {
+      return NextResponse.json({ orphanedCount: 0, orphaned: [], note: 'Table not yet created' })
+    }
+    console.error('[Datacap Reconciliation] PUT error:', error)
+    return NextResponse.json({ error: 'Failed to run orphan detection' }, { status: 500 })
   }
 }
 

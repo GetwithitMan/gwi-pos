@@ -34,6 +34,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return Response.json({ error: 'Invalid database name' }, { status: 400 })
   }
 
+  // Length cap: PostgreSQL max identifier is 63 chars
+  if (databaseName.length > 63) {
+    return Response.json(
+      { error: 'Database name exceeds maximum length' },
+      { status: 400 }
+    )
+  }
+
   // Safety: never drop the master database
   if (databaseName === 'gwi_pos' || databaseName === 'neondb') {
     return Response.json(
@@ -58,7 +66,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Check if database exists
+    // Check if database exists (parameterized query against pg_database)
     const existing = await db.$queryRawUnsafe<{ datname: string }[]>(
       `SELECT datname FROM pg_database WHERE datname = $1`,
       databaseName
@@ -66,6 +74,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (existing.length === 0) {
       return Response.json({ success: true, message: 'Database does not exist' })
+    }
+
+    // Secondary validation: confirm the returned name matches exactly.
+    // This guards against any edge case where the parameterized query
+    // returns an unexpected row before we use string interpolation in DROP.
+    if (existing[0].datname !== databaseName) {
+      console.error(`[Deprovision] pg_database name mismatch: expected=${databaseName}, got=${existing[0].datname}`)
+      return Response.json({ error: 'Database name verification failed' }, { status: 500 })
     }
 
     // Terminate active connections before dropping

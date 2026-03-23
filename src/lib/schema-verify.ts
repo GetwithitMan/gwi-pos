@@ -134,6 +134,7 @@ export async function verifySchema(): Promise<SchemaCheckResult> {
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
+    console.error('[SCHEMA-VERIFY] CRITICAL: Schema verification failed to execute — proceeding in degraded mode')
     log.error({ err: errorMsg }, '[SchemaVerify] Failed to verify schema')
 
     // ALWAYS return passed: false when verification itself throws.

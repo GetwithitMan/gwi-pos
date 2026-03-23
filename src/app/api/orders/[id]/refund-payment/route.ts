@@ -99,7 +99,26 @@ export const POST = withVenue(async function POST(
     // Phase 1: Read + validate under FOR UPDATE lock, then release lock
     // Phase 2: Call Datacap outside transaction
     // Phase 3: Write under FOR UPDATE lock (record refund result)
+    //
+    // PAY-P2-1: Advisory lock prevents concurrent refunds on the same payment from
+    // both passing Phase 1 validation and both calling Datacap. The advisory lock
+    // is held for the entire 3-phase span (acquired before Phase 1, released after Phase 3).
+    // Uses pg_try_advisory_lock to fail fast if another refund is already in progress.
 
+    // Derive a numeric lock key from paymentId (first 12 hex chars → safe integer)
+    const lockKey = parseInt(paymentId.replace(/-/g, '').slice(0, 12), 16)
+    const [{ acquired }] = await db.$queryRawUnsafe<[{ acquired: boolean }]>(
+      'SELECT pg_try_advisory_lock($1::bigint) as acquired',
+      lockKey,
+    )
+    if (!acquired) {
+      return NextResponse.json(
+        { error: 'Another refund is already in progress for this payment' },
+        { status: 409 }
+      )
+    }
+
+    try {
     // ── Phase 1: Validate under lock ──────────────────────────────────────────
     const phase1Result = await db.$transaction(async (tx) => {
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
@@ -447,6 +466,10 @@ export const POST = withVenue(async function POST(
         isPartial,
       },
     })
+    } finally {
+      // PAY-P2-1: Release advisory lock after all 3 phases complete (success or failure)
+      void db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(console.error)
+    }
   } catch (error) {
     console.error('Failed to refund payment:', error)
     return NextResponse.json(

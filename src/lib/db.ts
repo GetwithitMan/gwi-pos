@@ -73,6 +73,10 @@ export function createPrismaClient(url?: string) {
       $allModels: {
         async findMany({ model, args, query }) {
           applySoftDeleteFilter(model, args)
+          // Safety cap: prevent unbounded queries from returning millions of rows
+          if (!args.take) {
+            args.take = 5000
+          }
           return query(args)
         },
         async findFirst({ model, args, query }) {
@@ -188,6 +192,10 @@ function createAdminClient(url?: string): PrismaClient {
       $allModels: {
         async findMany({ model, args, query }) {
           applySoftDeleteFilter(model, args)
+          // Safety cap: prevent unbounded queries from returning millions of rows
+          if (!args.take) {
+            args.take = 5000
+          }
           return query(args)
         },
         async findFirst({ model, args, query }) {

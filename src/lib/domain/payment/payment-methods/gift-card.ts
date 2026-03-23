@@ -93,7 +93,10 @@ export async function processGiftCardPayment(
   await tx.giftCard.update({
     where: { id: giftCard.id },
     data: {
-      currentBalance: { decrement: gcPaymentAmount },
+      // PAY-P2-2: Use absolute set instead of decrement to prevent race conditions
+      // where concurrent transactions could both decrement from the same stale balance.
+      // The row lock (FOR UPDATE above) + absolute value ensures correctness.
+      currentBalance: newBalance,
       status: newBalance === 0 ? 'depleted' : 'active',
       transactions: {
         create: {

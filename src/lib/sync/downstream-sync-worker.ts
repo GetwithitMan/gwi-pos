@@ -604,6 +604,65 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
   return synced
 }
 
+// ── P2-5: Pending Fulfillment Re-check ──────────────────────────────────────
+// When a cloud-originated Order arrives via downstream sync but its OrderItems
+// haven't synced yet, we defer fulfillment and re-check on subsequent cycles.
+
+/** Map of orderId → { retries, row, locationId } for orders awaiting their items */
+const pendingFulfillmentOrders = new Map<string, {
+  retries: number
+  row: Record<string, unknown>
+  locationId: string
+  scheduledAt: number
+}>()
+
+/** Max re-check attempts before giving up (5 cycles * 15s = ~75s window) */
+const MAX_FULFILLMENT_RETRIES = 5
+
+function schedulePendingFulfillment(orderId: string, locationId: string, row: Record<string, unknown>): void {
+  if (pendingFulfillmentOrders.has(orderId)) return // Already scheduled
+  pendingFulfillmentOrders.set(orderId, {
+    retries: 0,
+    row,
+    locationId,
+    scheduledAt: Date.now(),
+  })
+  log.info({ orderId }, 'OrderItems not yet available — scheduled for pending fulfillment re-check')
+}
+
+/**
+ * Re-check pending fulfillment orders. Called at the end of each downstream cycle.
+ * If items have arrived, fires fulfillment and removes from the pending map.
+ */
+async function processPendingFulfillments(): Promise<void> {
+  if (pendingFulfillmentOrders.size === 0) return
+
+  for (const [orderId, pending] of pendingFulfillmentOrders) {
+    pending.retries++
+
+    if (pending.retries > MAX_FULFILLMENT_RETRIES) {
+      log.warn({ orderId, retries: pending.retries }, 'Pending fulfillment exceeded max retries — giving up')
+      pendingFulfillmentOrders.delete(orderId)
+      continue
+    }
+
+    try {
+      const items = await masterClient.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM "OrderItem" WHERE "orderId" = $1 AND "deletedAt" IS NULL AND "kitchenStatus" = 'sent' LIMIT 1`,
+        orderId
+      )
+
+      if (items.length > 0) {
+        log.info({ orderId, retries: pending.retries }, 'OrderItems arrived — firing deferred fulfillment')
+        pendingFulfillmentOrders.delete(orderId)
+        await handleCloudFulfillment(pending.row)
+      }
+    } catch (err) {
+      log.error({ err, orderId }, 'Pending fulfillment re-check failed')
+    }
+  }
+}
+
 /**
  * Handle fulfillment routing for a cloud-originated order that arrived via downstream sync.
  * Fetches order items + station config from local PG, then calls routeOrderFulfillment.
@@ -642,7 +701,12 @@ async function handleCloudFulfillment(row: Record<string, unknown>): Promise<voi
     orderId
   )
 
-  if (items.length === 0) return
+  if (items.length === 0) {
+    // P2-5: OrderItems may not have arrived yet via downstream sync.
+    // Schedule a deferred re-check so fulfillment fires once items appear.
+    schedulePendingFulfillment(orderId, locationId, row)
+    return
+  }
 
   // Fetch modifiers for all order items
   const modifiers = await masterClient.$queryRawUnsafe<Array<{ orderItemId: string; name: string; quantity: number }>>(
@@ -1068,6 +1132,11 @@ async function runDownstreamCycle(): Promise<void> {
     if (totalSynced > 0) {
       log.info({ cycleId, rows: totalSynced }, 'Cycle complete')
     }
+
+    // P2-5: Re-check orders that are pending fulfillment (items not yet synced)
+    void processPendingFulfillments().catch((err) => {
+      log.error({ err }, 'Pending fulfillment re-check failed')
+    })
 
     // Sync cellular deny list at the end of each cycle
     void syncCellularDenyList().catch((err) => {

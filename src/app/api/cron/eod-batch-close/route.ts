@@ -4,6 +4,15 @@ import { executeEodReset } from '@/lib/eod'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 
+// PAY-P3-4: Datacap batch close is already handled by executeEodReset() when
+// location settings have autoBatchClose=true and processor='datacap'.
+// The cron runs within a 15-minute window after the configured batchCloseTime.
+// If a venue misses the window (cron downtime, Vercel cold start), batch close
+// will NOT retry until the next day. Consider adding a fallback check: if
+// batchCloseSuccess was never recorded for today, retry on next cron invocation.
+// Also consider calling /api/internal/datacap-reconciliation (PUT) here to
+// auto-orphan stale pending sales before batch settlement.
+
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 

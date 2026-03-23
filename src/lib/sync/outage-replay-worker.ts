@@ -257,6 +257,9 @@ async function processOutageQueue(): Promise<void> {
   const cycleId = randomUUID().slice(0, 8)
 
   try {
+    // P3-3: Refresh column metadata cache if stale (picks up schema changes)
+    refreshColumnCacheIfStale()
+
     const isOnline = await checkNeonConnectivity()
     if (!isOnline) return
 

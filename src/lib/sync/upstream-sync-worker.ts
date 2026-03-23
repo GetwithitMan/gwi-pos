@@ -99,6 +99,11 @@ export function isInOutageMode(): boolean {
 // Cap outage queue to prevent disk exhaustion during extended outages
 const MAX_OUTAGE_QUEUE_SIZE = parseInt(process.env.MAX_OUTAGE_QUEUE_SIZE || '', 10) || 100000
 
+// P1-5: Soft threshold — drop low-priority tables when queue is getting large
+const OUTAGE_QUEUE_SOFT_LIMIT = 10000
+/** Tables that can be dropped under pressure (non-financial, reconstructable from source data) */
+const LOW_PRIORITY_OUTAGE_TABLES = new Set(['VenueLog', 'AuditLog', 'SocketEventLog', 'SyncConflict'])
+
 export async function queueOutageWrite(
   tableName: string,
   recordId: string,
@@ -111,6 +116,16 @@ export async function queueOutageWrite(
     const [{ count }] = await masterClient.$queryRawUnsafe<{ count: number }[]>(
       `SELECT COUNT(*)::int as count FROM "OutageQueueEntry" WHERE status = 'PENDING'`
     )
+    // P1-5: Soft limit — drop low-priority entries to preserve space for critical data
+    if (count >= OUTAGE_QUEUE_SOFT_LIMIT && LOW_PRIORITY_OUTAGE_TABLES.has(tableName)) {
+      log.warn({
+        tableName, recordId, operation, locationId,
+        queueSize: count,
+        softLimit: OUTAGE_QUEUE_SOFT_LIMIT,
+      }, 'Outage queue exceeded soft limit — dropping low-priority entry')
+      return { queued: false, reason: 'soft_limit_low_priority' }
+    }
+
     if (count >= MAX_OUTAGE_QUEUE_SIZE) {
       log.error({
         tableName, recordId, operation, locationId,
@@ -153,10 +168,14 @@ export async function queueOutageWrite(
   }
 }
 
-/** Cached column names per table (loaded once at startup) */
+/** Cached column names per table (loaded once at startup, refreshed periodically) */
 const columnCache = new Map<string, string[]>()
 /** Cached column PG casts: tableName → columnName → cast expression (e.g., '::timestamptz') */
 const columnTypeMap = new Map<string, Map<string, string>>()
+
+// P3-3: Periodic column metadata refresh (every 10 minutes)
+const UPSTREAM_COLUMN_CACHE_TTL = 10 * 60 * 1000
+let upstreamColumnCacheTimestamp = 0
 
 let timer: ReturnType<typeof setInterval> | null = null
 /** Guard against overlapping sync cycles */
@@ -251,8 +270,9 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
 
   const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
 
+  const quotedSelectCols = columns.map((c) => `"${c}"`).join(', ')
   const rows = await masterClient.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT * FROM "${tableName}" WHERE ${whereClause} ORDER BY "updatedAt" ASC LIMIT $1`,
+    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE ${whereClause} ORDER BY "updatedAt" ASC LIMIT $1`,
     batchSize
   )
 
@@ -371,6 +391,13 @@ async function runSyncCycle(): Promise<void> {
   const cycleId = randomUUID().slice(0, 8)
 
   try {
+    // P3-3: Refresh column metadata if cache TTL has expired (picks up schema changes)
+    if (Date.now() - upstreamColumnCacheTimestamp > UPSTREAM_COLUMN_CACHE_TTL) {
+      await loadColumnMetadata()
+      upstreamColumnCacheTimestamp = Date.now()
+      log.info('Column metadata cache refreshed (TTL expired)')
+    }
+
     // Quick connectivity check — if Neon is unreachable, bail early
     try {
       await neonClient!.$queryRawUnsafe<unknown[]>(`SELECT 1`)
@@ -514,6 +541,7 @@ export function startUpstreamSyncWorker(): void {
     }
 
     await loadColumnMetadata()
+    upstreamColumnCacheTimestamp = Date.now()
     void runSyncCycle()
     timer = setInterval(() => void runSyncCycle(), UPSTREAM_INTERVAL_MS)
     timer.unref()

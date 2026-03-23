@@ -163,8 +163,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // ── Match PIN ─────────────────────────────────────────────────────────
+    // Optimization: if only one employee has a PIN and the required permissions,
+    // check that one first to avoid unnecessary bcrypt comparisons.
+    const employeesWithPin = employees.filter((e) => !!e.pin)
+    const candidatesWithPermission = employeesWithPin.filter((e) => {
+      const perms = (e.role.permissions as string[]) || []
+      return requiredPermissions.some((p) => hasPermission(perms, p))
+    })
+    // Re-order: check permission-having employees first (most likely to be the correct one)
+    const orderedEmployees = [
+      ...candidatesWithPermission,
+      ...employeesWithPin.filter((e) => !candidatesWithPermission.includes(e)),
+    ]
+
     let matchedEmployee = null
-    for (const employee of employees) {
+    for (const employee of orderedEmployees) {
       if (!employee.pin) continue
       const pinMatch = await compare(pin, employee.pin)
       if (pinMatch) {
