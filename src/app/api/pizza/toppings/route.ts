@@ -81,6 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         usageQuantity: usageQuantity ?? null,
         usageUnit: usageUnit || null,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
 

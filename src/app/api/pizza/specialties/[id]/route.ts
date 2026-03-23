@@ -76,6 +76,7 @@ export const PATCH = withVenue(async function PATCH(
         ...(body.allowSauceChange !== undefined && { allowSauceChange: body.allowSauceChange }),
         ...(body.allowCheeseChange !== undefined && { allowCheeseChange: body.allowCheeseChange }),
         ...(body.allowToppingMods !== undefined && { allowToppingMods: body.allowToppingMods }),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
       include: {
         menuItem: true,
@@ -124,7 +125,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.pizzaSpecialty.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
     })
 
     return NextResponse.json({ data: { success: true } })

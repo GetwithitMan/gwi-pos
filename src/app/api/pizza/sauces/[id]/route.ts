@@ -46,6 +46,7 @@ export const PATCH = withVenue(async function PATCH(
         ...(body.inventoryItemId !== undefined && { inventoryItemId: body.inventoryItemId || null }),
         ...(body.usageQuantity !== undefined && { usageQuantity: body.usageQuantity }),
         ...(body.usageUnit !== undefined && { usageUnit: body.usageUnit || null }),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
 
@@ -80,7 +81,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.pizzaSauce.update({
       where: { id },
-      data: { isActive: false }
+      data: { isActive: false, lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' }
     })
 
     return NextResponse.json({ data: { success: true } })

@@ -76,6 +76,7 @@ export const PATCH = withVenue(async function PATCH(
         ...(body.isDefault !== undefined && { isDefault: body.isDefault }),
         ...(body.isActive !== undefined && { isActive: body.isActive }),
         ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
 
@@ -113,7 +114,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.pizzaSize.update({
       where: { id },
-      data: { isActive: false }
+      data: { isActive: false, lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' }
     })
 
     return NextResponse.json({ data: { success: true } })

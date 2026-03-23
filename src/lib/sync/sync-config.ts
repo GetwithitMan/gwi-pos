@@ -172,14 +172,16 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   // SpiritCategory, BottleProduct, SpiritModifierGroup moved to bidirectional above
   SpiritUpsellEvent:      { direction: 'upstream', owner: 'nuc', priority: 140, batchSize: 100 },
 
-  // ── Pizza Builder (NUC → Neon) ──────────────────────────────────────
-  PizzaConfig:            { direction: 'upstream', owner: 'nuc', priority: 141, batchSize: 10 },
-  PizzaSize:              { direction: 'upstream', owner: 'nuc', priority: 142, batchSize: 50 },
-  PizzaCrust:             { direction: 'upstream', owner: 'nuc', priority: 143, batchSize: 50 },
-  PizzaSauce:             { direction: 'upstream', owner: 'nuc', priority: 144, batchSize: 50 },
-  PizzaCheese:            { direction: 'upstream', owner: 'nuc', priority: 145, batchSize: 50 },
-  PizzaTopping:           { direction: 'upstream', owner: 'nuc', priority: 146, batchSize: 100 },
-  PizzaSpecialty:         { direction: 'upstream', owner: 'nuc', priority: 147, batchSize: 50 },
+  // ── Pizza Builder (Cloud ↔ NUC — bidirectional for cloud settings page) ──
+  // IMPORTANT: Cloud routes mutating pizza models MUST set lastMutatedBy: 'cloud'
+  // See docs/features/offline-sync.md § Bidirectional Sync Protocol
+  PizzaConfig:            { direction: 'bidirectional', owner: 'cloud', priority: 141, batchSize: 10 },
+  PizzaSize:              { direction: 'bidirectional', owner: 'cloud', priority: 142, batchSize: 50 },
+  PizzaCrust:             { direction: 'bidirectional', owner: 'cloud', priority: 143, batchSize: 50 },
+  PizzaSauce:             { direction: 'bidirectional', owner: 'cloud', priority: 144, batchSize: 50 },
+  PizzaCheese:            { direction: 'bidirectional', owner: 'cloud', priority: 145, batchSize: 50 },
+  PizzaTopping:           { direction: 'bidirectional', owner: 'cloud', priority: 146, batchSize: 100 },
+  PizzaSpecialty:         { direction: 'bidirectional', owner: 'cloud', priority: 147, batchSize: 50 },
 
   // ── Tips + Payroll (NUC → Neon) ─────────────────────────────────────
   PaidInOut:              { direction: 'upstream', owner: 'nuc', priority: 81, batchSize: 100 },

@@ -90,6 +90,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         ...(body.allowModeSwitch !== undefined && { allowModeSwitch: body.allowModeSwitch }),
         ...(body.allowCondimentSections !== undefined && { allowCondimentSections: body.allowCondimentSections }),
         ...(body.condimentDivisionMax !== undefined && { condimentDivisionMax: body.condimentDivisionMax }),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
       create: {
         locationId,
@@ -112,6 +113,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         allowModeSwitch: body.allowModeSwitch ?? true,
         allowCondimentSections: body.allowCondimentSections ?? false,
         condimentDivisionMax: body.condimentDivisionMax ?? 1,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
 

@@ -79,6 +79,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         freeToppings: freeToppings || 0,
         isDefault: isDefault || false,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
 

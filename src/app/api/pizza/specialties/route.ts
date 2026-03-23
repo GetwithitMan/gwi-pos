@@ -128,6 +128,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         allowSauceChange: allowSauceChange ?? true,
         allowCheeseChange: allowCheeseChange ?? true,
         allowToppingMods: allowToppingMods ?? true,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
       include: {
         menuItem: true,
