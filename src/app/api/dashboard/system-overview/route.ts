@@ -239,6 +239,32 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(): Promise<Nex
     }
   }
 
+  // ── Last update state ─────────────────────────────────────────────────────
+  let lastUpdate: {
+    attemptedAt: string
+    targetVersion: string
+    previousVersion: string
+    status: string
+    error?: string
+    durationMs: number
+  } | null = null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs')
+    const raw = fs.readFileSync('/opt/gwi-pos/state/last-update.json', 'utf-8')
+    const state = JSON.parse(raw)
+    lastUpdate = {
+      attemptedAt: state.attemptedAt ?? '',
+      targetVersion: state.targetVersion ?? '',
+      previousVersion: state.previousVersion ?? '',
+      status: state.status ?? 'unknown',
+      error: state.error,
+      durationMs: state.duration ?? 0,
+    }
+  } catch {
+    // File doesn't exist or parse error — that's fine
+  }
+
   // ── Readiness data ──────────────────────────────────────────────────────────
   const readiness = (() => {
     const rs = getReadinessState()
@@ -312,6 +338,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(): Promise<Nex
       },
       readiness,
       connectionPool,
+      lastUpdate,
     },
   })
 }))

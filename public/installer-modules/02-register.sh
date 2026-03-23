@@ -25,6 +25,74 @@
 # Flag: set to 1 when quick-code provisioning succeeds
 QUICK_CODE_PROVISIONED=0
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Duplicate Primary Rejection Handler (409 Conflict)
+# ─────────────────────────────────────────────────────────────────────────────
+# Called from both quick-code and manual registration paths when MC returns
+# HTTP 409, meaning this venue already has an active primary server.
+#
+# Returns:
+#   0 = not a 409 (continue normal flow)
+#   1 = retry with backup role (caller must re-attempt registration)
+#   2 = user chose to wait/retry after using Replace Server in MC
+#   3 = user aborted installation
+# ─────────────────────────────────────────────────────────────────────────────
+handle_duplicate_primary_rejection() {
+  local http_code="$1"
+  local response_body="$2"
+
+  if [[ "$http_code" != "409" ]]; then
+    return 0  # Not a 409 — continue normal flow
+  fi
+
+  echo ""
+  echo "============================================================"
+  echo "  WARNING: PRIMARY SERVER ALREADY EXISTS"
+  echo "============================================================"
+  echo ""
+  echo "  This venue already has an active primary server."
+  echo "  Only ONE primary is allowed per venue."
+  echo ""
+
+  # Extract and show the existing server info from MC response
+  local detail
+  detail=$(echo "$response_body" | jq -r '.error // .message // empty' 2>/dev/null)
+  if [[ -n "$detail" ]]; then
+    echo "  Details: $detail"
+    echo ""
+  fi
+
+  echo "  Options:"
+  echo "    1) Register this NUC as a BACKUP server instead"
+  echo "    2) Use 'Replace Server' in Mission Control first, then retry"
+  echo "    3) Abort installation"
+  echo ""
+  local choice
+  read -rp "  Choice [1/2/3]: " choice < /dev/tty
+
+  case "$choice" in
+    1)
+      echo ""
+      log "Switching to BACKUP role..."
+      STATION_ROLE="backup"
+      return 1  # Signal: retry with backup role
+      ;;
+    2)
+      echo ""
+      echo "  Go to Mission Control -> this venue -> Infrastructure tab"
+      echo "  Click 'Replace Server' to decommission the old NUC"
+      echo "  Then generate a new registration code and re-run the installer"
+      echo ""
+      read -rp "  Press Enter when ready to retry, or Ctrl+C to abort... " < /dev/tty
+      return 2  # Signal: retry same role
+      ;;
+    3|*)
+      err_code "ERR-INST-050" "Installation aborted — duplicate primary server"
+      return 3  # Signal: abort
+      ;;
+  esac
+}
+
 attempt_quick_code_registration() {
   echo ""
   echo "╔══════════════════════════════════════════════════╗"
@@ -78,54 +146,77 @@ attempt_quick_code_registration() {
   local public_key
   public_key=$(cat "$KEY_DIR/public.pem")
 
-  # ── Build validation payload ──
+  # Payload is built inside the retry loop (includes role, which may change after 409)
   local validate_payload
-  validate_payload=$(jq -n \
-    --arg code "$QUICK_CODE" \
-    --arg fp "$hw_fp" \
-    --arg pk "$public_key" \
-    '{code: $code, hardwareFingerprint: $fp, fingerprintVersion: 1, publicKey: $pk}')
 
   local mc_url="${MC_URL:-https://mc.getwithitpos.com}"
   local validate_url="${mc_url}/api/fleet/registration-codes/validate"
 
-  log "Validating quick-code with Mission Control..."
-  log "  URL: $validate_url"
+  # ── Validation call with retry loop (supports 409 duplicate-primary handling) ──
+  local resp_file err_file http_code response
+  local _qc_retry=true
+  while [[ "$_qc_retry" == "true" ]]; do
+    _qc_retry=false
 
-  local resp_file err_file http_code
-  resp_file=$(mktemp)
-  err_file=$(mktemp)
-  http_code=$(curl -sS --max-time 30 -X POST \
-    "$validate_url" \
-    -H "Content-Type: application/json" \
-    -d "$validate_payload" \
-    -o "$resp_file" \
-    -w "%{http_code}" 2>"$err_file") || http_code="000"
+    # Rebuild payload in case STATION_ROLE changed (e.g., user chose backup after 409)
+    validate_payload=$(jq -n \
+      --arg code "$QUICK_CODE" \
+      --arg fp "$hw_fp" \
+      --arg pk "$public_key" \
+      --arg role "${STATION_ROLE:-server}" \
+      '{code: $code, hardwareFingerprint: $fp, fingerprintVersion: 1, publicKey: $pk, role: $role}')
 
-  local response
-  response=$(cat "$resp_file" 2>/dev/null || echo "{}")
-  rm -f "$resp_file" "$err_file"
+    log "Validating quick-code with Mission Control..."
+    log "  URL: $validate_url"
 
-  if [[ "$http_code" != "201" ]] && [[ "$http_code" != "200" ]]; then
-    local err_msg
-    err_msg=$(echo "$response" | jq -r '.error // .message // empty' 2>/dev/null || echo "")
+    resp_file=$(mktemp)
+    err_file=$(mktemp)
+    http_code=$(curl -sS --max-time 30 -X POST \
+      "$validate_url" \
+      -H "Content-Type: application/json" \
+      -d "$validate_payload" \
+      -o "$resp_file" \
+      -w "%{http_code}" 2>"$err_file") || http_code="000"
 
-    if [[ "$http_code" == "000" ]]; then
-      warn "Mission Control unreachable at $validate_url"
-    elif [[ "$http_code" == "404" ]]; then
-      warn "Invalid registration code: $QUICK_CODE"
-    elif [[ "$http_code" == "409" ]]; then
-      warn "Code already used or provisioning incomplete: ${err_msg:-unknown}"
-    elif [[ "$http_code" == "410" ]]; then
-      warn "Code has expired. Generate a new one in Mission Control."
-    elif [[ "$http_code" == "429" ]]; then
-      warn "Too many attempts — wait 1 minute and try again."
-    else
-      warn "Quick-code validation failed (HTTP $http_code): ${err_msg:-unknown}"
+    response=$(cat "$resp_file" 2>/dev/null || echo "{}")
+    rm -f "$resp_file" "$err_file"
+
+    if [[ "$http_code" != "201" ]] && [[ "$http_code" != "200" ]]; then
+      # ── Check for duplicate primary (409) first ──
+      handle_duplicate_primary_rejection "$http_code" "$response"
+      local _dup_rc=$?
+      if [[ $_dup_rc -eq 1 ]]; then
+        # User chose backup role — retry with updated STATION_ROLE
+        _qc_retry=true
+        continue
+      elif [[ $_dup_rc -eq 2 ]]; then
+        # User did Replace Server in MC — retry same role
+        _qc_retry=true
+        continue
+      elif [[ $_dup_rc -eq 3 ]]; then
+        # User aborted
+        return 1
+      fi
+
+      # ── Not a 409 — handle other error codes ──
+      local err_msg
+      err_msg=$(echo "$response" | jq -r '.error // .message // empty' 2>/dev/null || echo "")
+
+      if [[ "$http_code" == "000" ]]; then
+        warn "Mission Control unreachable at $validate_url"
+      elif [[ "$http_code" == "404" ]]; then
+        warn "Invalid registration code: $QUICK_CODE"
+      elif [[ "$http_code" == "410" ]]; then
+        warn "Code has expired. Generate a new one in Mission Control."
+      elif [[ "$http_code" == "429" ]]; then
+        warn "Too many attempts — wait 1 minute and try again."
+      else
+        warn "Quick-code validation failed (HTTP $http_code): ${err_msg:-unknown}"
+      fi
+      warn "Falling back to manual registration..."
+      return 1
     fi
-    warn "Falling back to manual registration..."
-    return 1
-  fi
+  done
 
   # ── Parse the provisioning payload (same shape as /api/fleet/register) ──
   local validated
@@ -678,51 +769,72 @@ run_register() {
     PUBLIC_KEY=$(cat "$KEY_DIR/public.pem")
     log "RSA keypair ready."
 
-    # ── Build registration payload ──
-    REG_PAYLOAD=$(jq -n \
-      --arg token "$REG_CODE" \
-      --arg fp "$HARDWARE_FINGERPRINT" \
-      --arg pk "$PUBLIC_KEY" \
-      --arg role "$STATION_ROLE" \
-      '{registrationToken: $token, hardwareFingerprint: $fp, fingerprintVersion: 1, publicKey: $pk, role: $role}')
+    # ── Registration call with retry loop (supports 409 duplicate-primary handling) ──
+    local _reg_retry=true
+    while [[ "$_reg_retry" == "true" ]]; do
+      _reg_retry=false
 
-    log "Calling $MC_REGISTER_URL..."
+      # Build payload (rebuilt each iteration in case STATION_ROLE changed after 409)
+      REG_PAYLOAD=$(jq -n \
+        --arg token "$REG_CODE" \
+        --arg fp "$HARDWARE_FINGERPRINT" \
+        --arg pk "$PUBLIC_KEY" \
+        --arg role "$STATION_ROLE" \
+        '{registrationToken: $token, hardwareFingerprint: $fp, fingerprintVersion: 1, publicKey: $pk, role: $role}')
 
-    REG_RESP_FILE=$(mktemp)
-    REG_ERR_FILE=$(mktemp)
-    HTTP_CODE=$(curl -sS --max-time 30 -X POST \
-      "$MC_REGISTER_URL" \
-      -H "Content-Type: application/json" \
-      -d "$REG_PAYLOAD" \
-      -o "$REG_RESP_FILE" \
-      -w "%{http_code}" 2>"$REG_ERR_FILE") || HTTP_CODE="000"
+      log "Calling $MC_REGISTER_URL (role=$STATION_ROLE)..."
 
-    REG_RESPONSE=$(cat "$REG_RESP_FILE" 2>/dev/null || echo "{}")
-    rm -f "$REG_RESP_FILE" "$REG_ERR_FILE"
+      REG_RESP_FILE=$(mktemp)
+      REG_ERR_FILE=$(mktemp)
+      HTTP_CODE=$(curl -sS --max-time 30 -X POST \
+        "$MC_REGISTER_URL" \
+        -H "Content-Type: application/json" \
+        -d "$REG_PAYLOAD" \
+        -o "$REG_RESP_FILE" \
+        -w "%{http_code}" 2>"$REG_ERR_FILE") || HTTP_CODE="000"
 
-    if [[ "$HTTP_CODE" != "201" ]] && [[ "$HTTP_CODE" != "200" ]]; then
-      # Classify the error for structured logging
-      if [[ "$HTTP_CODE" == "000" ]]; then
-        err_code "ERR-INST-052" "MC unreachable at $MC_REGISTER_URL (HTTP $HTTP_CODE)"
-      else
-        err_code "ERR-INST-050" "HTTP $HTTP_CODE from $MC_REGISTER_URL"
+      REG_RESPONSE=$(cat "$REG_RESP_FILE" 2>/dev/null || echo "{}")
+      rm -f "$REG_RESP_FILE" "$REG_ERR_FILE"
+
+      if [[ "$HTTP_CODE" != "201" ]] && [[ "$HTTP_CODE" != "200" ]]; then
+        # ── Check for duplicate primary (409) first ──
+        handle_duplicate_primary_rejection "$HTTP_CODE" "$REG_RESPONSE"
+        local _dup_rc=$?
+        if [[ $_dup_rc -eq 1 ]]; then
+          # User chose backup role — retry with updated STATION_ROLE
+          _reg_retry=true
+          continue
+        elif [[ $_dup_rc -eq 2 ]]; then
+          # User did Replace Server in MC — retry same role
+          _reg_retry=true
+          continue
+        elif [[ $_dup_rc -eq 3 ]]; then
+          # User aborted
+          return 1
+        fi
+
+        # ── Not a 409 — handle other error codes ──
+        if [[ "$HTTP_CODE" == "000" ]]; then
+          err_code "ERR-INST-052" "MC unreachable at $MC_REGISTER_URL (HTTP $HTTP_CODE)"
+        else
+          err_code "ERR-INST-050" "HTTP $HTTP_CODE from $MC_REGISTER_URL"
+        fi
+        err "Mission Control registration failed (HTTP $HTTP_CODE)."
+        ERR_MSG=$(echo "$REG_RESPONSE" | jq -r '.error // .message // empty' 2>/dev/null || echo "")
+        if [[ -n "$ERR_MSG" ]]; then
+          err "  $ERR_MSG"
+        else
+          err "  Response: $REG_RESPONSE"
+        fi
+        err ""
+        err "Check:"
+        err "  - Registration code is a valid UUID from Mission Control"
+        err "  - Code has not expired (24-hour window)"
+        err "  - Code has not already been used"
+        err "  - Network can reach $MC_URL"
+        return 1
       fi
-      err "Mission Control registration failed (HTTP $HTTP_CODE)."
-      # Try to extract error message from response
-      ERR_MSG=$(echo "$REG_RESPONSE" | jq -r '.error // .message // empty' 2>/dev/null || echo "")
-      if [[ -n "$ERR_MSG" ]]; then
-        err "  $ERR_MSG"
-      else
-        err "  Response: $REG_RESPONSE"
-      fi
-      err ""
-      err "Check:"
-      err "  - Registration code is a valid UUID from Mission Control"
-      err "  - Code has not expired (24-hour window)"
-      err "  - Code has not already been used"
-      err "  - Network can reach $MC_URL"
-      return 1
-    fi
+    done
 
     # ── Parse response ──
     SERVER_NODE_ID=$(echo "$REG_RESPONSE" | jq -r '.data.serverNodeId // empty')

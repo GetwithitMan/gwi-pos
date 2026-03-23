@@ -882,11 +882,57 @@ async function processCommand(dataStr) {
         log('[Sync] REPAIR_GIT_CREDENTIALS error: ' + e.message)
         result = { ok: false, error: e.message }
       }
+    } else if (cmd.type === 'PROMOTE') {
+      // Promote this BACKUP NUC to PRIMARY
+      log('[Sync] Received PROMOTE command — promoting backup to primary')
+      currentAttemptId = generateAttemptId()
+      ackProgress(cmd.id, 'IN_PROGRESS', { step: 'promote_start' })
+
+      try {
+        // Run promote.sh if it exists (keepalived promote script)
+        var promoteScript = '/opt/gwi-pos/promote.sh'
+        if (fs.existsSync(promoteScript)) {
+          execSync('bash ' + promoteScript, { encoding: 'utf8', timeout: 60000 })
+          log('[Sync] promote.sh executed successfully')
+        }
+
+        // Update local role in .env
+        var envFile = '/opt/gwi-pos/.env'
+        if (fs.existsSync(envFile)) {
+          var envContent = fs.readFileSync(envFile, 'utf8')
+          envContent = envContent.replace(/STATION_ROLE=backup/i, 'STATION_ROLE=server')
+          fs.writeFileSync(envFile, envContent)
+          log('[Sync] Updated STATION_ROLE to server in .env')
+        }
+
+        // Restart POS service to pick up new role
+        try {
+          execSync('sudo systemctl restart thepasspos', { encoding: 'utf8', timeout: 30000 })
+          log('[Sync] POS service restarted')
+        } catch (restartErr) {
+          log('[Sync] Warning: POS restart failed: ' + restartErr.message)
+        }
+
+        ackProgress(cmd.id, 'COMPLETED', {
+          step: 'promote_complete',
+          newRole: 'server',
+          previousPrimaryId: (cmd.payload && cmd.payload.previousPrimaryId) || null
+        })
+        log('[Sync] PROMOTE completed — this NUC is now PRIMARY')
+        result = { ok: true, _acked: true }
+      } catch (err) {
+        ackProgress(cmd.id, 'FAILED', {
+          step: 'promote_failed',
+          error: err.message
+        })
+        log('[Sync] PROMOTE FAILED: ' + err.message)
+        result = { ok: false, error: err.message, _acked: true }
+      }
     } else {
       log('[Sync] Unknown command: ' + cmd.type + ', ACK OK')
       result = { ok: true }
     }
-    // FORCE_UPDATE and RE_PROVISION handle their own ACKs (two-phase progress)
+    // FORCE_UPDATE, RE_PROVISION, and PROMOTE handle their own ACKs (two-phase progress)
     if (!result._acked) {
       ack(cmd.id, result)
     }
