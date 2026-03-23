@@ -765,6 +765,36 @@ export interface VenuePortalSettings {
   rewardsPageEnabled: boolean
   orderHistoryEnabled: boolean
   cakeOrderingOnPortal: boolean
+
+  // ── Site (NEW — public ordering website) ──
+  siteEnabled: boolean
+  themePreset: 'modern' | 'classic' | 'bold'
+
+  // Section toggles
+  showHero: boolean
+  showAbout: boolean
+  showHours: boolean
+  showFeaturedItems: boolean
+  showReservations: boolean
+  showContact: boolean
+  showRewardsOnSite: boolean
+  showGiftCards: boolean
+
+  // Content
+  aboutText: string
+  socialLinks: {
+    facebook?: string
+    instagram?: string
+    twitter?: string
+    yelp?: string
+    google?: string
+  }
+  headingFont?: string
+  footerText?: string
+
+  // Featured items
+  featuredItemSource: 'popular' | 'manual' | 'first_n'
+  featuredItemIds?: string[]
 }
 
 // ─── Entertainment Settings ──────────────────────────────────────────────

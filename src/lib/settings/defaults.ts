@@ -230,6 +230,19 @@ export const DEFAULT_VENUE_PORTAL: VenuePortalSettings = {
   rewardsPageEnabled: false,
   orderHistoryEnabled: false,
   cakeOrderingOnPortal: false,
+  siteEnabled: false,
+  themePreset: 'modern' as const,
+  showHero: true,
+  showAbout: true,
+  showHours: true,
+  showFeaturedItems: true,
+  showReservations: false,
+  showContact: true,
+  showRewardsOnSite: false,
+  showGiftCards: false,
+  aboutText: '',
+  socialLinks: {},
+  featuredItemSource: 'first_n' as const,
 }
 
 export const DEFAULT_ENTERTAINMENT_SETTINGS: EntertainmentSettings = {

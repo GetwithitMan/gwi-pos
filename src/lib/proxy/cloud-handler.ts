@@ -3,6 +3,7 @@ import { verifyCloudToken, isBlockedInCloudMode } from '@/lib/cloud-auth'
 import { verifyAccessToken } from '@/lib/access-gate'
 import { proxyConfig } from './proxy-config'
 import { signAndAttachTenantJwt } from './tenant-signing'
+import { classifyPath } from './route-classifier'
 
 /**
  * Handle GWI access gate for www.barpos.restaurant (demo domain).
@@ -116,6 +117,19 @@ export async function handleCloudMode(
       gateUrl.searchParams.set('next', pathname)
       return NextResponse.redirect(gateUrl)
     }
+  }
+
+  // ── SITE (customer-facing) BYPASS ────────────────────────
+  // Customer site pages and public APIs skip admin auth entirely.
+  // Customer-level auth is validated by the pages/APIs themselves.
+  const audience = classifyPath(pathname)
+  if (audience && audience !== 'admin') {
+    const headers = new Headers(request.headers)
+    headers.set('x-venue-slug', venueSlug)
+    headers.set('x-cloud-mode', '1')
+    headers.set('x-site-mode', '1')
+    await signAndAttachTenantJwt(request, headers, venueSlug, '')
+    return NextResponse.next({ request: { headers } })
   }
 
   // Check for cloud session cookie
