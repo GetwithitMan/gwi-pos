@@ -468,7 +468,7 @@ export const POST = withVenue(async function POST(
     })
     } finally {
       // PAY-P2-1: Release advisory lock after all 3 phases complete (success or failure)
-      void db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(console.error)
+      await db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(console.error)
     }
   } catch (error) {
     console.error('Failed to refund payment:', error)

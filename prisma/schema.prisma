@@ -924,14 +924,14 @@ model Customer {
   isBlacklisted          Boolean   @default(false)
   blacklistOverrideUntil DateTime? @db.Date
 
-  isActive  Boolean   @default(true)
+  isActive Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   orders        Order[]
@@ -1243,8 +1243,8 @@ model TimeClockEntry {
   breakMinutes Int       @default(0)
 
   // Totals
-  regularHours  Decimal?
-  overtimeHours Decimal?
+  regularHours  Decimal? @db.Decimal(6, 2)
+  overtimeHours Decimal? @db.Decimal(6, 2)
 
   // Cash drawer
   drawerCountIn  Json? // {denominations, total}
@@ -1392,7 +1392,7 @@ model PaidInOut {
   drawer     Drawer   @relation(fields: [drawerId], references: [id])
 
   type      PaidInOutType
-  amount    Decimal @db.Decimal(10, 2)
+  amount    Decimal       @db.Decimal(10, 2)
   reason    String
   reference String? // Check number, vendor, etc.
 
@@ -1852,8 +1852,8 @@ model Modifier {
   // If price > 0, it acts as a price override or upcharge
   price       Decimal           @default(0) @db.Decimal(10, 2)
   priceType   ModifierPriceType @default(upcharge)
-  upsellPrice Decimal? @db.Decimal(10, 2) // Special price when offered as upsell
-  cost        Decimal? @db.Decimal(10, 2)
+  upsellPrice Decimal?          @db.Decimal(10, 2) // Special price when offered as upsell
+  cost        Decimal?          @db.Decimal(10, 2)
 
   // Pre-modifier support - explicit boolean fields for each option
   // These work just like ingredient pre-mods for consistent inventory tracking
@@ -2008,7 +2008,7 @@ model ComboComponent {
   // Legacy fields (kept for backward compatibility)
   modifierGroupId String?
   modifierGroup   ModifierGroup? @relation(fields: [modifierGroupId], references: [id])
-  priceOverride   Decimal? @db.Decimal(10, 2)
+  priceOverride   Decimal?       @db.Decimal(10, 2)
   defaultItemId   String?
   defaultItem     MenuItem?      @relation("ComboComponentDefault", fields: [defaultItemId], references: [id])
 
@@ -2297,7 +2297,7 @@ model EntertainmentWaitlist {
   notes String?
 
   // Deposit
-  depositAmount      Decimal? @db.Decimal(10, 2) // Amount held (in dollars)
+  depositAmount      Decimal?  @db.Decimal(10, 2) // Amount held (in dollars)
   depositMethod      String? // 'cash' | 'card'
   depositRecordNo    String? // Datacap token for card pre-auth
   depositCardLast4   String?
@@ -2307,10 +2307,10 @@ model EntertainmentWaitlist {
   depositRefundedAt  DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([elementId])
@@ -2460,7 +2460,7 @@ model Order {
 
   // Bar Tab Pre-auth (Skill 21)
   preAuthId        String? // Reference to pre-auth transaction
-  preAuthAmount    Decimal? @db.Decimal(10, 2)
+  preAuthAmount    Decimal?       @db.Decimal(10, 2)
   preAuthLast4     String? // Last 4 digits of held card
   preAuthCardBrand String? // Visa, Mastercard, etc.
   preAuthExpiresAt DateTime? // When the hold expires
@@ -2472,8 +2472,8 @@ model Order {
   isBottleService           Boolean            @default(false)
   bottleServiceTierId       String? // Linked tier
   bottleServiceTier         BottleServiceTier? @relation("OrderBottleServiceTier", fields: [bottleServiceTierId], references: [id])
-  bottleServiceDeposit      Decimal? @db.Decimal(10, 2) // Deposit amount pre-authorized
-  bottleServiceMinSpend     Decimal? @db.Decimal(10, 2) // Minimum spend requirement (from tier at time of creation)
+  bottleServiceDeposit      Decimal?           @db.Decimal(10, 2) // Deposit amount pre-authorized
+  bottleServiceMinSpend     Decimal?           @db.Decimal(10, 2) // Minimum spend requirement (from tier at time of creation)
   bottleServiceCurrentSpend Decimal?           @default(0) @db.Decimal(10, 2) // Denormalized: mirrors subtotal for bottle service orders (avoids re-computation in snapshot)
   incrementAuthFailed       Boolean            @default(false) // True when IncrementalAuth was declined — surfaces amber warning to staff
 
@@ -2618,7 +2618,7 @@ model OrderItem {
 
   // Item details (snapshot at time of order)
   name     String
-  price    Decimal  @db.Decimal(10, 2)
+  price    Decimal @db.Decimal(10, 2)
   quantity Int     @default(1)
 
   // Pour size (liquor items) — T-006
@@ -3034,7 +3034,7 @@ model Coupon {
 
   // Discount type
   discountType  String // 'percent' | 'fixed' | 'free_item'
-  discountValue Decimal @db.Decimal(10, 2) // Percent or dollar amount
+  discountValue Decimal   @db.Decimal(10, 2) // Percent or dollar amount
   freeItemId    String? // If discountType is 'free_item'
   freeItem      MenuItem? @relation("CouponFreeItem", fields: [freeItemId], references: [id])
 
@@ -3187,11 +3187,11 @@ model Reservation {
   cancelReason String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Reservation Engine — relations
   reservationTables ReservationTable[]
@@ -3278,7 +3278,7 @@ model OrderDiscount {
   couponCode String? // Denormalized for display/reporting
 
   name    String
-  amount  Decimal @db.Decimal(10, 2)
+  amount  Decimal  @db.Decimal(10, 2)
   percent Decimal? @db.Decimal(8, 4) // Whole-number percentages (0-100), must fit 100.0000
 
   // Who applied it
@@ -3318,7 +3318,7 @@ model VoidLog {
   voidType VoidType
   itemId   String? // If item void
   item     OrderItem? @relation("VoidLogItem", fields: [itemId], references: [id])
-  amount   Decimal
+  amount   Decimal    @db.Decimal(10, 2)
   reason   String
   wasMade  Boolean    @default(false) // Was the item already made? For waste/loss tracking
 
@@ -3363,7 +3363,7 @@ model RemoteVoidApproval {
   requestedBy   Employee   @relation("VoidRequester", fields: [requestedById], references: [id])
   voidReason    String
   voidType      String // "item" | "order" | "comp"
-  amount        Decimal
+  amount        Decimal    @db.Decimal(10, 2)
   itemName      String // Cached for SMS
   orderNumber   Int // Cached for SMS
 
@@ -3466,11 +3466,11 @@ model TipPool {
   isActive Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
 }
@@ -3491,22 +3491,22 @@ model TipOutRule {
   toRoleId   String // Role that receives (Busser, Bartender)
   toRole     Role   @relation("TipOutTo", fields: [toRoleId], references: [id])
 
-  percentage Decimal @db.Decimal(6, 4) // e.g., 3.0 for 3%
+  percentage Decimal @db.Decimal(8, 4) // e.g., 3.0 for 3% (8,4 allows values up to 9999.9999)
   isActive   Boolean @default(true)
 
   // Enhanced tip-out fields (Skill 251)
   basisType        String    @default("tips_earned") // tips_earned, food_sales, bar_sales, total_sales, net_sales
   salesCategoryIds Json? // Optional category filter for sales-based rules
-  maxPercentage    Decimal? @db.Decimal(6, 4) // Compliance cap (max % of tips/sales)
+  maxPercentage    Decimal?  @db.Decimal(8, 4) // Compliance cap (max % of tips/sales)
   effectiveDate    DateTime? // Rule becomes active on this date
   expiresAt        DateTime? // Rule expires after this date
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   tipShares TipShare[]
 
@@ -3532,7 +3532,7 @@ model TipShare {
   toEmployeeId   String
   toEmployee     Employee @relation("TipShareTo", fields: [toEmployeeId], references: [id])
 
-  amount    Decimal @db.Decimal(10, 2)
+  amount    Decimal     @db.Decimal(10, 2)
   shareType String // 'role_tipout' | 'custom' | 'pool'
   ruleId    String? // Reference to TipOutRule if role-based
   rule      TipOutRule? @relation(fields: [ruleId], references: [id])
@@ -3658,10 +3658,10 @@ model TipGroupTemplate {
   sortOrder        Int               @default(0)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   tipGroups TipGroup[] // Runtime group instances for this template
 
@@ -3920,11 +3920,11 @@ model GiftCard {
   order   Order?  @relation("GiftCardOrder", fields: [orderId], references: [id])
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   transactions GiftCardTransaction[]
 
@@ -4010,11 +4010,11 @@ model HouseAccount {
   customer   Customer? @relation(fields: [customerId], references: [id])
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   transactions HouseAccountTransaction[]
 
@@ -4087,11 +4087,11 @@ model TimedSession {
 
   // Calculated on close
   totalMinutes Int?
-  totalCharge  Decimal?
+  totalCharge  Decimal? @db.Decimal(10, 2)
 
   // Billing
   rateType   String  @default("hourly") // per15Min, per30Min, hourly, custom
-  rateAmount Decimal
+  rateAmount Decimal @db.Decimal(10, 2)
 
   // Status
   status TimedSessionStatus @default(active)
@@ -4168,11 +4168,11 @@ model Seat {
   version Int @default(0)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   tickets Ticket[]
@@ -4374,7 +4374,7 @@ model Ticket {
   cancelledAt  DateTime?
   cancelReason String?
   refundedAt   DateTime?
-  refundAmount Decimal? @db.Decimal(10, 2)
+  refundAmount Decimal?  @db.Decimal(10, 2)
   refundedBy   String? // Employee ID
 
   // Notes
@@ -4463,8 +4463,8 @@ model InventoryTransaction {
   reason        String? // For adjustments/waste
 
   // Cost tracking
-  unitCost  Decimal?
-  totalCost Decimal?
+  unitCost  Decimal? @db.Decimal(10, 2)
+  totalCost Decimal? @db.Decimal(10, 2)
 
   // COGS extensions
   businessDate DateTime? // business date for bucketing
@@ -4849,10 +4849,10 @@ model MenuItemRecipe {
   ingredients MenuItemRecipeIngredient[]
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([menuItemId])
@@ -4880,10 +4880,10 @@ model MenuItemRecipeIngredient {
   notes     String? // "lightly toasted", "diced"
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([recipeId])
@@ -4906,9 +4906,9 @@ model ModifierInventoryLink {
   prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
 
   // Usage amount when modifier is selected
-  usageQuantity  Decimal
+  usageQuantity  Decimal  @db.Decimal(10, 4)
   usageUnit      String
-  calculatedCost Decimal?
+  calculatedCost Decimal? @db.Decimal(10, 2)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -5000,9 +5000,9 @@ model PricingOptionInventoryLink {
   ingredient      Ingredient?    @relation(fields: [ingredientId], references: [id])
 
   // Usage amount when this pricing option is selected
-  usageQuantity  Decimal
+  usageQuantity  Decimal  @db.Decimal(10, 4)
   usageUnit      String
-  calculatedCost Decimal?
+  calculatedCost Decimal? @db.Decimal(10, 2)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -5058,10 +5058,10 @@ model InventoryCount {
   reviewedAt  DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deletedAt   DateTime?
-  syncedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([storageLocationId])
@@ -5089,10 +5089,10 @@ model InventoryCountItem {
   notes     String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([inventoryCountId])
@@ -5110,13 +5110,13 @@ model InventoryItemTransaction {
   type String // "purchase", "sale", "adjustment", "waste", "transfer", "count"
 
   // Quantities
-  quantityBefore Decimal
-  quantityChange Decimal // Positive for additions, negative for deductions
-  quantityAfter  Decimal
+  quantityBefore Decimal @db.Decimal(10, 4)
+  quantityChange Decimal @db.Decimal(10, 4) // Positive for additions, negative for deductions
+  quantityAfter  Decimal @db.Decimal(10, 4)
 
   // Cost info
-  unitCost  Decimal?
-  totalCost Decimal?
+  unitCost  Decimal? @db.Decimal(10, 2)
+  totalCost Decimal? @db.Decimal(10, 2)
 
   // Reference info
   reason         String?
@@ -5190,10 +5190,10 @@ model Invoice {
   receivedDate  DateTime?
 
   // Totals
-  subtotal     Decimal
-  taxAmount    Decimal @default(0)
-  shippingCost Decimal @default(0)
-  totalAmount  Decimal
+  subtotal     Decimal @db.Decimal(10, 2)
+  taxAmount    Decimal @default(0) @db.Decimal(10, 2)
+  shippingCost Decimal @default(0) @db.Decimal(10, 2)
+  totalAmount  Decimal @db.Decimal(10, 2)
 
   // Status
   status   InvoiceStatus @default(pending)
@@ -5245,15 +5245,15 @@ model InvoiceLineItem {
   // If not linked to inventory item
   description String?
 
-  quantity  Decimal
+  quantity  Decimal @db.Decimal(10, 4)
   unit      String
-  unitCost  Decimal
-  totalCost Decimal
+  unitCost  Decimal @db.Decimal(10, 2)
+  totalCost Decimal @db.Decimal(10, 2)
 
   // For cost comparison
-  previousCost  Decimal? // What it cost before
-  costChange    Decimal? // Difference
-  costChangePct Decimal? // % change
+  previousCost  Decimal? @db.Decimal(10, 2) // What it cost before
+  costChange    Decimal? @db.Decimal(10, 2) // Difference
+  costChangePct Decimal? @db.Decimal(8, 4) // % change
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -5273,9 +5273,9 @@ model WasteLogEntry {
   inventoryItemId String
   inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
 
-  quantity   Decimal
+  quantity   Decimal  @db.Decimal(10, 4)
   unit       String
-  costImpact Decimal?
+  costImpact Decimal? @db.Decimal(10, 2)
 
   reason String // "spoilage", "spill", "overcooked", "contamination", "training"
   notes  String?
@@ -5284,13 +5284,13 @@ model WasteLogEntry {
   employeeId String?
   employee   Employee? @relation("WasteLogEmployee", fields: [employeeId], references: [id])
 
-  wasteDate DateTime  @default(now())
+  wasteDate DateTime @default(now())
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([wasteDate])
@@ -5521,8 +5521,8 @@ model RecipeIngredient {
   notes     String? // "Top with...", "Float", etc.
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
@@ -5583,7 +5583,7 @@ model SpiritUpsellEvent {
   upsellModifierId String // Premium spirit modifier ID
   upsellTier       String // 'premium', 'top_shelf', etc.
   upsellBottleName String // "Patron Silver"
-  priceDifference  Decimal
+  priceDifference  Decimal @db.Decimal(10, 2)
 
   // Outcome
   wasShown    Boolean @default(true)
@@ -5657,10 +5657,10 @@ model IngredientSwapGroup {
   isActive  Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -5832,11 +5832,11 @@ model Ingredient {
   // C-SCHEMA-1: Added reverse relations
   orderItemIngredients        OrderItemIngredient[]
   pricingOptionInventoryLinks PricingOptionInventoryLink[]
-  pizzaToppings               PizzaTopping[] @relation("PizzaToppingIngredient")
-  pizzaSizes                  PizzaSize[] @relation("PizzaSizeIngredient")
-  pizzaCrusts                 PizzaCrust[] @relation("PizzaCrustIngredient")
-  pizzaSauces                 PizzaSauce[] @relation("PizzaSauceIngredient")
-  pizzaCheeses                PizzaCheese[] @relation("PizzaCheeseIngredient")
+  pizzaToppings               PizzaTopping[]               @relation("PizzaToppingIngredient")
+  pizzaSizes                  PizzaSize[]                  @relation("PizzaSizeIngredient")
+  pizzaCrusts                 PizzaCrust[]                 @relation("PizzaCrustIngredient")
+  pizzaSauces                 PizzaSauce[]                 @relation("PizzaSauceIngredient")
+  pizzaCheeses                PizzaCheese[]                @relation("PizzaCheeseIngredient")
 
   @@index([locationId])
   @@index([locationId, name])
@@ -5861,14 +5861,14 @@ model IngredientStockAdjustment {
   type String // "manual", "count", "waste", "transfer", "receiving"
 
   // Quantity tracking
-  quantityBefore Decimal
-  quantityChange Decimal // Positive for additions, negative for deductions
-  quantityAfter  Decimal
+  quantityBefore Decimal @db.Decimal(10, 4)
+  quantityChange Decimal @db.Decimal(10, 4) // Positive for additions, negative for deductions
+  quantityAfter  Decimal @db.Decimal(10, 4)
   unit           String? // Unit of measurement
 
   // Cost tracking (captured at time of adjustment)
-  unitCost        Decimal? // Cost per unit at time of adjustment
-  totalCostImpact Decimal? // quantityChange * unitCost (for reporting)
+  unitCost        Decimal? @db.Decimal(10, 2) // Cost per unit at time of adjustment
+  totalCostImpact Decimal? @db.Decimal(10, 2) // quantityChange * unitCost (for reporting)
 
   // Who and why
   employeeId String?
@@ -5881,10 +5881,10 @@ model IngredientStockAdjustment {
   referenceId   String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([ingredientId])
@@ -5922,10 +5922,10 @@ model IngredientRecipe {
   sortOrder Int @default(0)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@unique([outputId, componentId])
   @@index([locationId])
@@ -5969,10 +5969,10 @@ model MenuItemIngredient {
   sortOrder Int @default(0)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@unique([menuItemId, ingredientId, pricingOptionId])
   @@index([locationId])
@@ -6023,14 +6023,14 @@ model ModifierTemplate {
   template   ModifierGroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   name  String
-  price Decimal @default(0)
+  price Decimal @default(0) @db.Decimal(10, 2)
 
   // Pre-modifier options
   allowNo     Boolean @default(true)
   allowLite   Boolean @default(false)
   allowOnSide Boolean @default(false)
   allowExtra  Boolean @default(false)
-  extraPrice  Decimal @default(0)
+  extraPrice  Decimal @default(0) @db.Decimal(10, 2)
 
   // Display
   sortOrder Int     @default(0)
@@ -6425,12 +6425,12 @@ model Terminal {
 
   sortOrder Int @default(0)
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields
-  deletedAt      DateTime?
-  lastMutatedBy  String?
-  syncedAt       DateTime?
+  deletedAt     DateTime?
+  lastMutatedBy String?
+  syncedAt      DateTime?
 
   // C-SCHEMA-1: Reverse relations
   processedPayments Payment[] @relation("PaymentTerminal")
@@ -6811,11 +6811,11 @@ model PizzaConfig {
   condimentDivisionMax   Int     @default(1) // Max division for condiments: 1=whole, 2=halves, 3=thirds
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
 }
@@ -6845,8 +6845,8 @@ model PizzaSize {
 
   // Ingredient link — connects size to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
-  ingredientId    String?
-  ingredient      Ingredient? @relation("PizzaSizeIngredient", fields: [ingredientId], references: [id])
+  ingredientId String?
+  ingredient   Ingredient? @relation("PizzaSizeIngredient", fields: [ingredientId], references: [id])
 
   // Direct inventory linkage (e.g., dough ball per size)
   inventoryItemId String?
@@ -6859,11 +6859,11 @@ model PizzaSize {
   isActive  Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   orderItemPizzas OrderItemPizza[]
@@ -6885,8 +6885,8 @@ model PizzaCrust {
 
   // Ingredient link — connects crust to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
-  ingredientId    String?
-  ingredient      Ingredient? @relation("PizzaCrustIngredient", fields: [ingredientId], references: [id])
+  ingredientId String?
+  ingredient   Ingredient? @relation("PizzaCrustIngredient", fields: [ingredientId], references: [id])
 
   // Inventory tracking (Skill 115)
   // Links to dough inventory - usage is for MEDIUM size, scaled by size multiplier
@@ -6900,11 +6900,11 @@ model PizzaCrust {
   isActive  Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   pizzaSpecialties PizzaSpecialty[] @relation("DefaultCrust")
@@ -6932,8 +6932,8 @@ model PizzaSauce {
 
   // Ingredient link — connects sauce to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
-  ingredientId    String?
-  ingredient      Ingredient? @relation("PizzaSauceIngredient", fields: [ingredientId], references: [id])
+  ingredientId String?
+  ingredient   Ingredient? @relation("PizzaSauceIngredient", fields: [ingredientId], references: [id])
 
   // Inventory tracking (Skill 115)
   inventoryItemId String?
@@ -6946,11 +6946,11 @@ model PizzaSauce {
   isActive  Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   pizzaSpecialties PizzaSpecialty[] @relation("DefaultSauce")
@@ -6978,8 +6978,8 @@ model PizzaCheese {
 
   // Ingredient link — connects cheese to the ingredient library for
   // cost tracking and inventory deduction (same pattern as MenuItemIngredient)
-  ingredientId    String?
-  ingredient      Ingredient? @relation("PizzaCheeseIngredient", fields: [ingredientId], references: [id])
+  ingredientId String?
+  ingredient   Ingredient? @relation("PizzaCheeseIngredient", fields: [ingredientId], references: [id])
 
   // Inventory tracking (Skill 115)
   inventoryItemId String?
@@ -6992,11 +6992,11 @@ model PizzaCheese {
   isActive  Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   pizzaSpecialties PizzaSpecialty[] @relation("DefaultCheese")
@@ -7042,11 +7042,11 @@ model PizzaTopping {
   isActive  Boolean @default(true)
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -7084,11 +7084,11 @@ model PizzaSpecialty {
   allowToppingMods  Boolean @default(true) // Add/remove toppings
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([menuItemId])
@@ -7139,12 +7139,12 @@ model OrderItemPizza {
   cutStyle            String? // "normal", "square", "uncut"
 
   // Pricing snapshot at time of order
-  sizePrice     Decimal
-  crustPrice    Decimal
-  saucePrice    Decimal @default(0)
-  cheesePrice   Decimal @default(0)
-  toppingsPrice Decimal
-  totalPrice    Decimal
+  sizePrice     Decimal @db.Decimal(10, 2)
+  crustPrice    Decimal @db.Decimal(10, 2)
+  saucePrice    Decimal @default(0) @db.Decimal(10, 2)
+  cheesePrice   Decimal @default(0) @db.Decimal(10, 2)
+  toppingsPrice Decimal @db.Decimal(10, 2)
+  totalPrice    Decimal @db.Decimal(10, 2)
 
   // Free toppings tracking
   freeToppingsUsed Int @default(0)
@@ -7195,11 +7195,11 @@ model PayrollPeriod {
   notes String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // Relations
   payStubs PayStub[]
@@ -7275,11 +7275,11 @@ model PayStub {
   notes String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@unique([payrollPeriodId, employeeId])
   @@index([locationId])
@@ -7412,10 +7412,10 @@ model ShiftSwapRequest {
   declineReason         String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  deletedAt             DateTime?
-  syncedAt              DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([shiftId])
@@ -7541,10 +7541,10 @@ model DailyPrepCount {
   transactions DailyPrepCountTransaction[]
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([countDate])
@@ -7581,10 +7581,10 @@ model DailyPrepCountItem {
   notes String?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@unique([dailyCountId, prepItemId])
   @@index([locationId])
@@ -7613,14 +7613,14 @@ model DailyPrepCountTransaction {
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
 
   // Quantity movement
-  quantityBefore Decimal
-  quantityChange Decimal // Positive for prep item add, negative for ingredient deduct
-  quantityAfter  Decimal
+  quantityBefore Decimal @db.Decimal(10, 4)
+  quantityChange Decimal @db.Decimal(10, 4) // Positive for prep item add, negative for ingredient deduct
+  quantityAfter  Decimal @db.Decimal(10, 4)
   unit           String?
 
   // Cost tracking (for reporting)
-  unitCost  Decimal?
-  totalCost Decimal?
+  unitCost  Decimal? @db.Decimal(10, 2)
+  totalCost Decimal? @db.Decimal(10, 2)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -7674,9 +7674,9 @@ model OrderCard {
   status OrderCardStatus @default(authorized)
 
   // Capture details (at tab close)
-  capturedAmount Decimal? @db.Decimal(10, 2)
+  capturedAmount Decimal?  @db.Decimal(10, 2)
   capturedAt     DateTime?
-  tipAmount      Decimal? @db.Decimal(10, 2)
+  tipAmount      Decimal?  @db.Decimal(10, 2)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -7747,7 +7747,7 @@ model ChargebackCase {
   // Card info for matching
   cardLast4 String
   cardBrand String?
-  amount    Decimal
+  amount    Decimal @db.Decimal(10, 2)
 
   // Chargeback details
   chargebackDate   DateTime
@@ -7766,10 +7766,10 @@ model ChargebackCase {
   resolvedAt    DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // @@index([locationId]) — redundant with compound index below
   @@index([orderId])
@@ -7887,10 +7887,10 @@ model BottleServiceTier {
   reservations Reservation[]
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   // C-SCHEMA-1: Added reverse relations
   orders Order[] @relation("OrderBottleServiceTier")
@@ -7989,18 +7989,18 @@ model ErrorLog {
 // ============================================
 
 model VenueLog {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   locationId String
-  level      String   @default("info") // info, warn, error, critical
-  source     String   @default("server") // server, pos, kds, android, sync, pax
-  category   String   @default("system") // payment, sync, hardware, auth, order, system
+  level      String    @default("info") // info, warn, error, critical
+  source     String    @default("server") // server, pos, kds, android, sync, pax
+  category   String    @default("system") // payment, sync, hardware, auth, order, system
   message    String
   details    Json? // Arbitrary JSON context
   employeeId String?
   deviceId   String?
   stackTrace String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   syncedAt   DateTime?
   expiresAt  DateTime // Auto-cleanup target (30 days default)
 
@@ -8160,8 +8160,8 @@ model OrderItemDiscount {
   orderItem      OrderItem     @relation(fields: [orderItemId], references: [id])
   discountRuleId String?
   discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
-  amount         Decimal  @db.Decimal(10, 2)
-  percent        Decimal? @db.Decimal(8, 4) // Whole-number percentages (0-100), must fit 100.0000
+  amount         Decimal       @db.Decimal(10, 2)
+  percent        Decimal?      @db.Decimal(8, 4) // Whole-number percentages (0-100), must fit 100.0000
   appliedById    String?
   appliedBy      Employee?     @relation("ItemDiscountAppliedBy", fields: [appliedById], references: [id])
   reason         String?
@@ -8613,8 +8613,8 @@ model IngredientCostHistory {
   syncedAt        DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   location      Location      @relation(fields: [locationId], references: [id])
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
@@ -8643,8 +8643,8 @@ model VendorOrder {
   syncedAt         DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   location  Location              @relation(fields: [locationId], references: [id])
   vendor    Vendor                @relation(fields: [vendorId], references: [id])
@@ -8668,9 +8668,9 @@ model VendorOrderLineItem {
   syncedAt        DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
 
   location      Location      @relation(fields: [locationId], references: [id])
   vendorOrder   VendorOrder   @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
@@ -8700,8 +8700,8 @@ model InventoryCountEntry {
   syncedAt         DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   location       Location       @relation(fields: [locationId], references: [id])
   inventoryCount InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
@@ -8728,8 +8728,8 @@ model WasteLog {
   syncedAt        DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   location      Location       @relation(fields: [locationId], references: [id])
   inventoryItem InventoryItem? @relation(fields: [inventoryItemId], references: [id])
@@ -8754,8 +8754,8 @@ model MarginEdgeProductMapping {
   syncedAt              DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   location      Location      @relation(fields: [locationId], references: [id])
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
@@ -9053,9 +9053,9 @@ model ReservationBlock {
   syncedAt               DateTime?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-  deletedAt              DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
 
   @@index([locationId, blockDate])
 }
@@ -9081,8 +9081,8 @@ model ReservationEvent {
   details       Json         @default("{}")
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   syncedAt      DateTime?
 
   @@index([reservationId])
@@ -9133,10 +9133,10 @@ model ReservationDeposit {
   metadata         Json?
 
   lastMutatedBy String? // 'cloud' | 'local' | null
-  createdAt        DateTime    @default(now())
-  updatedAt        DateTime    @updatedAt
-  deletedAt        DateTime?
-  syncedAt         DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  syncedAt      DateTime?
 
   @@index([locationId])
   @@index([reservationId])

@@ -1701,7 +1701,7 @@ export const POST = withVenue(withTiming(async function POST(
             params.push(...ids)
             const idPlaceholders = ids.map((_, i) => `$${commissionUpdates.length * 2 + i + 1}`).join(', ')
             await db.$executeRawUnsafe(
-              `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW(), "lastMutatedBy" = 'local' WHERE id IN (${idPlaceholders})`,
+              `UPDATE "OrderItem" SET "commissionAmount" = CASE ${caseClauses} END, "updatedAt" = NOW(), "lastMutatedBy" = '${paymentMutationOrigin}' WHERE id IN (${idPlaceholders})`,
               ...params
             )
           }
@@ -1709,7 +1709,7 @@ export const POST = withVenue(withTiming(async function POST(
           const currentTotal = toNumber(order.commissionTotal ?? 0)
           if (Math.abs(recalculatedCommission - currentTotal) > 0.001) {
             await OrderRepository.updateOrder(orderId, order.locationId, {
-              commissionTotal: recalculatedCommission, lastMutatedBy: 'local',
+              commissionTotal: recalculatedCommission, lastMutatedBy: paymentMutationOrigin,
             })
           }
         } catch (err) {

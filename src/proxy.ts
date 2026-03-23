@@ -7,6 +7,9 @@ import { handleCellularAuth } from '@/lib/proxy/cellular-handler'
 import { handleAccessGate, handleCloudMode } from '@/lib/proxy/cloud-handler'
 import { handleLocalMode } from '@/lib/proxy/local-handler'
 
+/** Module-level constant — captured once at build time on Vercel, not re-read per request */
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? []
+
 /**
  * Multi-tenant proxy with cloud auth enforcement.
  *
@@ -32,7 +35,7 @@ export async function proxy(request: NextRequest) {
   // ═══════════════════════════════════════════════════════════
   if (pathname.startsWith('/api/')) {
     const origin = request.headers.get('origin')
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? []
+    const allowedOrigins = ALLOWED_ORIGINS
 
     if (request.method === 'OPTIONS') {
       const preflight = new NextResponse(null, { status: 204 })
@@ -126,7 +129,7 @@ export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
   if (pathname.startsWith('/api/')) {
     const origin = request.headers.get('origin')
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean) ?? []
+    const allowedOrigins = ALLOWED_ORIGINS
     if (origin && (allowedOrigins.length === 0 || allowedOrigins.includes(origin))) {
       response.headers.set('Access-Control-Allow-Origin', origin)
     }

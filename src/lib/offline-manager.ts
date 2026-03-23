@@ -56,7 +56,7 @@ class OfflineManagerClass {
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
 
-      const response = await fetch('/api/health', {
+      const response = await fetch('/api/health/ping', {
         method: 'GET',
         signal: controller.signal,
         cache: 'no-store',

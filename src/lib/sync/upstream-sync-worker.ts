@@ -63,20 +63,27 @@ const outageState = globalThis.__gwi_upstream_outage
 
 /** Monotonic counter for outage queue ordering — initialized from DB on first use to survive restarts */
 let outageSeqCounter: number | null = null
+/** Mutex guard to prevent concurrent initialization racing on the same DB query */
+let initPromise: Promise<void> | null = null
 
 async function getNextOutageSeq(): Promise<number> {
   if (outageSeqCounter === null) {
-    try {
-      const result = await masterClient.$queryRawUnsafe<{ max: number }[]>(
-        `SELECT COALESCE(MAX("localSeq"), 0) as max FROM "OutageQueueEntry" WHERE status = 'PENDING'`
-      )
-      outageSeqCounter = Number(result[0]?.max ?? 0)
-    } catch {
-      // If query fails (table doesn't exist yet, etc.), start from 0
-      outageSeqCounter = 0
+    if (!initPromise) {
+      initPromise = (async () => {
+        try {
+          const result = await masterClient.$queryRawUnsafe<{ max: number }[]>(
+            `SELECT COALESCE(MAX("localSeq"), 0) as max FROM "OutageQueueEntry" WHERE status = 'PENDING'`
+          )
+          outageSeqCounter = Number(result[0]?.max ?? 0)
+        } catch {
+          // If query fails (table doesn't exist yet, etc.), start from 0
+          outageSeqCounter = 0
+        }
+      })()
     }
+    await initPromise
   }
-  return ++outageSeqCounter
+  return ++outageSeqCounter!
 }
 
 // ── Outage Detection ──────────────────────────────────────────────────────────

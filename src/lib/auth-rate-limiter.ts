@@ -122,6 +122,22 @@ export function recordLoginSuccess(ip: string, employeeId: string): void {
   employeeMap.delete(employeeId)
 }
 
+/**
+ * Manager override: clear rate limit for a specific IP.
+ * Can be called from a manager override endpoint to unlock a terminal.
+ */
+export function clearRateLimitForIp(ip: string): void {
+  ipMap.delete(ip)
+}
+
+/**
+ * Manager override: clear rate limit for a specific employee.
+ * Can be called from a manager override endpoint to unlock an employee account.
+ */
+export function clearRateLimitForEmployee(employeeId: string): void {
+  employeeMap.delete(employeeId)
+}
+
 // Periodic cleanup of stale entries to prevent memory leaks
 function cleanupStaleEntries(): void {
   const now = Date.now()
