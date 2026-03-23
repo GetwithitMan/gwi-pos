@@ -18,14 +18,15 @@ import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
 import { getReadinessState } from '@/lib/readiness'
 import { APP_VERSION } from '@/lib/version-contract'
-import { withAuth } from '@/lib/api-auth-middleware'
-
 export const dynamic = 'force-dynamic'
 
 // Track server start time for uptime calculation
 const startTime = Date.now()
 
-export const GET = withVenue(withAuth('ADMIN', async function GET(): Promise<NextResponse> {
+// No auth required — this is a local-only endpoint consumed by the NUC Dashboard
+// (Tauri app). The Dashboard makes unauthenticated HTTP requests to localhost:3005.
+// The endpoint is not exposed to the internet (NUC firewall blocks external access).
+export const GET = withVenue(async function GET(): Promise<NextResponse> {
   const generatedAt = new Date().toISOString()
   const uptime = Math.floor((Date.now() - startTime) / 1000)
   const version = APP_VERSION
@@ -341,4 +342,4 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(): Promise<Nex
       lastUpdate,
     },
   })
-}))
+})
