@@ -52,6 +52,10 @@ export const GET = withVenue(async function GET(
         transactionId: p.transactionId,
         status: p.status,
         refundedAmount: Number(p.refundedAmount),
+        appliedPricingTier: p.appliedPricingTier,
+        detectedCardType: p.detectedCardType ?? null,
+        walletType: p.walletType ?? null,
+        pricingProgramSnapshot: p.pricingProgramSnapshot ?? null,
         processedAt: p.processedAt.toISOString(),
       })),
     } })

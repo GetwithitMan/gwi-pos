@@ -22,6 +22,7 @@ import type {
   PreAuthByRecordParams,
   AuthOnlyParams,
   KeyedSaleParams,
+  CardLookupResult,
 } from './types'
 import { validateDatacapConfig } from './types'
 import { buildRequest, buildAdminRequest } from './xml-builder'
@@ -39,6 +40,51 @@ import {
 } from './constants'
 import { logger } from '@/lib/logger'
 import { logReaderTransaction } from '@/lib/reader-health'
+
+// ─── Feature Flags ──────────────────────────────────────────────────────────
+
+/** Enable ButtonData/GetMultipleChoice pricing prompts on the Datacap reader.
+ *  Currently disabled — the reader prompt adds latency and requires UX testing.
+ *  When enabled, getPricingChoice() can show debit/credit price options on-screen. */
+const ENABLE_DATACAP_MULTI_PRICING = false
+
+// ─── Mobile Wallet Detection ────────────────────────────────────────────────
+
+/**
+ * Detect mobile wallet type from EMV AID and entry method.
+ * Mobile wallets (Apple Pay, Google Pay, Samsung Pay) use contactless entry
+ * with specific Application Identifiers (AIDs).
+ *
+ * @param aid - Application Identifier from EMV response
+ * @param entryMethod - Entry method (Tap, Chip, Swipe, etc.)
+ * @returns Wallet type string or null if not a mobile wallet
+ */
+export function detectWalletType(aid: string | undefined, entryMethod: string | undefined): string | null {
+  // Mobile wallets always use contactless (Tap) entry
+  if (entryMethod !== 'Tap' && entryMethod !== 'Contactless') return null
+  if (!aid) return null
+
+  const upperAid = aid.toUpperCase()
+
+  // Apple Pay AIDs — Visa tokenized: A000000003 prefix with specific suffixes
+  // Mastercard mobile: A0000000041010
+  if (upperAid === 'A0000000041010') return 'apple_pay'
+  // Apple Pay Visa: uses Visa DPAS AID
+  if (upperAid === 'A000000003101002') return 'apple_pay'
+
+  // Google Pay — uses standard network AIDs but with tokenized PANs
+  // Detection is unreliable by AID alone; for now return null
+  // and let the field be populated when we have confirmed AID mappings
+
+  // Samsung Pay — also uses standard network AIDs via MST or NFC
+  // Same limitation as Google Pay
+
+  // Note: Reliable wallet detection often requires checking additional fields
+  // like CardholderName or terminal-specific data. For now, only detect
+  // confirmed mobile-specific AIDs. The field can be enriched later.
+
+  return null
+}
 
 // ─── Error Classification ────────────────────────────────────────────────────
 
@@ -1117,6 +1163,110 @@ export class DatacapClient {
     const xml = buildRequest(fields)
     const response = await this.send(reader, xml)
     return this.handleResponse(readerId, response)
+  }
+
+  // ─── Card Lookup (Read-Only, No Charge) ────────────────────────────────
+
+  /**
+   * Perform a CardLookup to detect card type (debit vs credit) before sending a sale.
+   * This is a non-charging read-only operation — the customer taps/inserts their card
+   * and the reader returns card metadata without placing a hold or charge.
+   *
+   * Used by Model 3 (dual_price_pan_debit) to determine the correct pricing tier.
+   *
+   * Does NOT use withPadReset because CardLookup is non-monetary.
+   *
+   * @param readerId - Payment reader ID
+   * @returns CardLookupResult with card type information
+   */
+  async cardLookup(readerId: string): Promise<CardLookupResult> {
+    try {
+      const reader = await getReaderInfo(readerId)
+      const seqNo = await getSequenceNo(readerId)
+      const base = this.buildBaseFields(reader, seqNo)
+
+      const fields: DatacapRequestFields = {
+        ...base,
+        merchantId: base.merchantId!,
+        operatorId: base.operatorId!,
+        tranCode: TRAN_CODES.CARD_LOOKUP,
+        acctNo: 'SecureDevice',
+      }
+
+      const xml = buildRequest(fields)
+      const response = await this.send(reader, xml)
+      await this.handleResponse(readerId, response)
+
+      if (response.cmdStatus !== 'Approved' && response.cmdStatus !== 'Success') {
+        return {
+          success: false,
+          cardUsage: '',
+          extendedCardInfo: '',
+          cardType: '',
+          isDebit: false,
+          error: response.textResponse || 'CardLookup failed',
+        }
+      }
+
+      // Extract card type info from response XML
+      const { extractTag } = await import('./xml-parser')
+      const cardUsage = extractTag(response.rawXml, 'CardUsage') || ''
+      const extendedCardInfo = extractTag(response.rawXml, 'ExtendedCardInfo') || ''
+      const cardType = response.cardType || extractTag(response.rawXml, 'CardType') || ''
+
+      // Derive isDebit from multiple signals
+      const isDebit = cardUsage.toUpperCase() === 'DEBIT' ||
+        extendedCardInfo.toLowerCase().includes('debit') ||
+        extendedCardInfo.toLowerCase().includes('checkcard')
+
+      logger.info('datacap', 'CardLookup result', {
+        readerId,
+        cardUsage,
+        extendedCardInfo,
+        cardType,
+        isDebit,
+      })
+
+      return {
+        success: true,
+        cardUsage,
+        extendedCardInfo,
+        cardType,
+        isDebit,
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'CardLookup failed'
+      logger.error('datacap', 'CardLookup failed', err, { readerId })
+      return {
+        success: false,
+        cardUsage: '',
+        extendedCardInfo: '',
+        cardType: '',
+        isDebit: false,
+        error: errorMsg,
+      }
+    }
+  }
+
+  // ─── Pricing Choice Prompt (Feature-Flagged) ──────────────────────────
+
+  /**
+   * Display pricing options on the payment terminal for customer selection.
+   * Shows buttons like "Debit $10.15" and "Credit $10.40" (NEVER shows Cash).
+   *
+   * Feature-flagged — currently disabled. Enable ENABLE_DATACAP_MULTI_PRICING
+   * at the top of this file when ready for production use.
+   *
+   * @param readerId - Payment reader ID
+   * @param buttonLabels - Price option labels (e.g., ['Debit $10.15', 'Credit $10.40'])
+   * @returns Datacap response with customer's selection
+   * @throws Error if feature flag is not enabled
+   */
+  async getPricingChoice(readerId: string, buttonLabels: string[]): Promise<DatacapResponse> {
+    if (!ENABLE_DATACAP_MULTI_PRICING) {
+      throw new Error('Datacap multi-pricing prompt is not enabled. Set ENABLE_DATACAP_MULTI_PRICING = true to use.')
+    }
+    return this.getMultipleChoice(readerId, 'Select Payment Type', buttonLabels)
   }
 }
 

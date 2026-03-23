@@ -5,7 +5,7 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
-import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive } from '@/lib/order-calculations'
+import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive, getConvenienceFeeForChannel } from '@/lib/order-calculations'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
@@ -43,6 +43,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     const { employeeId: claimedEmployeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields, idempotencyKey, scheduledFor } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
+    const orderSource: string | null = typeof body.source === 'string' ? body.source : null
 
     // Cellular employee binding: prevent impersonation by validating bound employee
     let employeeId: string
@@ -198,6 +199,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
               tipTotal: 0,
               total: 0,
               commissionTotal: 0,
+              source: orderSource,
               notes: notes || null,
               customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
               businessDayDate: businessDayStart,
@@ -515,9 +517,12 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const orderInclusiveTaxRate = orderInclusiveTaxRateRaw != null && Number.isFinite(orderInclusiveTaxRateRaw) && orderInclusiveTaxRateRaw > 0
       ? orderInclusiveTaxRateRaw / 100 : 0
 
+    // Compute per-channel convenience fee from settings + order source
+    const orderConvenienceFee = getConvenienceFeeForChannel(orderSource, parsedSettings?.convenienceFees)
+
     // Use centralized calculation function (single source of truth)
     // Use totals.subtotal instead of the accumulated `subtotal` to avoid floating-point drift
-    const totals = calculateOrderTotals(items, locationSettings, 0, 0, parsedSettings?.priceRounding ?? undefined, 'card', undefined, orderInclusiveTaxRate || undefined)
+    const totals = calculateOrderTotals(items, locationSettings, 0, 0, parsedSettings?.priceRounding ?? undefined, 'card', undefined, orderInclusiveTaxRate || undefined, orderConvenienceFee)
     const { subtotal: roundedSubtotal, taxTotal, taxFromInclusive, taxFromExclusive, total } = totals
 
     // Create the order atomically: table lock (Bug 13) + order number lock (Bug 5) + create
@@ -587,6 +592,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             tipTotal: 0,
             total,
             commissionTotal,
+            convenienceFee: orderConvenienceFee || null,
+            source: orderSource,
             itemCount: items.reduce((sum, i) => sum + i.quantity, 0),
             notes: notes || null,
             customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,

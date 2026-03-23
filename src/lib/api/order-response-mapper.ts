@@ -253,6 +253,7 @@ export interface MappedOrder {
   discountTotal: number
   taxTotal: number
   tipTotal: number
+  convenienceFee: number
   total: number
   discounts: unknown[]
   payments: unknown[]
@@ -291,6 +292,7 @@ export function mapOrderForResponse(order: any): MappedOrder {
     discountTotal: Number(order.discountTotal),
     taxTotal: Number(order.taxTotal),
     tipTotal: Number(order.tipTotal),
+    convenienceFee: Number(order.convenienceFee ?? 0),
     total: Number(order.total),
     discounts: order.discounts || [],
     payments: order.payments || [],

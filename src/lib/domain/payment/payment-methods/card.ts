@@ -66,5 +66,10 @@ export function processCardPayment(
       tokenFrequency: payment.tokenFrequency || 'OneTime',
     }),
     safStatus: payment.storedOffline ? 'APPROVED_SAF_PENDING_UPLOAD' : 'APPROVED_ONLINE',
+    // Pricing tier detection (Payment & Pricing Redesign)
+    // appliedPricingTier is NOT NULL in schema — always set it, default to 'credit' for card payments
+    appliedPricingTier: payment.appliedPricingTier || 'credit',
+    ...(payment.detectedCardType && { detectedCardType: payment.detectedCardType }),
+    ...(payment.walletType && { walletType: payment.walletType }),
   }
 }

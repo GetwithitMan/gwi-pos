@@ -6,6 +6,7 @@
 export type {
   GlobalReceiptSettings,
   PricingProgram,
+  ConvenienceFeeSettings,
   DualPricingSettings,
   PriceRoundingSettings,
   TaxSettings,

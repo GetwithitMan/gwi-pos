@@ -22,6 +22,7 @@ interface ReceiptOrder {
   taxFromExclusive?: unknown
   tipTotal: unknown
   total: unknown
+  convenienceFee?: unknown
   createdAt: Date
   table?: { name: string } | null
   employee?: {
@@ -124,6 +125,13 @@ export function buildReceiptData(
       : null
   })()
 
+  // Convenience fee — include when order has a non-zero fee
+  const convenienceFeeAmount = Number(order.convenienceFee ?? 0)
+  const convenienceFeeDisclosure = (() => {
+    const cf = (settings as any).convenienceFees
+    return cf?.enabled && cf.disclosureText ? cf.disclosureText : null
+  })()
+
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -181,5 +189,7 @@ export function buildReceiptData(
     loyaltyPointsRedeemed: null,
     loyaltyPointsEarned: pointsEarned || null,
     surchargeDisclosure,
+    convenienceFee: convenienceFeeAmount > 0 ? convenienceFeeAmount : null,
+    convenienceFeeDisclosure: convenienceFeeAmount > 0 ? convenienceFeeDisclosure : null,
   }
 }

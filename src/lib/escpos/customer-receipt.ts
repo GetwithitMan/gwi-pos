@@ -76,6 +76,8 @@ export interface ReceiptTotals {
   surchargePercent?: number
   surchargeDisclosure?: string | null
   tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip suggestion basis
+  convenienceFee?: number
+  convenienceFeeDisclosure?: string | null
 }
 
 export interface CustomerReceiptData {
@@ -207,6 +209,9 @@ export function buildCustomerReceipt(
     const surchargePctLabel = totals.surchargePercent ? ` (${totals.surchargePercent}%)` : ''
     content.push(twoColumnLine(`CC Surcharge${surchargePctLabel}:`, `$${totals.surchargeAmount.toFixed(2)}`, width))
   }
+  if (totals.convenienceFee && totals.convenienceFee > 0) {
+    content.push(twoColumnLine('Convenience Fee:', `$${totals.convenienceFee.toFixed(2)}`, width))
+  }
   // Tax line(s) — show breakdown if enabled and both inclusive/exclusive present
   const showBreakdown = s.receipt?.totals?.showTaxBreakdown ?? false
   const inclTax = totals.taxFromInclusive ?? 0
@@ -309,6 +314,14 @@ export function buildCustomerReceipt(
     content.push(line(''))
     content.push(ESCPOS.ALIGN_CENTER)
     content.push(line(totals.surchargeDisclosure || '*Credit card surcharge applied per Visa/MC guidelines'))
+    content.push(ESCPOS.ALIGN_LEFT)
+  }
+
+  // ── Convenience fee disclosure ──
+  if (totals.convenienceFee && totals.convenienceFee > 0 && totals.convenienceFeeDisclosure) {
+    content.push(line(''))
+    content.push(ESCPOS.ALIGN_CENTER)
+    content.push(line(totals.convenienceFeeDisclosure))
     content.push(ESCPOS.ALIGN_LEFT)
   }
 

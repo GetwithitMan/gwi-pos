@@ -4,11 +4,12 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settings'
+import { ToggleRow, NumberRow, SettingsSaveBar, PaymentPricingReadOnly } from '@/components/admin/settings'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { PaymentSettings, PriceRoundingSettings, EodSettings } from '@/lib/settings'
+import type { PaymentSettings, PriceRoundingSettings, EodSettings, PricingProgram } from '@/lib/settings'
+import type { ConvenienceFeeSettings } from '@/lib/settings/types'
 
 export default function PaymentSettingsPage() {
   const { employee } = useRequireAuth()
@@ -20,6 +21,9 @@ export default function PaymentSettingsPage() {
   const [roundingForm, setRoundingForm] = useState<PriceRoundingSettings | null>(null)
   const [hotelPmsEnabled, setHotelPmsEnabled] = useState(false)
   const [eodSettings, setEodSettings] = useState<EodSettings | null>(null)
+  const [pricingProgram, setPricingProgram] = useState<PricingProgram | undefined>()
+  const [convenienceFees, setConvenienceFees] = useState<ConvenienceFeeSettings | undefined>()
+  const [settingsUpdatedAt, setSettingsUpdatedAt] = useState<string | null>(null)
 
   useUnsavedWarning(isDirty)
 
@@ -34,6 +38,9 @@ export default function PaymentSettingsPage() {
         setRoundingForm(data.settings.priceRounding)
         setHotelPmsEnabled(data.settings.hotelPms?.enabled ?? false)
         setEodSettings(data.settings.eod ?? { autoBatchClose: true, batchCloseTime: '04:00' })
+        setPricingProgram(data.settings.pricingProgram)
+        setConvenienceFees(data.settings.convenienceFees)
+        setSettingsUpdatedAt(data.settingsUpdatedAt ?? null)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
           toast.error('Failed to load payment settings')
@@ -285,6 +292,15 @@ export default function PaymentSettingsPage() {
             All tips must be entered before the batch close time. After batch close, tip adjustments for that business day are no longer possible.
           </p>
         </section>
+
+        {/* ═══════════════════════════════════════════
+            Payment & Pricing Configuration (read-only, synced from MC)
+            ═══════════════════════════════════════════ */}
+        <PaymentPricingReadOnly
+          pricingProgram={pricingProgram}
+          convenienceFees={convenienceFees}
+          settingsUpdatedAt={settingsUpdatedAt}
+        />
 
         {/* ═══════════════════════════════════════════
             Card 4: Signature & Receipts

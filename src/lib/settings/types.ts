@@ -4,33 +4,42 @@
 import type { GlobalReceiptSettings } from '@/types/print'
 export type { GlobalReceiptSettings } from '@/types/print'
 
-// ─── Pricing Program (T-080 Phase 1A) ────────────────────────────────────────
+// ─── Pricing Program (T-080 Phase 1A → Payment & Pricing Redesign) ──────────
+
+/** Active pricing models exposed to venue operators.
+ *  Legacy MC-only models (flat_rate, interchange_plus, tiered) are migrated
+ *  to 'standard' on read — see parseSettings migration logic. */
+export type PricingModelType = 'standard' | 'dual_price' | 'dual_price_pan_debit' | 'surcharge'
+
+/** Legacy model names accepted during migration. */
+export type LegacyPricingModelType = 'none' | 'cash_discount' | 'flat_rate' | 'interchange_plus' | 'tiered'
 
 export interface PricingProgram {
-  model: 'cash_discount' | 'surcharge' | 'flat_rate' | 'interchange_plus' | 'tiered' | 'none'
+  model: PricingModelType | LegacyPricingModelType
   enabled: boolean
 
-  // Cash Discount fields (model === 'cash_discount')
-  cashDiscountPercent?: number        // 0-10%
+  // Dual Price fields (model === 'dual_price' or 'dual_price_pan_debit')
+  creditMarkupPercent?: number       // 0-10%, default 4 — markup on credit cards over cash price
+  debitMarkupPercent?: number        // 0-10%, default 0 — markup on debit cards (0 = cash price)
+
+  // Legacy Cash Discount fields (migrated to creditMarkupPercent)
+  cashDiscountPercent?: number       // 0-10% — DEPRECATED: use creditMarkupPercent
   applyToCredit?: boolean
   applyToDebit?: boolean
   showSavingsMessage?: boolean
 
   // Surcharge fields (model === 'surcharge')
-  surchargePercent?: number           // 0-3% (Visa/MC cap)
+  surchargePercent?: number          // 0-3% (Visa/MC cap)
   surchargeApplyToCredit?: boolean
   surchargeApplyToDebit?: boolean
   surchargeDisclosure?: string
+  surchargeAcknowledged?: boolean
 
-  // Flat Rate fields (model === 'flat_rate')
+  // Legacy MC-only fields (flat_rate, interchange_plus, tiered) — retained for migration
   flatRatePercent?: number
   flatRatePerTxn?: number
-
-  // Interchange Plus fields (model === 'interchange_plus')
   markupPercent?: number
   markupPerTxn?: number
-
-  // Tiered fields (model === 'tiered')
   qualifiedRate?: number
   midQualifiedRate?: number
   nonQualifiedRate?: number
@@ -38,6 +47,22 @@ export interface PricingProgram {
 
   // State compliance
   venueState?: string
+}
+
+// ─── Convenience Fee Settings ────────────────────────────────────────────────
+
+export interface ConvenienceFeeSettings {
+  enabled: boolean
+  fees: {
+    online: number    // Fee in dollars for online orders
+    phone: number     // Fee in dollars for phone orders
+    delivery: number  // Fee in dollars for delivery orders
+    kiosk: number     // Fee in dollars for kiosk orders
+    pos: number       // Fee in dollars for POS orders (usually 0)
+  }
+  showFeeAsLineItem: boolean
+  disclosureText: string
+  refundPolicy: 'non_refundable' | 'pro_rated' | 'full_refund'
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1304,6 +1329,7 @@ export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
   pricingProgram?: PricingProgram       // New multi-model pricing program (optional for backward compat)
+  convenienceFees?: ConvenienceFeeSettings  // Per-channel convenience fees (optional for backward compat)
   priceRounding: PriceRoundingSettings
   tips: TipSettings
   tipShares: TipShareSettings

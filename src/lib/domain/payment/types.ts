@@ -53,6 +53,10 @@ export interface PaymentInput {
   tokenFrequency?: string
   // SAF (Store-and-Forward) — transaction stored offline on reader
   storedOffline?: boolean
+  // Pricing tier detection (Payment & Pricing Redesign)
+  detectedCardType?: string   // 'credit' | 'debit' — from Datacap CardLookup
+  appliedPricingTier?: string // 'cash' | 'debit' | 'credit' — which tier was applied
+  walletType?: string         // 'apple_pay' | 'google_pay' | 'samsung_pay'
 }
 
 // ─── Payment Record ─────────────────────────────────────────────────────────
@@ -101,6 +105,11 @@ export interface PaymentRecord {
   guestName?: string
   pmsReservationId?: string
   pmsTransactionId?: string
+  // Pricing tier detection (Payment & Pricing Redesign)
+  detectedCardType?: string | null    // 'credit' | 'debit' — from Datacap CardLookup
+  appliedPricingTier?: string         // 'cash' | 'debit' | 'credit' — which tier was applied
+  walletType?: string | null          // 'apple_pay' | 'google_pay' | 'samsung_pay'
+  pricingProgramSnapshot?: unknown    // Snapshot of pricing config at transaction time
   status: PaymentStatus
 }
 
@@ -201,4 +210,6 @@ export interface ReceiptData {
   loyaltyPointsRedeemed: number | null
   loyaltyPointsEarned: number | null
   surchargeDisclosure: string | null
+  convenienceFee: number | null
+  convenienceFeeDisclosure: string | null
 }

@@ -36,6 +36,27 @@ export function calculateCardPrice(cashPrice: number, discountPercent: number): 
 }
 
 /**
+ * Calculate the debit price from the stored cash price.
+ * Debit markup is typically 0% (= cash price) or a lower rate than credit.
+ *
+ * Example: Cash price $10, 2% debit markup → Debit price $10.20
+ */
+export function calculateDebitPrice(cashPrice: number, debitMarkupPercent: number): number {
+  if (debitMarkupPercent <= 0) return cashPrice
+  return roundToCents(cashPrice * (1 + debitMarkupPercent / 100))
+}
+
+/**
+ * Calculate the credit price from the stored cash price.
+ * Alias for calculateCardPrice using the new naming convention.
+ *
+ * Example: Cash price $10, 4% credit markup → Credit price $10.40
+ */
+export function calculateCreditPrice(cashPrice: number, creditMarkupPercent: number): number {
+  return calculateCardPrice(cashPrice, creditMarkupPercent)
+}
+
+/**
  * Calculate the cash discount amount from a card price
  * Used at checkout when customer pays with cash
  *
@@ -343,10 +364,24 @@ export function applyPricingProgram(
   if (!program.enabled) return base
 
   switch (program.model) {
-    case 'cash_discount': {
-      // Use existing calculateCardPrice for backward compat
+    case 'dual_price':
+    case 'dual_price_pan_debit': {
+      // New dual price models: separate credit and debit markup
       if (paymentMethod === 'cash') return base
-      const pct = program.cashDiscountPercent ?? 0
+      if (paymentMethod === 'debit') {
+        const debitPct = program.debitMarkupPercent ?? 0
+        if (debitPct <= 0) return base
+        return { ...base, finalPrice: calculateDebitPrice(basePrice, debitPct) }
+      }
+      // credit
+      const creditPct = program.creditMarkupPercent ?? program.cashDiscountPercent ?? 0
+      return { ...base, finalPrice: calculateCardPrice(basePrice, creditPct) }
+    }
+
+    case 'cash_discount': {
+      // Legacy model — uses cashDiscountPercent (same markup for credit & debit)
+      if (paymentMethod === 'cash') return base
+      const pct = program.cashDiscountPercent ?? program.creditMarkupPercent ?? 0
       const applies = (paymentMethod === 'credit' && (program.applyToCredit ?? true))
         || (paymentMethod === 'debit' && (program.applyToDebit ?? true))
       if (!applies) return base

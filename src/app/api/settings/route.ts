@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET() {
   try {
     // NOTE: This DB call fetches `name` which the location cache doesn't store.
     // Settings are already read from cache below via getLocationSettings().
-    const location = await db.location.findFirst({ select: { id: true, name: true } })
+    const location = await db.location.findFirst({ select: { id: true, name: true, updatedAt: true } })
     if (!location) {
       return NextResponse.json(
         { error: 'No location found' },
@@ -141,6 +141,7 @@ export const GET = withVenue(async function GET() {
     return NextResponse.json({ data: {
       locationId: location.id,
       locationName: location.name,
+      settingsUpdatedAt: location.updatedAt?.toISOString() ?? null,
       settings: responseSettings,
     } })
   } catch (error) {

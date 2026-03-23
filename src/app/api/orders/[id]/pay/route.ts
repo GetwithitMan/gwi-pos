@@ -906,6 +906,13 @@ export const POST = withVenue(withTiming(async function POST(
         idempotencyKey: payments.length > 1
           ? `${finalIdempotencyKey}-${paymentIdx}`
           : finalIdempotencyKey,
+        // Pricing tier detection (Payment & Pricing Redesign)
+        // appliedPricingTier is NOT NULL with default 'cash' — always set it
+        appliedPricingTier: payment.method === 'cash'
+          ? 'cash'
+          : ((payment as any).appliedPricingTier || 'credit'),
+        ...(((payment as any).detectedCardType) && { detectedCardType: (payment as any).detectedCardType }),
+        ...(((payment as any).walletType) && { walletType: (payment as any).walletType }),
       }
 
       // Dual pricing: record pricing mode and discount info
@@ -946,6 +953,17 @@ export const POST = withVenue(withTiming(async function POST(
               },
             }).catch(() => {})
           }
+        }
+      }
+
+      // Snapshot pricing program config at transaction time (for audit trail)
+      if (settings.pricingProgram?.enabled && (payment.method === 'credit' || payment.method === 'debit' || payment.method === 'cash')) {
+        paymentRecord.pricingProgramSnapshot = {
+          model: settings.pricingProgram.model,
+          creditMarkupPercent: settings.pricingProgram.creditMarkupPercent,
+          debitMarkupPercent: settings.pricingProgram.debitMarkupPercent,
+          cashDiscountPercent: settings.pricingProgram.cashDiscountPercent,
+          surchargePercent: settings.pricingProgram.surchargePercent,
         }
       }
 

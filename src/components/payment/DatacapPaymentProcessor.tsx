@@ -9,6 +9,13 @@ import { ReaderStatusIndicator } from './ReaderStatusIndicator'
 import { formatCurrency } from '@/lib/utils'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 
+/** Card detection result from CardLookup (Model 3: dual_price_pan_debit) */
+export interface CardDetectionResult {
+  detectedCardType: 'credit' | 'debit'
+  appliedPricingTier: 'credit' | 'debit'
+  walletType?: string | null
+}
+
 interface DatacapPaymentProcessorProps {
   orderId: string
   amount: number
@@ -24,7 +31,11 @@ interface DatacapPaymentProcessorProps {
   locationId: string
   tipMode?: 'suggestive' | 'prompt' | 'included' | 'none'
   readerId?: string
-  onSuccess: (result: DatacapResult & { tipAmount: number }) => void
+  /** Pricing program model — when 'dual_price_pan_debit', CardLookup runs before sale */
+  pricingModel?: string
+  /** Callback with adjusted charge amount after card detection (Model 3 only) */
+  onCardDetected?: (result: CardDetectionResult, adjustedAmount: number) => void
+  onSuccess: (result: DatacapResult & { tipAmount: number; cardDetection?: CardDetectionResult }) => void
   onPartialApproval?: (result: DatacapResult & { tipAmount: number; remainingBalance: number }) => void
   onCancel: () => void
   onPayCashInstead?: () => void
@@ -44,6 +55,8 @@ export function DatacapPaymentProcessor({
   locationId,
   tipMode: externalTipMode,
   readerId,
+  pricingModel,
+  onCardDetected,
   onSuccess,
   onPartialApproval,
   onCancel,
@@ -56,6 +69,10 @@ export function DatacapPaymentProcessor({
   const [partialResult, setPartialResult] = useState<(DatacapResult & { tipAmount: number }) | null>(null)
   const [isVoiding, setIsVoiding] = useState(false)
   const [voidError, setVoidError] = useState<string | null>(null)
+
+  // Model 3: Card detection state
+  const [isDetectingCard, setIsDetectingCard] = useState(false)
+  const [cardDetection, setCardDetection] = useState<CardDetectionResult | null>(null)
 
   // W1-P3: Track last approved recordNo for void-on-failure safety
   const lastApprovedRecordNoRef = useRef<string | null>(null)
@@ -85,7 +102,7 @@ export function DatacapPaymentProcessor({
         setPartialResult({ ...result, tipAmount })
         // onPartialApproval fires only when user clicks "Accept Partial" below
       } else {
-        onSuccess({ ...result, tipAmount })
+        onSuccess({ ...result, tipAmount, cardDetection: cardDetection || undefined })
       }
     },
     onDeclined: (_reason) => {
@@ -183,6 +200,64 @@ export function DatacapPaymentProcessor({
   }
 
   const handleStartPayment = async () => {
+    let chargeAmount = totalToCharge
+    let detection: CardDetectionResult | null = null
+
+    // Model 3 (dual_price_pan_debit): Detect card type before sending the sale
+    if (pricingModel === 'dual_price_pan_debit') {
+      setIsDetectingCard(true)
+      try {
+        const lookupRes = await fetch('/api/datacap/card-lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId,
+            readerId: readerId || terminalId,
+          }),
+        })
+        const lookupData = await lookupRes.json()
+        const lookupResult = lookupData.data
+
+        if (lookupResult?.success) {
+          const detectedType = lookupResult.isDebit ? 'debit' : 'credit'
+          detection = {
+            detectedCardType: detectedType,
+            appliedPricingTier: detectedType,
+            walletType: null,
+          }
+          setCardDetection(detection)
+          // Parent recalculates charge amount based on detection
+          if (onCardDetected) {
+            onCardDetected(detection, chargeAmount)
+          }
+        } else {
+          // CardLookup failed — fall back to credit (higher price = safe default)
+          console.warn('[DatacapPaymentProcessor] CardLookup failed, defaulting to credit:', lookupResult?.error)
+          detection = {
+            detectedCardType: 'credit',
+            appliedPricingTier: 'credit',
+            walletType: null,
+          }
+          setCardDetection(detection)
+        }
+      } catch (err) {
+        // Network error — fall back to credit
+        console.warn('[DatacapPaymentProcessor] CardLookup error, defaulting to credit:', err)
+        detection = {
+          detectedCardType: 'credit',
+          appliedPricingTier: 'credit',
+          walletType: null,
+        }
+        setCardDetection(detection)
+      } finally {
+        setIsDetectingCard(false)
+      }
+    }
+
+    // Use the amount prop directly — parent has already set the correct amount
+    // (for Model 3, parent updates amount via onCardDetected callback before re-render)
+    chargeAmount = amount + tipAmount
+
     // Notify CFD that card payment is starting (fire and forget via server dispatch)
     void fetch('/api/cfd/notify', {
       method: 'POST',
@@ -192,7 +267,7 @@ export function DatacapPaymentProcessor({
         locationId,
         payload: {
           orderId,
-          amount: totalToCharge,
+          amount: chargeAmount,
           paymentMethod: 'credit',
         },
       }),
@@ -200,7 +275,7 @@ export function DatacapPaymentProcessor({
 
     const result = await processPayment({
       orderId,
-      amount: totalToCharge,
+      amount: chargeAmount,
       purchaseAmount: amount, // Pre-tip amount for accurate partial approval detection
       tipAmount,
       tipMode: externalTipMode || 'none',
@@ -290,6 +365,7 @@ export function DatacapPaymentProcessor({
 
   // Status text for UI
   const getStatusText = () => {
+    if (isDetectingCard) return 'Detecting card type...'
     switch (processingStatus) {
       case 'checking_reader':
         return 'Verifying reader...'
@@ -421,17 +497,17 @@ export function DatacapPaymentProcessor({
             Cancel
           </button>
           <button
-            disabled={isProcessing || !isReaderOnline}
+            disabled={isProcessing || isDetectingCard || !isReaderOnline}
             onClick={handleStartPayment}
             className={`flex-[2] py-4 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 ${
-              isProcessing
+              isProcessing || isDetectingCard
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                 : !isReaderOnline
                 ? 'bg-amber-900/50 text-amber-500 cursor-not-allowed'
                 : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'
             }`}
           >
-            {isProcessing ? (
+            {isProcessing || isDetectingCard ? (
               <>
                 <ArrowPathIcon className="w-6 h-6 animate-spin" />
                 <span className="text-sm">{getStatusText()}</span>

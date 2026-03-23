@@ -261,6 +261,10 @@ export const GET = withVenue(async function GET(
             cardLast4: true,
             cardBrand: true,
             roundingAdjustment: true,
+            appliedPricingTier: true,
+            detectedCardType: true,
+            walletType: true,
+            pricingProgramSnapshot: true,
           },
         },
     })

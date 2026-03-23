@@ -31,7 +31,7 @@ export {
 
 // Types — re-exported for consumers using '@/lib/settings'
 export type {
-  GlobalReceiptSettings, PricingProgram, DualPricingSettings, PriceRoundingSettings,
+  GlobalReceiptSettings, PricingProgram, ConvenienceFeeSettings, DualPricingSettings, PriceRoundingSettings,
   TaxSettings, TipSettings, TipShareSettings, TipBankSettings, AutoGratuitySettings,
   AutoRebootSettings, AlertSettings, SecuritySettings, BusinessDaySettings,
   BreakComplianceSettings, ClockOutSettings, ReceiptSettings, PaymentSettings,

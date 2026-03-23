@@ -1,6 +1,6 @@
 import type { LocationSettings } from '@/lib/settings'
 
-type SettingsResponse = { settings: LocationSettings; locationId?: string; locationName?: string }
+type SettingsResponse = { settings: LocationSettings; locationId?: string; locationName?: string; settingsUpdatedAt?: string | null }
 
 export async function loadSettings(signal?: AbortSignal): Promise<SettingsResponse> {
   const res = await fetch('/api/settings', { signal })

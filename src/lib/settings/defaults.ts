@@ -56,6 +56,7 @@ import type {
   AccountingSettings,
   CustomerFeedbackSettings,
   PourControlSettings,
+  ConvenienceFeeSettings,
   LocationSettings,
   POSLayoutSettings,
   PricingRule,
@@ -72,8 +73,18 @@ function log(): GwiLogger {
 // ─── Default Constants ──────────────────────────────────────────────────────
 
 export const DEFAULT_PRICING_PROGRAM: PricingProgram = {
-  model: 'none',
+  model: 'standard',
   enabled: false,
+  creditMarkupPercent: 4,
+  debitMarkupPercent: 0,
+}
+
+export const DEFAULT_CONVENIENCE_FEES: ConvenienceFeeSettings = {
+  enabled: false,
+  fees: { online: 0, phone: 0, delivery: 0, kiosk: 0, pos: 0 },
+  showFeeAsLineItem: true,
+  disclosureText: '',
+  refundPolicy: 'full_refund',
 }
 
 export const DEFAULT_BREAK_COMPLIANCE: BreakComplianceSettings = {
@@ -1046,7 +1057,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       enabled: ((partial.dualPricing?.cashDiscountPercent ?? DEFAULT_SETTINGS.dualPricing.cashDiscountPercent) > 0)
         || (partial.dualPricing?.enabled ?? DEFAULT_SETTINGS.dualPricing.enabled),
     },
-    pricingProgram: partial.pricingProgram,  // pass-through: optional, undefined if not set
+    pricingProgram: partial.pricingProgram ? migratePricingProgram(partial.pricingProgram) : undefined,
+    convenienceFees: partial.convenienceFees
+      ? { ...DEFAULT_CONVENIENCE_FEES, ...partial.convenienceFees }
+      : undefined,
     priceRounding: {
       ...DEFAULT_SETTINGS.priceRounding,
       ...(partial.priceRounding || {}),
@@ -1351,23 +1365,64 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
   }
 }
 
-// ─── Pricing Program Functions ──────────────────────────────────────────────
+// ─── Pricing Program Migration & Functions ──────────────────────────────────
+
+/**
+ * Migrate legacy pricing program model names to the new types.
+ * Called during mergeWithDefaults so all consumers see normalized values.
+ *
+ * Migrations:
+ *  - 'none' → 'standard'
+ *  - 'cash_discount' → 'dual_price' (+ cashDiscountPercent → creditMarkupPercent)
+ *  - 'flat_rate', 'interchange_plus', 'tiered' → 'standard' (MC-only now)
+ */
+export function migratePricingProgram(program: PricingProgram): PricingProgram {
+  const migrated = { ...program }
+
+  switch (migrated.model) {
+    case 'none':
+      migrated.model = 'standard'
+      break
+    case 'cash_discount':
+      migrated.model = 'dual_price'
+      // Migrate cashDiscountPercent → creditMarkupPercent
+      if (migrated.cashDiscountPercent != null && migrated.creditMarkupPercent == null) {
+        migrated.creditMarkupPercent = migrated.cashDiscountPercent
+      }
+      if (migrated.debitMarkupPercent == null) {
+        // Legacy cash_discount applied the same rate to debit — default debit to 0 (cash price)
+        migrated.debitMarkupPercent = 0
+      }
+      break
+    case 'flat_rate':
+    case 'interchange_plus':
+    case 'tiered':
+      // MC-only models — strip to standard (merchant cost tracking moves to MC)
+      migrated.model = 'standard'
+      migrated.enabled = false
+      break
+  }
+
+  return migrated
+}
 
 export function getPricingProgram(settings: LocationSettings): PricingProgram {
-  // If new pricingProgram field exists and is enabled, use it
+  // If new pricingProgram field exists and is enabled, use it (already migrated in mergeWithDefaults)
   if (settings.pricingProgram?.enabled) return settings.pricingProgram
   // Fall back to legacy dualPricing
   if (settings.dualPricing?.enabled) {
     return {
-      model: 'cash_discount',
+      model: 'dual_price',
       enabled: true,
+      creditMarkupPercent: settings.dualPricing.cashDiscountPercent,
+      debitMarkupPercent: 0,
       cashDiscountPercent: settings.dualPricing.cashDiscountPercent,
       applyToCredit: settings.dualPricing.applyToCredit,
       applyToDebit: settings.dualPricing.applyToDebit,
       showSavingsMessage: settings.dualPricing.showSavingsMessage,
     }
   }
-  // If pricingProgram exists but is disabled (e.g. model='none'), return it
+  // If pricingProgram exists but is disabled, return it
   if (settings.pricingProgram) return settings.pricingProgram
   return DEFAULT_PRICING_PROGRAM
 }

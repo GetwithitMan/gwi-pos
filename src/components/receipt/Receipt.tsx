@@ -89,6 +89,9 @@ export interface ReceiptData {
   taxFromExclusive?: number
   // Surcharge disclosure (present when pricing program is 'surcharge')
   surchargeDisclosure?: string | null
+  // Convenience fee (present when order has a per-channel fee)
+  convenienceFee?: number | null
+  convenienceFeeDisclosure?: string | null
 }
 
 interface ReceiptProps {
@@ -283,6 +286,12 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                   <span>-{formatCurrency(data.discountTotal)}</span>
                 </div>
               )}
+              {data.convenienceFee != null && data.convenienceFee > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span>Convenience Fee:</span>
+                  <span>{formatCurrency(data.convenienceFee)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs">
                 <span>Tax:</span>
                 <span>{formatCurrency(data.cardTax!)}</span>
@@ -325,6 +334,12 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                   <span>-{formatCurrency(data.discountTotal)}</span>
                 </div>
               )}
+              {data.convenienceFee != null && data.convenienceFee > 0 && (
+                <div className="flex justify-between text-xs">
+                  <span>Convenience Fee:</span>
+                  <span>{formatCurrency(data.convenienceFee)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs">
                 <span>
                   {data.taxFromInclusive && data.taxFromInclusive > 0 && (!data.taxFromExclusive || data.taxFromExclusive === 0)
@@ -352,6 +367,13 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
       {showPrices && data.surchargeDisclosure && (
         <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs text-center text-gray-600 italic">
           {data.surchargeDisclosure}
+        </div>
+      )}
+
+      {/* Convenience Fee Disclosure */}
+      {showPrices && data.convenienceFeeDisclosure && data.convenienceFee != null && data.convenienceFee > 0 && (
+        <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs text-center text-gray-600 italic">
+          {data.convenienceFeeDisclosure}
         </div>
       )}
 

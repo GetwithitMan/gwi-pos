@@ -47,6 +47,10 @@ export const PaymentInputSchema = z.object({
   tokenFrequency: z.string().optional(),
   // SAF (Store-and-Forward) — transaction stored offline on reader, pending upload
   storedOffline: z.boolean().optional(),
+  // Pricing tier detection (Payment & Pricing Redesign)
+  detectedCardType: z.enum(['credit', 'debit']).optional().nullable(),
+  appliedPricingTier: z.enum(['cash', 'debit', 'credit']).optional(),
+  walletType: z.enum(['apple_pay', 'google_pay', 'samsung_pay']).optional().nullable(),
 })
 
 // PAYMENT-SAFETY: Idempotency design

@@ -11,8 +11,8 @@
  * - taxRate is always a decimal (0.08), never ambiguous 8 vs 0.08
  */
 
-import { roundToCents, applyPriceRounding, calculateCommission } from './pricing'
-import type { PriceRoundingSettings } from './settings'
+import { roundToCents, applyPriceRounding, calculateCommission, toNumber } from './pricing'
+import type { PriceRoundingSettings, ConvenienceFeeSettings } from './settings'
 
 // ============================================================================
 // TYPES
@@ -54,10 +54,33 @@ export interface OrderTotals {
   taxFromExclusive: number  // Tax added on top of exclusive items
   discountTotal: number
   tipTotal: number
+  convenienceFee: number       // Per-channel convenience fee (not in tip basis)
   totalBeforeRounding: number  // Total before price rounding applied
   total: number                // Final total (after rounding if applicable)
   roundingDelta: number        // total - totalBeforeRounding (0 if no rounding)
   commissionTotal?: number
+}
+
+// ============================================================================
+// CONVENIENCE FEE
+// ============================================================================
+
+/**
+ * Look up the per-channel convenience fee (dollars) for a given order source.
+ * Returns 0 when fees are disabled or the channel has no configured fee.
+ */
+export function getConvenienceFeeForChannel(
+  orderSource: string | null | undefined,
+  settings: ConvenienceFeeSettings | undefined
+): number {
+  if (!settings?.enabled) return 0
+  const source = (orderSource || '').toLowerCase()
+  if (source === 'online' || source === 'web') return settings.fees.online || 0
+  if (source === 'phone') return settings.fees.phone || 0
+  if (source === 'delivery') return settings.fees.delivery || 0
+  if (source === 'kiosk') return settings.fees.kiosk || 0
+  if (source === 'pos') return settings.fees.pos || 0
+  return 0
 }
 
 // ============================================================================
@@ -239,7 +262,9 @@ export function calculateOrderTotals(
   /** Order-level inclusive tax rate (decimal, e.g. 0.07). Overrides locationSettings
    *  when present — ensures orders created with inclusive pricing keep the original
    *  rate even if location settings change mid-service. */
-  orderInclusiveTaxRate?: number
+  orderInclusiveTaxRate?: number,
+  /** Per-channel convenience fee (dollars). Added to total but NOT included in tip basis. */
+  convenienceFee: number = 0
 ): OrderTotals {
   // Memoization: return cached result if inputs unchanged
   const cacheKey = buildTotalsCacheKey(items, locationSettings, existingDiscountTotal, existingTipTotal, priceRounding, paymentMethod, isTaxExempt)
@@ -300,9 +325,11 @@ export function calculateOrderTotals(
   // 3. Total before rounding
   // Inclusive items already contain tax (no extra added), exclusive items get taxFromExclusive added
   // Discount is already reflected in the post-discount tax, so subtract it from the base amounts
+  // Convenience fee is added to total but NOT included in tip basis
+  const safeConvenienceFee = roundToCents(Math.max(0, toNumber(convenienceFee)))
   const totalBeforeRounding = roundToCents(
     inclusiveSubtotal + exclusiveSubtotal + taxFromExclusive
-    - existingDiscountTotal + existingTipTotal
+    - existingDiscountTotal + existingTipTotal + safeConvenienceFee
   )
 
   // 4. Apply price rounding as absolute last step
@@ -321,6 +348,7 @@ export function calculateOrderTotals(
     taxFromExclusive,
     discountTotal: existingDiscountTotal,
     tipTotal: existingTipTotal,
+    convenienceFee: safeConvenienceFee,
     totalBeforeRounding,
     total,
     roundingDelta,

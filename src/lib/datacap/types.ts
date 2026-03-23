@@ -39,6 +39,8 @@ export type TranCode =
   | 'EMVAuthOnly'
   | 'SAF_Statistics'
   | 'SAF_ForwardAll'
+  // Card lookup (read-only, no charge)
+  | 'CardLookup'
 
 export type CmdStatus = 'Approved' | 'Declined' | 'Error' | 'Success'
 
@@ -274,6 +276,15 @@ export interface PreAuthByRecordParams {
 export interface AuthOnlyParams {
   invoiceNo: string
   // Zero-dollar auth — validates card without a charge
+}
+
+export interface CardLookupResult {
+  success: boolean
+  cardUsage: string       // 'DEBIT' | 'FSA' | 'OTHER' | ''
+  extendedCardInfo: string  // comma-separated: 'Debit', 'Credit', 'CheckCard', etc.
+  cardType: string        // 'VISA' | 'M/C' | 'AMEX' | etc.
+  isDebit: boolean        // derived: true if cardUsage === 'DEBIT' or extendedCardInfo includes 'Debit'
+  error?: string
 }
 
 export interface KeyedSaleParams {

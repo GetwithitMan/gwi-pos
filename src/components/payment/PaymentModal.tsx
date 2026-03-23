@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { formatCurrency } from '@/lib/utils'
-import { calculateCardPrice, applyPriceRounding } from '@/lib/pricing'
+import { calculateCardPrice, calculateDebitPrice, calculateCreditPrice, applyPriceRounding } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, PAYMENT_METHOD_LABELS } from '@/lib/payment'
 import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram, CustomerFeedbackSettings } from '@/lib/settings'
 import { FeedbackPrompt } from './FeedbackPrompt'
-import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
+import { DatacapPaymentProcessor, type CardDetectionResult } from './DatacapPaymentProcessor'
 import { ManualCardEntryModal, type ManualCardEntryResult } from './ManualCardEntryModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { toast } from '@/stores/toast-store'
@@ -75,6 +75,10 @@ interface PendingPayment {
   amountAuthorized?: number
   // SAF (Store-and-Forward) — transaction stored offline on reader
   storedOffline?: boolean
+  // Pricing tier detection (Payment & Pricing Redesign)
+  detectedCardType?: string
+  appliedPricingTier?: string
+  walletType?: string | null
 }
 
 interface GiftCardInfo {
@@ -201,6 +205,9 @@ export function PaymentModal({
   const [selectedRoomGuest, setSelectedRoomGuest] = useState<{ reservationId: string; roomNumber: string; guestName: string; selectionId: string } | null>(null)
   const [roomChargeLookupLoading, setRoomChargeLookupLoading] = useState(false)
   const [roomChargeLookupError, setRoomChargeLookupError] = useState<string | null>(null)
+
+  // Card detection state (Model 3: dual_price_pan_debit)
+  const [cardDetectionResult, setCardDetectionResult] = useState<CardDetectionResult | null>(null)
 
   // Manual card entry state
   const [showManualEntry, setShowManualEntry] = useState(false)
@@ -373,12 +380,37 @@ export function PaymentModal({
     [remainingBeforeTip, priceRounding]
   )
 
-  const cardTotal = useMemo(
-    () => dualPricing.enabled
-      ? calculateCardPrice(remainingBeforeTip, discountPercent)
-      : remainingBeforeTip,
-    [dualPricing.enabled, remainingBeforeTip, discountPercent]
-  )
+  // Model 3: Separate debit and credit totals
+  const debitTotal = useMemo(() => {
+    if (pricingProgram?.enabled && (pricingProgram.model === 'dual_price_pan_debit' || pricingProgram.model === 'dual_price')) {
+      const debitPct = pricingProgram.debitMarkupPercent ?? 0
+      if (debitPct <= 0) return remainingBeforeTip // Debit at cash price
+      return calculateDebitPrice(remainingBeforeTip, debitPct)
+    }
+    return remainingBeforeTip
+  }, [pricingProgram, remainingBeforeTip])
+
+  const creditTotal = useMemo(() => {
+    if (pricingProgram?.enabled && (pricingProgram.model === 'dual_price_pan_debit' || pricingProgram.model === 'dual_price')) {
+      const creditPct = pricingProgram.creditMarkupPercent ?? pricingProgram.cashDiscountPercent ?? 0
+      return calculateCreditPrice(remainingBeforeTip, creditPct)
+    }
+    return remainingBeforeTip
+  }, [pricingProgram, remainingBeforeTip])
+
+  const cardTotal = useMemo(() => {
+    // Model 3 (dual_price_pan_debit): Use detection result to determine card price
+    if (pricingProgram?.enabled && pricingProgram.model === 'dual_price_pan_debit') {
+      if (cardDetectionResult?.detectedCardType === 'debit') return debitTotal
+      // Default to credit (higher price) until detection completes
+      return creditTotal
+    }
+    // Legacy dual pricing: single card price
+    if (dualPricing.enabled) {
+      return calculateCardPrice(remainingBeforeTip, discountPercent)
+    }
+    return remainingBeforeTip
+  }, [pricingProgram, dualPricing.enabled, remainingBeforeTip, discountPercent, cardDetectionResult, debitTotal, creditTotal])
 
   const currentTotal = useMemo(
     () => selectedMethod === 'cash' ? cashTotal : cardTotal,
@@ -749,7 +781,7 @@ export function PaymentModal({
   }
 
   // Handle Datacap payment success
-  const handleDatacapSuccess = (result: DatacapResult & { tipAmount: number }) => {
+  const handleDatacapSuccess = (result: DatacapResult & { tipAmount: number; cardDetection?: CardDetectionResult }) => {
     // Start timing — gateway already responded at this point
     const timing = startPaymentTiming('pay_close', orderId || undefined)
     timing.method = selectedMethod || 'credit'
@@ -762,6 +794,10 @@ export function PaymentModal({
       setStep('method') // Go back to method selection
       return
     }
+
+    // Determine pricing tier from card detection or default
+    const detection = result.cardDetection || cardDetectionResult
+    const appliedTier = detection?.appliedPricingTier || (selectedMethod === 'debit' ? 'debit' : 'credit')
 
     const payment: PendingPayment = {
       method: selectedMethod, // Now type-safe after validation
@@ -778,6 +814,10 @@ export function PaymentModal({
       signatureData: result.signatureData,
       amountAuthorized: result.amountAuthorized,
       storedOffline: result.storedOffline,
+      // Pricing tier detection
+      detectedCardType: detection?.detectedCardType,
+      appliedPricingTier: appliedTier,
+      walletType: detection?.walletType,
     }
     processPayments([...pendingPayments, payment], pendingPayments)
   }
@@ -802,6 +842,8 @@ export function PaymentModal({
       authCode: result.authCode,
       entryMethod: 'Manual',
       amountAuthorized: result.amountAuthorized ? parseFloat(result.amountAuthorized) : undefined,
+      // Manual keyed entry is always credit (no card detection possible)
+      appliedPricingTier: 'credit',
     }
     processPayments([...pendingPayments, payment], pendingPayments)
   }
@@ -839,6 +881,11 @@ export function PaymentModal({
           amountAuthorized: p.amountAuthorized,
           storedOffline: p.storedOffline,
         } : {}),
+        // Pricing tier detection (Payment & Pricing Redesign)
+        // appliedPricingTier MUST always be sent — server column is NOT NULL
+        appliedPricingTier: p.appliedPricingTier || (p.method === 'cash' ? 'cash' : 'credit'),
+        ...(p.detectedCardType ? { detectedCardType: p.detectedCardType } : {}),
+        ...(p.walletType ? { walletType: p.walletType } : {}),
       }
     }),
     employeeId,
@@ -1889,6 +1936,10 @@ export function PaymentModal({
               terminalId={terminalId}
               employeeId={employeeId}
               locationId={locationId}
+              pricingModel={pricingProgram?.enabled ? pricingProgram.model : undefined}
+              onCardDetected={(detection, _adjustedAmount) => {
+                setCardDetectionResult(detection)
+              }}
               onSuccess={handleDatacapSuccess}
               onPayCashInstead={() => { setSelectedMethod('cash'); setTipAmount(0); setStep('cash') }}
               onPartialApproval={(result) => {

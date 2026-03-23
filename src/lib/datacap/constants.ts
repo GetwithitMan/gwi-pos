@@ -39,6 +39,8 @@ export const TRAN_CODES: Record<string, TranCode> = {
   // Store-and-Forward (SAF)
   SAF_STATISTICS: 'SAF_Statistics',
   SAF_FORWARD_ALL: 'SAF_ForwardAll',
+  // Card lookup (read-only, no charge)
+  CARD_LOOKUP: 'CardLookup',
 } as const
 
 // ─── Monetary TranCodes (require pad reset after) ────────────────────────────

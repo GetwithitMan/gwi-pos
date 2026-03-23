@@ -2455,6 +2455,9 @@ model Order {
   // Commission (Skill 29)
   commissionTotal Decimal @default(0) @db.Decimal(10, 2)
 
+  // Convenience Fee (Payment & Pricing Redesign)
+  convenienceFee Decimal? @db.Decimal(10, 2) // Per-channel convenience fee (not in tip basis)
+
   // Notes
   notes String?
 
@@ -2910,6 +2913,12 @@ model Payment {
   cashDiscountAmount  Decimal? @db.Decimal(10, 2) // Amount of cash discount applied (null if no dual pricing)
   priceBeforeDiscount Decimal? @db.Decimal(10, 2) // Original card price before cash discount
   pricingMode         String? // "cash" or "card" — which price was used
+
+  // Pricing Tier Detection (Payment & Pricing Redesign)
+  detectedCardType    String?           // 'credit' | 'debit' | null — from Datacap CardLookup
+  appliedPricingTier  String  @default("cash") // 'cash' | 'debit' | 'credit' — which tier was applied
+  walletType          String?           // 'apple_pay' | 'google_pay' | 'samsung_pay' | null
+  pricingProgramSnapshot Json?          // Snapshot of pricing config at transaction time
 
   // Reconciliation (for EOD reports)
   needsReconciliation Boolean   @default(false) // Flag for accountant review
