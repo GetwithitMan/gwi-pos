@@ -1,0 +1,48 @@
+---
+# =============================================================================
+# kiosk_hardening — Notification Suppression
+# =============================================================================
+# Removes desktop notification packages and silences KDE notification sounds.
+# Prevents update prompts, software center popups, and other distracting
+# notifications on kiosk terminals. Fully idempotent.
+# =============================================================================
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Remove desktop notification / update packages
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Notifications — Remove desktop notification packages"
+  ansible.builtin.apt:
+    name:
+      - update-notifier
+      - update-manager
+      - gnome-software
+      - plasma-discover-notifier
+      - plasma-discover
+      - plasma-discover-backends
+      - plasma-discover-snap-backend
+      - ubuntu-advantage-desktop-daemon
+    state: absent
+    autoremove: true
+  failed_when: false
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Blank KDE notification Action= lines (suppress popup/sound actions)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Notifications — Find knotify files with actions"
+  ansible.builtin.shell: >
+    find /usr/share/knotifications5 -name '*.notifyrc' -type f
+    -exec grep -lE '^Action=.+$' {} \; 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  register: _notifyrc_files
+  changed_when: false
+
+- name: "Notifications — Blank knotify Action= lines"
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: '^Action=.*$'
+    replace: 'Action='
+  loop: "{{ _notifyrc_files.stdout_lines | default([]) }}"
+  when: _notifyrc_files.stdout_lines | default([]) | length > 0

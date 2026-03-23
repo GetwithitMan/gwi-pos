@@ -1,0 +1,21 @@
+#!/bin/bash
+# =============================================================================
+# /usr/local/bin/keep-awake.sh — GWI POS keep-awake watchdog
+# =============================================================================
+# Prevents screen blanking even if desktop environment overrides settings.
+# Runs every 60s via gwi-keep-awake.timer (systemd user scope).
+# Managed by Ansible kiosk_hardening role — do not edit manually.
+# =============================================================================
+
+export DISPLAY=:0
+
+# Only run xset on X11 sessions (doesn't work on Wayland)
+if [ "${XDG_SESSION_TYPE:-x11}" = "x11" ]; then
+  xset s off -dpms 2>/dev/null
+  xset s noblank 2>/dev/null
+  xset dpms force on 2>/dev/null
+fi
+
+# Ensure Dashboard is running (don't force-focus — would annoy admin during maintenance)
+pgrep -f gwi-nuc-dashboard >/dev/null 2>&1 || \
+  systemctl --user start gwi-dashboard.service 2>/dev/null || true

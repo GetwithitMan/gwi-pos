@@ -8,7 +8,7 @@
  * version MC has approved for this venue's release channel.
  */
 
-import { createHmac } from 'crypto'
+import { createHmac, randomUUID } from 'crypto'
 import { execSync } from 'child_process'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync } from 'fs'
 import path from 'path'
@@ -31,6 +31,39 @@ interface UpdateResult {
   preflightResult: PreflightResult
   error?: string
   durationMs: number
+}
+
+interface UpdateState {
+  attemptId: string
+  commandId?: string
+  attemptedAt: string
+  targetVersion: string
+  previousVersion: string
+  gitShaBefore: string
+  gitShaAfter?: string
+  schemaVersionBefore?: string
+  schemaVersionAfter?: string
+  status: string
+  backupStatus: string
+  backupPath?: string
+  backupChecksum?: string
+  pendingSyncCounts?: Record<string, number>
+  rollbackAttempted: boolean
+  rollbackSucceeded?: boolean
+  manualInterventionRequired: boolean
+  proceededWithoutBackup: boolean
+  duration: number
+  steps: string[]
+  error?: string
+}
+
+const UPDATE_STATE_FILE = '/opt/gwi-pos/state/last-update.json'
+
+function writeUpdateState(state: UpdateState): void {
+  try {
+    execSync('mkdir -p /opt/gwi-pos/state', { timeout: 5_000 })
+    writeFileSync(UPDATE_STATE_FILE, JSON.stringify(state, null, 2))
+  } catch {}
 }
 
 let isUpdating = false
@@ -140,6 +173,9 @@ function isValidVersion(version: string): boolean {
 export async function executeUpdate(targetVersion: string): Promise<UpdateResult> {
   const startTime = Date.now()
   const previousVersion = getCurrentVersion()
+  const attemptId = randomUUID()
+  let backupInfo: { path?: string; size?: number; checksum?: string; status: string } = { status: 'SKIPPED' }
+  let previousSha = 'unknown'
 
   // Defense-in-depth: reject shell metacharacters in targetVersion
   // even though the API endpoint requires auth. Prevents command injection
@@ -186,6 +222,21 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
   try {
     // Write lock file
     writeFileSync(UPDATE_LOCK_FILE, JSON.stringify({ targetVersion, startedAt: new Date().toISOString() }))
+
+    // Pre-update safety: backup + code snapshot via atomic transaction
+    try {
+      log.info('[UpdateAgent] Starting update transaction (backup + snapshot)...')
+      const txOutput = execSync(
+        'bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && export APP_BASE=\\"/opt/gwi-pos\\" && source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && start_update_transaction"',
+        { encoding: 'utf8', timeout: 120_000 }
+      )
+      try { backupInfo = JSON.parse(txOutput.trim().split('\n').pop() || '{}') } catch {}
+      log.info(`[UpdateAgent] Backup: ${backupInfo.status} (${backupInfo.path || 'none'})`)
+    } catch (txErr) {
+      const msg = txErr instanceof Error ? txErr.message : String(txErr)
+      log.warn(`[UpdateAgent] Transaction start failed (non-fatal): ${msg.slice(0, 200)}`)
+      backupInfo = { status: 'FAILED' }
+    }
 
     // ── Git self-repair ──────────────────────────────────────────────
     // Clear stale git lock files (left by interrupted fetch/reset/merge)
@@ -240,7 +291,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     }
 
     // Capture current SHA before fetching — used for deterministic rollback
-    const previousSha = execSync('git rev-parse HEAD', { cwd: APP_DIR, encoding: 'utf8' }).trim()
+    previousSha = execSync('git rev-parse HEAD', { cwd: APP_DIR, encoding: 'utf8' }).trim()
 
     // Fetch with retry (transient network failures)
     let fetchSuccess = false
@@ -392,9 +443,30 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
 
     log.info(`[UpdateAgent] Update complete: ${previousVersion} → ${targetVersion}`)
 
+    // Write success state file before restart (restart may kill this process)
+    const finalState: UpdateState = {
+      attemptId,
+      attemptedAt: new Date(startTime).toISOString(),
+      targetVersion,
+      previousVersion,
+      gitShaBefore: previousSha,
+      gitShaAfter: execSync('git rev-parse HEAD', { cwd: APP_DIR, encoding: 'utf8' }).trim(),
+      status: 'COMPLETED',
+      backupStatus: backupInfo.status,
+      backupPath: backupInfo.path,
+      backupChecksum: backupInfo.checksum,
+      rollbackAttempted: false,
+      manualInterventionRequired: false,
+      proceededWithoutBackup: backupInfo.status !== 'OK',
+      duration: Date.now() - startTime,
+      steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-pending'],
+    }
+    writeUpdateState(finalState)
+
     // Request service restart (graceful, delayed to allow response delivery)
     setTimeout(() => {
       log.info('[UpdateAgent] Requesting service restart...')
+      const restartTimestamp = Date.now()
       try {
         execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
       } catch (err) {
@@ -429,25 +501,70 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
         }
 
         if (!healthy) {
-          log.error('[UpdateAgent] POS failed health check after update — rolling back')
+          log.error('[UpdateAgent] POS failed health check after update — initiating conservative rollback')
+
+          const rollbackState: Partial<UpdateState> = { rollbackAttempted: true }
+
           try {
-            execSync(`cd ${APP_DIR} && git reset --hard ${previousSha}`, { timeout: 30_000 })
-            // Rebuild from the previous code to ensure .next/ and node_modules match
+            // Conservative rollback: code only, NO database restore
+            // If writes may have been accepted, mark for manual review
+            const uptimeAfterRestart = Date.now() - restartTimestamp
+            const mayHaveAcceptedWrites = uptimeAfterRestart > 15_000 // >15s after restart = may have served requests
+
+            // Restore code from snapshot if available
+            if (existsSync('/opt/gwi-pos/app.last-good')) {
+              execSync('bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && rollback_transaction"', { timeout: 60_000 })
+              log.info('[UpdateAgent] Code restored from snapshot')
+            } else {
+              // Fallback: git reset
+              execSync(`cd ${APP_DIR} && git reset --hard ${previousSha}`, { timeout: 30_000 })
+            }
+
+            // Rebuild from rolled-back code
             try {
               execSync('npm ci', { cwd: APP_DIR, timeout: 300_000 })
               execSync('npx prisma generate', { cwd: APP_DIR, timeout: 60_000 })
               execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
               log.info('[UpdateAgent] Rollback rebuild complete')
             } catch (rebuildErr) {
-              log.error({ err: rebuildErr }, '[UpdateAgent] Rollback rebuild failed — restarting with whatever is available')
+              log.error({ err: rebuildErr }, '[UpdateAgent] Rollback rebuild failed')
             }
+
             execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
-            log.info('[UpdateAgent] Rollback complete — reverted to previous version')
+
+            rollbackState.rollbackSucceeded = true
+            rollbackState.manualInterventionRequired = mayHaveAcceptedWrites
+
+            if (mayHaveAcceptedWrites) {
+              log.warn('[UpdateAgent] Rollback complete but POS may have accepted writes — manual DB review required')
+            } else {
+              log.info('[UpdateAgent] Rollback complete — reverted to previous version')
+            }
           } catch (rollbackErr) {
             log.error({ err: rollbackErr }, '[UpdateAgent] Rollback failed — manual intervention required')
+            rollbackState.rollbackSucceeded = false
+            rollbackState.manualInterventionRequired = true
           }
+
+          // Update state file with rollback info
+          writeUpdateState({
+            ...finalState,
+            status: 'ROLLED_BACK',
+            rollbackAttempted: rollbackState.rollbackAttempted ?? true,
+            rollbackSucceeded: rollbackState.rollbackSucceeded,
+            manualInterventionRequired: rollbackState.manualInterventionRequired ?? true,
+            steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-failed', 'rollback'],
+            duration: Date.now() - startTime,
+          })
         } else {
           log.info('[UpdateAgent] Health check passed — update verified')
+          // Update state file with health-ok
+          writeUpdateState({
+            ...finalState,
+            status: 'COMPLETED',
+            steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-ok'],
+            duration: Date.now() - startTime,
+          })
         }
       })()
     }, 2000)
@@ -465,6 +582,25 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
 
     const error = err instanceof Error ? err.message : String(err)
     log.error({ err: error }, `[UpdateAgent] Update failed:`)
+
+    // Write error state file
+    const errorState: UpdateState = {
+      attemptId,
+      attemptedAt: new Date(startTime).toISOString(),
+      targetVersion,
+      previousVersion,
+      gitShaBefore: previousSha || 'unknown',
+      status: 'FAILED',
+      backupStatus: backupInfo.status,
+      backupPath: backupInfo.path,
+      rollbackAttempted: false,
+      manualInterventionRequired: false,
+      proceededWithoutBackup: backupInfo.status !== 'OK',
+      duration: Date.now() - startTime,
+      steps: [],
+      error,
+    }
+    writeUpdateState(errorState)
 
     return {
       success: false,
@@ -506,6 +642,16 @@ export async function reportDeployHealth(result: UpdateResult): Promise<void> {
   if (result.error) {
     body.error = result.error
   }
+
+  // Include backup info from last-update state file
+  try {
+    if (existsSync(UPDATE_STATE_FILE)) {
+      const lastUpdate = JSON.parse(readFileSync(UPDATE_STATE_FILE, 'utf8')) as UpdateState
+      body.backupStatus = lastUpdate.backupStatus
+      body.backupPath = lastUpdate.backupPath
+      body.proceededWithoutBackup = lastUpdate.proceededWithoutBackup
+    }
+  } catch {}
 
   const bodyString = JSON.stringify(body)
   const signature = createHmac('sha256', apiKey).update(bodyString).digest('hex')

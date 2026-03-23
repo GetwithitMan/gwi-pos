@@ -173,6 +173,35 @@ run_finalize() {
     echo ""
   fi
 
+  # ── Write structured install report ──
+  local report_file="$APP_BASE/state/install-report.json"
+  mkdir -p "$APP_BASE/state"
+  local _warnings_json
+  _warnings_json=$(printf '%s\n' "${INSTALL_WARNINGS[@]:-}" | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo '[]')
+  cat > "$report_file" <<REPORT
+{
+  "installId": "$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo unknown)",
+  "deviceId": "${HARDWARE_FINGERPRINT:-unknown}",
+  "venueId": "${LOCATION_ID:-unknown}",
+  "installedAt": "$(date -u +%FT%TZ)",
+  "installerVersion": "${INSTALLER_VERSION:-unknown}",
+  "role": "${STATION_ROLE:-unknown}",
+  "gitSha": "$(cd $APP_DIR && git rev-parse HEAD 2>/dev/null || echo unknown)",
+  "stages": {},
+  "warnings": ${_warnings_json},
+  "warningsCount": ${#INSTALL_WARNINGS[@]},
+  "schemaVersion": "${SCHEMA_VERSION:-unknown}",
+  "posVersion": "$(cd $APP_DIR && node -e 'console.log(require("./package.json").version)' 2>/dev/null || echo unknown)",
+  "nodeVersion": "$(node --version 2>/dev/null || echo unknown)",
+  "pgVersion": "$(psql --version 2>/dev/null | head -1 || echo unknown)",
+  "duration": $(( $(date +%s) - ${INSTALL_START:-0} )),
+  "degraded": $([ ${#INSTALL_WARNINGS[@]} -gt 0 ] && echo true || echo false),
+  "failureReason": null
+}
+REPORT
+  chown "$POSUSER":"$POSUSER" "$report_file" 2>/dev/null || true
+  log "Install report written to $report_file"
+
   log "Stage: finalize — completed in $(( $(date +%s) - _start ))s"
   return 0
 }

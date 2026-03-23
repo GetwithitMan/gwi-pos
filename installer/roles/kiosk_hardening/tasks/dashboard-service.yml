@@ -1,0 +1,46 @@
+---
+# =============================================================================
+# kiosk_hardening — Dashboard Service
+# =============================================================================
+# Deploys the GWI NUC Dashboard as a systemd user service with auto-restart.
+# The keep-awake watchdog also ensures the dashboard stays running.
+# Fully idempotent.
+# =============================================================================
+
+- name: "Dashboard — Ensure systemd user directory exists"
+  ansible.builtin.file:
+    path: "{{ gwi_posuser_home }}/.config/systemd/user"
+    state: directory
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0755"
+  become_user: "{{ gwi_posuser }}"
+
+- name: "Dashboard — Deploy systemd user service"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.config/systemd/user/gwi-dashboard.service"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=GWI NUC Dashboard
+
+      [Service]
+      ExecStart=/opt/gwi-pos/dashboard/gwi-nuc-dashboard
+      Restart=always
+      RestartSec=3
+      Environment=DISPLAY=:0
+
+      [Install]
+      WantedBy=default.target
+  become_user: "{{ gwi_posuser }}"
+
+- name: "Dashboard — Enable service"
+  ansible.builtin.systemd:
+    name: gwi-dashboard.service
+    scope: user
+    enabled: true
+    daemon_reload: true
+  become_user: "{{ gwi_posuser }}"
+  failed_when: false

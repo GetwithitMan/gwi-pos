@@ -138,8 +138,15 @@ function run(cmd, cwd, timeoutSec) {
 // Phase 8.2: First tries version-targeted update via local update agent
 // (preflight checks, payment safety, cloud event reporting).
 // Falls back to direct update if local POS server is unreachable.
-async function handleForceUpdate(payload) {
+async function handleForceUpdate(payload, cmdId) {
   var targetVersion = (payload && payload.version) || null
+  currentAttemptId = generateAttemptId()
+
+  // Get current version for state tracking
+  var previousVersion = 'unknown'
+  try { previousVersion = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
+
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'starting', targetVersion: targetVersion, previousVersion: previousVersion })
 
   // Try version-targeted update via local update agent (Phase 8.2)
   if (targetVersion) {
@@ -174,7 +181,8 @@ async function handleForceUpdate(payload) {
                 log('[Update] Update agent finished — version: ' + newVer)
                 // Self-update sync-agent from the new repo
                 selfUpdateSyncAgent()
-                return { ok: true, version: newVer, steps: ['update-agent OK'] }
+                if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: newVer, steps: ['update-agent OK'] })
+                return { ok: true, version: newVer, steps: ['update-agent OK'], _acked: true }
               }
             } catch (pollErr) {
               // Server may be restarting — expected. Wait a bit more.
@@ -195,7 +203,8 @@ async function handleForceUpdate(payload) {
                 if (!prData.isUpdating) {
                   log('[Update] Server back online — version: ' + (prData.currentVersion || 'unknown'))
                   selfUpdateSyncAgent()
-                  return { ok: true, version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK'] }
+                  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK'] })
+                  return { ok: true, version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK'], _acked: true }
                 }
               } catch (e) {
                 // Still down — continue waiting
@@ -208,7 +217,8 @@ async function handleForceUpdate(payload) {
         }
       } else if (updateRes.status === 409) {
         log('[Update] Update already in progress — waiting...')
-        return { ok: true, version: 'pending', steps: ['update-agent already running'] }
+        if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'already-in-progress', version: 'pending', steps: ['update-agent already running'] })
+        return { ok: true, version: 'pending', steps: ['update-agent already running'], _acked: true }
       } else {
         log('[Update] Update agent HTTP ' + updateRes.status + ' — falling back to direct update')
       }
@@ -220,6 +230,16 @@ async function handleForceUpdate(payload) {
   // Fallback: Direct update (original behavior)
   log('[Update] Starting direct FORCE_UPDATE...')
   var steps = []
+
+  // Write IN_PROGRESS state for boot recovery
+  writeUpdateState({
+    status: 'IN_PROGRESS',
+    attemptId: currentAttemptId,
+    targetVersion: targetVersion || 'latest',
+    previousVersion: previousVersion,
+    attemptedAt: new Date().toISOString(),
+    method: 'direct'
+  })
 
   function step(name, cmd, failOk, timeout) {
     log('  ' + name + '...')
@@ -283,6 +303,7 @@ async function handleForceUpdate(payload) {
     }
   } catch (e) {}
   steps.push('git-repair OK')
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'backup', detail: 'git-repair complete, starting fetch' })
 
   // ── Git fetch with retry ──
   var fetchOk = false
@@ -299,6 +320,7 @@ async function handleForceUpdate(payload) {
   if (!fetchOk) {
     log('  WARNING: All fetch attempts failed — attempting checkout with existing refs')
   }
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'git-fetch', detail: fetchOk ? 'fetch OK' : 'fetch failed, using existing refs' })
 
   // Version-targeted: try pinned tag first, fall back to origin/main
   var tagRef = targetVersion ? 'v' + targetVersion : null
@@ -321,7 +343,10 @@ async function handleForceUpdate(payload) {
       gitCheckoutError = ((e.stderr || e.stdout || e.message || '') + '').slice(0, 500)
       steps.push('git checkout FAIL: ' + gitCheckoutError.slice(0, 100))
       log('  FAILED: ' + gitCheckoutError)
-      return { ok: false, error: 'git checkout failed: ' + gitCheckoutError, steps: steps }
+      var failResult = { ok: false, error: 'git checkout failed: ' + gitCheckoutError, steps: steps }
+      if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'git-checkout', error: failResult.error, steps: steps })
+      writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: failResult.error, steps: steps })
+      return Object.assign(failResult, { _acked: true })
     }
   } else {
     // Fallback: use origin/main (backward compatible)
@@ -350,7 +375,10 @@ async function handleForceUpdate(payload) {
         try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
       } catch (cloneErr) {
         log('  Nuclear re-clone FAILED: ' + ((cloneErr.message || '') + '').slice(0, 200))
-        return { ok: false, error: 'git recovery failed: ' + gitCheckoutError, steps: steps }
+        var cloneFailResult = { ok: false, error: 'git recovery failed: ' + gitCheckoutError, steps: steps }
+        if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'git-checkout', error: cloneFailResult.error, steps: steps })
+        writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: cloneFailResult.error, steps: steps })
+        return Object.assign(cloneFailResult, { _acked: true })
       }
     }
   }
@@ -385,12 +413,16 @@ async function handleForceUpdate(payload) {
     }
   }
 
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'npm-install', detail: 'starting npm ci' })
   if (!step('npm install', 'npm ci --production=false', false, 180)) {
     log('  npm ci failed — clearing cache and retrying...')
     run('npm cache clean --force', APP_DIR, 30)
     run('rm -rf node_modules', APP_DIR, 30)
     if (!step('npm install (retry)', 'npm ci --production=false', false, 300)) {
-      return { ok: false, error: 'npm install failed after retry', steps: steps }
+      var npmFailResult = { ok: false, error: 'npm install failed after retry', steps: steps }
+      if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'npm-install', error: npmFailResult.error, steps: steps })
+      writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: npmFailResult.error, steps: steps })
+      return Object.assign(npmFailResult, { _acked: true })
     }
   }
   // Clean stale Prisma v6 cache (Prisma 7 generates to src/generated/prisma/)
@@ -437,16 +469,24 @@ async function handleForceUpdate(payload) {
   // NOTE: NUC does NOT migrate Neon. MC owns Neon schema advancement.
   // NUC reads version truth from Neon and blocks sync if behind.
   // If Neon schema is behind, MC must push the update to this venue.
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'build', detail: 'starting npm run build' })
   if (!step('build', 'npm run build', false, 600)) {
-    return { ok: false, error: 'build failed', steps: steps }
+    var buildFailResult = { ok: false, error: 'build failed', steps: steps }
+    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'build', error: buildFailResult.error, steps: steps })
+    writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: buildFailResult.error, steps: steps })
+    return Object.assign(buildFailResult, { _acked: true })
   }
   // Try current service name (thepasspos), fall back to legacy (pulse-pos)
+  if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'restart', detail: 'restarting POS service' })
   log('  restart...')
   var restartOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
   if (!restartOk) restartOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
   steps.push('restart' + (restartOk ? ' OK' : ' FAIL'))
   if (!restartOk) {
-    return { ok: false, error: 'restart failed', steps: steps }
+    var restartFailResult = { ok: false, error: 'restart failed', steps: steps }
+    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'restart', error: restartFailResult.error, steps: steps })
+    writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: restartFailResult.error, steps: steps })
+    return Object.assign(restartFailResult, { _acked: true })
   }
 
   selfUpdateSyncAgent()
@@ -454,7 +494,9 @@ async function handleForceUpdate(payload) {
   var ver = 'unknown'
   try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
   log('[Update] SUCCESS — v' + ver)
-  return { ok: true, version: ver, steps: steps }
+  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'done', version: ver, steps: steps })
+  writeUpdateState({ status: 'COMPLETED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', version: ver, steps: steps })
+  return { ok: true, version: ver, steps: steps, _acked: true }
 }
 
 // ── Self-update sync agent from repo ──────────────────────────────────────
@@ -477,6 +519,12 @@ function selfUpdateSyncAgent() {
 }
 
 // ── Command ACK ────────────────────────────────────────────────────────────
+var currentAttemptId = null
+
+function generateAttemptId() {
+  return crypto.randomBytes(8).toString('hex')
+}
+
 function ack(cmdId, result) {
   var body = result.ok
     ? { status: 'COMPLETED', resultPayload: { version: result.version, steps: result.steps } }
@@ -484,6 +532,28 @@ function ack(cmdId, result) {
   postJson('/api/fleet/commands/' + cmdId + '/ack', body)
     .then(function(r) { log('[Sync] ACK ' + body.status + ' (HTTP ' + r.status + ')') })
     .catch(function(e) { log('[Sync] ACK failed: ' + e.message) })
+}
+
+function ackProgress(cmdId, status, payload) {
+  if (!payload) payload = {}
+  payload.attemptId = currentAttemptId
+  payload.commandId = cmdId
+  payload.timestamp = new Date().toISOString()
+  var body = { status: status, resultPayload: payload }
+  if (payload.error) body.errorMessage = payload.error
+  postJson('/api/fleet/commands/' + cmdId + '/ack', body)
+    .then(function(r) { log('[Sync] ACK ' + status + ' (HTTP ' + r.status + ')') })
+    .catch(function(e) { log('[Sync] ACK failed: ' + e.message) })
+}
+
+// ── Update state persistence ──────────────────────────────────────────────
+function writeUpdateState(data) {
+  try {
+    fs.mkdirSync('/opt/gwi-pos/state', { recursive: true })
+    fs.writeFileSync('/opt/gwi-pos/state/last-update.json', JSON.stringify(data, null, 2))
+  } catch (e) {
+    log('[Update] Failed to write state: ' + e.message)
+  }
 }
 
 // ── Process received command ───────────────────────────────────────────────
@@ -494,7 +564,7 @@ async function processCommand(dataStr) {
 
     var result
     if (cmd.type === 'FORCE_UPDATE') {
-      result = await handleForceUpdate(cmd.payload || {})
+      result = await handleForceUpdate(cmd.payload || {}, cmd.id)
     } else if (cmd.type === 'DATA_CHANGED') {
       var domain = (cmd.payload && cmd.payload.domain) || 'unknown'
       var models = (cmd.payload && Array.isArray(cmd.payload.models)) ? cmd.payload.models : null
@@ -634,7 +704,7 @@ async function processCommand(dataStr) {
       }
     } else if (cmd.type === 'RE_PROVISION') {
       // Re-provision = full update cycle (same as FORCE_UPDATE)
-      result = await handleForceUpdate(cmd.payload || {})
+      result = await handleForceUpdate(cmd.payload || {}, cmd.id)
     } else if (cmd.type === 'RELOAD_TERMINALS') {
       // Restart POS service to force all connected terminals to reconnect
       log('[Sync] RELOAD_TERMINALS — restarting POS service...')
@@ -691,7 +761,10 @@ async function processCommand(dataStr) {
       log('[Sync] Unknown command: ' + cmd.type + ', ACK OK')
       result = { ok: true }
     }
-    ack(cmd.id, result)
+    // FORCE_UPDATE and RE_PROVISION handle their own ACKs (two-phase progress)
+    if (!result._acked) {
+      ack(cmd.id, result)
+    }
   } catch (e) {
     log('[Sync] Error processing command: ' + e.message)
   }
@@ -898,12 +971,88 @@ function backfillCloudIdentity() {
   })
 }
 
+// ── Boot repair: detect and recover from interrupted updates ──────────────
+function checkInterruptedUpdate(done) {
+  var lockFile = '/opt/gwi-pos/state/.update-transaction.lock'
+  var stateFile = '/opt/gwi-pos/state/last-update.json'
+
+  // Check for stale transaction lock (>30 min old)
+  try {
+    if (fs.existsSync(lockFile)) {
+      var lockStat = fs.statSync(lockFile)
+      var ageMs = Date.now() - lockStat.mtimeMs
+      if (ageMs > 30 * 60 * 1000) {
+        log('[Boot] Stale update transaction detected (' + Math.round(ageMs / 60000) + 'min old)')
+        // Try rollback
+        try {
+          var rollbackOk = run('source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && rollback_transaction', '/opt/gwi-pos', 60)
+          log('[Boot] Rollback ' + (rollbackOk ? 'succeeded' : 'failed'))
+        } catch (e) {
+          log('[Boot] Rollback error: ' + e.message)
+        }
+
+        // Report to MC
+        reportInterruptedUpdate('INTERRUPTED', 'Stale transaction lock detected on boot')
+      }
+    }
+  } catch (e) {
+    log('[Boot] Lock check error: ' + e.message)
+  }
+
+  // Check last-update.json for IN_PROGRESS state
+  try {
+    if (fs.existsSync(stateFile)) {
+      var state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'))
+      if (state.status === 'IN_PROGRESS') {
+        var stateAge = Date.now() - new Date(state.attemptedAt).getTime()
+        if (stateAge > 30 * 60 * 1000) {
+          log('[Boot] Found stale IN_PROGRESS update from ' + state.attemptedAt)
+
+          // Check current health to determine recovery status
+          var currentVersion = 'unknown'
+          try { currentVersion = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
+
+          var recoveryStatus
+          if (currentVersion === state.targetVersion) {
+            recoveryStatus = 'RECOVERED_COMPLETED'
+          } else if (currentVersion === state.previousVersion) {
+            recoveryStatus = 'RECOVERED_ROLLED_BACK'
+          } else {
+            recoveryStatus = 'RECOVERY_UNKNOWN'
+          }
+
+          log('[Boot] Recovery status: ' + recoveryStatus + ' (running v' + currentVersion + ')')
+
+          // Update state file
+          state.status = recoveryStatus
+          fs.writeFileSync(stateFile, JSON.stringify(state, null, 2))
+
+          reportInterruptedUpdate(recoveryStatus, 'Boot recovery from interrupted update')
+        }
+      }
+    }
+  } catch (e) {
+    log('[Boot] State check error: ' + e.message)
+  }
+
+  done()
+}
+
+function reportInterruptedUpdate(status, reason) {
+  var payload = { status: status, reason: reason, reportedAt: new Date().toISOString() }
+  postJson('/api/fleet/deploy-health', payload)
+    .then(function(r) { log('[Boot] Reported ' + status + ' to MC (HTTP ' + r.status + ')') })
+    .catch(function(e) { log('[Boot] Failed to report to MC: ' + e.message) })
+}
+
 // ── Start ──────────────────────────────────────────────────────────────────
 log('[Sync] GWI POS Sync Agent started')
 log('[Sync] MC: ' + MC_URL + '  Node: ' + NODE_ID)
 checkBootUpdate(function() {
-  backfillCloudIdentity().then(function() {
-    connectStream()
+  checkInterruptedUpdate(function() {
+    backfillCloudIdentity().then(function() {
+      connectStream()
+    })
   })
 })
 

@@ -17,6 +17,9 @@
 #   sudo ./installer.run --resume-from=schema
 #   sudo ./installer.run --resume-from=services
 #
+# Dry run (no changes):
+#   sudo ./installer.run --dry-run
+#
 # Re-running is idempotent: detects existing registration, backs up data,
 # pulls latest code, restarts services.
 # =============================================================================
@@ -182,20 +185,32 @@ done
 # ─────────────────────────────────────────────────────────────────────────────
 
 RESUME_FROM=""
+DRY_RUN=false
 INSTALLER_ARGS=()
 for arg in "$@"; do
   if [[ "$arg" =~ ^--resume-from=(.+)$ ]]; then
     RESUME_FROM="${BASH_REMATCH[1]}"
+  elif [[ "$arg" == "--dry-run" ]]; then
+    DRY_RUN=true
   else
     INSTALLER_ARGS+=("$arg")
   fi
 done
+export DRY_RUN
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage execution with checkpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
 header "GWI POS Installer"
+
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo ""
+  echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
+  echo -e "${YELLOW}  DRY RUN MODE — no changes will be made${NC}"
+  echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
+  echo ""
+fi
 
 # When resuming, load saved state from .env (needed for modules that depend on
 # earlier modules having set variables like POSUSER, STATION_ROLE, etc.)
@@ -332,7 +347,13 @@ fi
 # ── Clean reboot after successful full install ─────────────────────────────
 # Only reboot on full install (not --resume-from), ensures all services,
 # autostart entries, and the dashboard come up cleanly.
-if [[ -z "$RESUME_FROM" ]]; then
+if [[ "$DRY_RUN" == "true" ]]; then
+  echo ""
+  echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
+  echo -e "${YELLOW}  DRY RUN COMPLETE — no changes were made${NC}"
+  echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
+  echo ""
+elif [[ -z "$RESUME_FROM" ]]; then
   log ""
   log "Installation complete! System will reboot in 60 seconds..."
   log "  All services, dashboard, and autostart entries will activate on boot."

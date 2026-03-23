@@ -42,6 +42,11 @@ run_schema() {
     # nuc-pre-migrate.js runs numbered migrations for data backfills + DDL patches.
     # Timeout 120s: Prisma schema engine can hang when diffing large schemas already in sync.
     # --accept-data-loss is BANNED — schema must only move forward. See ARCHITECTURE-RULES.md.
+
+    # Capture pre-push table list for drift detection
+    local PRE_PUSH_TABLES
+    PRE_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
+
     _start_spinner "Applying schema to local PostgreSQL"
     if ! timeout 120 sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" >/dev/null 2>&1; then
       _stop_spinner
@@ -50,6 +55,19 @@ run_schema() {
       _stop_spinner
       log "Schema applied successfully"
     fi
+
+    # Capture post-push tables and detect dropped tables
+    local POST_PUSH_TABLES
+    POST_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
+    if [[ -n "$PRE_PUSH_TABLES" ]] && [[ -n "$POST_PUSH_TABLES" ]]; then
+      local dropped
+      dropped=$(comm -23 <(echo "$PRE_PUSH_TABLES") <(echo "$POST_PUSH_TABLES"))
+      if [[ -n "$dropped" ]]; then
+        warn "Tables dropped by schema push: $dropped"
+        track_warn "Schema push dropped tables: $dropped"
+      fi
+    fi
+
     log "Running local migrations..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1 | tail -5
 
@@ -130,6 +148,31 @@ run_schema() {
       else
         warn "No seed status file found — seed may not have run the hardened version"
       fi
+    fi
+
+    # ── Post-schema: validate critical tables ──
+    log "Validating critical tables..."
+    local critical_tables=("Organization" "Location" "Employee" "Role" "OrderType")
+    local validation_failed=false
+    for tbl in "${critical_tables[@]}"; do
+      local exists
+      exists=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='$tbl' AND table_schema='public')" 2>/dev/null || echo "f")
+      if [[ "$exists" == "t" ]]; then
+        local count
+        count=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM \"$tbl\"" 2>/dev/null || echo "0")
+        if [[ "$count" -eq 0 ]]; then
+          warn "$tbl exists but is empty (seed may be pending)"
+        else
+          log "  $tbl: $count rows"
+        fi
+      else
+        err "$tbl table MISSING — schema push may have failed"
+        validation_failed=true
+      fi
+    done
+    if [[ "$validation_failed" == "true" ]]; then
+      err "Critical tables missing — cannot proceed"
+      return 1
     fi
 
     # ── Post-schema: disable RLS on all tables ──

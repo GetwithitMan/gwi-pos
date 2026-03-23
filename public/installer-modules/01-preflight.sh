@@ -116,6 +116,84 @@ run_preflight() {
   fi
   log "Network: OK"
 
+  # ── DNS resolution (hard fail) ──
+  log "Checking DNS resolution..."
+  for host in github.com registry.npmjs.org; do
+    if ! host "$host" >/dev/null 2>&1 && ! nslookup "$host" >/dev/null 2>&1; then
+      err "DNS resolution failed for $host — check network/DNS configuration"
+      return 1
+    fi
+  done
+  log "DNS: OK"
+
+  # ── Disk space — 8GB minimum (hard fail) ──
+  local AVAIL_KB
+  AVAIL_KB=$(df -k "$APP_BASE" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
+  if [[ "$AVAIL_KB" -lt 8000000 ]]; then
+    err "Insufficient disk: $(( AVAIL_KB / 1024 )) MB free (need 8 GB)"
+    return 1
+  fi
+  log "Disk space: $(( AVAIL_KB / 1024 )) MB free — OK (8 GB minimum)"
+
+  # ── System clock sanity — TLS and token validation fail with bad clocks (hard fail) ──
+  if command -v timedatectl >/dev/null 2>&1; then
+    local clock_synced
+    clock_synced=$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo "no")
+    if [[ "$clock_synced" != "yes" ]]; then
+      # Check if clock is within 5 minutes of reality
+      local remote_time
+      remote_time=$(curl -sI https://google.com 2>/dev/null | grep -i "^date:" | cut -d' ' -f2- || echo "")
+      if [[ -n "$remote_time" ]]; then
+        local remote_epoch
+        remote_epoch=$(date -d "$remote_time" +%s 2>/dev/null || echo 0)
+        local local_epoch
+        local_epoch=$(date +%s)
+        local drift=$(( local_epoch - remote_epoch ))
+        if [[ ${drift#-} -gt 300 ]]; then
+          err "System clock off by ${drift}s — NTP not synced. TLS/tokens will fail."
+          err "Run: sudo timedatectl set-ntp true"
+          return 1
+        fi
+      fi
+      warn "NTP not synced (clock may drift)"
+    fi
+  fi
+
+  # ── Memory floor (hard fail) ──
+  local mem_mb
+  mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
+  if [[ "$mem_mb" -lt 2048 ]]; then
+    err "Insufficient memory: ${mem_mb}MB (need 2048MB minimum for build)"
+    return 1
+  fi
+  log "Memory: ${mem_mb}MB — OK"
+
+  # ── Role validation — early fail-fast ──
+  if [[ -f "$APP_BASE/config/role.conf" ]]; then
+    local _role
+    _role=$(cat "$APP_BASE/config/role.conf" 2>/dev/null || echo "")
+    case "$_role" in
+      server|terminal|backup|"") ;; # empty is OK on fresh install
+      *) err "Invalid role '$_role' in $APP_BASE/config/role.conf"; return 1 ;;
+    esac
+  fi
+
+  # ── Warn-only checks ──
+
+  # Network quality (warn, don't block)
+  local latency
+  latency=$(ping -c 1 -W 3 github.com 2>/dev/null | grep "time=" | sed 's/.*time=\([0-9.]*\).*/\1/' || echo "999")
+  if (( $(echo "$latency > 500" | bc -l 2>/dev/null || echo 1) )); then
+    warn "High latency to GitHub (${latency}ms) — install may be slow"
+  fi
+
+  # Port availability
+  for port in 3005 5432; do
+    if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+      warn "Port $port already in use — may conflict"
+    fi
+  done
+
   log "Stage: preflight — completed in $(( $(date +%s) - _start ))s"
   return 0
 }

@@ -1,0 +1,202 @@
+---
+# =============================================================================
+# kiosk_hardening — Display Management
+# =============================================================================
+# Prevents screen blanking, sleep, and lock on kiosk terminals.
+# Supplements os_hardening (which covers server+backup roles) with deeper
+# screensaver masking, keep-awake watchdog, and desktop-specific overrides.
+# Fully idempotent. Handles KDE, GNOME, and unknown desktops.
+# =============================================================================
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mask screensaver services
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Display — Mask screensaver services"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+    state: stopped
+  loop:
+    - xscreensaver.service
+    - gnome-screensaver.service
+    - light-locker.service
+  failed_when: false
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mask systemd sleep/suspend/hibernate targets (belt-and-suspenders with os_hardening)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Display — Mask sleep/suspend/hibernate targets"
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+    state: stopped
+  loop:
+    - sleep.target
+    - suspend.target
+    - hibernate.target
+    - hybrid-sleep.target
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Harden logind.conf (kiosk-specific overrides — HandlePowerKey=ignore etc.)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Display — Harden logind.conf"
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/logind.conf
+    regexp: "^#?{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - { key: "IdleAction", value: "ignore" }
+    - { key: "IdleActionSec", value: "0" }
+    - { key: "HandleLidSwitch", value: "ignore" }
+    - { key: "HandlePowerKey", value: "ignore" }
+    - { key: "HandleSuspendKey", value: "ignore" }
+    - { key: "HandleHibernateKey", value: "ignore" }
+  notify: restart logind
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GNOME settings (if detected)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Display — Check if gsettings available"
+  ansible.builtin.command: which gsettings
+  register: _gsettings_check
+  changed_when: false
+  failed_when: false
+
+- name: "Display — GNOME — Disable screen blanking/lock"
+  ansible.builtin.shell: |
+    export DISPLAY=:0
+    POSUSER_UID=$(id -u "{{ gwi_posuser }}" 2>/dev/null || echo "")
+    if [ -n "$POSUSER_UID" ]; then
+      export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$POSUSER_UID/bus"
+    fi
+    gsettings set {{ item.schema }} {{ item.key }} {{ item.value }} 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  become_user: "{{ gwi_posuser }}"
+  loop:
+    - { schema: "org.gnome.desktop.session", key: "idle-delay", value: "0" }
+    - { schema: "org.gnome.desktop.screensaver", key: "lock-delay", value: "uint32 0" }
+    - { schema: "org.gnome.desktop.screensaver", key: "lock-enabled", value: "false" }
+    - { schema: "org.gnome.settings-daemon.plugins.power", key: "sleep-inactive-ac-type", value: "'nothing'" }
+    - { schema: "org.gnome.settings-daemon.plugins.power", key: "sleep-inactive-battery-type", value: "'nothing'" }
+  when: _gsettings_check.rc == 0
+  changed_when: false
+  failed_when: false
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KDE settings (if detected)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Display — Check if kwriteconfig5 available"
+  ansible.builtin.command: which kwriteconfig5
+  register: _kde_check
+  changed_when: false
+  failed_when: false
+
+- name: "Display — KDE — Disable screen lock"
+  ansible.builtin.command: >
+    kwriteconfig5 --file kscreenlockerrc
+    --group Daemon --key {{ item.key }} {{ item.value }}
+  become_user: "{{ gwi_posuser }}"
+  loop:
+    - { key: "Autolock", value: "false" }
+    - { key: "Timeout", value: "0" }
+    - { key: "LockOnResume", value: "false" }
+  when: _kde_check.rc == 0
+  changed_when: false
+  failed_when: false
+
+- name: "Display — KDE — Mask PowerDevil (user scope)"
+  ansible.builtin.shell: systemctl --user mask plasma-powerdevil.service 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  become_user: "{{ gwi_posuser }}"
+  when: _kde_check.rc == 0
+  changed_when: false
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# X11 DPMS disable (persistent via .xsessionrc)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Display — Create .xsessionrc for DPMS disable"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.xsessionrc"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      # GWI POS — prevent screen blanking
+      # Managed by Ansible kiosk_hardening role — do not edit manually
+      if [ "$XDG_SESSION_TYPE" = "x11" ]; then
+        xset s off -dpms
+        xset s noblank
+        xset dpms force on
+      fi
+  become_user: "{{ gwi_posuser }}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Keep-awake watchdog (systemd user timer — runs every 60s)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Display — Ensure systemd user directory exists"
+  ansible.builtin.file:
+    path: "{{ gwi_posuser_home }}/.config/systemd/user"
+    state: directory
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0755"
+  become_user: "{{ gwi_posuser }}"
+
+- name: "Display — Deploy keep-awake watchdog script"
+  ansible.builtin.template:
+    src: keep-awake.sh.j2
+    dest: /usr/local/bin/keep-awake.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "Display — Deploy keep-awake systemd user service"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.config/systemd/user/gwi-keep-awake.service"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=GWI POS Keep-Awake Watchdog
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/keep-awake.sh
+  become_user: "{{ gwi_posuser }}"
+
+- name: "Display — Deploy keep-awake systemd user timer"
+  ansible.builtin.copy:
+    dest: "{{ gwi_posuser_home }}/.config/systemd/user/gwi-keep-awake.timer"
+    owner: "{{ gwi_posuser }}"
+    group: "{{ gwi_posuser }}"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=GWI POS Keep-Awake Timer
+
+      [Timer]
+      OnBootSec=10s
+      OnUnitActiveSec=60s
+
+      [Install]
+      WantedBy=timers.target
+  become_user: "{{ gwi_posuser }}"
+
+- name: "Display — Enable keep-awake timer"
+  ansible.builtin.systemd:
+    name: gwi-keep-awake.timer
+    scope: user
+    enabled: true
+    state: started
+    daemon_reload: true
+  become_user: "{{ gwi_posuser }}"

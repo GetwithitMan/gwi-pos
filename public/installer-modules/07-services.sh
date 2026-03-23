@@ -233,9 +233,34 @@ SVCEOF
         sleep 2
       done
 
+      if [[ "$POS_READY" == "true" ]]; then
+        # Enhanced: check sync readiness (DEGRADED is OK, FAILED is not)
+        if [[ "$SYNC_ENABLED" == "true" ]]; then
+          local sync_health
+          sync_health=$(curl -sf http://localhost:3005/api/health/sync 2>/dev/null || echo '{}')
+          local readiness
+          readiness=$(echo "$sync_health" | grep -o '"level":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "UNKNOWN")
+          if [[ "$readiness" == "FAILED" ]]; then
+            warn "Sync readiness is FAILED — venue may not be fully operational"
+            track_warn "Sync readiness FAILED after install"
+          elif [[ "$readiness" != "" ]] && [[ "$readiness" != "ORDERS" ]]; then
+            log "Sync readiness: $readiness (may still be warming up)"
+          fi
+        fi
+      fi
+
       if [[ "$POS_READY" != "true" ]]; then
         track_warn "POS not ready after 120s — will retry on reboot"
         track_warn "Check: sudo journalctl -u thepasspos -f"
+        # Capture diagnostics for troubleshooting
+        err "POS failed to start within timeout. Diagnostics:"
+        journalctl -u thepasspos --no-pager -n 30 2>/dev/null | tail -20 || true
+        echo "--- Memory ---"
+        free -m 2>/dev/null || true
+        echo "--- Disk ---"
+        df -h /opt/gwi-pos 2>/dev/null || true
+        echo "--- PostgreSQL ---"
+        pg_isready 2>/dev/null || echo "PostgreSQL not reachable"
       fi
       log "Services configured and started (no kiosk — web UI for settings/admin only)."
     fi
@@ -452,6 +477,12 @@ SVCEOF
     else
       track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js — sync agent will not start."
       systemctl disable thepasspos-sync 2>/dev/null || true
+    fi
+
+    # ── Force convergence to current baseline (removes legacy services/configs) ──
+    source "${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/lib/legacy-cleanup.sh" 2>/dev/null || true
+    if type converge_role >/dev/null 2>&1; then
+      converge_role "$STATION_ROLE"
     fi
 
   fi  # end server + backup roles

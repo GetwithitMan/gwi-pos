@@ -1,10 +1,12 @@
 ---
 # =============================================================================
-# kiosk_hardening — Optional
+# kiosk_hardening — Optional (terminal role only)
 # =============================================================================
 # Disables keyboard shortcuts that could escape the POS kiosk, suppresses
-# desktop chrome, disables USB auto-mount, and prevents screen blanking.
-# Handles both KDE and GNOME desktop environments.
+# desktop chrome, disables USB auto-mount, prevents screen blanking, removes
+# desktop notifications, deploys the keep-awake watchdog, and enables the
+# GWI NUC Dashboard as a systemd user service.
+# Handles both KDE and GNOME desktop environments. Fully idempotent.
 # =============================================================================
 
 # ── Install xbindkeys for keyboard shortcut suppression ────────────────────
@@ -151,3 +153,24 @@
     owner: "{{ gwi_posuser }}"
     group: "{{ gwi_posuser }}"
     mode: "0644"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Include Phase 5 display management (screensaver masking, keep-awake watchdog)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Include display management tasks"
+  ansible.builtin.include_tasks: display-management.yml
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Include notification suppression (remove update notifiers, silence KDE sounds)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Include notification suppression tasks"
+  ansible.builtin.include_tasks: notification-suppression.yml
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Include GWI NUC Dashboard systemd user service
+# ═══════════════════════════════════════════════════════════════════════════════
+
+- name: "Include dashboard service tasks"
+  ansible.builtin.include_tasks: dashboard-service.yml

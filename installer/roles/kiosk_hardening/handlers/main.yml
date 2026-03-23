@@ -1,0 +1,12 @@
+---
+# =============================================================================
+# GWI POS — kiosk_hardening handlers
+# =============================================================================
+# Local handlers only (no cross-role imports per spec).
+# =============================================================================
+
+- name: restart logind
+  ansible.builtin.systemd:
+    name: systemd-logind
+    state: restarted
+    daemon_reload: true

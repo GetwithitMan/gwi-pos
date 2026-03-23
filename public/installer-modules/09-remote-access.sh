@@ -255,6 +255,28 @@ DTEOF
   log "Desktop launcher created: $DESKTOP_DIR/gwi-pos.desktop"
   log "  Quick launch: $LAUNCHER_SCRIPT"
 
+  # ─────────────────────────────────────────────────────────────────────────────
+  # TeamViewer (backup remote access — server/backup roles only)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
+    if ! command -v teamviewer >/dev/null 2>&1; then
+      log "Installing TeamViewer..."
+      local tv_deb="/tmp/teamviewer_amd64.deb"
+      if curl -fsSL -o "$tv_deb" "https://download.teamviewer.com/download/linux/teamviewer_amd64.deb" 2>/dev/null; then
+        dpkg -i "$tv_deb" 2>/dev/null || true
+        apt-get install -f -y -qq 2>/dev/null || true
+        rm -f "$tv_deb"
+        systemctl enable teamviewerd.service 2>/dev/null || true
+        log "TeamViewer installed"
+      else
+        warn "TeamViewer download failed (non-fatal)"
+      fi
+    else
+      log "TeamViewer already installed"
+    fi
+  fi
+
   log "Stage: remote_access — completed in $(( $(date +%s) - _start ))s"
   return 0
 }

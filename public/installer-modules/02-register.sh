@@ -77,8 +77,43 @@ run_register() {
       while true; do
         read -rp "Select (1 or 2): " reg_choice < /dev/tty
         case $reg_choice in
-          1) break ;;
+          1)
+             # ── Keep existing: best-effort backup + state snapshot ──
+             source "${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/lib/pre-update-safety.sh" 2>/dev/null || true
+             if type create_pre_update_backup >/dev/null 2>&1; then
+               log "Creating pre-update backup (keep existing path)..."
+               create_pre_update_backup >/dev/null 2>&1 || warn "Pre-update backup failed — continuing with update"
+             fi
+             if type record_pre_update_state >/dev/null 2>&1; then
+               record_pre_update_state 2>/dev/null || true
+             fi
+             break ;;
           2) ALREADY_REGISTERED=false
+             # ── Pre-register safety: sync + backup + verify ──
+             source "${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/lib/pre-update-safety.sh" 2>/dev/null || true
+             if type ensure_data_synced_to_neon >/dev/null 2>&1; then
+               log "Ensuring data is synced to Neon before re-registration..."
+               ensure_data_synced_to_neon 2>/dev/null || warn "Sync check failed — some data may not be in Neon yet. Proceeding anyway."
+             fi
+             if type create_pre_update_backup >/dev/null 2>&1; then
+               log "Creating pre-register backup..."
+               local _backup_json
+               _backup_json=$(create_pre_update_backup 2>/dev/null) || {
+                 err "Backup failed — refusing to proceed without safety net"
+                 return 1
+               }
+               local _backup_path
+               _backup_path=$(echo "$_backup_json" | grep -o '"path":"[^"]*"' | cut -d'"' -f4 || echo "")
+               if [[ -n "$_backup_path" ]] && type verify_backup_integrity >/dev/null 2>&1; then
+                 verify_backup_integrity "$_backup_path" || {
+                   err "Backup integrity check failed — refusing to proceed without safety net"
+                   return 1
+                 }
+                 local _backup_size
+                 _backup_size=$(du -h "$_backup_path" 2>/dev/null | cut -f1 || echo "unknown")
+                 log "Pre-register backup created at $_backup_path ($_backup_size)"
+               fi
+             fi
              # Clean old identity so re-registration starts fresh
              if [[ -f "$ENV_FILE" ]]; then
                sed -i '/^SERVER_NODE_ID=/d; /^SERVER_API_KEY=/d; /^HARDWARE_FINGERPRINT=/d; /^POS_LOCATION_ID=/d; /^LOCATION_ID=/d; /^CLOUD_LOCATION_ID=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
