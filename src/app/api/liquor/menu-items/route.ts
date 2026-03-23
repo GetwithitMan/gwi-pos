@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 
 /**
  * GET /api/liquor/menu-items
  * List all menu items in liquor categories (what shows on POS)
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     // Get the location
     const locationId = await getLocationId()
@@ -94,4 +95,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

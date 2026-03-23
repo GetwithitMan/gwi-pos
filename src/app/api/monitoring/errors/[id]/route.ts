@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,7 +17,7 @@ export const dynamic = 'force-dynamic'
 // GET - Get Error Details
 // ============================================
 
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth(async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -69,13 +70,13 @@ export const GET = withVenue(async function GET(
       { status: 500 }
     )
   }
-})
+}))
 
 // ============================================
 // PUT - Update Error
 // ============================================
 
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth(async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -151,13 +152,13 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // ============================================
 // DELETE - Delete Error (Soft Delete)
 // ============================================
 
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -183,4 +184,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
@@ -8,7 +9,7 @@ import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-saf
 // For swaps: target employee accepts the swap offer
 // For covers: any employee claims the open cover request
 // Body: { locationId: string, employeeId?: string }
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
 ) {
@@ -86,4 +87,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to accept request:', error)
     return NextResponse.json({ error: 'Failed to accept request' }, { status: 500 })
   }
-})
+}))

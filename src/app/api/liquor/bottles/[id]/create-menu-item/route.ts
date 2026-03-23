@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate, dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -10,7 +11,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
  * POST /api/liquor/bottles/[id]/create-menu-item
  * Create a menu item linked to a bottle product
  */
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -191,4 +192,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

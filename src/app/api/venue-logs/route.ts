@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { logVenueEventsBatch, cleanupExpiredLogs } from '@/lib/venue-logger'
@@ -131,7 +132,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
 // POST — Create log entries
 // ============================================
 
-export const POST = withVenue(async function POST(req: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
   try {
     // Rate limit
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -204,4 +205,4 @@ export const POST = withVenue(async function POST(req: NextRequest) {
     console.error('[venue-logs] POST failed:', error)
     return NextResponse.json({ error: 'Failed to write venue logs' }, { status: 500 })
   }
-})
+}))

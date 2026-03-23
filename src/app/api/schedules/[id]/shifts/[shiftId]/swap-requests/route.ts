@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import type { ShiftRequestType } from '@/generated/prisma/client'
 
 // GET - List swap/cover/drop requests for a specific shift
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; shiftId: string }> }
 ) {
@@ -50,10 +51,10 @@ export const GET = withVenue(async function GET(
     console.error('Failed to fetch swap requests:', error)
     return NextResponse.json({ error: 'Failed to fetch swap requests' }, { status: 500 })
   }
-})
+}))
 
 // POST - Create a new shift request (swap, cover, or drop)
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; shiftId: string }> }
 ) {
@@ -177,4 +178,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to create shift request:', error)
     return NextResponse.json({ error: 'Failed to create shift request' }, { status: 500 })
   }
-})
+}))

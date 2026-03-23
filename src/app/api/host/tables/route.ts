@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 
@@ -13,7 +14,7 @@ export const dynamic = 'force-dynamic'
  *           currentOrderTotal, estimatedTurnTime
  * Grouped by section.
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -231,7 +232,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('[Host/Tables] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch tables' }, { status: 500 })
   }
-})
+}))
 
 /**
  * PUT /api/host/tables — Update table status
@@ -239,7 +240,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
  * Payload: { tableId, status }
  * Valid statuses: available, dirty, reserved, in_use
  */
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -308,4 +309,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     console.error('[Host/Tables] PUT error:', error)
     return NextResponse.json({ error: 'Failed to update table status' }, { status: 500 })
   }
-})
+}))

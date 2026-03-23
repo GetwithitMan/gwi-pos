@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // POST - Employee declines a shift request
 // Body: { locationId: string, reason?: string }
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
 ) {
@@ -78,4 +79,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to decline request:', error)
     return NextResponse.json({ error: 'Failed to decline request' }, { status: 500 })
   }
-})
+}))

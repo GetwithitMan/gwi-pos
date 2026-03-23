@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
@@ -60,7 +61,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 /**
  * POST /api/waitlist — Add entry to waitlist
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -134,4 +135,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('[Waitlist] POST error:', error)
     return NextResponse.json({ error: 'Failed to add to waitlist' }, { status: 500 })
   }
-})
+}))

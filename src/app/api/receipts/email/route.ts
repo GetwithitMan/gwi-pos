@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { formatCurrency } from '@/lib/utils'
 
 function escapeHtml(text: string): string {
@@ -41,7 +42,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 }
 
 // POST - Send an email receipt for an order
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { orderId, email, locationId } = body
@@ -264,4 +265,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
@@ -58,7 +59,7 @@ async function findOverlappingShift(
 }
 
 // POST - Add shift to schedule
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -159,10 +160,10 @@ export const POST = withVenue(async function POST(
     console.error('Failed to create shift:', error)
     return NextResponse.json({ error: 'Failed to create shift' }, { status: 500 })
   }
-})
+}))
 
 // PUT - Bulk update shifts
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -272,4 +273,4 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update shifts:', error)
     return NextResponse.json({ error: 'Failed to update shifts' }, { status: 500 })
   }
-})
+}))

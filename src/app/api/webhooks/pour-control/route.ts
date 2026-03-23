@@ -37,13 +37,16 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.text()
     const provider = request.headers.get('x-pour-provider') || 'generic'
     const signature = request.headers.get('x-pour-signature')
-    const webhookSecret = process.env.POUR_CONTROL_WEBHOOK_SECRET || ''
+    const webhookSecret = process.env.POUR_CONTROL_WEBHOOK_SECRET
 
-    // Validate signature if secret is configured
-    if (webhookSecret) {
-      if (!validateSignature(provider, rawBody, signature, webhookSecret)) {
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-      }
+    // Fail-closed: reject if webhook secret is not configured
+    if (!webhookSecret) {
+      return NextResponse.json({ error: 'Webhook secret not configured' }, { status: 401 })
+    }
+
+    // Validate signature against configured secret
+    if (!validateSignature(provider, rawBody, signature, webhookSecret)) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 
     let body: Record<string, unknown>

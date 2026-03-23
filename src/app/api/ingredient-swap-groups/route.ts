@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET /api/ingredient-swap-groups - List all swap groups with member ingredients
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -51,7 +52,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST /api/ingredient-swap-groups - Create a new swap group
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -108,10 +109,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Error creating ingredient swap group:', error)
     return NextResponse.json({ error: 'Failed to create ingredient swap group' }, { status: 500 })
   }
-})
+}))
 
 // PUT /api/ingredient-swap-groups - Update a swap group
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -184,10 +185,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     console.error('Error updating ingredient swap group:', error)
     return NextResponse.json({ error: 'Failed to update ingredient swap group' }, { status: 500 })
   }
-})
+}))
 
 // DELETE /api/ingredient-swap-groups - Soft delete a swap group
-export const DELETE = withVenue(async function DELETE(request: NextRequest) {
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
@@ -219,4 +220,4 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     console.error('Error deleting ingredient swap group:', error)
     return NextResponse.json({ error: 'Failed to delete ingredient swap group' }, { status: 500 })
   }
-})
+}))

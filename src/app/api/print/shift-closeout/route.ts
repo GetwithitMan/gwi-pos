@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { buildShiftCloseoutReceipt } from '@/lib/escpos/shift-closeout-receipt'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { shiftId, locationId } = body
@@ -192,4 +193,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

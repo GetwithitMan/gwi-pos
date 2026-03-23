@@ -14,6 +14,7 @@ import {
 } from '@/lib/escpos/commands'
 import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
@@ -23,7 +24,7 @@ interface PrintKitchenRequest {
 }
 
 // POST /api/print/kitchen - Print kitchen ticket for an order
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body: PrintKitchenRequest = await request.json()
     const { orderId, itemIds } = body
@@ -465,7 +466,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to print kitchen ticket:', error)
     return NextResponse.json({ error: 'Failed to print kitchen ticket' }, { status: 500 })
   }
-})
+}))
 
 // Build kitchen ticket content
 function buildKitchenTicket(

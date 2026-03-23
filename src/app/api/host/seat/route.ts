@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_HOST_VIEW } from '@/lib/settings'
 import { getNextServer, buildServerInfoList } from '@/lib/host/server-rotation'
@@ -18,7 +19,7 @@ export const dynamic = 'force-dynamic'
  * auto-assigns server via rotation engine if no serverId provided,
  * creates or links an order for the table.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -254,4 +255,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('[Host/Seat] POST error:', error)
     return NextResponse.json({ error: 'Failed to seat party' }, { status: 500 })
   }
-})
+}))

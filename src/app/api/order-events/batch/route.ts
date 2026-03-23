@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import {
   type BatchEventInput,
   type BatchEventResponse,
@@ -29,7 +30,7 @@ import { authenticateTerminal } from '@/lib/terminal-auth'
  *
  * Response: { accepted: [{eventId, serverSequence}], rejected: [{eventId, reason}] }
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   const auth = await authenticateTerminal(request)
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
@@ -160,4 +161,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   return NextResponse.json({
     data: { accepted, rejected } satisfies BatchEventResponse,
   })
-})
+}))

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { retryFailedPrintJobs } from '@/lib/print-retry'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * GET  /api/print/failed-jobs — List failed print jobs for printer status UI
@@ -10,7 +11,7 @@ import { withVenue } from '@/lib/with-venue'
  */
 
 // GET - List failed print jobs with printer info
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -145,10 +146,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('[Print Failed Jobs] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch print job status' }, { status: 500 })
   }
-})
+}))
 
 // POST - Retry failed print jobs (specific IDs or all)
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, jobIds } = body as { locationId: string; jobIds?: string[] }
@@ -190,10 +191,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('[Print Failed Jobs] POST error:', error)
     return NextResponse.json({ error: 'Failed to retry print jobs' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Acknowledge failed_permanent jobs (soft-delete)
-export const DELETE = withVenue(async function DELETE(request: NextRequest) {
+export const DELETE = withVenue(withAuth(async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -228,4 +229,4 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     console.error('[Print Failed Jobs] DELETE error:', error)
     return NextResponse.json({ error: 'Failed to clear print jobs' }, { status: 500 })
   }
-})
+}))

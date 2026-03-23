@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { authenticateTerminal } from '@/lib/terminal-auth'
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   const auth = await authenticateTerminal(request)
   if (auth.error) return auth.error
   const { locationId } = auth.terminal
@@ -131,4 +132,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ data: { synced, errors } })
-})
+}))

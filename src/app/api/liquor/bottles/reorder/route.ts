@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 
 /**
  * PUT /api/liquor/bottles/reorder
  * Reorder bottles within a spirit category by updating sortOrder
  */
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { bottleIds } = body
@@ -69,4 +70,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

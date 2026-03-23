@@ -11,6 +11,7 @@
 
 import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import {
   dispatchCFDShowOrder,
   dispatchCFDShowOrderDetail,
@@ -24,7 +25,7 @@ import {
   dispatchCFDReceiptSent,
 } from '@/lib/socket-dispatch'
 
-export const POST = withVenue(async (request: Request) => {
+export const POST = withVenue(withAuth(async (request: Request) => {
   try {
     const body = await request.json()
     const { event, locationId, payload, cfdTerminalId = null } = body
@@ -73,4 +74,4 @@ export const POST = withVenue(async (request: Request) => {
     console.error('[CFD Notify] Error:', error)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
-})
+}))

@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchAlert } from '@/lib/alert-service'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { queueIfOutage } from '@/lib/sync/outage-safe-write'
 
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic'
 // POST - Log Error
 // ============================================
 
-export const POST = withVenue(async function POST(req: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
   try {
     // Rate limit: 30 req/min per IP to prevent log flooding
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -202,7 +203,7 @@ export const POST = withVenue(async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // ============================================
 // Helper Functions

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 
 const ML_PER_OZ = 29.5735
@@ -38,7 +39,7 @@ function calculateBottleMetrics(
  * This is useful for syncing old bottles created before the
  * inventory integration was added.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     // Get the location
     const locationId = await getLocationId()
@@ -186,14 +187,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 /**
  * GET /api/liquor/bottles/sync-inventory
  *
  * Returns count of bottles that need syncing (no inventory link)
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     // Get the location
     const locationId = await getLocationId()
@@ -236,4 +237,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

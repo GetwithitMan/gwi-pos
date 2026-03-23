@@ -5,6 +5,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchPrintWithRetry } from '@/lib/print-retry'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, DEFAULT_SPEED_OF_SERVICE } from '@/lib/settings'
 import { dispatchAlert } from '@/lib/alert-service'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
@@ -336,7 +337,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // PUT - Mark item(s) as complete (bump) or resend
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { itemIds, action, resendNote } = body as {
@@ -723,4 +724,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

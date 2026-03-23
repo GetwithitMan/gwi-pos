@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
 
@@ -50,7 +51,7 @@ async function findOverlappingShift(
 }
 
 // PUT - Update an individual shift
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; shiftId: string }> }
 ) {
@@ -163,10 +164,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update shift:', error)
     return NextResponse.json({ error: 'Failed to update shift' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft-delete an individual shift
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; shiftId: string }> }
 ) {
@@ -202,4 +203,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete shift:', error)
     return NextResponse.json({ error: 'Failed to delete shift' }, { status: 500 })
   }
-})
+}))

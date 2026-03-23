@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -11,7 +12,7 @@ import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-saf
 // For covers: reassigns shift to target employee (who claimed the open request)
 // For drops: marks shift as called_off
 // Body: { locationId: string, approvedByEmployeeId: string, managerNote?: string }
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
 ) {
@@ -194,4 +195,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to approve request:', error)
     return NextResponse.json({ error: 'Failed to approve request' }, { status: 500 })
   }
-})
+}))

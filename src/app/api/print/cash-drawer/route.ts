@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { ESCPOS } from '@/lib/escpos/commands'
@@ -23,7 +24,7 @@ import { getLocationSettings } from '@/lib/location-cache'
  * On send failure returns { success: false, error }.
  * On success returns { success: true }.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as {
       locationId?: string
@@ -159,4 +160,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

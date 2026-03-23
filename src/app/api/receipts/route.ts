@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Create a digital receipt (called after payment)
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, orderId, paymentId, receiptData, signatureData, signatureSource } = body
@@ -32,10 +33,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to create receipt:', error)
     return NextResponse.json({ error: 'Failed to create receipt' }, { status: 500 })
   }
-})
+}))
 
 // GET - Search digital receipts
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -101,4 +102,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Failed to search receipts:', error)
     return NextResponse.json({ error: 'Failed to search receipts' }, { status: 500 })
   }
-})
+}))

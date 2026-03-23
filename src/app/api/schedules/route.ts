@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
 
 // GET - List schedules
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -78,10 +79,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Failed to fetch schedules:', error)
     return NextResponse.json({ error: 'Failed to fetch schedules' }, { status: 500 })
   }
-})
+}))
 
 // POST - Create a new schedule
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, weekStart, notes } = body
@@ -144,4 +145,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to create schedule:', error)
     return NextResponse.json({ error: 'Failed to create schedule' }, { status: 500 })
   }
-})
+}))

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { buildCustomerReceipt, type CustomerReceiptData } from '@/lib/escpos/customer-receipt'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice } from '@/lib/pricing'
 import type { PrintTemplateSettings } from '@/types/print'
@@ -19,7 +20,7 @@ import type { PrintTemplateSettings } from '@/types/print'
  *
  * Returns success/error — NOT fire-and-forget. Caller needs to know print result.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { orderId, printerId } = body
@@ -294,4 +295,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

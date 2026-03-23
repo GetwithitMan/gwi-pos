@@ -24,6 +24,7 @@ import { db } from '@/lib/db'
 import { Prisma, ErrorSeverity, ErrorLogStatus } from '@/generated/prisma/client'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,7 +33,7 @@ export const dynamic = 'force-dynamic'
 // GET - List Errors
 // ============================================
 
-export const GET = withVenue(async function GET(req: NextRequest) {
+export const GET = withVenue(withAuth(async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
 
@@ -167,7 +168,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // ============================================
 // GET - Error Statistics

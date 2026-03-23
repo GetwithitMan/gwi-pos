@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // DELETE - Employee cancels their own pending request (soft delete)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ requestId: string }> }
 ) {
@@ -74,4 +75,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to cancel request:', error)
     return NextResponse.json({ error: 'Failed to cancel request' }, { status: 500 })
   }
-})
+}))
