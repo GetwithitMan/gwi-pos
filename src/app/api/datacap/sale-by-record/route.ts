@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface SaleByRecordRequest {
   locationId: string
@@ -12,7 +13,7 @@ interface SaleByRecordRequest {
   gratuityAmount?: number
 }
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   try {
     const body = await parseBody<SaleByRecordRequest>(request)
     const { locationId, readerId, recordNo, invoiceNo, amount, gratuityAmount } = body
@@ -42,4 +43,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))

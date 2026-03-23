@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
@@ -13,7 +14,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
  * These payments were authorized while online, but captured while offline.
  * They need special handling for reconciliation.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -220,14 +221,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 /**
  * GET /api/payments/sync
  *
  * Get payments that need reconciliation (offline-captured)
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -292,14 +293,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 /**
  * PATCH /api/payments/sync
  *
  * Mark payments as reconciled
  */
-export const PATCH = withVenue(async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(withAuth(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { paymentIds, reconciledBy } = body
@@ -344,4 +345,4 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

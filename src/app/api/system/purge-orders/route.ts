@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // TEMPORARY: Purge all orders for a location (dev/test use only)
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, confirm } = body
@@ -101,4 +102,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Purge orders error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-})
+}))

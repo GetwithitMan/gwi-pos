@@ -3,12 +3,13 @@ import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 
 // POST - Re-authorize (IncrementalAuth) when bottle service tab exceeds deposit
 // Called when bartender acknowledges re-auth alert, or manually from tab management
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -100,4 +101,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to re-authorize bottle service tab:', error)
     return NextResponse.json({ error: 'Failed to re-authorize bottle service tab' }, { status: 500 })
   }
-})
+}))

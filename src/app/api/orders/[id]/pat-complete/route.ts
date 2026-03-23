@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { OrderStatus, TabStatus } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import {
   dispatchOpenOrdersChanged,
   dispatchTabUpdated,
@@ -18,7 +19,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 // POST /api/orders/[id]/pat-complete
 // Called by pay-at-table after all datacap payments complete.
 // Body: { employeeId, totalPaid, tipAmount, splits?: [{ amount, tipAmount, authCode, readerId }] }
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -239,4 +240,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

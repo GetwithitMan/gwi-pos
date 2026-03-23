@@ -3,12 +3,13 @@ import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 
 // POST sync an offline order
 // This handles orders that were created while the terminal was offline
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -292,4 +293,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

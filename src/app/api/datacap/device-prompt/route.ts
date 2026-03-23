@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface DevicePromptRequest {
   locationId: string
@@ -11,7 +12,7 @@ interface DevicePromptRequest {
   buttonLabels?: string[]
 }
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<DevicePromptRequest>(request)
     const { locationId, readerId, promptType, promptText, suggestions, buttonLabels } = body
@@ -56,4 +57,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))

@@ -4,6 +4,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -20,7 +21,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
  * Body:   { readerId, employeeId, amount? }
  * Returns { approved, orderCardId?, cardType?, cardLast4?, cardholderName?, authAmount?, error? }
  */
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -142,4 +143,4 @@ export const POST = withVenue(async function POST(
     console.error('[pre-auth] Failed:', error)
     return NextResponse.json({ error: 'Failed to start tab' }, { status: 500 })
   }
-})
+}))

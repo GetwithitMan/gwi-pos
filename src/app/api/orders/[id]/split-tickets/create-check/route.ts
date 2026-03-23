@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -10,7 +11,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 // POST - Create a new empty check on a split order
 // ============================================
 
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -146,4 +147,4 @@ export const POST = withVenue(async function POST(
   } catch (error) {
     return handleApiError(error, 'Failed to create check')
   }
-})
+}))

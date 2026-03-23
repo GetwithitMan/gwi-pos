@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
 import { OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 
 // POST — update an order item's special notes
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
@@ -67,4 +68,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to update item note:', error)
     return NextResponse.json({ error: 'Failed to update item note' }, { status: 500 })
   }
-})
+}))

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { normalizeCardholderName } from '@/lib/datacap/helpers'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
@@ -21,7 +22,7 @@ import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-disp
  *   - Duplicate detection: recordTab() checks for existing open tabs with same recordNo
  *   - Amount validation: authAmount required and must be positive
  */
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -154,4 +155,4 @@ export const POST = withVenue(async function POST(
     console.error('[record-card-auth] Failed to record card authorization:', error)
     return NextResponse.json({ error: 'Failed to record card authorization' }, { status: 500 })
   }
-})
+}))

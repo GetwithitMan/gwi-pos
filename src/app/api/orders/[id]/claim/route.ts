@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderClaimed, dispatchOrderReleased } from '@/lib/socket-dispatch'
 
 /** Claim expiry window in seconds — stale claims are treated as unclaimed */
 const CLAIM_EXPIRY_SECONDS = 60
 
 // POST - Claim (soft-lock) an order
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -128,10 +129,10 @@ export const POST = withVenue(async function POST(
     console.error('Failed to claim order:', error)
     return NextResponse.json({ error: 'Failed to claim order' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Release a claim on an order
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth({ allowCellular: true }, async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -220,4 +221,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to release order claim:', error)
     return NextResponse.json({ error: 'Failed to release order claim' }, { status: 500 })
   }
-})
+}))

@@ -4,6 +4,7 @@ import { OrderStatus } from '@/generated/prisma/client'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { getLocationTaxRate, calculateSplitTax } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
@@ -14,7 +15,7 @@ import { OrderRepository, OrderItemRepository, PaymentRepository } from '@/lib/r
 // DELETE - Delete an empty split check
 // ============================================
 
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; splitId: string }> }
 ) {
@@ -205,4 +206,4 @@ export const DELETE = withVenue(async function DELETE(
   } catch (error) {
     return handleApiError(error, 'Failed to delete check')
   }
-})
+}))

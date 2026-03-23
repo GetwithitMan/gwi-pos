@@ -8,6 +8,7 @@ import { validateRequest } from '@/lib/validations'
 import { z } from 'zod'
 import { calculateSplitTicketPricing, type OrderItemInput, type RoundingIncrement } from '@/lib/split-pricing'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { dispatchFloorPlanUpdate, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
@@ -44,7 +45,7 @@ const createSplitTicketsSchema = z.object({
 // GET - Get all split tickets for an order
 // ============================================
 
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -178,13 +179,13 @@ export const GET = withVenue(async function GET(
   } catch (error) {
     return handleApiError(error, 'Failed to get split tickets')
   }
-})
+}))
 
 // ============================================
 // POST - Create split tickets from an order
 // ============================================
 
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -723,13 +724,13 @@ export const POST = withVenue(async function POST(
   } catch (error) {
     return handleApiError(error, 'Failed to create split tickets')
   }
-})
+}))
 
 // ============================================
 // PATCH - Move an item between split tickets
 // ============================================
 
-export const PATCH = withVenue(async function PATCH(
+export const PATCH = withVenue(withAuth(async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -1011,13 +1012,13 @@ export const PATCH = withVenue(async function PATCH(
   } catch (error) {
     return handleApiError(error, 'Failed to move split item')
   }
-})
+}))
 
 // ============================================
 // DELETE - Merge split tickets back to parent
 // ============================================
 
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -1195,4 +1196,4 @@ export const DELETE = withVenue(async function DELETE(
   } catch (error) {
     return handleApiError(error, 'Failed to merge split tickets')
   }
-})
+}))

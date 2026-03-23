@@ -4,10 +4,11 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 
 // GET - List all cards on a tab
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -38,11 +39,11 @@ export const GET = withVenue(async function GET(
     console.error('Failed to list order cards:', error)
     return NextResponse.json({ error: 'Failed to list order cards' }, { status: 500 })
   }
-})
+}))
 
 // POST - Add another card to an existing tab
 // Fires CollectCardData + EMVPreAuth, creates a new OrderCard
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -143,4 +144,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to add card to tab:', error)
     return NextResponse.json({ error: 'Failed to add card to tab' }, { status: 500 })
   }
-})
+}))

@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
@@ -16,7 +17,7 @@ import { OrderRepository } from '@/lib/repositories'
 // within a batch window — sending the same increment twice for the same recordNo and amount
 // is a no-op on the processor side. The operation is additive (increases hold), not a charge,
 // so a double-increment only over-holds (auto-released at batch close).
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -225,4 +226,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to auto-increment:', error)
     return NextResponse.json({ error: 'Failed to auto-increment' }, { status: 500 })
   }
-})
+}))

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface ReturnRequest {
   locationId: string
@@ -13,7 +14,7 @@ interface ReturnRequest {
   invoiceNo?: string
 }
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(request: NextRequest) {
   try {
     const body = await parseBody<ReturnRequest>(request)
     const { locationId, readerId, recordNo, amount, cardPresent, employeeId, invoiceNo } = body
@@ -50,4 +51,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface PreAuthByRecordRequest {
   locationId: string
@@ -11,7 +12,7 @@ interface PreAuthByRecordRequest {
   amount: number
 }
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   try {
     const body = await parseBody<PreAuthByRecordRequest>(request)
     const { locationId, readerId, recordNo, invoiceNo, amount } = body
@@ -39,4 +40,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))

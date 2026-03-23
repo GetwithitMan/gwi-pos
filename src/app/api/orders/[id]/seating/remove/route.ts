@@ -3,10 +3,11 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { NextResponse } from 'next/server'
 import { dispatchOrderUpdated, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 
-export const POST = withVenue(async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { removeAtSeatNumber } = await req.json()
   const { id: orderId } = await params
 
@@ -96,4 +97,4 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
     console.error('[seating/remove] Shift-down failed:', error)
     return NextResponse.json({ error: 'SHIFT_DOWN_FAILED' }, { status: 500 })
   }
-})
+}))

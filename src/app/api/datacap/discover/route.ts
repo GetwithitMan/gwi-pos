@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { discoverDevice, discoverAllDevices } from '@/lib/datacap/discovery'
 import { datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * GET /api/datacap/discover
@@ -11,7 +12,7 @@ import { withVenue } from '@/lib/with-venue'
  * Query params:
  *   timeoutMs (optional) — how long to listen, default 5000ms (max 15000ms)
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const rawTimeout = parseInt(searchParams.get('timeoutMs') || '5000', 10)
@@ -29,7 +30,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))
 
 interface DiscoverBySerialRequest {
   serialNumber: string
@@ -43,7 +44,7 @@ interface DiscoverBySerialRequest {
  *
  * Body: { serialNumber: string, timeoutMs?: number }
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json() as DiscoverBySerialRequest
     const { serialNumber } = body
@@ -73,4 +74,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))

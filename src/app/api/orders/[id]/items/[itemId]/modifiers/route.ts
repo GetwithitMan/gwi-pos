@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 
 // PUT - Update modifiers on an existing order item
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth({ allowCellular: true }, async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
@@ -120,4 +121,4 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
