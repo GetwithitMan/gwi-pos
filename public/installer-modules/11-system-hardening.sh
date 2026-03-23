@@ -482,6 +482,78 @@ except Exception as e:
   # After 3+ venues, 2+ weeks stable → promote to fail-closed.
   # ─────────────────────────────────────────────────────────────────────────
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Direct hardening fallback — ALWAYS runs, even if Ansible failed.
+  # These are the critical settings that must be applied on every NUC.
+  # ─────────────────────────────────────────────────────────────────────────
+  _apply_critical_hardening_direct() {
+    log "Applying critical hardening (direct, no Ansible dependency)..."
+
+    # Screen sleep prevention — mask all sleep/suspend targets
+    systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target 2>/dev/null || true
+
+    # logind: no idle action, ignore lid/power keys
+    mkdir -p /etc/systemd/logind.conf.d
+    cat > /etc/systemd/logind.conf.d/gwi-no-sleep.conf <<'LOGIND_CONF'
+[Login]
+IdleAction=ignore
+IdleActionSec=0
+HandleLidSwitch=ignore
+HandlePowerKey=ignore
+HandleSuspendKey=ignore
+HandleHibernateKey=ignore
+LOGIND_CONF
+    systemctl restart systemd-logind 2>/dev/null || true
+
+    # Mask screensaver services
+    for svc in xscreensaver gnome-screensaver light-locker; do
+      systemctl mask "$svc.service" 2>/dev/null || true
+    done
+
+    # X11 DPMS off for all future sessions
+    if [[ -n "$POSUSER" ]]; then
+      local home_dir
+      home_dir=$(eval echo "~$POSUSER")
+      cat > "$home_dir/.xsessionrc" <<'XSRC'
+#!/bin/bash
+xset s off -dpms 2>/dev/null || true
+xset s noblank 2>/dev/null || true
+xset dpms 0 0 0 2>/dev/null || true
+XSRC
+      chmod +x "$home_dir/.xsessionrc"
+      chown "$POSUSER:$POSUSER" "$home_dir/.xsessionrc"
+
+      # Apply DPMS off NOW if X11 is running
+      if [[ -S /tmp/.X11-unix/X0 ]]; then
+        sudo -u "$POSUSER" DISPLAY=:0 xset s off -dpms 2>/dev/null || true
+        sudo -u "$POSUSER" DISPLAY=:0 xset s noblank 2>/dev/null || true
+        sudo -u "$POSUSER" DISPLAY=:0 xset dpms 0 0 0 2>/dev/null || true
+      fi
+
+      # GNOME settings
+      if command -v gsettings &>/dev/null; then
+        local dbus="unix:path=/run/user/$(id -u "$POSUSER")/bus"
+        sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
+        sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
+        sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.desktop.screensaver lock-delay 0 2>/dev/null || true
+        sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type "nothing" 2>/dev/null || true
+      fi
+
+      # KDE settings
+      if command -v kwriteconfig5 &>/dev/null; then
+        sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Autolock false 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Timeout 0 2>/dev/null || true
+      fi
+    fi
+
+    # Remove notification nags (non-fatal)
+    apt-get remove -y update-notifier update-manager gnome-software 2>/dev/null || true
+
+    log "Critical hardening applied (screen never sleeps, no notifications)"
+  }
+
+  _apply_critical_hardening_direct
+
   end_timer "Stage 11: System Hardening"
   return 0
 }
