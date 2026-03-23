@@ -73,7 +73,7 @@ export interface AuthContext {
 export interface AuthenticatedContext {
   auth: AuthContext
   /** Pass-through for Next.js route params (e.g., { params: Promise<{ id: string }> }) */
-  params?: any
+  params?: Promise<Record<string, string>> | Record<string, string> | any
 }
 
 type AuthenticatedHandler = (
@@ -308,25 +308,23 @@ export function withAuth(
       log.warn({ err: cloudErr instanceof Error ? cloudErr.message : String(cloudErr) }, '[withAuth] Cloud session auth failed')
     }
 
-    // ── 3. Try cellular Bearer token ─────────────────────────────────
-    if (allowCellular) {
+    // ── 3. Try Bearer token (Android LAN devices + cellular terminals) ──
+    // Always check Bearer tokens — PAX, Register, and KDS all authenticate this way.
+    // The allowCellular flag only controls whether permission-gated routes accept
+    // cellular terminals; Bearer auth itself is always attempted.
+    {
       const authHeader = request.headers.get('authorization')
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7)
         const payload = await verifyCellularToken(token)
         if (payload) {
-          // Cellular terminals don't have employee-level permissions.
-          // Permission checks for cellular are handled by the proxy allowlist.
-          // If a specific permission is required and the route made it past
-          // the proxy, we trust it. But we still block if the route explicitly
-          // requires a permission and cellular auth doesn't carry permissions.
-          if (resolvedPermission) {
-            // Cellular terminals are DENIED on permission-gated routes by default.
-            // Routes that need cellular access must use allowCellular: true explicitly
-            // AND perform route-level validation via cellular-validation.ts helpers.
-            log.warn({ terminalId: payload.terminalId, permission: resolvedPermission }, `[withAuth] Cellular terminal ${payload.terminalId} DENIED on permission-gated route (${resolvedPermission}). Use allowCellular+route validation if this route needs cellular access.`)
+          if (resolvedPermission && !allowCellular) {
+            // Bearer-authenticated devices on permission-gated routes are denied
+            // unless the route explicitly opts in with allowCellular: true.
+            // This prevents cellular terminals from hitting admin routes.
+            log.warn({ terminalId: payload.terminalId, permission: resolvedPermission }, `[withAuth] Terminal ${payload.terminalId} DENIED on permission-gated route (${resolvedPermission}). Use allowCellular: true if this route needs terminal access.`)
             return NextResponse.json(
-              { error: 'Cellular terminals cannot access this route. Use a LAN terminal.' },
+              { error: 'Terminals cannot access this permission-gated route.' },
               { status: 403 }
             )
           }
