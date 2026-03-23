@@ -28,6 +28,7 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { upsertOnlineCustomer, accrueOnlineLoyaltyPoints } from '@/lib/customer-upsert'
 
 // ─── Request Body Shape ───────────────────────────────────────────────────────
 
@@ -55,6 +56,10 @@ interface CheckoutBody {
   notes?: string
   tip?: number
   idempotencyKey?: string
+  couponCode?: string
+  giftCardNumber?: string
+  giftCardPin?: string
+  tableId?: string
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -98,7 +103,8 @@ export async function POST(request: NextRequest) {
   // Falls back to db proxy (NUC local mode).
   const venueDb = slug ? await getDbForVenue(slug) : db
 
-  if (!token) {
+  // Token required unless a gift card number is provided (may cover full amount)
+  if (!token && !body.giftCardNumber) {
     return NextResponse.json({ error: 'Payment token is required' }, { status: 400 })
   }
   if (!items || items.length === 0) {
@@ -283,6 +289,56 @@ export async function POST(request: NextRequest) {
 
     const tip = typeof body.tip === 'number' && body.tip >= 0 ? Math.round(body.tip * 100) / 100 : 0
 
+    // ── 2c½. Coupon validation (server-side re-validation) ──────────────────
+
+    let couponDiscount = 0
+    let couponId: string | null = null
+    let couponDiscountType: string | null = null
+
+    if (body.couponCode) {
+      const coupon = await venueDb.coupon.findFirst({
+        where: {
+          locationId,
+          code: { equals: body.couponCode, mode: 'insensitive' as any },
+          deletedAt: null,
+        },
+        select: {
+          id: true, discountType: true, discountValue: true,
+          minimumOrder: true, maximumDiscount: true,
+          usageLimit: true, usageCount: true,
+          perCustomerLimit: true,
+          validFrom: true, validUntil: true, isActive: true,
+        },
+      })
+
+      if (coupon && coupon.isActive) {
+        const now = new Date()
+        const withinDates = (!coupon.validFrom || now >= coupon.validFrom)
+          && (!coupon.validUntil || now <= coupon.validUntil)
+        const withinUsage = coupon.usageLimit == null || coupon.usageCount < coupon.usageLimit
+
+        if (withinDates && withinUsage) {
+          const minMet = coupon.minimumOrder == null || subtotal >= Number(coupon.minimumOrder)
+          if (minMet) {
+            couponId = coupon.id
+            couponDiscountType = coupon.discountType
+            const discountValue = Number(coupon.discountValue)
+            const maxCap = coupon.maximumDiscount != null ? Number(coupon.maximumDiscount) : null
+
+            if (coupon.discountType === 'percent') {
+              couponDiscount = subtotal * discountValue / 100
+            } else if (coupon.discountType === 'fixed') {
+              couponDiscount = Math.min(discountValue, subtotal)
+            }
+            // free_item handled differently — no dollar discount at checkout
+            if (maxCap != null && couponDiscount > maxCap) couponDiscount = maxCap
+            couponDiscount = Math.round(couponDiscount * 100) / 100
+          }
+        }
+      }
+      // If coupon invalid, we silently ignore — don't block checkout
+    }
+
     // ── 2d. Fetch location settings for tax rate ─────────────────────────────
 
     const onlineLocSettings = locSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean } } | null
@@ -307,8 +363,40 @@ export async function POST(request: NextRequest) {
     const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
       inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate
     )
-    const total = subtotal + taxFromExclusive
-    const chargeAmount = total + tip // Total charged to card includes tip
+    const total = subtotal + taxFromExclusive - couponDiscount
+    const totalPlusTip = total + tip // Total before gift card
+
+    // ── 2e. Gift card validation ─────────────────────────────────────────────
+
+    let giftCardApplied = 0
+    let giftCardRecord: { id: string; cardNumber: string; currentBalance: number; pin: string | null } | null = null
+
+    if (body.giftCardNumber) {
+      const sanitizedGc = body.giftCardNumber.trim().toUpperCase()
+      const gc = await venueDb.giftCard.findFirst({
+        where: {
+          cardNumber: sanitizedGc,
+          locationId,
+          status: 'active',
+          deletedAt: null,
+        },
+        select: { id: true, cardNumber: true, currentBalance: true, pin: true, expiresAt: true, frozenAt: true },
+      })
+
+      if (gc && !gc.frozenAt && (!gc.expiresAt || new Date() <= gc.expiresAt)) {
+        // PIN check
+        if (!gc.pin || gc.pin === (body.giftCardPin || '')) {
+          const balance = Number(gc.currentBalance)
+          giftCardApplied = Math.min(balance, totalPlusTip)
+          giftCardApplied = Math.round(giftCardApplied * 100) / 100
+          giftCardRecord = { id: gc.id, cardNumber: gc.cardNumber, currentBalance: balance, pin: gc.pin }
+        }
+      }
+      // If gift card invalid, silently ignore — don't block checkout
+    }
+
+    const chargeAmount = totalPlusTip - giftCardApplied // Amount to charge via Datacap
+    const skipDcPayment = chargeAmount <= 0 // Gift card covers everything
 
     // ── 3. Find or create a dedicated online employee (BUG #398) ─────────────
 
@@ -405,6 +493,7 @@ export async function POST(request: NextRequest) {
           orderNumber,
           orderType,
           orderTypeId,
+          source: 'online',
           guestCount: 1,
           baseSeatCount: 1,
           extraSeatCount: 0,
@@ -412,14 +501,17 @@ export async function POST(request: NextRequest) {
           seatTimestamps,
           status: 'open',
           subtotal,
-          discountTotal: 0,
+          discountTotal: couponDiscount,
           taxTotal,
           taxFromInclusive,
           taxFromExclusive,
           inclusiveTaxRate: inclusiveTaxRate || 0,
           tipTotal: tip,
-          total: chargeAmount,
+          total: totalPlusTip,
           commissionTotal: 0,
+          ...(body.tableId ? {
+            customFields: { channel: 'qr', tableId: body.tableId, qrContextVersion: 1 },
+          } : {}),
           notes: [
             `Online Order`,
             `Customer: ${customerName}`,
@@ -462,76 +554,213 @@ export async function POST(request: NextRequest) {
       })
     })
 
-    // ── 8. Charge the card via Datacap PayAPI ─────────────────────────────────
+    // ── 8. Charge the card via Datacap PayAPI (skip if gift card covers all) ──
 
-    let payApiResult
-    try {
-      payApiResult = await getPayApiClient().sale({
-        token,
-        amount: chargeAmount.toFixed(2),
-        invoiceNo: order.orderNumber.toString(),
-      })
-    } catch (payErr) {
-      // Payment error — soft-delete the order (BUG #389: never hard-delete)
-      await venueDb.order.update({
-        where: { id: order.id },
-        data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
-      }).catch(() => {})
-      console.error('[checkout] PayAPI error:', payErr)
-      return NextResponse.json(
-        { error: 'Payment processing failed. Please try again.' },
-        { status: 502 }
-      )
+    let payApiResult: any = null
+
+    if (!skipDcPayment) {
+      // Datacap charge required (full or partial after gift card)
+      if (!token) {
+        // Gift card didn't cover everything and no card token provided
+        await venueDb.order.update({
+          where: { id: order.id },
+          data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
+        }).catch(() => {})
+        return NextResponse.json(
+          { error: 'Payment token is required for the remaining balance' },
+          { status: 400 }
+        )
+      }
+      try {
+        payApiResult = await getPayApiClient().sale({
+          token,
+          amount: chargeAmount.toFixed(2),
+          invoiceNo: order.orderNumber.toString(),
+        })
+      } catch (payErr) {
+        // Payment error — soft-delete the order (BUG #389: never hard-delete)
+        await venueDb.order.update({
+          where: { id: order.id },
+          data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
+        }).catch(() => {})
+        console.error('[checkout] PayAPI error:', payErr)
+        return NextResponse.json(
+          { error: 'Payment processing failed. Please try again.' },
+          { status: 502 }
+        )
+      }
+
+      // ── 9. Handle payment result ─────────────────────────────────────────────
+
+      if (payApiResult.status !== 'Approved') {
+        // Declined — soft-delete the order (BUG #389), return 402
+        await venueDb.order.update({
+          where: { id: order.id },
+          data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
+        }).catch(() => {})
+        return NextResponse.json(
+          {
+            error: 'Payment declined. Please try a different card.',
+            declineMessage: payApiResult.message,
+          },
+          { status: 402 }
+        )
+      }
     }
 
-    // ── 9. Handle payment result ───────────────────────────────────────────────
+    // ── 10. Payment approved — update order status + create Payment record(s) ──
 
-    if (payApiResult.status !== 'Approved') {
-      // Declined — soft-delete the order (BUG #389), return 402
-      await venueDb.order.update({
-        where: { id: order.id },
-        data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
-      }).catch(() => {})
-      return NextResponse.json(
-        {
-          error: 'Payment declined. Please try a different card.',
-          declineMessage: payApiResult.message,
-        },
-        { status: 402 }
-      )
-    }
-
-    // ── 10. Payment approved — update order status + create Payment record ────
-
-    await venueDb.$transaction([
-      // TX-KEEP: COMPLEX — mark order received after PayAPI approval; batch transaction with payment create
+    const paymentOps: any[] = [
+      // TX-KEEP: COMPLEX — mark order received after payment; batch transaction
       venueDb.order.update({
         where: { id: order.id },
         data: { status: 'received', lastMutatedBy: 'cloud' },
       }),
-      // TX-KEEP: CREATE — online payment record after PayAPI approval; no repo create method for venueDb context
-      venueDb.payment.create({
-        data: {
-          locationId,
-          orderId: order.id,
-          employeeId,
-          amount: total,
-          tipAmount: tip,
-          totalAmount: chargeAmount,
-          paymentMethod: 'credit',
-          cardBrand: body.cardBrand ?? payApiResult.brand ?? null,
-          cardLast4: body.cardLast4 ?? (payApiResult.account ? payApiResult.account.slice(-4) : null),
-          authCode: payApiResult.authCode ?? null,
-          transactionId: payApiResult.invoiceNo ?? null,
-          datacapRefNumber: payApiResult.refNo ?? null,
-          entryMethod: 'Manual',
-          status: 'completed',
-          amountRequested: chargeAmount,
-          amountAuthorized: chargeAmount,
-          lastMutatedBy: 'cloud',
-        },
-      }),
-    ])
+    ]
+
+    if (payApiResult) {
+      // TX-KEEP: CREATE — card payment record after PayAPI approval
+      paymentOps.push(
+        venueDb.payment.create({
+          data: {
+            locationId,
+            orderId: order.id,
+            employeeId,
+            amount: chargeAmount - tip, // base amount charged to card (excl tip)
+            tipAmount: tip,
+            totalAmount: chargeAmount,
+            paymentMethod: 'credit',
+            cardBrand: body.cardBrand ?? payApiResult.brand ?? null,
+            cardLast4: body.cardLast4 ?? (payApiResult.account ? payApiResult.account.slice(-4) : null),
+            authCode: payApiResult.authCode ?? null,
+            transactionId: payApiResult.invoiceNo ?? null,
+            datacapRefNumber: payApiResult.refNo ?? null,
+            entryMethod: 'Manual',
+            status: 'completed',
+            amountRequested: chargeAmount,
+            amountAuthorized: chargeAmount,
+            lastMutatedBy: 'cloud',
+          },
+        })
+      )
+    }
+
+    if (giftCardApplied > 0 && giftCardRecord) {
+      // Gift card payment record
+      paymentOps.push(
+        venueDb.payment.create({
+          data: {
+            locationId,
+            orderId: order.id,
+            employeeId,
+            amount: giftCardApplied,
+            tipAmount: 0,
+            totalAmount: giftCardApplied,
+            paymentMethod: 'gift_card',
+            status: 'completed',
+            amountRequested: giftCardApplied,
+            amountAuthorized: giftCardApplied,
+            lastMutatedBy: 'cloud',
+          },
+        })
+      )
+    }
+
+    await venueDb.$transaction(paymentOps)
+
+    // ── 10b. Customer upsert + link to order ─────────────────────────────────
+
+    let customerId: string | null = null
+    try {
+      const customer = await upsertOnlineCustomer(venueDb, {
+        phone: body.customerPhone,
+        email: customerEmail,
+        name: customerName,
+        locationId,
+      })
+      customerId = customer.id
+
+      // Link customer to order (idempotent — skip if already linked)
+      await venueDb.order.update({
+        where: { id: order.id },
+        data: { customerId: customer.id },
+      })
+
+      // Accrue loyalty points (fire-and-forget)
+      void accrueOnlineLoyaltyPoints(venueDb, customer.id, totalPlusTip).catch(console.error)
+    } catch (custErr) {
+      // Customer upsert failure should not block order success
+      console.error('[checkout] Customer upsert error:', custErr)
+    }
+
+    // ── 10c. Coupon redemption (idempotent) ──────────────────────────────────
+
+    if (couponId && couponDiscount > 0) {
+      try {
+        // Idempotency: check if redemption already exists for this order
+        const existingRedemption = await venueDb.couponRedemption.findFirst({
+          where: { orderId: order.id, couponId },
+        })
+        if (!existingRedemption) {
+          await venueDb.$transaction([
+            venueDb.couponRedemption.create({
+              data: {
+                locationId,
+                couponId,
+                orderId: order.id,
+                customerId: customerId ?? undefined,
+                discountAmount: couponDiscount,
+              },
+            }),
+            venueDb.coupon.update({
+              where: { id: couponId },
+              data: { usageCount: { increment: 1 } },
+            }),
+          ])
+        }
+      } catch (couponErr) {
+        // Coupon redemption failure should not block order success
+        console.error('[checkout] Coupon redemption error:', couponErr)
+      }
+    }
+
+    // ── 10d. Gift card deduction (idempotent) ────────────────────────────────
+
+    if (giftCardApplied > 0 && giftCardRecord) {
+      try {
+        // Idempotency: check if transaction already exists for this order
+        const existingGcTx = await venueDb.giftCardTransaction.findFirst({
+          where: { orderId: order.id, giftCardId: giftCardRecord.id },
+        })
+        if (!existingGcTx) {
+          const balanceAfter = giftCardRecord.currentBalance - giftCardApplied
+          await venueDb.$transaction([
+            venueDb.giftCardTransaction.create({
+              data: {
+                locationId,
+                giftCardId: giftCardRecord.id,
+                type: 'redemption',
+                amount: giftCardApplied,
+                balanceBefore: giftCardRecord.currentBalance,
+                balanceAfter,
+                orderId: order.id,
+                notes: `Online order #${order.orderNumber}`,
+              },
+            }),
+            venueDb.giftCard.update({
+              where: { id: giftCardRecord.id },
+              data: {
+                currentBalance: { decrement: giftCardApplied },
+                ...(balanceAfter <= 0 ? { status: 'depleted' } : {}),
+              },
+            }),
+          ])
+        }
+      } catch (gcErr) {
+        // Gift card deduction failure should not block order success
+        console.error('[checkout] Gift card deduction error:', gcErr)
+      }
+    }
 
     // ── 11. Emit events AFTER payment success (fire-and-forget) ────────────────
 
@@ -571,12 +800,12 @@ export async function POST(request: NextRequest) {
           type: 'PAYMENT_APPLIED' as const,
           payload: {
             paymentId: paymentRecord?.id ?? crypto.randomUUID(),
-            method: 'card',
+            method: skipDcPayment ? 'gift_card' : 'card',
             amountCents: Math.round(total * 100),
             tipCents: Math.round(tip * 100),
-            totalCents: Math.round(chargeAmount * 100),
-            cardBrand: body.cardBrand ?? payApiResult.brand ?? null,
-            cardLast4: body.cardLast4 ?? (payApiResult.account ? payApiResult.account.slice(-4) : null),
+            totalCents: Math.round(totalPlusTip * 100),
+            cardBrand: payApiResult?.brand ?? body.cardBrand ?? null,
+            cardLast4: payApiResult?.account ? payApiResult.account.slice(-4) : (body.cardLast4 ?? null),
             status: 'approved',
           },
         },
@@ -599,7 +828,10 @@ export async function POST(request: NextRequest) {
         subtotal,
         tax: taxTotal,
         tip,
-        total: chargeAmount,
+        couponDiscount: couponDiscount > 0 ? couponDiscount : undefined,
+        giftCardApplied: giftCardApplied > 0 ? giftCardApplied : undefined,
+        total: totalPlusTip,
+        charged: chargeAmount > 0 ? chargeAmount : undefined,
         prepTime: prepTimeMinutes,
       },
     })
