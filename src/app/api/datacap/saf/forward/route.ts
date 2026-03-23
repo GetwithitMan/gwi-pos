@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
@@ -28,7 +29,7 @@ interface SAFForwardRequest {
  * After forwarding, we update all APPROVED_SAF_PENDING_UPLOAD Payment records
  * for this reader to UPLOAD_SUCCESS (or UPLOAD_FAILED on error).
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<SAFForwardRequest>(request)
     const { locationId, readerId } = body
@@ -97,4 +98,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-})
+}))

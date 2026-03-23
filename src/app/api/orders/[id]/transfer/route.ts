@@ -12,6 +12,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { isOpen } from '@/lib/domain/order-status'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 
@@ -21,7 +22,7 @@ interface TransferPayload {
   fromEmployeeId: string
 }
 
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -214,4 +215,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

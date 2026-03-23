@@ -17,6 +17,7 @@ import {
   updateOwnershipSplits,
 } from '@/lib/domain/tips/table-ownership'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -25,7 +26,7 @@ type RouteContext = { params: Promise<{ id: string }> }
 
 // ─── GET: Get active ownership for an order ─────────────────────────────────
 
-export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteContext) {
+export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const searchParams = request.nextUrl.searchParams
@@ -64,11 +65,11 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── POST: Add an owner to an order ─────────────────────────────────────────
 
-export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteContext) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const body = await request.json()
@@ -181,11 +182,11 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── PUT: Update ownership split percentages ────────────────────────────────
 
-export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteContext) {
+export const PUT = withVenue(withAuth({ allowCellular: true }, async function PUT(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const body = await request.json()
@@ -294,11 +295,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── DELETE: Remove an owner from an order ──────────────────────────────────
 
-export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteContext) {
+export const DELETE = withVenue(withAuth({ allowCellular: true }, async function DELETE(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const body = await request.json()
@@ -392,4 +393,4 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       { status: 500 }
     )
   }
-})
+}))

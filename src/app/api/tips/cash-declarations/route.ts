@@ -11,11 +11,12 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { checkDeclarationMinimum } from '@/lib/domain/tips/tip-compliance'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Declare cash tips ─────────────────────────────────────────────────
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, employeeId, shiftId, amountCents, totalSalesCents } = body
@@ -168,11 +169,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── GET: List cash tip declarations ─────────────────────────────────────────
 
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -297,4 +298,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

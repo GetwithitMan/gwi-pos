@@ -4,11 +4,12 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { orderIds, action, employeeId, toEmployeeId, reason } = body as {
@@ -250,4 +251,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('[Bulk Action] Error:', error)
     return NextResponse.json({ error: 'Failed to process bulk action' }, { status: 500 })
   }
-})
+}))

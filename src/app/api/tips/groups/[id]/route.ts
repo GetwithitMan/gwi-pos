@@ -17,11 +17,12 @@ import {
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── GET: Get group details ─────────────────────────────────────────────────
 
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -128,11 +129,11 @@ export const GET = withVenue(async function GET(
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── PUT: Update group (transfer ownership, change split mode) ──────────────
 
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth({ allowCellular: true }, async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -249,11 +250,11 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── DELETE: Close group ────────────────────────────────────────────────────
 
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth({ allowCellular: true }, async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -334,4 +335,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

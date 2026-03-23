@@ -18,11 +18,12 @@ import {
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Add member OR request to join ─────────────────────────────────────
 
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -163,11 +164,11 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── PUT: Approve a pending join request ──────────────────────────────────────
 
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth({ allowCellular: true }, async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -263,11 +264,11 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── DELETE: Remove member / leave group ──────────────────────────────────────
 
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth({ allowCellular: true }, async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -422,4 +423,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

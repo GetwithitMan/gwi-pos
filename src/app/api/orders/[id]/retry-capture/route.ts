@@ -8,6 +8,7 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { PAYMENT_STATES } from '@/lib/domain/payment/payment-state-machine'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
@@ -19,7 +20,7 @@ import type {
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { getRequestLocationId } from '@/lib/request-context'
 
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -414,4 +415,4 @@ export const POST = withVenue(async function POST(
     console.error('[Retry Capture] Error:', error)
     return NextResponse.json({ error: 'Failed to retry capture' }, { status: 500 })
   }
-})
+}))

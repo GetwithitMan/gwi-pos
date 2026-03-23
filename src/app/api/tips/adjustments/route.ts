@@ -18,6 +18,7 @@ import {
 } from '@/lib/domain/tips/tip-recalculation'
 import type { AdjustmentType } from '@/lib/domain/tips/tip-recalculation'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── Valid adjustment types ──────────────────────────────────────────────────
@@ -32,7 +33,7 @@ const VALID_ADJUSTMENT_TYPES: AdjustmentType[] = [
 
 // ─── GET: List adjustment history ────────────────────────────────────────────
 
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -130,11 +131,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // ─── POST: Create a tip adjustment ──────────────────────────────────────────
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const isPreview = request.nextUrl.searchParams.get('preview') === 'true'
 
@@ -538,4 +539,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

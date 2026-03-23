@@ -13,6 +13,7 @@ import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 const PayAllSplitsSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit']),
@@ -31,7 +32,7 @@ const PayAllSplitsSchema = z.object({
 })
 
 // POST - Pay all unpaid split children of a parent order in one batch
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -409,4 +410,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

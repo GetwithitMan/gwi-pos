@@ -17,6 +17,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { recalculateBalance } from '@/lib/domain/tips/tip-ledger'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // TODO: Migrate db.tipLedger, db.tipLedgerEntry, and db.payment.aggregate calls
 // to repositories once TipLedgerRepository and extended PaymentRepository aggregates exist.
@@ -43,7 +44,7 @@ interface ReconciliationResult {
 
 // ─── GET: Run integrity check ────────────────────────────────────────────────
 
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -222,4 +223,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

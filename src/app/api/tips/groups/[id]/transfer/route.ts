@@ -22,6 +22,7 @@ import {
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface TransferPayload {
@@ -29,7 +30,7 @@ interface TransferPayload {
   removeFromEmployee?: boolean // If true, remove the old owner from the group after transfer
 }
 
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -240,4 +241,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))
