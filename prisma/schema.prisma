@@ -3279,7 +3279,7 @@ model OrderDiscount {
 
   name    String
   amount  Decimal @db.Decimal(10, 2)
-  percent Decimal? @db.Decimal(6, 4)
+  percent Decimal? @db.Decimal(8, 4) // Whole-number percentages (0-100), must fit 100.0000
 
   // Who applied it
   appliedBy   String? // Employee ID if manual
@@ -8161,7 +8161,7 @@ model OrderItemDiscount {
   discountRuleId String?
   discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
   amount         Decimal  @db.Decimal(10, 2)
-  percent        Decimal? @db.Decimal(6, 4)
+  percent        Decimal? @db.Decimal(8, 4) // Whole-number percentages (0-100), must fit 100.0000
   appliedById    String?
   appliedBy      Employee?     @relation("ItemDiscountAppliedBy", fields: [appliedById], references: [id])
   reason         String?

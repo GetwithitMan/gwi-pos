@@ -59,7 +59,10 @@ export const PaymentRequestSchema = z.object({
   payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
   employeeId: z.string().optional(),
   terminalId: z.string().optional(),
-  idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID'),
+  // Optional for backward compat with Android Register (doesn't send it yet).
+  // Server generates random UUID when missing — disables double-charge protection for that client.
+  // TODO: Update Register APK to send idempotencyKey, then make this required.
+  idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID').optional(),
 })
 
 // ─── Idempotency Check ─────────────────────────────────────────────────────
@@ -182,10 +185,11 @@ export function validatePaymentAmounts(
     }
 
     // Prevent unreasonably large payments (potential UI bugs)
-    // 120% allows for tip on top of order total while catching fat-finger errors
-    const maxReasonablePayment = orderTotal * 1.2
+    // 200% allows generous tips (bartenders routinely get 30-50%+) while catching fat-finger errors
+    // The separate tip bounds validator (200% of payment) catches truly unreasonable tip amounts
+    const maxReasonablePayment = orderTotal * 2.0
     if (paymentAmount > maxReasonablePayment) {
-      return `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (120% of order total). This may indicate an error.`
+      return `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (200% of order total). This may indicate an error.`
     }
 
     // Validate Datacap field mutual exclusivity for card payments
