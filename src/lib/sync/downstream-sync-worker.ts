@@ -643,6 +643,15 @@ async function processPendingFulfillments(): Promise<void> {
     if (pending.retries > MAX_FULFILLMENT_RETRIES) {
       log.warn({ orderId, retries: pending.retries }, 'Pending fulfillment exceeded max retries — giving up')
       pendingFulfillmentOrders.delete(orderId)
+      try {
+        const { emitToLocation } = await import('../socket-server')
+        await emitToLocation(pending.locationId, 'sync:fulfillment-timeout', {
+          orderId,
+          retries: MAX_FULFILLMENT_RETRIES,
+        })
+      } catch (emitErr) {
+        log.error({ err: emitErr, orderId }, 'Failed to emit sync:fulfillment-timeout')
+      }
       continue
     }
 

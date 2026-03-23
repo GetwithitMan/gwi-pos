@@ -528,14 +528,28 @@ async function main() {
     }, 30_000)
     drainTimeout.unref()
 
-    // While draining, disconnect background services in parallel
-    await masterClient.$disconnect()
-    logger.info('Prisma disconnected')
+    // While draining, disconnect background services in parallel.
+    // Each step is individually try/caught so one failure doesn't prevent others.
+    try {
+      await masterClient.$disconnect()
+      logger.info('Prisma disconnected')
+    } catch (err) {
+      logger.error({ err }, 'Prisma disconnect failed during shutdown')
+    }
 
-    stopSchemaRecheck()
-    await stopAllWorkers()
-    await disconnectNeon()
-    logger.info('Neon client disconnected')
+    try {
+      stopSchemaRecheck()
+      await stopAllWorkers()
+    } catch (err) {
+      logger.error({ err }, 'Worker stop failed during shutdown')
+    }
+
+    try {
+      await disconnectNeon()
+      logger.info('Neon client disconnected')
+    } catch (err) {
+      logger.error({ err }, 'Neon disconnect failed during shutdown')
+    }
 
     // Wait for the HTTP server to fully close (connections drained) or
     // the drain timeout — whichever comes first.

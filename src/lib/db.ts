@@ -77,6 +77,9 @@ export function createPrismaClient(url?: string) {
           // Pass take: -1 to explicitly opt out (e.g., reports, data exports)
           if (!args.take) {
             args.take = 5000
+            if (process.env.NODE_ENV !== 'production') {
+              console.debug(`[DB] findMany on ${model} capped at 5000 rows (no take specified)`)
+            }
           } else if ((args.take as number) === -1) {
             delete args.take
           }
