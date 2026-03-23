@@ -72,7 +72,7 @@ check_health() {
     # Also verify the response is actually healthy
     response=$(curl -sf --connect-timeout 5 --max-time 10 "$HEALTH_URL" 2>/dev/null) || return 1
     local status
-    status=$(echo "$response" | jq -r '.status // empty' 2>/dev/null) || return 1
+    status=$(echo "$response" | jq -r '.data.status // .status // empty' 2>/dev/null) || return 1
 
     case "$status" in
       healthy) return 0 ;;
