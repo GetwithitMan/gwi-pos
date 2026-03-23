@@ -206,12 +206,30 @@ DASHBOARD_VERSION="unknown"
 if systemctl is-active --quiet gwi-dashboard 2>/dev/null; then
   DASHBOARD_RUNNING=true
 fi
-if [[ -f /opt/gwi-dashboard/version ]]; then
-  DASHBOARD_VERSION=$(cat /opt/gwi-dashboard/version 2>/dev/null || echo "unknown")
-elif [[ -f /opt/gwi-dashboard/package.json ]]; then
-  DASHBOARD_VERSION=$(jq -r '.version // "unknown"' /opt/gwi-dashboard/package.json 2>/dev/null || echo "unknown")
+# Prefer dpkg-query (canonical), fall back to version files
+DASHBOARD_VERSION=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "")
+if [[ -z "$DASHBOARD_VERSION" ]]; then
+  if [[ -f /opt/gwi-dashboard/version ]]; then
+    DASHBOARD_VERSION=$(cat /opt/gwi-dashboard/version 2>/dev/null || echo "unknown")
+  elif [[ -f /opt/gwi-dashboard/package.json ]]; then
+    DASHBOARD_VERSION=$(jq -r '.version // "unknown"' /opt/gwi-dashboard/package.json 2>/dev/null || echo "unknown")
+  else
+    DASHBOARD_VERSION="unknown"
+  fi
 fi
 DASHBOARD_JSON=$(jq -nc --argjson running "$DASHBOARD_RUNNING" --arg version "$DASHBOARD_VERSION" '{running:$running,version:$version}')
+
+# ── Component versions for fleet-wide visibility ──
+SYNC_AGENT_VERSION=$(node -e "try{const p=require('/opt/gwi-pos/app/package.json');console.log(p.version)}catch{console.log('unknown')}" 2>/dev/null || echo "unknown")
+WATCHDOG_STATUS=$(systemctl is-active gwi-watchdog.timer 2>/dev/null || echo "inactive")
+INSTALLER_VERSION=$(node -e "try{const c=require('/opt/gwi-pos/app/public/version-contract.json');console.log(c.installerVersion||c.version||'unknown')}catch{console.log('unknown')}" 2>/dev/null || echo "unknown")
+COMPONENT_VERSIONS_JSON=$(jq -nc \
+  --arg pos "$VERSION" \
+  --arg dashboard "$DASHBOARD_VERSION" \
+  --arg syncAgent "$SYNC_AGENT_VERSION" \
+  --arg watchdog "$WATCHDOG_STATUS" \
+  --arg installer "$INSTALLER_VERSION" \
+  '{pos:$pos,dashboard:$dashboard,syncAgent:$syncAgent,watchdog:$watchdog,installer:$installer}')
 
 BODY=$(jq -nc \
   --arg version "$VERSION" \
@@ -235,7 +253,8 @@ BODY=$(jq -nc \
   --argjson watchdog "$WATCHDOG_JSON" \
   --argjson watchdogEscalation "$WATCHDOG_ESC_JSON" \
   --argjson dashboard "$DASHBOARD_JSON" \
-  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard}')
+  --argjson componentVersions "$COMPONENT_VERSIONS_JSON" \
+  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard,componentVersions:$componentVersions}')
 
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
 

@@ -5,6 +5,9 @@
  *
  * The `installerVersion` field is used by installer.run's self-update check
  * to determine if a newer installer is available on Vercel.
+ *
+ * Component versions track ALL deployable artifacts so the update agent,
+ * installer, and dashboard can detect when any component needs updating.
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'fs'
 import { execSync } from 'child_process'
@@ -33,6 +36,38 @@ const schemaVersion = versions[versions.length - 1] || '000'
 const hashPath = path.join(root, 'prisma/schema-hash.txt')
 const schemaSha256 = existsSync(hashPath) ? readFileSync(hashPath, 'utf-8').trim() : null
 
+// ── Component versions ────────────────────────────────────────────────────
+// Dashboard version — extracted from bundled .deb or fallback version file
+const dashboardVersion = (() => {
+  try {
+    // Method 1: Extract version from bundled .deb
+    const debPath = path.join(root, 'public/gwi-nuc-dashboard.deb')
+    if (existsSync(debPath)) {
+      try {
+        const ver = execSync(`dpkg-deb -f "${debPath}" Version 2>/dev/null`, { encoding: 'utf8' }).trim()
+        if (ver) return ver
+      } catch { /* dpkg-deb not available (macOS) — fall through */ }
+    }
+    // Method 2: Read from maintained version file
+    const versionFile = path.join(root, 'public/dashboard-version.txt')
+    if (existsSync(versionFile)) {
+      return readFileSync(versionFile, 'utf8').trim()
+    }
+    return '0.1.0'
+  } catch { return '0.1.0' }
+})()
+
+// Ansible baseline version — read from installer manifest
+const ansibleBaselineVersion = (() => {
+  try {
+    const manifestPath = path.join(root, 'installer/version.txt')
+    if (existsSync(manifestPath)) {
+      return readFileSync(manifestPath, 'utf8').trim()
+    }
+    return '2026.03.20.1'
+  } catch { return '2026.03.20.1' }
+})()
+
 const contract = {
   schemaVersion,
   seedVersion: 'v1',
@@ -42,10 +77,24 @@ const contract = {
   // Installer version fields — consumed by installer.run self-update check
   installerVersion: appVersion,
   version: appVersion,
+  // Component versions — consumed by update agent, heartbeat, dashboard
+  dashboardVersion,
+  syncAgentVersion: appVersion,
+  monitoringVersion: appVersion,
+  ansibleBaselineVersion,
   buildDate: new Date().toISOString(),
   gitSha,
   generatedAt: new Date().toISOString(),
+  // Structured component manifest — all deployable artifacts
+  components: {
+    pos: { version: appVersion, artifact: 'app' },
+    dashboard: { version: dashboardVersion, artifact: 'gwi-nuc-dashboard.deb', url: '/gwi-nuc-dashboard.deb' },
+    installer: { version: appVersion, artifact: 'installer.run' },
+    syncAgent: { version: appVersion, artifact: 'sync-agent.js' },
+    monitoring: { version: appVersion, artifact: 'scripts/' },
+    ansibleBaseline: { version: ansibleBaselineVersion, artifact: 'installer/' },
+  },
 }
 
 writeFileSync(outPath, JSON.stringify(contract, null, 2) + '\n', 'utf-8')
-console.log(`[generate-version-contract] Schema version: ${schemaVersion}, ${files.length} migrations, installer: v${appVersion}, sha: ${gitSha}, hash: ${schemaSha256?.substring(0, 16) ?? 'N/A'}...`)
+console.log(`[generate-version-contract] Schema: ${schemaVersion}, ${files.length} migrations, POS: v${appVersion}, dashboard: v${dashboardVersion}, sha: ${gitSha}, hash: ${schemaSha256?.substring(0, 16) ?? 'N/A'}...`)

@@ -26,6 +26,41 @@ run_dashboard() {
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
+  # Version check — skip install if already at the correct version
+  # ─────────────────────────────────────────────────────────────────────────
+  local _installed_version=""
+  local _available_version=""
+  local _needs_update=true
+
+  # Get installed version (0.0.0 if not installed)
+  _installed_version=$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "0.0.0")
+
+  # Get available version from version file or bundled .deb
+  if [[ -f "${APP_DIR}/public/dashboard-version.txt" ]]; then
+    _available_version=$(cat "${APP_DIR}/public/dashboard-version.txt" 2>/dev/null || echo "0.0.0")
+  elif [[ -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" ]]; then
+    _available_version=$(dpkg-deb -f "${APP_DIR}/public/gwi-nuc-dashboard.deb" Version 2>/dev/null || echo "0.0.0")
+  fi
+
+  if [[ "$_installed_version" != "0.0.0" ]] && [[ -n "$_available_version" ]] && [[ "$_available_version" != "0.0.0" ]]; then
+    if [[ "$_installed_version" == "$_available_version" ]]; then
+      log "Dashboard is up to date (v${_installed_version})"
+      _needs_update=false
+    else
+      log "Dashboard update available: v${_installed_version} -> v${_available_version}"
+    fi
+  elif [[ "$_installed_version" == "0.0.0" ]]; then
+    log "Dashboard not yet installed — proceeding with fresh install"
+  fi
+
+  if [[ "$_needs_update" != true ]]; then
+    # Still ensure autostart + sudoers are configured (idempotent)
+    _ensure_dashboard_autostart
+    end_timer "Stage 12 (dashboard)"
+    return 0
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Locate the .deb package
   # ─────────────────────────────────────────────────────────────────────────
   local DASHBOARD_DEB=""
@@ -250,4 +285,52 @@ SUDOERS
 
   end_timer "Stage 12 (dashboard)"
   return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _ensure_dashboard_autostart — idempotent autostart + sudoers setup
+# Called when dashboard is already at the correct version (skip install)
+# but we still want to make sure systemd/XDG/sudoers are configured.
+# ─────────────────────────────────────────────────────────────────────────────
+_ensure_dashboard_autostart() {
+  # Systemd user service
+  local SYSTEMD_USER_DIR
+  SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
+  if [[ ! -f "${SYSTEMD_USER_DIR}/gwi-dashboard.service" ]]; then
+    mkdir -p "$SYSTEMD_USER_DIR"
+    chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
+    cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
+[Unit]
+Description=GWI NUC Dashboard
+After=graphical-session.target
+
+[Service]
+ExecStart=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || echo /usr/bin/gwi-dashboard)
+Restart=always
+RestartSec=3
+Environment=DISPLAY=:0
+Environment=GWI_POS_URL=http://localhost:3005
+
+[Install]
+WantedBy=default.target
+SVCEOF
+    chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
+    loginctl enable-linger "${POSUSER}" 2>/dev/null || true
+    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service" 2>/dev/null || true
+    log "Dashboard autostart configured"
+  fi
+
+  # Sudoers
+  local SUDOERS_FILE="/etc/sudoers.d/gwi-dashboard"
+  if [[ ! -f "$SUDOERS_FILE" ]]; then
+    cat > "$SUDOERS_FILE" << SUDOERS
+# GWI NUC Dashboard — allow service restarts without password
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
+${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart postgresql
+SUDOERS
+    chmod 440 "$SUDOERS_FILE"
+    log "Dashboard sudoers rules installed"
+  fi
 }

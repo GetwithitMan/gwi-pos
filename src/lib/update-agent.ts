@@ -19,6 +19,13 @@ const log = createChildLogger('update-agent')
 const APP_DIR = process.env.APP_DIR || '/opt/gwi-pos/app'
 const UPDATE_LOCK_FILE = path.join(APP_DIR, '..', '.update-lock')
 
+interface ComponentUpdateResult {
+  dashboard?: { from: string; to: string; updated: boolean }
+  monitoring?: { updated: boolean }
+  syncAgent?: { updated: boolean }
+  watchdog?: { active: boolean }
+}
+
 interface PreflightResult {
   passed: boolean
   checks: Array<{ name: string; passed: boolean; detail?: string }>
@@ -55,6 +62,7 @@ interface UpdateState {
   duration: number
   steps: string[]
   error?: string
+  componentUpdates?: ComponentUpdateResult
 }
 
 const UPDATE_STATE_FILE = '/opt/gwi-pos/state/last-update.json'
@@ -617,13 +625,15 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
       log.warn('[UpdateAgent] Version stamp failed (non-fatal):', stampErr instanceof Error ? stampErr.message : stampErr)
     }
 
-    // Update dashboard .deb (non-fatal — POS update still succeeds if dashboard fails)
+    // Update all components (dashboard, monitoring scripts, sync agent, watchdog)
+    // Non-fatal — POS update still succeeds if component updates fail
+    let componentUpdates: ComponentUpdateResult = {}
     const stationRole = process.env.STATION_ROLE || 'server'
     if (stationRole !== 'terminal') {
       try {
-        await updateDashboard()
-      } catch (dashErr) {
-        log.warn('[UpdateAgent] Dashboard update failed (non-fatal):', dashErr instanceof Error ? dashErr.message : dashErr)
+        componentUpdates = await updateComponents()
+      } catch (compErr) {
+        log.warn('[UpdateAgent] Component updates failed (non-fatal):', compErr instanceof Error ? compErr.message : compErr)
       }
     }
 
@@ -649,7 +659,8 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
       manualInterventionRequired: false,
       proceededWithoutBackup: backupInfo.status !== 'OK',
       duration: Date.now() - startTime,
-      steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-pending'],
+      steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'components', 'restart', 'health-pending'],
+      componentUpdates,
     }
     writeUpdateState(finalState)
 
@@ -890,13 +901,16 @@ export async function reportDeployHealth(result: UpdateResult): Promise<void> {
     body.error = result.error
   }
 
-  // Include backup info from last-update state file
+  // Include backup info + component updates from last-update state file
   try {
     if (existsSync(UPDATE_STATE_FILE)) {
       const lastUpdate = JSON.parse(readFileSync(UPDATE_STATE_FILE, 'utf8')) as UpdateState
       body.backupStatus = lastUpdate.backupStatus
       body.backupPath = lastUpdate.backupPath
       body.proceededWithoutBackup = lastUpdate.proceededWithoutBackup
+      if (lastUpdate.componentUpdates) {
+        body.componentUpdates = lastUpdate.componentUpdates
+      }
     }
   } catch {}
 
@@ -972,6 +986,127 @@ export function getUpdateAgentStatus(): {
     isUpdating,
     lockFileExists: existsSync(UPDATE_LOCK_FILE),
   }
+}
+
+// ── Component updates ───────────────────────────────────────────────────────
+
+/**
+ * Update all components from the checkout after a successful POS update.
+ * Called after POS restart + health check pass. Non-fatal — POS update
+ * still succeeds even if component updates fail.
+ */
+async function updateComponents(): Promise<ComponentUpdateResult> {
+  log.info('[update-agent] Checking component versions...')
+  const result: ComponentUpdateResult = {}
+
+  // ── Dashboard .deb ──────────────────────────────────────────────────────
+  try {
+    const installedVer = execSync('dpkg-query -W -f="${Version}" gwi-nuc-dashboard 2>/dev/null || echo "0.0.0"', { encoding: 'utf8' }).trim()
+    const versionFilePath = path.join(APP_DIR, 'public/dashboard-version.txt')
+    const availableVer = existsSync(versionFilePath)
+      ? readFileSync(versionFilePath, 'utf8').trim()
+      : '0.0.0'
+
+    if (installedVer !== availableVer && availableVer !== '0.0.0') {
+      log.info(`[update-agent] Dashboard update: ${installedVer} -> ${availableVer}`)
+      const debPath = path.join(APP_DIR, 'public/gwi-nuc-dashboard.deb')
+      if (existsSync(debPath)) {
+        execSync(`sudo dpkg -i "${debPath}" 2>/dev/null || sudo apt-get install -f -y`, {
+          encoding: 'utf8',
+          timeout: 60_000,
+        })
+        log.info('[update-agent] Dashboard updated successfully')
+        // Restart the dashboard app (auto-restarts via systemd)
+        try { execSync('pkill -f gwi-dashboard || true', { timeout: 5_000, stdio: 'pipe' }) } catch {}
+        result.dashboard = { from: installedVer, to: availableVer, updated: true }
+      } else {
+        // Fall back to existing updateDashboard() download flow
+        await updateDashboard()
+        result.dashboard = { from: installedVer, to: availableVer, updated: true }
+      }
+    } else {
+      log.info(`[update-agent] Dashboard is current (v${installedVer})`)
+      result.dashboard = { from: installedVer, to: installedVer, updated: false }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.error(`[update-agent] Dashboard update failed: ${msg}`)
+    result.dashboard = { from: 'unknown', to: 'unknown', updated: false }
+  }
+
+  // ── Monitoring scripts ──────────────────────────────────────────────────
+  try {
+    const scripts = [
+      { src: 'public/watchdog.sh', dest: '/opt/gwi-pos/watchdog.sh' },
+      { src: 'public/scripts/hardware-inventory.sh', dest: '/opt/gwi-pos/scripts/hardware-inventory.sh' },
+      { src: 'public/scripts/disk-pressure-monitor.sh', dest: '/opt/gwi-pos/scripts/disk-pressure-monitor.sh' },
+      { src: 'public/scripts/version-compat.sh', dest: '/opt/gwi-pos/scripts/version-compat.sh' },
+      { src: 'public/scripts/rolling-restart.sh', dest: '/opt/gwi-pos/scripts/rolling-restart.sh' },
+    ]
+
+    let updated = false
+    for (const { src, dest } of scripts) {
+      const srcPath = path.join(APP_DIR, src)
+      if (existsSync(srcPath)) {
+        execSync(`sudo mkdir -p "$(dirname "${dest}")" && sudo cp "${srcPath}" "${dest}" && sudo chmod +x "${dest}"`, { encoding: 'utf8', timeout: 10_000 })
+        updated = true
+      }
+    }
+
+    // Deploy latest installer libraries
+    const libDir = path.join(APP_DIR, 'public/installer-modules/lib')
+    if (existsSync(libDir)) {
+      execSync(`sudo mkdir -p /opt/gwi-pos/installer-modules/lib && sudo cp "${libDir}"/*.sh /opt/gwi-pos/installer-modules/lib/ && sudo chmod +x /opt/gwi-pos/installer-modules/lib/*.sh`, { encoding: 'utf8', timeout: 10_000 })
+      updated = true
+    }
+
+    result.monitoring = { updated }
+    log.info('[update-agent] Monitoring scripts updated from checkout')
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.error(`[update-agent] Script update failed: ${msg}`)
+    result.monitoring = { updated: false }
+  }
+
+  // ── Sync agent ──────────────────────────────────────────────────────────
+  try {
+    const syncSrc = path.join(APP_DIR, 'public/sync-agent.js')
+    if (existsSync(syncSrc)) {
+      execSync(`sudo cp "${syncSrc}" /opt/gwi-pos/sync-agent.js`, { encoding: 'utf8', timeout: 10_000 })
+      result.syncAgent = { updated: true }
+      log.info('[update-agent] Sync agent updated from checkout')
+    } else {
+      result.syncAgent = { updated: false }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.error(`[update-agent] Sync agent update failed: ${msg}`)
+    result.syncAgent = { updated: false }
+  }
+
+  // ── Watchdog timer ──────────────────────────────────────────────────────
+  try {
+    const timerActive = execSync('systemctl is-active gwi-watchdog.timer 2>/dev/null || echo inactive', { encoding: 'utf8' }).trim()
+    if (timerActive !== 'active') {
+      if (existsSync('/opt/gwi-pos/watchdog.sh')) {
+        const svcSrc = path.join(APP_DIR, 'public/watchdog.service')
+        const timerSrc = path.join(APP_DIR, 'public/watchdog.timer')
+        if (existsSync(svcSrc) && existsSync(timerSrc)) {
+          execSync(`sudo cp "${svcSrc}" /etc/systemd/system/gwi-watchdog.service; sudo cp "${timerSrc}" /etc/systemd/system/gwi-watchdog.timer; sudo systemctl daemon-reload; sudo systemctl enable --now gwi-watchdog.timer`, { encoding: 'utf8', timeout: 15_000 })
+          log.info('[update-agent] Watchdog timer activated')
+        }
+      }
+      result.watchdog = { active: true }
+    } else {
+      result.watchdog = { active: true }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.error(`[update-agent] Watchdog activation failed: ${msg}`)
+    result.watchdog = { active: false }
+  }
+
+  return result
 }
 
 // ── Dashboard .deb update ──────────────────────────────────────────────────

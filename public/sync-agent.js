@@ -206,10 +206,11 @@ async function handleForceUpdate(payload, cmdId) {
                 // Update finished (or server restarted with new version)
                 var newVer = statusData.currentVersion || 'unknown'
                 log('[Update] Update agent finished — version: ' + newVer)
-                // Self-update sync-agent from the new repo
+                // Self-update sync-agent + deploy all components from checkout
                 selfUpdateSyncAgent()
-                if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: newVer, steps: ['update-agent OK'] })
-                return { ok: true, version: newVer, steps: ['update-agent OK'], _acked: true }
+                var compResult = updateComponentsFromCheckout()
+                if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: newVer, steps: ['update-agent OK', 'components OK'], componentUpdates: compResult })
+                return { ok: true, version: newVer, steps: ['update-agent OK', 'components OK'], _acked: true }
               }
             } catch (pollErr) {
               // Server may be restarting — expected. Wait a bit more.
@@ -230,8 +231,9 @@ async function handleForceUpdate(payload, cmdId) {
                 if (!prData.isUpdating) {
                   log('[Update] Server back online — version: ' + (prData.currentVersion || 'unknown'))
                   selfUpdateSyncAgent()
-                  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK'] })
-                  return { ok: true, version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK'], _acked: true }
+                  var compResult2 = updateComponentsFromCheckout()
+                  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'update-agent-done', version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK', 'components OK'], componentUpdates: compResult2 })
+                  return { ok: true, version: prData.currentVersion || 'unknown', steps: ['update-agent OK', 'restart OK', 'components OK'], _acked: true }
                 }
               } catch (e) {
                 // Still down — continue waiting
@@ -519,11 +521,15 @@ async function handleForceUpdate(payload, cmdId) {
 
   selfUpdateSyncAgent()
 
+  // Deploy all components from the checkout (dashboard, monitoring, watchdog)
+  var componentUpdates = updateComponentsFromCheckout()
+  steps.push('components ' + (componentUpdates._updated ? 'OK' : 'skip'))
+
   var ver = 'unknown'
   try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
   log('[Update] SUCCESS — v' + ver)
-  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'done', version: ver, steps: steps })
-  writeUpdateState({ status: 'COMPLETED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', version: ver, steps: steps })
+  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'done', version: ver, steps: steps, componentUpdates: componentUpdates })
+  writeUpdateState({ status: 'COMPLETED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', version: ver, steps: steps, componentUpdates: componentUpdates })
   return { ok: true, version: ver, steps: steps, _acked: true }
 }
 
@@ -544,6 +550,90 @@ function selfUpdateSyncAgent() {
   } catch (e) {
     log('[Update] WARNING: Could not self-update sync agent: ' + e.message)
   }
+}
+
+// ── Component updates from checkout ────────────────────────────────────────
+// After a successful POS update, deploy all bundled components (dashboard,
+// monitoring scripts, watchdog) so every FORCE_UPDATE brings the full stack
+// to the target version — not just the POS app.
+function updateComponentsFromCheckout() {
+  var result = { _updated: false, dashboard: null, monitoring: false, watchdog: false }
+
+  // Dashboard .deb update (version-aware)
+  try {
+    var installedVer = ''
+    try { installedVer = execSync('dpkg-query -W -f="${Version}" gwi-nuc-dashboard 2>/dev/null || echo "0.0.0"', { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }).trim() } catch (e) { installedVer = '0.0.0' }
+    var availableVer = '0.0.0'
+    var versionFile = path.join(APP_DIR, 'public', 'dashboard-version.txt')
+    if (fs.existsSync(versionFile)) {
+      availableVer = fs.readFileSync(versionFile, 'utf-8').trim()
+    }
+    var debPath = path.join(APP_DIR, 'public', 'gwi-nuc-dashboard.deb')
+    if (installedVer !== availableVer && availableVer !== '0.0.0' && fs.existsSync(debPath)) {
+      log('[Components] Dashboard update: ' + installedVer + ' -> ' + availableVer)
+      var ok = run('sudo dpkg -i "' + debPath + '" 2>/dev/null || sudo apt-get install -f -y', APP_DIR, 60)
+      if (ok) {
+        run('pkill -f gwi-dashboard || true', APP_DIR, 5)
+        result.dashboard = { from: installedVer, to: availableVer, updated: true }
+        result._updated = true
+        log('[Components] Dashboard updated successfully')
+      }
+    } else {
+      result.dashboard = { from: installedVer, to: installedVer, updated: false }
+    }
+  } catch (e) {
+    log('[Components] Dashboard update failed: ' + (e.message || '').slice(0, 200))
+  }
+
+  // Monitoring scripts
+  try {
+    var scripts = [
+      { src: 'public/watchdog.sh', dest: '/opt/gwi-pos/watchdog.sh' },
+      { src: 'public/scripts/hardware-inventory.sh', dest: '/opt/gwi-pos/scripts/hardware-inventory.sh' },
+      { src: 'public/scripts/disk-pressure-monitor.sh', dest: '/opt/gwi-pos/scripts/disk-pressure-monitor.sh' },
+      { src: 'public/scripts/version-compat.sh', dest: '/opt/gwi-pos/scripts/version-compat.sh' },
+      { src: 'public/scripts/rolling-restart.sh', dest: '/opt/gwi-pos/scripts/rolling-restart.sh' }
+    ]
+    scripts.forEach(function(s) {
+      var srcPath = path.join(APP_DIR, s.src)
+      if (fs.existsSync(srcPath)) {
+        run('sudo mkdir -p "$(dirname ' + s.dest + ')" && sudo cp "' + srcPath + '" "' + s.dest + '" && sudo chmod +x "' + s.dest + '"', APP_DIR, 10)
+        result.monitoring = true
+        result._updated = true
+      }
+    })
+
+    // Deploy installer libraries
+    var libDir = path.join(APP_DIR, 'public', 'installer-modules', 'lib')
+    if (fs.existsSync(libDir)) {
+      run('sudo mkdir -p /opt/gwi-pos/installer-modules/lib && sudo cp "' + libDir + '"/*.sh /opt/gwi-pos/installer-modules/lib/ && sudo chmod +x /opt/gwi-pos/installer-modules/lib/*.sh', APP_DIR, 10)
+    }
+    log('[Components] Monitoring scripts updated')
+  } catch (e) {
+    log('[Components] Script update failed: ' + (e.message || '').slice(0, 200))
+  }
+
+  // Watchdog timer activation
+  try {
+    var timerStatus = ''
+    try { timerStatus = execSync('systemctl is-active gwi-watchdog.timer 2>/dev/null || echo inactive', { encoding: 'utf-8', timeout: 5000, stdio: 'pipe' }).trim() } catch (e) { timerStatus = 'inactive' }
+    if (timerStatus !== 'active' && fs.existsSync('/opt/gwi-pos/watchdog.sh')) {
+      var svcSrc = path.join(APP_DIR, 'public', 'watchdog.service')
+      var timerSrc = path.join(APP_DIR, 'public', 'watchdog.timer')
+      if (fs.existsSync(svcSrc) && fs.existsSync(timerSrc)) {
+        run('sudo cp "' + svcSrc + '" /etc/systemd/system/gwi-watchdog.service; sudo cp "' + timerSrc + '" /etc/systemd/system/gwi-watchdog.timer; sudo systemctl daemon-reload; sudo systemctl enable --now gwi-watchdog.timer', APP_DIR, 15)
+        result.watchdog = true
+        result._updated = true
+        log('[Components] Watchdog timer activated')
+      }
+    } else {
+      result.watchdog = timerStatus === 'active'
+    }
+  } catch (e) {
+    log('[Components] Watchdog activation failed: ' + (e.message || '').slice(0, 200))
+  }
+
+  return result
 }
 
 // ── Command ACK ────────────────────────────────────────────────────────────
