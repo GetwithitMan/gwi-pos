@@ -50,17 +50,16 @@ export const PaymentInputSchema = z.object({
 })
 
 // PAYMENT-SAFETY: Idempotency design
-// - idempotencyKey is optional in the schema because some clients (legacy, mobile) may not send it.
-// - Server generates a fallback UUID when missing (line below: `finalIdempotencyKey`).
-// - The duplicate check only fires when the CLIENT sends a key, because a server-generated UUID
-//   is unique per request and can never match an existing payment.
-// - For true double-charge prevention, the client MUST generate a UUID on button press and resend
-//   the same key on retries. The PaymentModal already does this.
+// - idempotencyKey is REQUIRED (UUID) — the client MUST generate a UUID on button press and resend
+//   the same key on retries. This prevents double-charges on network retries/timeouts.
+// - The PaymentModal, Android register, and PAX terminal all generate this key.
+// - The duplicate check fires when the CLIENT sends a key that matches an existing completed payment.
+// - Legacy clients that omit idempotencyKey will get a Zod validation error (400).
 export const PaymentRequestSchema = z.object({
   payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
   employeeId: z.string().optional(),
   terminalId: z.string().optional(),
-  idempotencyKey: z.string().optional(),
+  idempotencyKey: z.string().uuid('idempotencyKey must be a valid UUID'),
 })
 
 // ─── Idempotency Check ─────────────────────────────────────────────────────
@@ -143,14 +142,15 @@ export function checkIdempotencyByRecordNo(
 }
 
 /**
- * Validate that tip amounts are not unreasonably large (> 500% of payment).
+ * Validate that tip amounts are not unreasonably large (> 200% of payment).
+ * 200% is generous enough for exceptional service while catching data entry errors.
  */
 export function validateTipBounds(
   payments: Array<{ amount: number; tipAmount?: number }>,
 ): string | null {
   for (const payment of payments) {
-    if (payment.tipAmount && payment.tipAmount > payment.amount * 5) {
-      return 'Tip amount cannot exceed 500% of payment amount'
+    if (payment.tipAmount && payment.tipAmount > payment.amount * 2) {
+      return 'Tip amount cannot exceed 200% of payment amount'
     }
   }
   return null
@@ -182,9 +182,10 @@ export function validatePaymentAmounts(
     }
 
     // Prevent unreasonably large payments (potential UI bugs)
-    const maxReasonablePayment = orderTotal * 1.5
+    // 120% allows for tip on top of order total while catching fat-finger errors
+    const maxReasonablePayment = orderTotal * 1.2
     if (paymentAmount > maxReasonablePayment) {
-      return `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (150% of order total). This may indicate an error.`
+      return `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (120% of order total). This may indicate an error.`
     }
 
     // Validate Datacap field mutual exclusivity for card payments

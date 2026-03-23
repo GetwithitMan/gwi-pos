@@ -151,6 +151,7 @@ export const POST = withVenue(async function POST(
     }
 
     let datacapRefNo: string | null = null
+    let refundActionId: string | null = null
     const isCardPayment =
       payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
 
@@ -158,6 +159,14 @@ export const POST = withVenue(async function POST(
     if (isCardPayment && effectiveReaderId && payment.datacapRecordNo) {
       await validateReader(effectiveReaderId, order.locationId)
       const client = await requireDatacapClient(order.locationId)
+
+      // Structured processor action tracking — log intent before calling Datacap
+      refundActionId = `refund-${paymentId}-${Date.now()}`
+      console.log(
+        `[PROCESSOR-ACTION] PENDING: action=${refundActionId}, type=refund, ` +
+        `orderId=${id}, paymentId=${paymentId}, recordNo=${payment.datacapRecordNo}, ` +
+        `refundAmount=${refundAmount}, readerId=${effectiveReaderId}`
+      )
 
       const response = await client.emvReturn(effectiveReaderId, {
         recordNo: payment.datacapRecordNo,
@@ -167,12 +176,17 @@ export const POST = withVenue(async function POST(
       })
 
       if (response.cmdStatus !== 'Approved') {
+        console.log(
+          `[PROCESSOR-ACTION] DECLINED: action=${refundActionId}, ` +
+          `response=${response.textResponse || 'Unknown'}`
+        )
         return NextResponse.json(
           { error: response.textResponse || 'Refund declined' },
           { status: 422 }
         )
       }
 
+      console.log(`[PROCESSOR-ACTION] APPROVED: action=${refundActionId}, type=refund, refNo=${response.refNo ?? 'none'}`)
       datacapRefNo = response.refNo ?? null
     }
 
@@ -251,7 +265,8 @@ export const POST = withVenue(async function POST(
       if (isCardPayment && datacapRefNo) {
         console.error(
           `[PAYMENT-SAFETY] CRITICAL: Datacap refund succeeded (refNo=${datacapRefNo}) but DB write failed. ` +
-          `orderId=${id}, paymentId=${paymentId}, amount=${refundAmount}. Manual reconciliation required.`
+          `actionId=${refundActionId}, orderId=${id}, paymentId=${paymentId}, amount=${refundAmount}. ` +
+          `Manual reconciliation required.`
         )
       }
       return NextResponse.json({ error: txResult.error }, { status: txResult.status })

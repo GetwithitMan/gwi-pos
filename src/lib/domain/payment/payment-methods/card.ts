@@ -21,12 +21,21 @@ export function processCardPayment(
   record: PaymentRecord,
   orderId: string,
 ): PaymentRecord {
-  // Validate cardLast4 — allow '0000' only for non-card methods (gift card, house account, etc.)
-  // For actual credit/debit card payments, a missing cardLast4 likely means the terminal
-  // didn't return it. We still allow the payment through (blocking could strand a successful
-  // charge) but log a warning so it shows up in monitoring.
+  // Validate cardLast4 — for Datacap card payments, a missing cardLast4 likely means the
+  // terminal didn't return it. We keep the '0000' fallback for legacy compatibility but
+  // log a CRITICAL warning for Datacap payments (where the terminal SHOULD always return it)
+  // so it shows up in monitoring and can be investigated.
   if (!payment.cardLast4 || !/^\d{4}$/.test(payment.cardLast4)) {
-    log.warn({ orderId, method: payment.method }, 'Card payment missing cardLast4, defaulting to 0000')
+    const isDatacapPayment = !!(payment.datacapRecordNo || payment.datacapRefNumber)
+    if (isDatacapPayment) {
+      log.error(
+        { orderId, method: payment.method, datacapRecordNo: payment.datacapRecordNo },
+        '[PAYMENT-SAFETY] CRITICAL: Datacap card payment missing cardLast4 — terminal should always return this. ' +
+        'Falling back to 0000 but this needs investigation. Check terminal firmware/config.'
+      )
+    } else {
+      log.warn({ orderId, method: payment.method }, 'Card payment missing cardLast4, defaulting to 0000')
+    }
     payment.cardLast4 = '0000'
   }
 

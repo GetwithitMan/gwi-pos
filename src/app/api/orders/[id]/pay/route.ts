@@ -1501,7 +1501,9 @@ export const POST = withVenue(withTiming(async function POST(
           lastMutatedBy: paymentMutationOrigin,
         }
 
-    void OrderRepository.updateOrder(orderId, order.locationId, postPaymentOrderUpdate).catch(async (err) => {
+    try {
+      await OrderRepository.updateOrder(orderId, order.locationId, postPaymentOrderUpdate)
+    } catch (err) {
       console.error('[CRITICAL-PAYMENT] Post-payment order update failed, retrying:', err)
       try {
         // Retry without version increment — if the first write committed but timed out,
@@ -1510,7 +1512,7 @@ export const POST = withVenue(withTiming(async function POST(
         const { version: _v, ...retryData } = postPaymentOrderUpdate as any
         await OrderRepository.updateOrder(orderId, order.locationId, { ...retryData, lastMutatedBy: paymentMutationOrigin })
       } catch (retryErr) {
-        console.error('[CRITICAL-PAYMENT] Post-payment order update retry FAILED:', retryErr)
+        console.error('[CRITICAL-PAYMENT] Post-payment order update retry FAILED — order will have stale report fields:', retryErr)
         // Log to error capture so it appears in monitoring dashboard
         void errorCapture.critical('PAYMENT', 'Post-payment order update failed after retry', {
           category: 'payment-post-update-error',
@@ -1519,7 +1521,7 @@ export const POST = withVenue(withTiming(async function POST(
           error: retryErr instanceof Error ? retryErr : undefined,
         }).catch(() => {})
       }
-    })
+    }
 
     // Dispatch socket events when parent order was auto-closed (after transaction commit)
     if (parentWasMarkedPaid) {

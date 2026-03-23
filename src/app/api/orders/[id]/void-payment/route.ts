@@ -140,6 +140,7 @@ export const POST = withVenue(async function POST(
 
     // Step 1: If card payment, void at Datacap first (outside DB transaction)
     const isCardPayment = payment.paymentMethod === 'card' || payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
+    let voidActionId: string | null = null
     if (isCardPayment) {
       const recordNo = payment.datacapRecordNo
 
@@ -159,19 +160,34 @@ export const POST = withVenue(async function POST(
         )
       }
 
+      // Structured processor action tracking — log intent before calling Datacap
+      voidActionId = `void-${paymentId}-${Date.now()}`
+      console.log(
+        `[PROCESSOR-ACTION] PENDING: action=${voidActionId}, type=void, ` +
+        `orderId=${orderId}, paymentId=${paymentId}, recordNo=${recordNo}, ` +
+        `amount=${Number(payment.totalAmount)}, readerId=${effectiveReaderId}`
+      )
+
       try {
         const client = await requireDatacapClient(order.locationId)
         const datacapResponse = await client.voidSale(effectiveReaderId, { recordNo })
         const datacapError = parseError(datacapResponse)
 
         if (datacapResponse.cmdStatus !== 'Approved' || datacapError) {
+          console.log(
+            `[PROCESSOR-ACTION] DECLINED: action=${voidActionId}, ` +
+            `response=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}`
+          )
           return NextResponse.json(
             { error: `Datacap void failed: ${datacapError?.text || datacapResponse.textResponse || 'Unknown error'}. DB not modified.` },
             { status: 502 }
           )
         }
+
+        console.log(`[PROCESSOR-ACTION] APPROVED: action=${voidActionId}, type=void`)
       } catch (datacapErr) {
         const msg = datacapErr instanceof Error ? datacapErr.message : 'Datacap void request failed'
+        console.error(`[PROCESSOR-ACTION] ERROR: action=${voidActionId}, error=${msg}`)
         return NextResponse.json(
           { error: `Datacap void failed: ${msg}. DB not modified.` },
           { status: 502 }
@@ -257,7 +273,7 @@ export const POST = withVenue(async function POST(
         const recordNo = payment.datacapRecordNo
         const criticalMsg =
           `[PAYMENT-SAFETY] CRITICAL: Datacap voided but DB update failed. ` +
-          `orderId=${orderId}, paymentId=${paymentId}, recordNo=${recordNo}, ` +
+          `actionId=${voidActionId}, orderId=${orderId}, paymentId=${paymentId}, recordNo=${recordNo}, ` +
           `amount=${Number(payment.totalAmount)}, ` +
           `method=${payment.paymentMethod}, reason=${reason}. ` +
           `Reconcile manually via Datacap portal.`

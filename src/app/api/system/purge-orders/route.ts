@@ -42,19 +42,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
     results.push(`Found ${orderRows.length} orders`)
 
-    const oids = orderRows.map(r => `'${r.id}'`).join(',')
+    const oidArray = orderRows.map(r => r.id)
 
-    // Get all order item IDs
+    // Get all order item IDs (parameterized)
     const itemRows = await db.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "OrderItem" WHERE "orderId" IN (${oids})`
+      `SELECT id FROM "OrderItem" WHERE "orderId" = ANY($1::text[])`, oidArray
     )
-    const iids = itemRows.map(r => `'${r.id}'`).join(',')
+    const iidArray = itemRows.map(r => r.id)
 
     // === LEAF TABLES (reference OrderItem) ===
-    if (iids) {
-      await safeExec('OrderItemModifier', `DELETE FROM "OrderItemModifier" WHERE "orderItemId" IN (${iids})`)
-      await safeExec('OrderItemDiscount', `DELETE FROM "OrderItemDiscount" WHERE "orderItemId" IN (${iids})`)
-      await safeExec('OrderItemPizza', `DELETE FROM "OrderItemPizza" WHERE "orderItemId" IN (${iids})`)
+    if (iidArray.length > 0) {
+      await safeExec('OrderItemModifier', `DELETE FROM "OrderItemModifier" WHERE "orderItemId" = ANY($1::text[])`, [iidArray])
+      await safeExec('OrderItemDiscount', `DELETE FROM "OrderItemDiscount" WHERE "orderItemId" = ANY($1::text[])`, [iidArray])
+      await safeExec('OrderItemPizza', `DELETE FROM "OrderItemPizza" WHERE "orderItemId" = ANY($1::text[])`, [iidArray])
     }
 
     // === TABLES REFERENCING Order ===
@@ -68,25 +68,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       'PendingDeduction',
     ]
     for (const table of orderFkTables) {
-      await safeExec(table, `DELETE FROM "${table}" WHERE "orderId" IN (${oids})`)
+      await safeExec(table, `DELETE FROM "${table}" WHERE "orderId" = ANY($1::text[])`, [oidArray])
     }
 
     // AuditLog (uses entityId, not orderId)
-    await safeExec('AuditLog', `DELETE FROM "AuditLog" WHERE "entityType" = 'order' AND "entityId" IN (${oids})`)
+    await safeExec('AuditLog', `DELETE FROM "AuditLog" WHERE "entityType" = 'order' AND "entityId" = ANY($1::text[])`, [oidArray])
 
     // Snapshots
     const snapRows = await db.$queryRawUnsafe<{ id: string }[]>(
-      `SELECT id FROM "OrderSnapshot" WHERE "orderId" IN (${oids})`
+      `SELECT id FROM "OrderSnapshot" WHERE "orderId" = ANY($1::text[])`, oidArray
     ).catch(() => [] as { id: string }[])
     if (snapRows.length > 0) {
-      const sids = snapRows.map(r => `'${r.id}'`).join(',')
-      await safeExec('OrderItemSnapshot', `DELETE FROM "OrderItemSnapshot" WHERE "orderSnapshotId" IN (${sids})`)
-      await safeExec('OrderSnapshot', `DELETE FROM "OrderSnapshot" WHERE id IN (${sids})`)
+      const sidArray = snapRows.map(r => r.id)
+      await safeExec('OrderItemSnapshot', `DELETE FROM "OrderItemSnapshot" WHERE "orderSnapshotId" = ANY($1::text[])`, [sidArray])
+      await safeExec('OrderSnapshot', `DELETE FROM "OrderSnapshot" WHERE id = ANY($1::text[])`, [sidArray])
     }
 
     // === OrderItem ===
-    if (iids) {
-      await safeExec('OrderItem', `DELETE FROM "OrderItem" WHERE id IN (${iids})`)
+    if (iidArray.length > 0) {
+      await safeExec('OrderItem', `DELETE FROM "OrderItem" WHERE id = ANY($1::text[])`, [iidArray])
     }
 
     // === Order (children first) ===
