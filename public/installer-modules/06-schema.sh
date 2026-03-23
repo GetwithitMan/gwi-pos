@@ -228,11 +228,15 @@ run_schema() {
     log "Skipping database migrations (backup standby — data replicated from primary)."
   fi
 
+  # Node.js defaults to ~1.7GB heap which is insufficient for Next.js builds.
+  # Set 4GB heap for build (NUCs typically have 8-32GB RAM).
+  local BUILD_NODE_OPTS="--max-old-space-size=4096"
+
   _start_spinner "Building POS application (this takes a few minutes)"
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build" >/dev/null 2>&1; then
+  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build" >/dev/null 2>&1; then
     _stop_spinner
     err "Application build failed. Re-running with output..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build"
+    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build"
     return 1
   fi
   _stop_spinner

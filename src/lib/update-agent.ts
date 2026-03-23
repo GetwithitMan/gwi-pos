@@ -387,9 +387,10 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
       log.warn('[UpdateAgent] .next backup failed (non-fatal):', backupErr instanceof Error ? backupErr.message : backupErr)
     }
 
+    // Node defaults to ~1.7GB heap — insufficient for Next.js builds on NUCs
     log.info('[UpdateAgent] Running npm run build...')
     try {
-      execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
+      execSync('npm run build', { cwd: APP_DIR, timeout: 600_000, env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=4096' } })
       // Build succeeded — remove backup
       try {
         if (existsSync(nextBackup)) {
@@ -521,10 +522,11 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
             }
 
             // Rebuild from rolled-back code
+            const buildEnv = { ...process.env, NODE_OPTIONS: '--max-old-space-size=4096' }
             try {
               execSync('npm ci', { cwd: APP_DIR, timeout: 300_000 })
               execSync('npx prisma generate', { cwd: APP_DIR, timeout: 60_000 })
-              execSync('npm run build', { cwd: APP_DIR, timeout: 600_000 })
+              execSync('npm run build', { cwd: APP_DIR, timeout: 600_000, env: buildEnv })
               log.info('[UpdateAgent] Rollback rebuild complete')
             } catch (rebuildErr) {
               log.error({ err: rebuildErr }, '[UpdateAgent] Rollback rebuild failed')
