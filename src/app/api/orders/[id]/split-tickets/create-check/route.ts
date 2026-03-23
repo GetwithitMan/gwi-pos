@@ -88,6 +88,7 @@ export const POST = withVenue(async function POST(
         baseSeatCount: 0,
         extraSeatCount: 0,
         seatVersion: 0,
+        lastMutatedBy: 'local',
       },
       select: {
         id: true,

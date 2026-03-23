@@ -157,7 +157,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Update current course on the order (tenant-safe)
-    await OrderRepository.updateOrder(id, locationId, { currentCourse: courseNumber, version: { increment: 1 } })
+    await OrderRepository.updateOrder(id, locationId, { currentCourse: courseNumber, version: { increment: 1 }, lastMutatedBy: 'local' })
 
     // Route order items to stations using tag-based routing engine
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)

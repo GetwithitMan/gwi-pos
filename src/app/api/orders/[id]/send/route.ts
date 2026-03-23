@@ -224,13 +224,13 @@ export const POST = withVenue(withTiming(async function POST(
       // Update order: increment version, set sentAt = NOW(), optionally transition draft → open
       if (order.status === 'draft') {
         await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "updatedAt" = NOW()
+          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "lastMutatedBy" = 'local', "updatedAt" = NOW()
            WHERE id = $1 AND "locationId" = $2`,
           id, order.locationId,
         )
       } else {
         await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "updatedAt" = NOW()
+          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "lastMutatedBy" = 'local', "updatedAt" = NOW()
            WHERE id = $1 AND "locationId" = $2`,
           id, order.locationId,
         )

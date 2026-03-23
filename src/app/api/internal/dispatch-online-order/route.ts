@@ -63,7 +63,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // we skip it cleanly.
       const claimed = await adminDb.order.updateMany({
         where: { id: order.id, status: 'received' },
-        data: { status: 'open' },
+        data: { status: 'open', lastMutatedBy: 'local' },
       })
 
       if (claimed.count === 0) {
@@ -102,7 +102,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         // Revert so the next worker cycle retries
         await adminDb.order
-          .update({ where: { id: order.id }, data: { status: 'received' } })
+          .update({ where: { id: order.id }, data: { status: 'received', lastMutatedBy: 'local' } })
           .catch(() => {})
 
         console.error(
@@ -115,7 +115,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Revert on exception so it gets retried
       await adminDb.order
-        .update({ where: { id: order.id }, data: { status: 'received' } })
+        .update({ where: { id: order.id }, data: { status: 'received', lastMutatedBy: 'local' } })
         .catch(() => {})
 
       console.error(

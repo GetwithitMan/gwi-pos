@@ -231,6 +231,7 @@ export const POST = withVenue(async function POST(
           reopenedBy: managerId,
           reopenReason: reason,
           version: { increment: 1 },
+          lastMutatedBy: 'local',
         },
         undefined,
         tx,

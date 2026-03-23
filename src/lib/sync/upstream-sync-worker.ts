@@ -61,8 +61,23 @@ if (globalThis.__gwi_upstream_outage === undefined) {
 const metrics = globalThis.__gwi_upstream_metrics
 const outageState = globalThis.__gwi_upstream_outage
 
-/** Monotonic counter for outage queue ordering (resets on server restart — fine per outage period) */
-let outageSeqCounter = 0
+/** Monotonic counter for outage queue ordering — initialized from DB on first use to survive restarts */
+let outageSeqCounter: number | null = null
+
+async function getNextOutageSeq(): Promise<number> {
+  if (outageSeqCounter === null) {
+    try {
+      const result = await masterClient.$queryRawUnsafe<{ max: number }[]>(
+        `SELECT COALESCE(MAX("localSeq"), 0) as max FROM "OutageQueueEntry" WHERE status = 'PENDING'`
+      )
+      outageSeqCounter = Number(result[0]?.max ?? 0)
+    } catch {
+      // If query fails (table doesn't exist yet, etc.), start from 0
+      outageSeqCounter = 0
+    }
+  }
+  return ++outageSeqCounter
+}
 
 // ── Outage Detection ──────────────────────────────────────────────────────────
 
@@ -115,8 +130,8 @@ export async function queueOutageWrite(
   }
 
   try {
-    // Monotonic localSeq — simple counter, resets on restart (new outage = new sequence)
-    const localSeq = ++outageSeqCounter
+    // Monotonic localSeq — initialized from DB on first use to survive restarts
+    const localSeq = await getNextOutageSeq()
     // Idempotency key: deterministic prefix (for debugging) + random suffix (for uniqueness across retries/restarts)
     const idempotencyKey = `${locationId}:${tableName}:${recordId}:${randomUUID().slice(0, 8)}`
 

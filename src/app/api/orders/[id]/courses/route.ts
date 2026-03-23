@@ -199,7 +199,7 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      await OrderRepository.updateOrder(orderId, postLocationId, { courseMode })
+      await OrderRepository.updateOrder(orderId, postLocationId, { courseMode, lastMutatedBy: 'local' })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(() => {})
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { courseMode })
@@ -212,7 +212,7 @@ export const POST = withVenue(async function POST(
 
     // Handle set current course
     if (action === 'set_current' && courseNumber !== undefined) {
-      await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber })
+      await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: 'local' })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(() => {})
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { currentCourse: courseNumber })
@@ -257,7 +257,7 @@ export const POST = withVenue(async function POST(
 
           // Update current course if this course is higher
           if (courseNumber > order.currentCourse) {
-            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber }, tx)
+            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: 'local' }, tx)
           }
 
           void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
@@ -297,7 +297,7 @@ export const POST = withVenue(async function POST(
 
           // Update current course
           if (courseNumber > order.currentCourse) {
-            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber }, tx)
+            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: 'local' }, tx)
           }
 
           void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})

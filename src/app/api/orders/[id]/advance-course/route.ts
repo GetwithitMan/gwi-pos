@@ -121,7 +121,7 @@ export const POST = withVenue(async function POST(
         }, tx)
 
         // Update order's current course
-        await OrderRepository.updateOrder(orderId, order.locationId, { currentCourse: nextCourse, version: { increment: 1 } }, tx)
+        await OrderRepository.updateOrder(orderId, order.locationId, { currentCourse: nextCourse, version: { increment: 1 }, lastMutatedBy: 'local' }, tx)
 
         // Queue order:updated inside transaction for crash safety
         const updatedPayload: OrderUpdatedPayload = {

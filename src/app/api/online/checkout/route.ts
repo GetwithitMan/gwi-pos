@@ -428,6 +428,7 @@ export async function POST(request: NextRequest) {
             body.notes ? `Notes: ${body.notes}` : null,
           ].filter(Boolean).join('\n'),
           businessDayDate: businessDayStart,
+          lastMutatedBy: 'cloud',
           ...(body.idempotencyKey ? { metadata: { idempotencyKey: body.idempotencyKey } } : {}),
           // Create order items inline
           items: {
@@ -474,7 +475,7 @@ export async function POST(request: NextRequest) {
       // Payment error — soft-delete the order (BUG #389: never hard-delete)
       await venueDb.order.update({
         where: { id: order.id },
-        data: { status: 'cancelled', deletedAt: new Date() },
+        data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
       }).catch(() => {})
       console.error('[checkout] PayAPI error:', payErr)
       return NextResponse.json(
@@ -489,7 +490,7 @@ export async function POST(request: NextRequest) {
       // Declined — soft-delete the order (BUG #389), return 402
       await venueDb.order.update({
         where: { id: order.id },
-        data: { status: 'cancelled', deletedAt: new Date() },
+        data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
       }).catch(() => {})
       return NextResponse.json(
         {
@@ -506,7 +507,7 @@ export async function POST(request: NextRequest) {
       // TX-KEEP: COMPLEX — mark order received after PayAPI approval; batch transaction with payment create
       venueDb.order.update({
         where: { id: order.id },
-        data: { status: 'received' },
+        data: { status: 'received', lastMutatedBy: 'cloud' },
       }),
       // TX-KEEP: CREATE — online payment record after PayAPI approval; no repo create method for venueDb context
       venueDb.payment.create({
@@ -527,6 +528,7 @@ export async function POST(request: NextRequest) {
           status: 'completed',
           amountRequested: chargeAmount,
           amountAuthorized: chargeAmount,
+          lastMutatedBy: 'cloud',
         },
       }),
     ])

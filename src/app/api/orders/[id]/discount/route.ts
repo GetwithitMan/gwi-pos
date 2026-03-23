@@ -170,6 +170,7 @@ export const POST = withVenue(async function POST(
             taxFromExclusive: totals.taxFromExclusive,
             total: totals.total,
             version: { increment: 1 },
+            lastMutatedBy: 'local',
           }, tx)
 
           // Queue critical socket events in the outbox (atomic with discount removal)
@@ -472,6 +473,7 @@ export const POST = withVenue(async function POST(
         taxFromExclusive: totals.taxFromExclusive,
         total: totals.total,
         version: { increment: 1 },
+        lastMutatedBy: 'local',
       }, tx)
 
       // Emit order event for discount applied (fire-and-forget)
@@ -782,6 +784,7 @@ export const DELETE = withVenue(async function DELETE(
         taxFromExclusive: totals.taxFromExclusive,
         total: totals.total,
         version: { increment: 1 },
+        lastMutatedBy: 'local',
       }, tx)
 
       // Emit order event for discount removed (fire-and-forget)

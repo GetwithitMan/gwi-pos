@@ -394,6 +394,7 @@ export const POST = withVenue(async function POST(
           guestCount: newTotalSeats,
           seatVersion: order.seatVersion + 1,
           seatTimestamps: newTimestamps,
+          lastMutatedBy: 'local',
         }, tx)
         const updatedOrder = { seatVersion: order.seatVersion + 1 }
 
@@ -525,6 +526,7 @@ export const POST = withVenue(async function POST(
           guestCount: currentTotalSeats - 1,
           seatVersion: order.seatVersion + 1,
           seatTimestamps: newTimestamps,
+          lastMutatedBy: 'local',
         }, tx)
         const updatedOrder = { seatVersion: order.seatVersion + 1 }
 

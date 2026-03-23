@@ -370,7 +370,7 @@ export async function incrementVersion(
   locationId: string,
   tx?: TxClient,
 ) {
-  return updateOrder(id, locationId, { version: { increment: 1 } }, tx)
+  return updateOrder(id, locationId, { version: { increment: 1 }, lastMutatedBy: 'local' }, tx)
 }
 
 /**

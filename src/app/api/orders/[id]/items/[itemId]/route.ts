@@ -218,6 +218,7 @@ export const PUT = withVenue(async function PUT(
         await OrderRepository.updateOrder(orderId, locationId, {
           ...totals,
           version: { increment: 1 },
+          lastMutatedBy: 'local',
         }, tx)
 
         // Return full order response so clients get updated totals
@@ -425,6 +426,7 @@ export const DELETE = withVenue(async function DELETE(
       await OrderRepository.updateOrder(orderId, locationId, {
         ...totals,
         version: { increment: 1 },
+        lastMutatedBy: 'local',
       }, tx)
 
       // Fetch updated order with items for response (tenant-safe)
