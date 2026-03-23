@@ -13,12 +13,273 @@
 #       VENUE_SLUG, GIT_REPO
 # =============================================================================
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Quick-Code Registration (One-Click Venue Deployment)
+# ─────────────────────────────────────────────────────────────────────────────
+# If the field tech enters a 6-digit code from Mission Control, we skip all
+# manual prompts (role, UUID token, etc.) and auto-provision from MC's payload.
+# The code encodes: locationId, role, and all secrets needed for setup.
+# Falls back to the traditional flow if Enter is pressed or code is invalid.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Flag: set to 1 when quick-code provisioning succeeds
+QUICK_CODE_PROVISIONED=0
+
+attempt_quick_code_registration() {
+  echo ""
+  echo "╔══════════════════════════════════════════════════╗"
+  echo "║      GWI POS — One-Click Venue Deployment       ║"
+  echo "╠══════════════════════════════════════════════════╣"
+  echo "║                                                  ║"
+  echo "║  Enter the 6-digit registration code from        ║"
+  echo "║  Mission Control to auto-configure this NUC.     ║"
+  echo "║                                                  ║"
+  echo "║  Or press Enter for manual setup.                ║"
+  echo "║                                                  ║"
+  echo "╚══════════════════════════════════════════════════╝"
+  echo ""
+  read -rp "Registration code (or Enter for manual): " QUICK_CODE < /dev/tty
+
+  # Empty → fall through to manual flow
+  if [[ -z "$QUICK_CODE" ]]; then
+    return 1
+  fi
+
+  # Normalize to uppercase, strip whitespace
+  QUICK_CODE=$(echo "$QUICK_CODE" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]')
+
+  # Validate format: exactly 6 alphanumeric characters
+  if [[ ! "$QUICK_CODE" =~ ^[A-Z0-9]{6}$ ]]; then
+    warn "Invalid code format. Must be exactly 6 alphanumeric characters."
+    warn "Falling back to manual registration..."
+    return 1
+  fi
+
+  log "Quick-code entered: $QUICK_CODE"
+
+  # ── Generate hardware fingerprint ──
+  local machine_id mac_addrs hw_fp
+  machine_id=$(cat /etc/machine-id 2>/dev/null || echo "no-machine-id")
+  mac_addrs=$(ip link show 2>/dev/null | awk '/ether/{print $2}' | sort | tr '\n' ':')
+  hw_fp=$(printf '%s:%s' "$machine_id" "$mac_addrs" | sha256sum | cut -d' ' -f1)
+  log "Hardware fingerprint: ${hw_fp:0:16}..."
+
+  # ── Generate RSA 2048-bit keypair (needed for encrypted secrets) ──
+  mkdir -p "$APP_BASE" "$KEY_DIR"
+  chmod 700 "$KEY_DIR"
+  if [[ ! -f "$KEY_DIR/private.pem" ]]; then
+    log "Generating RSA keypair..."
+    openssl genrsa -out "$KEY_DIR/private.pem" 2048 2>/dev/null
+    openssl rsa -in "$KEY_DIR/private.pem" -pubout -out "$KEY_DIR/public.pem" 2>/dev/null
+  fi
+  chmod 600 "$KEY_DIR/private.pem"
+  chown -R "$POSUSER":"$POSUSER" "$APP_BASE"
+  chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
+  local public_key
+  public_key=$(cat "$KEY_DIR/public.pem")
+
+  # ── Build validation payload ──
+  local validate_payload
+  validate_payload=$(jq -n \
+    --arg code "$QUICK_CODE" \
+    --arg fp "$hw_fp" \
+    --arg pk "$public_key" \
+    '{code: $code, hardwareFingerprint: $fp, fingerprintVersion: 1, publicKey: $pk}')
+
+  local mc_url="${MC_URL:-https://mc.getwithitpos.com}"
+  local validate_url="${mc_url}/api/fleet/registration-codes/validate"
+
+  log "Validating quick-code with Mission Control..."
+  log "  URL: $validate_url"
+
+  local resp_file err_file http_code
+  resp_file=$(mktemp)
+  err_file=$(mktemp)
+  http_code=$(curl -sS --max-time 30 -X POST \
+    "$validate_url" \
+    -H "Content-Type: application/json" \
+    -d "$validate_payload" \
+    -o "$resp_file" \
+    -w "%{http_code}" 2>"$err_file") || http_code="000"
+
+  local response
+  response=$(cat "$resp_file" 2>/dev/null || echo "{}")
+  rm -f "$resp_file" "$err_file"
+
+  if [[ "$http_code" != "201" ]] && [[ "$http_code" != "200" ]]; then
+    local err_msg
+    err_msg=$(echo "$response" | jq -r '.error // .message // empty' 2>/dev/null || echo "")
+
+    if [[ "$http_code" == "000" ]]; then
+      warn "Mission Control unreachable at $validate_url"
+    elif [[ "$http_code" == "404" ]]; then
+      warn "Invalid registration code: $QUICK_CODE"
+    elif [[ "$http_code" == "409" ]]; then
+      warn "Code already used or provisioning incomplete: ${err_msg:-unknown}"
+    elif [[ "$http_code" == "410" ]]; then
+      warn "Code has expired. Generate a new one in Mission Control."
+    elif [[ "$http_code" == "429" ]]; then
+      warn "Too many attempts — wait 1 minute and try again."
+    else
+      warn "Quick-code validation failed (HTTP $http_code): ${err_msg:-unknown}"
+    fi
+    warn "Falling back to manual registration..."
+    return 1
+  fi
+
+  # ── Parse the provisioning payload (same shape as /api/fleet/register) ──
+  local validated
+  validated=$(echo "$response" | jq -r '.data.validated // empty' 2>/dev/null)
+  if [[ "$validated" != "true" ]]; then
+    warn "Unexpected response from quick-code validation."
+    warn "Falling back to manual registration..."
+    return 1
+  fi
+
+  # Set the same variables that manual registration sets
+  SERVER_NODE_ID=$(echo "$response" | jq -r '.data.serverNodeId // empty')
+  POS_LOCATION_ID=$(echo "$response" | jq -r '.data.posLocationId // empty')
+  MC_LOCATION_ID=$(echo "$response" | jq -r '.data.locationId // empty')
+  CLOUD_ORGANIZATION_ID=$(echo "$response" | jq -r '.data.organizationId // empty')
+  CLOUD_ENTERPRISE_ID=$(echo "$response" | jq -r '.data.enterpriseId // empty')
+  VENUE_SLUG=$(echo "$response" | jq -r '.data.venueSlug // empty')
+  VENUE_NAME=$(echo "$response" | jq -r '.data.venueName // empty')
+  LOCATION_NAME="$VENUE_NAME"
+  LOCATION_ID="${POS_LOCATION_ID:-$MC_LOCATION_ID}"
+  STATION_ROLE=$(echo "$response" | jq -r '.data.role // "server"')
+  HARDWARE_FINGERPRINT="$hw_fp"
+
+  # Encrypted secrets
+  local enc_api_key enc_db_url enc_direct_url enc_deploy_token enc_backoffice_url enc_repo_url
+  enc_api_key=$(echo "$response" | jq -r '.data.encryptedApiKey // empty')
+  enc_db_url=$(echo "$response" | jq -r '.data.encryptedDatabaseUrl // empty')
+  enc_direct_url=$(echo "$response" | jq -r '.data.encryptedDirectUrl // empty')
+  enc_deploy_token=$(echo "$response" | jq -r '.data.encryptedDeployToken // empty')
+  enc_backoffice_url=$(echo "$response" | jq -r '.data.encryptedBackofficeUrl // empty')
+  enc_repo_url=$(echo "$response" | jq -r '.data.encryptedRepoUrl // empty')
+
+  if [[ -z "$SERVER_NODE_ID" ]] || [[ -z "$enc_api_key" ]]; then
+    warn "Missing serverNodeId or encryptedApiKey in quick-code response."
+    warn "Falling back to manual registration..."
+    return 1
+  fi
+
+  # ── Decrypt secrets ──
+  # Reusable RSA decryption (same as manual flow uses)
+  _qc_decrypt_rsa() {
+    local encrypted_b64="$1" label="$2"
+    if [[ -z "$encrypted_b64" ]] || [[ "$encrypted_b64" == "null" ]]; then
+      echo ""; return
+    fi
+    local decrypted
+    decrypted=$(echo "$encrypted_b64" | base64 -d 2>/dev/null | openssl pkeyutl -decrypt \
+      -inkey "$KEY_DIR/private.pem" \
+      -pkeyopt rsa_padding_mode:oaep \
+      -pkeyopt rsa_oaep_md:sha256 \
+      -pkeyopt rsa_mgf1_md:sha256 2>&1) || {
+      warn "  RSA decrypt failed for: ${label:-unknown}"
+      echo ""; return
+    }
+    echo "$decrypted"
+  }
+
+  log "Decrypting secrets..."
+  SERVER_API_KEY=$(_qc_decrypt_rsa "$enc_api_key" "serverApiKey")
+  DATABASE_URL=$(_qc_decrypt_rsa "$enc_db_url" "databaseUrl")
+  DIRECT_URL=$(_qc_decrypt_rsa "$enc_direct_url" "directUrl")
+  DEPLOY_TOKEN=$(_qc_decrypt_rsa "$enc_deploy_token" "deployToken")
+
+  # Decrypt optional secrets
+  if [[ -n "$enc_repo_url" ]]; then
+    local decrypted_repo_url
+    decrypted_repo_url=$(_qc_decrypt_rsa "$enc_repo_url" "repoUrl")
+    if [[ -n "$decrypted_repo_url" ]]; then
+      GIT_REPO="$decrypted_repo_url"
+      log "Git repo URL from quick-code registration."
+    fi
+  fi
+  if [[ -z "$GIT_REPO" ]]; then
+    GIT_REPO="https://github.com/GetwithitMan/gwi-pos.git"
+    log "Using default Git repo URL."
+  fi
+
+  if [[ -n "$enc_backoffice_url" ]]; then
+    local decrypted_bo_url
+    decrypted_bo_url=$(_qc_decrypt_rsa "$enc_backoffice_url" "backofficeUrl")
+    if [[ -n "$decrypted_bo_url" ]]; then
+      BACKOFFICE_API_URL="$decrypted_bo_url"
+      log "Backoffice URL from quick-code registration."
+    fi
+  fi
+
+  if [[ -z "$SERVER_API_KEY" ]]; then
+    warn "Failed to decrypt server API key from quick-code response."
+    warn "Falling back to manual registration..."
+    return 1
+  fi
+
+  log "Secrets decrypted successfully."
+
+  # ── Cloud DB → NEON_DATABASE_URL (offline-first: local PG is primary) ──
+  NEON_DATABASE_URL=""
+  NEON_DIRECT_URL=""
+  SYNC_ENABLED="false"
+  USE_LOCAL_PG=true
+  if [[ -n "$DATABASE_URL" ]] && [[ "$DATABASE_URL" != *"localhost"* ]] && [[ "$DATABASE_URL" != *"127.0.0.1"* ]]; then
+    NEON_DATABASE_URL="$DATABASE_URL"
+    NEON_DIRECT_URL="$DIRECT_URL"
+    SYNC_ENABLED="true"
+    log "Cloud database URL provided — storing as NEON_DATABASE_URL for sync."
+    DATABASE_URL=""
+    DIRECT_URL=""
+  fi
+
+  # Mark quick-code as successful
+  QUICK_CODE_PROVISIONED=1
+  ALREADY_REGISTERED=false
+  REG_CODE=""
+
+  echo ""
+  log "╔══════════════════════════════════════════════════╗"
+  log "║  One-Click Registration Successful!              ║"
+  log "╠══════════════════════════════════════════════════╣"
+  log "║  Venue: $(printf '%-40s' "${VENUE_NAME:-Unknown}")║"
+  log "║  Role:  $(printf '%-40s' "$STATION_ROLE")║"
+  log "║  Node:  $(printf '%-40s' "${SERVER_NODE_ID:0:36}")║"
+  log "╚══════════════════════════════════════════════════╝"
+  echo ""
+
+  return 0
+}
+
 run_register() {
   local _start=$(date +%s)
   log "Stage: register — starting"
 
+  # Load error codes library
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
+
   # ─────────────────────────────────────────────────────────────────────────────
-  # Prompts — Station Configuration
+  # Quick-Code: try one-click deployment first (Enter skips to manual)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  if attempt_quick_code_registration; then
+    log "Quick-code provisioning complete — skipping manual registration prompts."
+    # Still need VNC password for remote access
+    echo ""
+    read -rsp "VNC remote access password [press Enter to auto-generate]: " VNC_PASSWORD < /dev/tty
+    echo ""
+    if [[ -z "$VNC_PASSWORD" ]]; then
+      VNC_PASSWORD=$(openssl rand -base64 20 | tr '+/' '-_' | cut -c1-20)
+      log "VNC password auto-generated."
+    fi
+    # Skip all manual prompts and MC registration — jump to end
+    log "Stage: register — completed in $(( $(date +%s) - _start ))s"
+    return 0
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Manual Flow — Prompts — Station Configuration
   # ─────────────────────────────────────────────────────────────────────────────
 
   header "Station Configuration"
@@ -167,12 +428,14 @@ run_register() {
     echo ""
     read -rp "Registration code: " REG_CODE < /dev/tty
     if [[ -z "$REG_CODE" ]]; then
+      err_code "ERR-INST-051" "Empty registration code"
       err "Registration code is required for new server/backup installations."
       return 1
     fi
     # Validate UUID format (MC expects a UUID v4)
     UUID_REGEX='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
     if [[ ! "$REG_CODE" =~ $UUID_REGEX ]]; then
+      err_code "ERR-INST-051" "Not a valid UUID: $REG_CODE"
       err "Invalid registration code format. Expected UUID (e.g., 550e8400-e29b-41d4-a716-446655440000)"
       return 1
     fi
@@ -438,6 +701,12 @@ run_register() {
     rm -f "$REG_RESP_FILE" "$REG_ERR_FILE"
 
     if [[ "$HTTP_CODE" != "201" ]] && [[ "$HTTP_CODE" != "200" ]]; then
+      # Classify the error for structured logging
+      if [[ "$HTTP_CODE" == "000" ]]; then
+        err_code "ERR-INST-052" "MC unreachable at $MC_REGISTER_URL (HTTP $HTTP_CODE)"
+      else
+        err_code "ERR-INST-050" "HTTP $HTTP_CODE from $MC_REGISTER_URL"
+      fi
       err "Mission Control registration failed (HTTP $HTTP_CODE)."
       # Try to extract error message from response
       ERR_MSG=$(echo "$REG_RESPONSE" | jq -r '.error // .message // empty' 2>/dev/null || echo "")
@@ -479,6 +748,7 @@ run_register() {
     ENCRYPTED_REPO_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedRepoUrl // empty')
 
     if [[ -z "$SERVER_NODE_ID" ]] || [[ -z "$ENCRYPTED_API_KEY" ]]; then
+      err_code "ERR-INST-050" "Missing serverNodeId or encryptedApiKey in MC response"
       err "Invalid response from Mission Control (missing serverNodeId or encryptedApiKey)."
       err "Response: $REG_RESPONSE"
       return 1
@@ -544,6 +814,7 @@ run_register() {
     fi
 
     if [[ -z "$SERVER_API_KEY" ]]; then
+      err_code "ERR-INST-054" "RSA decryption of serverApiKey failed"
       err "Failed to decrypt server API key."
       err ""
       err "Possible causes:"

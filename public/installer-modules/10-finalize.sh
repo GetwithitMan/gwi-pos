@@ -178,6 +178,55 @@ run_finalize() {
   mkdir -p "$APP_BASE/state"
   local _warnings_json
   _warnings_json=$(printf '%s\n' "${INSTALL_WARNINGS[@]:-}" | jq -R -s 'split("\n") | map(select(length > 0))' 2>/dev/null || echo '[]')
+  # Gather extended report fields
+  local _git_sha _commit_date _pos_version _node_version _pg_version
+  _git_sha=$(cd "$APP_DIR" && git rev-parse HEAD 2>/dev/null || echo "unknown")
+  _commit_date=$(cd "$APP_DIR" && git log -1 --format=%cI 2>/dev/null || echo "unknown")
+  _pos_version=$(cd "$APP_DIR" && node -e 'console.log(require("./package.json").version)' 2>/dev/null || echo "unknown")
+  _node_version=$(node --version 2>/dev/null || echo "unknown")
+  _pg_version=$(psql --version 2>/dev/null | head -1 || echo "unknown")
+
+  # Watchdog installed?
+  local _watchdog_installed="false"
+  if [[ -f /etc/systemd/system/gwi-watchdog.timer ]]; then
+    _watchdog_installed="true"
+  fi
+
+  # Hardware inventory (from watchdog script if available)
+  local _hw_inventory="{}"
+  if [[ -x /opt/gwi-pos/scripts/hardware-inventory.sh ]]; then
+    _hw_inventory=$(/opt/gwi-pos/scripts/hardware-inventory.sh 2>/dev/null || echo "{}")
+    # Validate JSON — fall back to empty object if invalid
+    echo "$_hw_inventory" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null || _hw_inventory="{}"
+  fi
+
+  # Disk state (usage of key partitions)
+  local _disk_state="{}"
+  if command -v df >/dev/null 2>&1; then
+    local _disk_total _disk_used _disk_avail _disk_pct
+    _disk_total=$(df -BM /opt/gwi-pos 2>/dev/null | awk 'NR==2 {gsub(/M/,""); print $2}' || echo "0")
+    _disk_used=$(df -BM /opt/gwi-pos 2>/dev/null | awk 'NR==2 {gsub(/M/,""); print $3}' || echo "0")
+    _disk_avail=$(df -BM /opt/gwi-pos 2>/dev/null | awk 'NR==2 {gsub(/M/,""); print $4}' || echo "0")
+    _disk_pct=$(df /opt/gwi-pos 2>/dev/null | awk 'NR==2 {gsub(/%/,""); print $5}' || echo "0")
+    _disk_state="{\"totalMB\":${_disk_total:-0},\"usedMB\":${_disk_used:-0},\"availMB\":${_disk_avail:-0},\"usedPercent\":${_disk_pct:-0}}"
+  fi
+
+  # Dashboard installed?
+  local _dashboard_installed="false"
+  local _dashboard_version="null"
+  if command -v gwi-dashboard >/dev/null 2>&1 || command -v gwi-nuc-dashboard >/dev/null 2>&1; then
+    _dashboard_installed="true"
+    _dashboard_version="\"$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "unknown")\""
+  fi
+
+  # Build stage results from state files if available
+  local _stages_json="{}"
+  if [[ -f "$APP_BASE/state/stage11-result.json" ]]; then
+    local _s11_outcome
+    _s11_outcome=$(python3 -c "import json; print(json.load(open('$APP_BASE/state/stage11-result.json')).get('outcome','unknown'))" 2>/dev/null || echo "unknown")
+    _stages_json="{\"hardening\":\"${_s11_outcome}\"}"
+  fi
+
   cat > "$report_file" <<REPORT
 {
   "installId": "$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo unknown)",
@@ -186,17 +235,23 @@ run_finalize() {
   "installedAt": "$(date -u +%FT%TZ)",
   "installerVersion": "${INSTALLER_VERSION:-unknown}",
   "role": "${STATION_ROLE:-unknown}",
-  "gitSha": "$(cd $APP_DIR && git rev-parse HEAD 2>/dev/null || echo unknown)",
-  "stages": {},
+  "gitSha": "${_git_sha}",
+  "commitDate": "${_commit_date}",
+  "stages": ${_stages_json},
   "warnings": ${_warnings_json},
   "warningsCount": ${#INSTALL_WARNINGS[@]},
   "schemaVersion": "${SCHEMA_VERSION:-unknown}",
-  "posVersion": "$(cd $APP_DIR && node -e 'console.log(require("./package.json").version)' 2>/dev/null || echo unknown)",
-  "nodeVersion": "$(node --version 2>/dev/null || echo unknown)",
-  "pgVersion": "$(psql --version 2>/dev/null | head -1 || echo unknown)",
+  "posVersion": "${_pos_version}",
+  "nodeVersion": "${_node_version}",
+  "pgVersion": "${_pg_version}",
   "duration": $(( $(date +%s) - ${INSTALL_START:-0} )),
   "degraded": $([ ${#INSTALL_WARNINGS[@]} -gt 0 ] && echo true || echo false),
-  "failureReason": null
+  "failureReason": null,
+  "watchdogInstalled": ${_watchdog_installed},
+  "hardwareInventory": ${_hw_inventory},
+  "diskState": ${_disk_state},
+  "dashboardInstalled": ${_dashboard_installed},
+  "dashboardVersion": ${_dashboard_version}
 }
 REPORT
   chown "$POSUSER":"$POSUSER" "$report_file" 2>/dev/null || true

@@ -1,0 +1,12 @@
+[Unit]
+Description=GWI POS Watchdog Health Check
+After=thepasspos.service
+Wants=thepasspos.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gwi-pos/watchdog.sh
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gwi-watchdog

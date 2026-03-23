@@ -148,6 +148,33 @@ async function handleForceUpdate(payload, cmdId) {
 
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'starting', targetVersion: targetVersion, previousVersion: previousVersion })
 
+  // Version compatibility check — block unsafe version skips
+  var versionCompat = '/opt/gwi-pos/scripts/version-compat.sh'
+  if (fs.existsSync(versionCompat)) {
+    try {
+      var currentSchema = getCurrentSchemaVersion()
+      var targetSchema = (payload && payload.targetSchemaVersion) || ''
+      var currentApp = getCurrentAppVersion()
+      var targetApp = targetVersion || ''
+
+      if (currentSchema && targetSchema) {
+        execSync('bash ' + versionCompat + ' "' + currentSchema + '" "' + targetSchema + '" "' + currentApp + '" "' + targetApp + '"', {
+          encoding: 'utf-8',
+          timeout: 10000
+        })
+        log('Version compatibility check passed')
+      }
+    } catch (err) {
+      log('Version compatibility check FAILED: ' + err.message)
+      ackProgress(cmdId, 'FAILED', {
+        step: 'version_compat_failed',
+        error: 'Version skip too large — must update through intermediate versions',
+        detail: err.stdout || err.message
+      })
+      return { ok: false, error: 'version_compat_failed', _acked: true }
+    }
+  }
+
   // Try version-targeted update via local update agent (Phase 8.2)
   if (targetVersion) {
     log('[Update] Attempting version-targeted update to ' + targetVersion + ' via update agent...')
@@ -557,6 +584,26 @@ function writeUpdateState(data) {
   }
 }
 
+// ── Version helpers ──────────────────────────────────────────────────────
+function getCurrentSchemaVersion() {
+  try {
+    // Read from _gwi_migrations table count, or from last migration file
+    var migrationsDir = '/opt/gwi-pos/app/scripts/migrations'
+    if (fs.existsSync(migrationsDir)) {
+      var files = fs.readdirSync(migrationsDir).filter(function(f) { return /^\d{3}-/.test(f) }).sort()
+      return files.length > 0 ? (files[files.length - 1].match(/^(\d{3})/) || [])[1] || '000' : '000'
+    }
+    return '000'
+  } catch (e) { return '000' }
+}
+
+function getCurrentAppVersion() {
+  try {
+    var pkg = JSON.parse(fs.readFileSync('/opt/gwi-pos/app/package.json', 'utf-8'))
+    return pkg.version || '0.0.0'
+  } catch (e) { return '0.0.0' }
+}
+
 // ── Process received command ───────────────────────────────────────────────
 async function processCommand(dataStr) {
   try {
@@ -735,6 +782,83 @@ async function processCommand(dataStr) {
       log('[Sync] Cancelling scheduled reboot')
       run('sudo shutdown -c', APP_DIR, 10)
       result = { ok: true }
+    } else if (cmd.type === 'RUN_BASELINE') {
+      // MC sends RUN_BASELINE command to run Ansible hardening baseline
+      // This is Stage 11 (system-hardening.sh) from the installer
+      log('Received RUN_BASELINE command from MC')
+      currentAttemptId = generateAttemptId()
+      ackProgress(cmd.id, 'IN_PROGRESS', { step: 'baseline_start' })
+
+      try {
+        var baselinePath = '/opt/gwi-pos/installer-modules/11-system-hardening.sh'
+
+        if (!fs.existsSync(baselinePath)) {
+          throw new Error('Stage 11 script not found at ' + baselinePath)
+        }
+
+        // Optional: accept specific tags from MC command
+        var tags = (cmd.payload && cmd.payload.tags) || ''  // e.g., "kiosk_hardening,notification_suppression"
+        var skipTags = (cmd.payload && cmd.payload.skipTags) || ''
+        var dryRun = cmd.payload && cmd.payload.dryRun === true
+
+        var baselineEnv = Object.assign({}, process.env)
+        if (tags) baselineEnv.HARDENING_TAGS = tags
+        if (skipTags) baselineEnv.SKIP_HARDENING_TAGS = skipTags
+        if (dryRun) baselineEnv.HARDENING_DRY_RUN = 'true'
+
+        execSync('bash ' + baselinePath, {
+          encoding: 'utf-8',
+          timeout: 600000,  // 10 minute timeout for Ansible
+          env: baselineEnv,
+          cwd: '/opt/gwi-pos'
+        })
+
+        // Read result artifact
+        var baselineResult = {}
+        try {
+          baselineResult = JSON.parse(fs.readFileSync('/opt/gwi-pos/state/stage11-result.json', 'utf-8'))
+        } catch (e) { /* ignore */ }
+
+        ackProgress(cmd.id, 'COMPLETED', {
+          step: 'baseline_complete',
+          result: baselineResult,
+          dryRun: dryRun
+        })
+        log('RUN_BASELINE completed successfully')
+        result = { ok: true, _acked: true }
+      } catch (err) {
+        ackProgress(cmd.id, 'FAILED', {
+          step: 'baseline_failed',
+          error: err.message,
+          stderr: (err.stderr || '').slice(-500)
+        })
+        log('RUN_BASELINE FAILED: ' + err.message)
+        result = { ok: false, error: err.message, _acked: true }
+      }
+    } else if (cmd.type === 'DISK_CLEANUP') {
+      log('Received DISK_CLEANUP command from MC')
+      currentAttemptId = generateAttemptId()
+      ackProgress(cmd.id, 'IN_PROGRESS', { step: 'cleanup_start' })
+
+      try {
+        execSync('bash /opt/gwi-pos/scripts/disk-pressure-monitor.sh', {
+          encoding: 'utf-8',
+          timeout: 120000
+        })
+
+        var diskState = {}
+        try {
+          diskState = JSON.parse(fs.readFileSync('/opt/gwi-pos/state/disk-pressure.json', 'utf-8'))
+        } catch (e) { /* ignore */ }
+
+        ackProgress(cmd.id, 'COMPLETED', { step: 'cleanup_complete', diskState: diskState })
+        log('DISK_CLEANUP completed')
+        result = { ok: true, _acked: true }
+      } catch (err) {
+        ackProgress(cmd.id, 'FAILED', { step: 'cleanup_failed', error: err.message })
+        log('DISK_CLEANUP FAILED: ' + err.message)
+        result = { ok: false, error: err.message, _acked: true }
+      }
     } else if (cmd.type === 'REPAIR_GIT_CREDENTIALS') {
       try {
         var token = cmd.payload && cmd.payload.deployToken

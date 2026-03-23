@@ -36,6 +36,9 @@
     "ws:dev": "SOCKET_PATH=/ws dotenv -e .env.local -- tsx ws-server.ts",
     "ws:build": "node scripts/build-ws-server.mjs",
     "build:all": "npm run build && npm run ws:build",
+    "build:offline-bundle": "bash scripts/build-offline-bundle.sh",
+    "build:iso": "bash scripts/build-custom-iso.sh",
+    "write-usb": "sudo bash scripts/write-usb.sh",
     "load-test": "npx tsx scripts/load-test.ts"
   },
   "dependencies": {

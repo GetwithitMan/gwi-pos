@@ -11,8 +11,12 @@ run_preflight() {
   local _start=$(date +%s)
   log "Stage: preflight — starting"
 
+  # Load error codes library
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
+
   # ── Must be root ──
   if [[ $EUID -ne 0 ]]; then
+    err_code "ERR-INST-001" "EUID=$EUID"
     err "This installer must be run as root. Use: sudo bash installer.run"
     return 1
   fi
@@ -21,11 +25,13 @@ run_preflight() {
   if [ -f /etc/os-release ]; then
     . /etc/os-release
     if [[ "$ID" != "ubuntu" ]] || [[ "${VERSION_ID%%.*}" -lt 22 ]]; then
+      err_code "ERR-INST-002" "Detected: $PRETTY_NAME"
       err "GWI POS requires Ubuntu 22.04 or later. Detected: $PRETTY_NAME"
       return 1
     fi
     log "OS: $PRETTY_NAME"
   else
+    err_code "ERR-INST-002" "/etc/os-release not found"
     err "Cannot detect OS. /etc/os-release not found."
     return 1
   fi
@@ -69,6 +75,7 @@ run_preflight() {
   # ── Disk Space Check — abort if less than 2GB free ──
   FREE_MB=$(df -BM /opt 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'M')
   if [[ -n "$FREE_MB" ]] && [[ "$FREE_MB" -lt 2000 ]]; then
+    err_code "ERR-INST-003" "${FREE_MB}MB free, need 2000MB on /opt"
     err "Insufficient disk space: ${FREE_MB}MB free, need at least 2000MB."
     err "Free up space before running the installer."
     return 1
@@ -109,6 +116,7 @@ run_preflight() {
   if ! curl -fsS --max-time 10 "$MC_URL" >/dev/null 2>&1; then
     warn "Cannot reach Mission Control ($MC_URL). Checking general internet..."
     if ! curl -fsS --max-time 10 "https://google.com" >/dev/null 2>&1; then
+      err_code "ERR-INST-004" "No internet connectivity (google.com unreachable)"
       err "No internet connection. Connect to the network and try again."
       return 1
     fi
@@ -120,6 +128,7 @@ run_preflight() {
   log "Checking DNS resolution..."
   for host in github.com registry.npmjs.org; do
     if ! host "$host" >/dev/null 2>&1 && ! nslookup "$host" >/dev/null 2>&1; then
+      err_code "ERR-INST-004" "DNS resolution failed for $host"
       err "DNS resolution failed for $host — check network/DNS configuration"
       return 1
     fi
@@ -130,6 +139,7 @@ run_preflight() {
   local AVAIL_KB
   AVAIL_KB=$(df -k "$APP_BASE" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
   if [[ "$AVAIL_KB" -lt 8000000 ]]; then
+    err_code "ERR-INST-003" "$(( AVAIL_KB / 1024 ))MB free on $APP_BASE, need 8GB"
     err "Insufficient disk: $(( AVAIL_KB / 1024 )) MB free (need 8 GB)"
     return 1
   fi
@@ -150,6 +160,7 @@ run_preflight() {
         local_epoch=$(date +%s)
         local drift=$(( local_epoch - remote_epoch ))
         if [[ ${drift#-} -gt 300 ]]; then
+          err_code "ERR-INST-005" "Clock drift ${drift}s, NTP not synced"
           err "System clock off by ${drift}s — NTP not synced. TLS/tokens will fail."
           err "Run: sudo timedatectl set-ntp true"
           return 1
@@ -163,6 +174,7 @@ run_preflight() {
   local mem_mb
   mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)
   if [[ "$mem_mb" -lt 2048 ]]; then
+    err_code "ERR-INST-006" "${mem_mb}MB detected, need 2048MB"
     err "Insufficient memory: ${mem_mb}MB (need 2048MB minimum for build)"
     return 1
   fi
@@ -174,7 +186,7 @@ run_preflight() {
     _role=$(cat "$APP_BASE/config/role.conf" 2>/dev/null || echo "")
     case "$_role" in
       server|terminal|backup|"") ;; # empty is OK on fresh install
-      *) err "Invalid role '$_role' in $APP_BASE/config/role.conf"; return 1 ;;
+      *) err_code "ERR-INST-010" "role='$_role' in $APP_BASE/config/role.conf"; err "Invalid role '$_role' in $APP_BASE/config/role.conf"; return 1 ;;
     esac
   fi
 

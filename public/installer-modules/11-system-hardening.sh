@@ -396,6 +396,10 @@ except Exception as e:
   log "  Station role: $_station_role"
   log "  POS user: $_posuser"
   log "  Baseline version: $(_read_baseline_version)"
+  # NOTE: Notification suppression (GNOME/desktop alerts) is handled by the
+  # kiosk_hardening Ansible role which runs by default (no tag filter needed).
+  # The role disables update-notifier, apport, and desktop notification daemons.
+  log "  Includes: kiosk_hardening (notification suppression), firewall, sshd, branding, etc."
 
   local ansible_exit=0
 

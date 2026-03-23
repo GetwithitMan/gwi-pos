@@ -12,6 +12,9 @@ run_schema() {
   local _start=$(date +%s)
   log "Stage: schema — starting"
 
+  # Load error codes library
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
+
   # Only server + backup roles need schema work
   if [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
     log "Stage: schema — skipped (terminal role)"
@@ -63,6 +66,7 @@ run_schema() {
       local dropped
       dropped=$(comm -23 <(echo "$PRE_PUSH_TABLES") <(echo "$POST_PUSH_TABLES"))
       if [[ -n "$dropped" ]]; then
+        err_code "ERR-INST-181" "Dropped tables: $dropped"
         warn "Tables dropped by schema push: $dropped"
         track_warn "Schema push dropped tables: $dropped"
       fi
@@ -126,6 +130,7 @@ run_schema() {
         # Check if seed wrote an INCOMPLETE marker
         if [[ -f "$APP_BASE/.seed-status" ]] && grep -q "^INCOMPLETE" "$APP_BASE/.seed-status"; then
           SEED_REASON=$(cat "$APP_BASE/.seed-status" | cut -d: -f3-)
+          err_code "ERR-INST-183" "Neon seed incomplete: $SEED_REASON"
           err "Neon seed FAILED: $SEED_REASON"
           err "The venue cannot activate on partial data. Fix the issue and re-run the installer."
           err "Seed status file: $APP_BASE/.seed-status"
@@ -142,6 +147,7 @@ run_schema() {
         if [[ "$SEED_STATE" == "COMPLETE" ]]; then
           log "Neon seed verified complete."
         else
+          err_code "ERR-INST-183" "Seed status: $(cat "$APP_BASE/.seed-status")"
           err "Seed did not complete successfully (status: $(cat "$APP_BASE/.seed-status"))"
           return 1
         fi
@@ -171,6 +177,7 @@ run_schema() {
       fi
     done
     if [[ "$validation_failed" == "true" ]]; then
+      err_code "ERR-INST-182" "One or more critical tables missing after schema push"
       err "Critical tables missing — cannot proceed"
       return 1
     fi
@@ -237,6 +244,7 @@ run_schema() {
   _start_spinner "Building POS application (this takes a few minutes)"
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build" >/dev/null 2>&1; then
     _stop_spinner
+    err_code "ERR-INST-186" "npm run build failed in $APP_DIR"
     err "Application build failed. Re-running with output..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build"
     return 1

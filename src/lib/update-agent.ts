@@ -10,7 +10,7 @@
 
 import { createHmac, randomUUID } from 'crypto'
 import { execSync } from 'child_process'
-import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync } from 'fs'
 import path from 'path'
 import { createChildLogger } from '@/lib/logger'
 
@@ -102,6 +102,44 @@ export async function runPreflightChecks(): Promise<PreflightResult> {
     checks.push({ name: 'disk_space', passed: true, detail: 'check skipped (non-linux)' })
   }
 
+  // 1b. Disk pressure state (from watchdog)
+  const diskPressurePath = '/opt/gwi-pos/state/disk-pressure.json'
+  if (existsSync(diskPressurePath)) {
+    try {
+      const diskState = JSON.parse(readFileSync(diskPressurePath, 'utf8')) as {
+        alert?: boolean
+        usagePercent?: number
+        freeGb?: number
+      }
+      if (diskState.alert) {
+        log.warn(`[UpdateAgent] WARNING: Disk pressure alert — ${diskState.usagePercent}% used, ${diskState.freeGb}GB free`)
+        if (diskState.freeGb !== undefined && diskState.freeGb < 4) {
+          checks.push({
+            name: 'disk_pressure',
+            passed: false,
+            detail: `Insufficient disk space: ${diskState.freeGb}GB free (need >= 4GB)`,
+          })
+        } else {
+          checks.push({
+            name: 'disk_pressure',
+            passed: true,
+            detail: `Disk pressure alert active but sufficient space: ${diskState.freeGb}GB free`,
+          })
+        }
+      } else {
+        checks.push({ name: 'disk_pressure', passed: true })
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('Insufficient disk')) {
+        checks.push({ name: 'disk_pressure', passed: false, detail: msg })
+      } else {
+        // Ignore parse errors — disk pressure file may be corrupt
+        checks.push({ name: 'disk_pressure', passed: true, detail: 'check skipped (parse error)' })
+      }
+    }
+  }
+
   // 2. Local PG reachable
   try {
     const { masterClient } = await import('./db')
@@ -170,7 +208,155 @@ function isValidVersion(version: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9._\-+]*$/.test(version) && version.length <= 64
 }
 
-export async function executeUpdate(targetVersion: string): Promise<UpdateResult> {
+// ── Version compatibility check ────────────────────────────────────────────
+
+/**
+ * Get the latest schema migration number from the migrations directory.
+ * Returns a 3-digit string (e.g. "093") or "000" if none found.
+ */
+function getCurrentSchemaVersion(): string {
+  try {
+    const migrationsDir = path.join(process.cwd(), 'scripts/migrations')
+    if (existsSync(migrationsDir)) {
+      const files = readdirSync(migrationsDir).filter(f => /^\d{3}-/.test(f)).sort()
+      return files.length > 0 ? (files[files.length - 1].match(/^(\d{3})/)?.[1] || '000') : '000'
+    }
+    return '000'
+  } catch { return '000' }
+}
+
+/**
+ * Version compatibility check — block unsafe version skips.
+ * Runs an external compat script (if present) that can enforce
+ * migration ordering, minimum-version requirements, etc.
+ */
+async function checkVersionCompatibility(currentVersion: string, targetVersion: string): Promise<void> {
+  const versionCompat = '/opt/gwi-pos/scripts/version-compat.sh'
+  if (!existsSync(versionCompat)) {
+    log.info('[UpdateAgent] Version compat script not found, skipping check')
+    return
+  }
+
+  // Get current schema version from migration files
+  const currentSchema = getCurrentSchemaVersion()
+  const targetSchema = targetVersion // MC should send schema version in payload
+
+  try {
+    execSync(`bash ${versionCompat} "${currentSchema}" "${targetSchema}" "${currentVersion}" "${targetVersion}"`, {
+      encoding: 'utf8',
+      timeout: 10_000,
+    })
+    log.info('[UpdateAgent] Version compatibility check passed')
+  } catch (err: unknown) {
+    const errObj = err as { stdout?: string; message?: string }
+    throw new Error(`Version compatibility check failed: ${errObj.stdout || errObj.message}`)
+  }
+}
+
+// ── Rolling restart ────────────────────────────────────────────────────────
+
+/**
+ * Perform a rolling restart using the rolling-restart.sh script.
+ * Returns true if rolling restart succeeded, false if script not found or failed
+ * (caller should fall back to standard restart).
+ */
+async function performRollingRestart(targetVersion: string): Promise<boolean> {
+  const rollingScript = '/opt/gwi-pos/scripts/rolling-restart.sh'
+  if (!existsSync(rollingScript)) {
+    log.info('[UpdateAgent] Rolling restart script not found, falling back to standard restart')
+    return false
+  }
+
+  try {
+    execSync(`bash ${rollingScript} "${targetVersion}"`, {
+      encoding: 'utf8',
+      timeout: 600_000, // 10 min for build + restart
+      stdio: 'pipe',
+    })
+    log.info('[UpdateAgent] Rolling restart completed successfully')
+    return true
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.error(`[UpdateAgent] Rolling restart failed: ${msg}`)
+    return false
+  }
+}
+
+// ── Rollback reporting ─────────────────────────────────────────────────────
+
+interface RollbackReport {
+  attempted: boolean
+  succeeded: boolean
+  method: 'code_only' | 'full' | 'none'
+  reason: string
+  codeRestored: boolean
+  dbRestored: boolean
+  manualInterventionRequired: boolean
+  diagnosticsPath?: string
+}
+
+const ROLLBACK_REPORT_FILE = '/opt/gwi-pos/state/last-rollback.json'
+
+/**
+ * Capture diagnostics before a rollback so operators can debug later.
+ * Returns the path to the diagnostics directory, or undefined on failure.
+ */
+function captureDiagnostics(reason: string): string | undefined {
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const diagDir = `/opt/gwi-pos/state/diagnostics/${timestamp}`
+    execSync(`mkdir -p "${diagDir}"`, { timeout: 5_000 })
+
+    // Capture journal logs (last 200 lines)
+    try {
+      const journal = execSync('journalctl -u thepasspos --no-pager -n 200 2>/dev/null || true', { encoding: 'utf8', timeout: 10_000 })
+      writeFileSync(path.join(diagDir, 'journal.log'), journal)
+    } catch {}
+
+    // Capture PM2 logs (if available)
+    try {
+      const pm2Log = execSync('tail -200 /opt/gwi-pos/logs/pm2-out.log 2>/dev/null || true', { encoding: 'utf8', timeout: 5_000 })
+      writeFileSync(path.join(diagDir, 'pm2-out.log'), pm2Log)
+    } catch {}
+
+    // Capture git state
+    try {
+      const gitLog = execSync(`git log --oneline -5`, { cwd: APP_DIR, encoding: 'utf8', timeout: 5_000 })
+      const gitStatus = execSync(`git status --short`, { cwd: APP_DIR, encoding: 'utf8', timeout: 5_000 })
+      writeFileSync(path.join(diagDir, 'git-state.txt'), `=== git log ===\n${gitLog}\n=== git status ===\n${gitStatus}`)
+    } catch {}
+
+    // Capture disk usage
+    try {
+      const df = execSync('df -h /opt/gwi-pos 2>/dev/null || true', { encoding: 'utf8', timeout: 5_000 })
+      writeFileSync(path.join(diagDir, 'disk-usage.txt'), df)
+    } catch {}
+
+    // Capture reason
+    writeFileSync(path.join(diagDir, 'reason.txt'), reason)
+
+    log.info(`[UpdateAgent] Diagnostics captured at ${diagDir}`)
+    return diagDir
+  } catch (err) {
+    log.warn('[UpdateAgent] Failed to capture diagnostics:', err instanceof Error ? err.message : err)
+    return undefined
+  }
+}
+
+/**
+ * Write a structured rollback report to /opt/gwi-pos/state/last-rollback.json
+ */
+function writeRollbackReport(report: RollbackReport): void {
+  try {
+    execSync('mkdir -p /opt/gwi-pos/state', { timeout: 5_000 })
+    writeFileSync(ROLLBACK_REPORT_FILE, JSON.stringify({ ...report, timestamp: new Date().toISOString() }, null, 2))
+    log.info(`[UpdateAgent] Rollback report written to ${ROLLBACK_REPORT_FILE}`)
+  } catch (err) {
+    log.warn('[UpdateAgent] Failed to write rollback report:', err instanceof Error ? err.message : err)
+  }
+}
+
+export async function executeUpdate(targetVersion: string, options?: { rollingRestart?: boolean; commandId?: string }): Promise<UpdateResult> {
   const startTime = Date.now()
   const previousVersion = getCurrentVersion()
   const attemptId = randomUUID()
@@ -222,6 +408,9 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
   try {
     // Write lock file
     writeFileSync(UPDATE_LOCK_FILE, JSON.stringify({ targetVersion, startedAt: new Date().toISOString() }))
+
+    // Version compatibility check — block unsafe version skips BEFORE any git operations
+    await checkVersionCompatibility(previousVersion, targetVersion)
 
     // Pre-update safety: backup + code snapshot via atomic transaction
     try {
@@ -358,7 +547,6 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
       if (stderr.includes('P3005')) {
         log.info('[UpdateAgent] Database needs baselining (P3005)...')
         const migrationsDir = path.join(APP_DIR, 'prisma', 'migrations')
-        const { readdirSync, statSync } = await import('fs')
         const migDirs = readdirSync(migrationsDir)
         for (const name of migDirs) {
           if (statSync(path.join(migrationsDir, name)).isDirectory()) {
@@ -447,6 +635,7 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
     // Write success state file before restart (restart may kill this process)
     const finalState: UpdateState = {
       attemptId,
+      commandId: options?.commandId,
       attemptedAt: new Date(startTime).toISOString(),
       targetVersion,
       previousVersion,
@@ -466,109 +655,165 @@ export async function executeUpdate(targetVersion: string): Promise<UpdateResult
 
     // Request service restart (graceful, delayed to allow response delivery)
     setTimeout(() => {
-      log.info('[UpdateAgent] Requesting service restart...')
-      const restartTimestamp = Date.now()
-      try {
-        execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
-      } catch (err) {
-        log.error({ err: err }, '[UpdateAgent] Restart failed:')
+      const useRollingRestart = options?.rollingRestart === true
+
+      // Rolling restart path: delegate to external script, skip manual health gate
+      if (useRollingRestart) {
+        log.info('[UpdateAgent] Attempting rolling restart...')
+        void (async () => {
+          const rollingOk = await performRollingRestart(targetVersion)
+          if (rollingOk) {
+            writeUpdateState({
+              ...finalState,
+              status: 'COMPLETED',
+              steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'rolling-restart', 'health-ok'],
+              duration: Date.now() - startTime,
+            })
+            return
+          }
+          // Rolling restart not available or failed — fall through to standard restart
+          log.info('[UpdateAgent] Falling back to standard restart after rolling restart failure')
+          standardRestart()
+        })()
         return
       }
 
-      // Health gate: verify POS boots successfully after update
-      void (async () => {
-        let healthy = false
-        for (let i = 0; i < 6; i++) {
-          await new Promise(r => setTimeout(r, 10_000)) // 10s intervals, 60s total
-          try {
-            const res = await fetch('http://localhost:3005/api/health', {
-              signal: AbortSignal.timeout(5000),
-            })
-            if (res.ok) {
-              const data = await res.json() as { data?: { database?: string; readiness?: { level?: string } } }
-              if (data.data?.database === 'connected') {
-                const readiness = data.data?.readiness
-                if (!readiness || readiness.level === 'FAILED') {
-                  // DB is up but readiness failed — keep retrying
-                  continue
-                }
-                healthy = true
-                break
-              }
-            }
-          } catch {
-            // Still booting, retry
-          }
+      standardRestart()
+
+      function standardRestart(): void {
+        log.info('[UpdateAgent] Requesting service restart...')
+        const restartTimestamp = Date.now()
+        try {
+          execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
+        } catch (err) {
+          log.error({ err: err }, '[UpdateAgent] Restart failed:')
+          return
         }
 
-        if (!healthy) {
-          log.error('[UpdateAgent] POS failed health check after update — initiating conservative rollback')
-
-          const rollbackState: Partial<UpdateState> = { rollbackAttempted: true }
-
-          try {
-            // Conservative rollback: code only, NO database restore
-            // If writes may have been accepted, mark for manual review
-            const uptimeAfterRestart = Date.now() - restartTimestamp
-            const mayHaveAcceptedWrites = uptimeAfterRestart > 15_000 // >15s after restart = may have served requests
-
-            // Restore code from snapshot if available
-            if (existsSync('/opt/gwi-pos/app.last-good')) {
-              execSync('bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && rollback_transaction"', { timeout: 60_000 })
-              log.info('[UpdateAgent] Code restored from snapshot')
-            } else {
-              // Fallback: git reset
-              execSync(`cd ${APP_DIR} && git reset --hard ${previousSha}`, { timeout: 30_000 })
-            }
-
-            // Rebuild from rolled-back code
-            const buildEnv = { ...process.env, NODE_OPTIONS: '--max-old-space-size=4096', SKIP_TYPECHECK: '1' }
+        // Health gate: verify POS boots successfully after update
+        void (async () => {
+          let healthy = false
+          for (let i = 0; i < 6; i++) {
+            await new Promise(r => setTimeout(r, 10_000)) // 10s intervals, 60s total
             try {
-              execSync('npm ci', { cwd: APP_DIR, timeout: 300_000 })
-              execSync('npx prisma generate', { cwd: APP_DIR, timeout: 60_000 })
-              execSync('npm run build', { cwd: APP_DIR, timeout: 600_000, env: buildEnv })
-              log.info('[UpdateAgent] Rollback rebuild complete')
-            } catch (rebuildErr) {
-              log.error({ err: rebuildErr }, '[UpdateAgent] Rollback rebuild failed')
+              const res = await fetch('http://localhost:3005/api/health', {
+                signal: AbortSignal.timeout(5000),
+              })
+              if (res.ok) {
+                const data = await res.json() as { data?: { database?: string; readiness?: { level?: string } } }
+                if (data.data?.database === 'connected') {
+                  const readiness = data.data?.readiness
+                  if (!readiness || readiness.level === 'FAILED') {
+                    // DB is up but readiness failed — keep retrying
+                    continue
+                  }
+                  healthy = true
+                  break
+                }
+              }
+            } catch {
+              // Still booting, retry
             }
-
-            execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
-
-            rollbackState.rollbackSucceeded = true
-            rollbackState.manualInterventionRequired = mayHaveAcceptedWrites
-
-            if (mayHaveAcceptedWrites) {
-              log.warn('[UpdateAgent] Rollback complete but POS may have accepted writes — manual DB review required')
-            } else {
-              log.info('[UpdateAgent] Rollback complete — reverted to previous version')
-            }
-          } catch (rollbackErr) {
-            log.error({ err: rollbackErr }, '[UpdateAgent] Rollback failed — manual intervention required')
-            rollbackState.rollbackSucceeded = false
-            rollbackState.manualInterventionRequired = true
           }
 
-          // Update state file with rollback info
-          writeUpdateState({
-            ...finalState,
-            status: 'ROLLED_BACK',
-            rollbackAttempted: rollbackState.rollbackAttempted ?? true,
-            rollbackSucceeded: rollbackState.rollbackSucceeded,
-            manualInterventionRequired: rollbackState.manualInterventionRequired ?? true,
-            steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-failed', 'rollback'],
-            duration: Date.now() - startTime,
-          })
-        } else {
-          log.info('[UpdateAgent] Health check passed — update verified')
-          // Update state file with health-ok
-          writeUpdateState({
-            ...finalState,
-            status: 'COMPLETED',
-            steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-ok'],
-            duration: Date.now() - startTime,
-          })
-        }
-      })()
+          if (!healthy) {
+            log.error('[UpdateAgent] POS failed health check after update — initiating conservative rollback')
+
+            const rollbackState: Partial<UpdateState> = { rollbackAttempted: true }
+            const rollbackReport: RollbackReport = {
+              attempted: true,
+              succeeded: false,
+              method: 'none',
+              reason: 'Health check failed after update restart',
+              codeRestored: false,
+              dbRestored: false,
+              manualInterventionRequired: false,
+            }
+
+            // Capture diagnostics BEFORE rolling back (preserves failed state for debugging)
+            const diagPath = captureDiagnostics(`Health check failed after update ${previousVersion} → ${targetVersion}`)
+            if (diagPath) {
+              rollbackReport.diagnosticsPath = diagPath
+            }
+
+            try {
+              // Conservative rollback: code only, NO database restore
+              // If writes may have been accepted, mark for manual review
+              const uptimeAfterRestart = Date.now() - restartTimestamp
+              const mayHaveAcceptedWrites = uptimeAfterRestart > 15_000 // >15s after restart = may have served requests
+
+              // Restore code from snapshot if available
+              if (existsSync('/opt/gwi-pos/app.last-good')) {
+                execSync('bash -c "export APP_DIR=\\"' + APP_DIR + '\\" && source /opt/gwi-pos/app/public/installer-modules/lib/atomic-update.sh && rollback_transaction"', { timeout: 60_000 })
+                log.info('[UpdateAgent] Code restored from snapshot')
+                rollbackReport.method = 'full'
+                rollbackReport.codeRestored = true
+              } else {
+                // Fallback: git reset
+                execSync(`cd ${APP_DIR} && git reset --hard ${previousSha}`, { timeout: 30_000 })
+                rollbackReport.method = 'code_only'
+                rollbackReport.codeRestored = true
+              }
+
+              // Rebuild from rolled-back code
+              const buildEnv = { ...process.env, NODE_OPTIONS: '--max-old-space-size=4096', SKIP_TYPECHECK: '1' }
+              try {
+                execSync('npm ci', { cwd: APP_DIR, timeout: 300_000 })
+                execSync('npx prisma generate', { cwd: APP_DIR, timeout: 60_000 })
+                execSync('npm run build', { cwd: APP_DIR, timeout: 600_000, env: buildEnv })
+                log.info('[UpdateAgent] Rollback rebuild complete')
+              } catch (rebuildErr) {
+                log.error({ err: rebuildErr }, '[UpdateAgent] Rollback rebuild failed')
+              }
+
+              execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
+
+              rollbackState.rollbackSucceeded = true
+              rollbackState.manualInterventionRequired = mayHaveAcceptedWrites
+              rollbackReport.succeeded = true
+              rollbackReport.manualInterventionRequired = mayHaveAcceptedWrites
+
+              if (mayHaveAcceptedWrites) {
+                rollbackReport.reason = 'Health check failed; rollback complete but POS may have accepted writes during window'
+                log.warn('[UpdateAgent] Rollback complete but POS may have accepted writes — manual DB review required')
+              } else {
+                rollbackReport.reason = 'Health check failed; clean rollback to previous version'
+                log.info('[UpdateAgent] Rollback complete — reverted to previous version')
+              }
+            } catch (rollbackErr) {
+              log.error({ err: rollbackErr }, '[UpdateAgent] Rollback failed — manual intervention required')
+              rollbackState.rollbackSucceeded = false
+              rollbackState.manualInterventionRequired = true
+              rollbackReport.succeeded = false
+              rollbackReport.manualInterventionRequired = true
+              rollbackReport.reason = `Rollback failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`
+            }
+
+            // Write structured rollback report
+            writeRollbackReport(rollbackReport)
+
+            // Update state file with rollback info
+            writeUpdateState({
+              ...finalState,
+              status: 'ROLLED_BACK',
+              rollbackAttempted: rollbackState.rollbackAttempted ?? true,
+              rollbackSucceeded: rollbackState.rollbackSucceeded,
+              manualInterventionRequired: rollbackState.manualInterventionRequired ?? true,
+              steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-failed', 'rollback'],
+              duration: Date.now() - startTime,
+            })
+          } else {
+            log.info('[UpdateAgent] Health check passed — update verified')
+            // Update state file with health-ok
+            writeUpdateState({
+              ...finalState,
+              status: 'COMPLETED',
+              steps: ['backup', 'git-fetch', 'npm-ci', 'prisma-generate', 'migrate', 'build', 'restart', 'health-ok'],
+              duration: Date.now() - startTime,
+            })
+          }
+        })()
+      } // end standardRestart()
     }, 2000)
 
     return {
@@ -690,8 +935,10 @@ export async function reportDeployHealth(result: UpdateResult): Promise<void> {
 export function checkForUpdate(heartbeatResponse: {
   targetVersion?: string
   releaseChannelTier?: string
+  rollingRestart?: boolean
+  commandId?: string
 }): void {
-  const { targetVersion } = heartbeatResponse
+  const { targetVersion, rollingRestart, commandId } = heartbeatResponse
   if (!targetVersion) return
 
   const current = getCurrentVersion()
@@ -700,7 +947,7 @@ export function checkForUpdate(heartbeatResponse: {
   log.info(`[UpdateAgent] Version mismatch: running ${current}, target ${targetVersion}`)
 
   // Fire-and-forget update
-  void executeUpdate(targetVersion).then(result => {
+  void executeUpdate(targetVersion, { rollingRestart, commandId }).then(result => {
     if (result.success) {
       log.info(`[UpdateAgent] Update succeeded: ${result.previousVersion} → ${result.targetVersion} (${result.durationMs}ms)`)
     } else {

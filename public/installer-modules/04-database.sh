@@ -150,6 +150,69 @@ if [ -n "$BATCH_API" ] && [ "$BATCH_API" != '{}' ]; then
   CURRENT_BATCH_TOTAL=$(echo "$BATCH_API" | node -e "try{const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf-8'));const v=d?.data?.currentBatchTotal;process.stdout.write(v!=null?String(v):'null')}catch(e){process.stdout.write('null')}" 2>/dev/null)
 fi
 
+# ── Periodic hardware inventory refresh + disk pressure check ──
+STATE_DIR="/opt/gwi-pos/state"
+mkdir -p "$STATE_DIR"
+HEARTBEAT_COUNT_FILE="$STATE_DIR/.heartbeat-count"
+count=$(cat "$HEARTBEAT_COUNT_FILE" 2>/dev/null || echo 0)
+count=$((count + 1))
+echo "$count" > "$HEARTBEAT_COUNT_FILE"
+# Refresh hardware inventory every 5 minutes (every 5th heartbeat)
+if [[ $((count % 5)) -eq 0 ]] && [[ -x /opt/gwi-pos/scripts/hardware-inventory.sh ]]; then
+  /opt/gwi-pos/scripts/hardware-inventory.sh > "$STATE_DIR/hardware-inventory.json" 2>/dev/null || true
+fi
+# Run disk pressure check every heartbeat (lightweight)
+if [[ -x /opt/gwi-pos/scripts/disk-pressure-monitor.sh ]]; then
+  /opt/gwi-pos/scripts/disk-pressure-monitor.sh 2>/dev/null || true
+fi
+
+# ── Read state files for enriched heartbeat payload ──
+HW_FILE="$STATE_DIR/hardware-inventory.json"
+DP_FILE="$STATE_DIR/disk-pressure.json"
+WD_FILE="$STATE_DIR/watchdog-status.json"
+WD_ESC_FILE="$STATE_DIR/watchdog-escalation.json"
+
+# Hardware inventory (cached JSON from hardware-inventory.sh)
+if [[ -f "$HW_FILE" ]] && jq empty "$HW_FILE" 2>/dev/null; then
+  HARDWARE_JSON=$(cat "$HW_FILE")
+else
+  HARDWARE_JSON='{"touchscreen":{"detected":false,"model":""},"thermalPrinter":{"detected":false,"model":""},"cardReader":{"detected":false,"model":""},"serialScale":{"detected":false,"port":""},"usbDeviceCount":0}'
+fi
+
+# Disk pressure (written by disk-pressure-monitor.sh)
+if [[ -f "$DP_FILE" ]] && jq empty "$DP_FILE" 2>/dev/null; then
+  DISK_PRESSURE_JSON=$(cat "$DP_FILE")
+else
+  DISK_PRESSURE_JSON='{"alert":false,"usagePercent":0,"freeGb":0,"totalGb":0}'
+fi
+
+# Watchdog status
+if [[ -f "$WD_FILE" ]] && jq empty "$WD_FILE" 2>/dev/null; then
+  WATCHDOG_JSON=$(cat "$WD_FILE")
+else
+  WATCHDOG_JSON='{"status":"unknown","failCount":0}'
+fi
+
+# Watchdog escalation (only present when escalated)
+if [[ -f "$WD_ESC_FILE" ]] && jq empty "$WD_ESC_FILE" 2>/dev/null; then
+  WATCHDOG_ESC_JSON=$(cat "$WD_ESC_FILE")
+else
+  WATCHDOG_ESC_JSON='null'
+fi
+
+# Dashboard status (check if gwi-dashboard systemd service is running)
+DASHBOARD_RUNNING=false
+DASHBOARD_VERSION="unknown"
+if systemctl is-active --quiet gwi-dashboard 2>/dev/null; then
+  DASHBOARD_RUNNING=true
+fi
+if [[ -f /opt/gwi-dashboard/version ]]; then
+  DASHBOARD_VERSION=$(cat /opt/gwi-dashboard/version 2>/dev/null || echo "unknown")
+elif [[ -f /opt/gwi-dashboard/package.json ]]; then
+  DASHBOARD_VERSION=$(jq -r '.version // "unknown"' /opt/gwi-dashboard/package.json 2>/dev/null || echo "unknown")
+fi
+DASHBOARD_JSON=$(jq -nc --argjson running "$DASHBOARD_RUNNING" --arg version "$DASHBOARD_VERSION" '{running:$running,version:$version}')
+
 BODY=$(jq -nc \
   --arg version "$VERSION" \
   --argjson uptime "${UPTIME:-0}" \
@@ -167,7 +230,12 @@ BODY=$(jq -nc \
   --argjson openOrderCount "${OPEN_ORDER_COUNT:-null}" \
   --argjson unadjustedTipCount "${UNADJUSTED_TIP_COUNT:-null}" \
   --argjson currentBatchTotal "${CURRENT_BATCH_TOTAL:-null}" \
-  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal}')
+  --argjson hardware "$HARDWARE_JSON" \
+  --argjson diskPressure "$DISK_PRESSURE_JSON" \
+  --argjson watchdog "$WATCHDOG_JSON" \
+  --argjson watchdogEscalation "$WATCHDOG_ESC_JSON" \
+  --argjson dashboard "$DASHBOARD_JSON" \
+  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard}')
 
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
 

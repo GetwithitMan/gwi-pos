@@ -112,6 +112,20 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(): Promise<Nex
   // Schema verified flag
   const schemaVerified = isSchemaVerified()
 
+  // Venue name for dashboard display
+  let venueName = ''
+  if (databaseCheck && locationId) {
+    try {
+      const location = await db.location.findFirst({
+        where: { id: locationId, deletedAt: null },
+        select: { name: true },
+      })
+      venueName = location?.name ?? ''
+    } catch {
+      // Non-critical
+    }
+  }
+
   // ── Sync data ───────────────────────────────────────────────────────────────
   let downstreamSync: {
     running: boolean
@@ -294,6 +308,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(): Promise<Nex
         uptime,
         stationRole,
         nodeEnv: process.env.NODE_ENV || 'development',
+        venueName,
       },
       readiness,
       connectionPool,

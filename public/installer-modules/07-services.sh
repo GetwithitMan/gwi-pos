@@ -14,6 +14,9 @@ run_services() {
   local _start=$(date +%s)
   log "Stage: services — starting"
 
+  # Load error codes library
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
+
   # ─────────────────────────────────────────────────────────────────────────────
   # Server + Backup Roles: Systemd Services
   # ─────────────────────────────────────────────────────────────────────────────
@@ -217,7 +220,7 @@ SVCEOF
       systemctl enable thepasspos
 
       log "Starting POS server..."
-      systemctl restart thepasspos || track_warn "POS service restart failed — will retry on reboot"
+      systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; track_warn "POS service restart failed — will retry on reboot"; }
 
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"
@@ -250,6 +253,7 @@ SVCEOF
       fi
 
       if [[ "$POS_READY" != "true" ]]; then
+        err_code "ERR-INST-212" "Health check failed after 120s — /api/health did not return healthy"
         track_warn "POS not ready after 120s — will retry on reboot"
         track_warn "Check: sudo journalctl -u thepasspos -f"
         # Capture diagnostics for troubleshooting
@@ -472,7 +476,7 @@ SVCEOF
 
       systemctl daemon-reload
       systemctl enable thepasspos-sync
-      systemctl restart thepasspos-sync || track_warn "Sync agent failed to start — check journalctl -u thepasspos-sync"
+      systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start — check journalctl -u thepasspos-sync"; }
       log "Sync agent configured and started."
     else
       track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js — sync agent will not start."
@@ -581,7 +585,7 @@ SVCEOF
     systemctl daemon-reload
     if [[ "$TERM_KIOSK_OK" == "true" ]]; then
       systemctl enable thepasspos-kiosk
-      systemctl restart thepasspos-kiosk || track_warn "Terminal kiosk service restart failed — will retry on reboot"
+      systemctl restart thepasspos-kiosk || { err_code "ERR-INST-214" "systemctl restart thepasspos-kiosk failed"; track_warn "Terminal kiosk service restart failed — will retry on reboot"; }
       # Verify kiosk process actually launched
       sleep 5
       if ! pgrep -u "$POSUSER" -f "${TERM_CHROMIUM:-chromium}" >/dev/null 2>&1; then
@@ -678,6 +682,63 @@ SVCEOF
     systemctl enable thepasspos-exit-kiosk
     systemctl start thepasspos-exit-kiosk
     log "Terminal kiosk exit service running on localhost:3006"
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # All Roles: Watchdog Health Monitor
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  header "Installing watchdog health monitor..."
+
+  # Resolve source directory: prefer $APP_DIR/public (post-clone), fall back to $MODULES_DIR/..
+  local _WD_SRC="${APP_DIR:-/opt/gwi-pos/app}/public"
+  [[ -f "$_WD_SRC/watchdog.sh" ]] || _WD_SRC="${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/.."
+
+  # Copy watchdog files
+  if [[ -f "$_WD_SRC/watchdog.sh" ]]; then
+    cp "$_WD_SRC/watchdog.sh" /opt/gwi-pos/watchdog.sh
+    chmod +x /opt/gwi-pos/watchdog.sh
+
+    if [[ -f "$_WD_SRC/watchdog.service" ]] && [[ -f "$_WD_SRC/watchdog.timer" ]]; then
+      cp "$_WD_SRC/watchdog.service" /etc/systemd/system/gwi-watchdog.service
+      cp "$_WD_SRC/watchdog.timer" /etc/systemd/system/gwi-watchdog.timer
+    else
+      track_warn "watchdog.service or watchdog.timer not found — watchdog timer not installed"
+    fi
+
+    # Copy monitoring scripts
+    mkdir -p /opt/gwi-pos/scripts
+    for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
+      if [[ -f "$_WD_SRC/scripts/$script" ]]; then
+        cp "$_WD_SRC/scripts/$script" /opt/gwi-pos/scripts/"$script"
+      fi
+    done
+    chmod +x /opt/gwi-pos/scripts/*.sh 2>/dev/null || true
+
+    # Create state and log directories
+    mkdir -p /opt/gwi-pos/state /opt/gwi-pos/logs/watchdog-diagnostics
+
+    # Enable and start watchdog timer
+    if [[ -f /etc/systemd/system/gwi-watchdog.timer ]]; then
+      systemctl daemon-reload
+      systemctl enable gwi-watchdog.timer
+      systemctl start gwi-watchdog.timer
+      log "Watchdog timer enabled (health check every 30s)"
+    fi
+  else
+    track_warn "watchdog.sh not found — watchdog not installed"
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # All Roles: Copy shared installer libraries to /opt/gwi-pos/
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  local _LIB_SRC="${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/lib"
+  if [[ -d "$_LIB_SRC" ]]; then
+    mkdir -p /opt/gwi-pos/installer-modules/lib
+    cp "$_LIB_SRC"/*.sh /opt/gwi-pos/installer-modules/lib/
+    chmod +x /opt/gwi-pos/installer-modules/lib/*.sh
+    log "Shared installer libraries copied to /opt/gwi-pos/installer-modules/lib/"
   fi
 
   log "Stage: services — completed in $(( $(date +%s) - _start ))s"

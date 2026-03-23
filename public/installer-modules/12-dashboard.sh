@@ -135,14 +135,46 @@ run_dashboard() {
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Set up autostart (for all users via /etc/xdg/autostart)
+  # Set up systemd user service (primary autostart mechanism)
+  # ─────────────────────────────────────────────────────────────────────────
+  local SYSTEMD_USER_DIR
+  SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
+  mkdir -p "$SYSTEMD_USER_DIR"
+  chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
+
+  cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
+[Unit]
+Description=GWI NUC Dashboard
+After=graphical-session.target
+
+[Service]
+ExecStart=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || echo /usr/bin/gwi-dashboard)
+Restart=always
+RestartSec=3
+Environment=DISPLAY=:0
+Environment=GWI_POS_URL=http://localhost:3005
+
+[Install]
+WantedBy=default.target
+SVCEOF
+  chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
+
+  # Enable the user service (requires loginctl enable-linger for boot-time start)
+  loginctl enable-linger "${POSUSER}" 2>/dev/null || true
+  sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service" 2>/dev/null || {
+    track_warn "Could not enable systemd user service for dashboard — falling back to XDG autostart"
+  }
+  log "Systemd user service created at ${SYSTEMD_USER_DIR}/gwi-dashboard.service (Restart=always, RestartSec=3)"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Set up XDG autostart (fallback if systemd user service fails)
   # ─────────────────────────────────────────────────────────────────────────
   local AUTOSTART_DIR="/etc/xdg/autostart"
   if [[ -d "$AUTOSTART_DIR" ]]; then
     cat > "${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop" << 'DESKTOP'
 [Desktop Entry]
 Name=GWI NUC Dashboard
-Comment=Auto-start GWI system dashboard
+Comment=Auto-start GWI system dashboard (fallback for systemd user service)
 Exec=gwi-dashboard
 Type=Application
 X-GNOME-Autostart-enabled=true
@@ -151,20 +183,26 @@ Hidden=false
 NoDisplay=false
 DESKTOP
     chmod 644 "${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop"
-    log "Autostart entry created at ${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop"
+    log "XDG autostart entry created as fallback at ${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop"
   else
-    track_warn "Autostart directory ${AUTOSTART_DIR} not found — dashboard won't auto-start"
+    track_warn "Autostart directory ${AUTOSTART_DIR} not found — dashboard relies solely on systemd user service"
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
   # Create desktop shortcut (clickable icon on desktop for manual launch)
   # ─────────────────────────────────────────────────────────────────────────
+  # Resolve venue name from .env for the desktop icon
+  local _LOCATION_NAME="${LOCATION_NAME:-}"
+  if [[ -z "$_LOCATION_NAME" ]] && [[ -f "${APP_BASE:-/opt/gwi-pos}/.env" ]]; then
+    _LOCATION_NAME=$(grep -m1 '^LOCATION_NAME=' "${APP_BASE:-/opt/gwi-pos}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' || echo "")
+  fi
+
   local DESKTOP_DIR
   DESKTOP_DIR=$(eval echo "~${POSUSER}/Desktop")
   if [[ -d "$DESKTOP_DIR" ]]; then
-    cat > "${DESKTOP_DIR}/gwi-nuc-dashboard.desktop" << 'DESKTOP'
+    cat > "${DESKTOP_DIR}/gwi-nuc-dashboard.desktop" << DESKTOP
 [Desktop Entry]
-Name=GWI Dashboard
+Name=GWI POS - ${_LOCATION_NAME:-POS Dashboard}
 Comment=System health and device monitoring
 Exec=gwi-dashboard
 Icon=gwi-nuc-dashboard
@@ -197,6 +235,17 @@ SUDOERS
     log "Sudoers rules installed at ${SUDOERS_FILE}"
   else
     log "Sudoers rules already present at ${SUDOERS_FILE}"
+  fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Copy error-codes library to install directory (used by watchdog + dashboard)
+  # ─────────────────────────────────────────────────────────────────────────
+  local _ERR_SRC="${MODULES_DIR:-${SCRIPT_DIR:-/opt/gwi-pos/app/public}/installer-modules}/lib/error-codes.sh"
+  if [[ -f "$_ERR_SRC" ]]; then
+    mkdir -p /opt/gwi-pos/installer-modules/lib
+    cp "$_ERR_SRC" /opt/gwi-pos/installer-modules/lib/error-codes.sh
+    chmod +x /opt/gwi-pos/installer-modules/lib/error-codes.sh
+    log "Error-codes library copied to /opt/gwi-pos/installer-modules/lib/error-codes.sh"
   fi
 
   end_timer "Stage 12 (dashboard)"

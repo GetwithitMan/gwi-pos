@@ -116,6 +116,9 @@ run_deploy_app() {
   local _start=$(date +%s)
   log "Stage: deploy_app — starting"
 
+  # Load error codes library
+  source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
+
   # Only server + backup roles need the app
   if [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
     log "Stage: deploy_app — skipped (terminal role)"
@@ -124,9 +127,30 @@ run_deploy_app() {
 
   header "Installing POS Application"
 
+  # ── Offline install mode — app already deployed by offline installer ──
+  if [[ "${SKIP_GIT_CLONE:-}" == "1" ]]; then
+    log "Offline mode: Skipping git clone (app pre-deployed)"
+    if [[ "${SKIP_NPM_INSTALL:-}" == "1" ]]; then
+      log "Offline mode: Skipping npm install (dependencies pre-bundled)"
+    fi
+    if [[ "${SKIP_BUILD:-}" == "1" ]]; then
+      log "Offline mode: Skipping build (pre-built)"
+    fi
+    # Just ensure symlinks and prisma client
+    ln -sf "$ENV_FILE" "$APP_DIR/.env" 2>/dev/null || true
+    ln -sf "$ENV_FILE" "$APP_DIR/.env.local" 2>/dev/null || true
+    if [[ "${SKIP_NPM_INSTALL:-}" == "1" ]] && [[ "${SKIP_BUILD:-}" == "1" ]]; then
+      log "Offline deploy stage complete"
+      log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
+      return 0
+    fi
+    # Partial offline — still need some steps, fall through to normal flow
+  fi
+
   # Disk space check — build requires ~5 GB temp space
   AVAIL_KB=$(df -k "$APP_BASE" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
   if [[ "$AVAIL_KB" -lt 5000000 ]]; then
+    err_code "ERR-INST-003" "$(( AVAIL_KB / 1024 ))MB free in $APP_BASE, need 5GB for build"
     err "Insufficient disk space: $(( AVAIL_KB / 1024 )) MB free in $APP_BASE (need ~5 GB)"
     err "Free up space and re-run the installer."
     return 1
@@ -149,6 +173,7 @@ run_deploy_app() {
   # Validate credentials before attempting git operations
   if [[ -f "$CRED_FILE" ]]; then
     if ! _git_validate_credentials "$CRED_FILE" "$GIT_REPO"; then
+      err_code "ERR-INST-152" "git ls-remote failed for $GIT_REPO"
       err "WARNING: Git credentials validation failed."
       err "  The deploy token may be expired or revoked."
       err "  Re-register this NUC from Mission Control to get a fresh token."
@@ -169,6 +194,7 @@ run_deploy_app() {
       git remote set-url origin '$GIT_REPO' 2>/dev/null || true
       git fetch --all --prune
     \""; then
+      err_code "ERR-INST-151" "git fetch failed after 3 attempts for $GIT_REPO"
       err "Failed to fetch from git after 3 attempts."
       err "  Check: network connectivity, deploy token, firewall rules."
       err "  If this persists, re-register the NUC to get a fresh deploy token."
@@ -181,6 +207,7 @@ run_deploy_app() {
       git reset --hard origin/main
       git clean -fd
     "; then
+      err_code "ERR-INST-155" "git reset --hard failed in $APP_DIR"
       err "Git reset failed. Attempting nuclear recovery..."
       # Nuclear option: blow away the checkout and re-clone
       # Safety: validate path before rm -rf
@@ -188,6 +215,7 @@ run_deploy_app() {
         log "  Removing corrupted git state at $APP_DIR and re-cloning..."
         rm -rf "$APP_DIR"
       else
+        err_code "ERR-INST-155" "Refusing to rm -rf suspicious path: '$APP_DIR'"
         err "FATAL: Refusing to rm -rf suspicious path: '$APP_DIR'"
         return 1
       fi
@@ -211,6 +239,7 @@ run_deploy_app() {
       cd '$APP_DIR'
       git config credential.helper 'store --file=$CRED_FILE'
     \""; then
+      err_code "ERR-INST-150" "git clone failed after 3 attempts to $GIT_REPO"
       err "Failed to clone app repository after 3 attempts."
       err "  Check: network connectivity, deploy token, repo access."
       err "  Try: curl -sI https://github.com (should return 200)"
@@ -230,6 +259,7 @@ run_deploy_app() {
 
   for _ef in "$APP_DIR/.env" "$APP_DIR/.env.local"; do
     if [[ ! -L "$_ef" ]]; then
+      err_code "ERR-INST-150" "Failed to create symlink at $_ef"
       err "FATAL: Failed to create symlink at $_ef"
       err "  This usually means a permission issue prevented rm -f or ln -sf from succeeding."
       err "  Check ownership of $APP_DIR and ensure $POSUSER has write access."
@@ -245,6 +275,7 @@ run_deploy_app() {
     err "npm install failed. Attempting cache clean + retry..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm cache clean --force" 2>/dev/null || true
     if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && rm -rf node_modules && npm ci --production=false"; then
+      err_code "ERR-INST-153" "npm ci failed after retry in $APP_DIR"
       err "npm install failed after retry. Check Node.js version and network."
       return 1
     fi
@@ -252,6 +283,7 @@ run_deploy_app() {
 
   log "Generating Prisma client..."
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma generate"; then
+    err_code "ERR-INST-154" "npx prisma generate failed in $APP_DIR"
     err "Prisma generate failed. Check schema.prisma for errors."
     return 1
   fi
