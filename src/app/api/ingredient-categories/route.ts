@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: category.id })
 
     try {
-      const { emitToLocation } = await import('@/lib/socket-dispatch')
+      const { emitToLocation } = await import('@/lib/socket-server')
       void emitToLocation(locationId, 'inventory:changed', { action: 'category_created', entityId: category.id })
     } catch {}
 

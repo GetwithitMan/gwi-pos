@@ -16,7 +16,7 @@ type NotifyDomain =
   | 'hardware' | 'pricing' | 'tax' | 'customers' | 'inventory' | 'scheduling'
   | 'combos' | 'roles' | 'coupons' | 'discounts' | 'gift-cards' | 'house-accounts'
   | 'events' | 'reservations' | 'prep' | 'cfd' | 'barcodes' | 'reasons'
-  | 'quick-bar' | 'invoices' | 'liquor' | 'delivery'
+  | 'quick-bar' | 'invoices' | 'liquor' | 'delivery' | 'location'
 
 interface NotifyParams {
   locationId: string

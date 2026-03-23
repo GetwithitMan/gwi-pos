@@ -305,7 +305,7 @@ async function processOutageQueue(): Promise<void> {
           void notifyDataChanged({
             locationId: locId,
             domain: 'sync',
-            action: 'DEAD_LETTER',
+            action: 'dead_letter',
             entityId: entry.id,
           })
           log.error({

@@ -469,9 +469,9 @@ async function handleForceUpdate(payload, cmdId) {
   // NOTE: NUC does NOT migrate Neon. MC owns Neon schema advancement.
   // NUC reads version truth from Neon and blocks sync if behind.
   // If Neon schema is behind, MC must push the update to this venue.
-  // Node defaults to ~1.7GB heap — insufficient for Next.js builds on NUCs
+  // Skip typecheck on NUC (already verified in CI) + set heap for Next.js build
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'build', detail: 'starting npm run build' })
-  if (!step('build', 'NODE_OPTIONS="--max-old-space-size=4096" npm run build', false, 600)) {
+  if (!step('build', 'SKIP_TYPECHECK=1 NODE_OPTIONS="--max-old-space-size=4096" npm run build', false, 600)) {
     var buildFailResult = { ok: false, error: 'build failed', steps: steps }
     if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'build', error: buildFailResult.error, steps: steps })
     writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: buildFailResult.error, steps: steps })

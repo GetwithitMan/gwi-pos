@@ -72,8 +72,12 @@ export interface AuthContext {
 
 export interface AuthenticatedContext {
   auth: AuthContext
-  /** Pass-through for Next.js route params (e.g., { params: Promise<{ id: string }> }) */
-  params?: Promise<Record<string, string>> | Record<string, string> | any
+  /** Pass-through for Next.js route params (e.g., { params: Promise<{ id: string }> }).
+   *  Typed as `any` so route handlers can narrow to their specific param shape
+   *  (e.g., `{ params: Promise<{ id: string }> }`) without type conflicts.
+   *  Next.js always provides params for dynamic routes; non-dynamic routes get `{}`. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  params: any
 }
 
 type AuthenticatedHandler = (
@@ -195,7 +199,7 @@ export function withAuth(
           source: 'session',
         }
 
-        return handler(request, { auth: authCtx, params: context?.params })
+        return handler(request, { auth: authCtx, params: context?.params ?? {} })
       }
     } catch {
       // Cookie read failed — fall through to other auth methods
@@ -270,7 +274,7 @@ export function withAuth(
                     roleName: employee.role?.name || null,
                     source: 'cloud',
                   }
-                  return handler(request, { auth: authCtx, params: context?.params })
+                  return handler(request, { auth: authCtx, params: context?.params ?? {} })
                 }
               }
 
@@ -297,7 +301,7 @@ export function withAuth(
                   source: 'cloud',
                   isCloudAdmin: true,
                 }
-                return handler(request, { auth: authCtx, params: context?.params })
+                return handler(request, { auth: authCtx, params: context?.params ?? {} })
               }
             }
           }
@@ -343,7 +347,7 @@ export function withAuth(
             canRefund: payload.canRefund ?? false,
           }
 
-          return handler(request, { auth: authCtx, params: context?.params })
+          return handler(request, { auth: authCtx, params: context?.params ?? {} })
         }
       }
     }
@@ -374,7 +378,7 @@ export function withAuth(
           source: 'internal',
         }
 
-        return handler(request, { auth: authCtx, params: context?.params })
+        return handler(request, { auth: authCtx, params: context?.params ?? {} })
       }
     }
 

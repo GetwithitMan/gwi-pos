@@ -131,7 +131,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
 
     try {
-      const { emitToLocation } = await import('@/lib/socket-dispatch')
+      const { emitToLocation } = await import('@/lib/socket-server')
       void emitToLocation(existing.locationId, 'inventory:changed', { action: 'category_updated', entityId: id })
     } catch {}
 
@@ -242,7 +242,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
 
     try {
-      const { emitToLocation } = await import('@/lib/socket-dispatch')
+      const { emitToLocation } = await import('@/lib/socket-server')
       void emitToLocation(existing.locationId, 'inventory:changed', { action: 'category_deleted', entityId: id })
     } catch {}
 
