@@ -110,9 +110,17 @@ if ! node scripts/nuc-pre-migrate.js; then
   exit 1
 fi
 
-log "Pushing Prisma schema..."
-if ! timeout 120 npx prisma db push; then
-  warn "prisma db push timed out or had warnings — schema likely already applied by Stage 6"
+# Schema push is handled by Stage 06 BEFORE seed runs.
+# Running prisma db push again here is redundant and causes hangs
+# (timeout + npx + schema-engine process chain doesn't propagate SIGTERM).
+# Instead, just verify schema exists.
+TABLE_COUNT=$($PSQL "$DATABASE_URL" -tAc "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public'" 2>/dev/null || echo "0")
+TABLE_COUNT=$(echo "$TABLE_COUNT" | tr -d '[:space:]')
+if [[ "$TABLE_COUNT" -lt 50 ]]; then
+  warn "Only $TABLE_COUNT tables found — schema may be incomplete. Attempting prisma db push..."
+  timeout --foreground --kill-after=10 120 npx prisma db push 2>/dev/null || warn "prisma db push had issues (non-fatal — Stage 06 should have handled schema)"
+else
+  log "Schema verified: $TABLE_COUNT tables present (skipping redundant prisma db push)"
 fi
 
 # ── Step 4: Verify critical tables have data ───────────────────────────────
