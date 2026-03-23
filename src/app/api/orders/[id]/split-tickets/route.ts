@@ -45,7 +45,7 @@ const createSplitTicketsSchema = z.object({
 // GET - Get all split tickets for an order
 // ============================================
 
-export const GET = withVenue(withAuth(async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -179,7 +179,7 @@ export const GET = withVenue(withAuth(async function GET(
   } catch (error) {
     return handleApiError(error, 'Failed to get split tickets')
   }
-}))
+})
 
 // ============================================
 // POST - Create split tickets from an order

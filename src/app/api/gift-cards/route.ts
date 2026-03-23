@@ -20,18 +20,19 @@ function generateCardNumber(): string {
 }
 
 // GET - List gift cards
-// Auth: session-verified employee with CUSTOMERS_GIFT_CARDS permission
-export const GET = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function GET(
+// No auth required — POS terminals need gift card lookup for checkout
+export const GET = withVenue(async function GET(
   request: NextRequest,
-  ctx: AuthenticatedContext
 ) {
   try {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const search = searchParams.get('search')
 
-    // Use verified locationId from session
-    const locationId = ctx.auth.locationId
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     const where: Record<string, unknown> = { locationId }
 
@@ -70,7 +71,7 @@ export const GET = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function GET
       { status: 500 }
     )
   }
-}))
+})
 
 // POST - Create/purchase a new gift card
 // Auth: session-verified employee with CUSTOMERS_GIFT_CARDS permission

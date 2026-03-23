@@ -6,7 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all sections for a location
-export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -65,7 +65,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       { status: 500 }
     )
   }
-}))
+})
 
 // POST - Create a new section
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {

@@ -8,7 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List active assignments for this section
-export const GET = withVenue(withAuth('ADMIN', async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -61,7 +61,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     console.error('[sections/[id]/assignments] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch assignments' }, { status: 500 })
   }
-}))
+})
 
 // POST - Assign an employee to this section
 export const POST = withVenue(withAuth('ADMIN', async function POST(

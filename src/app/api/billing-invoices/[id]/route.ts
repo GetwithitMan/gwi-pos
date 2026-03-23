@@ -56,13 +56,16 @@ function serializeInvoice(inv: any) {
 
 // ─── GET /api/billing-invoices/[id] ─────────────────────────────────────────
 // Get invoice detail with line items and payment history
-export const GET = withVenue(withAuth(async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
-  ctx: AuthenticatedContext
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await (ctx as any).params
-    const locationId = ctx.auth.locationId
+    const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     const invoice = await db.invoice.findFirst({
       where: { id, locationId, deletedAt: null, source: BILLING_SOURCE },
@@ -84,7 +87,7 @@ export const GET = withVenue(withAuth(async function GET(
     console.error('Get billing invoice error:', error)
     return NextResponse.json({ error: 'Failed to fetch invoice' }, { status: 500 })
   }
-}))
+})
 
 // ─── PUT /api/billing-invoices/[id] ─────────────────────────────────────────
 // Update invoice (only if draft)

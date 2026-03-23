@@ -7,7 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single section
-export const GET = withVenue(withAuth('ADMIN', async function GET(
+export const GET = withVenue(async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -48,7 +48,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     console.error('[sections/[id]] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch section' }, { status: 500 })
   }
-}))
+})
 
 // PUT - Update a section
 export const PUT = withVenue(withAuth('ADMIN', async function PUT(

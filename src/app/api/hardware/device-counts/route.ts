@@ -3,10 +3,9 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { db } from '@/lib/db'
 import { getDeviceCounts } from '@/lib/device-limits'
-import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET current device counts and limits for a location
-export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -43,4 +42,4 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     console.error('Failed to fetch device counts:', error)
     return NextResponse.json({ error: 'Failed to fetch device counts' }, { status: 500 })
   }
-}))
+})

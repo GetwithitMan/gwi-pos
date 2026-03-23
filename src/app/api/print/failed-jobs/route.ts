@@ -11,7 +11,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
  */
 
 // GET - List failed print jobs with printer info
-export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -146,7 +146,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     console.error('[Print Failed Jobs] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch print job status' }, { status: 500 })
   }
-}))
+})
 
 // POST - Retry failed print jobs (specific IDs or all)
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {

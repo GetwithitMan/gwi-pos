@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { withAuth } from '@/lib/api-auth-middleware'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
@@ -44,7 +43,7 @@ function recordKdsAuthFailure(ip: string): void {
 }
 
 // GET /api/hardware/kds-screens/auth - Verify device token and get screen info
-export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     // ── Rate limiting (5 attempts / minute) ────────────────────
     const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -217,4 +216,4 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     console.error('Failed to authenticate KDS:', error)
     return NextResponse.json({ error: 'Failed to authenticate' }, { status: 500 })
   }
-}))
+})

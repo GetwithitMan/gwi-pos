@@ -36,7 +36,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 }))
 
 // GET - Search digital receipts
-export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -102,4 +102,4 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     console.error('Failed to search receipts:', error)
     return NextResponse.json({ error: 'Failed to search receipts' }, { status: 500 })
   }
-}))
+})

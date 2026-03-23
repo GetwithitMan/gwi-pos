@@ -40,7 +40,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 }))
 
 // GET - List failed/queued print jobs
-export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -137,4 +137,4 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}))
+})

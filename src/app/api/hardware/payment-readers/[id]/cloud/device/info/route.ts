@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * Cloud reader device info proxy
  * For cloud-mode readers (e.g. VP3350 USB), there is no direct HTTP device handshake.
  * We return the stored serial + firmware from our DB so useDatacap can verify identity.
  */
-export const GET = withVenue(withAuth(async function GET(
+export const GET = withVenue(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -32,4 +31,4 @@ export const GET = withVenue(withAuth(async function GET(
     firmwareVersion: reader.firmwareVersion || null,
     model: reader.deviceType || 'VP3350',
   })
-}))
+})

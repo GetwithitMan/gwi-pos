@@ -3,10 +3,9 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { scaleService } from '@/lib/scale/scale-service'
 import { withVenue } from '@/lib/with-venue'
-import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get current weight reading (HTTP fallback when socket unavailable)
-export const GET = withVenue(withAuth('ADMIN', async function GET(
+export const GET = withVenue(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -41,4 +40,4 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
     const message = error instanceof Error ? error.message : 'Failed to read weight'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-}))
+})

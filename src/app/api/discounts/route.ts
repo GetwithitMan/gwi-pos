@@ -6,10 +6,9 @@ import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET - List all discount rules for a location
-// Auth: session-verified employee with POS_ACCESS (read is needed by order screen)
-export const GET = withVenue(withAuth('POS_ACCESS', async function GET(
+// No auth required — POS terminals need discount list for order screen
+export const GET = withVenue(async function GET(
   request: NextRequest,
-  ctx: AuthenticatedContext
 ) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -17,8 +16,10 @@ export const GET = withVenue(withAuth('POS_ACCESS', async function GET(
     const manualOnly = searchParams.get('manualOnly') === 'true'
     const employeeOnly = searchParams.get('employeeOnly') === 'true'
 
-    // Use verified locationId from session
-    const locationId = ctx.auth.locationId
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     const where: {
       locationId: string
@@ -73,7 +74,7 @@ export const GET = withVenue(withAuth('POS_ACCESS', async function GET(
       { status: 500 }
     )
   }
-}))
+})
 
 // POST - Create a new discount rule
 // Auth: session-verified employee with SETTINGS_MENU permission

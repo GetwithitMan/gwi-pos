@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
  *           currentOrderTotal, estimatedTurnTime
  * Grouped by section.
  */
-export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -232,7 +232,7 @@ export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
     console.error('[Host/Tables] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch tables' }, { status: 500 })
   }
-}))
+})
 
 /**
  * PUT /api/host/tables — Update table status

@@ -8,7 +8,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 
 // GET - List all cards on a tab
-export const GET = withVenue(withAuth(async function GET(
+export const GET = withVenue(async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -39,7 +39,7 @@ export const GET = withVenue(withAuth(async function GET(
     console.error('Failed to list order cards:', error)
     return NextResponse.json({ error: 'Failed to list order cards' }, { status: 500 })
   }
-}))
+})
 
 // POST - Add another card to an existing tab
 // Fires CollectCardData + EMVPreAuth, creates a new OrderCard

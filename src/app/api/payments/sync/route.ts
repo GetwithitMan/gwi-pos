@@ -228,7 +228,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
  *
  * Get payments that need reconciliation (offline-captured)
  */
-export const GET = withVenue(withAuth(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth({ allowCellular: true }, async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')

@@ -6,7 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single seat with table info
-export const GET = withVenue(withAuth('ADMIN', async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -59,7 +59,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       { status: 500 }
     );
   }
-}))
+})
 
 // PUT - Update seat position/properties
 export const PUT = withVenue(withAuth('ADMIN', async function PUT(

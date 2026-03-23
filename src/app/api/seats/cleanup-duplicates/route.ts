@@ -122,7 +122,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 }))
 
 // GET - Check for duplicates without modifying
-export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get('locationId');
 
@@ -139,4 +139,4 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
   } as NextRequest;
 
   return POST(mockRequest);
-}))
+})

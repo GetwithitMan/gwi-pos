@@ -10,7 +10,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single table
-export const GET = withVenue(withAuth('ADMIN', async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -96,7 +96,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(
       { status: 500 }
     )
   }
-}))
+})
 
 // PUT - Update a table
 export const PUT = withVenue(withAuth('ADMIN', async function PUT(

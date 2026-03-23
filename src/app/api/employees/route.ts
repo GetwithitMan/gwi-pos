@@ -9,13 +9,13 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List employees for a location with pagination
-export const GET = withVenue(withAuth('STAFF_VIEW', async function GET(
+// No auth required — POS terminals need employee list for login/selection
+export const GET = withVenue(async function GET(
   request: NextRequest,
-  ctx: AuthenticatedContext
 ) {
   try {
     const searchParams = request.nextUrl.searchParams
-    const locationId = searchParams.get('locationId') || ctx.auth.locationId
+    const locationId = searchParams.get('locationId')
     const includeInactive = searchParams.get('includeInactive') === 'true'
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
@@ -90,7 +90,7 @@ export const GET = withVenue(withAuth('STAFF_VIEW', async function GET(
       { status: 500 }
     )
   }
-}))
+})
 
 // POST - Create a new employee
 export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST(
