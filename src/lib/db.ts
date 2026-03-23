@@ -74,8 +74,11 @@ export function createPrismaClient(url?: string) {
         async findMany({ model, args, query }) {
           applySoftDeleteFilter(model, args)
           // Safety cap: prevent unbounded queries from returning millions of rows
+          // Pass take: -1 to explicitly opt out (e.g., reports, data exports)
           if (!args.take) {
             args.take = 5000
+          } else if ((args.take as number) === -1) {
+            delete args.take
           }
           return query(args)
         },
@@ -192,10 +195,7 @@ function createAdminClient(url?: string): PrismaClient {
       $allModels: {
         async findMany({ model, args, query }) {
           applySoftDeleteFilter(model, args)
-          // Safety cap: prevent unbounded queries from returning millions of rows
-          if (!args.take) {
-            args.take = 5000
-          }
+          // No safety cap on adminDb — internal/cross-tenant queries need full datasets
           return query(args)
         },
         async findFirst({ model, args, query }) {

@@ -15,7 +15,7 @@ interface RateLimitEntry {
   lastFailure: number // timestamp ms
 }
 
-const IP_MAX_FAILURES = 5
+const IP_MAX_FAILURES = 20 // High threshold — venues share WiFi IP across all POS devices
 const IP_LOCKOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 const EMPLOYEE_MAX_FAILURES = 5
