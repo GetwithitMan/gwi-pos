@@ -3,10 +3,10 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
-import { withAuth } from '@/lib/api-auth-middleware'
-
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
-export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
+// NO withAuth — this route does its own token validation against the Terminal table.
+// Terminals authenticate via Bearer token (not session cookie or cellular JWT).
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // Get token from Authorization header instead of cookie
     const authHeader = request.headers.get('authorization')
@@ -136,4 +136,4 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     console.error('Terminal heartbeat (native) failed:', error)
     return NextResponse.json({ error: 'Heartbeat failed' }, { status: 500 })
   }
-}))
+})
