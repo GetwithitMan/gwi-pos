@@ -3,9 +3,10 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST /api/hardware/kds-screens/[id]/unpair - Remove device pairing
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -43,4 +44,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to unpair device:', error)
     return NextResponse.json({ error: 'Failed to unpair device' }, { status: 500 })
   }
-})
+}))

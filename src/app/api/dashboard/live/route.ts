@@ -7,6 +7,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { roundMoney } from '@/lib/domain/reports'
+import { withAuth } from '@/lib/api-auth-middleware'
 import {
   getTodayRevenueOrders,
   getOpenOrders,
@@ -17,7 +18,7 @@ import {
   getFailedDeductionCount,
 } from '@/lib/query-services'
 
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -132,4 +133,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Dashboard live API error:', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-})
+}))

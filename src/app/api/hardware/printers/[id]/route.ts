@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET single printer
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -25,10 +26,10 @@ export const GET = withVenue(async function GET(
     console.error('Failed to fetch printer:', error)
     return NextResponse.json({ error: 'Failed to fetch printer' }, { status: 500 })
   }
-})
+}))
 
 // PUT update printer
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -99,10 +100,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update printer:', error)
     return NextResponse.json({ error: 'Failed to update printer' }, { status: 500 })
   }
-})
+}))
 
 // DELETE printer
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -133,4 +134,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete printer:', error)
     return NextResponse.json({ error: 'Failed to delete printer' }, { status: 500 })
   }
-})
+}))

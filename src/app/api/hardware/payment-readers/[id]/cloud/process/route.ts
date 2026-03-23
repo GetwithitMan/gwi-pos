@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getDatacapClient, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { roundToCents } from '@/lib/pricing'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * Cloud reader transaction proxy
@@ -11,7 +12,7 @@ import { roundToCents } from '@/lib/pricing'
  *
  * Body: { Amount, TranType, Invoice, TipAmount?, TipRequest?, PartialAuth? }
  */
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -84,4 +85,4 @@ export const POST = withVenue(async function POST(
   } catch (error) {
     return datacapErrorResponse(error)
   }
-})
+}))

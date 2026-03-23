@@ -8,10 +8,11 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const dynamic = 'force-dynamic'
 
-export const PATCH = withVenue(async function PATCH(
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
@@ -116,4 +117,4 @@ export const PATCH = withVenue(async function PATCH(
     console.error('[dashboard/terminals/[id]] PATCH error:', e)
     return NextResponse.json({ error: 'Failed to deactivate terminal' }, { status: 500 })
   }
-})
+}))

@@ -7,6 +7,7 @@ import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { getBusinessDateForTimestamp } from '@/lib/business-day'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { createHash } from 'crypto'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // Default 500ms — tight enough that real double-pours (>500ms apart) aren't deduplicated,
 // but wide enough to absorb ECU retries on no-response. Tunable via env var.
@@ -70,7 +71,7 @@ async function findOpenOrderForTerminal(
   }
 }
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   const startMs = Date.now()
   let body: DispenseBody
   let rawBodyText: string
@@ -469,4 +470,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   void db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } }).catch(console.error)
 
   return NextResponse.json({ action, reason: errorReason || undefined, orderItemId: orderItemId || undefined })
-})
+}))

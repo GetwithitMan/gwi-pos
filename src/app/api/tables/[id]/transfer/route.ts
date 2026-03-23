@@ -4,9 +4,10 @@ import { EmployeeRepository, OrderRepository } from '@/lib/repositories'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Transfer table to another server
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -130,4 +131,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

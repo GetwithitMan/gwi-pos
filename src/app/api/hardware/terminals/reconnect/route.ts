@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * Smart Terminal Auto-Reconnect
@@ -19,7 +20,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
  * Returns: { data: { token, terminal, location } } on success
  *          { error, code: 'NOT_PAIRED' } on 404
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { deviceFingerprint, terminalId } = body
@@ -168,4 +169,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

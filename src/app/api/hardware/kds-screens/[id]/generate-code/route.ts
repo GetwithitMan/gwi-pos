@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST /api/hardware/kds-screens/[id]/generate-code - Generate a pairing code
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -45,4 +46,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to generate pairing code:', error)
     return NextResponse.json({ error: 'Failed to generate pairing code' }, { status: 500 })
   }
-})
+}))

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -25,7 +26,7 @@ function hasTimeOverlap(
 }
 
 // POST - Resolve reservation conflicts for an event
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -179,4 +180,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

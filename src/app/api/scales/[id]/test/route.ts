@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { scaleService } from '@/lib/scale/scale-service'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Test scale connection and get a weight reading
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -40,4 +41,4 @@ export const POST = withVenue(async function POST(
     const message = error instanceof Error ? error.message : 'Failed to test scale connection'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-})
+}))

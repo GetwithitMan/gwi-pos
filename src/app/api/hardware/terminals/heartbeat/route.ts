@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST terminal heartbeat - updates online status
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   try {
     // Get token from httpOnly cookie
     const terminalToken = request.cookies.get('terminal_token')?.value
@@ -96,4 +97,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Terminal heartbeat failed:', error)
     return NextResponse.json({ error: 'Heartbeat failed' }, { status: 500 })
   }
-})
+}))

@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import crypto from 'crypto'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,7 +17,7 @@ const VALID_CATEGORIES = ['FIXED_STATION', 'HANDHELD', 'CFD_DISPLAY'] as const
 const VALID_PLATFORMS = ['ANDROID', 'BROWSER', 'IOS'] as const
 const PAIRING_CODE_TTL_MS = 15 * 60 * 1000 // 15 minutes
 
-export const POST = withVenue(async function POST(request: Request): Promise<NextResponse> {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: Request): Promise<NextResponse> {
   try {
     const body = await request.json()
     const { name, category, platform } = body
@@ -106,4 +107,4 @@ export const POST = withVenue(async function POST(request: Request): Promise<Nex
     console.error('[dashboard/terminals] POST error:', e)
     return NextResponse.json({ error: 'Failed to create terminal' }, { status: 500 })
   }
-})
+}))

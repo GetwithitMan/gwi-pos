@@ -2,9 +2,10 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // PUT - Reorder sections by updating sortOrder
-export const PUT = withVenue(async function PUT(req: Request) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(req: Request) {
   try {
     const body = await req.json()
     const { locationId, roomIds } = body
@@ -48,4 +49,4 @@ export const PUT = withVenue(async function PUT(req: Request) {
     console.error('[sections/reorder] PUT error:', error)
     return NextResponse.json({ error: 'Failed to reorder sections' }, { status: 500 })
   }
-})
+}))

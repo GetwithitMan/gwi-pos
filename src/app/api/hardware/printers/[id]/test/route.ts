@@ -14,9 +14,10 @@ import {
 import { PrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST print test page
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -200,4 +201,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to print test page:', error)
     return NextResponse.json({ error: 'Failed to print test page' }, { status: 500 })
   }
-})
+}))

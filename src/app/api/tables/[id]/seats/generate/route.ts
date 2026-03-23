@@ -3,9 +3,10 @@ import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { generateSeatPositions, type SeatPattern } from '@/lib/seat-generation';
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Generate/regenerate default seat layout
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -99,4 +100,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     );
   }
-})
+}))

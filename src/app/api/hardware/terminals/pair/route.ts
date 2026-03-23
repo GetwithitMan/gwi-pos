@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST complete terminal pairing with code
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { pairingCode, deviceFingerprint, deviceInfo } = body
@@ -118,4 +119,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to pair terminal:', error)
     return NextResponse.json({ error: 'Failed to pair terminal' }, { status: 500 })
   }
-})
+}))

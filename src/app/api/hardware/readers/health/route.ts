@@ -9,8 +9,9 @@ import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 import { db } from '@/lib/db'
 import { getReaderHealthSummary } from '@/lib/reader-health'
+import { withAuth } from '@/lib/api-auth-middleware'
 
-export const GET = withVenue(async (request: Request) => {
+export const GET = withVenue(withAuth(async (request: Request) => {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -112,4 +113,4 @@ export const GET = withVenue(async (request: Request) => {
     console.error('[GET /api/hardware/readers/health]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
-})
+}))

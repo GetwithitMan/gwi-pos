@@ -4,9 +4,10 @@ import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema, KDSOrderTypeFiltersSchema } from '@/lib/kds/types'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET single KDS screen
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -42,10 +43,10 @@ export const GET = withVenue(async function GET(
     console.error('Failed to fetch KDS screen:', error)
     return NextResponse.json({ error: 'Failed to fetch KDS screen' }, { status: 500 })
   }
-})
+}))
 
 // PUT update KDS screen
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -173,10 +174,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Failed to update KDS screen:', error)
     return NextResponse.json({ error: 'Failed to update KDS screen' }, { status: 500 })
   }
-})
+}))
 
 // DELETE KDS screen
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -215,4 +216,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete KDS screen:', error)
     return NextResponse.json({ error: 'Failed to delete KDS screen' }, { status: 500 })
   }
-})
+}))

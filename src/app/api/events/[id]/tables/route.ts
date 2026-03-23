@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List table configurations for an event
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -141,10 +142,10 @@ export const GET = withVenue(async function GET(
       { status: 500 }
     )
   }
-})
+}))
 
 // POST - Bulk configure tables for an event
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -224,4 +225,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

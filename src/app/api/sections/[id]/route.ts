@@ -4,9 +4,10 @@ import { softDeleteData } from '@/lib/floorplan/queries'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single section
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -47,10 +48,10 @@ export const GET = withVenue(async function GET(
     console.error('[sections/[id]] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch section' }, { status: 500 })
   }
-})
+}))
 
 // PUT - Update a section
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -113,10 +114,10 @@ export const PUT = withVenue(async function PUT(
     console.error('[sections/[id]] PUT error:', error)
     return NextResponse.json({ error: 'Failed to update section' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete a section (and optionally its tables)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -168,4 +169,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('[sections/[id]] DELETE error:', error)
     return NextResponse.json({ error: 'Failed to delete section' }, { status: 500 })
   }
-})
+}))

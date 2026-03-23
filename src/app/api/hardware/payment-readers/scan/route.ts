@@ -4,6 +4,7 @@ import { promisify } from 'util'
 import { db } from '@/lib/db'
 import { discoverAllDevices } from '@/lib/datacap/discovery'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 const execAsync = promisify(exec)
 
@@ -98,7 +99,7 @@ async function scanUsbDevices(): Promise<UsbDevice[]> {
  *   locationId (required) — to check which serials are already registered
  *   networkTimeoutMs (optional) — UDP discovery window (default 4000ms, max 10000ms)
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const locationId = searchParams.get('locationId')
   if (!locationId) {
@@ -145,4 +146,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       scannedAt: new Date().toISOString(),
     },
   })
-})
+}))

@@ -3,10 +3,11 @@ import { db } from '@/lib/db'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { executeHardwareCommand } from '@/lib/hardware-command'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Ping payment reader to check connectivity
 // Uses EMVPadReset via DatacapClient — fast (2-3s) and confirms device is alive
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -103,4 +104,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to ping payment reader:', error)
     return NextResponse.json({ error: 'Failed to ping payment reader' }, { status: 500 })
   }
-})
+}))

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Test a print route configuration
 // Validates that the route is properly configured and its printer(s) are reachable
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -134,4 +135,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

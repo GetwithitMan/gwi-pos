@@ -8,10 +8,11 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const dynamic = 'force-dynamic'
 
-export const GET = withVenue(async function GET(request: any): Promise<NextResponse> {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: any): Promise<NextResponse> {
   // Resolve locationId: request context (Vercel/NUC with slug) → env (NUC single-venue)
   const { getRequestLocationId } = await import('@/lib/request-context')
   const locationId =
@@ -173,4 +174,4 @@ export const GET = withVenue(async function GET(request: any): Promise<NextRespo
       })),
     },
   })
-})
+}))

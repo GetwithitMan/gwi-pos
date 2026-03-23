@@ -5,9 +5,10 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema, KDSOrderTypeFiltersSchema } from '@/lib/kds/types'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET all KDS screens for a location
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -97,10 +98,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Failed to fetch KDS screens:', error)
     return NextResponse.json({ error: 'Failed to fetch KDS screens' }, { status: 500 })
   }
-})
+}))
 
 // POST create a new KDS screen
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -242,4 +243,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to create KDS screen' }, { status: 500 })
   }
-})
+}))

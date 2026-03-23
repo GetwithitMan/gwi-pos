@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomBytes } from 'crypto'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // Generate ticket number: EVT-YYYYMMDD-XXXXX
 function generateTicketNumber(eventDate: Date, sequence: number): string {
@@ -16,7 +17,7 @@ function generateBarcode(): string {
 // POST - Create walk-in / cover charge tickets
 // These are created as already-sold and optionally already checked-in.
 // Used for walk-in guests who pay the cover charge at the door.
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -199,4 +200,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

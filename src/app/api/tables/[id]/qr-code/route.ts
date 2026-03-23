@@ -14,6 +14,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // Generate a short alphanumeric code (6 chars, no confusable characters)
 function generateOrderCode(): string {
@@ -27,7 +28,7 @@ function generateOrderCode(): string {
   return code
 }
 
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -132,4 +133,4 @@ export const GET = withVenue(async function GET(
     console.error('[GET /api/tables/[id]/qr-code] Error:', error)
     return NextResponse.json({ error: 'Failed to generate QR code' }, { status: 500 })
   }
-})
+}))

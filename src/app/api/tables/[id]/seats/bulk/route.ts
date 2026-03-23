@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { SeatType } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface SeatUpdate {
   id: string
@@ -15,7 +16,7 @@ interface SeatUpdate {
 }
 
 // PUT - Bulk update seat positions
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -101,4 +102,4 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))

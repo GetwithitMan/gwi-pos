@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all seats for a table
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -62,10 +63,10 @@ export const GET = withVenue(async function GET(
       { status: 500 }
     )
   }
-})
+}))
 
 // POST - Add a seat to table
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -187,4 +188,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

@@ -5,9 +5,10 @@ import { PERMISSIONS } from '@/lib/auth'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List active assignments for this section
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -60,10 +61,10 @@ export const GET = withVenue(async function GET(
     console.error('[sections/[id]/assignments] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch assignments' }, { status: 500 })
   }
-})
+}))
 
 // POST - Assign an employee to this section
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -146,10 +147,10 @@ export const POST = withVenue(async function POST(
     console.error('[sections/[id]/assignments] POST error:', error)
     return NextResponse.json({ error: 'Failed to create assignment' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Unassign an employee from this section (soft unassign)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -202,4 +203,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('[sections/[id]/assignments] DELETE error:', error)
     return NextResponse.json({ error: 'Failed to remove assignment' }, { status: 500 })
   }
-})
+}))

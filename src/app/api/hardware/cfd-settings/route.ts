@@ -4,9 +4,10 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET CFD settings for a location
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const locationId = request.nextUrl.searchParams.get('locationId')
 
@@ -43,10 +44,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Failed to fetch CFD settings:', error)
     return NextResponse.json({ error: 'Failed to fetch CFD settings' }, { status: 500 })
   }
-})
+}))
 
 // PUT upsert CFD settings for a location
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
 
@@ -164,4 +165,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     console.error('Failed to update CFD settings:', error)
     return NextResponse.json({ error: 'Failed to update CFD settings' }, { status: 500 })
   }
-})
+}))

@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Verify payment reader identity via EMVPadReset + optional beep
 // EMVPadReset confirms the device is alive and responds to Datacap protocol
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -83,4 +84,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to verify payment reader:', error)
     return NextResponse.json({ error: 'Failed to verify payment reader' }, { status: 500 })
   }
-})
+}))

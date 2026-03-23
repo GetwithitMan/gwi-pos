@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /** Validate IPv4 address — each octet must be 0-255 with no leading zeros */
 function isValidIPv4(ip: string): boolean {
@@ -17,7 +18,7 @@ function isValidIPv4(ip: string): boolean {
 }
 
 // GET all terminals for a location
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -121,10 +122,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Failed to fetch terminals:', error)
     return NextResponse.json({ error: 'Failed to fetch terminals' }, { status: 500 })
   }
-})
+}))
 
 // POST create a new terminal
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -365,4 +366,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const msg = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: `Failed to create terminal: ${msg}` }, { status: 500 })
   }
-})
+}))

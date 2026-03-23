@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Check in by ticket number or barcode (event-scoped)
 // This is a convenience endpoint that wraps /api/tickets/[id]/check-in
 // but scoped to a specific event for validation.
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -171,4 +172,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

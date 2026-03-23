@@ -6,6 +6,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface TablePositionUpdate {
   id: string
@@ -23,7 +24,7 @@ interface TablePositionUpdate {
  * IMPORTANT: All positions are normalized to grid alignment server-side
  * to ensure DB and UI are always on the same grid (prevents phantom "unsaved changes")
  */
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const { tables, locationId } = await request.json() as {
       tables: TablePositionUpdate[]
@@ -105,4 +106,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

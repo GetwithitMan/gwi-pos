@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import crypto from 'crypto'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,7 +20,7 @@ const regenAttempts = new Map<string, { count: number; resetAt: number }>()
 const MAX_REGEN = 10
 const REGEN_WINDOW_MS = 60 * 60 * 1000 // 1 hour
 
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
@@ -117,4 +118,4 @@ export const POST = withVenue(async function POST(
     console.error('[dashboard/terminals/[id]/pairing-code] POST error:', e)
     return NextResponse.json({ error: 'Failed to regenerate pairing code' }, { status: 500 })
   }
-})
+}))

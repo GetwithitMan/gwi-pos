@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +18,7 @@ const attempts = new Map<string, { count: number; resetAt: number }>()
 const MAX_ATTEMPTS = 5
 const WINDOW_MS = 60_000 // 1 minute
 
-export const POST = withVenue(async function POST(request: Request): Promise<NextResponse> {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: Request): Promise<NextResponse> {
   try {
     const body = await request.json()
     const { pin } = body
@@ -169,4 +170,4 @@ export const POST = withVenue(async function POST(request: Request): Promise<Nex
     console.error('[dashboard/verify-admin]', e)
     return NextResponse.json({ authorized: false }, { status: 500 })
   }
-})
+}))

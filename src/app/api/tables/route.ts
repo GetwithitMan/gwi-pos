@@ -5,6 +5,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // Table status validation
 const VALID_STATUSES = ['available', 'occupied', 'dirty', 'reserved'] as const
@@ -15,7 +16,7 @@ function isValidStatus(s: string | null): s is TableStatus {
 }
 
 // GET - List all tables for a location
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -156,10 +157,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // POST - Create a new table
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -305,4 +306,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

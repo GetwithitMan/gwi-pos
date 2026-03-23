@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { Prisma } from '@/generated/prisma/client'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * GET /api/dashboard/reservations
  * Returns upcoming reservations (next 2 hours) and today's stats for the dashboard widget.
  * No special permission required — dashboard is visible to all staff.
  */
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -142,4 +143,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     console.error('Dashboard reservations error:', error)
     return NextResponse.json({ error: 'Failed to load reservation dashboard data' }, { status: 500 })
   }
-})
+}))

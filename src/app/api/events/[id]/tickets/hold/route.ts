@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomBytes } from 'crypto'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // Generate ticket number: EVT-YYYYMMDD-XXXXX
 function generateTicketNumber(eventDate: Date, sequence: number): string {
@@ -15,7 +16,7 @@ function generateBarcode(): string {
 }
 
 // POST - Hold seats/tickets temporarily
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -296,4 +297,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

@@ -4,9 +4,10 @@ import { dispatchFloorPlanUpdate, dispatchEntertainmentWaitlistNotify } from '@/
 import { withVenue } from '@/lib/with-venue'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Collect a deposit for a waitlist entry
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -170,10 +171,10 @@ export const POST = withVenue(async function POST(
     const message = err instanceof Error ? err.message : 'Failed to collect deposit'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Refund a deposit for a waitlist entry
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -287,4 +288,4 @@ export const DELETE = withVenue(async function DELETE(
     const message = err instanceof Error ? err.message : 'Failed to refund deposit'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-})
+}))

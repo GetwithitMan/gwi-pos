@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { testPrinterConnection } from '@/lib/printer-connection'
 import { executeHardwareCommand } from '@/lib/hardware-command'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST test printer connection
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -79,4 +80,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to ping printer:', error)
     return NextResponse.json({ error: 'Failed to ping printer' }, { status: 500 })
   }
-})
+}))

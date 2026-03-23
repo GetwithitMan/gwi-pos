@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * POST /api/hardware/payment-readers/register-direct
@@ -17,7 +18,7 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
  * The Android app shows "Paired to: [terminalName]" as a warning — the user can still
  * proceed but should physically verify only one terminal uses the reader.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { serialNumber, connectionType, name, locationId, terminalId } = body
@@ -116,4 +117,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to register direct reader:', error)
     return NextResponse.json({ error: 'Failed to register reader' }, { status: 500 })
   }
-})
+}))

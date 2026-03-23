@@ -4,9 +4,10 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all scales for a location
-export const GET = withVenue(async function GET() {
+export const GET = withVenue(withAuth('ADMIN', async function GET() {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -50,10 +51,10 @@ const createScaleSchema = z.object({
   weightUnit: z.enum(['lb', 'kg', 'oz', 'g']).default('lb'),
   maxCapacity: z.number().positive().optional(),
   precision: z.number().int().min(0).max(6).default(2),
-})
+}))
 
 // POST - Create a new scale
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -126,4 +127,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to create scale:', error)
     return NextResponse.json({ error: 'Failed to create scale' }, { status: 500 })
   }
-})
+}))

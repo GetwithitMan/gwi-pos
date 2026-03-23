@@ -6,6 +6,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * POST /api/tables/merge
@@ -16,7 +17,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
  * Body: { sourceTableId, targetTableId, locationId, employeeId }
  * Returns: { mergedOrders, targetTable: { id, name } }
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { sourceTableId, targetTableId, locationId, employeeId } = body
@@ -153,4 +154,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

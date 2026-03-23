@@ -3,13 +3,14 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { getRequestLocationId } from '@/lib/request-context'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * Cloud reader cancel proxy
  * Sends EMVPadReset to reset the cloud-connected reader to idle.
  * Called when user navigates away mid-transaction or explicitly cancels.
  */
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -38,4 +39,4 @@ export const POST = withVenue(async function POST(
     console.error('[cloud/cancel] padReset failed:', error)
     return NextResponse.json({ data: { success: false } })
   }
-})
+}))

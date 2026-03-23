@@ -4,9 +4,10 @@ import { Prisma } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single seat
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; seatId: string }> }
 ) {
@@ -48,10 +49,10 @@ export const GET = withVenue(async function GET(
       { status: 500 }
     )
   }
-})
+}))
 
 // PUT - Update a seat
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; seatId: string }> }
 ) {
@@ -137,10 +138,10 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // DELETE - Delete (deactivate) a seat
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; seatId: string }> }
 ) {
@@ -231,4 +232,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

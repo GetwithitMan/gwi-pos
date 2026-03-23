@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
 
 // POST heartbeat from KDS screen
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -110,4 +111,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to update KDS screen heartbeat:', error)
     return NextResponse.json({ error: 'Failed to update heartbeat' }, { status: 500 })
   }
-})
+}))

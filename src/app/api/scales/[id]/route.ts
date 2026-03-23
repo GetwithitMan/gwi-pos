@@ -4,9 +4,10 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single scale by ID
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth('ADMIN', async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -44,7 +45,7 @@ export const GET = withVenue(async function GET(
     console.error('Failed to fetch scale:', error)
     return NextResponse.json({ error: 'Failed to fetch scale' }, { status: 500 })
   }
-})
+}))
 
 const updateScaleSchema = z.object({
   name: z.string().min(1).optional(),
@@ -64,7 +65,7 @@ const updateScaleSchema = z.object({
 }).strict()
 
 // PUT - Update scale
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -154,10 +155,10 @@ export const PUT = withVenue(async function PUT(
     }
     return NextResponse.json({ error: 'Failed to update scale' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete scale
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -196,4 +197,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete scale:', error)
     return NextResponse.json({ error: 'Failed to delete scale' }, { status: 500 })
   }
-})
+}))
