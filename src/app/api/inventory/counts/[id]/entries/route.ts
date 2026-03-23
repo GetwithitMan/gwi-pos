@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // PATCH - Batch update count entries (save counts as user enters them)
-export const PATCH = withVenue(async function PATCH(
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -93,4 +94,4 @@ export const PATCH = withVenue(async function PATCH(
     console.error('Update count entries error:', error)
     return NextResponse.json({ error: 'Failed to update count entries' }, { status: 500 })
   }
-})
+}))

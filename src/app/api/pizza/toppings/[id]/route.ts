@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET /api/pizza/toppings/[id] - Get single pizza topping
 export const GET = withVenue(async function GET(
@@ -33,7 +34,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PATCH /api/pizza/toppings/[id] - Update pizza topping
-export const PATCH = withVenue(async function PATCH(
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -81,10 +82,10 @@ export const PATCH = withVenue(async function PATCH(
     console.error('Failed to update pizza topping:', error)
     return NextResponse.json({ error: 'Failed to update pizza topping' }, { status: 500 })
   }
-})
+}))
 
 // DELETE /api/pizza/toppings/[id] - Delete pizza topping (soft delete)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -111,4 +112,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete pizza topping:', error)
     return NextResponse.json({ error: 'Failed to delete pizza topping' }, { status: 500 })
   }
-})
+}))

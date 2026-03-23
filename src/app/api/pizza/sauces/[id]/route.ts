@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // PATCH /api/pizza/sauces/[id] - Update pizza sauce
-export const PATCH = withVenue(async function PATCH(
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -59,10 +60,10 @@ export const PATCH = withVenue(async function PATCH(
     console.error('Failed to update pizza sauce:', error)
     return NextResponse.json({ error: 'Failed to update pizza sauce' }, { status: 500 })
   }
-})
+}))
 
 // DELETE /api/pizza/sauces/[id] - Delete pizza sauce (soft delete)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -89,4 +90,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete pizza sauce:', error)
     return NextResponse.json({ error: 'Failed to delete pizza sauce' }, { status: 500 })
   }
-})
+}))

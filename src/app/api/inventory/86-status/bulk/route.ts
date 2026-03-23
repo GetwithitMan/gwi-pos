@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * POST /api/inventory/86-status/bulk
@@ -11,7 +12,7 @@ import { emitToLocation } from '@/lib/socket-server'
  * Bulk update 86 status for multiple ingredients.
  * Useful for donut shops clearing multiple items at once.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -105,4 +106,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Error bulk updating 86 status:', error)
     return NextResponse.json({ error: 'Failed to bulk update 86 status' }, { status: 500 })
   }
-})
+}))

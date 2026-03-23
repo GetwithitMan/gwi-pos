@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -87,7 +88,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
 })
 
 // PUT - Update count session or add/update count items
-export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -197,10 +198,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     console.error('Update daily count error:', error)
     return NextResponse.json({ error: 'Failed to update daily count' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete a daily count session
-export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -223,4 +224,4 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     console.error('Delete daily count error:', error)
     return NextResponse.json({ error: 'Failed to delete daily count' }, { status: 500 })
   }
-})
+}))

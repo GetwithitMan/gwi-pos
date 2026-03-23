@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single void reason
 export const GET = withVenue(async function GET(
@@ -27,7 +28,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update void reason
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -67,10 +68,10 @@ export const PUT = withVenue(async function PUT(
     }
     return NextResponse.json({ error: 'Failed to update void reason' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete void reason
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -97,4 +98,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete void reason error:', error)
     return NextResponse.json({ error: 'Failed to delete void reason' }, { status: 500 })
   }
-})
+}))

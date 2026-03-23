@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List inventory transactions with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -89,7 +90,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create manual adjustment transaction
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -170,4 +171,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Create inventory transaction error:', error)
     return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 })
   }
-})
+}))

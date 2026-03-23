@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Send SMS verification to customer
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -74,4 +75,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

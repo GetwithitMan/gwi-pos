@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 const DEFAULT_SETTINGS = {
   // Tracking mode
@@ -107,7 +108,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create or update inventory settings
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, employeeId: bodyEmployeeId, ...settingsData } = body
@@ -225,4 +226,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Save inventory settings error:', error)
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 })
   }
-})
+}))

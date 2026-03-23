@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single inventory count with items
 export const GET = withVenue(async function GET(
@@ -66,7 +67,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update count (record counts, complete, approve)
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -259,10 +260,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Update inventory count error:', error)
     return NextResponse.json({ error: 'Failed to update inventory count' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete inventory count
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -293,4 +294,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete inventory count error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory count' }, { status: 500 })
   }
-})
+}))

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List tray configs for a prep item or all daily count items
 // This works with Ingredients that have preparationType (prep-style ingredients)
@@ -115,7 +116,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create a new tray config
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -176,10 +177,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to create tray config' }, { status: 500 })
   }
-})
+}))
 
 // PUT - Toggle isDailyCountItem on an ingredient
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientId, isDailyCountItem } = body
@@ -204,4 +205,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     console.error('Toggle daily count error:', error)
     return NextResponse.json({ error: 'Failed to update ingredient' }, { status: 500 })
   }
-})
+}))

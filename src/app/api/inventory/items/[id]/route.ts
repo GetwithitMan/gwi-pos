@@ -5,6 +5,7 @@ import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { InventoryStockChangePayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single inventory item
 export const GET = withVenue(async function GET(
@@ -66,7 +67,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update inventory item
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -199,10 +200,10 @@ export const PUT = withVenue(async function PUT(
     }
     return NextResponse.json({ error: 'Failed to update inventory item' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete inventory item
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -248,4 +249,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete inventory item error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory item' }, { status: 500 })
   }
-})
+}))

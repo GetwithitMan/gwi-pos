@@ -3,12 +3,13 @@ import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * PUT /api/ingredients/bulk-move
  * Move multiple ingredients to a different category
  */
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientIds, categoryId } = body
@@ -81,4 +82,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -37,7 +38,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
 })
 
 // PUT - Update a tray config
-export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -73,10 +74,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     }
     return NextResponse.json({ error: 'Failed to update tray config' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete a tray config
-export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -95,4 +96,4 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     console.error('Delete tray config error:', error)
     return NextResponse.json({ error: 'Failed to delete tray config' }, { status: 500 })
   }
-})
+}))

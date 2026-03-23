@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Record a payment against a house account balance
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -120,4 +121,4 @@ export const POST = withVenue(async function POST(
     console.error('Failed to record payment:', error)
     return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 })
   }
-})
+}))

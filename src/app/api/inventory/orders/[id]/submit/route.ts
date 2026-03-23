@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Submit PO: draft → sent
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -47,4 +48,4 @@ export const POST = withVenue(async function POST(
     console.error('Submit purchase order error:', error)
     return NextResponse.json({ error: 'Failed to submit purchase order' }, { status: 500 })
   }
-})
+}))

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // POST - Approve a daily count and update ingredient stock levels
-export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -191,4 +192,4 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     console.error('Approve daily count error:', error)
     return NextResponse.json({ error: 'Failed to approve daily count' }, { status: 500 })
   }
-})
+}))

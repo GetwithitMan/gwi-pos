@@ -6,9 +6,10 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { cascadeCostUpdate } from '@/lib/cost-cascade'
 import { convertUnits } from '@/lib/inventory/unit-conversion'
 import { autoClear86ForRestockedItems } from '@/lib/inventory'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Receive items against PO
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -290,4 +291,4 @@ export const POST = withVenue(async function POST(
     console.error('Receive purchase order error:', error)
     return NextResponse.json({ error: 'Failed to receive purchase order' }, { status: 500 })
   }
-})
+}))

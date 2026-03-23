@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * POST /api/menu/items/bulk
@@ -10,7 +11,7 @@ import { getLocationId } from '@/lib/location-cache'
  * Used by quick bar, bulk lookups, etc.
  * Replaces N individual GET /api/menu/items/{id} calls with 1 query.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
@@ -58,4 +59,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('[menu/items/bulk] POST error:', error)
     return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })
   }
-})
+}))

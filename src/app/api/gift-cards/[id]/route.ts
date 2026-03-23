@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get gift card details (by ID or card number)
 export const GET = withVenue(async function GET(
@@ -82,7 +83,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update gift card (freeze/unfreeze, reload)
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -307,4 +308,4 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))

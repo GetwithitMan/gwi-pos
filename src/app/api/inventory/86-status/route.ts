@@ -5,6 +5,7 @@ import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * GET /api/inventory/86-status
@@ -223,7 +224,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
  * Toggle the 86 status of an ingredient.
  * Returns the updated ingredient and list of affected items.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientId, is86d, employeeId } = body
@@ -366,14 +367,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Error updating 86 status:', error)
     return NextResponse.json({ error: 'Failed to update 86 status' }, { status: 500 })
   }
-})
+}))
 
 /**
  * PATCH /api/inventory/86-status
  *
  * Toggle the showOnQuick86 flag for an ingredient.
  */
-export const PATCH = withVenue(async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientId, showOnQuick86 } = body
@@ -421,4 +422,4 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     console.error('Error updating Quick 86 status:', error)
     return NextResponse.json({ error: 'Failed to update Quick 86 status' }, { status: 500 })
   }
-})
+}))

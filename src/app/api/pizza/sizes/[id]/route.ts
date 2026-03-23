@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET /api/pizza/sizes/[id] - Get single pizza size
 export const GET = withVenue(async function GET(
@@ -31,7 +32,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PATCH /api/pizza/sizes/[id] - Update pizza size
-export const PATCH = withVenue(async function PATCH(
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -92,10 +93,10 @@ export const PATCH = withVenue(async function PATCH(
     console.error('Failed to update pizza size:', error)
     return NextResponse.json({ error: 'Failed to update pizza size' }, { status: 500 })
   }
-})
+}))
 
 // DELETE /api/pizza/sizes/[id] - Delete pizza size (soft delete)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -122,4 +123,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Failed to delete pizza size:', error)
     return NextResponse.json({ error: 'Failed to delete pizza size' }, { status: 500 })
   }
-})
+}))

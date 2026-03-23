@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { SYSTEM_ORDER_TYPES } from '@/types/order-types'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all order types for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -39,7 +40,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create a new order type
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -108,10 +109,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))
 
 // PUT - Initialize system order types for a location
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId } = body
@@ -177,4 +178,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

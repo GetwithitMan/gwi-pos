@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { centsToDollars, getLedgerBalance, findActiveGroupForEmployee } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get pending tips for an employee
 export const GET = withVenue(async function GET(
@@ -198,7 +199,7 @@ export const GET = withVenue(async function GET(
 // entries (see /api/tips/payouts). This legacy endpoint is kept for backward compatibility
 // until the UI is migrated to use the payout flow — tracked in PM-TASK-BOARD.md
 // POST - Accept/collect tips (updates TipShare status only — TipBank removed in Skill 284)
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -259,4 +260,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

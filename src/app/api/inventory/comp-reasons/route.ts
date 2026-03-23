@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List comp reasons
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -34,7 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create comp reason
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -84,4 +85,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to create comp reason' }, { status: 500 })
   }
-})
+}))

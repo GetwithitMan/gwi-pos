@@ -4,6 +4,7 @@ import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { getLocationId } from '@/lib/location-cache'
 import { DEFAULT_LAYOUT_SETTINGS, type POSLayoutSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get employee's layout settings
 export const GET = withVenue(async function GET(
@@ -57,7 +58,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update employee's personal layout settings
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -111,10 +112,10 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // DELETE - Reset employee's personal layout to defaults
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -140,4 +141,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -195,7 +196,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
 })
 
 // PUT /api/ingredients/[id] - Update an ingredient
-export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -431,10 +432,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     console.error('Error updating ingredient:', error)
     return NextResponse.json({ error: 'Failed to update ingredient' }, { status: 500 })
   }
-})
+}))
 
 // DELETE /api/ingredients/[id] - Soft delete or permanent delete an ingredient
-export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const { searchParams } = new URL(request.url)
@@ -542,4 +543,4 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     console.error('Error deleting ingredient:', error)
     return NextResponse.json({ error: 'Failed to delete ingredient' }, { status: 500 })
   }
-})
+}))

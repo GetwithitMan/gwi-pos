@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single prep item
 export const GET = withVenue(async function GET(
@@ -62,7 +63,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update prep item
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -171,10 +172,10 @@ export const PUT = withVenue(async function PUT(
     }
     return NextResponse.json({ error: 'Failed to update prep item' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete prep item
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -208,4 +209,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete prep item error:', error)
     return NextResponse.json({ error: 'Failed to delete prep item' }, { status: 500 })
   }
-})
+}))

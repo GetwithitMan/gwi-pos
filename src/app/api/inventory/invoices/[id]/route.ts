@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single invoice with line items
 export const GET = withVenue(async function GET(
@@ -50,7 +51,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update invoice or apply to inventory
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -194,10 +195,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Update invoice error:', error)
     return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete invoice (only if pending)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -230,4 +231,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete invoice error:', error)
     return NextResponse.json({ error: 'Failed to delete invoice' }, { status: 500 })
   }
-})
+}))

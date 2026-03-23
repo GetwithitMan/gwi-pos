@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface RouteParams {
   params: Promise<{ id: string; ingredientId: string }>
 }
 
 // PUT /api/menu/items/[id]/ingredients/[ingredientId] - Update ingredient settings for a menu item
-export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, ingredientId } = await params
     const body = await request.json()
@@ -119,4 +120,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       { status: 500 }
     )
   }
-})
+}))

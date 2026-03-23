@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitToLocation } from '@/lib/socket-server'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 export const GET = withVenue(async function GET() {
   try {
@@ -27,7 +28,7 @@ export const GET = withVenue(async function GET() {
   }
 })
 
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, address, phone, timezone } = body
@@ -63,4 +64,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     console.error('Failed to update location:', error)
     return NextResponse.json({ error: 'Failed to update location' }, { status: 500 })
   }
-})
+}))

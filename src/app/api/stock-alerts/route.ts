@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List stock alerts
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -57,7 +58,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // PUT - Acknowledge or resolve alerts
-export const PUT = withVenue(async function PUT(request: NextRequest) {
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { alertIds, action, employeeId } = body
@@ -93,4 +94,4 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     console.error('Update alerts error:', error)
     return NextResponse.json({ error: 'Failed to update alerts' }, { status: 500 })
   }
-})
+}))

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Link a CardProfile to a Customer record
 // Used when staff manually associates a recognized card with a customer profile
 // (e.g., after recognizing a returning customer by card)
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, cardProfileId, customerId } = body
@@ -67,4 +68,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}))

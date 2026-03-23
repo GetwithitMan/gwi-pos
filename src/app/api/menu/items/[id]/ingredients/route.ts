@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -91,7 +92,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
 
 // POST /api/menu/items/[id]/ingredients - Save ingredients for a menu item
 // Replaces all existing ingredient links
-export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
     const body = await request.json()
@@ -242,4 +243,4 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     console.error('Error saving menu item ingredients:', error)
     return NextResponse.json({ error: 'Failed to save ingredients' }, { status: 500 })
   }
-})
+}))

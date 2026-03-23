@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET /api/inventory/deduction-queue — list pending deductions with summary
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -101,7 +102,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST /api/inventory/deduction-queue — retry a failed/dead deduction
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, action, id, employeeId } = body
@@ -155,4 +156,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to update deduction:', error)
     return NextResponse.json({ error: 'Failed to update deduction' }, { status: 500 })
   }
-})
+}))

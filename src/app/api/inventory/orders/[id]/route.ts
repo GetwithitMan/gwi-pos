@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Full PO detail
 export const GET = withVenue(async function GET(
@@ -82,7 +83,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Edit draft PO only
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -181,10 +182,10 @@ export const PUT = withVenue(async function PUT(
     console.error('Update purchase order error:', error)
     return NextResponse.json({ error: 'Failed to update purchase order' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Soft delete (draft or cancelled only)
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -226,4 +227,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete purchase order error:', error)
     return NextResponse.json({ error: 'Failed to delete purchase order' }, { status: 500 })
   }
-})
+}))

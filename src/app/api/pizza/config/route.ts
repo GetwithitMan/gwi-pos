@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { PizzaPrintSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET /api/pizza/config - Get pizza configuration for location
 export const GET = withVenue(async function GET() {
@@ -60,7 +61,7 @@ export const GET = withVenue(async function GET() {
 })
 
 // PATCH /api/pizza/config - Update pizza configuration
-export const PATCH = withVenue(async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const locationId = await getLocationId()
@@ -134,4 +135,4 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     console.error('Failed to update pizza config:', error)
     return NextResponse.json({ error: 'Failed to update pizza config' }, { status: 500 })
   }
-})
+}))

@@ -5,6 +5,7 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET all pricing option groups + nested options for a menu item
 export const GET = withVenue(async function GET(
@@ -70,7 +71,7 @@ export const GET = withVenue(async function GET(
 })
 
 // POST create a new pricing option group (optionally with inline options)
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -249,4 +250,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

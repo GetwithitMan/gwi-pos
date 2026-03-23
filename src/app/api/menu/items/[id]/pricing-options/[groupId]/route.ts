@@ -5,9 +5,10 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // PUT update group metadata
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; groupId: string }> }
 ) {
@@ -93,10 +94,10 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // DELETE soft-delete group + cascade soft-delete all options
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; groupId: string }> }
 ) {
@@ -156,4 +157,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

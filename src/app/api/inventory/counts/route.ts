@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List inventory counts
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -54,7 +55,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create new inventory count
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -183,4 +184,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Create inventory count error:', error)
     return NextResponse.json({ error: 'Failed to create inventory count' }, { status: 500 })
   }
-})
+}))

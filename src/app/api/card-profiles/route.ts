@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Recognize or create a card profile after payment
 // Called automatically when a card is used (if card recognition is enabled)
 // Optionally links CardProfile to Customer when orderId is provided and order has a customer
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -127,7 +128,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to process card profile:', error)
     return NextResponse.json({ error: 'Failed to process card profile' }, { status: 500 })
   }
-})
+}))
 
 // GET - Lookup card profile by hash or last4
 export const GET = withVenue(async function GET(request: NextRequest) {

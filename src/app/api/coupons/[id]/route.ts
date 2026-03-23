@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a specific coupon
 export const GET = withVenue(async function GET(
@@ -51,7 +52,7 @@ export const GET = withVenue(async function GET(
 })
 
 // PUT - Update coupon or perform action
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth('ADMIN', async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -240,10 +241,10 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // DELETE - Delete a coupon
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -283,4 +284,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET list all inventory links for a pricing option
 export const GET = withVenue(async function GET(
@@ -121,7 +122,7 @@ export const GET = withVenue(async function GET(
 })
 
 // POST create a new inventory link
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; groupId: string; optionId: string }> }
 ) {
@@ -324,4 +325,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}))

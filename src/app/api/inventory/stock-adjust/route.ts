@@ -5,6 +5,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { dispatchInventoryAdjustment, dispatchStockLevelChange } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
  * Calculate cost per unit from ingredient data
@@ -115,7 +116,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
  * Adjust the stock level of a single ingredient.
  * Supports: set (absolute), add, subtract operations.
  */
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientId, operation, quantity, reason, employeeId, locationId: bodyLocationId } = body
@@ -282,7 +283,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Error adjusting stock:', error)
     return NextResponse.json({ error: 'Failed to adjust stock' }, { status: 500 })
   }
-})
+}))
 
 /**
  * PATCH /api/inventory/stock-adjust
@@ -291,7 +292,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
  * Used by Quick Stock Adjust page with verification.
  * Creates audit trail and cost tracking records.
  */
-export const PATCH = withVenue(async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { adjustments, employeeId, locationId: bodyLocationId } = body
@@ -545,4 +546,4 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     console.error('Error bulk adjusting stock:', error)
     return NextResponse.json({ error: 'Failed to bulk adjust stock' }, { status: 500 })
   }
-})
+}))

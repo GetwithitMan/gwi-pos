@@ -4,6 +4,7 @@ import { getEffectiveCost, toNumber } from '@/lib/inventory-calculations'
 import { createModifierInventoryLinkSchema, validateRequest } from '@/lib/validations'
 import { withVenue } from '@/lib/with-venue'
 import { areUnitsCompatible, getUnitCategory } from '@/lib/inventory/unit-conversion'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get inventory link for modifier
 export const GET = withVenue(async function GET(
@@ -78,7 +79,7 @@ export const GET = withVenue(async function GET(
 })
 
 // POST - Create or update inventory link for modifier
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -212,10 +213,10 @@ export const POST = withVenue(async function POST(
     console.error('Save modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to save inventory link' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Remove inventory link from modifier
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -240,4 +241,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory link' }, { status: 500 })
   }
-})
+}))

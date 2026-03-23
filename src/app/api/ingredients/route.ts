@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchIngredientLibraryUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET /api/ingredients - List ingredients with filtering and grouping
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -323,7 +324,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST /api/ingredients - Create a new ingredient
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -544,4 +545,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: 'Failed to create ingredient', detail: message }, { status: 500 })
   }
-})
+}))

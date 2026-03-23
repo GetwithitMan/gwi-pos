@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface ImportRow {
   barcode: string
@@ -20,7 +21,7 @@ interface ImportError {
 
 const BATCH_SIZE = 100
 
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId: bodyLocationId, rows } = body
@@ -172,4 +173,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to import barcodes:', error)
     return NextResponse.json({ error: 'Failed to import barcodes' }, { status: 500 })
   }
-})
+}))

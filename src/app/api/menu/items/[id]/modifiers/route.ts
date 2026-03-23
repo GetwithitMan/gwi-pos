@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET modifier groups for a menu item — reads from item-owned groups (ModifierGroup.menuItemId)
 //
@@ -157,10 +158,10 @@ export const GET = withVenue(async function GET(
 // POST is no longer needed — modifier groups are item-owned, managed via
 // /api/menu/items/[id]/modifier-groups (the ItemEditor API)
 // Keeping a stub that returns a clear error if anything still calls it.
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   console.warn('Deprecated endpoint called: POST /api/menu/items/[id]/modifiers - should use /api/menu/items/[id]/modifier-groups')
   return NextResponse.json(
     { error: 'Shared modifier linking is deprecated. Use /api/menu/items/[id]/modifier-groups to manage item-owned modifier groups.' },
     { status: 410 }
   )
-})
+}))

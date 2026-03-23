@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { PayrollPeriodStatus } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 // TODO: Phase 1 - No PayrollPeriodRepository yet.
 // db.payrollPeriod calls remain direct.
 
@@ -66,7 +67,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // POST - Create a new payroll period
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, periodStart, periodEnd, periodType } = body
@@ -121,4 +122,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to create payroll period:', error)
     return NextResponse.json({ error: 'Failed to create payroll period' }, { status: 500 })
   }
-})
+}))

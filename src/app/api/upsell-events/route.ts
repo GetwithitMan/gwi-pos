@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 interface UpsellEventRow {
   id: string
@@ -17,7 +18,7 @@ interface UpsellEventRow {
 }
 
 // POST — Record an upsell event (shown, accepted, dismissed)
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -71,4 +72,4 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     console.error('Failed to record upsell event:', error)
     return NextResponse.json({ error: 'Failed to record upsell event' }, { status: 500 })
   }
-})
+}))

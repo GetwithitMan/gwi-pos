@@ -8,6 +8,7 @@ import {
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { createMenuItemRecipeSchema, validateRequest } from '@/lib/validations'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get inventory recipe for menu item (food costing)
 export const GET = withVenue(async function GET(
@@ -83,7 +84,7 @@ export const GET = withVenue(async function GET(
 })
 
 // POST - Create or update inventory recipe for menu item
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withAuth('ADMIN', async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -243,10 +244,10 @@ export const POST = withVenue(async function POST(
     console.error('Save menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to save recipe' }, { status: 500 })
   }
-})
+}))
 
 // DELETE - Remove inventory recipe from menu item
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -288,4 +289,4 @@ export const DELETE = withVenue(async function DELETE(
     console.error('Delete menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to delete recipe' }, { status: 500 })
   }
-})
+}))
