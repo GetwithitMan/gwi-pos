@@ -288,6 +288,84 @@ run_deploy_app() {
     return 1
   fi
 
+  # ── Refresh installer modules from git checkout ──────────────────────────
+  # The git checkout has the LATEST modules. The installer.run we're running
+  # from may be stale (downloaded before the git pull). Switch to using the
+  # checkout's modules so stages 06-12 use the latest code.
+  _refresh_modules_from_checkout() {
+    local checkout_modules="${APP_DIR}/public/installer-modules"
+    local checkout_scripts="${APP_DIR}/public/scripts"
+    local checkout_watchdog="${APP_DIR}/public/watchdog.sh"
+
+    if [[ ! -d "$checkout_modules" ]]; then
+      warn "No installer modules found in checkout at $checkout_modules — skipping refresh"
+      return 0
+    fi
+
+    local checkout_version=""
+    if [[ -f "${APP_DIR}/package.json" ]]; then
+      checkout_version=$(node -e "console.log(require('${APP_DIR}/package.json').version)" 2>/dev/null || true)
+    fi
+
+    log "Refreshing installer modules from git checkout (v${checkout_version:-unknown})..."
+
+    # Copy updated modules to the running installer's module dir
+    # This ensures stages 06-12 use the LATEST code
+    if [[ -d "$MODULES_DIR" ]]; then
+      cp -a "$checkout_modules"/* "$MODULES_DIR/" 2>/dev/null || true
+      chmod +x "$MODULES_DIR"/*.sh 2>/dev/null || true
+      [[ -d "$MODULES_DIR/lib" ]] && chmod +x "$MODULES_DIR"/lib/*.sh 2>/dev/null || true
+      log "  Updated installer modules from checkout"
+
+      # Re-source all modules so the running installer picks up new function definitions
+      for _mod in "$MODULES_DIR"/*.sh; do
+        if [[ -f "$_mod" ]]; then
+          source "$_mod"
+        fi
+      done
+      log "  Re-sourced updated module definitions"
+    fi
+
+    # Deploy operational scripts to /opt/gwi-pos for service use
+    mkdir -p /opt/gwi-pos/scripts /opt/gwi-pos/installer-modules/lib 2>/dev/null || true
+
+    # Watchdog
+    if [[ -f "$checkout_watchdog" ]]; then
+      cp "$checkout_watchdog" /opt/gwi-pos/watchdog.sh
+      chmod +x /opt/gwi-pos/watchdog.sh
+      log "  Deployed watchdog.sh"
+    fi
+    [[ -f "${APP_DIR}/public/watchdog.service" ]] && cp "${APP_DIR}/public/watchdog.service" /opt/gwi-pos/ && log "  Deployed watchdog.service"
+    [[ -f "${APP_DIR}/public/watchdog.timer" ]] && cp "${APP_DIR}/public/watchdog.timer" /opt/gwi-pos/ && log "  Deployed watchdog.timer"
+
+    # Monitoring scripts
+    for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh pre-update-backup.sh; do
+      if [[ -f "$checkout_scripts/$script" ]]; then
+        cp "$checkout_scripts/$script" /opt/gwi-pos/scripts/
+        chmod +x "/opt/gwi-pos/scripts/$script"
+        log "  Deployed scripts/$script"
+      fi
+    done
+
+    # Shared libraries (error codes, etc.)
+    if [[ -d "$checkout_modules/lib" ]]; then
+      cp -a "$checkout_modules"/lib/*.sh /opt/gwi-pos/installer-modules/lib/ 2>/dev/null || true
+      chmod +x /opt/gwi-pos/installer-modules/lib/*.sh 2>/dev/null || true
+      log "  Deployed installer libraries"
+    fi
+
+    # Sync agent
+    if [[ -f "${APP_DIR}/public/sync-agent.js" ]]; then
+      cp "${APP_DIR}/public/sync-agent.js" /opt/gwi-pos/sync-agent.js
+      log "  Deployed sync-agent.js"
+    fi
+
+    log "Module refresh complete — remaining stages will use latest code"
+  }
+
+  # Always refresh modules after successful deploy
+  _refresh_modules_from_checkout
+
   log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
   return 0
 }

@@ -34,6 +34,13 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Installer Version (stamped at build time by build-installer-bundle.sh)
+# ─────────────────────────────────────────────────────────────────────────────
+INSTALLER_VERSION="__INSTALLER_VERSION__"
+INSTALLER_BUILD_DATE="__INSTALLER_BUILD_DATE__"
+INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -199,10 +206,87 @@ done
 export DRY_RUN
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Self-Update Check — ensures NUCs always run the latest installer
+# ─────────────────────────────────────────────────────────────────────────────
+
+check_installer_update() {
+  # Skip in offline mode
+  [[ "${GWI_OFFLINE_INSTALL:-}" == "1" ]] && return 0
+
+  local mc_url="${MC_URL:-https://app.thepasspos.com}"
+  local remote_version=""
+
+  log "Checking for installer updates..."
+
+  # Fetch latest installer version from version-contract.json
+  remote_version=$(curl -sf --connect-timeout 5 --max-time 10 \
+    "${mc_url}/api/fleet/installer/version" 2>/dev/null | \
+    python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',''))" 2>/dev/null) || true
+
+  if [[ -z "$remote_version" ]]; then
+    # Fallback: read version-contract.json directly from POS deployment
+    remote_version=$(curl -sf --connect-timeout 5 --max-time 10 \
+      "${POS_BASE_URL}/version-contract.json" 2>/dev/null | \
+      python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('installerVersion', d.get('version','')))" 2>/dev/null) || true
+  fi
+
+  if [[ -z "$remote_version" ]]; then
+    warn "Could not check installer version (network issue?) — continuing with current version"
+    return 0
+  fi
+
+  if [[ "$INSTALLER_VERSION" == "__INSTALLER_VERSION__" ]] || [[ -z "$INSTALLER_VERSION" ]]; then
+    warn "Installer has no version stamp — likely a development build. Continuing."
+    return 0
+  fi
+
+  if [[ "$remote_version" != "$INSTALLER_VERSION" ]]; then
+    log ""
+    log "╔════════════════════════════════════════════════════════════╗"
+    log "║  Newer installer available!                               ║"
+    log "║  Current: $INSTALLER_VERSION"
+    log "║  Latest:  $remote_version"
+    log "╚════════════════════════════════════════════════════════════╝"
+    log ""
+    log "Downloading latest installer..."
+
+    local new_installer="/tmp/installer-${remote_version}.run"
+    if curl -fsSL "${mc_url}/installer.run" -o "$new_installer" 2>/dev/null; then
+      chmod +x "$new_installer"
+      # Verify the new one has the expected version
+      local new_ver
+      new_ver=$(grep '^INSTALLER_VERSION=' "$new_installer" | head -1 | cut -d'"' -f2)
+      if [[ "$new_ver" == "$remote_version" ]]; then
+        log "Updated to installer v${remote_version} — restarting..."
+        exec bash "$new_installer" "$@"
+        # exec replaces this process — never reaches here
+      else
+        warn "Downloaded installer version ($new_ver) doesn't match expected ($remote_version) — using current"
+        rm -f "$new_installer"
+      fi
+    else
+      warn "Failed to download new installer — continuing with current version"
+    fi
+  else
+    log "Installer is up to date (v${INSTALLER_VERSION})"
+  fi
+}
+
+# Run self-update check before anything else (pass all original args for re-exec)
+check_installer_update "$@"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Stage execution with checkpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
 header "GWI POS Installer"
+
+# Display version info
+if [[ "$INSTALLER_VERSION" != "__INSTALLER_VERSION__" ]] && [[ -n "$INSTALLER_VERSION" ]]; then
+  log "Installer v${INSTALLER_VERSION} (built ${INSTALLER_BUILD_DATE:-unknown}, sha ${INSTALLER_GIT_SHA:-unknown})"
+else
+  log "Installer version: development (unstamped)"
+fi
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo ""

@@ -22,6 +22,25 @@ fi
 
 echo "Building self-contained installer.run..."
 
+# ── Stamp version info into installer.run ──────────────────────────────────
+# These placeholders are replaced with actual values from package.json + git.
+# First restore placeholders in case this runs twice without a git checkout.
+VERSION=$(node -e "console.log(require('$REPO_DIR/package.json').version)")
+BUILD_DATE=$(date -u +%FT%TZ)
+GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+echo "Stamping installer: version=$VERSION date=$BUILD_DATE sha=$GIT_SHA"
+
+# Restore placeholders (idempotent — handles re-runs without git reset)
+perl -pi -e 's/^INSTALLER_VERSION="[^"]*"/INSTALLER_VERSION="__INSTALLER_VERSION__"/' "$INSTALLER"
+perl -pi -e 's/^INSTALLER_BUILD_DATE="[^"]*"/INSTALLER_BUILD_DATE="__INSTALLER_BUILD_DATE__"/' "$INSTALLER"
+perl -pi -e 's/^INSTALLER_GIT_SHA="[^"]*"/INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"/' "$INSTALLER"
+
+# Now stamp actual values (portability: perl works on both macOS + Linux)
+perl -pi -e "s/__INSTALLER_VERSION__/$VERSION/g" "$INSTALLER"
+perl -pi -e "s/__INSTALLER_BUILD_DATE__/$BUILD_DATE/g" "$INSTALLER"
+perl -pi -e "s/__INSTALLER_GIT_SHA__/$GIT_SHA/g" "$INSTALLER"
+
 # Strip any existing payload + exit marker (from previous builds)
 if grep -q '^__MODULES_PAYLOAD__$' "$INSTALLER"; then
   # Remove everything from "exit 0" before the marker onwards
