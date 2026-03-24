@@ -10,7 +10,6 @@ import { ToggleRow } from '@/components/admin/settings/ToggleRow'
 import type { ThirdPartyDeliverySettings, ThirdPartyDeliveryPlatformSettings, ThirdPartyDeliveryUberEatsSettings, DeliveryMarkupSettings } from '@/lib/settings'
 import { DEFAULT_THIRD_PARTY_DELIVERY, DEFAULT_DELIVERY_MARKUP } from '@/lib/settings'
 import { useAuthStore } from '@/stores/auth-store'
-import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import type { DoorDashCredentials, UberEatsCredentials, GrubhubCredentials } from '@/lib/delivery/clients/types'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -364,9 +363,6 @@ export default function DeliveryIntegrationSettingsPage() {
     grubhub: 'untested',
   })
 
-  // MC feature gate
-  const isDeliveryEnabled = useDeliveryFeature()
-
   // Menu sync state
   const [syncingMenu, setSyncingMenu] = useState(false)
   const [lastMenuSync, setLastMenuSync] = useState<{ time: string; success: boolean; details?: string } | null>(null)
@@ -607,22 +603,6 @@ export default function DeliveryIntegrationSettingsPage() {
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">Delivery Integrations</h1>
         <div className="text-gray-900">Loading settings...</div>
-      </div>
-    )
-  }
-
-  if (!isDeliveryEnabled) {
-    return (
-      <div className="p-6 max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-4">Delivery Integrations</h1>
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-          <div className="text-2xl mb-2">🚚</div>
-          <h2 className="text-lg font-semibold text-yellow-800 mb-2">Delivery Module Not Enabled</h2>
-          <p className="text-sm text-yellow-700 mb-4">
-            Third-party delivery integrations (DoorDash, UberEats, Grubhub) require the Delivery module
-            to be enabled for your venue. Contact your administrator or enable it from Mission Control.
-          </p>
-        </div>
       </div>
     )
   }
