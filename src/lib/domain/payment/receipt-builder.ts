@@ -117,7 +117,9 @@ export function buildReceiptData(
   const cardPayment = bridgedPayments.find(p =>
     p.pricingMode === 'card' || p.appliedPricingTier === 'credit' || p.appliedPricingTier === 'debit'
   )
-  const appliedTier = cardPayment?.appliedPricingTier as 'credit' | 'debit' | null
+  // Fall back to 'credit' when legacy pricingMode='card' is present but no explicit tier
+  const appliedTier = (cardPayment?.appliedPricingTier
+    || (cardPayment?.pricingMode === 'card' ? 'credit' : null)) as 'credit' | 'debit' | null
 
   // Resolve the markup percent based on which pricing tier was actually applied
   const markupPercent = (() => {
