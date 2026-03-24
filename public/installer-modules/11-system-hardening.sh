@@ -287,11 +287,64 @@ XSRC
         sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type "nothing" 2>/dev/null || true
       fi
 
-      # KDE settings
+      # KDE settings (KDE Power Devil overrides xset — must be fully disabled)
       if command -v kwriteconfig5 &>/dev/null; then
         sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Autolock false 2>/dev/null || true
         sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Timeout 0 2>/dev/null || true
+        # Disable ALL KDE power management (DPMS, suspend, dim)
+        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DPMSControl --key idleTime 0 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DPMSControl --key lockBeforeTurnOff 0 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group SuspendSession --key idleTime 0 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group SuspendSession --key suspendType 0 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DimDisplay --key idleTime 0 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group HandleButtonEvents --key lidAction 0 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group HandleButtonEvents --key powerButtonAction 0 2>/dev/null || true
+        # Kill and mask Power Devil so it can't re-enable DPMS
+        killall org_kde_powerdevil 2>/dev/null || true
+        sudo -u "$POSUSER" systemctl --user mask plasma-powerdevil.service 2>/dev/null || true
+        log "  KDE Power Devil disabled and masked"
       fi
+
+      # Xorg server-level DPMS disable (cannot be overridden by ANY desktop environment)
+      mkdir -p /etc/X11/xorg.conf.d
+      cat > /etc/X11/xorg.conf.d/10-no-dpms.conf <<'XORGCONF'
+Section "ServerFlags"
+    Option "StandbyTime" "0"
+    Option "SuspendTime" "0"
+    Option "OffTime" "0"
+    Option "BlankTime" "0"
+    Option "DPMS" "false"
+EndSection
+
+Section "Monitor"
+    Identifier "Monitor0"
+    Option "DPMS" "false"
+EndSection
+XORGCONF
+      log "  Xorg DPMS disabled at server level"
+
+      # Keep-awake timer — runs xset every 60s as ultimate safety net
+      cat > /etc/systemd/user/gwi-keep-awake.service <<'KASVC'
+[Unit]
+Description=GWI POS Keep Screen Awake
+[Service]
+Type=oneshot
+Environment=DISPLAY=:0
+ExecStart=/bin/bash -c "xset -dpms; xset s off; xset s noblank 2>/dev/null || true"
+KASVC
+      cat > /etc/systemd/user/gwi-keep-awake.timer <<'KATMR'
+[Unit]
+Description=GWI POS Keep Screen Awake Timer
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+[Install]
+WantedBy=timers.target
+KATMR
+      sudo -u "$POSUSER" systemctl --user daemon-reload 2>/dev/null || true
+      sudo -u "$POSUSER" systemctl --user enable gwi-keep-awake.timer 2>/dev/null || true
+      sudo -u "$POSUSER" systemctl --user start gwi-keep-awake.timer 2>/dev/null || true
+      log "  Keep-awake timer installed (xset every 60s)"
     fi
 
     # Remove notification nags (non-fatal)
