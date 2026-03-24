@@ -694,6 +694,12 @@ _run_verification() {
   echo -e "${CYAN}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
   echo ""
 
+  if [[ $fail -gt 0 ]]; then
+    echo ""
+    echo -e "  ${RED}!!!  $fail CRITICAL FAILURE(S) DETECTED — review verification table above  !!!${NC}"
+    echo ""
+  fi
+
   # ── Write structured verification report ────────────────────────────────────
   mkdir -p "$STATE_DIR"
   local verify_file="$STATE_DIR/verification-report.json"

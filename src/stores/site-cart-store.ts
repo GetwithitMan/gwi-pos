@@ -68,6 +68,13 @@ interface SiteCartState {
   giftCardApplied: number
   slug: string
   menuVersion: string
+  deliveryAddress: string
+  deliveryCity: string
+  deliveryState: string
+  deliveryZip: string
+  deliveryInstructions: string
+  deliveryZoneId: string | null
+  deliveryFee: number
 
   // Actions
   addItem: (item: CartItem) => void
@@ -85,6 +92,9 @@ interface SiteCartState {
   removeGiftCard: () => void
   setSlug: (slug: string) => void
   setMenuVersion: (version: string) => void
+  setDeliveryAddress: (addr: { address: string; city: string; state: string; zip: string; instructions: string }) => void
+  setDeliveryQuote: (quote: { zoneId: string; fee: number }) => void
+  clearDeliveryAddress: () => void
   clearCart: () => void
 }
 
@@ -130,6 +140,13 @@ const DEFAULT_STATE = {
   giftCardApplied: 0,
   slug: '',
   menuVersion: '',
+  deliveryAddress: '',
+  deliveryCity: '',
+  deliveryState: '',
+  deliveryZip: '',
+  deliveryInstructions: '',
+  deliveryZoneId: null as string | null,
+  deliveryFee: 0,
 }
 
 export const useSiteCartStore = create<SiteCartState>()(
@@ -185,6 +202,29 @@ export const useSiteCartStore = create<SiteCartState>()(
 
       setMenuVersion: (version) => set({ menuVersion: version }),
 
+      setDeliveryAddress: (addr) =>
+        set({
+          deliveryAddress: addr.address,
+          deliveryCity: addr.city,
+          deliveryState: addr.state,
+          deliveryZip: addr.zip,
+          deliveryInstructions: addr.instructions,
+        }),
+
+      setDeliveryQuote: (quote) =>
+        set({ deliveryZoneId: quote.zoneId, deliveryFee: quote.fee }),
+
+      clearDeliveryAddress: () =>
+        set({
+          deliveryAddress: '',
+          deliveryCity: '',
+          deliveryState: '',
+          deliveryZip: '',
+          deliveryInstructions: '',
+          deliveryZoneId: null,
+          deliveryFee: 0,
+        }),
+
       clearCart: () => set({ ...DEFAULT_STATE, slug: get().slug, menuVersion: get().menuVersion }),
     }),
     {
@@ -203,6 +243,13 @@ export const useSiteCartStore = create<SiteCartState>()(
         giftCardApplied: state.giftCardApplied,
         slug: state.slug,
         menuVersion: state.menuVersion,
+        deliveryAddress: state.deliveryAddress,
+        deliveryCity: state.deliveryCity,
+        deliveryState: state.deliveryState,
+        deliveryZip: state.deliveryZip,
+        deliveryInstructions: state.deliveryInstructions,
+        deliveryZoneId: state.deliveryZoneId,
+        deliveryFee: state.deliveryFee,
       }),
     }
   )

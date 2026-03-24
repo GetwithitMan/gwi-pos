@@ -133,6 +133,10 @@ attempt_quick_code_registration() {
   log "Hardware fingerprint: ${hw_fp:0:16}..."
 
   # ── Generate RSA 2048-bit keypair (needed for encrypted secrets) ──
+  # DESIGN NOTE: Keypair MUST be generated BEFORE the MC validation call because
+  # the public key is sent in the validation payload. MC uses it to encrypt the
+  # secrets (API key, DB URLs, deploy token) it returns. The hardware fingerprint
+  # is validated by MC as part of the same call — both are sent together.
   mkdir -p "$APP_BASE" "$KEY_DIR"
   chmod 700 "$KEY_DIR"
   if [[ ! -f "$KEY_DIR/private.pem" ]]; then

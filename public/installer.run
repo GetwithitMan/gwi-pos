@@ -206,6 +206,18 @@ done
 export DRY_RUN
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Detect first boot vs re-install (available to all stages via IS_REINSTALL)
+# ─────────────────────────────────────────────────────────────────────────────
+if [[ -f /opt/gwi-pos/.first-boot-done ]]; then
+  IS_REINSTALL=true
+  log "Detected existing installation — running as RE-INSTALL"
+else
+  IS_REINSTALL=false
+  log "No existing installation detected — running as FRESH INSTALL"
+fi
+export IS_REINSTALL
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Self-Update Check — ensures NUCs always run the latest installer
 # ─────────────────────────────────────────────────────────────────────────────
 

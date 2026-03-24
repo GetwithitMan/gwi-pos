@@ -119,8 +119,17 @@ PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
 # Extract DB name from DATABASE_URL (format: postgresql://user:pass@host:port/dbname)
 _DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|.*://[^/]*/\([^?]*\).*|\1|p')
 _DB_NAME="${_DB_NAME:-thepasspos}"
-echo "[pre-start] Disabling RLS on all tables (db=$_DB_NAME)..."
-sudo /opt/gwi-pos/disable-rls.sh "$_DB_NAME" && echo "[pre-start] RLS disabled." || echo "[pre-start] WARNING: RLS disable had issues — continuing."
+echo "[pre-start] Disabling RLS on all tables (ensuring clean state, db=$_DB_NAME)..."
+_rls_start=$(date +%s%N 2>/dev/null || date +%s)
+sudo /opt/gwi-pos/disable-rls.sh "$_DB_NAME" && {
+  _rls_end=$(date +%s%N 2>/dev/null || date +%s)
+  if [[ "$_rls_start" =~ ^[0-9]{10,}$ ]]; then
+    _rls_ms=$(( (_rls_end - _rls_start) / 1000000 ))
+    echo "[pre-start] RLS disabled (${_rls_ms}ms)."
+  else
+    echo "[pre-start] RLS disabled."
+  fi
+} || echo "[pre-start] WARNING: RLS disable had issues — continuing."
 
 # Run custom migrations if the script exists
 # TIMEOUT: 300s (5min) matches the internal timeout in nuc-pre-migrate.js
@@ -225,9 +234,10 @@ SVCEOF
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"
       # (HTTP 200 alone is insufficient — POS may be booting but not ready for orders)
-      log "Waiting for POS to be order-ready (up to 120s)..."
+      # 90 iterations x 2s = 180s (3 min). First boots with cold npm cache need extra time.
+      log "Waiting for POS to be order-ready (up to 180s)..."
       POS_READY=false
-      for i in $(seq 1 60); do
+      for i in $(seq 1 90); do
         if curl -sf http://localhost:3005/api/health 2>/dev/null | grep -q '"status":"healthy"'; then
           log "POS is ready!"
           POS_READY=true
@@ -253,8 +263,8 @@ SVCEOF
       fi
 
       if [[ "$POS_READY" != "true" ]]; then
-        err_code "ERR-INST-212" "Health check failed after 120s — /api/health did not return healthy"
-        track_warn "POS not ready after 120s — will retry on reboot"
+        err_code "ERR-INST-212" "Health check failed after 180s — /api/health did not return healthy"
+        track_warn "POS not ready after 180s — will retry on reboot"
         track_warn "Check: sudo journalctl -u thepasspos -f"
         # Capture diagnostics for troubleshooting
         err "POS failed to start within timeout. Diagnostics:"

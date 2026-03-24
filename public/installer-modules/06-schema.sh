@@ -101,7 +101,8 @@ run_schema() {
         FALLBACK_VERSION="${FALLBACK_VERSION:-092}"
 
         log "Neon has $TABLE_COUNT tables but missing _venue_schema_state — creating fallback (v$FALLBACK_VERSION)..."
-        PGPASSWORD="" $NEON_PSQL "$NEON_DIRECT_URL" --connect-timeout=10 -c "
+        local _neon_err
+        _neon_err=$(PGPASSWORD="" $NEON_PSQL "$NEON_DIRECT_URL" --connect-timeout=10 -c "
           CREATE TABLE IF NOT EXISTS \"_venue_schema_state\" (
             \"id\" INTEGER PRIMARY KEY DEFAULT 1,
             \"schemaVersion\" TEXT NOT NULL,
@@ -117,11 +118,12 @@ run_schema() {
           INSERT INTO \"_venue_schema_state\" (id, \"schemaVersion\", \"seedVersion\", \"provisionerVersion\", \"provisionedBy\", \"lastRepairReason\")
           VALUES (1, '$FALLBACK_VERSION', 'v1', '1', 'installer-fallback', 'mc-provisioning-incomplete')
           ON CONFLICT (id) DO NOTHING;
-        " 2>/dev/null && {
+        " 2>&1) && {
           NEON_SCHEMA_VERSION="$FALLBACK_VERSION"
           log "Neon _venue_schema_state created (version=$FALLBACK_VERSION, provisionedBy=installer-fallback)"
         } || {
-          warn "Could not create _venue_schema_state in Neon — sync will be blocked until MC provisions it"
+          warn "Could not create _venue_schema_state in Neon: $_neon_err"
+          track_warn "Neon _venue_schema_state creation failed"
         }
       fi
     fi

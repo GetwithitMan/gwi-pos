@@ -32,6 +32,7 @@ import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { upsertOnlineCustomer, accrueOnlineLoyaltyPoints } from '@/lib/customer-upsert'
 import { generateOrderViewToken } from '@/app/api/public/order-status/[id]/route'
+import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 
 // ─── Zod Validation Schema ────────────────────────────────────────────────────
 
@@ -68,6 +69,12 @@ const CheckoutBodySchema = z.object({
   tableContext: z.object({
     table: z.string().optional(),
   }).optional(),
+  // Delivery fields (optional — required when orderType === 'delivery')
+  deliveryAddress: z.string().max(500).optional(),
+  deliveryCity: z.string().max(100).optional(),
+  deliveryState: z.string().max(2).optional(),
+  deliveryZip: z.string().max(10).optional(),
+  deliveryInstructions: z.string().max(500).optional(),
   // Deprecated fields (backward compat)
   notes: z.string().max(2000).optional(),
   tip: z.number().min(0).max(9999).optional(),
@@ -431,7 +438,7 @@ export async function POST(request: NextRequest) {
       surchargeAmount = Math.round(discountedSubtotal * (surchargeValue / 100) * 100) / 100
     }
 
-    const total = discountedSubtotal + taxFromExclusive + surchargeAmount
+    const total = discountedSubtotal + taxFromExclusive + surchargeAmount + deliveryFee
     const totalPlusTip = total + tip // Total before gift card
 
     // ── 2e. Gift card validation ─────────────────────────────────────────────
@@ -530,6 +537,73 @@ export async function POST(request: NextRequest) {
     if (dbOrderType) {
       orderType = dbOrderType.slug
       orderTypeId = dbOrderType.id
+    }
+
+    // ── 4b. Delivery validation + zone lookup ──────────────────────────────────
+
+    let deliveryFee = 0
+    let matchedZone: { id: string; deliveryFee: number; minimumOrder: number; estimatedMinutes: number | null } | null = null
+    let deliveryTrackingToken: string | undefined
+
+    if (body.orderType === 'delivery') {
+      // Require address + zip for delivery
+      if (!body.deliveryAddress?.trim()) {
+        return NextResponse.json({ error: 'Delivery address is required' }, { status: 400 })
+      }
+      if (!body.deliveryZip?.trim()) {
+        return NextResponse.json({ error: 'Delivery zip code is required' }, { status: 400 })
+      }
+
+      // Check delivery enabled in settings
+      const fullSettings = mergeWithDefaults(locSettings as any)
+      const deliveryConfig = fullSettings.delivery ?? DEFAULT_DELIVERY
+      if (!deliveryConfig.enabled) {
+        return NextResponse.json({ error: 'Delivery is not available' }, { status: 400 })
+      }
+
+      // Query active delivery zones (raw SQL — DeliveryZone not in Prisma)
+      const zones: any[] = await venueDb.$queryRawUnsafe(
+        `SELECT id, "deliveryFee", "minimumOrder", "estimatedMinutes", zipcodes, "zoneType"
+         FROM "DeliveryZone"
+         WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true
+         ORDER BY "sortOrder" ASC`,
+        locationId
+      )
+
+      // Match zip against zones (same logic as quote engine)
+      const customerZip = body.deliveryZip.trim()
+      for (const zone of zones) {
+        if (zone.zoneType === 'zipcode' && customerZip) {
+          const zoneZips = Array.isArray(zone.zipcodes) ? zone.zipcodes : []
+          if (zoneZips.includes(customerZip)) {
+            matchedZone = {
+              id: zone.id,
+              deliveryFee: Number(zone.deliveryFee),
+              minimumOrder: Number(zone.minimumOrder),
+              estimatedMinutes: zone.estimatedMinutes,
+            }
+            break
+          }
+        }
+      }
+
+      if (!matchedZone) {
+        return NextResponse.json({ error: 'Delivery not available for this address' }, { status: 400 })
+      }
+
+      // Minimum order check (against pre-discount subtotal)
+      if (matchedZone.minimumOrder > 0 && subtotal < matchedZone.minimumOrder) {
+        return NextResponse.json(
+          { error: `Minimum order of $${matchedZone.minimumOrder.toFixed(2)} required for delivery` },
+          { status: 400 }
+        )
+      }
+
+      // Calculate delivery fee (with free delivery check)
+      deliveryFee = matchedZone.deliveryFee
+      if (deliveryConfig.freeDeliveryMinimum > 0 && subtotal >= deliveryConfig.freeDeliveryMinimum) {
+        deliveryFee = 0
+      }
     }
 
     // ── 5. Generate order number + 6. Compute business day ─────────────────────

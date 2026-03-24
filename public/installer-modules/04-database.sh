@@ -79,6 +79,9 @@ CLEAREOF
     chown "$POSUSER":"$POSUSER" "$APP_BASE"
 
     HB_SCRIPT="$APP_BASE/heartbeat.sh"
+    # NOTE: Single-quoted heredoc (<<'HBEOF') is intentional — prevents premature
+    # expansion of $() subshells. Paths like /opt/gwi-pos are hardcoded because
+    # APP_BASE is always /opt/gwi-pos. If APP_BASE ever changes, update these literals.
     cat > "$HB_SCRIPT" <<'HBEOF'
 #!/usr/bin/env bash
 # GWI POS Heartbeat — sends system metrics to Mission Control
@@ -133,10 +136,15 @@ BATCH_STATUS="null"
 BATCH_ITEM_COUNT="null"
 BATCH_NO="null"
 if [ -f /opt/gwi-pos/last-batch.json ]; then
-  BATCH_CLOSED_AT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.closedAt||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  BATCH_STATUS=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.status||'unknown')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  BATCH_ITEM_COUNT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write(String(d.itemCount||0))}catch(e){process.stdout.write('null')}" 2>/dev/null)
-  BATCH_NO=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.batchNo||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+  # Validate JSON before parsing — corrupt file should not produce wrong metrics
+  if ! node -e "JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'))" 2>/dev/null; then
+    echo "[heartbeat] WARNING: last-batch.json is corrupt — using defaults" >&2
+  else
+    BATCH_CLOSED_AT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.closedAt||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+    BATCH_STATUS=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.status||'unknown')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+    BATCH_ITEM_COUNT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write(String(d.itemCount||0))}catch(e){process.stdout.write('null')}" 2>/dev/null)
+    BATCH_NO=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.batchNo||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
+  fi
 fi
 
 # Get live batch status from local POS API (open orders, unadjusted tips, batch total)
