@@ -39,6 +39,13 @@ interface PaymentFormProps {
   giftCardNumber: string | null
   giftCardPin?: string
   tableContext: { table: string; section?: string } | null
+  deliveryAddress?: string
+  deliveryCity?: string
+  deliveryState?: string
+  deliveryZip?: string
+  deliveryInstructions?: string
+  deliveryZoneId?: string | null
+  deliveryFee?: number
   onSuccess: (orderId: string, orderNumber: number, token: string) => void
   onError: (message: string) => void
   disabled?: boolean
@@ -55,6 +62,13 @@ export function PaymentForm({
   giftCardNumber,
   giftCardPin,
   tableContext,
+  deliveryAddress,
+  deliveryCity,
+  deliveryState,
+  deliveryZip,
+  deliveryInstructions,
+  deliveryZoneId,
+  deliveryFee,
   onSuccess,
   onError,
   disabled,
@@ -125,6 +139,17 @@ export function PaymentForm({
         giftCardPin: giftCardPin || null,
         tableId: tableContext?.table ?? null,
         tableContext: tableContext || null,
+        ...(orderType === 'delivery'
+          ? {
+              deliveryAddress: deliveryAddress || null,
+              deliveryCity: deliveryCity || null,
+              deliveryState: deliveryState || null,
+              deliveryZip: deliveryZip || null,
+              deliveryInstructions: deliveryInstructions || null,
+              deliveryZoneId: deliveryZoneId || null,
+              deliveryFee: deliveryFee ?? 0,
+            }
+          : {}),
       }
 
       try {
@@ -151,7 +176,7 @@ export function PaymentForm({
         idempotencyKey.current = crypto.randomUUID()
       }
     },
-    [slug, items, orderType, customerInfo, specialRequests, tipAmount, couponCode, giftCardNumber, giftCardPin, tableContext, onSuccess]
+    [slug, items, orderType, customerInfo, specialRequests, tipAmount, couponCode, giftCardNumber, giftCardPin, tableContext, deliveryAddress, deliveryCity, deliveryState, deliveryZip, deliveryInstructions, deliveryZoneId, deliveryFee, onSuccess]
   )
 
   // Always keep the ref pointing to the latest callback

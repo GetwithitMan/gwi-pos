@@ -32,6 +32,14 @@ interface OrderStatusData {
   total: number
   pickupAddress: string | null
   source: string
+  deliveryAddress: string | null
+  deliveryCity: string | null
+  deliveryState: string | null
+  deliveryZip: string | null
+  deliveryInstructions: string | null
+  deliveryStatus: string | null
+  deliveryEstimatedTime: string | null
+  deliveryTrackingToken: string | null
 }
 
 const TERMINAL_STATUSES = new Set(['completed', 'voided', 'canceled'])
@@ -190,7 +198,9 @@ export function OrderStatusClient() {
             </svg>
           </div>
           <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--site-text)' }}>
-            {isComplete ? 'Your order is ready!' : 'Order Confirmed!'}
+            {isComplete
+              ? data.orderType === 'delivery' ? 'Your order has been delivered!' : 'Your order is ready!'
+              : 'Order Confirmed!'}
           </h1>
           <p className="text-sm" style={{ color: 'var(--site-text-muted)' }}>
             Order #{data.orderNumber}
@@ -200,8 +210,9 @@ export function OrderStatusClient() {
 
       {/* Status Tracker */}
       <OrderStatusTracker
-        status={data.status}
-        estimatedReadyTime={data.estimatedReadyTime}
+        status={data.deliveryStatus || data.status}
+        estimatedReadyTime={data.deliveryEstimatedTime || data.estimatedReadyTime}
+        orderType={data.orderType}
       />
 
       {/* Order Summary */}
@@ -252,13 +263,37 @@ export function OrderStatusClient() {
         </div>
       </div>
 
-      {/* Pickup Address */}
-      {data.pickupAddress && data.orderType !== 'delivery' && (
+      {/* Address Info */}
+      {data.orderType === 'delivery' && data.deliveryAddress ? (
+        <div className="rounded-xl border p-5" style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}>
+          <h3 className="font-semibold text-sm mb-2" style={{ color: 'var(--site-text)' }}>Delivering To</h3>
+          <p className="text-sm" style={{ color: 'var(--site-text-muted)' }}>
+            {data.deliveryAddress}
+            {data.deliveryCity && `, ${data.deliveryCity}`}
+            {data.deliveryState && `, ${data.deliveryState}`}
+            {data.deliveryZip && ` ${data.deliveryZip}`}
+          </p>
+          {data.deliveryInstructions && (
+            <p className="text-xs mt-1.5" style={{ color: 'var(--site-text-muted)' }}>
+              Instructions: {data.deliveryInstructions}
+            </p>
+          )}
+          {data.deliveryTrackingToken && (
+            <a
+              href={`/delivery/track/${data.deliveryTrackingToken}`}
+              className="inline-block mt-3 text-xs font-medium"
+              style={{ color: 'var(--site-brand)' }}
+            >
+              Track Delivery →
+            </a>
+          )}
+        </div>
+      ) : data.pickupAddress && data.orderType !== 'delivery' ? (
         <div className="rounded-xl border p-5" style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}>
           <h3 className="font-semibold text-sm mb-2" style={{ color: 'var(--site-text)' }}>Pickup Location</h3>
           <p className="text-sm" style={{ color: 'var(--site-text-muted)' }}>{data.pickupAddress}</p>
         </div>
-      )}
+      ) : null}
 
       {/* Back to Menu */}
       <div className="text-center pt-2 pb-4">

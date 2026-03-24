@@ -438,6 +438,73 @@ export async function POST(request: NextRequest) {
       surchargeAmount = Math.round(discountedSubtotal * (surchargeValue / 100) * 100) / 100
     }
 
+    // ── 2d½. Delivery validation + zone lookup + fee ───────────────────────────
+
+    let deliveryFee = 0
+    let matchedZone: { id: string; deliveryFee: number; minimumOrder: number; estimatedMinutes: number | null } | null = null
+    let deliveryTrackingToken: string | undefined
+
+    if (body.orderType === 'delivery') {
+      // Require address + zip for delivery
+      if (!body.deliveryAddress?.trim()) {
+        return NextResponse.json({ error: 'Delivery address is required' }, { status: 400 })
+      }
+      if (!body.deliveryZip?.trim()) {
+        return NextResponse.json({ error: 'Delivery zip code is required' }, { status: 400 })
+      }
+
+      // Check delivery enabled in settings
+      const fullSettings = mergeWithDefaults(locSettings as any)
+      const deliveryConfig = fullSettings.delivery ?? DEFAULT_DELIVERY
+      if (!deliveryConfig.enabled) {
+        return NextResponse.json({ error: 'Delivery is not available' }, { status: 400 })
+      }
+
+      // Query active delivery zones (raw SQL — DeliveryZone not in Prisma)
+      const zones: any[] = await venueDb.$queryRawUnsafe(
+        `SELECT id, "deliveryFee", "minimumOrder", "estimatedMinutes", zipcodes, "zoneType"
+         FROM "DeliveryZone"
+         WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true
+         ORDER BY "sortOrder" ASC`,
+        locationId
+      )
+
+      // Match zip against zones (same logic as quote engine)
+      const customerZip = body.deliveryZip.trim()
+      for (const zone of zones) {
+        if (zone.zoneType === 'zipcode' && customerZip) {
+          const zoneZips = Array.isArray(zone.zipcodes) ? zone.zipcodes : []
+          if (zoneZips.includes(customerZip)) {
+            matchedZone = {
+              id: zone.id,
+              deliveryFee: Number(zone.deliveryFee),
+              minimumOrder: Number(zone.minimumOrder),
+              estimatedMinutes: zone.estimatedMinutes,
+            }
+            break
+          }
+        }
+      }
+
+      if (!matchedZone) {
+        return NextResponse.json({ error: 'Delivery not available for this address' }, { status: 400 })
+      }
+
+      // Minimum order check (against discounted subtotal)
+      if (matchedZone.minimumOrder > 0 && discountedSubtotal < matchedZone.minimumOrder) {
+        return NextResponse.json(
+          { error: `Minimum order of $${matchedZone.minimumOrder.toFixed(2)} required for delivery` },
+          { status: 400 }
+        )
+      }
+
+      // Calculate delivery fee (with free delivery check)
+      deliveryFee = matchedZone.deliveryFee
+      if (deliveryConfig.freeDeliveryMinimum > 0 && discountedSubtotal >= deliveryConfig.freeDeliveryMinimum) {
+        deliveryFee = 0
+      }
+    }
+
     const total = discountedSubtotal + taxFromExclusive + surchargeAmount + deliveryFee
     const totalPlusTip = total + tip // Total before gift card
 
@@ -539,73 +606,6 @@ export async function POST(request: NextRequest) {
       orderTypeId = dbOrderType.id
     }
 
-    // ── 4b. Delivery validation + zone lookup ──────────────────────────────────
-
-    let deliveryFee = 0
-    let matchedZone: { id: string; deliveryFee: number; minimumOrder: number; estimatedMinutes: number | null } | null = null
-    let deliveryTrackingToken: string | undefined
-
-    if (body.orderType === 'delivery') {
-      // Require address + zip for delivery
-      if (!body.deliveryAddress?.trim()) {
-        return NextResponse.json({ error: 'Delivery address is required' }, { status: 400 })
-      }
-      if (!body.deliveryZip?.trim()) {
-        return NextResponse.json({ error: 'Delivery zip code is required' }, { status: 400 })
-      }
-
-      // Check delivery enabled in settings
-      const fullSettings = mergeWithDefaults(locSettings as any)
-      const deliveryConfig = fullSettings.delivery ?? DEFAULT_DELIVERY
-      if (!deliveryConfig.enabled) {
-        return NextResponse.json({ error: 'Delivery is not available' }, { status: 400 })
-      }
-
-      // Query active delivery zones (raw SQL — DeliveryZone not in Prisma)
-      const zones: any[] = await venueDb.$queryRawUnsafe(
-        `SELECT id, "deliveryFee", "minimumOrder", "estimatedMinutes", zipcodes, "zoneType"
-         FROM "DeliveryZone"
-         WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true
-         ORDER BY "sortOrder" ASC`,
-        locationId
-      )
-
-      // Match zip against zones (same logic as quote engine)
-      const customerZip = body.deliveryZip.trim()
-      for (const zone of zones) {
-        if (zone.zoneType === 'zipcode' && customerZip) {
-          const zoneZips = Array.isArray(zone.zipcodes) ? zone.zipcodes : []
-          if (zoneZips.includes(customerZip)) {
-            matchedZone = {
-              id: zone.id,
-              deliveryFee: Number(zone.deliveryFee),
-              minimumOrder: Number(zone.minimumOrder),
-              estimatedMinutes: zone.estimatedMinutes,
-            }
-            break
-          }
-        }
-      }
-
-      if (!matchedZone) {
-        return NextResponse.json({ error: 'Delivery not available for this address' }, { status: 400 })
-      }
-
-      // Minimum order check (against pre-discount subtotal)
-      if (matchedZone.minimumOrder > 0 && subtotal < matchedZone.minimumOrder) {
-        return NextResponse.json(
-          { error: `Minimum order of $${matchedZone.minimumOrder.toFixed(2)} required for delivery` },
-          { status: 400 }
-        )
-      }
-
-      // Calculate delivery fee (with free delivery check)
-      deliveryFee = matchedZone.deliveryFee
-      if (deliveryConfig.freeDeliveryMinimum > 0 && subtotal >= deliveryConfig.freeDeliveryMinimum) {
-        deliveryFee = 0
-      }
-    }
-
     // ── 5. Generate order number + 6. Compute business day ─────────────────────
 
     const today = new Date()
@@ -654,9 +654,10 @@ export async function POST(request: NextRequest) {
           tipTotal: tip,
           total: totalPlusTip,
           commissionTotal: 0,
-          ...(tableId ? {
-            customFields: { channel: 'qr', tableId, qrContextVersion: 1 },
-          } : {}),
+          customFields: {
+            ...(tableId ? { channel: 'qr', tableId, qrContextVersion: 1 } : { channel: 'web' }),
+            ...(body.orderType === 'delivery' && matchedZone ? { deliveryZoneId: matchedZone.id, deliveryFee } : {}),
+          },
           // Fix #12: No PII in notes — only "Online Order" + specialRequests
           notes: [
             'Online Order',
@@ -835,6 +836,36 @@ export async function POST(request: NextRequest) {
     } catch (custErr) {
       // Customer upsert failure should not block order success
       console.error('[checkout] Customer upsert error:', custErr)
+    }
+
+    // ── 10b½. Create DeliveryOrder (raw SQL — not in Prisma) ────────────────
+
+    if (body.orderType === 'delivery' && matchedZone) {
+      try {
+        const deliveryOrderId = crypto.randomUUID()
+        deliveryTrackingToken = crypto.randomUUID()
+        await venueDb.$queryRawUnsafe(`
+          INSERT INTO "DeliveryOrder" (
+            id, "locationId", "orderId", status,
+            "customerName", "customerPhone", "customerEmail",
+            "deliveryAddress", "deliveryCity", "deliveryState", "deliveryZip",
+            "deliveryInstructions", "deliveryFee", "zoneId",
+            "estimatedMinutes", "trackingToken",
+            "createdAt", "updatedAt"
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $17)
+        `,
+          deliveryOrderId, locationId, order.id, 'pending',
+          body.customerName, body.customerPhone || '', body.customerEmail,
+          body.deliveryAddress, body.deliveryCity || '', body.deliveryState || '', body.deliveryZip,
+          body.deliveryInstructions || '', deliveryFee, matchedZone.id,
+          matchedZone.estimatedMinutes || 30, deliveryTrackingToken,
+          new Date()
+        )
+      } catch (deliveryErr) {
+        // DeliveryOrder creation failure should NOT block the order
+        console.error('[checkout] DeliveryOrder creation error:', deliveryErr)
+        deliveryTrackingToken = undefined
+      }
     }
 
     // ── 10c. Coupon redemption (idempotent) ──────────────────────────────────
@@ -1037,6 +1068,8 @@ export async function POST(request: NextRequest) {
         giftCardApplied: giftCardApplied > 0 ? giftCardApplied : undefined,
         total: totalPlusTip,
         charged: chargeAmount > 0 ? chargeAmount : undefined,
+        deliveryFee: deliveryFee > 0 ? deliveryFee : undefined,
+        deliveryTrackingToken: body.orderType === 'delivery' ? deliveryTrackingToken : undefined,
         prepTime: prepTimeMinutes,
         // Fix #3: Add status token for order tracking
         statusToken: generateOrderViewToken(order.id),

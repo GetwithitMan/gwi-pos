@@ -18,6 +18,7 @@ interface CartSummaryProps {
   surchargeType: string | null // 'flat' | 'percent' | null
   surchargeAmount: number
   surchargeName: string
+  deliveryFee?: number
 }
 
 function computeSurcharge(
@@ -39,11 +40,12 @@ export function CartSummary({
   surchargeType,
   surchargeAmount,
   surchargeName,
+  deliveryFee = 0,
 }: CartSummaryProps) {
   const surcharge = computeSurcharge(subtotal, surchargeType, surchargeAmount)
   const afterDiscount = Math.max(0, subtotal - couponDiscount)
   const taxDisplay = taxEstimate ?? 0
-  const beforeGiftCard = afterDiscount + taxDisplay + tipAmount + surcharge
+  const beforeGiftCard = afterDiscount + taxDisplay + tipAmount + surcharge + deliveryFee
   const total = Math.max(0, beforeGiftCard - giftCardApplied)
 
   const rows: Array<{ label: string; value: number; negative?: boolean; muted?: boolean; pending?: boolean }> = [
@@ -52,6 +54,10 @@ export function CartSummary({
 
   if (couponDiscount > 0) {
     rows.push({ label: 'Coupon discount', value: couponDiscount, negative: true })
+  }
+
+  if (deliveryFee > 0) {
+    rows.push({ label: 'Delivery fee', value: deliveryFee })
   }
 
   if (taxEstimate !== null) {

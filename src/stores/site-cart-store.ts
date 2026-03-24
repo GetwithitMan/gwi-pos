@@ -274,3 +274,13 @@ export const useCartGiftCard = () =>
   useSiteCartStore((s) => ({ number: s.giftCardNumber, applied: s.giftCardApplied }))
 export const useCartSlug = () => useSiteCartStore((s) => s.slug)
 export const useCartMenuVersion = () => useSiteCartStore((s) => s.menuVersion)
+export const useCartDelivery = () =>
+  useSiteCartStore((s) => ({
+    address: s.deliveryAddress,
+    city: s.deliveryCity,
+    state: s.deliveryState,
+    zip: s.deliveryZip,
+    instructions: s.deliveryInstructions,
+    zoneId: s.deliveryZoneId,
+    fee: s.deliveryFee,
+  }))

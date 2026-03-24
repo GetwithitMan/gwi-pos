@@ -3,8 +3,23 @@
 /**
  * OrderTypeSelector — Pickup / Delivery toggle for checkout.
  *
- * Phase C: Pickup only. Delivery shown as "Coming soon" when not enabled.
+ * When delivery is selected and enabled, shows an address form.
+ * On ZIP blur, calls the delivery quote endpoint to check eligibility + fee.
  */
+
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { formatCurrency } from '@/lib/utils'
+import { useSiteCartStore } from '@/stores/site-cart-store'
+
+interface DeliveryQuoteResult {
+  status: 'idle' | 'loading' | 'success' | 'not_serviceable' | 'below_minimum' | 'error'
+  fee?: number
+  estimatedMinutes?: number
+  zoneId?: string
+  freeDeliveryMinimum?: number
+  minimumOrder?: number
+  reason?: string
+}
 
 interface OrderTypeSelectorProps {
   value: 'pickup' | 'delivery' | 'dine_in'
@@ -13,6 +28,8 @@ interface OrderTypeSelectorProps {
   prepTime: number // minutes
   canPlaceDeliveryOrder: boolean
   isDineIn?: boolean // QR table context present
+  slug: string
+  subtotal: number
 }
 
 export function OrderTypeSelector({
@@ -22,7 +39,90 @@ export function OrderTypeSelector({
   prepTime,
   canPlaceDeliveryOrder,
   isDineIn,
+  slug,
+  subtotal,
 }: OrderTypeSelectorProps) {
+  const deliveryAddress = useSiteCartStore((s) => s.deliveryAddress)
+  const deliveryCity = useSiteCartStore((s) => s.deliveryCity)
+  const deliveryState = useSiteCartStore((s) => s.deliveryState)
+  const deliveryZip = useSiteCartStore((s) => s.deliveryZip)
+  const deliveryInstructions = useSiteCartStore((s) => s.deliveryInstructions)
+  const setDeliveryAddress = useSiteCartStore((s) => s.setDeliveryAddress)
+  const setDeliveryQuote = useSiteCartStore((s) => s.setDeliveryQuote)
+  const clearDeliveryAddress = useSiteCartStore((s) => s.clearDeliveryAddress)
+
+  const [quote, setQuote] = useState<DeliveryQuoteResult>({ status: 'idle' })
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // When switching away from delivery, clear the address
+  useEffect(() => {
+    if (value !== 'delivery') {
+      clearDeliveryAddress()
+      setQuote({ status: 'idle' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  const fetchQuote = useCallback(
+    async (zip: string, address: string) => {
+      if (!zip || zip.length < 5) return
+      setQuote({ status: 'loading' })
+
+      try {
+        const res = await fetch('/api/public/delivery/quote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug, zip, address, subtotal }),
+        })
+        const json = await res.json()
+
+        if (!res.ok) {
+          setQuote({ status: 'error', reason: json.error || 'Failed to check delivery' })
+          return
+        }
+
+        if (json.serviceable) {
+          setQuote({
+            status: 'success',
+            fee: json.fee,
+            estimatedMinutes: json.estimatedMinutes,
+            zoneId: json.zoneId,
+            freeDeliveryMinimum: json.freeDeliveryMinimum,
+          })
+          setDeliveryQuote({ zoneId: json.zoneId, fee: json.fee })
+        } else if (json.minimumOrder) {
+          setQuote({
+            status: 'below_minimum',
+            minimumOrder: json.minimumOrder,
+            reason: json.reason,
+          })
+        } else {
+          setQuote({ status: 'not_serviceable', reason: json.reason })
+        }
+      } catch {
+        setQuote({ status: 'error', reason: 'Network error. Please try again.' })
+      }
+    },
+    [slug, subtotal, setDeliveryQuote]
+  )
+
+  const handleZipBlur = useCallback(
+    (zip: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        void fetchQuote(zip, deliveryAddress)
+      }, 300)
+    },
+    [fetchQuote, deliveryAddress]
+  )
+
+  const handleAddressField = useCallback(
+    (field: string, val: string) => {
+      const current = { address: deliveryAddress, city: deliveryCity, state: deliveryState, zip: deliveryZip, instructions: deliveryInstructions }
+      setDeliveryAddress({ ...current, [field]: val })
+    },
+    [deliveryAddress, deliveryCity, deliveryState, deliveryZip, deliveryInstructions, setDeliveryAddress]
+  )
   // If QR dine-in mode, show locked dine-in indicator
   if (isDineIn) {
     return (
@@ -129,6 +229,114 @@ export function OrderTypeSelector({
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
           </svg>
           <span>{venueAddress}</span>
+        </div>
+      )}
+
+      {/* Delivery address form */}
+      {value === 'delivery' && canPlaceDeliveryOrder && (
+        <div
+          className="space-y-3 p-4 rounded-xl border"
+          style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}
+        >
+          <input
+            type="text"
+            value={deliveryAddress}
+            onChange={(e) => handleAddressField('address', e.target.value)}
+            placeholder="Street address *"
+            autoComplete="street-address"
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none"
+            style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-bg-secondary)', color: 'var(--site-text)' }}
+          />
+          <div className="grid grid-cols-3 gap-2">
+            <input
+              type="text"
+              value={deliveryCity}
+              onChange={(e) => handleAddressField('city', e.target.value)}
+              placeholder="City"
+              autoComplete="address-level2"
+              className="px-3 py-2.5 rounded-lg border text-sm outline-none"
+              style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-bg-secondary)', color: 'var(--site-text)' }}
+            />
+            <input
+              type="text"
+              value={deliveryState}
+              onChange={(e) => handleAddressField('state', e.target.value.toUpperCase().slice(0, 2))}
+              placeholder="State"
+              autoComplete="address-level1"
+              maxLength={2}
+              className="px-3 py-2.5 rounded-lg border text-sm outline-none"
+              style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-bg-secondary)', color: 'var(--site-text)' }}
+            />
+            <input
+              type="text"
+              value={deliveryZip}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, '').slice(0, 5)
+                handleAddressField('zip', v)
+              }}
+              onBlur={(e) => handleZipBlur(e.target.value)}
+              placeholder="ZIP *"
+              autoComplete="postal-code"
+              inputMode="numeric"
+              maxLength={5}
+              className="px-3 py-2.5 rounded-lg border text-sm outline-none"
+              style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-bg-secondary)', color: 'var(--site-text)' }}
+            />
+          </div>
+          <textarea
+            value={deliveryInstructions}
+            onChange={(e) => handleAddressField('instructions', e.target.value)}
+            placeholder="Delivery instructions (optional)"
+            maxLength={500}
+            rows={2}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none resize-none"
+            style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-bg-secondary)', color: 'var(--site-text)' }}
+          />
+
+          {/* Quote result */}
+          {quote.status === 'loading' && (
+            <div className="flex items-center gap-2 text-xs py-2" style={{ color: 'var(--site-text-muted)' }}>
+              <div className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--site-border)', borderTopColor: 'var(--site-brand)' }} />
+              Checking delivery availability...
+            </div>
+          )}
+          {quote.status === 'success' && (
+            <div
+              className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs font-medium"
+              style={{ backgroundColor: 'rgba(22, 163, 74, 0.08)', color: '#16a34a' }}
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+              {quote.fee === 0
+                ? `Free Delivery! (orders over ${formatCurrency(quote.freeDeliveryMinimum ?? 0)})`
+                : `Delivery fee: ${formatCurrency(quote.fee ?? 0)} · Est. ${quote.estimatedMinutes} min`}
+            </div>
+          )}
+          {quote.status === 'not_serviceable' && (
+            <div
+              className="px-3 py-2.5 rounded-lg text-xs font-medium"
+              style={{ backgroundColor: 'rgba(220, 38, 38, 0.08)', color: '#dc2626' }}
+            >
+              {quote.reason || "Sorry, we don't deliver to this area"}
+            </div>
+          )}
+          {quote.status === 'below_minimum' && (
+            <div
+              className="px-3 py-2.5 rounded-lg text-xs font-medium"
+              style={{ backgroundColor: 'rgba(217, 119, 6, 0.08)', color: '#d97706' }}
+            >
+              {quote.reason || `Minimum order of ${formatCurrency(quote.minimumOrder ?? 0)} required for delivery`}
+            </div>
+          )}
+          {quote.status === 'error' && (
+            <div
+              className="px-3 py-2.5 rounded-lg text-xs font-medium"
+              style={{ backgroundColor: 'rgba(220, 38, 38, 0.08)', color: '#dc2626' }}
+            >
+              {quote.reason || 'Failed to check delivery availability'}
+            </div>
+          )}
         </div>
       )}
     </div>

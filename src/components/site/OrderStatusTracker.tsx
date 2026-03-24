@@ -10,27 +10,64 @@
 interface OrderStatusTrackerProps {
   status: string
   estimatedReadyTime: string | null
+  orderType?: string
 }
 
-const STEPS = [
+const PICKUP_STEPS = [
   { key: 'received', label: 'Received' },
   { key: 'preparing', label: 'Preparing' },
-  { key: 'complete', label: 'Complete' },
+  { key: 'complete', label: 'Ready' },
 ] as const
 
-function mapStatusToStepIndex(status: string): number {
+const DELIVERY_STEPS = [
+  { key: 'received', label: 'Received' },
+  { key: 'preparing', label: 'Preparing' },
+  { key: 'dispatched', label: 'Out for Delivery' },
+  { key: 'delivered', label: 'Delivered' },
+] as const
+
+function mapPickupStatusToStep(status: string): number {
   switch (status) {
     case 'received':
+    case 'pending':
+    case 'confirmed':
       return 0
     case 'open':
     case 'in_progress':
     case 'sent':
+    case 'preparing':
       return 1
     case 'completed':
+    case 'ready':
       return 2
     case 'voided':
     case 'canceled':
-      return -1 // error state
+      return -1
+    default:
+      return 0
+  }
+}
+
+function mapDeliveryStatusToStep(status: string): number {
+  switch (status) {
+    case 'received':
+    case 'pending':
+    case 'confirmed':
+      return 0
+    case 'open':
+    case 'in_progress':
+    case 'sent':
+    case 'preparing':
+      return 1
+    case 'dispatched':
+    case 'en_route':
+      return 2
+    case 'delivered':
+    case 'completed':
+      return 3
+    case 'voided':
+    case 'canceled':
+      return -1
     default:
       return 0
   }
@@ -53,8 +90,10 @@ function formatEstimatedTime(iso: string): string {
   return `~${hours} hr ${mins} min`
 }
 
-export function OrderStatusTracker({ status, estimatedReadyTime }: OrderStatusTrackerProps) {
-  const activeIndex = mapStatusToStepIndex(status)
+export function OrderStatusTracker({ status, estimatedReadyTime, orderType }: OrderStatusTrackerProps) {
+  const isDelivery = orderType === 'delivery'
+  const STEPS = isDelivery ? DELIVERY_STEPS : PICKUP_STEPS
+  const activeIndex = isDelivery ? mapDeliveryStatusToStep(status) : mapPickupStatusToStep(status)
   const isError = activeIndex === -1
   const isComplete = activeIndex >= STEPS.length - 1
 

@@ -48,6 +48,14 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
   const giftCardApplied = useSiteCartStore((s) => s.giftCardApplied)
   const clearCart = useSiteCartStore((s) => s.clearCart)
 
+  const deliveryAddress = useSiteCartStore((s) => s.deliveryAddress)
+  const deliveryCity = useSiteCartStore((s) => s.deliveryCity)
+  const deliveryState = useSiteCartStore((s) => s.deliveryState)
+  const deliveryZip = useSiteCartStore((s) => s.deliveryZip)
+  const deliveryInstructions = useSiteCartStore((s) => s.deliveryInstructions)
+  const deliveryZoneId = useSiteCartStore((s) => s.deliveryZoneId)
+  const deliveryFee = useSiteCartStore((s) => s.deliveryFee)
+
   const setOrderType = useSiteCartStore((s) => s.setOrderType)
   const setTipPercent = useSiteCartStore((s) => s.setTipPercent)
   const setTipAmount = useSiteCartStore((s) => s.setTipAmount)
@@ -199,13 +207,17 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
 
   // ── Form validity for enabling payment ───────────────────────
   const isFormValid = useMemo(() => {
-    return (
+    const baseValid =
       customerInfo.name.trim().length > 0 &&
       customerInfo.phone.trim().length > 0 &&
       customerInfo.email.trim().length > 0 &&
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerInfo.email)
-    )
-  }, [customerInfo])
+
+    if (orderType === 'delivery') {
+      return baseValid && deliveryAddress.trim().length > 0 && deliveryZip.trim().length >= 5 && !!deliveryZoneId
+    }
+    return baseValid
+  }, [customerInfo, orderType, deliveryAddress, deliveryZip, deliveryZoneId])
 
   // Don't render until hydrated (prevents SSR mismatch with Zustand)
   if (!mounted) {
@@ -247,6 +259,8 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
             prepTime={orderingConfig.prepTime}
             canPlaceDeliveryOrder={capabilities.canPlaceDeliveryOrder}
             isDineIn={!!tableContext}
+            slug={slug}
+            subtotal={subtotal}
           />
         </Section>
 
@@ -495,6 +509,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
             surchargeType={orderingConfig.surchargeType}
             surchargeAmount={orderingConfig.surchargeAmount}
             surchargeName={orderingConfig.surchargeName}
+            deliveryFee={orderType === 'delivery' ? deliveryFee : 0}
           />
         </Section>
 
@@ -511,13 +526,22 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
             giftCardNumber={giftCardNumber}
             giftCardPin={giftCardPinInput}
             tableContext={tableContext}
+            deliveryAddress={deliveryAddress}
+            deliveryCity={deliveryCity}
+            deliveryState={deliveryState}
+            deliveryZip={deliveryZip}
+            deliveryInstructions={deliveryInstructions}
+            deliveryZoneId={deliveryZoneId}
+            deliveryFee={deliveryFee}
             onSuccess={handlePaymentSuccess}
             onError={handlePaymentError}
             disabled={!isFormValid}
           />
           {!isFormValid && (
             <p className="text-xs mt-2 text-center" style={{ color: 'var(--site-text-muted)' }}>
-              Fill in your name, phone, and email to continue
+              {orderType === 'delivery'
+                ? 'Fill in your info and delivery address to continue'
+                : 'Fill in your name, phone, and email to continue'}
             </p>
           )}
         </Section>
