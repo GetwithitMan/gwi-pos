@@ -167,19 +167,9 @@ export default function OnlineOrderingOverviewPage() {
     }
   }
 
-  // Generate a stable orderCode prefix required by the online-ordering URL pattern
-  // (middleware regex: /^\/([A-Z0-9]{4,8})\/([a-z0-9-]+)/)
-  // Derived deterministically from the slug so QR codes never break:
-  //   "fruita-grill" → "FRUITAGR"
-  const orderCode = locationSlug
-    ? (() => {
-        const code = locationSlug.replace(/-/g, '').toUpperCase()
-        return code.length >= 4 ? code.substring(0, 8) : code.padEnd(4, 'X')
-      })()
-    : null
-
-  const orderingUrl = orderCode && locationSlug
-    ? `ordercontrolcenter.com/${orderCode}/${locationSlug}`
+  // Wildcard subdomain URL for the customer-facing ordering site
+  const orderingUrl = locationSlug
+    ? `${locationSlug}.ordercontrolcenter.com`
     : null
 
   const handleCopyUrl = () => {
@@ -284,16 +274,16 @@ export default function OnlineOrderingOverviewPage() {
                 URL will appear here once your venue slug is configured
               </p>
             )}
-            {locationId && (
+            {orderingUrl && (
               <div className="mt-2 flex items-center gap-2">
-                <span className="text-xs text-gray-900">Local preview:</span>
+                <span className="text-xs text-gray-900">Customer site:</span>
                 <a
-                  href={`/order?locationId=${locationId}`}
+                  href={`https://${orderingUrl}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-blue-500 hover:text-blue-700 font-mono underline"
                 >
-                  /order?locationId={locationId}
+                  https://{orderingUrl}
                 </a>
               </div>
             )}
