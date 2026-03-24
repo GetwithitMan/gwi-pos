@@ -321,6 +321,25 @@ export const POST = withVenue(async function POST(
           )
         }
 
+        // Reverse stackability check: block manual discount when a non-stackable rule is already applied
+        if (order.discounts.length > 0) {
+          const ruleIds = order.discounts
+            .map(d => d.discountRuleId)
+            .filter((id): id is string => id != null)
+          if (ruleIds.length > 0) {
+            const nonStackableRule = await tx.discountRule.findFirst({
+              where: { id: { in: ruleIds }, isStackable: false, deletedAt: null },
+              select: { displayText: true },
+            })
+            if (nonStackableRule) {
+              return NextResponse.json(
+                { error: `Cannot add manual discount — a non-stackable discount ("${nonStackableRule.displayText}") is already applied` },
+                { status: 400 }
+              )
+            }
+          }
+        }
+
         // Normalize type: accept 'percent'/'PERCENTAGE'/'Percent' and 'fixed'/'FIXED'/'Fixed'/'FLAT'
         const normalizedType = body.type.toLowerCase().startsWith('percent') ? 'percent' : 'fixed'
 
@@ -740,6 +759,29 @@ export const DELETE = withVenue(async function DELETE(
         where: { id: discountId },
         data: { deletedAt: new Date() },
       })
+
+      // If this discount came from a coupon, decrement usage count and soft-delete the redemption
+      if (discountToRemove.couponId) {
+        await tx.coupon.update({
+          where: { id: discountToRemove.couponId },
+          data: { usageCount: { decrement: 1 } },
+        })
+
+        // Soft-delete the associated CouponRedemption record
+        const redemption = await tx.couponRedemption.findFirst({
+          where: {
+            couponId: discountToRemove.couponId,
+            orderId,
+            deletedAt: null,
+          },
+        })
+        if (redemption) {
+          await tx.couponRedemption.update({
+            where: { id: redemption.id },
+            data: { deletedAt: new Date() },
+          })
+        }
+      }
 
       // Audit log for discount removal
       await tx.auditLog.create({

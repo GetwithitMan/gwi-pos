@@ -113,7 +113,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }),
     db.paymentReader.findMany({ where: { locationId, deletedAt: null } }),
     db.printer.findMany({ where: { locationId, deletedAt: null } }),
-    db.section.findMany({ where: { locationId, deletedAt: null }, orderBy: { sortOrder: 'asc' } }),
+    db.section.findMany({ where: { locationId, deletedAt: null }, orderBy: { sortOrder: 'asc' }, include: { assignments: { select: { employeeId: true } } } }),
     db.floorPlanElement.findMany({
       where: { locationId, deletedAt: null, isVisible: true, elementType: 'entertainment' },
       select: {
@@ -465,7 +465,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationSettings: settings,
       paymentReaders,
       printers,
-      sections: sections.map(s => ({ id: s.id, name: s.name, color: s.color, sortOrder: s.sortOrder })),
+      sections: sections.map(s => ({ id: s.id, name: s.name, color: s.color, sortOrder: s.sortOrder, assignedEmployeeIds: s.assignments.map(a => a.employeeId) })),
       floorPlanElements,
       syncVersion: Date.now(),
       terminalConfig: {

@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
@@ -430,6 +431,70 @@ export const POST = withVenue(async function POST(
         }
       } catch (err) {
         console.error('[refund-payment] Failed to adjust tip proportionally:', err)
+      }
+    })()
+
+    // Loyalty point reversal: reverse earned points proportionally for refund (fire-and-forget)
+    void (async () => {
+      try {
+        if (!order.id) return
+        // Fetch order's customerId (not included in initial lightweight query)
+        const orderWithCustomer = await db.order.findUnique({
+          where: { id },
+          select: { customerId: true, orderNumber: true },
+        })
+        if (!orderWithCustomer?.customerId) return
+
+        const locSettings = parseSettings(await getLocationSettings(order.locationId))
+        if (!locSettings.loyalty.enabled) return
+
+        // Find all 'earn' loyalty transactions for this order
+        const earnTxns = await db.$queryRawUnsafe<Array<{ points: unknown }>>(
+          `SELECT "points" FROM "LoyaltyTransaction" WHERE "orderId" = $1 AND "type" = 'earn'`,
+          id,
+        ).catch(() => [] as Array<{ points: unknown }>)
+
+        const earnedPoints = earnTxns.reduce((sum, t) => sum + (Number(t.points) || 0), 0)
+        if (earnedPoints <= 0) return
+
+        const paymentAmount = Number(payment.amount)
+        // Full refund: reverse all points. Partial: reverse proportionally.
+        const pointsToReverse = isPartial
+          ? Math.round(earnedPoints * (refundAmount / paymentAmount))
+          : earnedPoints
+
+        if (pointsToReverse <= 0) return
+
+        // Decrement customer loyalty points and stats (proportional for partial)
+        const spentReduction = isPartial ? refundAmount : paymentAmount
+        const totalOrdersClause = !isPartial ? ', "totalOrders" = GREATEST(0, "totalOrders" - 1)' : ''
+        await db.$executeRawUnsafe(
+          `UPDATE "Customer" SET
+            "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - $2),
+            "lifetimePoints" = GREATEST(0, "lifetimePoints" - $2),
+            "totalSpent" = GREATEST(0, "totalSpent" - $3)${totalOrdersClause},
+            "updatedAt" = NOW()
+          WHERE "id" = $1`,
+          orderWithCustomer.customerId,
+          pointsToReverse,
+          spentReduction,
+        )
+
+        // Create reversal LoyaltyTransaction
+        const txnId = crypto.randomUUID()
+        const desc = isPartial
+          ? `Reversed ${pointsToReverse} points: partial refund ($${refundAmount.toFixed(2)}) on order #${orderWithCustomer.orderNumber}`
+          : `Reversed: payment refunded on order #${orderWithCustomer.orderNumber}`
+        await db.$executeRawUnsafe(
+          `INSERT INTO "LoyaltyTransaction" (
+            "id", "customerId", "locationId", "orderId", "type", "points",
+            "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
+          ) VALUES ($1, $2, $3, $4, 'adjust', $5, 0, 0, $6, $7, NOW())`,
+          txnId, orderWithCustomer.customerId, order.locationId, id, -pointsToReverse,
+          desc, managerId || null,
+        )
+      } catch (err) {
+        console.error('[refund-payment] Loyalty point reversal failed:', err)
       }
     })()
 

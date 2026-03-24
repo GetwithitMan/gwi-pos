@@ -9,6 +9,7 @@ import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchPaymentProc
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { parseSettings } from '@/lib/settings'
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
+import { calculateAutoGratuity } from '@/lib/domain/payment/auto-gratuity'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
@@ -158,7 +159,7 @@ export const POST = withVenue(withAuth(async function POST(
     const unpaidSplitIds = unpaidSplits.map(s => s.id)
 
     // splitPaymentMap: splitOrderId → real payment row ID (populated inside tx, used outside for events)
-    const splitPaymentMap = await db.$transaction(async (tx) => {
+    const { paymentMap: splitPaymentMap, loyaltyPointsEarned } = await db.$transaction(async (tx) => {
       // RACE-CONDITION FIX: Lock the parent order first to prevent concurrent
       // pay-all-splits requests from double-paying all splits.
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${parentOrderId} FOR UPDATE`
@@ -226,17 +227,35 @@ export const POST = withVenue(withAuth(async function POST(
       ])
 
       // W2-P1: Loyalty points INSIDE transaction to prevent double-credit on retry
+      let loyaltyPointsEarned = 0
       if (parentOrder.customer && settings.loyalty.enabled) {
         const earningBase = settings.loyalty.earnOnSubtotal
           ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.subtotal), 0))
           : combinedTotal
+
+        // Check for tier multiplier from LoyaltyTier
+        let tierMultiplier = 1.0
+        const custTierId = (parentOrder.customer as any).loyaltyTierId
+        if (custTierId) {
+          try {
+            const tierRows = await tx.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
+              `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
+              custTierId,
+            )
+            if (tierRows.length > 0) {
+              tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
+            }
+          } catch { /* table may not exist yet — graceful fallback */ }
+        }
+
         if (earningBase >= settings.loyalty.minimumEarnAmount) {
-          const pointsEarned = Math.floor(earningBase * settings.loyalty.pointsPerDollar)
-          if (pointsEarned > 0) {
+          loyaltyPointsEarned = Math.round(earningBase * settings.loyalty.pointsPerDollar * tierMultiplier)
+          if (loyaltyPointsEarned > 0) {
             await tx.customer.update({
               where: { id: parentOrder.customer.id },
               data: {
-                loyaltyPoints: { increment: pointsEarned },
+                loyaltyPoints: { increment: loyaltyPointsEarned },
+                lifetimePoints: { increment: loyaltyPointsEarned },
                 totalSpent: { increment: combinedTotal },
                 totalOrders: { increment: 1 },
                 lastVisit: new Date(),
@@ -246,8 +265,71 @@ export const POST = withVenue(withAuth(async function POST(
         }
       }
 
-      return paymentMap
+      return { paymentMap, loyaltyPointsEarned }
     })
+
+    // Create LoyaltyTransaction record + check tier promotion (fire-and-forget)
+    if (loyaltyPointsEarned > 0 && parentOrder.customer) {
+      void (async () => {
+        try {
+          const customer = parentOrder.customer!
+          const custId = customer.id
+          const currentPoints = Number((customer as any).loyaltyPoints ?? 0)
+          const currentLifetime = Number((customer as any).lifetimePoints ?? 0)
+          const custTierId = (customer as any).loyaltyTierId
+
+          // Resolve tier multiplier for description
+          let tierMultiplier = 1.0
+          if (custTierId) {
+            try {
+              const tierRows = await db.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
+                `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
+                custTierId,
+              )
+              if (tierRows.length > 0) {
+                tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
+              }
+            } catch { /* table may not exist yet */ }
+          }
+
+          const txnId = crypto.randomUUID()
+          await db.$executeRawUnsafe(
+            `INSERT INTO "LoyaltyTransaction" (
+              "id", "customerId", "locationId", "orderId", "type", "points",
+              "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
+            ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, NOW())`,
+            txnId, custId, parentOrder.locationId, parentOrderId, loyaltyPointsEarned,
+            currentPoints, currentPoints + loyaltyPointsEarned,
+            `Earned ${loyaltyPointsEarned} points on split order #${parentOrder.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`,
+            employeeId || null,
+          )
+
+          // Check tier promotion
+          const newLifetime = currentLifetime + loyaltyPointsEarned
+          const custProgramId = (customer as any).loyaltyProgramId
+          if (custProgramId) {
+            const tiers = await db.$queryRawUnsafe<Array<{ id: string; name: string; minimumPoints: number }>>(
+              `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+               WHERE "programId" = $1 AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`,
+              custProgramId,
+            )
+            for (const tier of tiers) {
+              if (newLifetime >= Number(tier.minimumPoints)) {
+                if (tier.id !== custTierId) {
+                  await db.$executeRawUnsafe(
+                    `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
+                    custId, tier.id,
+                  )
+                }
+                break
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[pay-all-splits] Loyalty transaction/tier check failed:', err)
+        }
+      })()
+    }
 
     // Fire-and-forget socket events
     void dispatchOpenOrdersChanged(parentOrder.locationId, {

@@ -34,6 +34,14 @@ export async function createEvenSplit(
   const orderTotal = Number(order.total)
   const perSplit = Math.floor((orderTotal / numWays) * 100) / 100
 
+  // Tax-exempt + donation fields from parent (available on the Prisma object even if not in SplitSourceOrder type)
+  const parentAny = order as any
+  const isTaxExempt = parentAny.isTaxExempt ?? false
+  const taxExemptReason = parentAny.taxExemptReason ?? null
+  const taxExemptId = parentAny.taxExemptId ?? null
+  const taxExemptApprovedBy = parentAny.taxExemptApprovedBy ?? null
+  const parentDonation = Number(parentAny.donationAmount ?? 0)
+
   // Get current max split index for this parent
   const existingSplits = await tx.order.count({
     where: { parentOrderId: order.id },
@@ -61,10 +69,17 @@ export async function createEvenSplit(
         ? Math.round((Number(order.taxFromExclusive) - Math.floor((Number(order.taxFromExclusive) / numWays) * 100) / 100 * (numWays - 1)) * 100) / 100
         : Math.floor((Number(order.taxFromExclusive) / numWays) * 100) / 100
 
+      // Distribute donation: even share with penny correction on last child
+      const splitDonation = parentDonation > 0
+        ? (i === numWays - 1
+          ? roundToCents(parentDonation - Math.floor((parentDonation / numWays) * 100) / 100 * (numWays - 1))
+          : Math.floor((parentDonation / numWays) * 100) / 100)
+        : 0
+
       // Last split: compute total FROM its own components to avoid penny drift
       const splitTotal = i === numWays - 1
-        ? roundToCents(splitSubtotal + splitTax - splitDiscount)
-        : perSplit
+        ? roundToCents(splitSubtotal + splitTax - splitDiscount + splitDonation)
+        : roundToCents(perSplit + splitDonation)
 
       return tx.order.create({
         data: {
@@ -87,6 +102,13 @@ export async function createEvenSplit(
           total: splitTotal,
           parentOrderId: order.id,
           splitIndex,
+          // Propagate tax-exempt status from parent
+          isTaxExempt,
+          ...(taxExemptReason ? { taxExemptReason } : {}),
+          ...(taxExemptId ? { taxExemptId } : {}),
+          ...(taxExemptApprovedBy ? { taxExemptApprovedBy } : {}),
+          // Distribute donation across children
+          ...(splitDonation > 0 ? { donationAmount: splitDonation } : {}),
           notes: `Split ${splitIndex} of ${numWays} from order #${order.orderNumber}`,
         },
       })
@@ -114,6 +136,8 @@ export async function createEvenSplit(
     data: {
       status: 'split',
       discountTotal: 0,
+      // Zero out parent donation — it's been distributed to children
+      ...(parentDonation > 0 ? { donationAmount: 0 } : {}),
       notes: order.notes
         ? `${order.notes}\n[Split ${numWays} ways]`
         : `[Split ${numWays} ways]`,

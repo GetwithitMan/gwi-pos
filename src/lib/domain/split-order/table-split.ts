@@ -30,6 +30,14 @@ export async function createTableSplit(
 ): Promise<TableSplitResult> {
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
 
+  // Tax-exempt + donation fields from parent (available on the Prisma object even if not in SplitSourceOrder type)
+  const parentAny = order as any
+  const isTaxExempt = parentAny.isTaxExempt ?? false
+  const taxExemptReason = parentAny.taxExemptReason ?? null
+  const taxExemptId = parentAny.taxExemptId ?? null
+  const taxExemptApprovedBy = parentAny.taxExemptApprovedBy ?? null
+  const parentDonation = Number(parentAny.donationAmount ?? 0)
+
   // Group items by sourceTableId
   const itemsByTable = new Map<string | null, SplitOrderItem[]>()
   for (const item of order.items) {
@@ -156,7 +164,10 @@ export async function createTableSplit(
     }
     const tableTaxResult = calculateSplitTax(tblInclSub, tblExclSub, taxRate, inclusiveTaxRate)
     const tableTax = tableTaxResult.totalTax
-    const tableTotal = Math.round((tableSubtotal + tableTaxResult.taxFromExclusive) * 100) / 100
+    // Assign full donation to the first table child only
+    const isFirstTable = splitOrders.length === 0
+    const tableDonation = isFirstTable && parentDonation > 0 ? parentDonation : 0
+    const tableTotal = Math.round((tableSubtotal + tableTaxResult.taxFromExclusive + tableDonation) * 100) / 100
 
     // Create split order for this table
     const splitOrder = await tx.order.create({
@@ -181,6 +192,13 @@ export async function createTableSplit(
         itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
         parentOrderId: order.id,
         splitIndex,
+        // Propagate tax-exempt status from parent
+        isTaxExempt,
+        ...(taxExemptReason ? { taxExemptReason } : {}),
+        ...(taxExemptId ? { taxExemptId } : {}),
+        ...(taxExemptApprovedBy ? { taxExemptApprovedBy } : {}),
+        // Assign donation to first child
+        ...(tableDonation > 0 ? { donationAmount: tableDonation } : {}),
         notes: `${tableName} from order #${baseOrderNumber}`,
         items: {
           create: newItems as any,
@@ -333,6 +351,8 @@ export async function createTableSplit(
       taxFromExclusive: remTaxResult.taxFromExclusive,
       total: remainingTotal,
       itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
+      // Zero out parent donation — assigned to first child
+      ...(parentDonation > 0 ? { donationAmount: 0 } : {}),
       notes: order.notes
         ? `${order.notes}\n[Split by table: ${tablesWithItems.length} tables]`
         : `[Split by table: ${tablesWithItems.length} tables]`,

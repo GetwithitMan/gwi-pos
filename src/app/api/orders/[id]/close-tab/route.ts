@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
@@ -634,6 +635,109 @@ export const POST = withVenue(async function POST(
       closedByEmployeeId: employeeId,
       locationId,
     }, { async: true }).catch(() => {})
+
+    // Loyalty points earning after successful tab close (fire-and-forget)
+    void (async () => {
+      try {
+        // Fetch the order's customer for loyalty check
+        const orderForLoyalty = await db.order.findUnique({
+          where: { id: orderId },
+          select: {
+            customerId: true, orderNumber: true, subtotal: true, total: true,
+            customer: {
+              select: { id: true, loyaltyPoints: true, lifetimePoints: true, loyaltyTierId: true, loyaltyProgramId: true, totalSpent: true, totalOrders: true },
+            },
+          },
+        })
+        if (!orderForLoyalty?.customer) return
+        if (!locSettings.loyalty.enabled) return
+
+        const customer = orderForLoyalty.customer
+        let loyaltyEarningBase = locSettings.loyalty.earnOnSubtotal
+          ? Number(orderForLoyalty.subtotal ?? 0)
+          : Number(orderForLoyalty.total ?? 0)
+        if (locSettings.loyalty.earnOnTips) {
+          loyaltyEarningBase += finalTipAmount
+        }
+
+        // Check for tier multiplier
+        let tierMultiplier = 1.0
+        if (customer.loyaltyTierId) {
+          try {
+            const tierRows = await db.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
+              `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
+              customer.loyaltyTierId,
+            )
+            if (tierRows.length > 0) {
+              tierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
+            }
+          } catch { /* table may not exist yet */ }
+        }
+
+        if (loyaltyEarningBase < locSettings.loyalty.minimumEarnAmount) return
+
+        const pointsEarned = Math.round(loyaltyEarningBase * locSettings.loyalty.pointsPerDollar * tierMultiplier)
+        if (pointsEarned <= 0) return
+
+        // Update customer: loyalty points + stats
+        const currentTotalSpent = Number(customer.totalSpent ?? 0)
+        const currentTotalOrders = Number(customer.totalOrders ?? 0)
+        const orderTotal = Number(orderForLoyalty.total ?? 0)
+        const newTotalSpent = currentTotalSpent + orderTotal
+        const newTotalOrders = currentTotalOrders + 1
+        const newAverageTicket = Math.round((newTotalSpent / newTotalOrders) * 100) / 100
+
+        await db.customer.update({
+          where: { id: customer.id },
+          data: {
+            loyaltyPoints: { increment: pointsEarned },
+            lifetimePoints: { increment: pointsEarned },
+            totalSpent: { increment: orderTotal },
+            totalOrders: { increment: 1 },
+            lastVisit: new Date(),
+            averageTicket: newAverageTicket,
+          },
+        })
+
+        // Create LoyaltyTransaction record
+        const currentPoints = Number(customer.loyaltyPoints ?? 0)
+        const currentLifetime = Number(customer.lifetimePoints ?? 0)
+        const txnId = crypto.randomUUID()
+        await db.$executeRawUnsafe(
+          `INSERT INTO "LoyaltyTransaction" (
+            "id", "customerId", "locationId", "orderId", "type", "points",
+            "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
+          ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, NOW())`,
+          txnId, customer.id, locationId, orderId, pointsEarned,
+          currentPoints, currentPoints + pointsEarned,
+          `Earned ${pointsEarned} points on tab #${orderForLoyalty.orderNumber}${tierMultiplier > 1 ? ` (${tierMultiplier}x tier)` : ''}`,
+          employeeId || null,
+        )
+
+        // Check tier promotion
+        const newLifetime = currentLifetime + pointsEarned
+        if (customer.loyaltyProgramId) {
+          const tiers = await db.$queryRawUnsafe<Array<{ id: string; name: string; minimumPoints: number }>>(
+            `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+             WHERE "programId" = $1 AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`,
+            customer.loyaltyProgramId,
+          )
+          for (const tier of tiers) {
+            if (newLifetime >= Number(tier.minimumPoints)) {
+              if (tier.id !== customer.loyaltyTierId) {
+                await db.$executeRawUnsafe(
+                  `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
+                  customer.id, tier.id,
+                )
+              }
+              break
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[close-tab] Loyalty points earning failed:', err)
+      }
+    })()
 
     // Trigger upstream sync (fire-and-forget, debounced)
     pushUpstream()

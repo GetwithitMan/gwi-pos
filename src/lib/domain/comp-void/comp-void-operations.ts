@@ -200,7 +200,9 @@ export async function applyCompVoid(
     select: { amount: true },
   })
   const itemLevelDiscount = activeItemDiscounts.reduce((sum: number, d: any) => sum + Number(d.amount), 0)
-  const discountTotal = roundToCents(orderLevelDiscount + itemLevelDiscount)
+  const rawDiscountTotal = roundToCents(orderLevelDiscount + itemLevelDiscount)
+  // Cap discount at subtotal to prevent negative totals after comp reduces the subtotal
+  const discountTotal = Math.min(rawDiscountTotal, split.subtotal)
 
   const taxRate = getLocationTaxRate(locationSettings)
   // Get inclusive tax rate from location settings (may differ from exclusive rate)
@@ -312,7 +314,9 @@ export async function applyRestore(
     select: { amount: true },
   })
   const itemLevelDiscount = restoreItemDiscounts.reduce((sum: number, d: any) => sum + Number(d.amount), 0)
-  const discountTotal = roundToCents(orderLevelDiscount + itemLevelDiscount)
+  const rawRestoreDiscount = roundToCents(orderLevelDiscount + itemLevelDiscount)
+  // Cap discount at subtotal for safety (restore adds subtotal back, but guard anyway)
+  const discountTotal = Math.min(rawRestoreDiscount, split.subtotal)
 
   const taxRate = getLocationTaxRate(locationSettings)
   // Get inclusive tax rate from location settings (may differ from exclusive rate)

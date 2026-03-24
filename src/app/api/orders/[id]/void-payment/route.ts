@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import * as OrderRepository from '@/lib/repositories/order-repository'
@@ -19,6 +20,7 @@ import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
 import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
+import { isClosed } from '@/lib/domain/order-status'
 
 class VoidValidationError extends Error {
   statusCode: number
@@ -410,6 +412,85 @@ export const POST = withVenue(async function POST(
         console.error('[VOID] Inventory restoration failed — manual stock adjustment may be needed:', err)
       }
     }
+
+    // Parent order cleanup: if this is a split child and now voided, check if ALL siblings are terminal.
+    // If so, close the parent order too (same pattern as comp-void route lines 594-623).
+    if (newOrderStatus === 'voided' && order.parentOrderId) {
+      void (async () => {
+        try {
+          const siblings = await db.order.findMany({
+            where: { parentOrderId: order.parentOrderId!, locationId: order.locationId, deletedAt: null },
+            select: { id: true, status: true },
+          })
+          const allTerminal = siblings.length > 0 && siblings.every(s => isClosed(s.status))
+          if (allTerminal) {
+            await OrderRepository.updateOrder(order.parentOrderId!, order.locationId, {
+              status: 'voided', closedAt: new Date(),
+              lastMutatedBy: 'local',
+            })
+            void dispatchOrderClosed(order.locationId, {
+              orderId: order.parentOrderId!,
+              status: 'voided',
+              closedAt: new Date().toISOString(),
+              closedByEmployeeId: managerId,
+              locationId: order.locationId,
+            }, { async: true }).catch(console.error)
+            void dispatchOpenOrdersChanged(order.locationId, {
+              trigger: 'voided',
+              orderId: order.parentOrderId!,
+            }, { async: true }).catch(console.error)
+          }
+        } catch (err) {
+          console.error('[void-payment] Failed to resolve parent order after all children voided:', err)
+        }
+      })()
+    }
+
+    // Loyalty point reversal: reverse earned points when payment is voided (fire-and-forget)
+    void (async () => {
+      try {
+        if (!order.customerId) return
+        const locSettings = parseSettings(await getLocationSettings(order.locationId))
+        if (!locSettings.loyalty.enabled) return
+
+        // Find all 'earn' loyalty transactions for this order
+        const earnTxns = await db.$queryRawUnsafe<Array<{ points: unknown }>>(
+          `SELECT "points" FROM "LoyaltyTransaction" WHERE "orderId" = $1 AND "type" = 'earn'`,
+          orderId,
+        ).catch(() => [] as Array<{ points: unknown }>)
+
+        const earnedPoints = earnTxns.reduce((sum, t) => sum + (Number(t.points) || 0), 0)
+        if (earnedPoints <= 0) return
+
+        // Decrement customer loyalty points and stats
+        await db.$executeRawUnsafe(
+          `UPDATE "Customer" SET
+            "loyaltyPoints" = GREATEST(0, "loyaltyPoints" - $2),
+            "lifetimePoints" = GREATEST(0, "lifetimePoints" - $2),
+            "totalSpent" = GREATEST(0, "totalSpent" - $3),
+            "totalOrders" = GREATEST(0, "totalOrders" - 1),
+            "updatedAt" = NOW()
+          WHERE "id" = $1`,
+          order.customerId,
+          earnedPoints,
+          Number(payment.totalAmount),
+        )
+
+        // Create reversal LoyaltyTransaction
+        const txnId = crypto.randomUUID()
+        await db.$executeRawUnsafe(
+          `INSERT INTO "LoyaltyTransaction" (
+            "id", "customerId", "locationId", "orderId", "type", "points",
+            "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
+          ) VALUES ($1, $2, $3, $4, 'adjust', $5, 0, 0, $6, $7, NOW())`,
+          txnId, order.customerId, order.locationId, orderId, -earnedPoints,
+          `Reversed: payment voided on order #${order.orderNumber}`,
+          managerId || null,
+        )
+      } catch (err) {
+        console.error('[void-payment] Loyalty point reversal failed:', err)
+      }
+    })()
 
     // Alert dispatch: notify if void exceeds threshold (fire-and-forget)
     void (async () => {

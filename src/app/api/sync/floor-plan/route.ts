@@ -12,7 +12,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     db.section.findMany({
       where: { locationId, deletedAt: null },
       orderBy: { sortOrder: 'asc' },
-      select: { id: true, name: true, color: true, sortOrder: true },
+      select: { id: true, name: true, color: true, sortOrder: true, assignments: { select: { employeeId: true } } },
     }),
     db.table.findMany({
       where: { locationId, deletedAt: null },
@@ -29,6 +29,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
   ])
 
   return NextResponse.json({
-    data: { sections, tables, floorPlanElements },
+    data: {
+      sections: sections.map(s => ({ ...s, assignedEmployeeIds: s.assignments.map(a => a.employeeId), assignments: undefined })),
+      tables,
+      floorPlanElements,
+    },
   })
 })

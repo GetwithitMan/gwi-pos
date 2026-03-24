@@ -7,6 +7,7 @@
 
 import { OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
+import { roundToCents } from '@/lib/pricing'
 import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
@@ -124,6 +125,14 @@ export async function createItemSplit(
 ): Promise<ItemSplitResult> {
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
 
+  // Tax-exempt + donation fields from parent (available on the Prisma object even if not in SplitSourceOrder type)
+  const parentAny = order as any
+  const isTaxExempt = parentAny.isTaxExempt ?? false
+  const taxExemptReason = parentAny.taxExemptReason ?? null
+  const taxExemptId = parentAny.taxExemptId ?? null
+  const taxExemptApprovedBy = parentAny.taxExemptApprovedBy ?? null
+  const parentDonation = Number(parentAny.donationAmount ?? 0)
+
   // Validate items belong to this order
   const itemsToMove = order.items.filter(item => itemIds.includes(item.id))
 
@@ -160,6 +169,14 @@ export async function createItemSplit(
     ? (await tx.order.findUnique({ where: { id: order.parentOrderId }, select: { orderNumber: true } }))?.orderNumber || order.orderNumber
     : order.orderNumber
 
+  // For item split: assign full donation to the first child (this child gets it)
+  // Only if this is the first split child from this parent
+  const existingSplitCount = await tx.order.count({
+    where: { parentOrderId: order.parentOrderId || order.id },
+  })
+  const childDonation = existingSplitCount === 0 ? parentDonation : 0
+  const childTotal = childDonation > 0 ? roundToCents(newTotal + childDonation) : newTotal
+
   // Create new split order with the selected items
   const newOrder = await tx.order.create({
     data: {
@@ -179,10 +196,17 @@ export async function createItemSplit(
       taxFromInclusive: newTaxResult.taxFromInclusive,
       taxFromExclusive: newTaxResult.taxFromExclusive,
       tipTotal: 0,
-      total: newTotal,
+      total: childTotal,
       itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
       parentOrderId: order.parentOrderId || order.id,
       splitIndex: nextSplitIndex,
+      // Propagate tax-exempt status from parent
+      isTaxExempt,
+      ...(taxExemptReason ? { taxExemptReason } : {}),
+      ...(taxExemptId ? { taxExemptId } : {}),
+      ...(taxExemptApprovedBy ? { taxExemptApprovedBy } : {}),
+      // Assign donation to first child
+      ...(childDonation > 0 ? { donationAmount: childDonation } : {}),
       notes: `Split from order #${order.orderNumber}`,
       items: {
         create: newItems as any,
@@ -345,6 +369,8 @@ export async function createItemSplit(
       taxFromExclusive: remTaxResult.taxFromExclusive,
       total: Math.max(0, remainingTotal),
       itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
+      // Zero out parent donation — assigned to first child
+      ...(childDonation > 0 ? { donationAmount: 0 } : {}),
       version: { increment: 1 },
     },
   })

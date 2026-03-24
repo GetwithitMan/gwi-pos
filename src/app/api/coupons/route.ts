@@ -27,6 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           locationId,
           code: code.toUpperCase(),
           isActive: true,
+          deletedAt: null,
         },
         include: {
           _count: {
@@ -76,6 +77,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const coupons = await db.coupon.findMany({
       where: {
         locationId,
+        deletedAt: null,
         ...(activeOnly ? { isActive: true } : {}),
       },
       include: {

@@ -843,8 +843,20 @@ export const POST = withVenue(withTiming(async function POST(
         .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || (Number(i.price) * (i.quantity || 1))), 0)
       autoGratSubtotal = roundToCents(Math.max(0, autoGratSubtotal - entertainmentTotal))
     }
+    // For split children, use the parent order's guestCount for auto-gratuity eligibility
+    // (split children have guestCount: 1, which would always fail the minimum party size check)
+    let autoGratGuestCount = order.guestCount
+    if (order.parentOrderId) {
+      const parentOrderForGrat = await db.order.findUnique({
+        where: { id: order.parentOrderId },
+        select: { guestCount: true },
+      })
+      if (parentOrderForGrat) {
+        autoGratGuestCount = parentOrderForGrat.guestCount
+      }
+    }
     const autoGratResult = calculateAutoGratuity(settings.autoGratuity, {
-      guestCount: order.guestCount,
+      guestCount: autoGratGuestCount,
       existingTipTotal: toNumber(order.tipTotal ?? 0),
       orderSubtotal: autoGratSubtotal,
       payments,

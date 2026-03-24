@@ -58,7 +58,10 @@ export const POST = withVenue(async function POST(
           discounts: { where: { deletedAt: null } },
           items: {
             where: { status: { not: 'voided' }, deletedAt: null },
-            include: { modifiers: true },
+            include: {
+              modifiers: true,
+              menuItem: { select: { categoryId: true } },
+            },
           },
         },
       })
@@ -76,6 +79,7 @@ export const POST = withVenue(async function POST(
         where: {
           locationId: order.locationId,
           code: code.toUpperCase(),
+          deletedAt: null,
         },
       })
 
@@ -170,6 +174,36 @@ export const POST = withVenue(async function POST(
         }
       }
 
+      // --- Determine eligible subtotal based on appliesTo scope ---
+      let eligibleSubtotal = subtotal
+      const appliesToScope = coupon.appliesTo || 'order'
+
+      if (appliesToScope === 'category' && Array.isArray(coupon.categoryIds) && coupon.categoryIds.length > 0) {
+        const eligibleCategoryIds = coupon.categoryIds as string[]
+        const eligibleItems = order.items.filter(
+          (i: any) => i.menuItem?.categoryId && eligibleCategoryIds.includes(i.menuItem.categoryId)
+        )
+        if (eligibleItems.length === 0) {
+          throw Object.assign(new Error('No items in this order match the coupon\'s eligible categories'), { statusCode: 400 })
+        }
+        eligibleSubtotal = eligibleItems.reduce(
+          (sum: number, i: any) => sum + Number(i.itemTotal),
+          0
+        )
+      } else if (appliesToScope === 'item' && Array.isArray(coupon.itemIds) && coupon.itemIds.length > 0) {
+        const eligibleItemIds = coupon.itemIds as string[]
+        const eligibleItems = order.items.filter(
+          (i: any) => eligibleItemIds.includes(i.menuItemId)
+        )
+        if (eligibleItems.length === 0) {
+          throw Object.assign(new Error('No items in this order match the coupon\'s eligible items'), { statusCode: 400 })
+        }
+        eligibleSubtotal = eligibleItems.reduce(
+          (sum: number, i: any) => sum + Number(i.itemTotal),
+          0
+        )
+      }
+
       // --- Calculate discount amount ---
       const discountType = coupon.discountType // 'percent' | 'fixed' | 'free_item'
       const discountValue = Number(coupon.discountValue)
@@ -179,10 +213,11 @@ export const POST = withVenue(async function POST(
 
       if (discountType === 'percent') {
         discountPercent = discountValue
-        discountAmount = Math.round(subtotal * (discountValue / 100) * 100) / 100
+        discountAmount = Math.round(eligibleSubtotal * (discountValue / 100) * 100) / 100
         discountName = `Coupon: ${coupon.code} (${discountValue}% off)`
       } else if (discountType === 'fixed') {
-        discountAmount = discountValue
+        // For scoped coupons, cap fixed discount at eligible subtotal
+        discountAmount = Math.min(discountValue, eligibleSubtotal)
         discountName = `Coupon: ${coupon.code} ($${discountValue.toFixed(2)} off)`
       } else {
         // free_item — not supported in this endpoint (requires adding item to order)

@@ -26,6 +26,14 @@ export async function createSeatSplit(
 ): Promise<SeatSplitResult> {
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
 
+  // Tax-exempt + donation fields from parent (available on the Prisma object even if not in SplitSourceOrder type)
+  const parentAny = order as any
+  const isTaxExempt = parentAny.isTaxExempt ?? false
+  const taxExemptReason = parentAny.taxExemptReason ?? null
+  const taxExemptId = parentAny.taxExemptId ?? null
+  const taxExemptApprovedBy = parentAny.taxExemptApprovedBy ?? null
+  const parentDonation = Number(parentAny.donationAmount ?? 0)
+
   // Group items by seat number
   const itemsBySeat = new Map<number | null, SplitOrderItem[]>()
   for (const item of order.items) {
@@ -151,7 +159,10 @@ export async function createSeatSplit(
     }
     const seatTaxResult = calculateSplitTax(seatInclSub, seatExclSub, taxRate, inclusiveTaxRate)
     const seatTax = seatTaxResult.totalTax
-    const seatTotal = Math.round((seatSubtotal + seatTaxResult.taxFromExclusive) * 100) / 100
+    // Assign full donation to the first seat child only
+    const isFirstSeat = splitOrders.length === 0
+    const seatDonation = isFirstSeat && parentDonation > 0 ? parentDonation : 0
+    const seatTotal = Math.round((seatSubtotal + seatTaxResult.taxFromExclusive + seatDonation) * 100) / 100
 
     // Create split order for this seat
     const splitOrder = await tx.order.create({
@@ -176,6 +187,13 @@ export async function createSeatSplit(
         itemCount: newItems.reduce((sum, i) => sum + i.quantity, 0),
         parentOrderId: order.id,
         splitIndex,
+        // Propagate tax-exempt status from parent
+        isTaxExempt,
+        ...(taxExemptReason ? { taxExemptReason } : {}),
+        ...(taxExemptId ? { taxExemptId } : {}),
+        ...(taxExemptApprovedBy ? { taxExemptApprovedBy } : {}),
+        // Assign donation to first child
+        ...(seatDonation > 0 ? { donationAmount: seatDonation } : {}),
         notes: `Seat ${seatNumber} from order #${baseOrderNumber}`,
         items: {
           create: newItems as any,
@@ -329,6 +347,8 @@ export async function createSeatSplit(
       taxFromExclusive: remTaxResult.taxFromExclusive,
       total: remainingTotal,
       itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
+      // Zero out parent donation — assigned to first child
+      ...(parentDonation > 0 ? { donationAmount: 0 } : {}),
       notes: order.notes
         ? `${order.notes}\n[Split by seat: ${sortedSeats.length} seats]`
         : `[Split by seat: ${sortedSeats.length} seats]`,
