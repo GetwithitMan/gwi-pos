@@ -50,12 +50,10 @@ run_schema() {
     local PRE_PUSH_TABLES
     PRE_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
 
-    _start_spinner "Applying schema to local PostgreSQL"
-    if ! timeout 120 sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" >/dev/null 2>&1; then
-      _stop_spinner
+    log "Applying schema to local PostgreSQL..."
+    if ! timeout 120 sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -3; then
       warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
     else
-      _stop_spinner
       log "Schema applied successfully"
     fi
 
@@ -130,9 +128,8 @@ run_schema() {
 
     # Seed local PG from Neon cloud (offline-first mode)
     if [[ "$SYNC_ENABLED" == "true" ]] && [[ -n "$NEON_DATABASE_URL" ]]; then
-      _start_spinner "Seeding local database from Neon cloud"
-      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && APP_BASE='$APP_BASE' bash scripts/seed-from-neon.sh" >/dev/null 2>&1; then
-        _stop_spinner
+      log "Seeding local database from Neon cloud..."
+      if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && APP_BASE='$APP_BASE' bash scripts/seed-from-neon.sh" 2>&1 | tail -5; then
         # Check if seed wrote an INCOMPLETE marker
         if [[ -f "$APP_BASE/.seed-status" ]] && grep -q "^INCOMPLETE" "$APP_BASE/.seed-status"; then
           SEED_REASON=$(cat "$APP_BASE/.seed-status" | cut -d: -f3-)
@@ -144,8 +141,6 @@ run_schema() {
         else
           warn "Neon seed had warnings — check $APP_BASE/.seed-status"
         fi
-      else
-        _stop_spinner
       fi
       # Verify seed completed successfully
       if [[ -f "$APP_BASE/.seed-status" ]]; then
@@ -247,15 +242,13 @@ run_schema() {
   # 3. Type errors don't affect runtime behavior (Next.js builds fine without tsc)
   local BUILD_NODE_OPTS="--max-old-space-size=4096"
 
-  _start_spinner "Building POS application (this takes a few minutes)"
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build" >/dev/null 2>&1; then
-    _stop_spinner
+  log "Building POS application (this takes a few minutes)..."
+  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build" 2>&1 | tail -5; then
     err_code "ERR-INST-186" "npm run build failed in $APP_DIR"
-    err "Application build failed. Re-running with output..."
+    err "Application build failed. Re-running with full output..."
     sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build"
     return 1
   fi
-  _stop_spinner
   log "POS application built successfully!"
 
   # ── Post-build: update _local_install_state with freshly generated version ──

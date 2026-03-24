@@ -92,10 +92,9 @@ run_dashboard() {
     mkdir -p "$DOWNLOAD_DIR"
 
     # Method 1: Download from POS Vercel deployment (no auth needed)
-    _start_spinner "Downloading NUC Dashboard"
+    log "Downloading NUC Dashboard..."
     curl -sfL "${POS_BASE_URL:-https://app.thepasspos.com}/gwi-nuc-dashboard.deb" \
       -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
-    _stop_spinner
 
     # Method 2: If Vercel download failed, try GitHub releases with deploy token
     if [[ ! -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] || [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null || echo 0) -lt 100000 ]]; then
