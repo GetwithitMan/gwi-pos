@@ -157,6 +157,12 @@ async function handleForceUpdate(payload, cmdId) {
       var currentApp = getCurrentAppVersion()
       var targetApp = targetVersion || ''
 
+      // Validate targetSchema is numeric (like "096"), not semver (like "1.2.15")
+      if (targetSchema && /\./.test(targetSchema)) {
+        log('targetSchemaVersion looks like semver (' + targetSchema + '), not schema version — skipping compat check')
+        targetSchema = ''
+      }
+
       if (currentSchema && targetSchema) {
         execSync('bash ' + versionCompat + ' "' + currentSchema + '" "' + targetSchema + '" "' + currentApp + '" "' + targetApp + '"', {
           encoding: 'utf-8',

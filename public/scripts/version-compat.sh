@@ -13,6 +13,18 @@ check_schema_compatibility() {
   local current="$1"
   local target="$2"
 
+  # Validate both are numeric (schema versions are like 093, 096 — NOT semver)
+  if [[ ! "$current" =~ ^[0-9]+$ ]]; then
+    log "Current schema version '$current' is not numeric — skipping schema compat check"
+    echo '{"compatible":true,"reason":"non_numeric_current","current":"'"$current"'","target":"'"$target"'"}'
+    return 0
+  fi
+  if [[ ! "$target" =~ ^[0-9]+$ ]]; then
+    log "Target schema version '$target' is not numeric — skipping schema compat check"
+    echo '{"compatible":true,"reason":"non_numeric_target","current":"'"$current"'","target":"'"$target"'"}'
+    return 0
+  fi
+
   # Strip leading zeros for arithmetic
   local current_num=$((10#$current))
   local target_num=$((10#$target))
