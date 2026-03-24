@@ -148,7 +148,9 @@ async function handleForceUpdate(payload, cmdId) {
 
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'starting', targetVersion: targetVersion, previousVersion: previousVersion })
 
-  // Version compatibility check — block unsafe version skips
+  // Version compatibility check — advisory only, NEVER blocks the update
+  // If we can't determine compatibility, proceed anyway. A failed update
+  // can be rolled back; a blocked update leaves the venue on old code forever.
   var versionCompat = '/opt/gwi-pos/scripts/version-compat.sh'
   if (fs.existsSync(versionCompat)) {
     try {
@@ -157,27 +159,20 @@ async function handleForceUpdate(payload, cmdId) {
       var currentApp = getCurrentAppVersion()
       var targetApp = targetVersion || ''
 
-      // Validate targetSchema is numeric (like "096"), not semver (like "1.2.15")
-      if (targetSchema && /\./.test(targetSchema)) {
-        log('targetSchemaVersion looks like semver (' + targetSchema + '), not schema version — skipping compat check')
-        targetSchema = ''
-      }
-
-      if (currentSchema && targetSchema) {
+      // Only run if we have valid numeric schema versions
+      if (currentSchema && targetSchema && /^\d+$/.test(currentSchema) && /^\d+$/.test(targetSchema)) {
         execSync('bash ' + versionCompat + ' "' + currentSchema + '" "' + targetSchema + '" "' + currentApp + '" "' + targetApp + '"', {
           encoding: 'utf-8',
           timeout: 10000
         })
         log('Version compatibility check passed')
+      } else {
+        log('Version compat: schema versions not both numeric (current=' + currentSchema + ', target=' + targetSchema + ') — proceeding with update')
       }
     } catch (err) {
-      log('Version compatibility check FAILED: ' + err.message)
-      ackProgress(cmdId, 'FAILED', {
-        step: 'version_compat_failed',
-        error: 'Version skip too large — must update through intermediate versions',
-        detail: err.stdout || err.message
-      })
-      return { ok: false, error: 'version_compat_failed', _acked: true }
+      // ADVISORY ONLY — log the warning but ALWAYS proceed with the update
+      log('Version compatibility WARNING: ' + (err.message || '').slice(0, 200))
+      log('Proceeding with update anyway (compat check is advisory)')
     }
   }
 

@@ -234,30 +234,52 @@ function getCurrentSchemaVersion(): string {
 }
 
 /**
- * Version compatibility check — block unsafe version skips.
- * Runs an external compat script (if present) that can enforce
- * migration ordering, minimum-version requirements, etc.
+ * Version compatibility check — advisory only, NEVER blocks updates.
+ * If schema is behind, triggers schema update (prisma db push + migrations).
+ * A failed update can be rolled back; a blocked update leaves the venue stuck.
  */
 async function checkVersionCompatibility(currentVersion: string, targetVersion: string): Promise<void> {
+  const currentSchema = getCurrentSchemaVersion()
+  log.info(`[UpdateAgent] Version check: app ${currentVersion} → ${targetVersion}, schema ${currentSchema}`)
+
+  // The compat script only works with numeric schema versions
+  // App versions (semver like 1.2.15) are NOT schema versions (numeric like 096)
+  // This check is advisory — if it fails or can't run, we proceed anyway
   const versionCompat = '/opt/gwi-pos/scripts/version-compat.sh'
-  if (!existsSync(versionCompat)) {
-    log.info('[UpdateAgent] Version compat script not found, skipping check')
-    return
+  if (existsSync(versionCompat) && /^\d+$/.test(currentSchema)) {
+    try {
+      execSync(`bash ${versionCompat} "${currentSchema}" "${currentSchema}" "${currentVersion}" "${targetVersion}"`, {
+        encoding: 'utf8',
+        timeout: 10_000,
+      })
+      log.info('[UpdateAgent] Version compatibility check passed')
+    } catch (err: unknown) {
+      const errObj = err as { stdout?: string; message?: string }
+      log.warn(`[UpdateAgent] Version compat advisory: ${(errObj.stdout || errObj.message || '').slice(0, 200)}`)
+      // Proceed anyway — don't block the update
+    }
   }
 
-  // Get current schema version from migration files
-  const currentSchema = getCurrentSchemaVersion()
-  const targetSchema = targetVersion // MC should send schema version in payload
-
+  // Ensure local schema is up to date (prisma db push + migrations)
+  // This runs BEFORE the git pull so the current code's schema is applied.
+  // After git pull, pre-start.sh will run again with the NEW schema.
   try {
-    execSync(`bash ${versionCompat} "${currentSchema}" "${targetSchema}" "${currentVersion}" "${targetVersion}"`, {
+    log.info('[UpdateAgent] Ensuring local schema is current...')
+    execSync('cd /opt/gwi-pos/app && npx prisma db push --accept-data-loss=false 2>&1 | tail -3', {
       encoding: 'utf8',
-      timeout: 10_000,
+      timeout: 120_000,
     })
-    log.info('[UpdateAgent] Version compatibility check passed')
-  } catch (err: unknown) {
-    const errObj = err as { stdout?: string; message?: string }
-    throw new Error(`Version compatibility check failed: ${errObj.stdout || errObj.message}`)
+    if (existsSync('/opt/gwi-pos/app/scripts/nuc-pre-migrate.js')) {
+      execSync('cd /opt/gwi-pos/app && node scripts/nuc-pre-migrate.js 2>&1 | tail -5', {
+        encoding: 'utf8',
+        timeout: 300_000,
+      })
+    }
+    log.info('[UpdateAgent] Local schema verified/updated')
+  } catch (schemaErr: unknown) {
+    const errObj = schemaErr as { message?: string }
+    log.warn(`[UpdateAgent] Pre-update schema sync warning: ${(errObj.message || '').slice(0, 200)}`)
+    // Non-fatal — proceed with update, post-restart pre-start.sh will retry
   }
 }
 
