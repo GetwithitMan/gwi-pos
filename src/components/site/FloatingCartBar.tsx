@@ -1,14 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { useCartItemCount, useCartSubtotal } from '@/stores/site-cart-store'
 import { CartDrawer } from '@/components/site/CartDrawer'
 
 export function FloatingCartBar() {
+  const [mounted, setMounted] = useState(false)
   const itemCount = useCartItemCount()
   const subtotal = useCartSubtotal()
   const [drawerOpen, setDrawerOpen] = useState(false)
+
+  useEffect(() => setMounted(true), [])
+
+  if (!mounted) return null
 
   const visible = itemCount > 0
 

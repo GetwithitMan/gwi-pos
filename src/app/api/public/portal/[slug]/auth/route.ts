@@ -102,10 +102,8 @@ export async function POST(
       )
 
       if (customers.length === 0) {
-        return NextResponse.json(
-          { error: 'No account found for this phone number' },
-          { status: 404 },
-        )
+        // Generic response — do not reveal whether account exists
+        return NextResponse.json({ success: true, message: 'If an account exists, a verification code has been sent.' })
       }
 
       const customerId = customers[0].id
@@ -353,6 +351,14 @@ export async function POST(
       if (!result.valid) {
         return NextResponse.json(
           { error: result.expired ? 'This login link has expired.' : 'Invalid login link.' },
+          { status: 401 },
+        )
+      }
+
+      // ── Verify slug matches token to prevent cross-venue token reuse ──
+      if (result.slug !== slug) {
+        return NextResponse.json(
+          { error: 'Invalid link' },
           { status: 401 },
         )
       }

@@ -220,7 +220,7 @@ SVCEOF
       systemctl enable thepasspos
 
       log "Starting POS server..."
-      systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; track_warn "POS service restart failed — will retry on reboot"; }
+      systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; warn "POS service failed to start — will retry on reboot"; track_warn "POS service restart failed — will retry on reboot"; }
 
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"

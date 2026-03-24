@@ -8,6 +8,7 @@
  * Uses getDbForVenue(slug) for tenant isolation.
  */
 
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { GiftCardBalanceSchema } from '@/lib/site-api-schemas'
@@ -111,9 +112,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ valid: false, reason: 'This gift card has been suspended' })
     }
 
-    // PIN validation — if card has a PIN set, request must provide matching PIN
-    if (giftCard.pin && giftCard.pin !== pin) {
-      return NextResponse.json({ valid: false, reason: 'Invalid PIN' })
+    // PIN validation — timing-safe comparison to prevent side-channel attacks
+    if (giftCard.pin) {
+      const pinStr = pin || ''
+      const pinMatch = giftCard.pin.length === pinStr.length &&
+        crypto.timingSafeEqual(Buffer.from(giftCard.pin), Buffer.from(pinStr))
+      if (!pinMatch) {
+        return NextResponse.json({ valid: false, reason: 'Invalid PIN' })
+      }
     }
 
     return NextResponse.json({

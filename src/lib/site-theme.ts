@@ -13,6 +13,10 @@ interface ThemeVariables {
   '--site-brand': string
   '--site-brand-secondary': string
   '--site-brand-rgb': string
+  '--site-brand-text': string
+  '--site-primary': string
+  '--site-primary-light': string
+  '--site-success': string
 
   // Typography
   '--site-heading-font': string
@@ -22,6 +26,7 @@ interface ThemeVariables {
   // Surface & text
   '--site-bg': string
   '--site-bg-secondary': string
+  '--site-surface': string
   '--site-text': string
   '--site-text-muted': string
   '--site-text-on-brand': string
@@ -50,14 +55,16 @@ interface ThemeVariables {
 
 // ── Preset Definitions ──────────────────────────────────────────────────────
 
-const MODERN: Omit<ThemeVariables, '--site-brand' | '--site-brand-secondary' | '--site-brand-rgb' | '--site-heading-font'> = {
+const MODERN: Omit<ThemeVariables, '--site-brand' | '--site-brand-secondary' | '--site-brand-rgb' | '--site-brand-text' | '--site-primary' | '--site-primary-light' | '--site-heading-font'> = {
   '--site-body-font': "'Inter', system-ui, sans-serif",
   '--site-heading-weight': '700',
   '--site-bg': '#ffffff',
   '--site-bg-secondary': '#f9fafb',
+  '--site-surface': '#ffffff',
   '--site-text': '#111827',
   '--site-text-muted': '#6b7280',
   '--site-text-on-brand': '#ffffff',
+  '--site-success': '#16a34a',
   '--site-border': '#e5e7eb',
   '--site-border-radius': '0.75rem',
   '--site-shadow-sm': '0 1px 2px rgba(0,0,0,0.05)',
@@ -78,9 +85,11 @@ const CLASSIC: typeof MODERN = {
   '--site-heading-weight': '700',
   '--site-bg': '#fefcf8',
   '--site-bg-secondary': '#f5f0e8',
+  '--site-surface': '#fffdf7',
   '--site-text': '#2d2418',
   '--site-text-muted': '#7c6f5e',
   '--site-text-on-brand': '#ffffff',
+  '--site-success': '#16a34a',
   '--site-border': '#e0d5c4',
   '--site-border-radius': '0.5rem',
   '--site-shadow-sm': '0 1px 3px rgba(45,36,24,0.08)',
@@ -101,9 +110,11 @@ const BOLD: typeof MODERN = {
   '--site-heading-weight': '900',
   '--site-bg': '#0f0f0f',
   '--site-bg-secondary': '#1a1a1a',
+  '--site-surface': '#1e293b',
   '--site-text': '#f5f5f5',
   '--site-text-muted': '#a3a3a3',
   '--site-text-on-brand': '#ffffff',
+  '--site-success': '#16a34a',
   '--site-border': '#2a2a2a',
   '--site-border-radius': '1rem',
   '--site-shadow-sm': '0 1px 3px rgba(0,0,0,0.3)',
@@ -150,11 +161,16 @@ export function getSiteThemeVariables(options: {
     ? `'${options.headingFont}', ${preset['--site-body-font']}`
     : preset['--site-body-font']
 
+  const rgb = hexToRgb(options.brandColor)
+
   return {
     ...preset,
     '--site-brand': options.brandColor,
     '--site-brand-secondary': options.brandColorSecondary || options.brandColor,
-    '--site-brand-rgb': hexToRgb(options.brandColor),
+    '--site-brand-rgb': rgb,
+    '--site-brand-text': '#ffffff',
+    '--site-primary': options.brandColor,
+    '--site-primary-light': `rgba(${rgb}, 0.1)`,
     '--site-heading-font': headingFontValue,
   }
 }

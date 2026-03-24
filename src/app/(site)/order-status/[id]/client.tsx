@@ -38,14 +38,9 @@ const TERMINAL_STATUSES = new Set(['completed', 'voided', 'canceled'])
 const POLL_INTERVAL_MS = 15_000
 const MAX_POLL_DURATION_MS = 30 * 60 * 1000 // 30 minutes
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount)
-}
+import { formatCurrency } from '@/lib/utils'
 
-export default function OrderStatusPage() {
+export function OrderStatusClient() {
   const params = useParams()
   const searchParams = useSearchParams()
   const id = params?.id as string
@@ -134,8 +129,8 @@ export default function OrderStatusPage() {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--site-primary, #2563eb)', borderTopColor: 'transparent' }} />
-          <p className="text-gray-500 text-sm">Loading order status...</p>
+          <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--site-brand)', borderTopColor: 'transparent' }} />
+          <p className="text-sm" style={{ color: 'var(--site-text-muted)' }}>Loading order status...</p>
         </div>
       </div>
     )
@@ -147,11 +142,12 @@ export default function OrderStatusPage() {
     return (
       <div className="min-h-[60vh] flex items-center justify-center px-4">
         <div className="max-w-sm w-full text-center">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-            <p className="text-red-700 text-sm">{error || 'Something went wrong.'}</p>
+          <div className="rounded-xl p-6" style={{ backgroundColor: 'rgba(220, 38, 38, 0.06)', border: '1px solid rgba(220, 38, 38, 0.2)' }}>
+            <p className="text-sm" style={{ color: '#dc2626' }}>{error || 'Something went wrong.'}</p>
             <button
               onClick={() => { setLoading(true); void fetchStatus() }}
-              className="mt-4 px-5 py-2 bg-red-100 hover:bg-red-200 text-red-800 text-sm rounded-lg transition-colors font-medium"
+              className="mt-4 px-5 py-2 text-sm rounded-lg transition-colors font-medium"
+              style={{ backgroundColor: 'rgba(220, 38, 38, 0.1)', color: '#dc2626' }}
             >
               Try Again
             </button>
@@ -193,10 +189,10 @@ export default function OrderStatusPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h1 className="text-xl font-bold text-gray-900 mb-1">
+          <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--site-text)' }}>
             {isComplete ? 'Your order is ready!' : 'Order Confirmed!'}
           </h1>
-          <p className="text-gray-600 text-sm">
+          <p className="text-sm" style={{ color: 'var(--site-text-muted)' }}>
             Order #{data.orderNumber}
           </p>
         </div>
@@ -209,24 +205,24 @@ export default function OrderStatusPage() {
       />
 
       {/* Order Summary */}
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="font-semibold text-gray-900 mb-4">Order Summary</h2>
+      <div className="rounded-xl border p-5" style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}>
+        <h2 className="font-semibold mb-4" style={{ color: 'var(--site-text)' }}>Order Summary</h2>
 
         <div className="space-y-3">
           {data.items.map((item, i) => (
             <div key={i} className="flex justify-between items-start">
               <div className="flex-1 min-w-0">
-                <p className="text-gray-900 text-sm font-medium">
-                  {item.quantity > 1 && <span className="text-gray-500 mr-1">{item.quantity}x</span>}
+                <p className="text-sm font-medium" style={{ color: 'var(--site-text)' }}>
+                  {item.quantity > 1 && <span className="mr-1" style={{ color: 'var(--site-text-muted)' }}>{item.quantity}x</span>}
                   {item.name}
                 </p>
                 {item.modifiers.length > 0 && (
-                  <p className="text-gray-500 text-xs mt-0.5">
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--site-text-muted)' }}>
                     {item.modifiers.join(', ')}
                   </p>
                 )}
               </div>
-              <span className="text-gray-900 text-sm font-medium ml-3 whitespace-nowrap">
+              <span className="text-sm font-medium ml-3 whitespace-nowrap" style={{ color: 'var(--site-text)' }}>
                 {formatCurrency(item.price * item.quantity)}
               </span>
             </div>
@@ -234,33 +230,33 @@ export default function OrderStatusPage() {
         </div>
 
         {/* Totals */}
-        <div className="border-t border-gray-100 mt-4 pt-4 space-y-2">
+        <div className="border-t mt-4 pt-4 space-y-2" style={{ borderColor: 'var(--site-border)' }}>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Subtotal</span>
-            <span className="text-gray-700">{formatCurrency(data.subtotal)}</span>
+            <span style={{ color: 'var(--site-text-muted)' }}>Subtotal</span>
+            <span style={{ color: 'var(--site-text)' }}>{formatCurrency(data.subtotal)}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Tax</span>
-            <span className="text-gray-700">{formatCurrency(data.taxTotal)}</span>
+            <span style={{ color: 'var(--site-text-muted)' }}>Tax</span>
+            <span style={{ color: 'var(--site-text)' }}>{formatCurrency(data.taxTotal)}</span>
           </div>
           {data.tipTotal > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Tip</span>
-              <span className="text-gray-700">{formatCurrency(data.tipTotal)}</span>
+              <span style={{ color: 'var(--site-text-muted)' }}>Tip</span>
+              <span style={{ color: 'var(--site-text)' }}>{formatCurrency(data.tipTotal)}</span>
             </div>
           )}
-          <div className="flex justify-between font-semibold text-base pt-2 border-t border-gray-100">
-            <span className="text-gray-900">Total</span>
-            <span className="text-gray-900">{formatCurrency(data.total)}</span>
+          <div className="flex justify-between font-semibold text-base pt-2 border-t" style={{ borderColor: 'var(--site-border)' }}>
+            <span style={{ color: 'var(--site-text)' }}>Total</span>
+            <span style={{ color: 'var(--site-text)' }}>{formatCurrency(data.total)}</span>
           </div>
         </div>
       </div>
 
       {/* Pickup Address */}
       {data.pickupAddress && data.orderType !== 'delivery' && (
-        <div className="rounded-xl border border-gray-200 bg-white p-5">
-          <h3 className="font-semibold text-gray-900 text-sm mb-2">Pickup Location</h3>
-          <p className="text-gray-600 text-sm">{data.pickupAddress}</p>
+        <div className="rounded-xl border p-5" style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}>
+          <h3 className="font-semibold text-sm mb-2" style={{ color: 'var(--site-text)' }}>Pickup Location</h3>
+          <p className="text-sm" style={{ color: 'var(--site-text-muted)' }}>{data.pickupAddress}</p>
         </div>
       )}
 
@@ -270,8 +266,8 @@ export default function OrderStatusPage() {
           href="/menu"
           className="inline-block px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
           style={{
-            backgroundColor: 'var(--site-primary, #2563eb)',
-            color: 'white',
+            backgroundColor: 'var(--site-brand)',
+            color: 'var(--site-brand-text)',
           }}
         >
           Back to Menu

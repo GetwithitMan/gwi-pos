@@ -73,7 +73,11 @@ run_schema() {
     fi
 
     log "Running local migrations..."
-    sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1 | tail -5
+    if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && node scripts/nuc-pre-migrate.js" 2>&1; then
+      err_code "ERR-INST-184" "Migration runner (nuc-pre-migrate.js) failed"
+      warn "Migrations failed — continuing but venue may have issues"
+      track_warn "nuc-pre-migrate.js failed"
+    fi
 
     # ── Step 2.5: Ensure _venue_schema_state exists in Neon (fallback) ──
     # MC owns _venue_schema_state, but if provisioning didn't complete or the

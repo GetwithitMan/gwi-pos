@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { computeIsOrderableOnline } from '@/lib/online-availability'
+import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,6 +47,21 @@ export async function POST(
 
     if (!slug) {
       return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+    }
+
+    // ── Rate limit ──────────────────────────────────────────────────────────
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') ||
+      'unknown'
+    const rateCheck = checkOnlineRateLimit(ip, slug, 'menu') // 30/min
+    if (!rateCheck.allowed) {
+      const resp = NextResponse.json(
+        { error: 'Too many requests. Please try again shortly.' },
+        { status: 429 }
+      )
+      resp.headers.set('Retry-After', String(rateCheck.retryAfterSeconds ?? 60))
+      return resp
     }
 
     let body: QuoteBody
@@ -133,6 +149,7 @@ export async function POST(
           id: { in: allModifierIds },
           locationId,
           isActive: true,
+          showOnline: true,
           deletedAt: null,
         },
         select: {
@@ -206,9 +223,9 @@ export async function POST(
       subtotal += lineTotal
       validatedItems.push({ menuItemId: item.menuItemId, serverPrice: serverLinePrice })
 
-      // Track client-sent price for comparison
+      // Track client-sent price for comparison (must include base price + mods)
       const clientModsTotal = item.modifiers.reduce((sum, mod) => sum + mod.price, 0)
-      clientSubtotal += clientModsTotal * item.quantity
+      clientSubtotal += (basePrice + clientModsTotal) * item.quantity
 
       // Split by tax-inclusive status
       const itemInclusive = isItemTaxInclusive(mi.category?.categoryType, taxIncSettings)

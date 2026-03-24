@@ -298,7 +298,9 @@ run_deploy_app() {
     local checkout_watchdog="${APP_DIR}/public/watchdog.sh"
 
     if [[ ! -d "$checkout_modules" ]]; then
-      warn "No installer modules found in checkout at $checkout_modules — skipping refresh"
+      warn "IMPORTANT: No installer modules found in checkout at $checkout_modules"
+      warn "Stages 06-12 will use embedded (potentially stale) modules"
+      track_warn "Module refresh skipped — checkout modules not found"
       return 0
     fi
 
@@ -324,6 +326,14 @@ run_deploy_app() {
         fi
       done
       log "  Re-sourced updated module definitions"
+
+      # Also re-source lib files (error codes, atomic update, safety, etc.)
+      if [[ -d "$MODULES_DIR/lib" ]]; then
+        for _lib in "$MODULES_DIR"/lib/*.sh; do
+          [[ -f "$_lib" ]] && source "$_lib"
+        done
+        log "  Re-sourced installer libraries"
+      fi
     fi
 
     # Deploy operational scripts to /opt/gwi-pos for service use
@@ -341,9 +351,11 @@ run_deploy_app() {
     # Monitoring scripts
     for script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh pre-update-backup.sh; do
       if [[ -f "$checkout_scripts/$script" ]]; then
-        cp "$checkout_scripts/$script" /opt/gwi-pos/scripts/
-        chmod +x "/opt/gwi-pos/scripts/$script"
-        log "  Deployed scripts/$script"
+        if cp "$checkout_scripts/$script" /opt/gwi-pos/scripts/ 2>/dev/null && chmod +x "/opt/gwi-pos/scripts/$script"; then
+          log "  Deployed scripts/$script"
+        else
+          warn "  FAILED to deploy scripts/$script"
+        fi
       fi
     done
 

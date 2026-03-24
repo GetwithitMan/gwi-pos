@@ -8,9 +8,15 @@ interface QRContextPayload {
   iat: number
 }
 
+function getQRSecret(): string {
+  const secret = process.env.QR_SIGNING_SECRET || process.env.PROVISION_API_KEY
+  if (!secret) throw new Error('QR_SIGNING_SECRET or PROVISION_API_KEY required')
+  return secret
+}
+
 /** Sign a QR context for embedding in QR code URLs */
 export function signQRContext(data: { table: string; section?: string; slug: string }): string {
-  const secret = process.env.PROVISION_API_KEY || ''
+  const secret = getQRSecret()
   const payload: QRContextPayload = {
     table: data.table,
     section: data.section,
@@ -26,7 +32,7 @@ export function signQRContext(data: { table: string; section?: string; slug: str
 /** Verify a signed QR context token — returns payload or null */
 export function verifyQRContext(token: string): QRContextPayload | null {
   try {
-    const secret = process.env.PROVISION_API_KEY || ''
+    const secret = getQRSecret()
     const [encoded, sig] = token.split('.')
     if (!encoded || !sig) return null
     const expectedSig = crypto.createHmac('sha256', secret).update(encoded).digest('base64url')

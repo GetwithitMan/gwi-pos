@@ -8,6 +8,7 @@
  * Uses getDbForVenue(slug) for tenant isolation.
  */
 
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
@@ -33,12 +34,16 @@ interface PurchaseBody {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function generateCardNumber(): string {
-  const seg = () => String(Math.floor(1000 + Math.random() * 9000))
+  const seg = () => String(crypto.randomInt(1000, 10000))
   return `GC-${seg()}-${seg()}-${seg()}`
 }
 
 function generatePin(): string {
-  return String(Math.floor(1000 + Math.random() * 9000))
+  return String(crypto.randomInt(1000, 10000))
+}
+
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;')
 }
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
@@ -297,22 +302,22 @@ function buildGiftCardEmail(data: {
         <div style="background: linear-gradient(135deg, #3B82F6, #8B5CF6); color: white; padding: 32px 24px; text-align: center;">
           <h1 style="margin: 0; font-size: 28px; font-weight: 700;">Gift Card</h1>
           <p style="margin: 8px 0 0; font-size: 40px; font-weight: 800;">${formatDollar(data.amount)}</p>
-          <p style="margin: 8px 0 0; opacity: 0.9; font-size: 14px;">from ${data.venueName}</p>
+          <p style="margin: 8px 0 0; opacity: 0.9; font-size: 14px;">from ${escapeHtml(data.venueName)}</p>
         </div>
 
         <!-- Content -->
         <div style="padding: 24px;">
           <p style="margin: 0 0 16px; font-size: 16px; color: #1f2937;">
-            Hi ${data.recipientName},
+            Hi ${escapeHtml(data.recipientName)},
           </p>
 
           <p style="margin: 0 0 16px; font-size: 16px; color: #1f2937;">
-            ${data.purchaserName} sent you a gift card to ${data.venueName}!
+            ${escapeHtml(data.purchaserName)} sent you a gift card to ${escapeHtml(data.venueName)}!
           </p>
 
           ${data.message ? `
             <div style="margin: 0 0 20px; padding: 16px; background: #f9fafb; border-left: 3px solid #3B82F6; border-radius: 4px; font-style: italic; color: #4b5563;">
-              "${data.message}"
+              "${escapeHtml(data.message)}"
             </div>
           ` : ''}
 
@@ -335,7 +340,7 @@ function buildGiftCardEmail(data: {
           </div>
 
           <p style="margin: 0; font-size: 13px; color: #9ca3af; text-align: center;">
-            Use this gift card when ordering online or in-store at ${data.venueName}.
+            Use this gift card when ordering online or in-store at ${escapeHtml(data.venueName)}.
           </p>
         </div>
 

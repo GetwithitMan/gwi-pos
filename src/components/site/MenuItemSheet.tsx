@@ -57,8 +57,8 @@ interface MenuItemSheetProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`
+function formatPrice(dollars: number): string {
+  return `$${dollars.toFixed(2)}`
 }
 
 /** Calculate total price from base price + all modifier selections (recursive) */

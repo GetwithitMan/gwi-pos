@@ -3,7 +3,7 @@
 /**
  * OrderStatusTracker — Visual progress bar for online order status.
  *
- * Steps: Received -> Preparing -> Ready -> Complete
+ * Steps: Received -> Preparing -> Complete
  * Maps order statuses to steps, shows active/completed/pending states.
  */
 
@@ -15,7 +15,6 @@ interface OrderStatusTrackerProps {
 const STEPS = [
   { key: 'received', label: 'Received' },
   { key: 'preparing', label: 'Preparing' },
-  { key: 'ready', label: 'Ready' },
   { key: 'complete', label: 'Complete' },
 ] as const
 
@@ -28,7 +27,7 @@ function mapStatusToStepIndex(status: string): number {
     case 'sent':
       return 1
     case 'completed':
-      return 3
+      return 2
     case 'voided':
     case 'canceled':
       return -1 // error state

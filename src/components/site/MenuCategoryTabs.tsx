@@ -60,7 +60,7 @@ export function MenuCategoryTabs({ categories, activeCategoryId, onTabClick }: M
     <div
       className="sticky top-16 z-40 border-b backdrop-blur-md"
       style={{
-        backgroundColor: 'rgba(255,255,255,0.95)',
+        backgroundColor: 'var(--site-bg)',
         borderColor: 'var(--site-border)',
       }}
     >

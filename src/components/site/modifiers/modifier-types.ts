@@ -63,9 +63,9 @@ export function getModifierPrice(
   return (base + extra) * quantity
 }
 
-/** Format price for display */
-export function formatModifierPrice(cents: number): string {
-  if (cents === 0) return ''
-  const sign = cents > 0 ? '+' : ''
-  return `${sign}$${(cents / 100).toFixed(2)}`
+/** Format price for display (prices are in dollars) */
+export function formatModifierPrice(dollars: number): string {
+  if (dollars === 0) return ''
+  const sign = dollars > 0 ? '+' : ''
+  return `${sign}$${dollars.toFixed(2)}`
 }

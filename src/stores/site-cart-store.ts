@@ -194,12 +194,12 @@ export const useSiteCartStore = create<SiteCartState>()(
         orderType: state.orderType,
         tipPercent: state.tipPercent,
         tipAmount: state.tipAmount,
-        customerInfo: state.customerInfo,
+        // EXCLUDED: customerInfo (PII — name, email, phone)
+        // EXCLUDED: giftCardNumber (sensitive payment data)
         specialRequests: state.specialRequests,
         tableContext: state.tableContext,
         couponCode: state.couponCode,
         couponDiscount: state.couponDiscount,
-        giftCardNumber: state.giftCardNumber,
         giftCardApplied: state.giftCardApplied,
         slug: state.slug,
         menuVersion: state.menuVersion,

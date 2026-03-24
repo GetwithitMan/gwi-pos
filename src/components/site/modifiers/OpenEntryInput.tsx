@@ -15,10 +15,15 @@ interface OpenEntryInputProps {
 
 const MAX_CHARS = 200
 
-/** Strip control characters (keep newlines/tabs for paste scenarios, but collapse later) */
+/**
+ * Strip control characters and dangerous HTML patterns.
+ * Server-side escaping (escapeHtml) is also applied before rendering in emails/receipts.
+ */
 function stripControlChars(s: string): string {
   // eslint-disable-next-line no-control-regex
   return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/on\w+\s*=/gi, '')
 }
 
 /** Trim and collapse internal whitespace runs to single space */

@@ -282,6 +282,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
               type="text"
               value={customerInfo.name}
               onChange={(v) => setCustomerInfo({ name: v })}
+              onBlur={validate}
               error={errors.name}
               placeholder="Your name"
               autoComplete="name"
@@ -291,6 +292,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
               type="tel"
               value={customerInfo.phone}
               onChange={(v) => setCustomerInfo({ phone: v })}
+              onBlur={validate}
               error={errors.phone}
               placeholder="(555) 123-4567"
               autoComplete="tel"
@@ -300,6 +302,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
               type="email"
               value={customerInfo.email}
               onChange={(v) => setCustomerInfo({ email: v })}
+              onBlur={validate}
               error={errors.email}
               placeholder="you@example.com"
               autoComplete="email"
@@ -506,6 +509,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
             tipAmount={tipAmount}
             couponCode={couponCode}
             giftCardNumber={giftCardNumber}
+            giftCardPin={giftCardPinInput}
             tableContext={tableContext}
             onSuccess={handlePaymentSuccess}
             onError={handlePaymentError}
@@ -551,6 +555,7 @@ function InputField({
   type,
   value,
   onChange,
+  onBlur,
   error,
   placeholder,
   autoComplete,
@@ -559,6 +564,7 @@ function InputField({
   type: string
   value: string
   onChange: (v: string) => void
+  onBlur?: () => void
   error?: string
   placeholder?: string
   autoComplete?: string
@@ -572,6 +578,7 @@ function InputField({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         placeholder={placeholder}
         autoComplete={autoComplete}
         className="w-full px-4 py-3 rounded-xl border text-sm outline-none transition-colors"

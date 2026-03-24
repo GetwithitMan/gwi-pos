@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { getSiteBootstrapData } from '@/lib/site-bootstrap'
 import { SiteBootstrapSchema } from '@/lib/site-api-schemas'
+import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,6 +25,21 @@ export async function GET(
 
     if (!slug) {
       return NextResponse.json({ error: 'Venue slug is required' }, { status: 400 })
+    }
+
+    // ── Rate limit ──────────────────────────────────────────────────────────
+    const ip =
+      _request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      _request.headers.get('x-real-ip') ||
+      'unknown'
+    const rateCheck = checkOnlineRateLimit(ip, slug, 'menu') // 30/min
+    if (!rateCheck.allowed) {
+      const resp = NextResponse.json(
+        { error: 'Too many requests. Please try again shortly.' },
+        { status: 429 }
+      )
+      resp.headers.set('Retry-After', String(rateCheck.retryAfterSeconds ?? 60))
+      return resp
     }
 
     // ── Resolve venue DB ───────────────────────────────────────────

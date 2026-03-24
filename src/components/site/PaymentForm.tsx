@@ -66,6 +66,9 @@ export function PaymentForm({
   const datacapInitialized = useRef(false)
   const idempotencyKey = useRef(crypto.randomUUID())
 
+  // ── Stable ref for the Datacap callback to avoid stale closures ──
+  const handleDatacapTokenRef = useRef<(resp: DatacapTokenResponse) => void>()
+
   // ── Handle Datacap token response ────────────────────────────
   const handleDatacapToken = useCallback(
     async (resp: DatacapTokenResponse) => {
@@ -79,6 +82,19 @@ export function PaymentForm({
         setError('No payment token received. Please try again.')
         setLoading(false)
         return
+      }
+
+      // Flatten nested modifier childSelections recursively
+      function flattenModifiers(mods: Array<{ modifierId: string; name: string; price: number; quantity: number; preModifier: string | null; depth: number; childSelections?: unknown[] }>): Array<{ modifierId: string; name: string; price: number; quantity: number; preModifier: string | null }> {
+        const result: Array<{ modifierId: string; name: string; price: number; quantity: number; preModifier: string | null }> = []
+        for (const mod of mods) {
+          result.push({ modifierId: mod.modifierId, name: mod.name, price: mod.price, quantity: mod.quantity, preModifier: mod.preModifier })
+          if (mod.childSelections && Array.isArray(mod.childSelections)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            result.push(...flattenModifiers(mod.childSelections as any))
+          }
+        }
+        return result
       }
 
       // Build checkout payload
@@ -96,14 +112,7 @@ export function PaymentForm({
           quantity: item.quantity,
           itemType: item.itemType,
           specialInstructions: item.specialInstructions || null,
-          modifiers: item.modifiers.map((m) => ({
-            modifierId: m.modifierId,
-            name: m.name,
-            price: m.price,
-            quantity: m.quantity,
-            preModifier: m.preModifier,
-            depth: m.depth,
-          })),
+          modifiers: flattenModifiers(item.modifiers),
           pizzaData: item.pizzaData ?? null,
         })),
         customerName: customerInfo.name,
@@ -114,6 +123,7 @@ export function PaymentForm({
         couponCode: couponCode || null,
         giftCardNumber: giftCardNumber || null,
         giftCardPin: giftCardPin || null,
+        tableId: tableContext?.table ?? null,
         tableContext: tableContext || null,
       }
 
@@ -144,6 +154,9 @@ export function PaymentForm({
     [slug, items, orderType, customerInfo, specialRequests, tipAmount, couponCode, giftCardNumber, giftCardPin, tableContext, onSuccess]
   )
 
+  // Always keep the ref pointing to the latest callback
+  handleDatacapTokenRef.current = handleDatacapToken
+
   // ── Initialize Datacap ───────────────────────────────────────
   const initDatacap = useCallback(() => {
     const tokenKey = process.env.NEXT_PUBLIC_DATACAP_PAYAPI_TOKEN_KEY ?? ''
@@ -152,14 +165,17 @@ export function PaymentForm({
       return
     }
     try {
-      DatacapHostedWebToken.init(tokenKey, 'datacap-site-token-iframe', handleDatacapToken)
+      // Use stable ref wrapper so the listener always calls the latest closure
+      DatacapHostedWebToken.init(tokenKey, 'datacap-site-token-iframe', (resp) => {
+        handleDatacapTokenRef.current?.(resp)
+      })
       datacapInitialized.current = true
       setDatacapReady(true)
     } catch (err) {
       console.error('Datacap init error:', err)
       setError('Failed to initialize payment form. Please refresh.')
     }
-  }, [handleDatacapToken])
+  }, []) // stable — no deps needed since we use ref
 
   // ── Load Datacap CDN script ──────────────────────────────────
   useEffect(() => {

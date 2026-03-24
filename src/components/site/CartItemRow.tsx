@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { humanizeSections } from '@/lib/pizza-section-utils'
 import type { CartItem, CartModifier } from '@/stores/site-cart-store'
@@ -95,8 +96,13 @@ function renderPizzaDetails(item: CartItem): React.ReactNode {
 }
 
 export function CartItemRow({ item }: CartItemRowProps) {
+  const [mounted, setMounted] = useState(false)
   const updateQuantity = useSiteCartStore((s) => s.updateQuantity)
   const removeItem = useSiteCartStore((s) => s.removeItem)
+
+  useEffect(() => setMounted(true), [])
+
+  if (!mounted) return null
 
   // Calculate line total
   let lineTotal: number

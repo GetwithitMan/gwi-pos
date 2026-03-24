@@ -9,6 +9,7 @@
  */
 
 import type { PrismaClient, Customer } from '@/generated/prisma/client'
+import { normalizePhone } from '@/lib/utils'
 
 interface OnlineCustomerData {
   phone?: string
@@ -21,11 +22,14 @@ export async function upsertOnlineCustomer(
   db: PrismaClient,
   data: OnlineCustomerData
 ): Promise<Customer> {
+  // Normalize phone before any matching — ensures "(555) 123-4567" matches "5551234567"
+  const normalizedPhone = data.phone ? normalizePhone(data.phone) : undefined
+
   // Step 1: Try exact phone match (preferred identifier)
   let existing: Customer | null = null
-  if (data.phone) {
+  if (normalizedPhone) {
     existing = await db.customer.findFirst({
-      where: { locationId: data.locationId, phone: data.phone, deletedAt: null }
+      where: { locationId: data.locationId, phone: normalizedPhone, deletedAt: null }
     })
   }
 
@@ -37,11 +41,11 @@ export async function upsertOnlineCustomer(
 
     // Step 3: Conflict detection — phone matched nobody, but email matched someone
     // who has a DIFFERENT phone. Don't silently merge; create new + log.
-    if (emailMatch && data.phone && emailMatch.phone && emailMatch.phone !== data.phone) {
+    if (emailMatch && normalizedPhone && emailMatch.phone && emailMatch.phone !== normalizedPhone) {
       console.error(JSON.stringify({
         event: 'customer_upsert_conflict',
         locationId: data.locationId,
-        phoneProvided: data.phone,
+        phoneProvided: normalizedPhone,
         emailProvided: data.email,
         conflictCustomerId: emailMatch.id,
         conflictPhone: emailMatch.phone,
@@ -54,13 +58,39 @@ export async function upsertOnlineCustomer(
     }
   }
 
+  // Step 4: Check soft-deleted records — reactivate instead of creating duplicates
+  if (!existing) {
+    let softDeleted: Customer | null = null
+    if (normalizedPhone) {
+      softDeleted = await db.customer.findFirst({
+        where: { locationId: data.locationId, phone: normalizedPhone, deletedAt: { not: null } }
+      })
+    }
+    if (!softDeleted && data.email) {
+      softDeleted = await db.customer.findFirst({
+        where: { locationId: data.locationId, email: data.email, deletedAt: { not: null } }
+      })
+    }
+    if (softDeleted) {
+      return db.customer.update({
+        where: { id: softDeleted.id },
+        data: {
+          deletedAt: null,
+          lastVisit: new Date(),
+          ...(data.email && { email: data.email }),
+          ...(normalizedPhone && { phone: normalizedPhone }),
+        }
+      })
+    }
+  }
+
   // Update existing — only backfill missing contact info, never overwrite
   if (existing) {
     return db.customer.update({
       where: { id: existing.id },
       data: {
         ...(data.email && !existing.email && { email: data.email }),
-        ...(data.phone && !existing.phone && { phone: data.phone }),
+        ...(normalizedPhone && !existing.phone && { phone: normalizedPhone }),
         lastVisit: new Date(),
       }
     })
@@ -74,7 +104,7 @@ export async function upsertOnlineCustomer(
       firstName: firstName || 'Guest',
       lastName: rest.join(' ') || '',
       email: data.email || null,
-      phone: data.phone || null,
+      phone: normalizedPhone || null,
       lastVisit: new Date(),
       marketingOptIn: false,
     }

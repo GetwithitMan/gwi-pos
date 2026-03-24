@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
 
     // ── Check online ordering is enabled (BUG #394) ─────────────────────────
     const locationRec = await venueDb.location.findFirst({
-      where: { id: locationId! },
+      where: { id: locationId!, deletedAt: null },
       select: { settings: true },
     })
     const locSettings = locationRec?.settings as Record<string, unknown> | null

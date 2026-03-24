@@ -12,11 +12,14 @@ interface CartDrawerProps {
 }
 
 export function CartDrawer({ open, onClose }: CartDrawerProps) {
+  const [mounted, setMounted] = useState(false)
   const items = useCartItems()
   const itemCount = useCartItemCount()
   const subtotal = useCartSubtotal()
   const clearCart = useSiteCartStore((s) => s.clearCart)
   const [confirmClear, setConfirmClear] = useState(false)
+
+  useEffect(() => setMounted(true), [])
 
   // Body scroll lock
   useEffect(() => {
@@ -52,6 +55,8 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
   useEffect(() => {
     if (!open) setConfirmClear(false)
   }, [open])
+
+  if (!mounted) return null
 
   return (
     <>

@@ -21,7 +21,9 @@
  *   - Online ordering must be enabled in location settings.
  */
 
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db, getDbForVenue } from '@/lib/db'
 import { getPayApiClient } from '@/lib/datacap/payapi-client'
 import { getCurrentBusinessDay } from '@/lib/business-day'
@@ -29,38 +31,50 @@ import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxIncl
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { upsertOnlineCustomer, accrueOnlineLoyaltyPoints } from '@/lib/customer-upsert'
+import { generateOrderViewToken } from '@/app/api/public/order-status/[id]/route'
 
-// ─── Request Body Shape ───────────────────────────────────────────────────────
+// ─── Zod Validation Schema ────────────────────────────────────────────────────
 
-interface CheckoutItem {
-  menuItemId: string
-  quantity: number
-  modifiers: Array<{
-    modifierId: string
-    name: string
-    price: number
-  }>
-}
+const CheckoutModifierSchema = z.object({
+  modifierId: z.string().min(1),
+  name: z.string().max(500).optional(),
+  price: z.number().optional(),
+  quantity: z.number().int().min(1).max(10).optional(),
+})
 
-interface CheckoutBody {
-  locationId: string
-  slug?: string
-  token: string
-  cardBrand?: string
-  cardLast4?: string
-  items: CheckoutItem[]
-  customerName: string
-  customerEmail: string
-  customerPhone?: string
-  orderType?: string
-  notes?: string
-  tip?: number
-  idempotencyKey?: string
-  couponCode?: string
-  giftCardNumber?: string
-  giftCardPin?: string
-  tableId?: string
-}
+const CheckoutItemSchema = z.object({
+  menuItemId: z.string().min(1),
+  quantity: z.number().int().min(1).max(99),
+  modifiers: z.array(CheckoutModifierSchema).default([]),
+})
+
+const CheckoutBodySchema = z.object({
+  locationId: z.string().optional(), // backward compat: NUC direct path
+  slug: z.string().min(1).optional(),
+  token: z.string().optional(),
+  cardBrand: z.string().max(50).optional(),
+  cardLast4: z.string().max(4).optional(),
+  items: z.array(CheckoutItemSchema).min(1).max(100),
+  customerName: z.string().min(1).max(500),
+  customerEmail: z.string().email().max(500),
+  customerPhone: z.string().max(30).optional(),
+  orderType: z.string().max(50).optional(),
+  specialRequests: z.string().max(2000).optional(),
+  tipAmount: z.number().min(0).max(9999).optional(),
+  idempotencyKey: z.string().max(200).optional(),
+  couponCode: z.string().max(100).optional(),
+  giftCardNumber: z.string().max(100).optional(),
+  giftCardPin: z.string().max(20).optional(),
+  tableContext: z.object({
+    table: z.string().optional(),
+  }).optional(),
+  // Deprecated fields (backward compat)
+  notes: z.string().max(2000).optional(),
+  tip: z.number().min(0).max(9999).optional(),
+  tableId: z.string().optional(),
+})
+
+type CheckoutBody = z.infer<typeof CheckoutBodySchema>
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
@@ -74,17 +88,44 @@ export async function POST(request: NextRequest) {
   let body: CheckoutBody
 
   try {
-    body = (await request.json()) as CheckoutBody
+    const raw = await request.json()
+    const parsed = CheckoutBodySchema.safeParse(raw)
+    if (!parsed.success) {
+      const firstError = parsed.error.errors[0]
+      return NextResponse.json(
+        { error: firstError?.message ?? 'Invalid request body', details: parsed.error.errors },
+        { status: 400 }
+      )
+    }
+    body = parsed.data
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  // ── 1. Validate required fields ────────────────────────────────────────────
+  // ── 1. Resolve locationId from slug or body ────────────────────────────────
 
-  const { locationId, slug, token, items, customerName, customerEmail } = body
+  const { slug, token, items, customerName, customerEmail } = body
+
+  // Resolve locationId: prefer body.locationId (NUC direct), otherwise resolve from slug
+  let locationId = body.locationId ?? ''
+
+  // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
+  // Falls back to db proxy (NUC local mode).
+  const venueDb = slug ? await getDbForVenue(slug) : db
+
+  if (!locationId && slug) {
+    const location = await venueDb.location.findFirst({
+      where: { isActive: true, deletedAt: null },
+      select: { id: true },
+    })
+    if (!location) {
+      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+    }
+    locationId = location.id
+  }
 
   if (!locationId) {
-    return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    return NextResponse.json({ error: 'slug or locationId is required' }, { status: 400 })
   }
 
   // ── 1a. Rate limit (BUG #388) ─────────────────────────────────────────────
@@ -99,34 +140,16 @@ export async function POST(request: NextRequest) {
     return resp
   }
 
-  // Route to venue DB when slug is provided (cloud/Vercel multi-tenant).
-  // Falls back to db proxy (NUC local mode).
-  const venueDb = slug ? await getDbForVenue(slug) : db
-
   // Token required unless a gift card number is provided (may cover full amount)
   if (!token && !body.giftCardNumber) {
     return NextResponse.json({ error: 'Payment token is required' }, { status: 400 })
   }
-  if (!items || items.length === 0) {
-    return NextResponse.json({ error: 'At least one item is required' }, { status: 400 })
-  }
-  if (!customerName?.trim()) {
-    return NextResponse.json({ error: 'Customer name is required' }, { status: 400 })
-  }
-  if (!customerEmail?.trim()) {
-    return NextResponse.json({ error: 'Customer email is required' }, { status: 400 })
-  }
 
-  // ── 1b. Validate item quantities (BUG #391) ──────────────────────────────
+  // ── 1b. Resolve field name aliases (backward compat) ──────────────────────
 
-  for (const item of items) {
-    if (!Number.isInteger(item.quantity) || item.quantity < 1) {
-      return NextResponse.json(
-        { error: 'Each item quantity must be a positive integer' },
-        { status: 400 }
-      )
-    }
-  }
+  const tipAmount = body.tipAmount ?? body.tip
+  const specialRequests = body.specialRequests ?? body.notes
+  const tableId = body.tableContext?.table ?? body.tableId
 
   try {
     // ── 1c. Check online ordering is enabled (BUG #394) ─────────────────────
@@ -168,6 +191,7 @@ export async function POST(request: NextRequest) {
             tip: Number(existingOrder.tipTotal),
             total: Number(existingOrder.total),
             prepTime: prepTimeMinutes,
+            statusToken: generateOrderViewToken(existingOrder.id),
             duplicate: true,
           },
         })
@@ -261,7 +285,8 @@ export async function POST(request: NextRequest) {
           )
         }
         // BUG #390: Validate modifier belongs to this menu item's modifier group
-        if (dbMod.modifierGroup.menuItemId !== item.menuItemId) {
+        // Fix #11: Allow universal modifier groups (menuItemId === null) for any item
+        if (dbMod.modifierGroup.menuItemId !== null && dbMod.modifierGroup.menuItemId !== item.menuItemId) {
           return NextResponse.json(
             { error: `Modifier ${mod.modifierId} does not belong to the selected item` },
             { status: 422 }
@@ -278,22 +303,25 @@ export async function POST(request: NextRequest) {
       // BUG #385: Use onlinePrice when set, otherwise fall back to base price
       const basePrice = mi.onlinePrice != null ? Number(mi.onlinePrice) : Number(mi.price)
       // BUG #383: Use DB modifier prices, not client-supplied
+      // Fix #15: Respect client-sent modifier quantity (validated: 1–10)
       const modsTotal = item.modifiers.reduce((sum, mod) => {
         const dbMod = modifierMap.get(mod.modifierId)
-        return sum + (dbMod ? Number(dbMod.price) : 0)
+        const modQty = mod.quantity ?? 1
+        return sum + (dbMod ? Number(dbMod.price) * modQty : 0)
       }, 0)
       const lineTotal = (basePrice + modsTotal) * item.quantity
       subtotal += lineTotal
       return { item, mi, basePrice, modsTotal, lineTotal }
     })
 
-    const tip = typeof body.tip === 'number' && body.tip >= 0 ? Math.round(body.tip * 100) / 100 : 0
+    const tip = typeof tipAmount === 'number' && tipAmount >= 0 ? Math.round(tipAmount * 100) / 100 : 0
 
     // ── 2c½. Coupon validation (server-side re-validation) ──────────────────
 
     let couponDiscount = 0
     let couponId: string | null = null
     let couponDiscountType: string | null = null
+    let couponUsageLimit: number | null = null
 
     if (body.couponCode) {
       const coupon = await venueDb.coupon.findFirst({
@@ -318,10 +346,28 @@ export async function POST(request: NextRequest) {
         const withinUsage = coupon.usageLimit == null || coupon.usageCount < coupon.usageLimit
 
         if (withinDates && withinUsage) {
+          // Fix #14: Per-customer coupon limit check
+          let perCustomerBlocked = false
+          if (coupon.perCustomerLimit != null) {
+            const customerIdentifier = customerEmail.toLowerCase().trim()
+            const priorRedemptions = await venueDb.couponRedemption.count({
+              where: {
+                couponId: coupon.id,
+                OR: [
+                  { customer: { email: customerIdentifier } },
+                  ...(body.customerPhone ? [{ customer: { phone: body.customerPhone } }] : []),
+                ],
+              },
+            })
+            if (priorRedemptions >= coupon.perCustomerLimit) {
+              perCustomerBlocked = true
+            }
+          }
           const minMet = coupon.minimumOrder == null || subtotal >= Number(coupon.minimumOrder)
-          if (minMet) {
+          if (minMet && !perCustomerBlocked) {
             couponId = coupon.id
             couponDiscountType = coupon.discountType
+            couponUsageLimit = coupon.usageLimit
             const discountValue = Number(coupon.discountValue)
             const maxCap = coupon.maximumDiscount != null ? Number(coupon.maximumDiscount) : null
 
@@ -347,23 +393,45 @@ export async function POST(request: NextRequest) {
       taxInclusiveLiquor: onlineLocSettings?.tax?.taxInclusiveLiquor ?? false,
       taxInclusiveFood: onlineLocSettings?.tax?.taxInclusiveFood ?? false,
     }
+    // Fix #9: Apply coupon discount BEFORE tax calculation
+    const discountedSubtotal = subtotal - couponDiscount
+
     // Split items by tax-inclusive status based on category
-    let inclusiveSubtotal = 0
-    let exclusiveSubtotal = 0
+    // Proportionally distribute coupon discount across inclusive/exclusive
+    let rawInclusiveSubtotal = 0
+    let rawExclusiveSubtotal = 0
     for (const { mi, lineTotal } of lineItems) {
       const itemInclusive = isItemTaxInclusive(mi.category?.categoryType, taxIncSettings)
       if (itemInclusive) {
-        inclusiveSubtotal += lineTotal
+        rawInclusiveSubtotal += lineTotal
       } else {
-        exclusiveSubtotal += lineTotal
+        rawExclusiveSubtotal += lineTotal
       }
     }
+    // Distribute coupon discount proportionally
+    const discountRatio = subtotal > 0 ? couponDiscount / subtotal : 0
+    const inclusiveSubtotal = rawInclusiveSubtotal * (1 - discountRatio)
+    const exclusiveSubtotal = rawExclusiveSubtotal * (1 - discountRatio)
+
     const inclusiveTaxRate = onlineLocSettings?.tax?.inclusiveTaxRate != null
       ? onlineLocSettings.tax.inclusiveTaxRate / 100 : undefined
     const { taxFromInclusive, taxFromExclusive, totalTax: taxTotal } = calculateSplitTax(
       inclusiveSubtotal, exclusiveSubtotal, taxRate, inclusiveTaxRate
     )
-    const total = subtotal + taxFromExclusive - couponDiscount
+
+    // Fix #4: Add surcharge calculation
+    let surchargeAmount = 0
+    const surchargeType = onlineSettings?.surchargeType as string | null | undefined
+    const surchargeValue = Number(onlineSettings?.surchargeAmount ?? 0)
+    const surchargeName = (onlineSettings?.surchargeName as string | undefined) ?? 'Online Order Fee'
+
+    if (surchargeType === 'flat' && surchargeValue > 0) {
+      surchargeAmount = surchargeValue
+    } else if (surchargeType === 'percent' && surchargeValue > 0) {
+      surchargeAmount = Math.round(discountedSubtotal * (surchargeValue / 100) * 100) / 100
+    }
+
+    const total = discountedSubtotal + taxFromExclusive + surchargeAmount
     const totalPlusTip = total + tip // Total before gift card
 
     // ── 2e. Gift card validation ─────────────────────────────────────────────
@@ -384,8 +452,11 @@ export async function POST(request: NextRequest) {
       })
 
       if (gc && !gc.frozenAt && (!gc.expiresAt || new Date() <= gc.expiresAt)) {
-        // PIN check
-        if (!gc.pin || gc.pin === (body.giftCardPin || '')) {
+        // PIN check — timing-safe comparison to prevent side-channel attacks
+        const pinInput = body.giftCardPin || ''
+        const pinOk = !gc.pin || (gc.pin.length === pinInput.length &&
+          crypto.timingSafeEqual(Buffer.from(gc.pin), Buffer.from(pinInput)))
+        if (pinOk) {
           const balance = Number(gc.currentBalance)
           giftCardApplied = Math.min(balance, totalPlusTip)
           giftCardApplied = Math.round(giftCardApplied * 100) / 100
@@ -509,15 +580,13 @@ export async function POST(request: NextRequest) {
           tipTotal: tip,
           total: totalPlusTip,
           commissionTotal: 0,
-          ...(body.tableId ? {
-            customFields: { channel: 'qr', tableId: body.tableId, qrContextVersion: 1 },
+          ...(tableId ? {
+            customFields: { channel: 'qr', tableId, qrContextVersion: 1 },
           } : {}),
+          // Fix #12: No PII in notes — only "Online Order" + specialRequests
           notes: [
-            `Online Order`,
-            `Customer: ${customerName}`,
-            `Email: ${customerEmail}`,
-            body.customerPhone ? `Phone: ${body.customerPhone}` : null,
-            body.notes ? `Notes: ${body.notes}` : null,
+            'Online Order',
+            specialRequests ? specialRequests : null,
           ].filter(Boolean).join('\n'),
           businessDayDate: businessDayStart,
           lastMutatedBy: 'cloud',
@@ -537,12 +606,13 @@ export async function POST(request: NextRequest) {
                 ? {
                     create: item.modifiers.map(mod => {
                       const dbMod = modifierMap.get(mod.modifierId)
+                      const modQty = mod.quantity ?? 1
                       return {
                         locationId,
                         modifierId: mod.modifierId.length >= 20 ? mod.modifierId : null,
-                        name: dbMod?.name ?? mod.name,
+                        name: dbMod?.name ?? mod.name ?? '',
                         price: dbMod ? Number(dbMod.price) : 0,
-                        quantity: 1,
+                        quantity: modQty,
                       }
                     }),
                   }
@@ -702,8 +772,20 @@ export async function POST(request: NextRequest) {
           where: { orderId: order.id, couponId },
         })
         if (!existingRedemption) {
-          await venueDb.$transaction([
-            venueDb.couponRedemption.create({
+          // Fix #8: Atomic coupon usage increment (prevents race condition)
+          const updatedCoupon = await venueDb.coupon.updateMany({
+            where: {
+              id: couponId,
+              OR: [
+                { usageLimit: null },
+                ...(couponUsageLimit != null ? [{ usageCount: { lt: couponUsageLimit } }] : []),
+              ],
+            },
+            data: { usageCount: { increment: 1 } },
+          })
+
+          if (updatedCoupon.count > 0) {
+            await venueDb.couponRedemption.create({
               data: {
                 locationId,
                 couponId,
@@ -711,12 +793,10 @@ export async function POST(request: NextRequest) {
                 customerId: customerId ?? undefined,
                 discountAmount: couponDiscount,
               },
-            }),
-            venueDb.coupon.update({
-              where: { id: couponId },
-              data: { usageCount: { increment: 1 } },
-            }),
-          ])
+            })
+          }
+          // If count === 0, coupon was exhausted concurrently — discount already applied to order,
+          // but redemption not recorded. This is acceptable (customer got discount, usage cap intact).
         }
       } catch (couponErr) {
         // Coupon redemption failure should not block order success
@@ -724,7 +804,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── 10d. Gift card deduction (idempotent) ────────────────────────────────
+    // ── 10d. Gift card deduction (atomic — Fix #7) ──────────────────────────
 
     if (giftCardApplied > 0 && giftCardRecord) {
       try {
@@ -733,33 +813,75 @@ export async function POST(request: NextRequest) {
           where: { orderId: order.id, giftCardId: giftCardRecord.id },
         })
         if (!existingGcTx) {
-          const balanceAfter = giftCardRecord.currentBalance - giftCardApplied
-          await venueDb.$transaction([
-            venueDb.giftCardTransaction.create({
+          await venueDb.$transaction(async (tx) => {
+            // Atomic balance check + deduction (prevents race condition)
+            const updatedGc = await tx.giftCard.updateMany({
+              where: {
+                id: giftCardRecord!.id,
+                currentBalance: { gte: giftCardApplied },
+              },
+              data: {
+                currentBalance: { decrement: giftCardApplied },
+              },
+            })
+            if (updatedGc.count === 0) {
+              throw new Error('Gift card balance insufficient (concurrent redemption)')
+            }
+            // Fetch updated balance for transaction log
+            const gcAfter = await tx.giftCard.findUnique({
+              where: { id: giftCardRecord!.id },
+              select: { currentBalance: true },
+            })
+            const balanceAfter = gcAfter ? Number(gcAfter.currentBalance) : 0
+            await tx.giftCardTransaction.create({
               data: {
                 locationId,
-                giftCardId: giftCardRecord.id,
+                giftCardId: giftCardRecord!.id,
                 type: 'redemption',
                 amount: giftCardApplied,
-                balanceBefore: giftCardRecord.currentBalance,
+                balanceBefore: giftCardRecord!.currentBalance,
                 balanceAfter,
                 orderId: order.id,
                 notes: `Online order #${order.orderNumber}`,
               },
-            }),
-            venueDb.giftCard.update({
-              where: { id: giftCardRecord.id },
-              data: {
-                currentBalance: { decrement: giftCardApplied },
-                ...(balanceAfter <= 0 ? { status: 'depleted' } : {}),
-              },
-            }),
-          ])
+            })
+            // Mark depleted if balance is zero
+            if (balanceAfter <= 0) {
+              await tx.giftCard.update({
+                where: { id: giftCardRecord!.id },
+                data: { status: 'depleted' },
+              })
+            }
+          })
         }
       } catch (gcErr) {
         // Gift card deduction failure should not block order success
         console.error('[checkout] Gift card deduction error:', gcErr)
       }
+    }
+
+    // ── 10e. Create PendingDeduction (Fix #5) ────────────────────────────────
+
+    try {
+      const existingDeduction = await venueDb.pendingDeduction.findUnique({ where: { orderId: order.id } })
+      if (!existingDeduction) {
+        const firstPayment = await venueDb.payment.findFirst({
+          where: { orderId: order.id },
+          select: { id: true },
+        })
+        await venueDb.pendingDeduction.create({
+          data: {
+            locationId,
+            orderId: order.id,
+            paymentId: firstPayment?.id ?? null,
+            deductionType: 'order_deduction',
+            status: 'pending',
+          },
+        })
+      }
+    } catch (dedErr) {
+      // PendingDeduction failure should not block order success
+      console.error('[checkout] PendingDeduction error:', dedErr)
     }
 
     // ── 11. Emit events AFTER payment success (fire-and-forget) ────────────────
@@ -796,6 +918,13 @@ export async function POST(request: NextRequest) {
             soldByWeight: false,
           },
         })),
+        // Fix #10: Emit ORDER_SENT between ITEM_ADDED and PAYMENT_APPLIED
+        {
+          type: 'ORDER_SENT' as const,
+          payload: {
+            sentItemIds: createdItems.map(item => item.id),
+          },
+        },
         {
           type: 'PAYMENT_APPLIED' as const,
           payload: {
@@ -828,11 +957,15 @@ export async function POST(request: NextRequest) {
         subtotal,
         tax: taxTotal,
         tip,
+        surcharge: surchargeAmount > 0 ? surchargeAmount : undefined,
+        surchargeName: surchargeAmount > 0 ? surchargeName : undefined,
         couponDiscount: couponDiscount > 0 ? couponDiscount : undefined,
         giftCardApplied: giftCardApplied > 0 ? giftCardApplied : undefined,
         total: totalPlusTip,
         charged: chargeAmount > 0 ? chargeAmount : undefined,
         prepTime: prepTimeMinutes,
+        // Fix #3: Add status token for order tracking
+        statusToken: generateOrderViewToken(order.id),
       },
     })
   } catch (error) {

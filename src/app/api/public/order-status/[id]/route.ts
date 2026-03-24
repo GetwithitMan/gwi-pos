@@ -9,13 +9,18 @@
 
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { getDbForVenue } from '@/lib/db'
 
 // ── Token Helpers (exported for checkout route) ──────────────────────────────
 
+function getOrderViewSecret(): string {
+  const secret = process.env.ORDER_VIEW_SECRET || process.env.PROVISION_API_KEY
+  if (!secret) throw new Error('ORDER_VIEW_SECRET or PROVISION_API_KEY required')
+  return secret
+}
+
 export function generateOrderViewToken(orderId: string): string {
-  const secret = process.env.PROVISION_API_KEY || 'fallback-secret'
-  return crypto.createHmac('sha256', secret).update(orderId).digest('hex')
+  return crypto.createHmac('sha256', getOrderViewSecret()).update(orderId).digest('hex')
 }
 
 function verifyOrderViewToken(orderId: string, token: string): boolean {
@@ -68,10 +73,18 @@ export async function GET(
   try {
     const { id } = (await context.params) as { id: string }
     const token = request.nextUrl.searchParams.get('token')
+    const slug = request.nextUrl.searchParams.get('slug')
 
     if (!id || !token) {
       return NextResponse.json(
         { error: 'Order ID and token are required' },
+        { status: 400 }
+      )
+    }
+
+    if (!slug) {
+      return NextResponse.json(
+        { error: 'slug query parameter is required' },
         { status: 400 }
       )
     }
@@ -84,9 +97,25 @@ export async function GET(
       )
     }
 
-    // Fetch order with items and location
-    const order = await db.order.findFirst({
-      where: { id, deletedAt: null },
+    // Resolve venue DB for tenant isolation
+    let venueDb
+    try {
+      venueDb = await getDbForVenue(slug)
+    } catch {
+      return NextResponse.json({ error: 'Venue not found' }, { status: 404 })
+    }
+
+    const location = await venueDb.location.findFirst({
+      where: { isActive: true },
+      select: { id: true },
+    })
+    if (!location) {
+      return NextResponse.json({ error: 'Location not found' }, { status: 404 })
+    }
+
+    // Fetch order with items and location — scoped to locationId
+    const order = await venueDb.order.findFirst({
+      where: { id, locationId: location.id, deletedAt: null },
       select: {
         id: true,
         orderNumber: true,

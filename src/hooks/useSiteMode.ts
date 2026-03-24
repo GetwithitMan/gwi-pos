@@ -42,10 +42,10 @@ export function useSiteMode(): SiteMode {
       }
     }
 
-    // Check unsigned dev mode (?table=T5&qr=1)
+    // Check unsigned dev mode (?table=T5&qr=1) — only allowed in development
     const table = searchParams.get('table')
     const qr = searchParams.get('qr')
-    if (table && qr === '1') {
+    if (process.env.NODE_ENV === 'development' && table && qr === '1') {
       const mode: SiteMode = { isQR: true, tableId: table, tableSection: null, mode: 'qr' }
       setSiteMode(mode)
       sessionStorage.setItem('site-qr-context', JSON.stringify(mode))

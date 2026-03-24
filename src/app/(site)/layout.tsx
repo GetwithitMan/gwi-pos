@@ -16,6 +16,7 @@ import { getSiteThemeVariables, getSiteThemeCSS } from '@/lib/site-theme'
 import { SiteShell } from '@/components/site/SiteShell'
 import { SiteHeader } from '@/components/site/SiteHeader'
 import { SiteFooter } from '@/components/site/SiteFooter'
+import { FloatingCartBar } from '@/components/site/FloatingCartBar'
 import type { SiteBootstrapResponse } from '@/lib/site-api-schemas'
 import type { ThemePreset } from '@/lib/site-theme'
 import type { Metadata } from 'next'
@@ -168,6 +169,7 @@ export default async function SiteLayout({
           <main className="flex-1">
             {children}
           </main>
+          <FloatingCartBar />
           <SiteFooter
             venueName={bootstrap.venue.name}
             address={bootstrap.venue.address}

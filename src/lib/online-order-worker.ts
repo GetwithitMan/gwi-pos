@@ -241,7 +241,37 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
           await upsertRow('OrderItemModifier', mod)
         }
 
-        log.info({ orderId, itemCount: items.length }, 'Pulled order from Neon')
+        // Pull Payment records (online orders are pre-paid via Datacap PayAPI)
+        const paymentCols = await getColumnNames('Payment')
+        const payments = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT ${paymentCols} FROM "Payment" WHERE "orderId" = $1`,
+          orderId
+        )
+        for (const payment of payments) {
+          await upsertRow('Payment', payment)
+        }
+
+        // Pull CouponRedemption records if coupon was applied
+        const couponCols = await getColumnNames('CouponRedemption')
+        const couponRedemptions = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT ${couponCols} FROM "CouponRedemption" WHERE "orderId" = $1`,
+          orderId
+        )
+        for (const cr of couponRedemptions) {
+          await upsertRow('CouponRedemption', cr)
+        }
+
+        // Pull GiftCardTransaction records if gift card was used
+        const giftCardCols = await getColumnNames('GiftCardTransaction')
+        const giftCardTxns = await neonClient!.$queryRawUnsafe<Record<string, unknown>[]>(
+          `SELECT ${giftCardCols} FROM "GiftCardTransaction" WHERE "orderId" = $1`,
+          orderId
+        )
+        for (const gt of giftCardTxns) {
+          await upsertRow('GiftCardTransaction', gt)
+        }
+
+        log.info({ orderId, itemCount: items.length, paymentCount: payments.length }, 'Pulled order from Neon')
       } catch (err) {
         log.error({ err, orderId }, 'Error pulling order from Neon')
         // Revert claim in Neon on failure
