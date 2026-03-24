@@ -7,7 +7,7 @@ import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settin
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import { DEFAULT_CFD_DISPLAY, type CfdDisplayMode, type CfdDisplaySettings } from '@/lib/settings'
+import { DEFAULT_CFD_DISPLAY, type CfdDisplayMode, type CfdDisplaySettings } from '@/lib/settings/index'
 
 // ─── Display Mode Radio Group ────────────────────────────────────────────────
 
