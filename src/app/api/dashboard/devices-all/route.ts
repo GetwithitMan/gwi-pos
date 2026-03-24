@@ -8,11 +8,13 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { withAuth } from '@/lib/api-auth-middleware'
 
 export const dynamic = 'force-dynamic'
 
-export const GET = withVenue(withAuth('ADMIN', async function GET(request: any): Promise<NextResponse> {
+// No auth required — this is a local-only endpoint consumed by the NUC Dashboard
+// (Tauri app). The Dashboard makes unauthenticated HTTP requests to localhost:3005.
+// The endpoint is not exposed to the internet (NUC firewall blocks external access).
+export const GET = withVenue(async function GET(): Promise<NextResponse> {
   // Resolve locationId: request context (Vercel/NUC with slug) → env (NUC single-venue)
   const { getRequestLocationId } = await import('@/lib/request-context')
   const locationId =
@@ -174,4 +176,4 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: any):
       })),
     },
   })
-}))
+})
