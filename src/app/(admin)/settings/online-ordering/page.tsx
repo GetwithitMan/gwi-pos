@@ -122,22 +122,22 @@ export default function OnlineOrderingOverviewPage() {
     load()
   }, [locationId])
 
-  // Load location slug for URL display
+  // Derive slug from hostname — proxy routes *.ordercontrolcenter.com to venue
   useEffect(() => {
-    if (!locationId) return
-    const load = async () => {
-      try {
-        const res = await fetch(`/api/locations/${locationId}`)
-        if (res.ok) {
-          const json = await res.json()
-          setLocationSlug(json.data?.slug || null)
-        }
-      } catch {
-        // Slug not available — that's fine
+    const hostname = window.location.hostname
+    // Extract slug from subdomain: {slug}.ordercontrolcenter.com or {slug}.barpos.restaurant
+    if (hostname.endsWith('.ordercontrolcenter.com')) {
+      const slug = hostname.replace('.ordercontrolcenter.com', '')
+      if (slug && !slug.includes('.') && slug !== 'www') {
+        setLocationSlug(slug)
+      }
+    } else if (hostname.endsWith('.barpos.restaurant')) {
+      const slug = hostname.replace('.barpos.restaurant', '')
+      if (slug && !slug.includes('.') && slug !== 'www') {
+        setLocationSlug(slug)
       }
     }
-    load()
-  }, [locationId])
+  }, [])
 
   const handleToggleEnabled = async () => {
     if (!locationId || !settings || toggling) return
