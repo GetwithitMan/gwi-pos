@@ -171,7 +171,7 @@ export default function OnlineOrderingOverviewPage() {
   // Format: ordercontrolcenter.com/{orderCode}/{slug}
   // The order code is stored in MC's CloudLocation.orderCode — not available locally.
   // We read it from Location.settings.onlineOrdering.orderCode if MC has synced it.
-  const orderCode = (settings as Record<string, unknown>)?.orderCode as string | undefined
+  const orderCode = (settings as unknown as Record<string, unknown>)?.orderCode as string | undefined
   const orderingUrl = orderCode && locationSlug
     ? `ordercontrolcenter.com/${orderCode}/${locationSlug}`
     : null

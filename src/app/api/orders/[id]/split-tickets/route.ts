@@ -606,11 +606,11 @@ export const POST = withVenue(withAuth(async function POST(
 
         // TX-KEEP: CREATE — split child order with nested item+modifier creates; no repo method for full split creation
         // Assign full donation to the first ticket only
-        const ticketDonation = splits.length === 0 ? Number((parentOrder as any).donationAmount ?? 0) : 0
-        const ticketTotal = ticketDonation > 0
+        const ticketDonation: number = splits.length === 0 ? Number((parentOrder as any).donationAmount ?? 0) : 0
+        const ticketTotal: number = ticketDonation > 0
           ? Math.round((ticketData.pricing.total + ticketDonation) * 100) / 100
           : ticketData.pricing.total
-        const splitOrder = await tx.order.create({
+        const splitOrder: any = await tx.order.create({
           data: {
             locationId: parentOrder.locationId,
             employeeId: parentOrder.employeeId,
