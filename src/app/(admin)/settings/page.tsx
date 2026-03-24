@@ -135,7 +135,7 @@ export default function SettingsPage() {
           <SectionCard
             icon="💳"
             title="Payments & Processing"
-            description="Payment methods, card processor, batch settlement, Quick Pay, walkout recovery, and bottle service"
+            description="Payment methods, card processor, batch settlement, Quick Pay, walkout recovery, bottle service, and party-size auto-gratuity"
             href="/settings/payments"
           />
           <SectionCard

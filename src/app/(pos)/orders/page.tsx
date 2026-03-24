@@ -93,7 +93,19 @@ export default function OrdersPage() {
 
   // ── View mode ──
   const isBartender = employee?.role?.name?.toLowerCase() === 'bartender'
-  const [viewMode, setViewMode] = useState<ViewMode>('floor-plan')
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    isBartender ? 'bartender' : 'floor-plan'
+  )
+
+  // Auto-switch to bartender view when a bartender logs in (e.g. employee switch)
+  const prevEmployeeIdRef = useRef(employee?.id)
+  useEffect(() => {
+    if (employee?.id && employee.id !== prevEmployeeIdRef.current) {
+      prevEmployeeIdRef.current = employee.id
+      const nowBartender = employee?.role?.name?.toLowerCase() === 'bartender'
+      setViewMode(nowBartender ? 'bartender' : 'floor-plan')
+    }
+  }, [employee?.id, employee?.role?.name])
 
   // ── Permissions ──
   const permissionsArray = Array.isArray(employee?.permissions) ? employee.permissions : []

@@ -23,6 +23,8 @@ interface EntertainmentSessionControlsProps {
   // Finish Game settings
   finishGameExtensionMinutes?: number  // Minutes added by Finish Game (default: 5)
   finishGameExtensionPrice?: number    // Flat fee for Finish Game (default: 3.00)
+  // Permission gate: when false, action buttons are hidden but timer/status is still visible
+  canManageEntertainment?: boolean
 }
 
 export function EntertainmentSessionControls({
@@ -42,6 +44,7 @@ export function EntertainmentSessionControls({
   overtimeRatePerMinute = 0.50,
   finishGameExtensionMinutes = 5,
   finishGameExtensionPrice = 3.00,
+  canManageEntertainment = true,
 }: EntertainmentSessionControlsProps) {
   const [timeDisplay, setTimeDisplay] = useState<string>('')
   const [isExpired, setIsExpired] = useState(false)
@@ -218,44 +221,48 @@ export function EntertainmentSessionControls({
           <span className="font-bold text-amber-800">Timer Not Started</span>
         </div>
         <p className="text-sm text-amber-700 mb-3">
-          Start the timer to track session time for {itemName}
+          {canManageEntertainment
+            ? `Start the timer to track session time for ${itemName}`
+            : `Awaiting manager to start timer for ${itemName}`}
         </p>
 
-        {showStartOptions ? (
-          <div className="space-y-2">
-            <div className="text-sm font-medium text-gray-700">Select duration:</div>
-            <div className="flex gap-2 flex-wrap">
-              {[30, 60, 90, 120].map(mins => (
+        {canManageEntertainment && (
+          showStartOptions ? (
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-gray-700">Select duration:</div>
+              <div className="flex gap-2 flex-wrap">
+                {[30, 60, 90, 120].map(mins => (
+                  <Button
+                    key={mins}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleStartTimer(mins)}
+                    disabled={isProcessing}
+                    className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                  >
+                    {mins} min
+                  </Button>
+                ))}
                 <Button
-                  key={mins}
                   size="sm"
-                  variant="outline"
-                  onClick={() => handleStartTimer(mins)}
-                  disabled={isProcessing}
-                  className="border-amber-400 text-amber-700 hover:bg-amber-100"
+                  variant="ghost"
+                  onClick={() => setShowStartOptions(false)}
+                  className="text-gray-500"
                 >
-                  {mins} min
+                  Cancel
                 </Button>
-              ))}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowStartOptions(false)}
-                className="text-gray-500"
-              >
-                Cancel
-              </Button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <Button
-            size="sm"
-            onClick={() => setShowStartOptions(true)}
-            disabled={isProcessing}
-            className="w-full bg-amber-500 hover:bg-amber-600 text-white"
-          >
-            Start Timer
-          </Button>
+          ) : (
+            <Button
+              size="sm"
+              onClick={() => setShowStartOptions(true)}
+              disabled={isProcessing}
+              className="w-full bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              Start Timer
+            </Button>
+          )
         )}
       </div>
     )
@@ -288,54 +295,56 @@ export function EntertainmentSessionControls({
         </div>
       )}
 
-      {/* Extend options */}
-      {showExtendOptions ? (
-        <div className="space-y-2">
-          <div className="text-sm font-medium text-gray-700">Extend by:</div>
-          <div className="flex gap-2 flex-wrap">
-            {[15, 30, 45, 60].map(mins => (
+      {/* Extend / Stop controls — only visible to employees with settings.entertainment permission */}
+      {canManageEntertainment && (
+        showExtendOptions ? (
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-700">Extend by:</div>
+            <div className="flex gap-2 flex-wrap">
+              {[15, 30, 45, 60].map(mins => (
+                <Button
+                  key={mins}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleExtendTime(mins)}
+                  disabled={isProcessing}
+                  className="border-green-400 text-green-700 hover:bg-green-100"
+                >
+                  +{mins} min
+                </Button>
+              ))}
               <Button
-                key={mins}
                 size="sm"
-                variant="outline"
-                onClick={() => handleExtendTime(mins)}
-                disabled={isProcessing}
-                className="border-green-400 text-green-700 hover:bg-green-100"
+                variant="ghost"
+                onClick={() => setShowExtendOptions(false)}
+                className="text-gray-500"
               >
-                +{mins} min
+                Cancel
               </Button>
-            ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
             <Button
               size="sm"
-              variant="ghost"
-              onClick={() => setShowExtendOptions(false)}
-              className="text-gray-500"
+              variant="outline"
+              onClick={() => setShowExtendOptions(true)}
+              disabled={isProcessing}
+              className="flex-1 border-green-500 text-green-700 hover:bg-green-100"
             >
-              Cancel
+              Extend Time
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleStopSession}
+              disabled={isProcessing}
+              className="flex-1 border-red-400 text-red-600 hover:bg-red-50"
+            >
+              {isProcessing ? 'Stopping...' : 'Stop Session'}
             </Button>
           </div>
-        </div>
-      ) : (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowExtendOptions(true)}
-            disabled={isProcessing}
-            className="flex-1 border-green-500 text-green-700 hover:bg-green-100"
-          >
-            Extend Time
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleStopSession}
-            disabled={isProcessing}
-            className="flex-1 border-red-400 text-red-600 hover:bg-red-50"
-          >
-            {isProcessing ? 'Stopping...' : 'Stop Session'}
-          </Button>
-        </div>
+        )
       )}
 
       {isExpired && !isInOvertime && (
@@ -350,8 +359,8 @@ export function EntertainmentSessionControls({
         </div>
       )}
 
-      {/* Finish Game button — shows after expiry, one-time use */}
-      {isExpired && !finishGameUsed && (
+      {/* Finish Game button — shows after expiry, one-time use, gated on permission */}
+      {isExpired && !finishGameUsed && canManageEntertainment && (
         <div className="mt-2">
           <Button
             size="sm"

@@ -17,6 +17,8 @@ import { CustomerLookupModal } from '@/components/customers/CustomerLookupModal'
 import { CustomerProfileModal } from '@/components/customers/CustomerProfileModal'
 import { getSharedSocket } from '@/lib/shared-socket'
 import { useAuthStore } from '@/stores/auth-store'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { toast } from '@/stores/toast-store'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
@@ -312,8 +314,10 @@ export const OrderPanel = memo(function OrderPanel({
     !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
   )
 
-  // Employee role for manager-gated features
+  // Employee role + permissions for manager-gated features
   const employeeRole = useAuthStore(s => s.employee?.role?.name?.toLowerCase())
+  const employeePermissions = useAuthStore(s => s.employee?.permissions ?? [])
+  const canTaxExempt = hasPermission(employeePermissions, PERMISSIONS.MGR_TAX_EXEMPT)
 
   // Shared ownership modal
   const [showShareOwnership, setShowShareOwnership] = useState(false)
@@ -478,11 +482,13 @@ export const OrderPanel = memo(function OrderPanel({
       .then(r => {
         if (!r.ok) {
           setIsTaxExempt(true) // Revert on failure
+          toast.error(r.status === 403 ? 'Manager permission required for tax exempt' : 'Failed to remove tax exempt')
           console.error('Failed to remove tax exempt')
         }
       })
       .catch(err => {
         setIsTaxExempt(true) // Revert on error
+        toast.error('Failed to remove tax exempt')
         console.error('Tax exempt remove error:', err)
       })
       .finally(() => setTaxExemptToggling(false))
@@ -505,11 +511,13 @@ export const OrderPanel = memo(function OrderPanel({
       .then(r => {
         if (!r.ok) {
           setIsTaxExempt(false) // Revert on failure
+          toast.error(r.status === 403 ? 'Manager permission required for tax exempt' : 'Failed to set tax exempt')
           console.error('Failed to set tax exempt')
         }
       })
       .catch(err => {
         setIsTaxExempt(false) // Revert on error
+        toast.error('Failed to set tax exempt')
         console.error('Tax exempt submit error:', err)
       })
       .finally(() => setTaxExemptToggling(false))
@@ -1617,8 +1625,8 @@ export const OrderPanel = memo(function OrderPanel({
                         Add Customer
                       </button>
                     )}
-                    {/* Tax Exempt toggle — available to managers for any open order */}
-                    {orderId && !orderId.startsWith('temp-') && (
+                    {/* Tax Exempt toggle — gated to employees with manager.tax_exempt permission */}
+                    {orderId && !orderId.startsWith('temp-') && canTaxExempt && (
                       <button
                         onClick={handleTaxExemptToggle}
                         disabled={taxExemptToggling}

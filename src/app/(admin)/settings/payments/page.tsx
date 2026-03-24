@@ -8,8 +8,9 @@ import { ToggleRow, NumberRow, SettingsSaveBar, PaymentPricingReadOnly } from '@
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { PaymentSettings, PriceRoundingSettings, EodSettings, PricingProgram } from '@/lib/settings'
+import type { PaymentSettings, PriceRoundingSettings, EodSettings, PricingProgram, AutoGratuitySettings } from '@/lib/settings'
 import { getPricingProgram } from '@/lib/settings'
+import { DEFAULT_AUTO_GRATUITY } from '@/lib/settings/defaults'
 import type { ConvenienceFeeSettings } from '@/lib/settings/types'
 
 export default function PaymentSettingsPage() {
@@ -24,6 +25,7 @@ export default function PaymentSettingsPage() {
   const [eodSettings, setEodSettings] = useState<EodSettings | null>(null)
   const [pricingProgram, setPricingProgram] = useState<PricingProgram | undefined>()
   const [convenienceFees, setConvenienceFees] = useState<ConvenienceFeeSettings | undefined>()
+  const [autoGratuity, setAutoGratuity] = useState<AutoGratuitySettings>({ ...DEFAULT_AUTO_GRATUITY })
   const [settingsUpdatedAt, setSettingsUpdatedAt] = useState<string | null>(null)
 
   useUnsavedWarning(isDirty)
@@ -41,6 +43,7 @@ export default function PaymentSettingsPage() {
         setEodSettings(data.settings.eod ?? { autoBatchClose: true, batchCloseTime: '04:00' })
         setPricingProgram(getPricingProgram(data.settings))
         setConvenienceFees(data.settings.convenienceFees)
+        setAutoGratuity({ ...DEFAULT_AUTO_GRATUITY, ...data.settings.autoGratuity })
         setSettingsUpdatedAt(data.settingsUpdatedAt ?? null)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
@@ -68,10 +71,11 @@ export default function PaymentSettingsPage() {
         ...form,
       }
 
-      const data = await saveSettingsApi({ payments: payload, ...(roundingForm && { priceRounding: roundingForm }) }, employee?.id)
+      const data = await saveSettingsApi({ payments: payload, ...(roundingForm && { priceRounding: roundingForm }), autoGratuity }, employee?.id)
       const saved = data.settings.payments
       setForm(saved)
       setRoundingForm(data.settings.priceRounding)
+      setAutoGratuity({ ...DEFAULT_AUTO_GRATUITY, ...data.settings.autoGratuity })
       setIsDirty(false)
       toast.success('Payment settings saved')
     } catch (err) {
@@ -88,6 +92,11 @@ export default function PaymentSettingsPage() {
 
   const updateRounding = <K extends keyof PriceRoundingSettings>(key: K, value: PriceRoundingSettings[K]) => {
     setRoundingForm(prev => prev ? { ...prev, [key]: value } : prev)
+    setIsDirty(true)
+  }
+
+  const updateAutoGratuity = <K extends keyof AutoGratuitySettings>(key: K, value: AutoGratuitySettings[K]) => {
+    setAutoGratuity(prev => ({ ...prev, [key]: value }))
     setIsDirty(true)
   }
 
@@ -110,7 +119,7 @@ export default function PaymentSettingsPage() {
     <div className="p-6 max-w-5xl mx-auto">
       <AdminPageHeader
         title="Payment Configuration"
-        subtitle="Payment processing, Quick Pay, signature threshold, walkout recovery, and batch settlement"
+        subtitle="Payment processing, Quick Pay, signature threshold, walkout recovery, batch settlement, and auto-gratuity"
         breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
         actions={
           <div className="flex items-center gap-3">
@@ -540,6 +549,54 @@ export default function PaymentSettingsPage() {
                 />
               </div>
             </>
+          )}
+        </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 9: Party-Size Auto-Gratuity
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Party-Size Auto-Gratuity</h2>
+          <p className="text-sm text-gray-600 mb-5">Automatically add gratuity to orders when the guest count meets or exceeds the minimum party size. This is separate from bottle service auto-gratuity above.</p>
+
+          <div className="space-y-0">
+            <ToggleRow
+              label="Enable Auto-Gratuity"
+              description="Automatically apply a gratuity percentage to large-party orders based on guest count"
+              checked={autoGratuity.enabled}
+              onChange={v => updateAutoGratuity('enabled', v)}
+            />
+          </div>
+
+          {autoGratuity.enabled && (
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+              <NumberRow
+                label="Minimum Party Size"
+                description="Auto-gratuity applies when the guest count on the order is at least this number"
+                value={autoGratuity.minimumPartySize}
+                onChange={v => updateAutoGratuity('minimumPartySize', v)}
+                suffix="guests"
+                min={2}
+                max={100}
+              />
+              <NumberRow
+                label="Gratuity Percentage"
+                description="The tip percentage automatically added to qualifying orders"
+                value={autoGratuity.percent}
+                onChange={v => updateAutoGratuity('percent', v)}
+                suffix="%"
+                min={1}
+                max={100}
+              />
+              <div className="pt-2 border-t border-gray-100">
+                <ToggleRow
+                  label="Allow Staff to Remove"
+                  description="Let managers remove auto-gratuity from an order after it has been applied. When disabled, auto-gratuity cannot be removed once added."
+                  checked={autoGratuity.allowRemoval}
+                  onChange={v => updateAutoGratuity('allowRemoval', v)}
+                />
+              </div>
+            </div>
           )}
         </section>
 

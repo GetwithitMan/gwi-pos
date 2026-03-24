@@ -7,6 +7,8 @@ import { useOrderSettings } from '@/hooks/useOrderSettings'
 import type { UiModifier, IngredientModification } from '@/types/orders'
 import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 import { parsePreModifiers, PRE_MODIFIER_CONFIG } from '@/components/modifiers/useModifierSelections'
+import { useAuthStore } from '@/stores/auth-store'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 
 export interface OrderPanelItemData {
   id: string
@@ -141,6 +143,8 @@ export const OrderPanelItem = memo(function OrderPanelItem({
   isLastSent,
 }: OrderPanelItemProps) {
   const { entertainmentSettings } = useOrderSettings()
+  const employeePermissions = useAuthStore(s => s.employee?.permissions ?? [])
+  const canManageEntertainment = hasPermission(employeePermissions, PERMISSIONS.SETTINGS_ENTERTAINMENT)
   const isVoided = item.status === 'voided'
   const isComped = item.status === 'comped'
   const isCompedOrVoided = isVoided || isComped
@@ -1019,6 +1023,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                   overtimeRatePerMinute={entertainmentSettings.overtimeRatePerMinute}
                   finishGameExtensionMinutes={entertainmentSettings.finishGameExtensionMinutes}
                   finishGameExtensionPrice={entertainmentSettings.finishGameExtensionPrice}
+                  canManageEntertainment={canManageEntertainment}
                 />
               </div>
             )}
