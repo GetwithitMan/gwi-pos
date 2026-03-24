@@ -9,6 +9,7 @@ import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
 import type { PaymentSettings, PriceRoundingSettings, EodSettings, PricingProgram } from '@/lib/settings'
+import { getPricingProgram } from '@/lib/settings'
 import type { ConvenienceFeeSettings } from '@/lib/settings/types'
 
 export default function PaymentSettingsPage() {
@@ -38,7 +39,7 @@ export default function PaymentSettingsPage() {
         setRoundingForm(data.settings.priceRounding)
         setHotelPmsEnabled(data.settings.hotelPms?.enabled ?? false)
         setEodSettings(data.settings.eod ?? { autoBatchClose: true, batchCloseTime: '04:00' })
-        setPricingProgram(data.settings.pricingProgram)
+        setPricingProgram(getPricingProgram(data.settings))
         setConvenienceFees(data.settings.convenienceFees)
         setSettingsUpdatedAt(data.settingsUpdatedAt ?? null)
       } catch (err) {

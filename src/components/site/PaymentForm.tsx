@@ -67,7 +67,7 @@ export function PaymentForm({
   const idempotencyKey = useRef(crypto.randomUUID())
 
   // ── Stable ref for the Datacap callback to avoid stale closures ──
-  const handleDatacapTokenRef = useRef<(resp: DatacapTokenResponse) => void>()
+  const handleDatacapTokenRef = useRef<(resp: DatacapTokenResponse) => void>(null)
 
   // ── Handle Datacap token response ────────────────────────────
   const handleDatacapToken = useCallback(

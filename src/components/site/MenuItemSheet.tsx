@@ -13,6 +13,7 @@ import Image from 'next/image'
 import { ModifierGroupRenderer } from './modifiers/ModifierGroupRenderer'
 import type { ModifierGroupData, SelectedModifier } from './modifiers/modifier-types'
 import { getModifierPrice } from './modifiers/modifier-types'
+import { formatCurrency } from '@/lib/utils'
 import type { PizzaBuilderResult } from './pizza/PizzaBuilder'
 
 // Lazy-imported by conditional render
@@ -56,10 +57,6 @@ interface MenuItemSheetProps {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatPrice(dollars: number): string {
-  return `$${dollars.toFixed(2)}`
-}
 
 /** Calculate total price from base price + all modifier selections (recursive) */
 function calculateTotal(
@@ -470,7 +467,7 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
                     className="text-lg font-semibold shrink-0"
                     style={{ color: 'var(--site-brand)' }}
                   >
-                    {formatPrice(item.price)}
+                    {formatCurrency(item.price)}
                   </span>
                 </div>
 
@@ -566,7 +563,7 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
               >
                 {item.stockStatus === 'out_of_stock'
                   ? 'Unavailable'
-                  : `Add to Cart — ${formatPrice(total)}`}
+                  : `Add to Cart — ${formatCurrency(total)}`}
               </button>
             </div>
           </div>

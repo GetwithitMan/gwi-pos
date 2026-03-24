@@ -80,11 +80,11 @@ export function OrderStatusTracker({ status, estimatedReadyTime }: OrderStatusTr
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="rounded-xl border p-5" style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}>
       {/* Progress bar */}
       <div className="flex items-start justify-between relative px-2">
         {/* Background connector line */}
-        <div className="absolute top-4 left-8 right-8 h-0.5 bg-gray-200" />
+        <div className="absolute top-4 left-8 right-8 h-0.5" style={{ backgroundColor: 'var(--site-border)' }} />
         {/* Active connector line */}
         <div
           className="absolute top-4 left-8 h-0.5 transition-all duration-700 ease-out"
@@ -92,14 +92,13 @@ export function OrderStatusTracker({ status, estimatedReadyTime }: OrderStatusTr
             width: isComplete
               ? 'calc(100% - 64px)'
               : `calc(${(activeIndex / (STEPS.length - 1)) * 100}% - ${activeIndex === 0 ? 0 : 32}px)`,
-            backgroundColor: 'var(--site-primary, #2563eb)',
+            backgroundColor: 'var(--site-brand)',
           }}
         />
 
         {STEPS.map((step, i) => {
           const isStepComplete = i < activeIndex || isComplete
           const isCurrent = i === activeIndex && !isComplete
-          const isPending = i > activeIndex && !isComplete
 
           return (
             <div key={step.key} className="flex flex-col items-center relative z-10" style={{ flex: 1 }}>
@@ -109,16 +108,19 @@ export function OrderStatusTracker({ status, estimatedReadyTime }: OrderStatusTr
                   isStepComplete
                     ? 'shadow-sm'
                     : isCurrent
-                    ? 'ring-4 shadow-sm'
-                    : 'bg-gray-100 border-2 border-gray-300'
+                    ? 'shadow-sm'
+                    : 'border-2'
                 }`}
                 style={{
-                  ...(isStepComplete ? { backgroundColor: 'var(--site-primary, #2563eb)' } : {}),
+                  ...(isStepComplete ? { backgroundColor: 'var(--site-brand)' } : {}),
                   ...(isCurrent
                     ? {
-                        backgroundColor: 'var(--site-primary, #2563eb)',
-                        ringColor: 'var(--site-primary-light, rgba(37, 99, 235, 0.2))',
+                        backgroundColor: 'var(--site-brand)',
+                        boxShadow: '0 0 0 4px var(--site-primary-light)',
                       }
+                    : {}),
+                  ...(!isStepComplete && !isCurrent
+                    ? { backgroundColor: 'var(--site-bg-secondary)', borderColor: 'var(--site-border)' }
                     : {}),
                 }}
               >
@@ -134,10 +136,11 @@ export function OrderStatusTracker({ status, estimatedReadyTime }: OrderStatusTr
 
               {/* Label */}
               <span
-                className={`text-xs mt-2 text-center leading-tight font-medium ${
-                  isStepComplete || isCurrent ? 'text-gray-900' : 'text-gray-400'
-                }`}
-                style={{ maxWidth: '72px' }}
+                className="text-xs mt-2 text-center leading-tight font-medium"
+                style={{
+                  maxWidth: '72px',
+                  color: isStepComplete || isCurrent ? 'var(--site-text)' : 'var(--site-text-muted)',
+                }}
               >
                 {step.label}
               </span>
@@ -149,8 +152,8 @@ export function OrderStatusTracker({ status, estimatedReadyTime }: OrderStatusTr
       {/* Estimated time below active step (only while in progress) */}
       {estimatedReadyTime && !isComplete && (
         <div className="mt-4 text-center">
-          <p className="text-sm text-gray-500">Estimated ready</p>
-          <p className="text-lg font-bold text-gray-900">
+          <p className="text-sm" style={{ color: 'var(--site-text-muted)' }}>Estimated ready</p>
+          <p className="text-lg font-bold" style={{ color: 'var(--site-text)' }}>
             {formatEstimatedTime(estimatedReadyTime)}
           </p>
         </div>

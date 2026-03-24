@@ -91,9 +91,9 @@ export async function POST(request: NextRequest) {
     const raw = await request.json()
     const parsed = CheckoutBodySchema.safeParse(raw)
     if (!parsed.success) {
-      const firstError = parsed.error.errors[0]
+      const firstIssue = parsed.error.issues[0]
       return NextResponse.json(
-        { error: firstError?.message ?? 'Invalid request body', details: parsed.error.errors },
+        { error: firstIssue?.message ?? 'Invalid request body', details: parsed.error.issues },
         { status: 400 }
       )
     }

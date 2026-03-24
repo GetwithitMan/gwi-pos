@@ -181,8 +181,8 @@ export function OrderStatusClient() {
             className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center"
             style={{
               backgroundColor: isComplete
-                ? 'rgb(34, 197, 94)' // green-500
-                : 'var(--site-primary, #2563eb)',
+                ? 'var(--site-success)'
+                : 'var(--site-brand)',
             }}
           >
             <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
