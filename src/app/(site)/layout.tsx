@@ -150,7 +150,7 @@ export default async function SiteLayout({
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: themeCSS }} />
-      <SiteShell>
+      <SiteShell slug={slug}>
         <div
           data-site-theme
           className="min-h-screen flex flex-col"

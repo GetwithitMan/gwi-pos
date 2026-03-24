@@ -78,6 +78,35 @@ export function getSessionExpiry(): Date {
   return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 }
 
+// ─── Magic Link Tokens ─────────────────────────────────────────────────────
+
+/** Generate HMAC-signed magic link token containing nonce + metadata */
+export function generateMagicLinkToken(nonce: string, slug: string, customerId: string): string {
+  const exp = Date.now() + 15 * 60 * 1000 // 15 minutes
+  const payload = Buffer.from(JSON.stringify({ nonce, slug, customerId, exp })).toString('base64url')
+  const sig = crypto.createHmac('sha256', portalSecret()).update(payload).digest('base64url')
+  return `${payload}.${sig}`
+}
+
+/** Verify and decode magic link token */
+export function verifyMagicLinkToken(token: string): {
+  valid: boolean
+  nonce?: string
+  slug?: string
+  customerId?: string
+  expired?: boolean
+} {
+  try {
+    const [payload, sig] = token.split('.')
+    if (!payload || !sig) return { valid: false }
+    const expectedSig = crypto.createHmac('sha256', portalSecret()).update(payload).digest('base64url')
+    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) return { valid: false }
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString())
+    if (data.exp < Date.now()) return { valid: false, expired: true, nonce: data.nonce, slug: data.slug, customerId: data.customerId }
+    return { valid: true, nonce: data.nonce, slug: data.slug, customerId: data.customerId }
+  } catch { return { valid: false } }
+}
+
 // ─── Redemption Codes ──────────────────────────────────────────────────────
 
 /** Generate 6-char alphanumeric redemption code */

@@ -13,16 +13,21 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useSiteMode, type SiteMode } from '@/hooks/useSiteMode'
 import { useSiteCartStore } from '@/stores/site-cart-store'
 
-const SiteModeContext = createContext<SiteMode>({
+interface SiteModeWithSlug extends SiteMode {
+  slug: string
+}
+
+const SiteModeContext = createContext<SiteModeWithSlug>({
   isQR: false,
   tableId: null,
   tableSection: null,
   mode: 'site',
+  slug: '',
 })
 
 export const useSiteModeContext = () => useContext(SiteModeContext)
 
-export function SiteShell({ children }: { children: React.ReactNode }) {
+export function SiteShell({ children, slug = '' }: { children: React.ReactNode; slug?: string }) {
   const siteMode = useSiteMode()
   const pathname = usePathname()
   const router = useRouter()
@@ -48,7 +53,7 @@ export function SiteShell({ children }: { children: React.ReactNode }) {
   }, [siteMode.isQR, siteMode.tableId, siteMode.tableSection, setOrderType, setTableContext])
 
   return (
-    <SiteModeContext.Provider value={siteMode}>
+    <SiteModeContext.Provider value={{ ...siteMode, slug }}>
       <div data-qr-mode={siteMode.isQR ? '' : undefined}>
         {children}
       </div>
