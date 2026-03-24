@@ -280,7 +280,7 @@ export function CheckoutPageClient({ bootstrap, slug }: CheckoutPageClientProps)
             </span>
           </div>
           <Link
-            href="/menu"
+            href="/our-menu"
             className="inline-block mt-2 text-xs font-medium hover:opacity-70 transition-colors"
             style={{ color: 'var(--site-brand)' }}
           >

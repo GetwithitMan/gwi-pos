@@ -204,7 +204,7 @@ export default async function SiteHomePage() {
             <FeaturedItemsGrid items={featuredItems} />
             <div className="text-center mt-8">
               <Link
-                href="/menu"
+                href="/our-menu"
                 className="inline-flex items-center gap-1 text-base font-medium hover:underline"
                 style={{ color: 'var(--site-brand)' }}
               >

@@ -298,7 +298,7 @@ export function OrderStatusClient() {
       {/* Back to Menu */}
       <div className="text-center pt-2 pb-4">
         <a
-          href="/menu"
+          href="/our-menu"
           className="inline-block px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
           style={{
             backgroundColor: 'var(--site-brand)',

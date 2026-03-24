@@ -179,7 +179,7 @@ export default function OrderHistoryPage() {
               Start by browsing our menu!
             </p>
             <Link
-              href="/menu"
+              href="/our-menu"
               className="inline-block px-6 py-2.5 text-sm font-medium transition-opacity hover:opacity-90"
               style={{
                 backgroundColor: 'var(--site-brand)',
