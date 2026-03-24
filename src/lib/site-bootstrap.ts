@@ -123,9 +123,8 @@ export async function getSiteBootstrapData(
         ],
       },
     }).catch(() => 0),
-    db.deliveryZone.count({
-      where: { locationId, isActive: true },
-    }).catch(() => 0),
+    // DeliveryZone model not yet in schema — stub until migration adds it
+    Promise.resolve(0),
   ])
 
   // ── Hours (from reservation settings or empty) ──────────────────────────
@@ -227,7 +226,8 @@ export async function getSiteCapabilities(
         OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }],
       },
     }).catch(() => 0),
-    db.deliveryZone.count({ where: { locationId, isActive: true } }).catch(() => 0),
+    // DeliveryZone model not yet in schema — stub until migration adds it
+    Promise.resolve(0),
   ])
 
   const isCurrentlyOpen = checkIsCurrentlyOpen([], timezone)

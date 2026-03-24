@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 // No auth required — this is a local-only endpoint consumed by the NUC Dashboard
 // (Tauri app). The Dashboard makes unauthenticated HTTP requests to localhost:3005.
 // The endpoint is not exposed to the internet (NUC firewall blocks external access).
-export const GET = withVenue(async function GET(): Promise<NextResponse> {
+export const GET = withVenue(async function GET(request: Request): Promise<NextResponse> {
   // Resolve locationId: request context (Vercel/NUC with slug) → env (NUC single-venue)
   const { getRequestLocationId } = await import('@/lib/request-context')
   const locationId =
