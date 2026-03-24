@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET /api/loyalty/tiers/[id]
 export const GET = withVenue(async function GET(
@@ -130,6 +132,9 @@ export const PUT = withVenue(async function PUT(
       id,
     )
 
+    pushUpstream()
+    void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: updated[0] })
   } catch (error) {
     console.error('Failed to update loyalty tier:', error)
@@ -175,11 +180,12 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'Tier not found' }, { status: 404 })
     }
 
-    // Unlink customers from this tier
+    // Unlink customers from this tier (scoped to location)
     await db.$executeRawUnsafe(
       `UPDATE "Customer" SET "loyaltyTierId" = NULL, "updatedAt" = NOW()
-       WHERE "loyaltyTierId" = $1`,
+       WHERE "loyaltyTierId" = $1 AND "locationId" = $2`,
       id,
+      locationId,
     )
 
     await db.$executeRawUnsafe(
@@ -188,6 +194,9 @@ export const DELETE = withVenue(async function DELETE(
        WHERE "id" = $1`,
       id,
     )
+
+    pushUpstream()
+    void notifyDataChanged({ locationId: locationId!, domain: 'loyalty', action: 'deleted', entityId: id })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -108,7 +108,7 @@ export default function RewardsPage() {
           }
         } catch {
           // Balance endpoint may not exist yet — use customer data fallback
-          setLifetimePoints(customer?.lifetimePoints ?? 0)
+          setLifetimePoints((customer as any)?.lifetimePoints ?? 0)
         }
       } catch {
         setError('Failed to load rewards.')
@@ -119,7 +119,8 @@ export default function RewardsPage() {
     }
 
     fetchData()
-  }, [slug, isAuthenticated, router, customer?.loyaltyPoints, customer?.lifetimePoints])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, isAuthenticated, router, customer?.loyaltyPoints])
 
   // Loading
   if (authLoading || (isAuthenticated && loading)) {

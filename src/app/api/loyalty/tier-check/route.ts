@@ -4,6 +4,8 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST /api/loyalty/tier-check — recalculate customer's tier based on lifetime points
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -99,6 +101,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         description,
         employeeId || null,
       )
+
+      pushUpstream()
+      void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
     }
 
     return NextResponse.json({

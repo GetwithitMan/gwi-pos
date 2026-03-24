@@ -4,6 +4,8 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST /api/loyalty/redeem — redeem points for a dollar discount
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -35,12 +37,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'points must be a positive number' }, { status: 400 })
     }
 
-    // Fetch customer
+    // Fetch customer (scoped to location)
     const customers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT "id", "loyaltyPoints", "loyaltyProgramId"
        FROM "Customer"
-       WHERE "id" = $1 AND "deletedAt" IS NULL`,
+       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
       customerId,
+      locationId,
     )
 
     if (customers.length === 0) {
@@ -54,11 +57,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Customer is not enrolled in a loyalty program' }, { status: 400 })
     }
 
-    // Fetch program for minimum redeem check and point value
+    // Fetch program for minimum redeem check and point value (scoped to location)
     const programs = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT * FROM "LoyaltyProgram"
-       WHERE "id" = $1 AND "isActive" = true AND "deletedAt" IS NULL`,
+       WHERE "id" = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
       customer.loyaltyProgramId,
+      locationId,
     )
 
     if (programs.length === 0) {
@@ -117,6 +121,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       customerId,
       newBalance,
     )
+
+    pushUpstream()
+    void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
 
     return NextResponse.json({
       data: {

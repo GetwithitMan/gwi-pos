@@ -169,24 +169,19 @@ export const POST = withVenue(async function POST(
       // Calculate current order total to cap deposit application
       const settings = parseSettings(await getLocationSettings(order.locationId))
       const itemsForCalc: OrderItemForCalculation[] = order.items.map((item) => ({
-        id: item.id,
         price: Number(item.price),
         quantity: item.quantity,
+        status: (item as Record<string, unknown>).status as string | undefined,
         categoryType: (item as Record<string, unknown>).categoryType as string | null ?? null,
         modifiers: item.modifiers.map((m) => ({
-          id: m.id,
           price: Number(m.price),
           quantity: m.quantity ?? 1,
         })),
-        compType: (item as Record<string, unknown>).compType as string | null ?? null,
-        discountAmount: Number(item.discountAmount ?? 0),
-        isComped: item.isComped ?? false,
-        isVoided: item.isVoided ?? false,
       }))
 
       const currentTotals = calculateOrderTotals(
         itemsForCalc,
-        { defaultRate: settings.tax?.defaultRate ?? 0 },
+        { tax: { defaultRate: settings.tax?.defaultRate ?? 0 } },
         Number(order.discountTotal),
       )
 
@@ -224,7 +219,7 @@ export const POST = withVenue(async function POST(
       const newDiscountTotal = roundToCents(Number(order.discountTotal) + depositToApply)
       const newTotals = calculateOrderTotals(
         itemsForCalc,
-        { defaultRate: settings.tax?.defaultRate ?? 0 },
+        { tax: { defaultRate: settings.tax?.defaultRate ?? 0 } },
         newDiscountTotal,
       )
 
@@ -302,18 +297,18 @@ export const POST = withVenue(async function POST(
     }
 
     // Emit order event for event sourcing (fire-and-forget, post-transaction)
-    void emitOrderEvent({
-      orderId: result.orderId,
-      locationId: outboxLocationId!,
-      eventType: 'deposit_applied',
-      payload: {
+    void emitOrderEvent(
+      outboxLocationId!,
+      result.orderId,
+      'deposit_applied' as any,
+      {
         reservationId: result.reservationId,
         depositAmount: result.depositApplied,
         guestName: result.guestName,
         remainingCredit: result.remainingCredit,
         discountId: result.discountId,
       },
-    }).catch(console.error)
+    ).catch(console.error)
 
     // Notify cloud for upstream sync (fire-and-forget)
     if (outboxLocationId) {

@@ -290,6 +290,9 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // Hoisted for post-transaction access (populated inside tx)
+    let loyaltyTierMultiplier: number = 1.0
+
     const txResult = await db.$transaction(async (tx) => {
 
     // Acquire row-level lock to prevent double-charge from concurrent terminals
@@ -1148,7 +1151,6 @@ export const POST = withVenue(withTiming(async function POST(
     // Pre-compute loyalty points BEFORE the transaction (avoid nested findUnique inside tx)
     let pointsEarned = 0
     let loyaltyEarningBase = 0
-    let loyaltyTierMultiplier = 1.0
     if (updateData.status === 'paid' && order.customer && settings.loyalty.enabled) {
       loyaltyEarningBase = settings.loyalty.earnOnSubtotal
         ? toNumber(order.subtotal ?? 0)

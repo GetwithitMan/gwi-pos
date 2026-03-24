@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST - Set donation amount on order
 export const POST = withVenue(async function POST(
@@ -29,6 +33,17 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
+    // Auth check
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId || body.employeeId
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json(
+        { code: 'PERMISSION_DENIED', message: auth.error },
+        { status: auth.status },
+      )
+    }
+
     const roundedAmount = Math.round(amount * 100) / 100
     const previousDonation = Number(order.donationAmount ?? 0)
     const totalAdjustment = roundedAmount - previousDonation
@@ -48,12 +63,16 @@ export const POST = withVenue(async function POST(
     })
 
     // Emit socket events for cross-terminal awareness
-    void emitToLocation(order.locationId, 'orders:list-changed', { orderId })
+    void emitToLocation(order.locationId, 'orders:list-changed', { orderId }).catch(console.error)
     void emitToLocation(order.locationId, 'order:totals-updated', {
       orderId,
       total: Number(updated.total),
       donationAmount: Number(updated.donationAmount),
-    })
+    }).catch(console.error)
+
+    // Sync
+    pushUpstream()
+    void notifyDataChanged({ locationId: order.locationId, domain: 'orders', action: 'updated', entityId: orderId })
 
     return NextResponse.json({
       data: {
@@ -88,6 +107,17 @@ export const DELETE = withVenue(async function DELETE(
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
+    // Auth check
+    const actor = await getActorFromRequest(request)
+    const deleteEmployeeId = actor.employeeId || request.nextUrl.searchParams.get('employeeId')
+    const deleteAuth = await requirePermission(deleteEmployeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!deleteAuth.authorized) {
+      return NextResponse.json(
+        { code: 'PERMISSION_DENIED', message: deleteAuth.error },
+        { status: deleteAuth.status },
+      )
+    }
+
     const previousDonation = Number(order.donationAmount ?? 0)
     if (previousDonation === 0) {
       return NextResponse.json({
@@ -114,12 +144,16 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     // Emit socket events for cross-terminal awareness
-    void emitToLocation(order.locationId, 'orders:list-changed', { orderId })
+    void emitToLocation(order.locationId, 'orders:list-changed', { orderId }).catch(console.error)
     void emitToLocation(order.locationId, 'order:totals-updated', {
       orderId,
       total: Number(updated.total),
       donationAmount: 0,
-    })
+    }).catch(console.error)
+
+    // Sync
+    pushUpstream()
+    void notifyDataChanged({ locationId: order.locationId, domain: 'orders', action: 'updated', entityId: orderId })
 
     return NextResponse.json({
       data: {

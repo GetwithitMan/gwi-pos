@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
+import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 /**
  * GET /api/menu/items/[id]/details
- * Returns item detail for the long-hold popover: name, description, category, recipe + ingredients, 86'd status.
+ * Returns item detail for the long-hold popover: name, description, category, recipe + ingredients, availability.
  */
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -18,6 +20,16 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
     }
 
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId || request.nextUrl.searchParams.get('employeeId')
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json(
+        { code: 'PERMISSION_DENIED', message: auth.error },
+        { status: auth.status },
+      )
+    }
+
     const item = await db.menuItem.findFirst({
       where: { id, locationId, deletedAt: null },
       select: {
@@ -26,7 +38,6 @@ export const GET = withVenue(async function GET(
         description: true,
         price: true,
         isAvailable: true,
-        is86d: true,
         itemType: true,
         category: {
           select: { id: true, name: true, categoryType: true },
@@ -60,10 +71,9 @@ export const GET = withVenue(async function GET(
           select: {
             id: true,
             ingredient: {
-              select: { id: true, name: true },
+              select: { id: true, name: true, is86d: true },
             },
-            isDefault: true,
-            isRequired: true,
+            isIncluded: true,
           },
         },
       },
@@ -73,6 +83,11 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
+    // Derive 86'd status from ingredients
+    const hasOutOfStockIngredient = item.ingredients.some(
+      (mi) => mi.ingredient?.is86d === true
+    )
+
     return NextResponse.json({
       data: {
         id: item.id,
@@ -80,7 +95,7 @@ export const GET = withVenue(async function GET(
         description: item.description,
         price: Number(item.price),
         isAvailable: item.isAvailable,
-        is86d: item.is86d,
+        is86d: hasOutOfStockIngredient,
         itemType: item.itemType,
         category: item.category ? {
           id: item.category.id,
@@ -90,7 +105,7 @@ export const GET = withVenue(async function GET(
         recipe: item.recipe ? {
           totalCost: item.recipe.totalCost ? Number(item.recipe.totalCost) : null,
           foodCostPct: item.recipe.foodCostPct ? Number(item.recipe.foodCostPct) : null,
-          ingredients: item.recipe.ingredients.map(ing => ({
+          ingredients: item.recipe.ingredients.map((ing) => ({
             id: ing.id,
             name: ing.inventoryItem?.name || ing.prepItem?.name || 'Unknown',
             quantity: ing.quantity ? Number(ing.quantity) : null,
@@ -99,11 +114,11 @@ export const GET = withVenue(async function GET(
             notes: ing.notes,
           })),
         } : null,
-        ingredients: item.ingredients.map(ing => ({
-          id: ing.id,
-          name: ing.ingredient?.name || 'Unknown',
-          isDefault: ing.isDefault,
-          isRequired: ing.isRequired,
+        ingredients: item.ingredients.map((mi) => ({
+          id: mi.id,
+          name: mi.ingredient?.name || 'Unknown',
+          isIncluded: mi.isIncluded,
+          is86d: mi.ingredient?.is86d ?? false,
         })),
       },
     })

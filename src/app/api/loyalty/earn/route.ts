@@ -4,6 +4,8 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST /api/loyalty/earn — earn points from an order
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -35,12 +37,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'amount must be a positive number (in dollars)' }, { status: 400 })
     }
 
-    // Fetch customer with program and tier info
+    // Fetch customer with program and tier info (scoped to location)
     const customers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT c."id", c."loyaltyPoints", c."lifetimePoints", c."loyaltyProgramId", c."loyaltyTierId"
        FROM "Customer" c
-       WHERE c."id" = $1 AND c."deletedAt" IS NULL`,
+       WHERE c."id" = $1 AND c."locationId" = $2 AND c."deletedAt" IS NULL`,
       customerId,
+      locationId,
     )
 
     if (customers.length === 0) {
@@ -53,11 +56,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Customer is not enrolled in a loyalty program' }, { status: 400 })
     }
 
-    // Fetch program
+    // Fetch program (scoped to location)
     const programs = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT * FROM "LoyaltyProgram"
-       WHERE "id" = $1 AND "isActive" = true AND "deletedAt" IS NULL`,
+       WHERE "id" = $1 AND "locationId" = $2 AND "isActive" = true AND "deletedAt" IS NULL`,
       customer.loyaltyProgramId,
+      locationId,
     )
 
     if (programs.length === 0) {
@@ -188,6 +192,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         break // Only match the highest tier
       }
     }
+
+    pushUpstream()
+    void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
 
     return NextResponse.json({
       data: {

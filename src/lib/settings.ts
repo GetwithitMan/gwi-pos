@@ -19,6 +19,7 @@ export {
   DEFAULT_CUSTOMER_FEEDBACK, DEFAULT_POUR_CONTROL, DEFAULT_LAYOUT_SETTINGS,
   DEFAULT_RESERVATION_TEMPLATES, TEMPLATE_PACKS, AVAILABLE_PLACEHOLDERS,
   DEFAULT_RESERVATION_INTEGRATION, RESERVATION_PLATFORMS, DEFAULT_SETTINGS,
+  DEFAULT_CFD_DISPLAY,
   mergeWithDefaults, getPricingProgram, effectivePricingProgram,
   getEffectiveDepositMode, parseSettings,
   // Pricing Rules
@@ -58,4 +59,5 @@ export type {
   HardwareLimitsSettings, QrOrderingSettings, KdsSettings,
   AccountingGLMapping, AccountingSettings, CustomerFeedbackSettings,
   PourControlSettings, LocationSettings,
+  CfdDisplayMode, CfdDisplaySettings,
 } from './settings/index'

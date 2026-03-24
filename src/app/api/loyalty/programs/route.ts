@@ -4,6 +4,8 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET /api/loyalty/programs — list loyalty programs for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -128,6 +130,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       `SELECT * FROM "LoyaltyProgram" WHERE "id" = $1`,
       id,
     )
+
+    pushUpstream()
+    void notifyDataChanged({ locationId, domain: 'loyalty', action: 'created', entityId: id })
 
     return NextResponse.json({ data: created[0] })
   } catch (error) {

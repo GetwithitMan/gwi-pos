@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET /api/loyalty/programs/[id]
 export const GET = withVenue(async function GET(
@@ -142,6 +144,9 @@ export const PUT = withVenue(async function PUT(
       id,
     )
 
+    pushUpstream()
+    void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: id })
+
     return NextResponse.json({ data: updated[0] })
   } catch (error) {
     console.error('Failed to update loyalty program:', error)
@@ -185,6 +190,9 @@ export const DELETE = withVenue(async function DELETE(
     if (result === 0) {
       return NextResponse.json({ error: 'Program not found' }, { status: 404 })
     }
+
+    pushUpstream()
+    void notifyDataChanged({ locationId, domain: 'loyalty', action: 'deleted', entityId: id })
 
     return NextResponse.json({ success: true })
   } catch (error) {

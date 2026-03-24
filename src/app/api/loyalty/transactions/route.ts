@@ -72,7 +72,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
     const total = Number(countRows[0]?.count ?? 0)
 
-    // Fetch transactions
+    // Fetch transactions (parameterized LIMIT/OFFSET)
+    params.push(limit, offset)
     const transactions = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT lt.*,
               c."firstName" AS "customerFirstName",
@@ -81,7 +82,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
        LEFT JOIN "Customer" c ON c."id" = lt."customerId"
        WHERE ${whereClause}
        ORDER BY lt."createdAt" DESC
-       LIMIT ${limit} OFFSET ${offset}`,
+       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
       ...params,
     )
 

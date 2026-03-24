@@ -5,6 +5,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST /api/loyalty/enroll — enroll a customer in a loyalty program
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -52,8 +54,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const customers = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT "id", "loyaltyProgramId", "loyaltyPoints", "locationId"
        FROM "Customer"
-       WHERE "id" = $1 AND "deletedAt" IS NULL`,
+       WHERE "id" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
       customerId,
+      locationId,
     )
 
     if (customers.length === 0) {
@@ -114,6 +117,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         welcomeBonus,
       )
     }
+
+    pushUpstream()
+    void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated' })
 
     return NextResponse.json({
       success: true,

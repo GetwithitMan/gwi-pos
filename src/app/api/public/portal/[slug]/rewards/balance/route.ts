@@ -101,14 +101,15 @@ export const GET = withVenue(async function GET(
       }
     }
 
-    // Recent transactions (last 20)
+    // Recent transactions (last 20, scoped to location)
     const transactions = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT "id", "type", "points", "description", "createdAt"
        FROM "LoyaltyTransaction"
-       WHERE "customerId" = $1
+       WHERE "customerId" = $1 AND "locationId" = $2
        ORDER BY "createdAt" DESC
        LIMIT 20`,
       customerId,
+      locationId,
     )
 
     return NextResponse.json({
