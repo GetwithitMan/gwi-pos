@@ -167,9 +167,16 @@ export default function OnlineOrderingOverviewPage() {
     }
   }
 
-  // Wildcard subdomain URL for the customer-facing ordering site
-  const orderingUrl = locationSlug
-    ? `${locationSlug}.ordercontrolcenter.com`
+  // Customer-facing ordering URL: ordercontrolcenter.com/{orderCode}/{slug}
+  const orderCode = locationSlug
+    ? (() => {
+        const code = locationSlug.replace(/-/g, '').toUpperCase()
+        return code.length >= 4 ? code.substring(0, 8) : code.padEnd(4, 'X')
+      })()
+    : null
+
+  const orderingUrl = orderCode && locationSlug
+    ? `ordercontrolcenter.com/${orderCode}/${locationSlug}`
     : null
 
   const handleCopyUrl = () => {
