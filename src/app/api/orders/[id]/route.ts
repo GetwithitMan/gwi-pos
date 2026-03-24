@@ -7,7 +7,7 @@ import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate, dispatchOrderUpdated, dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOrderUpdated, dispatchFloorPlanUpdate, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
@@ -435,6 +435,7 @@ export const PUT = withVenue(async function PUT(
         inclusiveTaxRate: true,
         version: true,
         employeeId: true,
+        tableId: true,
         location: { select: { settings: true } },
         items: {
           where: { deletedAt: null, status: 'active' },
@@ -622,6 +623,19 @@ export const PUT = withVenue(async function PUT(
 
     // Dispatch order:updated for metadata changes (fire-and-forget)
     void dispatchOrderUpdated(updatedOrder.locationId, { orderId: id, changes: Object.keys(updateData) }).catch(() => {})
+
+    // P1-9: Dispatch floor plan update when table changes so floor plan UI refreshes in real time
+    if (tableId !== undefined && tableId !== existingOrder.tableId) {
+      void dispatchFloorPlanUpdate(updatedOrder.locationId).catch(console.error)
+      // Mark old table as available (if there was one)
+      if (existingOrder.tableId) {
+        void dispatchTableStatusChanged(updatedOrder.locationId, { tableId: existingOrder.tableId, status: 'available' }).catch(console.error)
+      }
+      // Mark new table as occupied (if there is one)
+      if (tableId) {
+        void dispatchTableStatusChanged(updatedOrder.locationId, { tableId, status: 'occupied' }).catch(console.error)
+      }
+    }
 
     // Emit order events for metadata changes (fire-and-forget)
     const orderEvents: Array<{ type: 'GUEST_COUNT_CHANGED' | 'NOTE_CHANGED' | 'ORDER_METADATA_UPDATED' | 'ORDER_CLOSED'; payload: Record<string, unknown> }> = []

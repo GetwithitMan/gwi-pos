@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
@@ -15,6 +15,7 @@ interface ApplyItemDiscountRequest {
   reason?: string
   employeeId: string
   discountRuleId?: string
+  approvedById?: string  // Manager ID if approval required
 }
 
 // POST — Apply item-level discount
@@ -132,6 +133,15 @@ export const POST = withVenue(async function POST(
           if (!updatedOrder) throw new Error(`Order ${orderId} not found after update`)
           void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
 
+          // P1-10: Dispatch totals + summary on toggle-off too
+          void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+            subtotal: Number(updatedOrder.subtotal),
+            taxTotal: Number(updatedOrder.taxTotal),
+            tipTotal: Number(updatedOrder.tipTotal),
+            discountTotal: Number(updatedOrder.discountTotal),
+            total: Number(updatedOrder.total),
+          }, { async: true }).catch(() => {})
+
           // Emit order event for item discount removed via toggle (fire-and-forget)
           void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
             discountId: alreadyApplied.id,
@@ -216,6 +226,27 @@ export const POST = withVenue(async function POST(
         trigger: 'created',
         orderId,
       }, { async: true }).catch(() => {})
+
+      // P1-10: Dispatch totals + summary updates so other terminals see updated discount totals
+      void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+        subtotal: Number(updatedOrder.subtotal),
+        taxTotal: Number(updatedOrder.taxTotal),
+        tipTotal: Number(updatedOrder.tipTotal),
+        discountTotal: Number(updatedOrder.discountTotal),
+        total: Number(updatedOrder.total),
+      }, { async: true }).catch(() => {})
+
+      // P1-11: AuditLog when a manager approval was required for the item discount
+      if (body.approvedById) {
+        await tx.auditLog.create({
+          data: {
+            locationId: order.locationId,
+            action: 'item_discount_override',
+            employeeId: body.approvedById,
+            details: JSON.stringify({ orderId, itemId, type: body.type, value: body.value, reason: body.reason }),
+          },
+        })
+      }
 
       return NextResponse.json({
         data: {
@@ -365,6 +396,15 @@ export const DELETE = withVenue(async function DELETE(
       void dispatchOpenOrdersChanged(order.locationId, {
         trigger: 'created',
         orderId,
+      }, { async: true }).catch(() => {})
+
+      // P1-10: Dispatch totals + summary on DELETE too
+      void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+        subtotal: Number(updatedOrder.subtotal),
+        taxTotal: Number(updatedOrder.taxTotal),
+        tipTotal: Number(updatedOrder.tipTotal),
+        discountTotal: Number(updatedOrder.discountTotal),
+        total: Number(updatedOrder.total),
       }, { async: true }).catch(() => {})
 
       return NextResponse.json({

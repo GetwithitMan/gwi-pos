@@ -162,6 +162,12 @@ export const POST = withVenue(async function POST(
         data: { orderId: targetOrderId },
       })
 
+      // P1-8: Move pre-auth cards from source to target (before source is voided)
+      await tx.orderCard.updateMany({
+        where: { orderId: sourceOrder.id, deletedAt: null },
+        data: { orderId: targetOrder.id },
+      })
+
       // Recalculate target order totals
       const allItems = await OrderItemRepository.getItemsForOrderWithModifiers(
         targetOrderId, locationId, tx,
