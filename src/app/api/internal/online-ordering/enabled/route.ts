@@ -27,7 +27,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   const body = await request.json()
-  const { enabled } = body
+  const { enabled, orderCode } = body
 
   if (typeof enabled !== 'boolean') {
     return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
@@ -51,6 +51,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     onlineOrdering: {
       ...existingOnlineOrdering,
       enabled,
+      ...(orderCode && { orderCode }),
     },
   }
 

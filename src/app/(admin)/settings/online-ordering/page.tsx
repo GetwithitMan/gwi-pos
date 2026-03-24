@@ -167,14 +167,11 @@ export default function OnlineOrderingOverviewPage() {
     }
   }
 
-  // Customer-facing ordering URL: ordercontrolcenter.com/{orderCode}/{slug}
-  const orderCode = locationSlug
-    ? (() => {
-        const code = locationSlug.replace(/-/g, '').toUpperCase()
-        return code.length >= 4 ? code.substring(0, 8) : code.padEnd(4, 'X')
-      })()
-    : null
-
+  // Ordering URL uses the order code assigned by Mission Control
+  // Format: ordercontrolcenter.com/{orderCode}/{slug}
+  // The order code is stored in MC's CloudLocation.orderCode — not available locally.
+  // We read it from Location.settings.onlineOrdering.orderCode if MC has synced it.
+  const orderCode = settings?.orderCode as string | undefined
   const orderingUrl = orderCode && locationSlug
     ? `ordercontrolcenter.com/${orderCode}/${locationSlug}`
     : null
@@ -278,7 +275,7 @@ export default function OnlineOrderingOverviewPage() {
               </div>
             ) : (
               <p className="text-sm text-gray-900 italic">
-                URL will appear here once your venue slug is configured
+                Ordering URL is configured in Mission Control
               </p>
             )}
             {orderingUrl && (
