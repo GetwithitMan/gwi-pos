@@ -17,6 +17,12 @@ interface EntertainmentSessionControlsProps {
   onSessionEnded?: () => void
   onTimeExtended?: () => void
   onTimerStarted?: () => void
+  // Overtime settings
+  overtimeGracePeriodMinutes?: number  // Grace period before overtime charges (default: 2)
+  overtimeRatePerMinute?: number       // Dollar per minute of overtime (default: 0.50)
+  // Finish Game settings
+  finishGameExtensionMinutes?: number  // Minutes added by Finish Game (default: 5)
+  finishGameExtensionPrice?: number    // Flat fee for Finish Game (default: 3.00)
 }
 
 export function EntertainmentSessionControls({
@@ -32,6 +38,10 @@ export function EntertainmentSessionControls({
   onSessionEnded,
   onTimeExtended,
   onTimerStarted,
+  overtimeGracePeriodMinutes = 2,
+  overtimeRatePerMinute = 0.50,
+  finishGameExtensionMinutes = 5,
+  finishGameExtensionPrice = 3.00,
 }: EntertainmentSessionControlsProps) {
   const [timeDisplay, setTimeDisplay] = useState<string>('')
   const [isExpired, setIsExpired] = useState(false)
@@ -39,6 +49,12 @@ export function EntertainmentSessionControls({
   const [isProcessing, setIsProcessing] = useState(false)
   const [showExtendOptions, setShowExtendOptions] = useState(false)
   const [showStartOptions, setShowStartOptions] = useState(false)
+  // Overtime tracking
+  const [isInOvertime, setIsInOvertime] = useState(false)
+  const [overtimeAmount, setOvertimeAmount] = useState(0)
+  const [overtimeMinutes, setOvertimeMinutes] = useState(0)
+  // Finish Game — one-time use
+  const [finishGameUsed, setFinishGameUsed] = useState(false)
 
   const hasActiveTimer = blockTimeStartedAt || blockTimeExpiresAt || blockTimeMinutes
 
@@ -62,14 +78,33 @@ export function EntertainmentSessionControls({
       return
     }
 
-    // Block time - show countdown
+    // Block time - show countdown (with overtime tracking)
     const updateCountdown = () => {
       const expiresAt = new Date(blockTimeExpiresAt)
       const now = new Date()
       const remainingMs = expiresAt.getTime() - now.getTime()
 
       if (remainingMs <= 0) {
-        setTimeDisplay('EXPIRED')
+        const overMinutes = Math.abs(remainingMs) / 60000
+        const gracePeriod = overtimeGracePeriodMinutes
+
+        if (overMinutes > gracePeriod) {
+          // Past grace period — in overtime
+          const chargeableMinutes = Math.floor(overMinutes - gracePeriod)
+          const charge = chargeableMinutes * overtimeRatePerMinute
+          setIsInOvertime(true)
+          setOvertimeMinutes(chargeableMinutes)
+          setOvertimeAmount(Math.round(charge * 100) / 100)
+          setTimeDisplay(`OT +${chargeableMinutes}m`)
+        } else {
+          // In grace period
+          const graceRemaining = Math.ceil(gracePeriod - overMinutes)
+          setTimeDisplay(`Grace: ${graceRemaining}m`)
+          setIsInOvertime(false)
+          setOvertimeAmount(0)
+          setOvertimeMinutes(0)
+        }
+
         setIsExpired(true)
         setIsExpiringSoon(false)
         return
@@ -303,9 +338,68 @@ export function EntertainmentSessionControls({
         </div>
       )}
 
-      {isExpired && (
-        <div className="mt-2 p-2 bg-red-100 border border-red-400 rounded text-sm text-red-800 font-medium">
-          ⚠️ Time has expired! Stop the session or extend time.
+      {isExpired && !isInOvertime && (
+        <div className="mt-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-sm text-yellow-800 font-medium">
+          Time expired — grace period active. Stop the session or extend time.
+        </div>
+      )}
+
+      {isExpired && isInOvertime && (
+        <div className="mt-2 p-2 bg-red-200 border border-red-500 rounded text-sm text-red-900 font-bold">
+          Overtime: ${overtimeAmount.toFixed(2)} ({overtimeMinutes}m at ${overtimeRatePerMinute.toFixed(2)}/min)
+        </div>
+      )}
+
+      {/* Finish Game button — shows after expiry, one-time use */}
+      {isExpired && !finishGameUsed && (
+        <div className="mt-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              setIsProcessing(true)
+              try {
+                // Extend time by finishGameExtensionMinutes
+                const response = await fetch('/api/entertainment/block-time', {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    orderItemId,
+                    locationId,
+                    additionalMinutes: finishGameExtensionMinutes,
+                    finishGameCharge: finishGameExtensionPrice,
+                  }),
+                })
+                if (response.ok) {
+                  setFinishGameUsed(true)
+                  setIsExpired(false)
+                  setIsInOvertime(false)
+                  setOvertimeAmount(0)
+                  setOvertimeMinutes(0)
+                  onTimeExtended?.()
+                  toast.success(`Finish Game: +${finishGameExtensionMinutes}m added ($${finishGameExtensionPrice.toFixed(2)} charge)`)
+                } else {
+                  const data = await response.json()
+                  toast.error(data.error || 'Failed to extend time')
+                }
+              } catch (err) {
+                console.error('Finish Game error:', err)
+                toast.error('Failed to extend time')
+              } finally {
+                setIsProcessing(false)
+              }
+            }}
+            disabled={isProcessing}
+            className="w-full border-orange-500 text-orange-700 hover:bg-orange-100 font-semibold"
+          >
+            {isProcessing ? 'Extending...' : `Finish Game (+${finishGameExtensionMinutes}m / $${finishGameExtensionPrice.toFixed(2)})`}
+          </Button>
+        </div>
+      )}
+
+      {isExpired && finishGameUsed && (
+        <div className="mt-2 p-2 bg-green-100 border border-green-400 rounded text-sm text-green-800 font-medium">
+          Extended — Finish Game used
         </div>
       )}
     </div>

@@ -92,6 +92,10 @@ export interface ReceiptData {
   // Convenience fee (present when order has a per-channel fee)
   convenienceFee?: number | null
   convenienceFeeDisclosure?: string | null
+  // Tax exemption
+  isTaxExempt?: boolean
+  taxExemptReason?: string | null
+  taxExemptId?: string | null
 }
 
 interface ReceiptProps {
@@ -340,9 +344,17 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                   <span>{formatCurrency(data.convenienceFee)}</span>
                 </div>
               )}
+              {data.isTaxExempt && (
+                <div className="flex justify-between text-xs text-yellow-600 font-bold">
+                  <span>TAX EXEMPT</span>
+                  <span>{data.taxExemptReason || ''}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs">
                 <span>
-                  {data.taxFromInclusive && data.taxFromInclusive > 0 && (!data.taxFromExclusive || data.taxFromExclusive === 0)
+                  {data.isTaxExempt
+                    ? 'Tax (exempt):'
+                    : data.taxFromInclusive && data.taxFromInclusive > 0 && (!data.taxFromExclusive || data.taxFromExclusive === 0)
                     ? 'Tax (included):'
                     : 'Tax:'}
                 </span>

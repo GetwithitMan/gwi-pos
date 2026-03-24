@@ -280,6 +280,13 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
   } = options
 
   const [isSendingOrder, setIsSendingOrder] = useState(false)
+  const [lastSentItemIds, setLastSentItemIds] = useState<Set<string>>(new Set())
+  // Store full item data for Repeat Round (works even after order is cleared)
+  const lastSentItemsDataRef = useRef<Array<{
+    menuItemId: string; name: string; price: number; quantity: number;
+    modifiers: Array<{ id: string; modifierId?: string; name: string; price: number; preModifier?: string | null; depth?: number; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }>
+    categoryType?: string; pourSize?: string | null; pourMultiplier?: number | null; specialNotes?: string
+  }>>([])
   const paymentLockRef = useRef(false)
 
   // All currentOrder reads use useOrderStore.getState() inside callbacks — no reactive subscription needed
@@ -385,8 +392,38 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
 
     sendLockRef.current = true
     setIsSendingOrder(true)
+
+    // Capture pending items before send — these become the "last sent batch" for Repeat Round
+    const pendingBeforeSend = order.items.filter(i => !i.sentToKitchen && !i.isHeld)
+
     try {
       await activeOrderFull.handleSendToKitchen(employeeId)
+
+      // Update last sent batch for Repeat Round — store IDs and full item data
+      if (pendingBeforeSend.length > 0) {
+        setLastSentItemIds(new Set(pendingBeforeSend.map(i => i.id)))
+        lastSentItemsDataRef.current = pendingBeforeSend.map(i => ({
+          menuItemId: i.menuItemId,
+          name: i.name,
+          price: i.price,
+          quantity: i.quantity,
+          modifiers: (i.modifiers || []).map(m => ({
+            id: m.id || m.modifierId || '',
+            modifierId: m.modifierId || m.id || '',
+            name: m.name,
+            price: m.price || 0,
+            preModifier: m.preModifier ?? null,
+            depth: m.depth ?? 0,
+            spiritTier: m.spiritTier ?? null,
+            linkedBottleProductId: m.linkedBottleProductId ?? null,
+            parentModifierId: m.parentModifierId ?? null,
+          })),
+          categoryType: i.categoryType,
+          pourSize: i.pourSize ?? null,
+          pourMultiplier: i.pourMultiplier ?? null,
+          specialNotes: i.specialNotes,
+        }))
+      }
 
       const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
       if (orderId) {
@@ -1788,5 +1825,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     handleResend,
     handleSeatChange,
     handleSearchSelect,
+    lastSentItemIds,
+    lastSentItemsDataRef,
   }
 }

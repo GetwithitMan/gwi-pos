@@ -552,12 +552,21 @@ export function BartenderView({
       setAllMenuItems(initialMenuItems)
       // If a category is selected, refresh its filtered view
       if (selectedCategoryIdRef.current) {
-        setMenuItems(initialMenuItems.filter(
-          item => item.categoryId === selectedCategoryIdRef.current
-        ))
+        const selectedCat = categories.find(c => c.id === selectedCategoryIdRef.current)
+        if (selectedCat?.categoryType === 'pizza') {
+          const pizzaCatIds = new Set(categories.filter(c => c.categoryType === 'pizza').map(c => c.id))
+          setMenuItems(initialMenuItems.filter(item =>
+            item.categoryId === selectedCategoryIdRef.current ||
+            (item.itemType === 'pizza' && (!item.categoryId || pizzaCatIds.has(item.categoryId)))
+          ))
+        } else {
+          setMenuItems(initialMenuItems.filter(
+            item => item.categoryId === selectedCategoryIdRef.current
+          ))
+        }
       }
     }
-  }, [initialMenuItems])
+  }, [initialMenuItems, categories])
 
   // Server-synced bartender preferences (replaces 14 localStorage calls)
   const bartPrefs = useBartenderPreferences({ employeeId, locationId })
@@ -810,10 +819,20 @@ export function BartenderView({
   }, [locationId])
 
   // Client-side category filter — no API call needed
+  // Pizza category guard: when a pizza category is selected, include all pizza items
   const filterMenuItemsByCategory = useCallback((categoryId: string) => {
     setMenuPage(1)
-    setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
-  }, [])
+    const selectedCat = categories.find(c => c.id === categoryId)
+    if (selectedCat?.categoryType === 'pizza') {
+      const pizzaCatIds = new Set(categories.filter(c => c.categoryType === 'pizza').map(c => c.id))
+      setMenuItems(allMenuItemsRef.current.filter(item =>
+        item.categoryId === categoryId ||
+        (item.itemType === 'pizza' && (!item.categoryId || pizzaCatIds.has(item.categoryId)))
+      ))
+    } else {
+      setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
+    }
+  }, [categories])
 
   // Initial load — skip if parent owns menu data (prop defined, even if empty while loading)
   useEffect(() => {

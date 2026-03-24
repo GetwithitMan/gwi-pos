@@ -1,0 +1,96 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
+
+// GET /api/loyalty/transactions — transaction history with filters
+export const GET = withVenue(async function GET(request: NextRequest) {
+  try {
+    const searchParams = request.nextUrl.searchParams
+    const locationId = searchParams.get('locationId')
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    const actor = await getActorFromRequest(request)
+    const employeeId = actor.employeeId || searchParams.get('employeeId')
+
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json(
+        { code: 'PERMISSION_DENIED', message: auth.error },
+        { status: auth.status },
+      )
+    }
+
+    const conditions: string[] = ['lt."locationId" = $1']
+    const params: unknown[] = [locationId]
+    let paramIdx = 2
+
+    // Optional filters
+    const customerId = searchParams.get('customerId')
+    if (customerId) {
+      conditions.push(`lt."customerId" = $${paramIdx}`)
+      params.push(customerId)
+      paramIdx++
+    }
+
+    const type = searchParams.get('type')
+    if (type) {
+      conditions.push(`lt."type" = $${paramIdx}`)
+      params.push(type)
+      paramIdx++
+    }
+
+    const dateFrom = searchParams.get('dateFrom')
+    if (dateFrom) {
+      conditions.push(`lt."createdAt" >= $${paramIdx}::timestamp`)
+      params.push(dateFrom)
+      paramIdx++
+    }
+
+    const dateTo = searchParams.get('dateTo')
+    if (dateTo) {
+      conditions.push(`lt."createdAt" <= $${paramIdx}::timestamp`)
+      params.push(dateTo)
+      paramIdx++
+    }
+
+    const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 200)
+    const offset = parseInt(searchParams.get('offset') || '0')
+
+    const whereClause = conditions.join(' AND ')
+
+    // Count total
+    const countRows = await db.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*) AS "count"
+       FROM "LoyaltyTransaction" lt
+       WHERE ${whereClause}`,
+      ...params,
+    )
+    const total = Number(countRows[0]?.count ?? 0)
+
+    // Fetch transactions
+    const transactions = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
+      `SELECT lt.*,
+              c."firstName" AS "customerFirstName",
+              c."lastName" AS "customerLastName"
+       FROM "LoyaltyTransaction" lt
+       LEFT JOIN "Customer" c ON c."id" = lt."customerId"
+       WHERE ${whereClause}
+       ORDER BY lt."createdAt" DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      ...params,
+    )
+
+    return NextResponse.json({
+      data: transactions,
+      pagination: { total, limit, offset },
+    })
+  } catch (error) {
+    console.error('Failed to list loyalty transactions:', error)
+    return NextResponse.json({ error: 'Failed to list loyalty transactions' }, { status: 500 })
+  }
+})

@@ -210,6 +210,12 @@ export default function SettingsPage() {
             description="Entertainment waitlist settings, SMS notifications, deposit collection, and no-show policies"
             href="/settings/waitlist"
           />
+          <SectionCard
+            icon="📺"
+            title="Customer Display (CFD)"
+            description="Display modes, item visibility, dual pricing, upsell messages, and idle screen customization"
+            href="/settings/cfd"
+          />
         </div>
 
         {/* Hardware Health Widget */}

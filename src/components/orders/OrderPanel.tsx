@@ -8,6 +8,7 @@ import { calculateItemTotal } from '@/lib/order-calculations'
 import { formatCurrency } from '@/lib/utils'
 import { roundToCents } from '@/lib/pricing'
 import { OrderDelayBanner } from './OrderDelayBanner'
+import { SeatAllergyModal } from './SeatAllergyModal'
 import { ConflictBanner } from './ConflictBanner'
 import { ComboSuggestionBanner } from './ComboSuggestionBanner'
 import { UpsellPromptBanner } from './UpsellPromptBanner'
@@ -168,6 +169,8 @@ export interface OrderPanelProps {
   onAddUpsellItem?: (menuItemId: string) => void
   // Last-sent-batch highlight
   lastSentItemIds?: Set<string>
+  // Repeat Round — repeats all items from the last sent batch
+  onRepeatRound?: () => void
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -301,6 +304,8 @@ export const OrderPanel = memo(function OrderPanel({
   onAddUpsellItem,
   // Last-sent-batch highlight
   lastSentItemIds,
+  // Repeat Round
+  onRepeatRound,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -327,6 +332,9 @@ export const OrderPanel = memo(function OrderPanel({
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false)
   const [isTaxExempt, setIsTaxExempt] = useState(false)
   const [taxExemptToggling, setTaxExemptToggling] = useState(false)
+  const [taxExemptReason, setTaxExemptReason] = useState('')
+  const [taxExemptId, setTaxExemptId] = useState('')
+  const [showTaxExemptDialog, setShowTaxExemptDialog] = useState(false)
   const customerFetchedForRef = useRef<string | null>(null)
   const orderIdRef = useRef(orderId)
   orderIdRef.current = orderId
@@ -448,32 +456,64 @@ export const OrderPanel = memo(function OrderPanel({
       .catch(console.error)
   }, [])
 
-  // Tax exempt toggle handler
+  // Tax exempt toggle handler — opens dialog when enabling, removes via DELETE when disabling
   const handleTaxExemptToggle = useCallback(() => {
     if (!orderId || taxExemptToggling) return
-    const newValue = !isTaxExempt
-    setIsTaxExempt(newValue) // Optimistic
+    if (!isTaxExempt) {
+      // Opening: show dialog for reason/taxId
+      setTaxExemptReason('')
+      setTaxExemptId('')
+      setShowTaxExemptDialog(true)
+      return
+    }
+    // Removing: call DELETE
     setTaxExemptToggling(true)
-    void fetch(`/api/orders/${orderId}`, {
-      method: 'PUT',
+    setIsTaxExempt(false) // Optimistic
+    void fetch(`/api/orders/${orderId}/tax-exempt`, {
+      method: 'DELETE',
+      headers: {
+        ...(employeeId ? { 'x-employee-id': employeeId } : {}),
+      },
+    })
+      .then(r => {
+        if (!r.ok) {
+          setIsTaxExempt(true) // Revert on failure
+          console.error('Failed to remove tax exempt')
+        }
+      })
+      .catch(err => {
+        setIsTaxExempt(true) // Revert on error
+        console.error('Tax exempt remove error:', err)
+      })
+      .finally(() => setTaxExemptToggling(false))
+  }, [orderId, isTaxExempt, taxExemptToggling, employeeId])
+
+  // Submit tax exempt with reason/taxId via POST
+  const submitTaxExempt = useCallback(() => {
+    if (!orderId || !taxExemptReason.trim()) return
+    setTaxExemptToggling(true)
+    setShowTaxExemptDialog(false)
+    setIsTaxExempt(true) // Optimistic
+    void fetch(`/api/orders/${orderId}/tax-exempt`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(employeeId ? { 'x-employee-id': employeeId } : {}),
       },
-      body: JSON.stringify({ isTaxExempt: newValue }),
+      body: JSON.stringify({ reason: taxExemptReason.trim(), taxId: taxExemptId.trim() || undefined, employeeId }),
     })
       .then(r => {
         if (!r.ok) {
-          setIsTaxExempt(!newValue) // Revert on failure
-          console.error('Failed to toggle tax exempt')
+          setIsTaxExempt(false) // Revert on failure
+          console.error('Failed to set tax exempt')
         }
       })
       .catch(err => {
-        setIsTaxExempt(!newValue) // Revert on error
-        console.error('Tax exempt toggle error:', err)
+        setIsTaxExempt(false) // Revert on error
+        console.error('Tax exempt submit error:', err)
       })
       .finally(() => setTaxExemptToggling(false))
-  }, [orderId, isTaxExempt, taxExemptToggling, employeeId])
+  }, [orderId, taxExemptReason, taxExemptId, employeeId])
 
   // Birthday proximity check: returns null, 'today', or days until birthday (1-7)
   const birthdayAlert = useMemo(() => {
@@ -514,6 +554,12 @@ export const OrderPanel = memo(function OrderPanel({
 
   // Check overview popover (table name click)
   const [showCheckOverview, setShowCheckOverview] = useState(false)
+
+  // Seat allergy notes — per-seat notes stored locally (keyed by seat number)
+  const [seatAllergyNotes, setSeatAllergyNotes] = useState<Record<number, string>>({})
+  const [allergyModalSeat, setAllergyModalSeat] = useState<{ seatNumber: number; position: { x: number; y: number } } | null>(null)
+  const seatLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seatLongPressTriggeredRef = useRef(false)
 
   // Track newest item for highlight + auto-scroll
   const [newestItemId, setNewestItemId] = useState<string | null>(null)
@@ -1031,12 +1077,47 @@ export const OrderPanel = memo(function OrderPanel({
                   borderRadius: '8px',
                   overflow: 'hidden',
                 }}>
-                  {/* Seat check header */}
+                  {/* Seat check header — long-press for allergy notes */}
                   {(() => {
                     const isSelected = group.seatNumber === selectedSeatNumber
+                    const hasAllergyNotes = group.seatNumber !== null && !!seatAllergyNotes[group.seatNumber]
                     return (
                   <div
-                    onClick={() => onSeatSelect?.(group.seatNumber)}
+                    onClick={() => {
+                      if (seatLongPressTriggeredRef.current) {
+                        seatLongPressTriggeredRef.current = false
+                        return
+                      }
+                      onSeatSelect?.(group.seatNumber)
+                    }}
+                    onContextMenu={(e) => {
+                      if (group.seatNumber !== null) {
+                        e.preventDefault()
+                        setAllergyModalSeat({ seatNumber: group.seatNumber, position: { x: e.clientX, y: e.clientY } })
+                      }
+                    }}
+                    onTouchStart={(e) => {
+                      seatLongPressTriggeredRef.current = false
+                      if (group.seatNumber === null) return
+                      const touch = e.touches[0]
+                      const pos = { x: touch.clientX, y: touch.clientY }
+                      seatLongPressTimerRef.current = setTimeout(() => {
+                        seatLongPressTriggeredRef.current = true
+                        setAllergyModalSeat({ seatNumber: group.seatNumber!, position: pos })
+                      }, 600)
+                    }}
+                    onTouchEnd={() => {
+                      if (seatLongPressTimerRef.current) {
+                        clearTimeout(seatLongPressTimerRef.current)
+                        seatLongPressTimerRef.current = null
+                      }
+                    }}
+                    onTouchMove={() => {
+                      if (seatLongPressTimerRef.current) {
+                        clearTimeout(seatLongPressTimerRef.current)
+                        seatLongPressTimerRef.current = null
+                      }
+                    }}
                     style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '4px 10px',
@@ -1054,6 +1135,18 @@ export const OrderPanel = memo(function OrderPanel({
                         width: '8px', height: '8px', borderRadius: '50%',
                         background: seatColor,
                       }} />
+                      {hasAllergyNotes && (
+                        <span style={{
+                          fontSize: '10px',
+                          background: 'rgba(239, 68, 68, 0.2)',
+                          color: '#f87171',
+                          borderRadius: '4px',
+                          padding: '1px 5px',
+                          fontWeight: 600,
+                        }}>
+                          ALLERGY
+                        </span>
+                      )}
                       <span style={{
                         fontSize: '12px', fontWeight: 700,
                         color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
@@ -1501,8 +1594,8 @@ export const OrderPanel = memo(function OrderPanel({
                         Add Customer
                       </button>
                     )}
-                    {/* Tax Exempt toggle — only when customer is attached */}
-                    {linkedCustomer && orderId && !orderId.startsWith('temp-') && (
+                    {/* Tax Exempt toggle — available to managers for any open order */}
+                    {orderId && !orderId.startsWith('temp-') && (
                       <button
                         onClick={handleTaxExemptToggle}
                         disabled={taxExemptToggling}
@@ -1987,6 +2080,9 @@ export const OrderPanel = memo(function OrderPanel({
           onTransferOrder={onTransferOrder}
           onMergeOrders={onMergeOrders}
           tableId={tableId}
+          isTaxExempt={isTaxExempt}
+          lastSentItemIds={lastSentItemIds}
+          onRepeatRound={onRepeatRound}
         />
       </div>
 
@@ -2030,6 +2126,178 @@ export const OrderPanel = memo(function OrderPanel({
             setShowCustomerProfile(false)
             handleSelectCustomer(null)
           }}
+        />
+      )}
+
+      {/* Tax Exempt Dialog — shown when enabling tax exemption */}
+      {showTaxExemptDialog && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 60,
+        }}>
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.95)',
+            backdropFilter: 'blur(20px)',
+            borderRadius: 16,
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
+            width: '100%',
+            maxWidth: 400,
+            padding: 24,
+          }}>
+            <h3 style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
+              Tax Exempt
+            </h3>
+
+            {/* Tax Exempt Reason */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                Reason <span style={{ color: '#f87171' }}>*</span>
+              </label>
+              <select
+                value={taxExemptReason}
+                onChange={e => setTaxExemptReason(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  background: 'rgba(15, 23, 42, 0.8)',
+                  border: '1px solid rgba(100, 116, 139, 0.3)',
+                  borderRadius: 8,
+                  color: '#ffffff',
+                  fontSize: 14,
+                  outline: 'none',
+                }}
+              >
+                <option value="">Select reason...</option>
+                <option value="Government purchase">Government purchase</option>
+                <option value="Resale certificate">Resale certificate</option>
+                <option value="Non-profit organization">Non-profit organization</option>
+                <option value="Diplomatic exemption">Diplomatic exemption</option>
+                <option value="Agricultural exemption">Agricultural exemption</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {/* Custom reason input (when "Other" is selected) */}
+            {taxExemptReason === 'Other' && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                  Specify Reason <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value=""
+                  onChange={e => setTaxExemptReason(e.target.value)}
+                  placeholder="Enter exemption reason..."
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(100, 116, 139, 0.3)',
+                    borderRadius: 8,
+                    color: '#ffffff',
+                    fontSize: 14,
+                    outline: 'none',
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Tax ID (optional) */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', color: '#94a3b8', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                Tax Exempt ID / Certificate # (optional)
+              </label>
+              <input
+                type="text"
+                value={taxExemptId}
+                onChange={e => setTaxExemptId(e.target.value)}
+                placeholder="e.g., EIN, certificate number..."
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  background: 'rgba(15, 23, 42, 0.8)',
+                  border: '1px solid rgba(100, 116, 139, 0.3)',
+                  borderRadius: 8,
+                  color: '#ffffff',
+                  fontSize: 14,
+                  outline: 'none',
+                }}
+              />
+            </div>
+
+            {/* Info banner */}
+            <div style={{
+              padding: 10,
+              borderRadius: 8,
+              background: 'rgba(251, 191, 36, 0.1)',
+              border: '1px solid rgba(251, 191, 36, 0.2)',
+              color: '#fbbf24',
+              fontSize: 12,
+              marginBottom: 16,
+            }}>
+              Tax exemption will set all tax to $0 for this order. The pre-exempt tax amount is preserved for audit.
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setShowTaxExemptDialog(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  border: '1px solid rgba(100, 116, 139, 0.3)',
+                  background: 'transparent',
+                  color: '#94a3b8',
+                  fontSize: 15,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitTaxExempt}
+                disabled={!taxExemptReason.trim() || taxExemptReason === 'Other'}
+                style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: (!taxExemptReason.trim() || taxExemptReason === 'Other') ? '#374151' : '#f59e0b',
+                  color: (!taxExemptReason.trim() || taxExemptReason === 'Other') ? '#6b7280' : '#1e293b',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: (!taxExemptReason.trim() || taxExemptReason === 'Other') ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Apply Tax Exempt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Seat Allergy Notes Modal */}
+      {allergyModalSeat && (
+        <SeatAllergyModal
+          seatNumber={allergyModalSeat.seatNumber}
+          currentNotes={seatAllergyNotes[allergyModalSeat.seatNumber] || ''}
+          position={allergyModalSeat.position}
+          onSave={(seatNumber, notes) => {
+            setSeatAllergyNotes(prev => ({
+              ...prev,
+              [seatNumber]: notes,
+            }))
+          }}
+          onClose={() => setAllergyModalSeat(null)}
         />
       )}
     </div>

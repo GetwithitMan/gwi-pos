@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, memo, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
+import { ItemDetailPopover } from './ItemDetailPopover'
 import type { UiModifier, IngredientModification } from '@/types/orders'
 import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 import { parsePreModifiers, PRE_MODIFIER_CONFIG } from '@/components/modifiers/useModifierSelections'
@@ -282,17 +283,65 @@ export const OrderPanelItem = memo(function OrderPanelItem({
     }
   }, [isVoided, isComped, isCompedOrVoided, isNewest, isSelected, hasActiveDelay, hasDelayPreset, isReady, isSent, onClick, onSelect, isLastSent])
 
+  // ─── Long-press / right-click detail popover ───
+  const [detailPopover, setDetailPopover] = useState<{ x: number; y: number } | null>(null)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressTriggeredRef = useRef(false)
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    if (item.menuItemId) {
+      setDetailPopover({ x: e.clientX, y: e.clientY })
+    }
+  }, [item.menuItemId])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    longPressTriggeredRef.current = false
+    const touch = e.touches[0]
+    const pos = { x: touch.clientX, y: touch.clientY }
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true
+      if (item.menuItemId) {
+        setDetailPopover(pos)
+      }
+    }, 600)
+  }, [item.menuItemId])
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
+  const handleTouchMove = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }, [])
+
   return (
+    <>
     <div
       data-item-id={item.id}
       style={rootStyle}
       onClick={() => {
+        // If long press was triggered, don't fire regular click
+        if (longPressTriggeredRef.current) {
+          longPressTriggeredRef.current = false
+          return
+        }
         // Toggle selection for all items (sent items show Resend/Comp/Void when selected)
         onSelect?.(item.id)
         if (!isSent) {
           onClick?.(item)
         }
       }}
+      onContextMenu={handleContextMenu}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
       onMouseEnter={(e) => {
         if ((onClick || onSelect) && !isSelected) {
           e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
@@ -1118,5 +1167,17 @@ export const OrderPanelItem = memo(function OrderPanelItem({
         </div>
       )}
     </div>
+    {/* Long-press detail popover */}
+    {detailPopover && item.menuItemId && (
+      <ItemDetailPopover
+        menuItemId={item.menuItemId}
+        itemName={item.name}
+        quantity={item.quantity}
+        locationId={locationId}
+        position={detailPopover}
+        onClose={() => setDetailPopover(null)}
+      />
+    )}
+    </>
   )
 })

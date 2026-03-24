@@ -57,6 +57,7 @@ import type {
   CustomerFeedbackSettings,
   PourControlSettings,
   ConvenienceFeeSettings,
+  CfdDisplaySettings,
   LocationSettings,
   POSLayoutSettings,
   PricingRule,
@@ -247,6 +248,10 @@ export const DEFAULT_VENUE_PORTAL: VenuePortalSettings = {
 
 export const DEFAULT_ENTERTAINMENT_SETTINGS: EntertainmentSettings = {
   allowExtendWithWaitlist: true,
+  overtimeGracePeriodMinutes: 2,
+  overtimeRatePerMinute: 0.50,
+  finishGameExtensionMinutes: 5,
+  finishGameExtensionPrice: 3.00,
 }
 
 export const DEFAULT_MEMBERSHIP_SETTINGS: MembershipSettings = {
@@ -496,6 +501,19 @@ export const DEFAULT_WAITLIST_SETTINGS: WaitlistSettings = {
   allowCashDeposit: true,
   applyDepositToOrder: true,
   forfeitOnNoShow: true,
+}
+
+export const DEFAULT_CFD_DISPLAY: CfdDisplaySettings = {
+  displayMode: 'full',
+  showModifiers: true,
+  showModifierPrices: true,
+  showDualPricing: true,
+  totalOnlyDelaySeconds: 0,
+  showTotalOnPaymentMethod: true,
+  showUpsellSuggestions: true,
+  upsellMessage: 'While you wait...',
+  idleScreenMessage: 'Welcome!',
+  idleScreenImageUrl: '',
 }
 
 export const DEFAULT_MENU_RESTORE_POINT_SETTINGS: MenuRestorePointSettings = {
@@ -894,6 +912,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     allowEmployeeGroupCreation: false,       // Off by default — only admin templates until enabled
     showTipIndicatorOnPOS: true,             // Show tip badge in POS header by default
     showCCFeeToEmployee: true,              // Show CC fee deduction in closeout by default
+    entertainmentTipsEnabled: true,          // Employees earn tips on entertainment/timed rental items by default
   },
   receipts: {
     headerText: 'Thank you for your visit!',
@@ -1374,6 +1393,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     venuePortal: partial.venuePortal
       ? { ...DEFAULT_VENUE_PORTAL, ...partial.venuePortal }
+      : undefined,
+    cfdDisplay: partial.cfdDisplay
+      ? { ...DEFAULT_CFD_DISPLAY, ...partial.cfdDisplay }
       : undefined,
   }
 }

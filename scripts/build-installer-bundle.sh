@@ -36,10 +36,10 @@ perl -pi -e 's/^INSTALLER_VERSION="[^"]*"/INSTALLER_VERSION="__INSTALLER_VERSION
 perl -pi -e 's/^INSTALLER_BUILD_DATE="[^"]*"/INSTALLER_BUILD_DATE="__INSTALLER_BUILD_DATE__"/' "$INSTALLER"
 perl -pi -e 's/^INSTALLER_GIT_SHA="[^"]*"/INSTALLER_GIT_SHA="__INSTALLER_GIT_SHA__"/' "$INSTALLER"
 
-# Now stamp actual values (portability: perl works on both macOS + Linux)
-perl -pi -e "s/__INSTALLER_VERSION__/$VERSION/g" "$INSTALLER"
-perl -pi -e "s/__INSTALLER_BUILD_DATE__/$BUILD_DATE/g" "$INSTALLER"
-perl -pi -e "s/__INSTALLER_GIT_SHA__/$GIT_SHA/g" "$INSTALLER"
+# Now stamp actual values — ONLY on the assignment lines (not in comparison checks)
+perl -pi -e "s/^INSTALLER_VERSION=\"__INSTALLER_VERSION__\"/INSTALLER_VERSION=\"$VERSION\"/" "$INSTALLER"
+perl -pi -e "s/^INSTALLER_BUILD_DATE=\"__INSTALLER_BUILD_DATE__\"/INSTALLER_BUILD_DATE=\"$BUILD_DATE\"/" "$INSTALLER"
+perl -pi -e "s/^INSTALLER_GIT_SHA=\"__INSTALLER_GIT_SHA__\"/INSTALLER_GIT_SHA=\"$GIT_SHA\"/" "$INSTALLER"
 
 # Strip any existing payload + exit marker (from previous builds)
 if grep -q '^__MODULES_PAYLOAD__$' "$INSTALLER"; then

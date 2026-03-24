@@ -90,6 +90,7 @@ interface SettingsCache {
   ageVerification: AgeVerificationSettings
   sendBehavior: SendBehavior
   barOperations: BarOperationsSettings
+  entertainmentTipsEnabled: boolean
 }
 
 const DEFAULT_PRICING_PROGRAM: PricingProgram = { model: 'none', enabled: false }
@@ -129,6 +130,9 @@ export function useOrderSettings() {
   const [barOperations, setBarOperations] = useState<BarOperationsSettings>(
     cachedSettings?.barOperations ?? DEFAULT_BAR_OPERATIONS
   )
+  const [entertainmentTipsEnabled, setEntertainmentTipsEnabled] = useState(
+    cachedSettings?.entertainmentTipsEnabled ?? true
+  )
   const [isLoading, setIsLoading] = useState(!cachedSettings)
 
   const applySettings = (settings: {
@@ -142,6 +146,7 @@ export function useOrderSettings() {
     ageVerification?: AgeVerificationSettings
     sendBehavior?: SendBehavior
     barOperations?: BarOperationsSettings
+    tipBank?: { entertainmentTipsEnabled?: boolean }
   }) => {
     const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
     const derivedPricingProgram = settings.pricingProgram
@@ -162,6 +167,7 @@ export function useOrderSettings() {
       ageVerification: settings.ageVerification ?? DEFAULT_AGE_VERIFICATION,
       sendBehavior: settings.sendBehavior ?? 'return_to_floor',
       barOperations: settings.barOperations ? { ...DEFAULT_BAR_OPERATIONS, ...settings.barOperations } : DEFAULT_BAR_OPERATIONS,
+      entertainmentTipsEnabled: settings.tipBank?.entertainmentTipsEnabled ?? true,
     }
 
     if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
@@ -201,6 +207,7 @@ export function useOrderSettings() {
     setAgeVerification(result.ageVerification)
     setSendBehavior(result.sendBehavior)
     setBarOperations(result.barOperations)
+    setEntertainmentTipsEnabled(result.entertainmentTipsEnabled)
   }
 
   const loadSettings = async () => {
@@ -222,6 +229,7 @@ export function useOrderSettings() {
         ageVerification: cachedSettings.ageVerification,
         sendBehavior: cachedSettings.sendBehavior,
         barOperations: cachedSettings.barOperations,
+        tipBank: { entertainmentTipsEnabled: cachedSettings.entertainmentTipsEnabled },
       })
       setIsLoading(false)
       return
@@ -318,6 +326,7 @@ export function useOrderSettings() {
     ageVerification,
     sendBehavior,
     barOperations,
+    entertainmentTipsEnabled,
     isLoading,
     reloadSettings: forceReload,
   }

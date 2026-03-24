@@ -95,6 +95,8 @@ export type {
   AccountingSettings,
   CustomerFeedbackSettings,
   PourControlSettings,
+  CfdDisplayMode,
+  CfdDisplaySettings,
   LocationSettings,
 } from './types'
 
@@ -154,6 +156,7 @@ export {
   AVAILABLE_PLACEHOLDERS,
   DEFAULT_RESERVATION_INTEGRATION,
   RESERVATION_PLATFORMS,
+  DEFAULT_CFD_DISPLAY,
   DEFAULT_SETTINGS,
   mergeWithDefaults,
   getPricingProgram,

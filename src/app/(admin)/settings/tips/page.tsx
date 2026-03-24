@@ -754,6 +754,23 @@ export default function TipSettingsPage() {
         </section>
 
         {/* ═══════════════════════════════════════════
+            Section 4.5: Tip-Eligible Item Types
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Tip-Eligible Item Types</h2>
+          <p className="text-sm text-gray-600 mb-5">Control which types of items are included in tip calculations.</p>
+
+          <div className="space-y-0">
+            <ToggleRow
+              label="Employees Earn Tips on Entertainment / Timed Rental Items"
+              description="When ON, entertainment and timed rental items (bowling, pool, arcade, etc.) are included in the tip-eligible order amount. When OFF, those items are excluded from tip calculations — employees only earn tips on food, drinks, and other non-entertainment items."
+              checked={tipBank.entertainmentTipsEnabled ?? true}
+              onChange={v => updateTipBank('entertainmentTipsEnabled', v)}
+            />
+          </div>
+        </section>
+
+        {/* ═══════════════════════════════════════════
             Section 5: CC Fee Deduction
             ═══════════════════════════════════════════ */}
         <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">

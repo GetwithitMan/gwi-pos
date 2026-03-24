@@ -10,7 +10,7 @@ const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { pairingCode, deviceFingerprint, deviceInfo, appVersion, osVersion, pushToken } = body
+    const { pairingCode, deviceFingerprint, stableDeviceId, deviceInfo, appVersion, osVersion, pushToken } = body
     const platform = VALID_PLATFORMS.includes(body.platform) ? body.platform : 'ANDROID'
 
     if (!pairingCode) {
@@ -65,12 +65,34 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Generate secure device token
     const deviceToken = crypto.randomBytes(32).toString('hex')
 
+    // Check if this hardware was previously paired (device re-identification after reinstall)
+    let previousDeviceName: string | null = null
+    const fingerprintToMatch = stableDeviceId || deviceFingerprint
+    if (fingerprintToMatch) {
+      const previousTerminal = await db.terminal.findFirst({
+        where: {
+          locationId,
+          deviceFingerprint: fingerprintToMatch,
+          id: { not: terminal.id },
+          deletedAt: null,
+        },
+        select: { name: true },
+        orderBy: { lastSeenAt: 'desc' },
+      })
+      if (previousTerminal) {
+        previousDeviceName = previousTerminal.name
+        console.log(
+          `[pair-native] Device re-identified: fingerprint ${fingerprintToMatch} was previously "${previousTerminal.name}"`
+        )
+      }
+    }
+
     // Complete pairing with native app fields
     const updated = await db.terminal.update({
       where: { id: terminal.id },
       data: {
         deviceToken,
-        deviceFingerprint: deviceFingerprint || null,
+        deviceFingerprint: stableDeviceId || deviceFingerprint || null,
         deviceInfo: deviceInfo || null,
         platform,
         appVersion: appVersion || null,
@@ -116,6 +138,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         receiptPrinter: updated.receiptPrinter,
       },
       location: { id: terminal.locationId },
+      previousDeviceName,
     } })
   } catch (error) {
     console.error('Failed to pair native terminal:', error)

@@ -114,6 +114,7 @@ export const CFD_EVENTS = {
   ORDER_UPDATED: 'cfd:order-updated',
   IDLE: 'cfd:idle',
   RECEIPT_SENT: 'cfd:receipt-sent',
+  SETTINGS_UPDATED: 'cfd:settings-updated',
   // CFD → POS
   TIP_SELECTED: 'cfd:tip-selected',
   SIGNATURE_DONE: 'cfd:signature-done',

@@ -191,5 +191,9 @@ export function buildReceiptData(
     surchargeDisclosure,
     convenienceFee: convenienceFeeAmount > 0 ? convenienceFeeAmount : null,
     convenienceFeeDisclosure: convenienceFeeAmount > 0 ? convenienceFeeDisclosure : null,
+    // Tax exemption
+    isTaxExempt: (order as any).isTaxExempt ?? false,
+    taxExemptReason: (order as any).taxExemptReason ?? null,
+    taxExemptId: (order as any).taxExemptId ?? null,
   }
 }

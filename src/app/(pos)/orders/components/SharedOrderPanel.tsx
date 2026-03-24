@@ -109,6 +109,10 @@ interface SharedOrderPanelProps {
   onTransferItems?: () => void
   onTransferOrder?: () => void
 
+  // Repeat Round — last sent batch for repeat
+  lastSentItemIds?: Set<string>
+  onRepeatRound?: () => void
+
   // Refs
   bartenderDeselectTabRef: React.MutableRefObject<(() => void) | null>
   floorPlanDeselectTableRef: React.MutableRefObject<(() => void) | null>
@@ -182,6 +186,8 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
     setTabsRefreshTrigger,
     onTransferItems,
     onTransferOrder,
+    lastSentItemIds,
+    onRepeatRound,
     bartenderDeselectTabRef,
     floorPlanDeselectTableRef,
     orderReadyPromiseRef,
@@ -723,6 +729,8 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
           } : undefined}
           onTransferItems={onTransferItems}
           onTransferOrder={onTransferOrder}
+          lastSentItemIds={lastSentItemIds}
+          onRepeatRound={onRepeatRound}
         />
       </SilentErrorBoundary>
       {/* Quick Pick Strip */}

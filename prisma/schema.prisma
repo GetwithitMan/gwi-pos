@@ -882,6 +882,10 @@ model Location {
   // Per-employee permission overrides
   employeePermissionOverrides EmployeePermissionOverride[]
 
+  // Loyalty System (Migration 098)
+  loyaltyPrograms      LoyaltyProgram[]
+  loyaltyTransactions  LoyaltyTransaction[]
+
   @@index([organizationId])
 }
 
@@ -908,8 +912,14 @@ model Customer {
   favoriteFood  String? // Customer's preferred food
   tags          Json? // VIP, Regular, etc.
 
-  // Loyalty (Skill 52 foundation)
-  loyaltyPoints Int       @default(0)
+  // Loyalty (Skill 52 foundation + 098 Loyalty System)
+  loyaltyPoints    Int       @default(0)
+  lifetimePoints   Int       @default(0) // Total ever earned, for tier calculation
+  loyaltyEnrolledAt DateTime?
+  loyaltyProgramId String?
+  loyaltyProgram   LoyaltyProgram? @relation(fields: [loyaltyProgramId], references: [id])
+  loyaltyTierId    String?
+  loyaltyTier      LoyaltyTier? @relation(fields: [loyaltyTierId], references: [id])
   totalSpent    Decimal   @default(0) @db.Decimal(10, 2)
   totalOrders   Int       @default(0)
   averageTicket Decimal   @default(0) @db.Decimal(10, 2)
@@ -946,11 +956,16 @@ model Customer {
   cardProfiles CardProfile[]
   errorLogs    ErrorLog[]    @relation("ErrorLogCustomer")
 
+  // Loyalty system reverse relations
+  loyaltyTransactions LoyaltyTransaction[]
+
   @@unique([locationId, email])
   @@unique([locationId, phone])
   @@index([locationId])
   @@index([lastName, firstName])
   @@index([locationId, isActive, deletedAt])
+  @@index([loyaltyProgramId])
+  @@index([loyaltyTierId])
 }
 
 // ============================================
@@ -2447,6 +2462,7 @@ model Order {
   taxFromExclusive Decimal @default(0) @db.Decimal(10, 2) // Tax added on top of exclusive items
   inclusiveTaxRate Decimal @default(0) @db.Decimal(6, 4) // Inclusive tax rate snapshot at order creation (survives setting changes)
   tipTotal         Decimal @default(0) @db.Decimal(10, 2)
+  donationAmount   Decimal? @db.Decimal(10, 2) // Optional donation added to order
   total            Decimal @default(0) @db.Decimal(10, 2)
 
   // Dual Pricing (Skill 31)
@@ -2509,7 +2525,11 @@ model Order {
   source String?
 
   // Tax exemption (manager.tax_exempt permission required to set)
-  isTaxExempt Boolean @default(false)
+  isTaxExempt          Boolean  @default(false)
+  taxExemptReason      String?  // Why order is tax-exempt (e.g., "Government purchase", "Resale")
+  taxExemptId          String?  // Customer's tax-exempt certificate / tax ID number
+  taxExemptApprovedBy  String?  // Employee ID who approved the exemption
+  taxExemptSavedAmount Decimal? @db.Decimal(10, 2) // Pre-exempt tax amount preserved for audit
 
   // Order claiming — soft lock to prevent concurrent editing
   claimedByEmployeeId String?
@@ -2577,6 +2597,9 @@ model Order {
   chargebackCases    ChargebackCase[]       @relation("ChargebackOrder")
   errorLogs          ErrorLog[]             @relation("ErrorLogOrder")
   bergDispenseEvents BergDispenseEvent[]
+
+  // Loyalty System (Migration 098)
+  loyaltyTransactions LoyaltyTransaction[]
 
   @@index([employeeId])
   @@index([tableId])
@@ -9218,6 +9241,86 @@ model SocketEventLog {
   createdAt  DateTime @default(now())
 
   @@index([locationId, id])
+}
+
+// ============================================
+// LOYALTY SYSTEM (Migration 098)
+// ============================================
+
+model LoyaltyProgram {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name               String   @default("Loyalty Program")
+  isActive           Boolean  @default(true)
+  pointsPerDollar    Int      @default(1)
+  pointValueCents    Int      @default(1) // 1 point = $0.01
+  minimumRedeemPoints Int     @default(100)
+  roundingMode       String   @default("floor") // 'floor' | 'round' | 'ceil'
+  excludedCategoryIds String[] @default([])
+  excludedItemTypes   String[] @default([]) // e.g., ['entertainment']
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  tiers     LoyaltyTier[]
+  customers Customer[]
+
+  @@index([locationId])
+  @@index([locationId, isActive])
+}
+
+model LoyaltyTier {
+  id        String   @id @default(cuid())
+  programId String
+  program   LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  name             String
+  minimumPoints    Int      @default(0) // Lifetime points to reach tier
+  pointsMultiplier Decimal  @default(1.0) @db.Decimal(6, 2) // e.g., 1.5 = 1.5x points
+  perks            Json     @default("{}") // { freeItems: [], discountPercent: 0, birthdayReward: false }
+  color            String   @default("#6366f1") // For UI badge
+  sortOrder        Int      @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  customers Customer[]
+
+  @@index([programId])
+  @@index([programId, sortOrder])
+}
+
+model LoyaltyTransaction {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  orderId    String?
+  order      Order?   @relation(fields: [orderId], references: [id])
+
+  type          String // 'earn' | 'redeem' | 'adjust' | 'expire' | 'tier_bonus' | 'welcome'
+  points        Int    // Positive for earn, negative for redeem
+  balanceBefore Int    @default(0)
+  balanceAfter  Int    @default(0)
+  description   String @default("")
+  employeeId    String?
+  metadata      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([customerId])
+  @@index([locationId])
+  @@index([orderId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([customerId, createdAt(sort: Desc)])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables

@@ -1148,6 +1148,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Pre-compute loyalty points BEFORE the transaction (avoid nested findUnique inside tx)
     let pointsEarned = 0
     let loyaltyEarningBase = 0
+    let loyaltyTierMultiplier = 1.0
     if (updateData.status === 'paid' && order.customer && settings.loyalty.enabled) {
       loyaltyEarningBase = settings.loyalty.earnOnSubtotal
         ? toNumber(order.subtotal ?? 0)
@@ -1155,8 +1156,21 @@ export const POST = withVenue(withTiming(async function POST(
       if (settings.loyalty.earnOnTips) {
         loyaltyEarningBase += newTipTotal
       }
+      // Check for tier multiplier from LoyaltyTier (Loyalty System migration 098)
+      const custTierId = (order.customer as any).loyaltyTierId
+      if (custTierId) {
+        try {
+          const tierRows = await db.$queryRawUnsafe<Array<{ pointsMultiplier: unknown }>>(
+            `SELECT "pointsMultiplier" FROM "LoyaltyTier" WHERE "id" = $1 AND "deletedAt" IS NULL`,
+            custTierId,
+          )
+          if (tierRows.length > 0) {
+            loyaltyTierMultiplier = Number(tierRows[0].pointsMultiplier) || 1.0
+          }
+        } catch { /* table may not exist yet — graceful fallback */ }
+      }
       if (loyaltyEarningBase >= settings.loyalty.minimumEarnAmount) {
-        pointsEarned = Math.round(loyaltyEarningBase * settings.loyalty.pointsPerDollar)
+        pointsEarned = Math.round(loyaltyEarningBase * settings.loyalty.pointsPerDollar * loyaltyTierMultiplier)
       }
     }
 
@@ -1457,13 +1471,59 @@ export const POST = withVenue(withTiming(async function POST(
       void db.customer.update({
         where: { id: order.customer.id },
         data: {
-          ...(pointsEarned > 0 ? { loyaltyPoints: { increment: pointsEarned } } : {}),
+          ...(pointsEarned > 0 ? { loyaltyPoints: { increment: pointsEarned }, lifetimePoints: { increment: pointsEarned } } : {}),
           totalSpent: { increment: toNumber(order.total ?? 0) },
           totalOrders: { increment: 1 },
           lastVisit: new Date(),
           averageTicket: newAverageTicket!,
         },
       }).catch(err => console.error('Post-ingestion customer/loyalty update failed:', err))
+
+      // Create LoyaltyTransaction record + check tier promotion (fire-and-forget)
+      if (pointsEarned > 0) {
+        void (async () => {
+          try {
+            const custId = order.customer!.id
+            const currentPoints = Number((order.customer as any).loyaltyPoints ?? 0)
+            const currentLifetime = Number((order.customer as any).lifetimePoints ?? 0)
+            const txnId = crypto.randomUUID()
+            await db.$executeRawUnsafe(
+              `INSERT INTO "LoyaltyTransaction" (
+                "id", "customerId", "locationId", "orderId", "type", "points",
+                "balanceBefore", "balanceAfter", "description", "employeeId", "createdAt"
+              ) VALUES ($1, $2, $3, $4, 'earn', $5, $6, $7, $8, $9, NOW())`,
+              txnId, custId, order.locationId, orderId, pointsEarned,
+              currentPoints, currentPoints + pointsEarned,
+              `Earned ${pointsEarned} points on order #${order.orderNumber}${loyaltyTierMultiplier > 1 ? ` (${loyaltyTierMultiplier}x tier)` : ''}`,
+              employeeId || null,
+            )
+            // Check tier promotion
+            const newLifetime = currentLifetime + pointsEarned
+            const custProgramId = (order.customer as any).loyaltyProgramId
+            if (custProgramId) {
+              const tiers = await db.$queryRawUnsafe<Array<{ id: string; name: string; minimumPoints: number }>>(
+                `SELECT "id", "name", "minimumPoints" FROM "LoyaltyTier"
+                 WHERE "programId" = $1 AND "deletedAt" IS NULL ORDER BY "minimumPoints" DESC`,
+                custProgramId,
+              )
+              const currentTierId = (order.customer as any).loyaltyTierId
+              for (const tier of tiers) {
+                if (newLifetime >= Number(tier.minimumPoints)) {
+                  if (tier.id !== currentTierId) {
+                    await db.$executeRawUnsafe(
+                      `UPDATE "Customer" SET "loyaltyTierId" = $2, "updatedAt" = NOW() WHERE "id" = $1`,
+                      custId, tier.id,
+                    )
+                  }
+                  break
+                }
+              }
+            }
+          } catch (err) {
+            console.error('Post-ingestion loyalty transaction/tier check failed:', err)
+          }
+        })()
+      }
     }
 
     // Post-ingestion: audit logs (fire-and-forget)

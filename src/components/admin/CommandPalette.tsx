@@ -29,6 +29,7 @@ const ALL_PAGES = [
   { name: 'Gift Cards', path: '/gift-cards', section: 'Customers', keywords: ['gift', 'card', 'store credit'] },
   { name: 'House Accounts', path: '/house-accounts', section: 'Customers', keywords: ['house', 'account', 'credit'] },
   { name: 'Coupons', path: '/coupons', section: 'Customers', keywords: ['coupon', 'promo', 'code'] },
+  { name: 'Loyalty Program', path: '/loyalty', section: 'Customers', keywords: ['loyalty', 'points', 'rewards', 'tier'] },
   // Team
   { name: 'Employees', path: '/employees', section: 'Team', keywords: ['employee', 'staff', 'team', 'worker'] },
   { name: 'Roles & Permissions', path: '/roles', section: 'Team', keywords: ['role', 'permission', 'access', 'security'] },

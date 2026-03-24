@@ -177,6 +177,8 @@ export interface TipBankSettings {
   showTipIndicatorOnPOS: boolean
   /** Show the CC fee deduction amount in the shift closeout receipt/screen. */
   showCCFeeToEmployee: boolean
+  /** Whether employees earn tips on entertainment/timed rental items. If false, those items are excluded from tip-eligible amounts. */
+  entertainmentTipsEnabled: boolean
 }
 
 export interface AutoGratuitySettings {
@@ -801,6 +803,12 @@ export interface VenuePortalSettings {
 
 export interface EntertainmentSettings {
   allowExtendWithWaitlist: boolean  // Allow extending time when customers are on the waitlist (default: true)
+  // Overtime settings
+  overtimeGracePeriodMinutes: number  // Minutes after expiry before overtime charges begin (default: 2)
+  overtimeRatePerMinute: number       // Dollar amount per minute of overtime (default: 0.50)
+  // Finish Game extension
+  finishGameExtensionMinutes: number  // Minutes added when "Finish Game" is pressed (default: 5)
+  finishGameExtensionPrice: number    // Flat fee for the "Finish Game" extension (default: 3.00)
 }
 
 // ─── Membership Settings ──────────────────────────────────────────────────
@@ -1353,6 +1361,23 @@ export interface PourControlSettings {
   alertOnOverPour: boolean      // Alert managers on over-pours (default: false)
 }
 
+// ─── CFD Display Settings ───────────────────────────────────────────────────
+
+export type CfdDisplayMode = 'full' | 'items_only' | 'total_only' | 'items_no_price'
+
+export interface CfdDisplaySettings {
+  displayMode: CfdDisplayMode
+  showModifiers: boolean
+  showModifierPrices: boolean         // inline modifier prices vs just on item total
+  showDualPricing: boolean            // show both cash and card price
+  totalOnlyDelaySeconds: number       // show total only after N seconds of no new items (0 = immediate)
+  showTotalOnPaymentMethod: boolean   // flash/highlight total when cash/credit button pressed
+  showUpsellSuggestions: boolean
+  upsellMessage: string               // e.g., "Would you like to add..."
+  idleScreenMessage: string           // custom idle screen text
+  idleScreenImageUrl: string          // custom idle screen image/logo
+}
+
 // ─── The Main LocationSettings Interface ─────────────────────────────────────
 
 export interface LocationSettings {
@@ -1431,4 +1456,5 @@ export interface LocationSettings {
   cakeOrdering?: CakeOrderingSettings                   // Custom cake ordering module (optional for backward compat)
   venuePortal?: VenuePortalSettings                     // Customer-facing portal (branding, rewards, order history) (optional for backward compat)
   twilio?: TwilioSettings                               // Twilio SMS integration credentials (optional for backward compat)
+  cfdDisplay?: CfdDisplaySettings                         // Customer-facing display configuration (optional for backward compat)
 }

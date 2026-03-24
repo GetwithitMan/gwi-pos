@@ -117,7 +117,7 @@ export default function OrdersPage() {
     selectedPizzaSpecialty, setSelectedPizzaSpecialty, editingPizzaItem, setEditingPizzaItem } = usePizzaBuilder()
 
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings,
-    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification, sendBehavior, barOperations } = useOrderSettings()
+    taxInclusiveLiquor, taxInclusiveFood, requireCardForTab, allowNameOnlyTab, ageVerification, sendBehavior, barOperations, entertainmentTipsEnabled } = useOrderSettings()
 
   const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass,
     categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor,
@@ -668,6 +668,45 @@ export default function OrdersPage() {
     return null
   }
 
+  // ── Repeat Round handler — duplicates all items from the last sent batch ──
+  // Uses stored item data (ref) so it works even after the order is cleared
+  const handleRepeatRound = useCallback(() => {
+    const itemsData = handlers.lastSentItemsDataRef.current
+    if (itemsData.length === 0) return
+
+    const store = useOrderStore.getState()
+    // Ensure there's an active order to add items to
+    if (!store.currentOrder) return
+
+    let addedCount = 0
+    for (const item of itemsData) {
+      store.addItem({
+        menuItemId: item.menuItemId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        modifiers: item.modifiers.map(m => ({
+          id: m.id,
+          modifierId: m.modifierId,
+          name: m.name,
+          price: m.price,
+          preModifier: m.preModifier ?? null,
+          depth: m.depth ?? 0,
+          spiritTier: m.spiritTier ?? null,
+          linkedBottleProductId: m.linkedBottleProductId ?? null,
+          parentModifierId: m.parentModifierId ?? null,
+        })),
+        categoryType: item.categoryType,
+        pourSize: item.pourSize ?? undefined,
+        pourMultiplier: item.pourMultiplier ?? undefined,
+        specialNotes: item.specialNotes ?? undefined,
+      })
+      addedCount += item.quantity
+    }
+
+    toast.success(`Repeated ${addedCount} item${addedCount !== 1 ? 's' : ''} from last round`)
+  }, [handlers.lastSentItemsDataRef])
+
   // ── Shared OrderPanel element ──
   const sharedOrderPanel = (
     <SharedOrderPanel
@@ -736,6 +775,8 @@ export default function OrdersPage() {
       setTabsRefreshTrigger={setTabsRefreshTrigger}
       onTransferItems={savedOrderId ? () => setShowItemTransferModal(true) : undefined}
       onTransferOrder={savedOrderId ? () => setShowTabTransferModal(true) : undefined}
+      lastSentItemIds={handlers.lastSentItemIds}
+      onRepeatRound={handleRepeatRound}
       bartenderDeselectTabRef={bartenderDeselectTabRef}
       floorPlanDeselectTableRef={floorPlanDeselectTableRef}
       orderReadyPromiseRef={orderReadyPromiseRef}
@@ -1157,6 +1198,7 @@ export default function OrdersPage() {
         onTabCardsChanged={handlers.handleTabCardsChanged}
         paymentSettings={paymentSettings}
         priceRounding={priceRounding}
+        entertainmentTipsEnabled={entertainmentTipsEnabled}
         currentOrder={currentOrder}
         onPaymentComplete={(receiptData) => {
           const paidId = orderToPayId

@@ -267,6 +267,12 @@ export interface MappedOrder {
   reopenedAt: Date | null
   reopenReason: string | null
   version: number
+  // Tax exemption
+  isTaxExempt: boolean
+  taxExemptReason: string | null
+  taxExemptId: string | null
+  taxExemptApprovedBy: string | null
+  taxExemptSavedAmount: number | null
 }
 
  
@@ -306,5 +312,11 @@ export function mapOrderForResponse(order: any): MappedOrder {
     reopenedAt: order.reopenedAt || null,
     reopenReason: order.reopenReason || null,
     version: order.version ?? 1,
+    // Tax exemption
+    isTaxExempt: order.isTaxExempt ?? false,
+    taxExemptReason: order.taxExemptReason || null,
+    taxExemptId: order.taxExemptId || null,
+    taxExemptApprovedBy: order.taxExemptApprovedBy || null,
+    taxExemptSavedAmount: order.taxExemptSavedAmount != null ? Number(order.taxExemptSavedAmount) : null,
   }
 }

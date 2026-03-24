@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { formatCurrency } from '@/lib/utils'
-import { calculateCardPrice, calculateDebitPrice, calculateCreditPrice, applyPriceRounding } from '@/lib/pricing'
+import { calculateCardPrice, calculateDebitPrice, calculateCreditPrice, applyPriceRounding, roundToCents } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, PAYMENT_METHOD_LABELS } from '@/lib/payment'
 import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings, PricingProgram, CustomerFeedbackSettings } from '@/lib/settings'
 import { FeedbackPrompt } from './FeedbackPrompt'
@@ -96,7 +96,7 @@ interface HouseAccountInfo {
   status: string
 }
 
-type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card' | 'room_charge' | 'manual_card_entry'
+type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card' | 'room_charge' | 'manual_card_entry' | 'split'
 
 // Default tip settings
 const DEFAULT_TIP_SETTINGS: TipSettings = {
@@ -220,6 +220,11 @@ export function PaymentModal({
 
   // Tab increment status — background indicator (Task #6)
   const [tabIncrementFailed, setTabIncrementFailed] = useState(false)
+
+  // Split payment state
+  const [splitMethod1, setSplitMethod1] = useState<'cash' | 'credit'>('cash')
+  const [splitMethod2, setSplitMethod2] = useState<'cash' | 'credit'>('credit')
+  const [splitAmount1, setSplitAmount1] = useState('')
 
   // Post-payment feedback prompt state
   const [showFeedbackPrompt, setShowFeedbackPrompt] = useState(false)
@@ -493,6 +498,71 @@ export function PaymentModal({
       setStep('cash')
     } else {
       // All card payments go through Datacap
+      setStep('datacap_card')
+    }
+  }
+
+  // Split Payment: open the split payment entry screen
+  const handleSplitPayment = () => {
+    setSplitMethod1('cash')
+    setSplitMethod2('credit')
+    setSplitAmount1('')
+    setError(null)
+    setStep('split')
+  }
+
+  // Split Payment: submit both payments
+  const handleSplitSubmit = () => {
+    const amount1 = parseFloat(splitAmount1)
+    if (!amount1 || amount1 <= 0 || amount1 >= remainingBeforeTip) {
+      setError('First payment must be between $0.01 and the remaining balance')
+      return
+    }
+    const amount2 = roundToCents(remainingBeforeTip - amount1)
+    if (amount2 <= 0) {
+      setError('Nothing remaining for second payment')
+      return
+    }
+
+    // Determine the amount for each method considering dual pricing
+    const payment1Amount = splitMethod1 === 'cash' ? amount1 : amount1
+    const payment2Amount = splitMethod2 === 'cash' ? amount2 : amount2
+
+    const payment1: PendingPayment = {
+      method: splitMethod1,
+      amount: payment1Amount,
+      tipAmount: 0,
+      ...(splitMethod1 === 'cash' ? { amountTendered: payment1Amount } : {}),
+    }
+    const payment2: PendingPayment = {
+      method: splitMethod2,
+      amount: payment2Amount,
+      tipAmount: 0,
+      ...(splitMethod2 === 'cash' ? { amountTendered: payment2Amount } : {}),
+    }
+
+    // If either payment is card, we need to go through the Datacap flow.
+    // For simplicity: if payment 1 is cash, process it as a pending payment
+    // and then process payment 2 via normal flow (card or cash).
+    if (splitMethod1 === 'cash' && splitMethod2 === 'cash') {
+      // Both cash — process both at once
+      processPayments([...pendingPayments, payment1, payment2], pendingPayments)
+    } else if (splitMethod1 === 'cash') {
+      // Cash first, then card — add cash as pending, proceed to card
+      setPendingPayments([...pendingPayments, payment1])
+      setSelectedMethod(splitMethod2)
+      // Set step to datacap card for the remaining amount
+      setStep('datacap_card')
+    } else if (splitMethod2 === 'cash') {
+      // Card first — add cash second as pending, process card first
+      // We need to process the card payment first through Datacap
+      setPendingPayments([...pendingPayments, payment2])
+      setSelectedMethod(splitMethod1)
+      setStep('datacap_card')
+    } else {
+      // Both cards — process first card, second will follow
+      setPendingPayments([...pendingPayments, payment2])
+      setSelectedMethod(splitMethod1)
       setStep('datacap_card')
     }
   }
@@ -1541,6 +1611,37 @@ export function PaymentModal({
                 </button>
               )}
 
+              {/* Split Payment — pay part cash, part card */}
+              {remainingBeforeTip > 0.01 && paymentSettings.acceptCash && paymentSettings.acceptCredit && (
+                <>
+                  <div style={{ height: 1, background: 'rgba(148, 163, 184, 0.15)', margin: '4px 0' }} />
+                  <button
+                    onClick={handleSplitPayment}
+                    disabled={isProcessing}
+                    style={{
+                      width: '100%',
+                      height: 56,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 16,
+                      padding: '0 20px',
+                      borderRadius: 12,
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                      background: 'rgba(245, 158, 11, 0.08)',
+                      cursor: isProcessing ? 'not-allowed' : 'pointer',
+                      textAlign: 'left' as const,
+                      opacity: isProcessing ? 0.5 : 1,
+                    }}
+                  >
+                    <span style={{ fontSize: 22 }}>{'\u2702'}</span>
+                    <div>
+                      <div style={{ color: '#f59e0b', fontSize: 16, fontWeight: 600 }}>Split Payment</div>
+                      <div style={{ color: '#92400e', fontSize: 12 }}>Pay part cash, part card</div>
+                    </div>
+                  </button>
+                </>
+              )}
+
               {/* Manual Card Entry — manager-only, higher risk */}
               {canKeyedEntry && paymentSettings.acceptCredit && (
                 <button
@@ -1569,6 +1670,200 @@ export function PaymentModal({
                   </div>
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Step: Split Payment */}
+          {step === 'split' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <h3 style={sectionLabelStyle}>Split Payment</h3>
+              <p style={{ ...mutedTextStyle, marginBottom: 4 }}>
+                Total: {formatCurrency(remainingBeforeTip)}
+              </p>
+
+              {/* Payment 1 */}
+              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                <div style={{ fontSize: 11, color: '#818cf8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, marginBottom: 8 }}>
+                  Payment 1
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <button
+                    onClick={() => {
+                      setSplitMethod1('cash')
+                      if (splitMethod2 === 'cash') setSplitMethod2('credit')
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: splitMethod1 === 'cash' ? '2px solid #22c55e' : '1px solid rgba(100, 116, 139, 0.3)',
+                      background: splitMethod1 === 'cash' ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      color: splitMethod1 === 'cash' ? '#22c55e' : '#94a3b8',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cash
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSplitMethod1('credit')
+                      if (splitMethod2 === 'credit') setSplitMethod2('cash')
+                    }}
+                    disabled={!isConnected}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: splitMethod1 === 'credit' ? '2px solid #6366f1' : '1px solid rgba(100, 116, 139, 0.3)',
+                      background: splitMethod1 === 'credit' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                      color: splitMethod1 === 'credit' ? '#818cf8' : '#94a3b8',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: !isConnected ? 'not-allowed' : 'pointer',
+                      opacity: !isConnected ? 0.5 : 1,
+                    }}
+                  >
+                    Card
+                  </button>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748b', fontSize: 16 }}>$</span>
+                  <input
+                    type="number"
+                    value={splitAmount1}
+                    onChange={e => setSplitAmount1(e.target.value)}
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0.01"
+                    max={remainingBeforeTip - 0.01}
+                    style={{
+                      ...inputStyle,
+                      paddingLeft: 28,
+                      fontSize: 18,
+                      fontWeight: 700,
+                      fontFamily: 'ui-monospace, monospace',
+                    }}
+                  />
+                </div>
+
+                {/* Quick split buttons */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 8 }}>
+                  {[
+                    { label: 'Half', value: roundToCents(remainingBeforeTip / 2) },
+                    { label: '1/3', value: roundToCents(remainingBeforeTip / 3) },
+                    { label: '2/3', value: roundToCents(remainingBeforeTip * 2 / 3) },
+                  ].map(btn => (
+                    <button
+                      key={btn.label}
+                      onClick={() => setSplitAmount1(btn.value.toFixed(2))}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: '1px solid rgba(100, 116, 139, 0.3)',
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        color: '#94a3b8',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {btn.label} ({formatCurrency(btn.value)})
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Payment 2 — auto-calculated remainder */}
+              <div style={{ padding: 12, borderRadius: 10, background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                <div style={{ fontSize: 11, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700, marginBottom: 8 }}>
+                  Payment 2 (Remaining)
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <button
+                    onClick={() => {
+                      setSplitMethod2('cash')
+                      if (splitMethod1 === 'cash') setSplitMethod1('credit')
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: splitMethod2 === 'cash' ? '2px solid #22c55e' : '1px solid rgba(100, 116, 139, 0.3)',
+                      background: splitMethod2 === 'cash' ? 'rgba(34, 197, 94, 0.15)' : 'transparent',
+                      color: splitMethod2 === 'cash' ? '#22c55e' : '#94a3b8',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cash
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSplitMethod2('credit')
+                      if (splitMethod1 === 'credit') setSplitMethod1('cash')
+                    }}
+                    disabled={!isConnected}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: splitMethod2 === 'credit' ? '2px solid #6366f1' : '1px solid rgba(100, 116, 139, 0.3)',
+                      background: splitMethod2 === 'credit' ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                      color: splitMethod2 === 'credit' ? '#818cf8' : '#94a3b8',
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: !isConnected ? 'not-allowed' : 'pointer',
+                      opacity: !isConnected ? 0.5 : 1,
+                    }}
+                  >
+                    Card
+                  </button>
+                </div>
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.2)',
+                  fontFamily: 'ui-monospace, monospace',
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: '#f59e0b',
+                  textAlign: 'center',
+                }}>
+                  {splitAmount1 && parseFloat(splitAmount1) > 0
+                    ? formatCurrency(roundToCents(Math.max(0, remainingBeforeTip - parseFloat(splitAmount1))))
+                    : formatCurrency(remainingBeforeTip)
+                  }
+                  <div style={{ fontSize: 11, fontWeight: 500, color: '#92400e', marginTop: 2 }}>
+                    on {splitMethod2 === 'cash' ? 'Cash' : 'Card'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  onClick={() => setStep('method')}
+                  style={backButtonStyle}
+                >
+                  Back
+                </button>
+                <button
+                  onClick={handleSplitSubmit}
+                  disabled={!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip}
+                  style={{
+                    ...primaryButtonStyle,
+                    background: (!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip) ? '#374151' : '#f59e0b',
+                    color: (!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip) ? '#6b7280' : '#1e293b',
+                    cursor: (!splitAmount1 || parseFloat(splitAmount1) <= 0 || parseFloat(splitAmount1) >= remainingBeforeTip) ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Process Split
+                </button>
+              </div>
             </div>
           )}
 

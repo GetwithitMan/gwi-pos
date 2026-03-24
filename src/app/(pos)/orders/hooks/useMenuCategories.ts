@@ -92,16 +92,34 @@ export function useMenuCategories(options: UseMenuCategoriesOptions) {
   }
 
   // Filtered items for the selected category (memoized to avoid O(n) filter on every render)
-  const { filteredItems, unavailableItems } = useMemo(() => ({
-    filteredItems: menuItems.filter(
-      item => item.categoryId === selectedCategory && item.isAvailable
-    ),
-    unavailableItems: menuItems.filter(
-      item => item.categoryId === selectedCategory && !item.isAvailable
-    ),
-  }), [menuItems, selectedCategory])
-
+  // Pizza category guard: when a pizza category is selected, also include pizza items
+  // from other pizza categories (prevents items from disappearing if miscategorized)
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
+  const isPizzaCategorySelected = selectedCategoryData?.categoryType === 'pizza'
+  const pizzaCategoryIds = useMemo(() => {
+    if (!isPizzaCategorySelected) return new Set<string>()
+    return new Set(categories.filter(c => c.categoryType === 'pizza').map(c => c.id))
+  }, [categories, isPizzaCategorySelected])
+
+  const { filteredItems, unavailableItems, uncategorizedPizzaItems } = useMemo(() => {
+    const filtered = menuItems.filter(item => {
+      if (item.categoryId === selectedCategory) return item.isAvailable
+      // Pizza guard: include pizza items (itemType === 'pizza') that belong to any pizza category
+      if (isPizzaCategorySelected && item.itemType === 'pizza' && item.isAvailable) {
+        // Include pizza items that have no category or belong to another pizza category
+        if (!item.categoryId || pizzaCategoryIds.has(item.categoryId)) return true
+      }
+      return false
+    })
+    const unavailable = menuItems.filter(
+      item => item.categoryId === selectedCategory && !item.isAvailable
+    )
+    // Track uncategorized pizza items for admin warning
+    const uncategorizedPizza = menuItems.filter(
+      item => item.itemType === 'pizza' && !item.categoryId
+    )
+    return { filteredItems: filtered, unavailableItems: unavailable, uncategorizedPizzaItems: uncategorizedPizza }
+  }, [menuItems, selectedCategory, isPizzaCategorySelected, pizzaCategoryIds])
 
   return {
     isEditingCategories,
@@ -112,5 +130,6 @@ export function useMenuCategories(options: UseMenuCategoriesOptions) {
     filteredItems,
     unavailableItems,
     selectedCategoryData,
+    uncategorizedPizzaItems,
   }
 }

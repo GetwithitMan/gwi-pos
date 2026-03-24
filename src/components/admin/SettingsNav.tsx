@@ -120,7 +120,8 @@ const settingsSections: SettingsSection[] = [
     permission: PERMISSIONS.SETTINGS_CUSTOMERS,
     items: [
       { name: 'Customer List', href: '/settings/customers' },
-      { name: 'Loyalty Program', href: '/settings/loyalty' },
+      { name: 'Loyalty Settings', href: '/settings/loyalty' },
+      { name: 'Loyalty Dashboard', href: '/loyalty' },
       { name: 'Gift Cards', href: '/settings/gift-cards' },
       { name: 'House Accounts', href: '/settings/house-accounts' },
       { name: 'Coupons', href: '/settings/coupons' },

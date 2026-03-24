@@ -26,6 +26,9 @@ function exportDailyCSV(report: DailyReport) {
   rows.push(['Revenue', 'Gross Sales', report.revenue.grossSales.toFixed(2)])
   rows.push(['Revenue', 'Tips', report.revenue.tips.toFixed(2)])
   rows.push(['Revenue', 'Refunds', report.revenue.refunds.toFixed(2)])
+  if (report.revenue.donations > 0) {
+    rows.push(['Revenue', 'Donations', report.revenue.donations.toFixed(2)])
+  }
   rows.push(['Revenue', 'Total Collected', report.revenue.totalCollected.toFixed(2)])
 
   // Payments
@@ -88,6 +91,7 @@ interface DailyReport {
     roundingAdjustments: number
     totalCollected: number
     commission: number
+    donations: number
   }
 
   payments: {
@@ -442,6 +446,12 @@ export default function DailyReportPage() {
                     <div className="flex justify-between text-yellow-600">
                       <span>{report.revenue.roundingAdjustments > 0 ? '+' : '–'} Cash Rounding</span>
                       <span>{formatCurrency(Math.abs(report.revenue.roundingAdjustments))}</span>
+                    </div>
+                  )}
+                  {report.revenue.donations > 0 && (
+                    <div className="flex justify-between text-pink-500">
+                      <span>+ Donations</span>
+                      <span>{formatCurrency(report.revenue.donations)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">

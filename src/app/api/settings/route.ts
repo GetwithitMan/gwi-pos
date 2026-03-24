@@ -347,6 +347,11 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Emit full settings to terminals so Android can pick up changes (e.g. idleLockMinutes)
     void emitToLocation(location.id, 'settings:updated', { settings: finalSettings })
 
+    // Emit CFD display settings to customer-facing displays so they update in real time
+    if (finalSettings.cfdDisplay) {
+      void emitToLocation(location.id, 'cfd:settings-updated', { cfdDisplay: finalSettings.cfdDisplay })
+    }
+
     return NextResponse.json({ data: {
       locationId: location.id,
       settings: finalSettings,

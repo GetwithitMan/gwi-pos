@@ -25,6 +25,7 @@ export interface RevenueSummaryRow {
   tip_total: number
   discount_total: number
   commission_total: number
+  donation_total: number
   guest_count: number
   total_check_time_minutes: number
   closed_count: number
@@ -116,6 +117,7 @@ export async function getRevenueSummary(
       COALESCE(SUM(o."tipTotal"), 0)::float AS tip_total,
       COALESCE(SUM(o."discountTotal"), 0)::float AS discount_total,
       COALESCE(SUM(o."commissionTotal"), 0)::float AS commission_total,
+      COALESCE(SUM(o."donationAmount"), 0)::float AS donation_total,
       COALESCE(SUM(o."guestCount"), 0)::int AS guest_count,
       COALESCE(SUM(
         CASE WHEN o."closedAt" IS NOT NULL
@@ -137,7 +139,7 @@ export async function getRevenueSummary(
   return rows[0] || {
     order_count: 0, subtotal: 0, tax_total: 0, tax_from_inclusive: 0,
     tax_from_exclusive: 0, tip_total: 0, discount_total: 0, commission_total: 0,
-    guest_count: 0, total_check_time_minutes: 0, closed_count: 0,
+    donation_total: 0, guest_count: 0, total_check_time_minutes: 0, closed_count: 0,
   }
 }
 

@@ -144,6 +144,7 @@ export interface OrderPageModalsProps {
   onTabCardsChanged: () => void
   paymentSettings: any
   priceRounding: any
+  entertainmentTipsEnabled?: boolean
   currentOrder: any | null
   onPaymentComplete: (receiptData?: any) => void
   orderReadyPromiseRef: React.MutableRefObject<Promise<string | null> | null>
@@ -352,6 +353,7 @@ export function OrderPageModals(props: OrderPageModalsProps) {
     onTabCardsChanged,
     paymentSettings,
     priceRounding,
+    entertainmentTipsEnabled = true,
     currentOrder,
     onPaymentComplete,
     orderReadyPromiseRef,
@@ -618,7 +620,10 @@ export function OrderPageModals(props: OrderPageModalsProps) {
             remainingBalance={currentOrder?.total ?? 0}
             tipExemptAmount={
               currentOrder?.items
-                ?.filter((i: any) => i.tipExempt && i.status !== 'voided')
+                ?.filter((i: any) => i.status !== 'voided' && (
+                  i.tipExempt ||
+                  (!entertainmentTipsEnabled && i.categoryType === 'entertainment')
+                ))
                 .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || (Number(i.price) * (i.quantity || 1))), 0) || undefined
             }
             tabCards={paymentTabCards}

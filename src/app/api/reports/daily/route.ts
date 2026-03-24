@@ -154,6 +154,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalTips = Number(rev.tip_total) || 0
     const totalDiscounts = Number(rev.discount_total) || 0
     const totalCommission = Number(rev.commission_total) || 0
+    const totalDonations = Number(rev.donation_total) || 0
     const checkCount = Number(rev.order_count) || 0
     const totalCovers = Number(rev.guest_count) || 0
     const totalRefunds = 0
@@ -610,6 +611,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         roundingAdjustments: round(totalRoundingAdjustments),
         totalCollected: round(totalCollected),
         commission: round(totalCommission),
+        donations: round(totalDonations),
       },
 
       payments: {
@@ -1566,6 +1568,7 @@ async function legacyReport(
       roundingAdjustments: round(totalRoundingAdjustments),
       totalCollected: round(totalCollected),
       commission: round(totalCommission),
+      donations: 0,
     },
 
     payments: {

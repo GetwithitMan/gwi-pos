@@ -288,12 +288,21 @@ export function FloorPlanHome({
       setAllMenuItems(initialMenuItems)
       // If a category is selected, refresh its filtered view
       if (selectedCategoryIdRef.current) {
-        setMenuItems(initialMenuItems.filter(
-          item => item.categoryId === selectedCategoryIdRef.current
-        ))
+        const selectedCat = categories.find(c => c.id === selectedCategoryIdRef.current)
+        if (selectedCat?.categoryType === 'pizza') {
+          const pizzaCatIds = new Set(categories.filter(c => c.categoryType === 'pizza').map(c => c.id))
+          setMenuItems(initialMenuItems.filter(item =>
+            item.categoryId === selectedCategoryIdRef.current ||
+            (item.itemType === 'pizza' && (!item.categoryId || pizzaCatIds.has(item.categoryId)))
+          ))
+        } else {
+          setMenuItems(initialMenuItems.filter(
+            item => item.categoryId === selectedCategoryIdRef.current
+          ))
+        }
       }
     }
-  }, [initialMenuItems])
+  }, [initialMenuItems, categories])
 
   // Refs for stable callbacks (avoid stale closures + prevent callback recreation)
   const selectedCategoryIdRef = useRef(selectedCategoryId)
@@ -1325,9 +1334,21 @@ export function FloorPlanHome({
       // Select new category — instant client-side filter (0ms, no API call)
       setSelectedCategoryId(categoryId)
       setViewMode('menu')
-      setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
+
+      // Pizza category guard: when selecting a pizza category, also include pizza items
+      // from other pizza categories to prevent items from disappearing
+      const selectedCat = categories.find(c => c.id === categoryId)
+      if (selectedCat?.categoryType === 'pizza') {
+        const pizzaCatIds = new Set(categories.filter(c => c.categoryType === 'pizza').map(c => c.id))
+        setMenuItems(allMenuItemsRef.current.filter(item =>
+          item.categoryId === categoryId ||
+          (item.itemType === 'pizza' && (!item.categoryId || pizzaCatIds.has(item.categoryId)))
+        ))
+      } else {
+        setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
+      }
     })
-  }, [])
+  }, [categories])
 
 
   // Reset table: remove ALL temp seats on this table (regardless of order)

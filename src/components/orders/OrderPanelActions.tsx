@@ -72,6 +72,13 @@ interface OrderPanelActionsProps {
   scheduledForDisplay?: string | null // Display string for scheduled time
   tableId?: string         // Current table ID — enables "Repeat Last" button
   tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip suggestion basis
+  isTaxExempt?: boolean    // Whether this order is tax-exempt
+  // Donation
+  donationAmount?: number   // Current donation amount on order
+  onDonation?: (amount: number | null) => void  // Set or clear donation
+  // Repeat Round — repeats all items from the last sent batch
+  lastSentItemIds?: Set<string>
+  onRepeatRound?: () => void
 }
 
 export const OrderPanelActions = memo(function OrderPanelActions({
@@ -128,8 +135,15 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   scheduledForDisplay,
   tableId,
   tipExemptAmount,
+  isTaxExempt = false,
+  donationAmount,
+  onDonation,
+  lastSentItemIds,
+  onRepeatRound,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
+  const [showDonationPopover, setShowDonationPopover] = useState(false)
+  const [customDonation, setCustomDonation] = useState('')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
   const [showPaymentProcessor, setShowPaymentProcessor] = useState(false)
   const [tipAmount, setTipAmount] = useState(0)
@@ -981,12 +995,29 @@ export const OrderPanelActions = memo(function OrderPanelActions({
 
               {/* Tax */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
-                <span style={{ color: '#94a3b8' }}>Tax{taxPct > 0 ? ` (${taxPct}%)` : ''}</span>
-                <span style={{ color: '#e2e8f0' }}>${displayTax.toFixed(2)}</span>
+                <span style={{ color: isTaxExempt ? '#fbbf24' : '#94a3b8' }}>
+                  Tax{isTaxExempt ? ' (EXEMPT)' : taxPct > 0 ? ` (${taxPct}%)` : ''}
+                </span>
+                <span style={{ color: isTaxExempt ? '#fbbf24' : '#e2e8f0' }}>
+                  {isTaxExempt ? '$0.00' : `$${displayTax.toFixed(2)}`}
+                </span>
               </div>
-              {hasTaxInclusiveItems && (
+              {isTaxExempt && (
+                <div style={{ fontSize: '10px', color: '#fbbf24', fontStyle: 'italic', marginTop: '2px', textAlign: 'right' }}>
+                  Tax exemption applied
+                </div>
+              )}
+              {!isTaxExempt && hasTaxInclusiveItems && (
                 <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', marginTop: '2px', textAlign: 'right' }}>
                   Included in item prices
+                </div>
+              )}
+
+              {/* Donation */}
+              {donationAmount != null && donationAmount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
+                  <span style={{ color: '#f472b6' }}>Donation</span>
+                  <span style={{ color: '#f472b6' }}>${donationAmount.toFixed(2)}</span>
                 </div>
               )}
 
@@ -1223,6 +1254,43 @@ export const OrderPanelActions = memo(function OrderPanelActions({
         </div>
       )}
 
+      {/* Repeat Round — repeats all items from the last sent batch */}
+      {lastSentItemIds && lastSentItemIds.size > 0 && onRepeatRound && (
+        <div style={{ marginBottom: '8px' }}>
+          <button
+            onClick={onRepeatRound}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              background: 'rgba(59, 130, 246, 0.1)',
+              color: '#60a5fa',
+              fontSize: '12px',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>{'\u21BB'}</span>
+            Repeat Round
+            <span style={{
+              background: 'rgba(59, 130, 246, 0.2)',
+              borderRadius: '10px',
+              padding: '1px 7px',
+              fontSize: '11px',
+              fontWeight: 600,
+            }}>
+              {lastSentItemIds.size}
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* Repeat Last Order — only when table order has an active order */}
       {tableId && orderId && (
         <div style={{ marginBottom: '8px' }}>
@@ -1254,8 +1322,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
       )}
 
       {/* Secondary actions */}
-      {hasItems && (onDiscount || onClear || onCancelOrder || onSplit || onQuickSplitEvenly) && (
-        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems && !justCancelledPayment), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems && !justCancelledPayment), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
+      {hasItems && (onDiscount || onDonation || onClear || onCancelOrder || onSplit || onQuickSplitEvenly) && (
+        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onQuickSplitEvenly, onDiscount, onDonation, (onCancelOrder && !hasSentItems && !justCancelledPayment), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onQuickSplitEvenly, onDiscount, onDonation, (onCancelOrder && !hasSentItems && !justCancelledPayment), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
           {onSplit && (
             <button
               onClick={onSplit}
@@ -1312,6 +1380,149 @@ export const OrderPanelActions = memo(function OrderPanelActions({
             >
               Discount
             </button>
+          )}
+          {/* Donation button */}
+          {onDonation && (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowDonationPopover(!showDonationPopover)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: donationAmount && donationAmount > 0
+                    ? '1px solid rgba(244, 114, 182, 0.5)'
+                    : '1px solid rgba(255, 255, 255, 0.15)',
+                  background: donationAmount && donationAmount > 0
+                    ? 'rgba(244, 114, 182, 0.15)'
+                    : 'rgba(255, 255, 255, 0.05)',
+                  color: donationAmount && donationAmount > 0 ? '#f472b6' : '#94a3b8',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  width: '100%',
+                }}
+              >
+                {donationAmount && donationAmount > 0 ? `Donate $${donationAmount.toFixed(2)}` : 'Donate'}
+              </button>
+              {showDonationPopover && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  marginBottom: '8px',
+                  background: '#1e293b',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  borderRadius: '12px',
+                  padding: '12px',
+                  zIndex: 50,
+                  minWidth: '200px',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+                }}>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '8px', textAlign: 'center' }}>
+                    Add Donation
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '8px' }}>
+                    {[1, 2, 5].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => {
+                          onDonation(amt)
+                          setShowDonationPopover(false)
+                          setCustomDonation('')
+                        }}
+                        style={{
+                          padding: '8px',
+                          borderRadius: '8px',
+                          border: '1px solid rgba(244, 114, 182, 0.3)',
+                          background: 'rgba(244, 114, 182, 0.1)',
+                          color: '#f472b6',
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ${amt}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Custom"
+                      value={customDonation}
+                      onChange={(e) => setCustomDonation(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = parseFloat(customDonation)
+                          if (!isNaN(val) && val > 0) {
+                            onDonation(val)
+                            setShowDonationPopover(false)
+                            setCustomDonation('')
+                          }
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '6px 8px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        color: '#e2e8f0',
+                        fontSize: '13px',
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        const val = parseFloat(customDonation)
+                        if (!isNaN(val) && val > 0) {
+                          onDonation(val)
+                          setShowDonationPopover(false)
+                          setCustomDonation('')
+                        }
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        background: '#f472b6',
+                        color: '#fff',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        border: 'none',
+                      }}
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {donationAmount != null && donationAmount > 0 && (
+                    <button
+                      onClick={() => {
+                        onDonation(null)
+                        setShowDonationPopover(false)
+                        setCustomDonation('')
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '6px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        color: '#f87171',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Remove Donation
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
           {/* Cancel Order — only when NO items have been sent to kitchen
               BUG-C1: Also hidden briefly after a payment cancel to prevent accidental tab destruction */}
