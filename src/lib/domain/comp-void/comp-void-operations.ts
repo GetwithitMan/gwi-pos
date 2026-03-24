@@ -225,6 +225,17 @@ export async function applyCompVoid(
     discountTotal, splitTax,
   )
 
+  // Add donation back to total — buildOrderTotals doesn't know about donations
+  // (matches pattern in order-totals.ts recalculateOrderTotals)
+  const orderForDonation = await (tx as any).order.findUnique({
+    where: { id: orderId },
+    select: { donationAmount: true },
+  })
+  const donationAmount = Number(orderForDonation?.donationAmount ?? 0)
+  if (donationAmount > 0) {
+    totals.total = roundToCents(totals.total + donationAmount)
+  }
+
   const shouldAutoClose = activeItems.length === 0
 
   // 5. Update order with recalculated totals + increment version
@@ -338,6 +349,16 @@ export async function applyRestore(
     split.inclusiveSubtotal, split.exclusiveSubtotal, split.subtotal,
     discountTotal, splitTax,
   )
+
+  // Add donation back to total — buildOrderTotals doesn't know about donations
+  const restoreOrderForDonation = await (tx as any).order.findUnique({
+    where: { id: orderId },
+    select: { donationAmount: true },
+  })
+  const restoreDonation = Number(restoreOrderForDonation?.donationAmount ?? 0)
+  if (restoreDonation > 0) {
+    totals.total = roundToCents(totals.total + restoreDonation)
+  }
 
   // 3. Update order with recalculated totals
   await (tx as any).order.update({

@@ -167,6 +167,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orderTypeSales: Record<string, { type: string; orders: number; gross: number; avgTicket: number }> = {}
     const modifierSales: Record<string, { name: string; quantity: number; gross: number }> = {}
     const paymentMethodSales: Record<string, { method: string; count: number; amount: number; tips: number }> = {}
+    const pricingTierSales: Record<string, { tier: string; count: number; total: number }> = {}
 
     // Entertainment tracking
     let entertainmentRevenue = 0
@@ -206,6 +207,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         } else {
           cardSales += amount
         }
+
+        // Pricing tier tracking
+        const tier = (payment as any).appliedPricingTier || (payment.paymentMethod === 'cash' ? 'cash' : 'credit')
+        if (!pricingTierSales[tier]) {
+          pricingTierSales[tier] = { tier, count: 0, total: 0 }
+        }
+        pricingTierSales[tier].count += 1
+        pricingTierSales[tier].total += amount
       })
 
       // Surcharge calculation (dual pricing: surcharge on card-paid orders)
@@ -483,6 +492,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       byOrderType: orderTypeReport,
       byModifier: modifierReport,
       byPaymentMethod: paymentMethodReport,
+      pricingTierSummary: Object.values(pricingTierSales)
+        .map(pt => ({ ...pt, total: roundMoney(pt.total) }))
+        .sort((a, b) => b.total - a.total),
       entertainment: entertainmentSessions > 0 ? {
         revenue: roundMoney(entertainmentRevenue),
         sessions: entertainmentSessions,

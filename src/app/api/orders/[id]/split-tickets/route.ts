@@ -605,6 +605,11 @@ export const POST = withVenue(withAuth(async function POST(
         ]
 
         // TX-KEEP: CREATE — split child order with nested item+modifier creates; no repo method for full split creation
+        // Assign full donation to the first ticket only
+        const ticketDonation = splits.length === 0 ? Number((parentOrder as any).donationAmount ?? 0) : 0
+        const ticketTotal = ticketDonation > 0
+          ? Math.round((ticketData.pricing.total + ticketDonation) * 100) / 100
+          : ticketData.pricing.total
         const splitOrder = await tx.order.create({
           data: {
             locationId: parentOrder.locationId,
@@ -624,8 +629,15 @@ export const POST = withVenue(withAuth(async function POST(
             taxTotal: ticketData.pricing.taxAmount,
             taxFromInclusive: ticketData.taxFromInclusive,
             taxFromExclusive: ticketData.taxFromExclusive,
-            total: ticketData.pricing.total,
+            total: ticketTotal,
             notes: parentOrder.notes,
+            // Propagate tax-exempt status from parent
+            isTaxExempt: (parentOrder as any).isTaxExempt ?? false,
+            ...((parentOrder as any).taxExemptReason ? { taxExemptReason: (parentOrder as any).taxExemptReason } : {}),
+            ...((parentOrder as any).taxExemptId ? { taxExemptId: (parentOrder as any).taxExemptId } : {}),
+            ...((parentOrder as any).taxExemptApprovedBy ? { taxExemptApprovedBy: (parentOrder as any).taxExemptApprovedBy } : {}),
+            // Assign donation to first ticket
+            ...(ticketDonation > 0 ? { donationAmount: ticketDonation } : {}),
             items: {
               create: itemCreateData,
             },
@@ -647,6 +659,7 @@ export const POST = withVenue(withAuth(async function POST(
       await OrderItemRepository.updateItemsWhere(id, parentOrder.locationId, { deletedAt: null }, { deletedAt: new Date() }, tx)
 
       // Update parent: status='split', zero out totals (children own all items now)
+      const parentDonationAmt = Number((parentOrder as any).donationAmount ?? 0)
       await OrderRepository.updateOrder(parentOrder.id, parentOrder.locationId, {
         status: 'split',
         subtotal: 0,
@@ -654,6 +667,8 @@ export const POST = withVenue(withAuth(async function POST(
         taxFromInclusive: 0,
         taxFromExclusive: 0,
         total: 0,
+        // Zero out parent donation — assigned to first child
+        ...(parentDonationAmt > 0 ? { donationAmount: 0 } : {}),
         notes: parentOrder.notes
           ? `${parentOrder.notes}\n[Split into ${splits.length} tickets]`
           : `[Split into ${splits.length} tickets]`,

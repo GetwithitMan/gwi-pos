@@ -76,6 +76,7 @@ export {
   fetchLiveModifierTotal,
   validateComboComponents,
   fetchModifierPrices,
+  validateRequiredModifierGroups,
 } from './item-operations'
 
-export type { CreateOrderItemParams, ComboValidationError } from './item-operations'
+export type { CreateOrderItemParams, ComboValidationError, RequiredModifierError } from './item-operations'

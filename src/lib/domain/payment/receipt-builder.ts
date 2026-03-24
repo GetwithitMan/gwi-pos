@@ -4,8 +4,9 @@
  * PURE function that builds the receipt response object from order and payment data.
  */
 
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, calculateDebitPrice, roundToCents } from '@/lib/pricing'
 import { getPricingProgram } from '@/lib/settings'
+import type { PricingProgram } from '@/lib/settings'
 import type { ReceiptData, ReceiptPayment } from './types'
 
 interface ReceiptOrder {
@@ -78,6 +79,7 @@ interface BridgedPayment {
   amountTendered?: unknown
   changeGiven?: unknown
   pricingMode?: string
+  appliedPricingTier?: string | null // 'cash' | 'debit' | 'credit'
 }
 
 /**
@@ -89,7 +91,7 @@ export function buildReceiptData(
   pointsEarned: number,
   settings: Record<string, unknown>,
 ): ReceiptData {
-  const dualPricing = (settings as any).dualPricing
+  const pp: PricingProgram = getPricingProgram(settings as any)
   const employeeName = order.employee?.displayName ||
     (order.employee ? `${order.employee.firstName} ${order.employee.lastName}` : 'Unknown')
 
@@ -105,25 +107,63 @@ export function buildReceiptData(
     changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
   }))
 
-  // For cash discount (dual pricing) model: order.total IS the cash price.
-  // If any payment was charged at the card price, show the card total on the receipt.
-  const total = (() => {
-    if (dualPricing?.enabled) {
-      const hasCardPayment = bridgedPayments.some(p => p.pricingMode === 'card')
-      if (hasCardPayment) {
-        return calculateCardPrice(Number(order.total ?? 0), dualPricing.cashDiscountPercent)
-      }
+  // Dual pricing breakdown — works with both legacy dualPricing and new pricingProgram models.
+  // order.total IS the cash price. Card/debit payments use a markup.
+  const isDualPricing = pp.enabled && (
+    pp.model === 'dual_price' || pp.model === 'dual_price_pan_debit' || pp.model === 'cash_discount'
+  )
+
+  // Determine the applied tier from the first card payment (for receipt display)
+  const cardPayment = bridgedPayments.find(p =>
+    p.pricingMode === 'card' || p.appliedPricingTier === 'credit' || p.appliedPricingTier === 'debit'
+  )
+  const appliedTier = cardPayment?.appliedPricingTier as 'credit' | 'debit' | null
+
+  // Resolve the markup percent based on which pricing tier was actually applied
+  const markupPercent = (() => {
+    if (!isDualPricing || !appliedTier) return 0
+    if (appliedTier === 'debit') {
+      return pp.debitMarkupPercent ?? 0
     }
-    return Number(order.total ?? 0)
+    // credit tier (or legacy fallback)
+    return pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0
+  })()
+
+  // Calculate totals
+  const cashTotal = Number(order.total ?? 0)
+  const total = isDualPricing && cardPayment && markupPercent > 0
+    ? (appliedTier === 'debit'
+        ? calculateDebitPrice(cashTotal, markupPercent)
+        : calculateCardPrice(cashTotal, markupPercent))
+    : cashTotal
+
+  // Build dual pricing breakdown fields for the receipt template
+  const dualPricingBreakdown = (() => {
+    if (!isDualPricing || !cardPayment || markupPercent <= 0) return {}
+
+    const cashSubtotal = Number(order.subtotal ?? 0)
+    const cashTax = Number(order.taxTotal ?? 0)
+    const cardSubtotal = appliedTier === 'debit'
+      ? calculateDebitPrice(cashSubtotal, markupPercent)
+      : calculateCardPrice(cashSubtotal, markupPercent)
+    const cardTax = appliedTier === 'debit'
+      ? calculateDebitPrice(cashTax, markupPercent)
+      : calculateCardPrice(cashTax, markupPercent)
+
+    return {
+      cardSubtotal,
+      cardTax,
+      cardTotal: total, // Use the already-calculated total for consistency
+      cashSubtotal,
+      cashTax,
+      cashTotal: roundToCents(cashSubtotal + cashTax - Number(order.discountTotal ?? 0) + Number(order.tipTotal ?? 0)),
+    }
   })()
 
   // Surcharge disclosure — include when pricing program is 'surcharge' and disclosure text is set
-  const surchargeDisclosure = (() => {
-    const pp = getPricingProgram(settings as any)
-    return pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
-      ? pp.surchargeDisclosure
-      : null
-  })()
+  const surchargeDisclosure = pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
+    ? pp.surchargeDisclosure
+    : null
 
   // Convenience fee — include when order has a non-zero fee
   const convenienceFeeAmount = Number(order.convenienceFee ?? 0)
@@ -178,6 +218,7 @@ export function buildReceiptData(
     taxFromExclusive: Number(order.taxFromExclusive ?? 0) || undefined,
     tipTotal: Number(order.tipTotal ?? 0),
     total,
+    ...dualPricingBreakdown,
     createdAt: order.createdAt.toISOString(),
     paidAt: new Date().toISOString(),
     customer: order.customer ? {

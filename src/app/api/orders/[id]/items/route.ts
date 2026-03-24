@@ -30,6 +30,7 @@ import {
   createOrderItem,
   validateComboComponents,
   fetchModifierPrices,
+  validateRequiredModifierGroups,
   recalculateOrderTotalsForAdd,
   recalculateParentOrderTotals,
 } from '@/lib/domain/order-items'
@@ -326,6 +327,15 @@ export const POST = withVenue(async function POST(
       // Server-side modifier price validation via domain
       const modifierPriceMap = await fetchModifierPrices(tx, items)
       overrideModifierPrices(items, modifierPriceMap)
+
+      // Server-side required modifier group validation (safety net — clients already validate)
+      const modGroupError = await validateRequiredModifierGroups(tx, items)
+      if (modGroupError) {
+        throw new Error(
+          `REQUIRED_MODIFIER_MISSING:${modGroupError.itemName}:${modGroupError.groupName}` +
+          `:requires ${modGroupError.minSelections}, got ${modGroupError.actualSelections}`
+        )
+      }
 
       // Derive tax-inclusive flags + dual pricing settings via domain
       const locSettings = existingOrder.location.settings
@@ -624,6 +634,15 @@ export const POST = withVenue(async function POST(
       const itemName = message.replace('COMBO_COMPONENT_INACTIVE:', '')
       return NextResponse.json(
         { error: `Combo component "${itemName}" is no longer available` },
+        { status: 400 }
+      )
+    }
+    if (message.startsWith('REQUIRED_MODIFIER_MISSING:')) {
+      const parts = message.replace('REQUIRED_MODIFIER_MISSING:', '').split(':')
+      const itemName = parts[0]
+      const groupName = parts[1]
+      return NextResponse.json(
+        { error: `Required modifier group "${groupName}" is not satisfied for item "${itemName}"` },
         { status: 400 }
       )
     }

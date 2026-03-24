@@ -199,6 +199,13 @@ export interface ReceiptData {
   taxFromExclusive?: number
   tipTotal: number
   total: number
+  // Dual pricing breakdown (present when dual pricing + card/debit payment)
+  cardSubtotal?: number
+  cardTax?: number
+  cardTotal?: number
+  cashSubtotal?: number
+  cashTax?: number
+  cashTotal?: number
   createdAt: string
   paidAt: string
   customer: {

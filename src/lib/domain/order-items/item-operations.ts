@@ -504,3 +504,108 @@ export async function fetchModifierPrices(
     extraMultiplier: m.extraMultiplier != null ? Number(m.extraMultiplier) : null,
   }]))
 }
+
+// ─── Required Modifier Group Validation ────────────────────────────────────
+
+export interface RequiredModifierError {
+  itemName: string
+  groupName: string
+  minSelections: number
+  actualSelections: number
+}
+
+/**
+ * Server-side safety net: validate that required modifier groups have
+ * minimum selections satisfied for each item being added.
+ *
+ * Only validates items that have modifiers AND a menuItemId (skip open items).
+ * Legacy clients that don't send modifier data are not blocked — this only
+ * validates when modifiers are present but a required group is unsatisfied.
+ *
+ * Returns null if valid, or the first validation error found.
+ */
+export async function validateRequiredModifierGroups(
+  tx: TxClient,
+  items: AddItemInput[],
+): Promise<RequiredModifierError | null> {
+  // Collect unique menuItemIds from items that have modifiers
+  const itemsWithModifiers = items.filter(i => i.menuItemId && i.modifiers && i.modifiers.length > 0)
+  if (itemsWithModifiers.length === 0) return null
+
+  const uniqueMenuItemIds = [...new Set(itemsWithModifiers.map(i => i.menuItemId))]
+
+  // Batch-fetch all required modifier groups for these menu items
+  const requiredGroups = await tx.modifierGroup.findMany({
+    where: {
+      menuItemId: { in: uniqueMenuItemIds },
+      isRequired: true,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      menuItemId: true,
+      name: true,
+      minSelections: true,
+      modifiers: {
+        where: { deletedAt: null },
+        select: { id: true },
+      },
+    },
+  })
+
+  if (requiredGroups.length === 0) return null
+
+  // Build a map: menuItemId -> required groups with their modifier IDs
+  const groupsByMenuItem = new Map<string, typeof requiredGroups>()
+  for (const group of requiredGroups) {
+    if (!group.menuItemId) continue
+    const existing = groupsByMenuItem.get(group.menuItemId) || []
+    existing.push(group)
+    groupsByMenuItem.set(group.menuItemId, existing)
+  }
+
+  // For each item, check required groups are satisfied
+  for (const item of itemsWithModifiers) {
+    const groups = groupsByMenuItem.get(item.menuItemId)
+    if (!groups) continue
+
+    // Build a set of modifier IDs submitted for this item
+    const submittedModifierIds = new Set(item.modifiers.map(m => m.modifierId))
+    // Count isNoneSelection as satisfying the group
+    const noneSelectionModifierIds = new Set(
+      item.modifiers.filter(m => m.isNoneSelection).map(m => m.modifierId)
+    )
+
+    for (const group of groups) {
+      const groupModifierIds = new Set(group.modifiers.map(m => m.id))
+
+      // Count how many modifiers from this group are in the submission
+      let selectionCount = 0
+      let hasNone = false
+      for (const mod of item.modifiers) {
+        if (groupModifierIds.has(mod.modifierId)) {
+          if (mod.isNoneSelection) {
+            hasNone = true
+          } else {
+            selectionCount++
+          }
+        }
+      }
+
+      // isNoneSelection satisfies the requirement
+      if (hasNone) continue
+
+      const minRequired = group.minSelections > 0 ? group.minSelections : 1
+      if (selectionCount < minRequired) {
+        return {
+          itemName: item.name || item.menuItemId,
+          groupName: group.name,
+          minSelections: minRequired,
+          actualSelections: selectionCount,
+        }
+      }
+    }
+  }
+
+  return null
+}

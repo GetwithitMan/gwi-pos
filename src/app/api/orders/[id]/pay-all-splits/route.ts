@@ -125,6 +125,24 @@ export const POST = withVenue(withAuth(async function POST(
     // Parse settings before tx — needed for loyalty inside tx and tips outside
     const settings = parseSettings(parentOrder.location.settings)
 
+    // ── Party-size auto-gratuity for pay-all-splits ────────────────────────
+    // Use parent's guestCount (split children all have guestCount: 1)
+    const autoGratPerSplit = new Map<string, number>()
+    if (settings.autoGratuity?.enabled && parentOrder.guestCount >= (settings.autoGratuity.minimumPartySize || 0)) {
+      for (const split of unpaidSplits) {
+        const splitSubtotal = Number(split.subtotal ?? split.total ?? 0)
+        const autoGratResult = calculateAutoGratuity(settings.autoGratuity, {
+          guestCount: parentOrder.guestCount,
+          existingTipTotal: Number(split.tipTotal ?? 0),
+          orderSubtotal: splitSubtotal,
+          payments: [{ method }],
+        })
+        if (autoGratResult.applied && autoGratResult.amount > 0) {
+          autoGratPerSplit.set(split.id, autoGratResult.amount)
+        }
+      }
+    }
+
     // Dual pricing: determine if card price applies to this payment method
     const dualPricing = settings.dualPricing
     const isCard = method !== 'cash'
@@ -181,11 +199,20 @@ export const POST = withVenue(withAuth(async function POST(
 
       // Create payments individually to capture real payment IDs for event emission
       const createdPayments = await Promise.all(
-        unpaidSplits.map(split => {
+        unpaidSplits.map(async (split) => {
           const cashSplitTotal = roundToCents(Number(split.total))
           const splitTotal = dualPricingApplies
             ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
             : cashSplitTotal
+          const splitAutoGratTip = autoGratPerSplit.get(split.id) ?? 0
+
+          // If auto-gratuity applies, update the split order's tipTotal
+          if (splitAutoGratTip > 0) {
+            await tx.order.update({
+              where: { id: split.id },
+              data: { tipTotal: splitAutoGratTip },
+            })
+          }
 
           // TX-KEEP: CREATE — payment record per split inside FOR UPDATE lock; no batch payment create repo method
           return tx.payment.create({
@@ -197,8 +224,8 @@ export const POST = withVenue(withAuth(async function POST(
               employeeId: split.employeeId || employeeId,
               terminalId: terminalId || null,
               amount: splitTotal,
-              tipAmount: 0,
-              totalAmount: splitTotal,
+              tipAmount: splitAutoGratTip,
+              totalAmount: roundToCents(splitTotal + splitAutoGratTip),
               paymentMethod: method,
               status: 'completed',
               ...cardDetails,
@@ -350,14 +377,15 @@ export const POST = withVenue(withAuth(async function POST(
       const splitTotal = dualPricingApplies
         ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
         : cashSplitTotal
+      const splitAutoGratTip = autoGratPerSplit.get(split.id) ?? 0
       void dispatchPaymentProcessed(parentOrder.locationId, {
         orderId: split.id,
         paymentId: splitPaymentMap.get(split.id),
         status: 'completed',
         method,
         amount: splitTotal,
-        tipAmount: 0,
-        totalAmount: splitTotal,
+        tipAmount: splitAutoGratTip,
+        totalAmount: roundToCents(splitTotal + splitAutoGratTip),
         employeeId: split.employeeId || employeeId || null,
         isClosed: true,
         parentOrderId: parentOrderId,
@@ -381,6 +409,7 @@ export const POST = withVenue(withAuth(async function POST(
       const splitTotal = dualPricingApplies
         ? calculateCardPrice(cashSplitTotal, dualPricing.cashDiscountPercent)
         : cashSplitTotal
+      const splitAutoGratTipEmit = autoGratPerSplit.get(split.id) ?? 0
       void emitOrderEvents(split.locationId, split.id, [
         {
           type: 'PAYMENT_APPLIED',
@@ -388,8 +417,8 @@ export const POST = withVenue(withAuth(async function POST(
             paymentId: splitPaymentMap.get(split.id) || split.id,
             method,
             amountCents: Math.round(splitTotal * 100),
-            tipCents: 0,
-            totalCents: Math.round(splitTotal * 100),
+            tipCents: Math.round(splitAutoGratTipEmit * 100),
+            totalCents: Math.round((splitTotal + splitAutoGratTipEmit) * 100),
             ...(cardBrand && { cardBrand }),
             ...(cardLast4 && { cardLast4 }),
             status: 'completed',
@@ -449,9 +478,10 @@ export const POST = withVenue(withAuth(async function POST(
       }
     })()
 
-    // Fire-and-forget: tip allocation for splits that have tips
+    // Fire-and-forget: tip allocation for splits that have tips (including auto-gratuity)
     for (const split of unpaidSplits) {
-      const splitTipTotal = Number(split.tipTotal || 0)
+      const autoGratTipForSplit = autoGratPerSplit.get(split.id) ?? 0
+      const splitTipTotal = Number(split.tipTotal || 0) + autoGratTipForSplit
       if (splitTipTotal > 0 && split.employeeId) {
         void allocateTipsForPayment({
           locationId: split.locationId,

@@ -254,6 +254,14 @@ export const POST = withVenue(async function POST(
         )
       }
 
+      // Guard: cannot split an already-split order (same guard as even/seat/table splits)
+      if (isAlreadySplit) {
+        return NextResponse.json(
+          { error: 'Cannot split an already-split order' },
+          { status: 400 }
+        )
+      }
+
       // Validate items belong to this order
       const itemsToMove = order.items.filter(item => itemIds.includes(item.id))
       if (itemsToMove.length !== itemIds.length) {
