@@ -267,6 +267,8 @@ export interface MappedOrder {
   reopenedAt: Date | null
   reopenReason: string | null
   version: number
+  // Donations
+  donationAmount: number | null
   // Tax exemption
   isTaxExempt: boolean
   taxExemptReason: string | null
@@ -312,6 +314,8 @@ export function mapOrderForResponse(order: any): MappedOrder {
     reopenedAt: order.reopenedAt || null,
     reopenReason: order.reopenReason || null,
     version: order.version ?? 1,
+    // Donations
+    donationAmount: order.donationAmount != null ? Number(order.donationAmount) : null,
     // Tax exemption
     isTaxExempt: order.isTaxExempt ?? false,
     taxExemptReason: order.taxExemptReason || null,

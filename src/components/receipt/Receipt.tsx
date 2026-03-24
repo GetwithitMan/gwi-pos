@@ -92,6 +92,8 @@ export interface ReceiptData {
   // Convenience fee (present when order has a per-channel fee)
   convenienceFee?: number | null
   convenienceFeeDisclosure?: string | null
+  // Donations
+  donationAmount?: number | null
   // Tax exemption
   isTaxExempt?: boolean
   taxExemptReason?: string | null
@@ -364,6 +366,12 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                 <div className="flex justify-between text-xs">
                   <span>Tip:</span>
                   <span>{formatCurrency(data.tipTotal)}</span>
+                </div>
+              )}
+              {data.donationAmount != null && data.donationAmount > 0 && (
+                <div className="flex justify-between text-xs text-pink-600">
+                  <span>Donation:</span>
+                  <span>{formatCurrency(data.donationAmount)}</span>
                 </div>
               )}
               <div className="flex justify-between font-bold mt-2 pt-2 border-t border-gray-300">

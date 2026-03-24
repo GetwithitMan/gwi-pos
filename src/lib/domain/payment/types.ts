@@ -212,6 +212,8 @@ export interface ReceiptData {
   surchargeDisclosure: string | null
   convenienceFee: number | null
   convenienceFeeDisclosure: string | null
+  // Donations
+  donationAmount?: number | null
   // Tax exemption
   isTaxExempt?: boolean
   taxExemptReason?: string | null

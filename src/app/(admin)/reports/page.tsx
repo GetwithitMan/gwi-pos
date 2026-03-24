@@ -338,6 +338,17 @@ export default function ReportsHubPage() {
           ),
         },
         {
+          name: 'Tax Exempt Orders',
+          href: '/reports/tax-exempt',
+          description: 'Track tax-exempt transactions with reason, tax ID, and amount saved',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z" />
+            </svg>
+          ),
+        },
+        {
           name: 'Tip Adjustment',
           href: '/reports/tip-adjustment',
           description: 'Review and adjust card transaction tips for today\'s shifts',
