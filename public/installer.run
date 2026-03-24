@@ -84,24 +84,34 @@ header() { echo -e "\n${CYAN}═════════════════
 _SPINNER_PID=""
 _start_spinner() {
   local msg="$1"
-  (
-    local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-    local i=0 elapsed=0
-    while true; do
-      printf "\r${GREEN}[GWI POS]${NC} %s %s [%ds]  " "$msg" "${chars:i%10:1}" "$elapsed"
-      sleep 1
-      elapsed=$((elapsed + 1))
-      i=$((i + 1))
-    done
-  ) &
-  _SPINNER_PID=$!
+  log "$msg"
+  if [[ -t 1 ]]; then
+    # Interactive terminal — animated spinner
+    (
+      local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+      local i=0 elapsed=0
+      while true; do
+        printf "\r${GREEN}[GWI POS]${NC} %s %s [%ds]  " "$msg" "${chars:i%10:1}" "$elapsed"
+        sleep 1
+        elapsed=$((elapsed + 1))
+        i=$((i + 1))
+      done
+    ) &
+    _SPINNER_PID=$!
+  else
+    # Non-interactive — just print a dot every 30s
+    (
+      while true; do sleep 30; printf "."; done
+    ) &
+    _SPINNER_PID=$!
+  fi
 }
 _stop_spinner() {
   if [[ -n "$_SPINNER_PID" ]] && kill -0 "$_SPINNER_PID" 2>/dev/null; then
     kill "$_SPINNER_PID" 2>/dev/null
     wait "$_SPINNER_PID" 2>/dev/null
     _SPINNER_PID=""
-    printf "\r\033[K"  # clear the spinner line
+    [[ -t 1 ]] && printf "\r\033[K"  # clear spinner line only on TTY
   fi
 }
 run_with_progress() {
