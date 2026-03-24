@@ -1241,6 +1241,20 @@ export function PaymentModal({
             </div>
           </div>
 
+          {/* Surcharge disclosure — Visa requires pre-payment notice (P1 compliance) */}
+          {pricingProgram?.enabled && pricingProgram.model === 'surcharge' && selectedMethod && selectedMethod !== 'cash' && surchargeAmount > 0 && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.25)', borderRadius: 8, fontSize: 13, color: '#fbbf24', textAlign: 'center' }}>
+              A surcharge of {pricingProgram.surchargePercent ?? 0}% ({formatCurrency(surchargeAmount)}) applies to card payments
+            </div>
+          )}
+
+          {/* Dual pricing savings message — show when card method selected */}
+          {pricingProgram?.enabled && (pricingProgram.model === 'dual_price' || pricingProgram.model === 'dual_price_pan_debit') && selectedMethod && selectedMethod !== 'cash' && cardTotal > cashTotal && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: 8, fontSize: 13, color: '#4ade80', textAlign: 'center' }}>
+              Save {formatCurrency(cardTotal - cashTotal)} by paying with cash
+            </div>
+          )}
+
           <PaymentStepErrorBoundary onReset={() => setStep('method')}>
           {/* Step: Select Payment Method */}
           {step === 'method' && (

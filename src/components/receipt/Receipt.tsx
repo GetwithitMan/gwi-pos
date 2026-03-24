@@ -383,15 +383,15 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
         </div>
       )}
 
-      {/* Surcharge Disclosure */}
-      {showPrices && data.surchargeDisclosure && (
+      {/* Surcharge Disclosure — always prints when present (legal requirement) */}
+      {data.surchargeDisclosure && (
         <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs text-center text-gray-600 italic">
           {data.surchargeDisclosure}
         </div>
       )}
 
-      {/* Convenience Fee Disclosure */}
-      {showPrices && data.convenienceFeeDisclosure && data.convenienceFee != null && data.convenienceFee > 0 && (
+      {/* Convenience Fee Disclosure — always prints when fee was charged (legal requirement) */}
+      {data.convenienceFeeDisclosure && data.convenienceFee != null && data.convenienceFee > 0 && (
         <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs text-center text-gray-600 italic">
           {data.convenienceFeeDisclosure}
         </div>

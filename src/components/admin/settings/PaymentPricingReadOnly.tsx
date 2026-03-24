@@ -70,6 +70,17 @@ export function PaymentPricingReadOnly({ pricingProgram, convenienceFees, settin
         <div className="bg-white rounded-xl p-3 border border-gray-100">
           <div className="text-xs text-gray-600 mb-0.5">Pricing Model</div>
           <div className="font-medium text-gray-900">{isEnabled ? modelLabel : 'Standard'}</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {!isEnabled || model === 'standard'
+              ? 'No additional fees. All customers pay the same price.'
+              : model === 'dual_price'
+              ? 'Card customers pay a small markup. Cash customers get the base price.'
+              : model === 'dual_price_pan_debit'
+              ? 'Credit cards pay a markup. Debit cards pay a lower rate or cash price. Detected automatically.'
+              : model === 'surcharge'
+              ? 'A fee is added on top of the base price for card payments.'
+              : null}
+          </div>
         </div>
 
         {isEnabled && isDualPrice && (
