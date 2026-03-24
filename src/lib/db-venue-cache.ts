@@ -84,6 +84,38 @@ function getVenueDbIdFromEnv(): string | null {
 const ENV_VENUE_DB_ID = getVenueDbIdFromEnv()
 
 // ---------------------------------------------------------------------------
+// Slug → Database Name Registry (populated by MC sync)
+// ---------------------------------------------------------------------------
+
+/**
+ * Runtime registry mapping venue slugs to their actual Neon database names.
+ * Populated by MC via POST /api/internal/online-ordering/enabled.
+ *
+ * This solves the problem where a venue's actual database name doesn't match
+ * the slug-derived convention (e.g., venue provisioned before naming convention,
+ * or renamed slug). MC is the source of truth for database names.
+ *
+ * On Vercel serverless: this Map is per-instance and populated on first sync.
+ * On NUC: VENUE_DB_ID env var takes precedence (single-venue mode).
+ */
+const globalForRegistry = globalThis as unknown as {
+  venueDbNameRegistry: Map<string, string> | undefined
+}
+if (!globalForRegistry.venueDbNameRegistry) {
+  globalForRegistry.venueDbNameRegistry = new Map()
+}
+
+/** Register a slug → databaseName mapping (called by MC sync endpoint) */
+export function registerVenueDbName(slug: string, databaseName: string): void {
+  globalForRegistry.venueDbNameRegistry!.set(slug, databaseName)
+}
+
+/** Get all registered mappings (for debugging) */
+export function getVenueDbNameRegistry(): Map<string, string> {
+  return globalForRegistry.venueDbNameRegistry!
+}
+
+// ---------------------------------------------------------------------------
 // URL helpers
 // ---------------------------------------------------------------------------
 
@@ -92,7 +124,8 @@ const ENV_VENUE_DB_ID = getVenueDbIdFromEnv()
  *
  * Resolution order:
  *   1. If VENUE_DB_ID env var is set (NUC single-venue), use `gwi_pos_{uuid_underscored}`
- *   2. Otherwise, use slug-derived: `gwi_pos_{slug_underscored}`
+ *   2. If slug is in the MC-synced registry, use the registered databaseName
+ *   3. Otherwise, fall back to slug-derived: `gwi_pos_{slug_underscored}`
  *
  * The venueDbId uses underscores in place of hyphens because PostgreSQL identifiers
  * with hyphens require quoting. The UUID format (8-4-4-4-12 hex) is safe after
@@ -103,6 +136,12 @@ export function venueDbName(slug: string): string {
   if (ENV_VENUE_DB_ID) {
     return `gwi_pos_${ENV_VENUE_DB_ID.replace(/-/g, '_')}`
   }
+  // Check MC-synced registry for explicit database name
+  const registered = globalForRegistry.venueDbNameRegistry!.get(slug)
+  if (registered) {
+    return registered
+  }
+  // Fall back to slug-derived convention
   return `gwi_pos_${slug.replace(/-/g, '_')}`
 }
 
@@ -229,22 +268,49 @@ export async function getDbForVenue(
     }
   }
 
-  const venueUrl = buildVenueDatabaseUrl(slug)
-  const client = createPrismaClient(venueUrl)
+  let venueUrl = buildVenueDatabaseUrl(slug)
+  let client = createPrismaClient(venueUrl)
 
   // Connectivity test: verify the venue database exists before caching.
   // Only runs on first connection (not cached hits). If the DB doesn't exist,
-  // throw a descriptive error and do NOT cache the failed client.
+  // fall back to MC lookup for the actual database name.
   try {
     await client.$queryRawUnsafe('SELECT 1')
   } catch (connErr: any) {
     // Disconnect the failed client immediately
     void client.$disconnect().catch(() => {})
     const msg = connErr?.message || ''
-    if (msg.includes('does not exist') || msg.includes('FATAL') || msg.includes('3D000')) {
-      throw new Error(`Venue database not found for slug "${slug}"`)
+    const isDbNotFound = msg.includes('does not exist') || msg.includes('FATAL') || msg.includes('3D000')
+
+    if (isDbNotFound) {
+      // ── MC Fallback: resolve actual database name from Mission Control ──
+      // The slug-derived name didn't match. Ask MC for the real database name.
+      // This handles venues provisioned before the naming convention was established.
+      const mcDbName = await resolveDbNameFromMC(slug)
+      if (mcDbName && mcDbName !== venueDbName(slug)) {
+        // Register the mapping so future calls skip the MC lookup
+        registerVenueDbName(slug, mcDbName)
+        // Rebuild URL with the correct database name
+        const masterUrl = process.env.DATABASE_URL
+        if (masterUrl) {
+          venueUrl = masterUrl.replace(/\/[^/?]+(\?|$)/, `/${mcDbName}$1`)
+          client = createPrismaClient(venueUrl)
+          try {
+            await client.$queryRawUnsafe('SELECT 1')
+          } catch (retryErr: any) {
+            void client.$disconnect().catch(() => {})
+            throw new Error(`Venue database not found for slug "${slug}" (MC resolved: ${mcDbName}): ${retryErr?.message || ''}`)
+          }
+          // Success with MC-resolved name — fall through to cache below
+        } else {
+          throw new Error(`Venue database not found for slug "${slug}" and DATABASE_URL not set`)
+        }
+      } else {
+        throw new Error(`Venue database not found for slug "${slug}"`)
+      }
+    } else {
+      throw new Error(`Venue database connection failed for slug "${slug}": ${msg}`)
     }
-    throw new Error(`Venue database connection failed for slug "${slug}": ${msg}`)
   }
 
   clients.set(slug, { client, lastAccessed: Date.now() })
@@ -257,6 +323,38 @@ export async function getDbForVenue(
   }
 
   return client
+}
+
+/**
+ * Resolve venue database name from Mission Control.
+ * Called as a fallback when the slug-derived database name doesn't exist.
+ * MC stores the actual database name in CloudLocation.databaseName.
+ *
+ * Returns the database name or null if MC is unreachable or venue not found.
+ * Timeout: 5 seconds (don't block customer requests for too long).
+ */
+async function resolveDbNameFromMC(slug: string): Promise<string | null> {
+  const mcUrl = process.env.MC_BASE_URL || process.env.NEXT_PUBLIC_MC_URL || 'https://gwi-mission-control.vercel.app'
+  const apiKey = process.env.PROVISION_API_KEY
+  if (!apiKey) return null
+
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+
+    const res = await fetch(`${mcUrl}/api/fleet/resolve-venue?slug=${encodeURIComponent(slug)}`, {
+      headers: { 'x-api-key': apiKey },
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.databaseName || null
+  } catch {
+    // MC unreachable — don't block the request
+    return null
+  }
 }
 
 /**

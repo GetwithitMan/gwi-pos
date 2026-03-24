@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateLocationCache } from '@/lib/location-cache'
+import { registerVenueDbName } from '@/lib/db-venue-cache'
 
 /**
  * POST /api/internal/online-ordering/enabled
@@ -9,12 +10,18 @@ import { invalidateLocationCache } from '@/lib/location-cache'
  * Called by Mission Control to push the online ordering enable/disable state
  * down to the POS. MC is the authoritative source for this toggle.
  *
+ * Also syncs:
+ *   - orderCode: the MC-assigned order code for the customer ordering URL
+ *   - databaseName: the actual Neon database name for this venue
+ *     (registered in the venue DB name cache so getDbForVenue works
+ *      even if the database name doesn't match the slug convention)
+ *
  * Headers:
  *   x-api-key: PROVISION_API_KEY (shared secret between MC and POS)
  *   x-venue-slug: venue slug (set by custom server for DB routing)
  *
  * Body:
- *   { enabled: boolean }
+ *   { enabled: boolean, orderCode?: string, databaseName?: string }
  *
  * Response:
  *   { success: true }
@@ -26,11 +33,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const venueSlug = request.headers.get('x-venue-slug')
+
   const body = await request.json()
-  const { enabled, orderCode } = body
+  const { enabled, orderCode, databaseName } = body
 
   if (typeof enabled !== 'boolean') {
     return NextResponse.json({ error: 'enabled must be a boolean' }, { status: 400 })
+  }
+
+  // ── Register venue database name in cache ────────────────────────────
+  // This ensures getDbForVenue(slug) works even when the actual Neon
+  // database name doesn't match the slug convention (gwi_pos_{slug}).
+  if (venueSlug && databaseName) {
+    registerVenueDbName(venueSlug, databaseName)
   }
 
   // ── Find location ─────────────────────────────────────────────────────
@@ -52,6 +68,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       ...existingOnlineOrdering,
       enabled,
       ...(orderCode && { orderCode }),
+      ...(databaseName && { databaseName }),
     },
   }
 
