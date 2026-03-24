@@ -424,25 +424,10 @@ KIOSKCTL
     chmod 755 /opt/gwi-pos/kiosk-control.sh
 
     cat > /etc/sudoers.d/gwi-pos <<SUDEOF
-# GWI POS — allow service user to manage POS services without password
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/kiosk-control.sh
-$POSUSER ALL=(ALL) NOPASSWD: /sbin/shutdown -h now
-$POSUSER ALL=(ALL) NOPASSWD: /usr/sbin/shutdown -h now
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/promote.sh
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/rejoin-as-standby.sh
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/scripts/nuc-restore.sh
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart keepalived
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop keepalived
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start keepalived
-$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart postgresql
-$POSUSER ALL=(ALL) NOPASSWD: /opt/gwi-pos/disable-rls.sh
+# GWI POS — full passwordless sudo for POS service user
+# Required for: service management, component updates, schema sync,
+# backups, watchdog, dashboard install, file deployment
+$POSUSER ALL=(ALL) NOPASSWD: ALL
 SUDEOF
     chmod 440 /etc/sudoers.d/gwi-pos
 

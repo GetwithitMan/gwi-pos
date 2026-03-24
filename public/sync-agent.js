@@ -500,6 +500,11 @@ async function handleForceUpdate(payload, cmdId) {
   // NUC reads version truth from Neon and blocks sync if behind.
   // If Neon schema is behind, MC must push the update to this venue.
   // Skip typecheck on NUC (already verified in CI) + set heap for Next.js build
+  // Clean stale .next/lock from previous failed builds
+  try { fs.unlinkSync(path.join(APP_DIR, '.next', 'lock')) } catch (e) { /* no lock = fine */ }
+  // Fix ownership (git operations as root can leave root-owned files)
+  run('sudo chown -R $(whoami):$(whoami) ' + APP_DIR, APP_DIR, 30)
+
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'build', detail: 'starting npm run build' })
   if (!step('build', 'SKIP_TYPECHECK=1 NODE_OPTIONS="--max-old-space-size=4096" npm run build', false, 600)) {
     var buildFailResult = { ok: false, error: 'build failed', steps: steps }
