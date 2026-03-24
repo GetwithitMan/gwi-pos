@@ -5,10 +5,13 @@
  *
  * Shows venue logo/name, navigation links (driven by capabilities),
  * cart icon, and account icon. Collapses to hamburger on mobile.
+ *
+ * In QR mode: minimal header — logo + table badge + cart only.
  */
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { useSiteModeContext } from '@/components/site/SiteShell'
 import type { SiteBootstrapResponse } from '@/lib/site-api-schemas'
 
 interface SiteHeaderProps {
@@ -19,6 +22,7 @@ interface SiteHeaderProps {
 
 export function SiteHeader({ venueName, logoUrl, capabilities }: SiteHeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { isQR, tableId } = useSiteModeContext()
 
   const navLinks: Array<{ href: string; label: string }> = []
 
@@ -32,6 +36,69 @@ export function SiteHeader({ venueName, logoUrl, capabilities }: SiteHeaderProps
     navLinks.push({ href: '/gift-cards', label: 'Gift Cards' })
   }
 
+  // ── QR Mode: minimal header ────────────────────────────────────────
+  if (isQR) {
+    return (
+      <header
+        className="sticky top-0 z-50 border-b backdrop-blur-md"
+        style={{
+          backgroundColor: 'rgba(var(--site-brand-rgb), 0.03)',
+          borderColor: 'var(--site-border)',
+        }}
+      >
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-12 items-center justify-between">
+            {/* Logo / venue name + table badge */}
+            <div className="flex items-center gap-3 shrink-0">
+              <Link href="/menu" className="flex items-center gap-2">
+                {logoUrl ? (
+                  <img src={logoUrl} alt={venueName} className="h-7 w-auto object-contain" />
+                ) : (
+                  <span
+                    className="text-lg font-bold"
+                    style={{
+                      fontFamily: 'var(--site-heading-font)',
+                      fontWeight: 'var(--site-heading-weight)',
+                      color: 'var(--site-brand)',
+                    }}
+                  >
+                    {venueName}
+                  </span>
+                )}
+              </Link>
+              {tableId && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                  style={{
+                    backgroundColor: 'var(--site-brand)',
+                    color: 'var(--site-brand-contrast, #fff)',
+                  }}
+                >
+                  Table {tableId}
+                </span>
+              )}
+            </div>
+
+            {/* Cart icon only */}
+            {capabilities.isAcceptingOrders && (
+              <Link
+                href="/checkout"
+                className="relative p-2 rounded-lg transition-colors hover:opacity-80"
+                style={{ color: 'var(--site-text)' }}
+                aria-label="Cart"
+              >
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 0 0-16.536-1.84M7.5 14.25 5.106 5.272M6 20.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm12.75 0a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
+                </svg>
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
+    )
+  }
+
+  // ── Normal Mode: full header ───────────────────────────────────────
   return (
     <header
       className="sticky top-0 z-50 border-b backdrop-blur-md"

@@ -13,6 +13,7 @@ import { redirect } from 'next/navigation'
 import { getDbForVenue } from '@/lib/db'
 import { getSiteBootstrapData } from '@/lib/site-bootstrap'
 import { getSiteThemeVariables, getSiteThemeCSS } from '@/lib/site-theme'
+import { SiteShell } from '@/components/site/SiteShell'
 import { SiteHeader } from '@/components/site/SiteHeader'
 import { SiteFooter } from '@/components/site/SiteFooter'
 import type { SiteBootstrapResponse } from '@/lib/site-api-schemas'
@@ -149,33 +150,35 @@ export default async function SiteLayout({
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: themeCSS }} />
-      <div
-        data-site-theme
-        className="min-h-screen flex flex-col"
-        style={{
-          backgroundColor: 'var(--site-bg)',
-          color: 'var(--site-text)',
-          fontFamily: 'var(--site-body-font)',
-        }}
-      >
-        <SiteHeader
-          venueName={bootstrap.venue.name}
-          logoUrl={bootstrap.branding.logoUrl}
-          capabilities={bootstrap.capabilities}
-        />
-        <main className="flex-1">
-          {children}
-        </main>
-        <SiteFooter
-          venueName={bootstrap.venue.name}
-          address={bootstrap.venue.address}
-          phone={bootstrap.venue.phone}
-          email={bootstrap.venue.email}
-          hours={bootstrap.hours}
-          socialLinks={bootstrap.content.socialLinks}
-          footerText={bootstrap.content.footerText}
-        />
-      </div>
+      <SiteShell>
+        <div
+          data-site-theme
+          className="min-h-screen flex flex-col"
+          style={{
+            backgroundColor: 'var(--site-bg)',
+            color: 'var(--site-text)',
+            fontFamily: 'var(--site-body-font)',
+          }}
+        >
+          <SiteHeader
+            venueName={bootstrap.venue.name}
+            logoUrl={bootstrap.branding.logoUrl}
+            capabilities={bootstrap.capabilities}
+          />
+          <main className="flex-1">
+            {children}
+          </main>
+          <SiteFooter
+            venueName={bootstrap.venue.name}
+            address={bootstrap.venue.address}
+            phone={bootstrap.venue.phone}
+            email={bootstrap.venue.email}
+            hours={bootstrap.hours}
+            socialLinks={bootstrap.content.socialLinks}
+            footerText={bootstrap.content.footerText}
+          />
+        </div>
+      </SiteShell>
     </>
   )
 }
