@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { emitToLocation } from '@/lib/socket-server'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
 
 // POST - Set donation amount on order
 export const POST = withVenue(async function POST(
@@ -26,7 +27,23 @@ export const POST = withVenue(async function POST(
 
     const order = await db.order.findUnique({
       where: { id: orderId },
-      select: { id: true, locationId: true, total: true, donationAmount: true },
+      select: {
+        id: true,
+        locationId: true,
+        total: true,
+        donationAmount: true,
+        orderNumber: true,
+        status: true,
+        tableId: true,
+        tabName: true,
+        guestCount: true,
+        employeeId: true,
+        subtotal: true,
+        taxTotal: true,
+        discountTotal: true,
+        tipTotal: true,
+        itemCount: true,
+      },
     })
 
     if (!order) {
@@ -62,13 +79,43 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    // Emit socket events for cross-terminal awareness
-    void emitToLocation(order.locationId, 'orders:list-changed', { orderId }).catch(console.error)
-    void emitToLocation(order.locationId, 'order:totals-updated', {
-      orderId,
+    // Emit order event (mandatory for every Order mutation)
+    void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+      donationAmount: roundedAmount,
       total: Number(updated.total),
-      donationAmount: Number(updated.donationAmount),
     }).catch(console.error)
+
+    // Socket dispatch for cross-terminal awareness
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'updated',
+      orderId,
+    }).catch(console.error)
+    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      subtotal: Number(order.subtotal),
+      taxTotal: Number(order.taxTotal),
+      tipTotal: Number(order.tipTotal),
+      discountTotal: Number(order.discountTotal),
+      total: Number(updated.total),
+      commissionTotal: 0,
+    }, { async: true }).catch(console.error)
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(Number(order.subtotal) * 100),
+      taxTotalCents: Math.round(Number(order.taxTotal) * 100),
+      discountTotalCents: Math.round(Number(order.discountTotal) * 100),
+      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+      totalCents: Math.round(Number(updated.total) * 100),
+      itemCount: order.itemCount ?? 0,
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
+    }, { async: true }).catch(console.error)
 
     // Sync
     pushUpstream()
@@ -100,7 +147,23 @@ export const DELETE = withVenue(async function DELETE(
 
     const order = await db.order.findUnique({
       where: { id: orderId },
-      select: { id: true, locationId: true, total: true, donationAmount: true },
+      select: {
+        id: true,
+        locationId: true,
+        total: true,
+        donationAmount: true,
+        orderNumber: true,
+        status: true,
+        tableId: true,
+        tabName: true,
+        guestCount: true,
+        employeeId: true,
+        subtotal: true,
+        taxTotal: true,
+        discountTotal: true,
+        tipTotal: true,
+        itemCount: true,
+      },
     })
 
     if (!order) {
@@ -143,13 +206,43 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
 
-    // Emit socket events for cross-terminal awareness
-    void emitToLocation(order.locationId, 'orders:list-changed', { orderId }).catch(console.error)
-    void emitToLocation(order.locationId, 'order:totals-updated', {
-      orderId,
+    // Emit order event (mandatory for every Order mutation)
+    void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+      donationAmount: null,
       total: Number(updated.total),
-      donationAmount: 0,
     }).catch(console.error)
+
+    // Socket dispatch for cross-terminal awareness
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'updated',
+      orderId,
+    }).catch(console.error)
+    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      subtotal: Number(order.subtotal),
+      taxTotal: Number(order.taxTotal),
+      tipTotal: Number(order.tipTotal),
+      discountTotal: Number(order.discountTotal),
+      total: Number(updated.total),
+      commissionTotal: 0,
+    }, { async: true }).catch(console.error)
+    void dispatchOrderSummaryUpdated(order.locationId, {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.status,
+      tableId: order.tableId || null,
+      tableName: null,
+      tabName: order.tabName || null,
+      guestCount: order.guestCount ?? 0,
+      employeeId: order.employeeId || null,
+      subtotalCents: Math.round(Number(order.subtotal) * 100),
+      taxTotalCents: Math.round(Number(order.taxTotal) * 100),
+      discountTotalCents: Math.round(Number(order.discountTotal) * 100),
+      tipTotalCents: Math.round(Number(order.tipTotal) * 100),
+      totalCents: Math.round(Number(updated.total) * 100),
+      itemCount: order.itemCount ?? 0,
+      updatedAt: new Date().toISOString(),
+      locationId: order.locationId,
+    }, { async: true }).catch(console.error)
 
     // Sync
     pushUpstream()

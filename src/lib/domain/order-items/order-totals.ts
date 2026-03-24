@@ -12,6 +12,7 @@ import {
   type LocationTaxSettings,
 } from '@/lib/order-calculations'
 import { parseSettings } from '@/lib/settings'
+import { roundToCents } from '@/lib/pricing'
 import type { TxClient, OrderTotalsUpdate } from './types'
 
 // ─── Prisma Decimal → Number Mapping ────────────────────────────────────────
@@ -59,12 +60,13 @@ export async function recalculateOrderTotals(
   tipTotal: number,
   isTaxExempt?: boolean
 ): Promise<OrderTotalsUpdate> {
-  // Fetch the order's stored inclusive tax rate (survives setting changes)
+  // Fetch the order's stored inclusive tax rate and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true },
+    select: { inclusiveTaxRate: true, donationAmount: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
+  const donationAmount = Number(orderRow?.donationAmount ?? 0)
 
   // Fetch all active items with modifiers and ingredient modifications
   const allItems = await tx.orderItem.findMany({
@@ -95,12 +97,15 @@ export async function recalculateOrderTotals(
     orderInclRate
   )
 
+  // Add donation back to total — calculateOrderTotals doesn't know about donations
+  const finalTotal = donationAmount > 0 ? roundToCents(totals.total + donationAmount) : totals.total
+
   return {
     subtotal: totals.subtotal,
     taxTotal: totals.taxTotal,
     taxFromInclusive: totals.taxFromInclusive,
     taxFromExclusive: totals.taxFromExclusive,
-    total: totals.total,
+    total: finalTotal,
     commissionTotal: totals.commissionTotal,
     itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
   }
@@ -119,12 +124,13 @@ export async function recalculateOrderTotalsForAdd(
   tipTotal: number,
   isTaxExempt?: boolean
 ): Promise<OrderTotalsUpdate> {
-  // Fetch the order's stored inclusive tax rate (survives setting changes)
+  // Fetch the order's stored inclusive tax rate and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true },
+    select: { inclusiveTaxRate: true, donationAmount: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
+  const donationAmount = Number(orderRow?.donationAmount ?? 0)
 
   // For add-item, we query all non-deleted items (the original route used deletedAt: null without status filter)
   const allItems = await tx.orderItem.findMany({
@@ -153,12 +159,15 @@ export async function recalculateOrderTotalsForAdd(
     orderInclRate
   )
 
+  // Add donation back to total — calculateOrderTotals doesn't know about donations
+  const finalTotal = donationAmount > 0 ? roundToCents(totals.total + donationAmount) : totals.total
+
   return {
     subtotal: totals.subtotal,
     taxTotal: totals.taxTotal,
     taxFromInclusive: totals.taxFromInclusive,
     taxFromExclusive: totals.taxFromExclusive,
-    total: totals.total,
+    total: finalTotal,
     commissionTotal: totals.commissionTotal,
     itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
   }

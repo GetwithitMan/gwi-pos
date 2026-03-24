@@ -236,10 +236,10 @@ export const POST = withVenue(withTiming(async function POST(
         )
       }
 
-      // Batch update regular items: kitchenStatus = 'sent', firedAt = NOW()
+      // Batch update regular items: kitchenStatus = 'sent', firedAt = NOW(), kitchenSentAt = NOW()
       if (regularItemIds.length > 0) {
         await tx.$executeRawUnsafe(
-          `UPDATE "OrderItem" SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "updatedAt" = NOW()
+          `UPDATE "OrderItem" SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "updatedAt" = NOW()
            WHERE id = ANY($1::text[]) AND "locationId" = $2`,
           regularItemIds, order.locationId,
         )
@@ -250,7 +250,7 @@ export const POST = withVenue(withTiming(async function POST(
         for (const { itemId, sessionEnd } of entertainmentUpdates) {
           await tx.$executeRawUnsafe(
             `UPDATE "OrderItem"
-             SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "blockTimeStartedAt" = NOW(),
+             SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "blockTimeStartedAt" = NOW(),
                  "blockTimeExpiresAt" = $1, "updatedAt" = NOW()
              WHERE id = $2 AND "locationId" = $3`,
             sessionEnd, itemId, order.locationId,

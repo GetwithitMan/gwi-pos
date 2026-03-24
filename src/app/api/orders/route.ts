@@ -435,6 +435,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             customEntryPrice: mod.customEntryPrice ?? null,
             // None selection
             isNoneSelection: mod.isNoneSelection || false,
+            noneShowOnReceipt: mod.noneShowOnReceipt ?? false,
             // Swap fields
             swapTargetName: mod.swapTargetName || null,
             swapTargetItemId: mod.swapTargetItemId || null,

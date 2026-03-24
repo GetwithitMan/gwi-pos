@@ -477,6 +477,7 @@ function buildKitchenTicket(
     table: { name: string } | null
     employee: { displayName: string | null; firstName: string; lastName: string }
     createdAt: Date
+    notes?: string | null
     // Delivery customer info
     customerName?: string | null
     customerPhone?: string | null
@@ -722,6 +723,37 @@ function buildKitchenTicket(
   }
 
   content.push(line(''))
+
+  // SEAT ALLERGY NOTES — parsed from Order.notes JSON
+  if (order.notes) {
+    try {
+      const parsed = JSON.parse(order.notes)
+      if (parsed && typeof parsed === 'object' && parsed.seatAllergies) {
+        const seatAllergies = parsed.seatAllergies as Record<string, string>
+        const seatEntries = Object.entries(seatAllergies).filter(([, notes]) => notes && notes.trim())
+        if (seatEntries.length > 0) {
+          // Sort by seat number
+          seatEntries.sort((a, b) => Number(a[0]) - Number(b[0]))
+
+          if (hasRed && useRedNotes) content.push(RED)
+          content.push(getSizeCommand(notesSize))
+          if (!isImpact) content.push(ESCPOS.BOLD_ON)
+          for (const [seat, notes] of seatEntries) {
+            const allergyLine = truncateForPrint(`!! SEAT ${seat}: ${notes.toUpperCase()}`, width)
+            content.push(line(allergyLine))
+          }
+          if (!isImpact) content.push(ESCPOS.BOLD_OFF)
+          content.push(NORMAL)
+          if (hasRed && useRedNotes) content.push(BLACK)
+
+          content.push(divider(width))
+          content.push(line(''))
+        }
+      }
+    } catch {
+      // Not JSON or parse error — legacy text, skip allergy rendering
+    }
+  }
 
   // ITEMS
   for (const item of items) {

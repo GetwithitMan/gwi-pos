@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
 import { ItemDetailPopover } from './ItemDetailPopover'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
 import type { UiModifier, IngredientModification } from '@/types/orders'
 import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 import { parsePreModifiers, PRE_MODIFIER_CONFIG } from '@/components/modifiers/useModifierSelections'
@@ -139,6 +140,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
   onItemDiscountRemove,
   isLastSent,
 }: OrderPanelItemProps) {
+  const { entertainmentSettings } = useOrderSettings()
   const isVoided = item.status === 'voided'
   const isComped = item.status === 'comped'
   const isCompedOrVoided = isVoided || isComped
@@ -1013,6 +1015,10 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                   onSessionEnded={onSessionEnded}
                   onTimerStarted={onTimerStarted}
                   onTimeExtended={onTimeExtended}
+                  overtimeGracePeriodMinutes={entertainmentSettings.overtimeGracePeriodMinutes}
+                  overtimeRatePerMinute={entertainmentSettings.overtimeRatePerMinute}
+                  finishGameExtensionMinutes={entertainmentSettings.finishGameExtensionMinutes}
+                  finishGameExtensionPrice={entertainmentSettings.finishGameExtensionPrice}
                 />
               </div>
             )}

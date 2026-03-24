@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateOrderTotals } from '@/lib/order-calculations'
-import { requirePermission } from '@/lib/api-auth'
+import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderTotalsUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOrderUpdated, dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { roundToCents } from '@/lib/pricing'
@@ -21,7 +21,8 @@ export const POST = withVenue(async function POST(
     const { id: orderId } = await params
     const body = await request.json()
     const { reason, taxId } = body as { reason?: string; taxId?: string }
-    const requestingEmployeeId = request.headers.get('x-employee-id') || body.employeeId
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId || body.employeeId
 
     if (!reason || reason.trim().length === 0) {
       return NextResponse.json({ error: 'Tax exempt reason is required' }, { status: 400 })
@@ -119,6 +120,7 @@ export const POST = withVenue(async function POST(
         taxFromInclusive: orderTotals.taxFromInclusive,
         taxFromExclusive: orderTotals.taxFromExclusive,
         total: orderTotals.total,
+        lastMutatedBy: 'local',
       },
       select: {
         id: true,
@@ -133,6 +135,14 @@ export const POST = withVenue(async function POST(
         discountTotal: true,
         tipTotal: true,
         locationId: true,
+        orderNumber: true,
+        tabName: true,
+        guestCount: true,
+        employeeId: true,
+        tableId: true,
+        table: { select: { name: true } },
+        status: true,
+        updatedAt: true,
       },
     })
 
@@ -151,6 +161,8 @@ export const POST = withVenue(async function POST(
       commissionTotal: 0,
     }, { async: true }).catch(console.error)
     void dispatchOrderUpdated(order.locationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
+    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
+    void dispatchOrderSummaryUpdated(order.locationId, buildOrderSummary(updated), { async: true }).catch(console.error)
 
     // Upstream sync
     pushUpstream()
@@ -182,7 +194,8 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id: orderId } = await params
-    const requestingEmployeeId = request.headers.get('x-employee-id') ||
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId ||
       request.nextUrl.searchParams.get('employeeId')
 
     // Fetch order with items for recalculation
@@ -265,6 +278,7 @@ export const DELETE = withVenue(async function DELETE(
         taxFromInclusive: orderTotals.taxFromInclusive,
         taxFromExclusive: orderTotals.taxFromExclusive,
         total: orderTotals.total,
+        lastMutatedBy: 'local',
       },
       select: {
         id: true,
@@ -275,6 +289,14 @@ export const DELETE = withVenue(async function DELETE(
         discountTotal: true,
         tipTotal: true,
         locationId: true,
+        orderNumber: true,
+        tabName: true,
+        guestCount: true,
+        employeeId: true,
+        tableId: true,
+        table: { select: { name: true } },
+        status: true,
+        updatedAt: true,
       },
     })
 
@@ -293,6 +315,8 @@ export const DELETE = withVenue(async function DELETE(
       commissionTotal: 0,
     }, { async: true }).catch(console.error)
     void dispatchOrderUpdated(order.locationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
+    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
+    void dispatchOrderSummaryUpdated(order.locationId, buildOrderSummary(updated), { async: true }).catch(console.error)
 
     // Upstream sync
     pushUpstream()

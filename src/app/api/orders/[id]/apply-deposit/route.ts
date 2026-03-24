@@ -231,6 +231,7 @@ export const POST = withVenue(async function POST(
           total: newTotals.total,
           taxTotal: newTotals.taxTotal,
           version: { increment: 1 },
+          lastMutatedBy: 'local',
         },
       })
 

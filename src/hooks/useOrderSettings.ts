@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram, AgeVerificationSettings, BarOperationsSettings } from '@/lib/settings'
-import { getPricingProgram, DEFAULT_AGE_VERIFICATION, DEFAULT_BAR_OPERATIONS } from '@/lib/settings'
+import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings, PricingProgram, AgeVerificationSettings, BarOperationsSettings, EntertainmentSettings } from '@/lib/settings'
+import { getPricingProgram, DEFAULT_AGE_VERIFICATION, DEFAULT_BAR_OPERATIONS, DEFAULT_ENTERTAINMENT_SETTINGS } from '@/lib/settings'
 import { useOrderStore } from '@/stores/order-store'
 import { setLocationTaxRate } from '@/lib/seat-utils'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
@@ -91,6 +91,7 @@ interface SettingsCache {
   sendBehavior: SendBehavior
   barOperations: BarOperationsSettings
   entertainmentTipsEnabled: boolean
+  entertainmentSettings: EntertainmentSettings
 }
 
 const DEFAULT_PRICING_PROGRAM: PricingProgram = { model: 'none', enabled: false }
@@ -133,6 +134,9 @@ export function useOrderSettings() {
   const [entertainmentTipsEnabled, setEntertainmentTipsEnabled] = useState(
     cachedSettings?.entertainmentTipsEnabled ?? true
   )
+  const [entertainmentSettings, setEntertainmentSettings] = useState<EntertainmentSettings>(
+    cachedSettings?.entertainmentSettings ?? DEFAULT_ENTERTAINMENT_SETTINGS
+  )
   const [isLoading, setIsLoading] = useState(!cachedSettings)
 
   const applySettings = (settings: {
@@ -147,6 +151,7 @@ export function useOrderSettings() {
     sendBehavior?: SendBehavior
     barOperations?: BarOperationsSettings
     tipBank?: { entertainmentTipsEnabled?: boolean }
+    entertainment?: EntertainmentSettings
   }) => {
     const effectiveDualPricing = settings.dualPricing || DEFAULT_DUAL_PRICING
     const derivedPricingProgram = settings.pricingProgram
@@ -168,6 +173,9 @@ export function useOrderSettings() {
       sendBehavior: settings.sendBehavior ?? 'return_to_floor',
       barOperations: settings.barOperations ? { ...DEFAULT_BAR_OPERATIONS, ...settings.barOperations } : DEFAULT_BAR_OPERATIONS,
       entertainmentTipsEnabled: settings.tipBank?.entertainmentTipsEnabled ?? true,
+      entertainmentSettings: settings.entertainment
+        ? { ...DEFAULT_ENTERTAINMENT_SETTINGS, ...settings.entertainment }
+        : DEFAULT_ENTERTAINMENT_SETTINGS,
     }
 
     if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
@@ -208,6 +216,7 @@ export function useOrderSettings() {
     setSendBehavior(result.sendBehavior)
     setBarOperations(result.barOperations)
     setEntertainmentTipsEnabled(result.entertainmentTipsEnabled)
+    setEntertainmentSettings(result.entertainmentSettings)
   }
 
   const loadSettings = async () => {
@@ -230,6 +239,7 @@ export function useOrderSettings() {
         sendBehavior: cachedSettings.sendBehavior,
         barOperations: cachedSettings.barOperations,
         tipBank: { entertainmentTipsEnabled: cachedSettings.entertainmentTipsEnabled },
+        entertainment: cachedSettings.entertainmentSettings,
       })
       setIsLoading(false)
       return
@@ -245,6 +255,7 @@ export function useOrderSettings() {
           priceRounding: result.priceRounding,
           tax: {
             defaultRate: result.taxRate * 100,
+            inclusiveTaxRate: result.inclusiveTaxRate * 100,
             taxInclusiveLiquor: result.taxInclusiveLiquor,
             taxInclusiveFood: result.taxInclusiveFood,
           },
@@ -254,6 +265,8 @@ export function useOrderSettings() {
           ageVerification: result.ageVerification,
           sendBehavior: result.sendBehavior,
           barOperations: result.barOperations,
+          tipBank: { entertainmentTipsEnabled: result.entertainmentTipsEnabled },
+          entertainment: result.entertainmentSettings,
         })
       }
       setIsLoading(false)
@@ -327,6 +340,7 @@ export function useOrderSettings() {
     sendBehavior,
     barOperations,
     entertainmentTipsEnabled,
+    entertainmentSettings,
     isLoading,
     reloadSettings: forceReload,
   }

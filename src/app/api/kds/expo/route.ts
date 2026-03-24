@@ -5,7 +5,7 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
-import { processScreenLinks } from '@/lib/kds/screen-links'
+import { processScreenLinks, processExpoFinalBump } from '@/lib/kds/screen-links'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 
@@ -84,6 +84,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               select: {
                 id: true,
                 name: true,
+                itemType: true,
                 prepStationId: true,
                 category: {
                   select: {
@@ -120,8 +121,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Transform orders
     const expoOrders = orders
       .map((order) => {
+        // M3: Exclude entertainment/timed_rental items from expo display.
+        // Entertainment items should only appear on entertainment-type stations.
+        const filteredItems = order.items.filter(item => item.menuItem?.itemType !== 'timed_rental')
+
         // Skip orders with no items after filtering
-        if (order.items.length === 0) return null
+        if (filteredItems.length === 0) return null
 
         const createdAt = new Date(order.createdAt)
         const now = new Date()
@@ -148,7 +153,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           createdAt: order.createdAt.toISOString(),
           elapsedMinutes,
           timeStatus,
-          items: order.items.map((item) => {
+          items: filteredItems.map((item) => {
             // Determine prep station
             const stationId =
               item.menuItem?.prepStationId ||
@@ -414,6 +419,18 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       if (action === 'serve' || status === 'served' || action === 'bump_order') {
         const targetOrderId = action === 'bump_order' ? (body.orderId || orderId) : orderId
         void checkKdsBumpDeliveryAdvance(targetOrderId, locationId).catch(console.error)
+      }
+
+      // KDS Overhaul: Process expo final bump — marks items as kdsFinalCompleted
+      // and triggers terminal "Made" events when all forwarded items are complete
+      if (screenId && (action === 'serve' || status === 'served' || action === 'bump_order')) {
+        const targetOrderId = action === 'bump_order' ? (body.orderId || orderId) : orderId
+        void processExpoFinalBump(locationId, {
+          orderId: targetOrderId,
+          itemIds,
+          screenId,
+          bumpedBy,
+        }).catch(err => console.error('[Expo] processExpoFinalBump failed:', err))
       }
     }
 

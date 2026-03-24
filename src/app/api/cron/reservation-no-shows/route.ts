@@ -29,13 +29,13 @@ export async function GET(request: NextRequest) {
     let noShowCount = 0
     let blacklistedCount = 0
 
-    // ── Step 1: Get all locations with confirmed reservations today ──
+    // ── Step 1: Get all locations with confirmed reservations on or before today ──
     const locations: { id: string; settings: any }[] = await venueDb.$queryRaw`
       SELECT DISTINCT l.id, l.settings
       FROM "Location" l
       JOIN "Reservation" r ON r."locationId" = l.id
       WHERE r.status = 'confirmed'
-        AND r."reservationDate" <= ${now}::date
+        AND r."serviceDate" <= ${now}::date
     `
 
     for (const location of locations) {
@@ -45,21 +45,21 @@ export async function GET(request: NextRequest) {
       const blacklistThreshold = resSetting.noShowBlacklistAfterCount ?? 3
 
       // ── Step 2: Find no-show candidates for this location ──────
+      // Compute the actual reservation datetime (serviceDate + reservationTime) and add
+      // the grace period. Mark as no-show only when NOW exceeds that threshold.
+      // This correctly handles cross-midnight reservations (e.g. 11:30 PM service date
+      // = previous calendar day) by always using serviceDate instead of reservationDate.
       const candidates: { id: string; customerId: string | null; depositStatus: string | null }[] =
         await venueDb.$queryRaw`
           SELECT r.id, r."customerId", r."depositStatus"
           FROM "Reservation" r
           WHERE r."locationId" = ${location.id}
             AND r.status = 'confirmed'
-            AND r."reservationDate" <= ${now}::date
+            AND r."serviceDate" <= ${now}::date
             AND (
-              r."reservationDate" < ${now}::date
-              OR (
-                EXTRACT(HOUR FROM ${now}::time) * 60 + EXTRACT(MINUTE FROM ${now}::time)
-                > (CAST(SPLIT_PART(r."reservationTime", ':', 1) AS INT) * 60
-                   + CAST(SPLIT_PART(r."reservationTime", ':', 2) AS INT)
-                   + ${graceMinutes})
-              )
+              r."serviceDate"::date + r."reservationTime"::time
+                + (${graceMinutes} * interval '1 minute')
+              < ${now}::timestamp
             )
         `
 

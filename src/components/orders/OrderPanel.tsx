@@ -555,11 +555,34 @@ export const OrderPanel = memo(function OrderPanel({
   // Check overview popover (table name click)
   const [showCheckOverview, setShowCheckOverview] = useState(false)
 
-  // Seat allergy notes — per-seat notes stored locally (keyed by seat number)
+  // Seat allergy notes — persisted on Order.notes as JSON { seatAllergies: { [seat]: "notes" } }
   const [seatAllergyNotes, setSeatAllergyNotes] = useState<Record<number, string>>({})
   const [allergyModalSeat, setAllergyModalSeat] = useState<{ seatNumber: number; position: { x: number; y: number } } | null>(null)
   const seatLongPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seatLongPressTriggeredRef = useRef(false)
+
+  // Load seat allergies from the server when orderId changes
+  useEffect(() => {
+    if (!orderId) {
+      setSeatAllergyNotes({})
+      return
+    }
+    let cancelled = false
+    fetch(`/api/orders/${orderId}/seat-notes`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (cancelled || !data?.data?.seatAllergies) return
+        const loaded: Record<number, string> = {}
+        for (const [seat, notes] of Object.entries(data.data.seatAllergies)) {
+          if (typeof notes === 'string' && notes.trim()) {
+            loaded[Number(seat)] = notes
+          }
+        }
+        setSeatAllergyNotes(loaded)
+      })
+      .catch(console.error)
+    return () => { cancelled = true }
+  }, [orderId])
 
   // Track newest item for highlight + auto-scroll
   const [newestItemId, setNewestItemId] = useState<string | null>(null)
@@ -2292,10 +2315,24 @@ export const OrderPanel = memo(function OrderPanel({
           currentNotes={seatAllergyNotes[allergyModalSeat.seatNumber] || ''}
           position={allergyModalSeat.position}
           onSave={(seatNumber, notes) => {
-            setSeatAllergyNotes(prev => ({
-              ...prev,
-              [seatNumber]: notes,
-            }))
+            // Optimistic local update
+            setSeatAllergyNotes(prev => {
+              const next = { ...prev }
+              if (notes.trim()) {
+                next[seatNumber] = notes
+              } else {
+                delete next[seatNumber]
+              }
+              return next
+            })
+            // Persist to server
+            if (orderId) {
+              void fetch(`/api/orders/${orderId}/seat-notes`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ seatNumber, allergyNotes: notes }),
+              }).catch(console.error)
+            }
           }}
           onClose={() => setAllergyModalSeat(null)}
         />

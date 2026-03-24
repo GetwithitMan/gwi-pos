@@ -263,7 +263,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { orderItemId, additionalMinutes, locationId, employeeId } = body
+    const { orderItemId, additionalMinutes, locationId, employeeId, finishGameCharge } = body
 
     const validationError = validateExtendRequest({ orderItemId, locationId, additionalMinutes })
     if (validationError) {
@@ -374,7 +374,19 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       )
     }
 
-    const { updatedItem, newExpiresAt, newTotalMinutes, newPrice } = txResult
+    const { updatedItem, newExpiresAt, newTotalMinutes, newPrice: tieredPrice } = txResult
+
+    // Apply flat Finish Game surcharge on top of the tiered extension charge
+    const flatFee = (typeof finishGameCharge === 'number' && finishGameCharge > 0) ? finishGameCharge : 0
+    const newPrice = tieredPrice + flatFee
+
+    if (flatFee > 0) {
+      // Persist the surcharge to the OrderItem price in DB
+      await db.orderItem.update({
+        where: { id: orderItemId },
+        data: { price: newPrice, itemTotal: newPrice },
+      })
+    }
 
     // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
     void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
@@ -421,6 +433,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
           additionalMinutes,
           newTotalMinutes,
           newPrice,
+          finishGameCharge: flatFee > 0 ? flatFee : undefined,
           newExpiresAt: newExpiresAt.toISOString(),
           orderId: orderItem.orderId,
           employeeName: auth.employee.displayName || `${auth.employee.firstName} ${auth.employee.lastName}`,

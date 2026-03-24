@@ -777,8 +777,10 @@ export const POST = withVenue(withTiming(async function POST(
       } }) }
     }
 
-    // Calculate total being paid now
-    const paymentTotal = payments.reduce((sum, p) => sum + p.amount + (p.tipAmount || 0), 0)
+    // Calculate total being paid now (base amounts only, excludes tips).
+    // Tips are tracked separately via totalTips/newTipTotal — they must NOT count
+    // toward paying the order balance or the order could close underpaid.
+    const paymentBaseTotal = payments.reduce((sum, p) => sum + p.amount, 0)
 
     // When cash rounding is enabled, the client sends the ROUNDED amount
     // (e.g., $3.29 rounded to $3.25 with quarter rounding). The tolerance
@@ -807,9 +809,9 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    if (paymentTotal < remaining - 0.01) {
+    if (paymentBaseTotal < remaining - 0.01) {
       return { earlyReturn: NextResponse.json(
-        { error: `Payment amount ($${paymentTotal.toFixed(2)}) is less than remaining balance ($${remaining.toFixed(2)})` },
+        { error: `Payment amount ($${paymentBaseTotal.toFixed(2)}) is less than remaining balance ($${remaining.toFixed(2)})` },
         { status: 400 }
       ) }
     }
@@ -831,10 +833,20 @@ export const POST = withVenue(withTiming(async function POST(
     let autoGratNote: string | null = null
 
     // ── Party-size auto-gratuity ────────────────────────────────────────────
+    // When entertainmentTipsEnabled is false, deduct entertainment item totals
+    // from the auto-gratuity basis (mirrors client-side tipExemptAmount logic
+    // in OrderPageModals.tsx).
+    let autoGratSubtotal = roundToCents(toNumber(order.subtotal ?? order.total ?? 0) - toNumber(order.tipTotal ?? 0))
+    if (settings.tipBank?.entertainmentTipsEnabled === false) {
+      const entertainmentTotal = (order.items ?? [])
+        .filter((i: any) => i.status !== 'voided' && i.categoryType === 'entertainment')
+        .reduce((sum: number, i: any) => sum + (Number(i.itemTotal) || (Number(i.price) * (i.quantity || 1))), 0)
+      autoGratSubtotal = roundToCents(Math.max(0, autoGratSubtotal - entertainmentTotal))
+    }
     const autoGratResult = calculateAutoGratuity(settings.autoGratuity, {
       guestCount: order.guestCount,
       existingTipTotal: toNumber(order.tipTotal ?? 0),
-      orderSubtotal: roundToCents(toNumber(order.subtotal ?? order.total ?? 0) - toNumber(order.tipTotal ?? 0)),
+      orderSubtotal: autoGratSubtotal,
       payments,
     })
     if (autoGratResult.applied) {
@@ -1087,7 +1099,9 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Update order status and tip total
     const newTipTotal = roundToCents(toNumber(order.tipTotal ?? 0) + totalTips)
-    const newPaidTotal = alreadyPaid + paymentTotal
+    // Use paymentBaseTotal (excludes tips) for balance comparison — tips should NOT
+    // count toward paying the order balance, only base payment amounts do.
+    const newPaidTotal = alreadyPaid + paymentBaseTotal
 
     // When price rounding is active for cash, the paid amount may be less than orderTotal
     // by up to the rounding increment (e.g., $3.25 paid for $3.29 order with quarter rounding).

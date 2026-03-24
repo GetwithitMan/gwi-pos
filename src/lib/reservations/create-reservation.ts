@@ -343,7 +343,7 @@ export async function createReservationWithRules(
     reservation,
   }).catch((err) => log.error({ err }, 'dispatchReservationChanged failed'))
 
-  // ── Step 4: Post-commit — generate deposit token if needed ──
+  // ── Step 4: Post-commit — generate deposit token if needed (BEFORE notification) ──
   let depositToken: string | undefined
   let depositExpiresAt: Date | undefined
 
@@ -358,11 +358,14 @@ export async function createReservationWithRules(
   }
 
   // ── Step 5: Post-commit — send confirmation (fire-and-forget) ──
+  // NOTE: deposit token is generated ABOVE so {{paymentUrl}} is populated in the template
   const templateKey = depositEval.required ? 'depositRequest' : 'confirmation'
   void sendReservationNotification({
     reservation: {
       ...reservation,
       customer,
+      depositToken,
+      depositExpiresAt,
     },
     templateKey,
     db,

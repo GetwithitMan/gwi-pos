@@ -65,6 +65,7 @@ const TRANSITIONS: Record<string, TransitionRule> = {
   'checked_in:seated':    { eventType: 'seated' },
   'confirmed:cancelled':  { eventType: 'cancelled', checkCutoff: true, autoRefundDeposit: true },
   'confirmed:no_show':    { eventType: 'no_show_marked' },
+  'checked_in:completed': { eventType: 'completed', requireStaff: true },
   'seated:completed':     { eventType: 'completed' },
   'seated:cancelled':     { eventType: 'cancelled', requireStaff: true, requireReason: true },
   'no_show:confirmed':    { eventType: 'no_show_overridden', requireStaff: true, requireReason: true, requireOverride: true },

@@ -524,9 +524,12 @@ export function PaymentModal({
       return
     }
 
-    // Determine the amount for each method considering dual pricing
-    const payment1Amount = splitMethod1 === 'cash' ? amount1 : amount1
-    const payment2Amount = splitMethod2 === 'cash' ? amount2 : amount2
+    // Determine the amount for each method considering dual pricing.
+    // Cash portions stay at the base (cash) price; card portions get the card markup.
+    const payment1Amount = splitMethod1 === 'cash' ? amount1
+      : dualPricing.enabled ? calculateCardPrice(amount1, discountPercent) : amount1
+    const payment2Amount = splitMethod2 === 'cash' ? amount2
+      : dualPricing.enabled ? calculateCardPrice(amount2, discountPercent) : amount2
 
     const payment1: PendingPayment = {
       method: splitMethod1,

@@ -116,6 +116,7 @@ export const POST = withVenue(async function POST(
         kitchenStatus: 'sent',
         courseStatus: 'fired',
         firedAt: now,
+        kitchenSentAt: now,
       })
     }
 
@@ -128,6 +129,7 @@ export const POST = withVenue(async function POST(
             kitchenStatus: 'sent',
             courseStatus: 'fired',
             firedAt: now,
+            kitchenSentAt: now,
             blockTimeStartedAt: now,
             blockTimeExpiresAt: expiresAt,
           }),
