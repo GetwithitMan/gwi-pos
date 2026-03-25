@@ -6,7 +6,14 @@ interface ToppingPlacementPickerProps {
   sectionMode: number
   selectedSections: number[]
   onChange: (sections: number[]) => void
-  /** If true, allow selecting multiple sections (e.g., pepperoni on left AND right). Default: true */
+  /**
+   * Max division level for this picker.
+   * - For toppings: uses the pizza's sectionMode (halves, quarters, sixths, eighths)
+   * - For sauce/cheese: capped by condimentDivisionMax (typically 1=whole, 2=halves, 3=thirds)
+   * If not provided, defaults to sectionMode.
+   */
+  maxDivision?: number
+  /** If true, allow selecting multiple sections. Default: true for toppings. */
   multiSelect?: boolean
 }
 
@@ -14,12 +21,17 @@ export function ToppingPlacementPicker({
   sectionMode,
   selectedSections,
   onChange,
+  maxDivision,
   multiSelect = true,
 }: ToppingPlacementPickerProps) {
   if (sectionMode <= 1) return null
 
-  const presets = getAllSectionPresetsForMode(sectionMode)
+  // Use maxDivision to limit which section modes are shown
+  // e.g., sauce/cheese might only get whole/halves/thirds even if pizza is in quarters
+  const effectiveMode = maxDivision ? Math.min(sectionMode, maxDivision) : sectionMode
+  const presets = getAllSectionPresetsForMode(effectiveMode)
   const wholePreset = getSectionPreset(1, 0)
+
   const isWhole = selectedSections.length === TOTAL_SECTIONS ||
     (selectedSections.length === wholePreset.length && wholePreset.every(s => selectedSections.includes(s)))
 
@@ -32,25 +44,34 @@ export function ToppingPlacementPicker({
   }
 
   const handleSectionToggle = (sectionIndices: number[]) => {
-    if (multiSelect) {
-      // Multi-select: toggle this section on/off
-      const alreadySelected = isSectionSelected(sectionIndices)
-
-      if (alreadySelected) {
-        // Remove these sections
-        const remaining = selectedSections.filter(s => !sectionIndices.includes(s))
-        // Don't allow empty — keep at least this section if removing would empty
-        onChange(remaining.length > 0 ? remaining : sectionIndices)
-      } else {
-        // Add these sections (merge with existing, dedupe)
-        const merged = [...new Set([...selectedSections, ...sectionIndices])].sort((a, b) => a - b)
-        // Check if all sections now selected → treat as whole
-        const allSelected = presets.every(p => p.sections.every(s => merged.includes(s)))
-        onChange(allSelected ? wholePreset : merged)
-      }
-    } else {
-      // Single-select: replace
+    if (!multiSelect) {
+      // Single-select (sauce/cheese): just replace
       onChange(sectionIndices)
+      return
+    }
+
+    // Multi-select (toppings):
+    if (isWhole) {
+      // Currently "Whole" → clicking a section means "just this section"
+      onChange(sectionIndices)
+      return
+    }
+
+    const alreadySelected = isSectionSelected(sectionIndices)
+
+    if (alreadySelected) {
+      // Remove these sections
+      const remaining = selectedSections.filter(s => !sectionIndices.includes(s))
+      if (remaining.length > 0) {
+        onChange(remaining)
+      }
+      // If removing would leave empty, do nothing (keep current)
+    } else {
+      // Add these sections
+      const merged = [...new Set([...selectedSections, ...sectionIndices])].sort((a, b) => a - b)
+      // Check if all sections now selected → auto-convert to whole
+      const allSelected = presets.every(p => p.sections.every(s => merged.includes(s)))
+      onChange(allSelected ? wholePreset : merged)
     }
   }
 

@@ -29,6 +29,8 @@ interface SauceCheesePanelProps {
   onSauceChange: (selections: CondimentSelection[]) => void
   onCheeseChange: (selections: CondimentSelection[]) => void
   allowCondimentSections: boolean
+  /** Max division for sauce/cheese placement (1=whole only, 2=halves, 3=thirds). Default: 2 */
+  condimentDivisionMax: number
   sectionMode: number
   sauceDisabled?: boolean
   cheeseDisabled?: boolean
@@ -42,6 +44,7 @@ export function SauceCheesePanel({
   onSauceChange,
   onCheeseChange,
   allowCondimentSections,
+  condimentDivisionMax,
   sectionMode,
   sauceDisabled,
   cheeseDisabled,
@@ -49,6 +52,9 @@ export function SauceCheesePanel({
   const activeSauces = sauces.filter((s) => s.isActive).sort((a, b) => a.sortOrder - b.sortOrder)
   const activeCheeses = cheeses.filter((c) => c.isActive).sort((a, b) => a.sortOrder - b.sortOrder)
   const showPlacement = allowCondimentSections && sectionMode >= 2
+  // Sauce/cheese placement is limited by condimentDivisionMax (e.g., max halves or thirds)
+  // Toppings use the full sectionMode (quarters, sixths, eighths)
+  const condimentMaxDivision = condimentDivisionMax || 2
 
   return (
     <div className="py-4 space-y-5">
@@ -59,6 +65,7 @@ export function SauceCheesePanel({
         onChange={onSauceChange}
         showPlacement={showPlacement}
         sectionMode={sectionMode}
+        maxDivision={condimentMaxDivision}
         disabled={sauceDisabled}
       />
       <CondimentSelector
@@ -68,6 +75,7 @@ export function SauceCheesePanel({
         onChange={onCheeseChange}
         showPlacement={showPlacement}
         sectionMode={sectionMode}
+        maxDivision={condimentMaxDivision}
         disabled={cheeseDisabled}
       />
     </div>
@@ -83,6 +91,8 @@ interface CondimentSelectorProps {
   onChange: (selections: CondimentSelection[]) => void
   showPlacement: boolean
   sectionMode: number
+  /** Max division for placement picker (2=halves, 3=thirds). Limits sauce/cheese splits. */
+  maxDivision: number
   disabled?: boolean
 }
 
@@ -93,6 +103,7 @@ function CondimentSelector({
   onChange,
   showPlacement,
   sectionMode,
+  maxDivision,
   disabled,
 }: CondimentSelectorProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -181,12 +192,13 @@ function CondimentSelector({
             )}
           </div>
 
-          {/* Placement picker (Whole / Left / Right / quarters) */}
+          {/* Placement picker (Whole / Left Half / Right Half — limited by condimentDivisionMax) */}
           {showPlacement && (
             <ToppingPlacementPicker
               sectionMode={sectionMode}
               selectedSections={primarySel.sections}
               onChange={handlePlacementChange}
+              maxDivision={maxDivision}
               multiSelect={false}
             />
           )}

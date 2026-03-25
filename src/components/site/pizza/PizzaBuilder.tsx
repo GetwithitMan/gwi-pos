@@ -276,6 +276,7 @@ export function PizzaBuilder({
         onSauceChange={setSauceSelections}
         onCheeseChange={setCheeseSelections}
         allowCondimentSections={allowCondimentSections}
+        condimentDivisionMax={config.condimentDivisionMax ?? 2}
         sectionMode={sectionMode}
         sauceDisabled={sauceDisabled}
         cheeseDisabled={cheeseDisabled}
