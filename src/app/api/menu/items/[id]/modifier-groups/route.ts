@@ -627,6 +627,17 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     const resolvedMaxSelections = templateMaxSelections ?? maxSelections
     const resolvedIsRequired = templateIsRequired ?? isRequired
 
+    // Deduplicate group name if a unique constraint on (locationId, name) still exists.
+    // Migration 105 drops this stale constraint, but until it runs on all venues we
+    // handle it here by appending a counter suffix.
+    let groupName = name || 'New Group'
+    const existingCount = await db.modifierGroup.count({
+      where: { locationId: menuItem.locationId, name: groupName, deletedAt: null },
+    })
+    if (existingCount > 0) {
+      groupName = `${groupName} (${existingCount + 1})`
+    }
+
     // Use transaction if we need to link to parent modifier
     const group = await db.$transaction(async (tx) => {
       // Create the modifier group owned by this item
@@ -634,7 +645,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         data: {
           locationId: menuItem.locationId,
           menuItemId, // This makes it item-specific!
-          name: name || 'New Group',
+          name: groupName,
           minSelections: resolvedMinSelections,
           maxSelections: resolvedMaxSelections,
           isRequired: resolvedIsRequired,
