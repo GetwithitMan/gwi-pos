@@ -169,6 +169,18 @@ function setCfdMapping(cfdTerminalId: string, registerTerminalId: string): void 
 
 async function markTerminalOffline(terminalId: string, locationId: string, reason: string, socketId: string): Promise<void> {
   try {
+    // KDS screens use a 'kds-' prefixed terminalId — they live in KDSScreen, not Terminal
+    if (terminalId.startsWith('kds-')) {
+      // KDS screens don't have an isOnline column — just emit status event
+      void emitToLocation(locationId, 'terminal:status_changed', {
+        terminalId,
+        isOnline: false,
+        lastSeenAt: null,
+        source: 'socket_disconnect',
+        reason,
+      })
+      return
+    }
     await db.terminal.update({
       where: { id: terminalId },
       data: { isOnline: false },
@@ -196,6 +208,17 @@ async function markTerminalOffline(terminalId: string, locationId: string, reaso
 
 async function markTerminalOnline(terminalId: string, locationId: string): Promise<void> {
   try {
+    // KDS screens use a 'kds-' prefixed terminalId — they live in KDSScreen, not Terminal
+    if (terminalId.startsWith('kds-')) {
+      // KDS screens don't have an isOnline column — just emit status event
+      void emitToLocation(locationId, 'terminal:status_changed', {
+        terminalId,
+        isOnline: true,
+        lastSeenAt: new Date().toISOString(),
+        source: 'socket_reconnect',
+      })
+      return
+    }
     const terminal = await db.terminal.findFirst({
       where: { id: terminalId, deletedAt: null },
       select: { isOnline: true },
@@ -497,15 +520,30 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           return
         }
 
-        // Validate that the terminal belongs to this location
-        const validTerminal = await db.terminal.findFirst({
-          where: { id: terminalId, locationId: socket.data.locationId || locationId, deletedAt: null },
-          select: { id: true },
-        })
-        if (!validTerminal) {
-          log.warn(`Rejected join_station: terminal ${terminalId} not found in location ${socket.data.locationId || locationId}`)
-          ack({ success: false, error: 'Terminal not found in this location' })
-          return
+        // Validate that the terminal/KDS screen belongs to this location
+        const effectiveLocationId = socket.data.locationId || locationId
+        if (terminalId.startsWith('kds-')) {
+          // KDS screens live in the KDSScreen table — strip the 'kds-' prefix for lookup
+          const kdsId = terminalId.slice(4)
+          const validKds = await db.kDSScreen.findFirst({
+            where: { id: kdsId, locationId: effectiveLocationId, deletedAt: null, isActive: true },
+            select: { id: true },
+          })
+          if (!validKds) {
+            log.warn(`Rejected join_station: KDS screen ${kdsId} not found in location ${effectiveLocationId}`)
+            ack({ success: false, error: 'KDS screen not found in this location' })
+            return
+          }
+        } else {
+          const validTerminal = await db.terminal.findFirst({
+            where: { id: terminalId, locationId: effectiveLocationId, deletedAt: null },
+            select: { id: true },
+          })
+          if (!validTerminal) {
+            log.warn(`Rejected join_station: terminal ${terminalId} not found in location ${effectiveLocationId}`)
+            ack({ success: false, error: 'Terminal not found in this location' })
+            return
+          }
         }
 
         // Join location room (global alerts)

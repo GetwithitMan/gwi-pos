@@ -12,6 +12,34 @@ import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-links'
 import { sendSMS, isTwilioConfigured, formatPhoneE164 } from '@/lib/twilio'
 
+/**
+ * Validate a KDS device token from request headers.
+ * Checks x-device-token header, kds_device_token cookie, or Bearer token against KDSScreen.deviceToken.
+ * Returns the screen's locationId if valid, null otherwise.
+ */
+async function validateKdsDeviceToken(request: NextRequest): Promise<{ locationId: string; screenId: string } | null> {
+  const headerToken = request.headers.get('x-device-token')
+  const cookieToken = request.cookies.get('kds_device_token')?.value
+  const authHeader = request.headers.get('authorization')
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  const deviceToken = headerToken || cookieToken || bearerToken
+
+  if (!deviceToken || typeof deviceToken !== 'string') return null
+
+  try {
+    const screen = await db.kDSScreen.findFirst({
+      where: { deviceToken, deletedAt: null, isActive: true },
+      select: { id: true, locationId: true },
+    })
+    if (screen) {
+      return { locationId: screen.locationId, screenId: screen.id }
+    }
+  } catch {
+    // DB lookup failed — fall through
+  }
+  return null
+}
+
 // GET - Get orders for KDS display
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -337,7 +365,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 })
 
 // PUT - Mark item(s) as complete (bump) or resend
-export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextRequest) {
+// Accepts KDS device token auth (x-device-token header, kds_device_token cookie, or Bearer token)
+// OR standard employee auth (withAuth('ADMIN')) for POS web UI bumps.
+const putHandler = async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { itemIds, action, resendNote } = body as {
@@ -724,4 +754,17 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       { status: 500 }
     )
   }
-}))
+}
+
+// Auth wrapper: try KDS device token first, fall back to employee auth (ADMIN permission)
+const authWrappedPut = withAuth('ADMIN', putHandler as any)
+export const PUT = withVenue(async function PUT(request: NextRequest) {
+  // Check KDS device token auth first (x-device-token, cookie, or Bearer)
+  const kdsAuth = await validateKdsDeviceToken(request)
+  if (kdsAuth) {
+    // Valid KDS device — proceed directly without employee permission check
+    return putHandler(request)
+  }
+  // Fall back to standard employee auth (POS web UI bumps)
+  return authWrappedPut(request)
+})
