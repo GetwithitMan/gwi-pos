@@ -125,7 +125,13 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       let verifiedLocationId: string | undefined
 
       // ── Tenant JWT verification (when enabled) ──────────────────────
-      if (config.tenantJwtEnabled && config.tenantSigningKey && slug) {
+      // Cellular terminals authenticate via Bearer token (cellular JWT) which already
+      // carries verified venue identity (locationId, venueSlug). They don't have
+      // the x-tenant-context proxy JWT — skip the gate for Bearer-authenticated requests.
+      const authHeader = headersList.get('authorization')
+      const hasBearerToken = authHeader?.startsWith('Bearer ')
+
+      if (config.tenantJwtEnabled && config.tenantSigningKey && slug && !hasBearerToken) {
         const tenantJwt = headersList.get('x-tenant-context')
         if (!tenantJwt) {
           logger.error('[withVenue] Missing x-tenant-context JWT for slug:', slug)
