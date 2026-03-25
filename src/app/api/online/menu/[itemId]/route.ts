@@ -297,6 +297,8 @@ export async function GET(
               builderMode: true,
               defaultBuilderMode: true,
               allowModeSwitch: true,
+              allowCondimentSections: true,
+              condimentDivisionMax: true,
             },
           }),
           venueDb.pizzaSize.findMany({
@@ -312,6 +314,7 @@ export async function GET(
               toppingMultiplier: true,
               freeToppings: true,
               isDefault: true,
+              sortOrder: true,
             },
           }),
           venueDb.pizzaCrust.findMany({
@@ -324,6 +327,7 @@ export async function GET(
               description: true,
               price: true,
               isDefault: true,
+              sortOrder: true,
             },
           }),
           venueDb.pizzaSauce.findMany({
@@ -339,6 +343,7 @@ export async function GET(
               allowExtra: true,
               extraPrice: true,
               isDefault: true,
+              sortOrder: true,
             },
           }),
           venueDb.pizzaCheese.findMany({
@@ -354,6 +359,7 @@ export async function GET(
               allowExtra: true,
               extraPrice: true,
               isDefault: true,
+              sortOrder: true,
             },
           }),
           venueDb.pizzaTopping.findMany({
@@ -368,6 +374,7 @@ export async function GET(
               extraPrice: true,
               color: true,
               iconUrl: true,
+              sortOrder: true,
             },
           }),
         ])
@@ -390,6 +397,8 @@ export async function GET(
         toppingMultiplier: Number(s.toppingMultiplier),
         freeToppings: s.freeToppings,
         isDefault: s.isDefault,
+        isActive: true as const,
+        sortOrder: s.sortOrder ?? 0,
       }))
 
       response.pizzaCrusts = pizzaCrusts.map(c => ({
@@ -398,6 +407,8 @@ export async function GET(
         description: c.description,
         price: Number(c.price),
         isDefault: c.isDefault,
+        isActive: true as const,
+        sortOrder: c.sortOrder ?? 0,
       }))
 
       response.pizzaSauces = pizzaSauces.map(s => ({
@@ -409,6 +420,8 @@ export async function GET(
         allowExtra: s.allowExtra,
         extraPrice: Number(s.extraPrice),
         isDefault: s.isDefault,
+        isActive: true as const,
+        sortOrder: s.sortOrder ?? 0,
       }))
 
       response.pizzaCheeses = pizzaCheeses.map(c => ({
@@ -420,6 +433,8 @@ export async function GET(
         allowExtra: c.allowExtra,
         extraPrice: Number(c.extraPrice),
         isDefault: c.isDefault,
+        isActive: true as const,
+        sortOrder: c.sortOrder ?? 0,
       }))
 
       response.pizzaToppings = pizzaToppings.map(t => ({
@@ -430,6 +445,8 @@ export async function GET(
         extraPrice: t.extraPrice != null ? Number(t.extraPrice) : null,
         color: t.color,
         iconUrl: t.iconUrl,
+        isActive: true as const,
+        sortOrder: t.sortOrder ?? 0,
       }))
 
       response.pizzaSpecialty = item.pizzaSpecialty ?? null

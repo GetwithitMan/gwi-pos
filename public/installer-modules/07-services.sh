@@ -56,12 +56,34 @@ RLSEOF
 # GWI POS Pre-Start — runs before thepasspos.service on every boot/restart.
 # Ensures the database schema matches the deployed Prisma schema.
 set -euo pipefail
-APP_DIR="/opt/gwi-pos/app"
-cd "$APP_DIR"
+_APP_DIR="/opt/gwi-pos/app"
+cd "$_APP_DIR"
 
 # Ensure app env files are symlinked to canonical /opt/gwi-pos/.env
 # (repairs broken symlinks or copies left by older installers)
 _CANONICAL_ENV="/opt/gwi-pos/.env"
+
+# ── Per-boot reconciliation gate — prevents infinite restart loops ──
+BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '-')
+RECONCILE_MARKER="/opt/gwi-pos/state/.reconciled-${BOOT_ID}"
+
+if [[ -f "$RECONCILE_MARKER" ]]; then
+  echo "[pre-start] Reconciliation already completed this boot — skipping full cycle"
+  # Still do minimal checks (symlinks only)
+  if [[ -f "$_CANONICAL_ENV" ]]; then
+    for _ef in "$_APP_DIR/.env" "$_APP_DIR/.env.local"; do
+      if [[ ! -L "$_ef" ]] || [[ "$(readlink -f "$_ef" 2>/dev/null)" != "$(readlink -f "$_CANONICAL_ENV")" ]]; then
+        rm -f "$_ef"
+        ln -sf "$_CANONICAL_ENV" "$_ef"
+      fi
+    done
+  fi
+  exit 0
+fi
+
+# 5-minute hard timeout
+PRE_START_DEADLINE=$(($(date +%s) + 300))
+
 if [[ -f "$_CANONICAL_ENV" ]]; then
   for _ef in .env .env.local; do
     if [[ ! -L "$_ef" ]] || [[ "$(readlink -f "$_ef" 2>/dev/null)" != "$(readlink -f "$_CANONICAL_ENV")" ]]; then
@@ -91,6 +113,14 @@ else
   else
     echo "[pre-start] WARNING: prisma generate failed — continuing with existing client."
   fi
+fi
+
+# Timeout check
+if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
+  echo "[pre-start] CRITICAL: Pre-start exceeded 5-minute timeout — continuing with current state"
+  mkdir -p /opt/gwi-pos/state
+  touch "$RECONCILE_MARKER"
+  exit 0
 fi
 
 echo "[pre-start] Checking database schema..."
@@ -130,6 +160,14 @@ sudo /opt/gwi-pos/disable-rls.sh "$_DB_NAME" && {
     echo "[pre-start] RLS disabled."
   fi
 } || echo "[pre-start] WARNING: RLS disable had issues — continuing."
+
+# Timeout check
+if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
+  echo "[pre-start] CRITICAL: Pre-start exceeded 5-minute timeout — continuing with current state"
+  mkdir -p /opt/gwi-pos/state
+  touch "$RECONCILE_MARKER"
+  exit 0
+fi
 
 # Run custom migrations if the script exists
 # TIMEOUT: 300s (5min) matches the internal timeout in nuc-pre-migrate.js
@@ -177,6 +215,49 @@ if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
   touch /opt/gwi-pos/.first-boot-done
   echo "[pre-start] First boot completed successfully — future boots will be more lenient."
 fi
+
+# ── Service health checks — ensure critical services are running ──
+echo "[pre-start] Verifying critical services..."
+
+# Sync service
+if systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
+  if ! systemctl is-active thepasspos-sync >/dev/null 2>&1; then
+    echo "[pre-start] Sync service not running — starting..."
+    systemctl start thepasspos-sync 2>/dev/null || echo "[pre-start] WARNING: Failed to start sync service"
+  fi
+fi
+
+# Watchdog timer
+if [[ -f /opt/gwi-pos/watchdog.sh ]]; then
+  if ! systemctl is-active gwi-watchdog.timer >/dev/null 2>&1; then
+    echo "[pre-start] Watchdog timer not active — enabling..."
+    systemctl enable --now gwi-watchdog.timer 2>/dev/null || echo "[pre-start] WARNING: Failed to enable watchdog"
+  fi
+fi
+
+# Dashboard (user service — check via process list)
+if command -v gwi-dashboard >/dev/null 2>&1 || command -v gwi-nuc-dashboard >/dev/null 2>&1; then
+  if ! pgrep -f gwi-dashboard >/dev/null 2>&1; then
+    echo "[pre-start] Dashboard not running — will start via user service on login"
+  fi
+fi
+
+# Deploy latest scripts from checkout if available
+if [[ -d "$_APP_DIR/public/scripts" ]]; then
+  for _script in watchdog.sh; do
+    [[ -f "$_APP_DIR/public/$_script" ]] && cp "$_APP_DIR/public/$_script" /opt/gwi-pos/ && chmod +x "/opt/gwi-pos/$_script" 2>/dev/null || true
+  done
+  for _script in hardware-inventory.sh disk-pressure-monitor.sh version-compat.sh rolling-restart.sh; do
+    [[ -f "$_APP_DIR/public/scripts/$_script" ]] && cp "$_APP_DIR/public/scripts/$_script" /opt/gwi-pos/scripts/ && chmod +x "/opt/gwi-pos/scripts/$_script" 2>/dev/null || true
+  done
+fi
+
+# ── Mark reconciliation complete for this boot ──
+mkdir -p /opt/gwi-pos/state
+touch "$RECONCILE_MARKER"
+# Clean old markers (keep last 5)
+ls -t /opt/gwi-pos/state/.reconciled-* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+echo "[pre-start] Reconciliation complete (marker: $RECONCILE_MARKER)"
 PSEOF
     chmod +x "$PRE_START"
     chown "$POSUSER":"$POSUSER" "$PRE_START"

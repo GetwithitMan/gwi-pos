@@ -17,8 +17,12 @@ const MODE_LABELS: Record<number, string> = {
 }
 
 export function SectionSelector({ sectionOptions, selectedMode, onModeChange }: SectionSelectorProps) {
-  // Only show options from venue config; default to [1,2,4] if not configured
-  const allowedModes = (sectionOptions.length > 0 ? sectionOptions : [1, 2, 4])
+  // FIX 4: Default to [1,2,4] if not configured. Never show 6/8 unless explicitly in config.
+  const configuredModes = Array.isArray(sectionOptions) && sectionOptions.length > 0
+    ? sectionOptions
+    : [1, 2, 4]
+
+  const allowedModes = configuredModes
     .filter((m) => MODE_LABELS[m])
     .sort((a, b) => a - b)
 
@@ -37,12 +41,11 @@ export function SectionSelector({ sectionOptions, selectedMode, onModeChange }: 
               key={mode}
               type="button"
               onClick={() => onModeChange(mode)}
-              className={`
-                px-4 py-2.5 rounded-full border-2 text-sm font-medium cursor-pointer transition-all min-h-[44px]
-                ${isSelected
-                  ? 'border-blue-500 bg-blue-500 text-white'
-                  : 'border-gray-200 text-gray-700 hover:border-gray-300'}
-              `}
+              className={`px-4 py-2.5 rounded-full border-2 text-sm font-medium cursor-pointer transition-all min-h-[44px] ${!isSelected ? 'border-gray-200 text-gray-700 hover:border-gray-300' : 'text-white'}`}
+              style={isSelected ? {
+                borderColor: 'var(--site-brand)',
+                backgroundColor: 'var(--site-brand)',
+              } : undefined}
             >
               {MODE_LABELS[mode] || `${mode} Sections`}
             </button>

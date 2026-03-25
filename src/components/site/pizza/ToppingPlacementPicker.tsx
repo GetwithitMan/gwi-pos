@@ -53,12 +53,8 @@ function PlacementButton({
     <button
       type="button"
       onClick={onClick}
-      className={`
-        px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-        ${isSelected
-          ? 'bg-blue-500 text-white'
-          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
-      `}
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${!isSelected ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'text-white'}`}
+      style={isSelected ? { backgroundColor: 'var(--site-brand)' } : undefined}
     >
       {label}
     </button>

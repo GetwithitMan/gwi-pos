@@ -25,6 +25,10 @@ interface ModifierGroupRendererProps {
   selections: Map<string, SelectedModifier[]>
   onSelectionChange: (groupId: string, selections: SelectedModifier[]) => void
   depth?: number
+  /** Map of exclusionGroupKey → groupIds sharing that key. Used to enforce mutual exclusion across groups. */
+  exclusionGroups?: Map<string, string[]>
+  /** Callback to clear selections in another group when exclusion fires */
+  onExclusionClear?: (groupId: string) => void
 }
 
 // ── Pre-modifier pill button ────────────────────────────────────────────────
@@ -257,6 +261,8 @@ export function ModifierGroupRenderer({
   selections,
   onSelectionChange,
   depth = 0,
+  exclusionGroups,
+  onExclusionClear,
 }: ModifierGroupRendererProps) {
   const [openEntryText, setOpenEntryText] = useState('')
 
@@ -315,6 +321,20 @@ export function ModifierGroupRenderer({
         groupSelections.filter((s) => s.modifierId !== option.id)
       )
       return
+    }
+
+    // TODO: Exclusion group enforcement — when this group has an exclusionGroupKey,
+    // check if any other group shares the same key via exclusionGroups map and call
+    // onExclusionClear(otherGroupId) to clear conflicting selections.
+    // This requires MenuItemSheet to build the exclusionGroups map from all modifier groups
+    // and pass the onExclusionClear callback that clears the target group's selections.
+    if (group.exclusionGroupKey && exclusionGroups && onExclusionClear) {
+      const siblingGroupIds = exclusionGroups.get(group.exclusionGroupKey) ?? []
+      for (const siblingId of siblingGroupIds) {
+        if (siblingId !== group.id) {
+          onExclusionClear(siblingId)
+        }
+      }
     }
 
     // Select
@@ -383,6 +403,24 @@ export function ModifierGroupRenderer({
 
   function handleOpenEntryChange(_groupId: string, value: string) {
     setOpenEntryText(value)
+
+    // Persist open entry text as a SelectedModifier so it flows to the order
+    const currentSels = groupSelections.filter(s => !s.isCustomEntry)
+
+    if (value.trim()) {
+      currentSels.push({
+        modifierId: `custom-${group.id}`,
+        name: value.trim(),
+        price: 0,
+        quantity: 1,
+        preModifier: null,
+        depth,
+        isCustomEntry: true,
+        customEntryText: value.trim(),
+      })
+    }
+
+    onSelectionChange(group.id, currentSels)
   }
 
   // ── Render ──────────────────────────────────────────────────────────────

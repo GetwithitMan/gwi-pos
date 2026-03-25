@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import type {
   PizzaConfig,
   PizzaSize,
@@ -30,10 +30,20 @@ interface SelectedTopping {
   basePrice: number
 }
 
+/** Per-section condiment selection (sauce or cheese) */
+export interface CondimentSelection {
+  id: string
+  amount: Amount
+  sections: number[]  // which sections this applies to
+}
+
 /** Full pizza builder state, to be passed to cart when "Add to Cart" is clicked */
 export interface PizzaBuilderResult {
   sizeId: string
   crustId: string
+  sauceSelections: CondimentSelection[]
+  cheeseSelections: CondimentSelection[]
+  // Legacy single sauce/cheese fields for backward compat
   sauceId: string | null
   cheeseId: string | null
   sauceAmount: Amount
@@ -56,6 +66,8 @@ interface PizzaBuilderProps {
   onComplete: (result: PizzaBuilderResult) => void
   /** Called when customer cancels / goes back */
   onCancel: () => void
+  /** Called whenever the estimated total changes (for parent to update "Add to Cart" button) */
+  onPriceChange?: (total: number) => void
 }
 
 export function PizzaBuilder({
@@ -68,6 +80,7 @@ export function PizzaBuilder({
   specialty,
   onComplete,
   onCancel,
+  onPriceChange,
 }: PizzaBuilderProps) {
   const isSpecialty = !!specialty
 
@@ -83,17 +96,28 @@ export function PizzaBuilder({
     ? cheeses.find((c) => c.id === specialty.defaultCheeseId) ?? null
     : cheeses.find((c) => c.isDefault && c.isActive) || cheeses.find((c) => c.isActive) || null
 
+  const allowCondimentSections = config.allowCondimentSections ?? false
+
   // --- State ---
   const [selectedSize, setSelectedSize] = useState<PizzaSize | null>(defaultSize)
   const [selectedCrust, setSelectedCrust] = useState<PizzaCrust | null>(defaultCrust)
-  const [selectedSauce, setSelectedSauce] = useState<PizzaSauce | null>(defaultSauce)
-  const [selectedCheese, setSelectedCheese] = useState<PizzaCheese | null>(defaultCheese)
-  const [sauceAmount, setSauceAmount] = useState<Amount>(isSpecialty ? specialty.sauceAmount : 'regular')
-  const [cheeseAmount, setCheeseAmount] = useState<Amount>(isSpecialty ? specialty.cheeseAmount : 'regular')
   const [sectionMode, setSectionMode] = useState<number>(config.defaultSections || 1)
+
+  // Per-section sauce/cheese selections
+  const wholeSections = useMemo(() => getSectionPreset(1, 0), [])
+  const [sauceSelections, setSauceSelections] = useState<CondimentSelection[]>(() => {
+    if (!defaultSauce) return []
+    const defaultAmount: Amount = isSpecialty ? specialty.sauceAmount : 'regular'
+    return [{ id: defaultSauce.id, amount: defaultAmount, sections: getSectionPreset(1, 0) }]
+  })
+  const [cheeseSelections, setCheeseSelections] = useState<CondimentSelection[]>(() => {
+    if (!defaultCheese) return []
+    const defaultAmount: Amount = isSpecialty ? specialty.cheeseAmount : 'regular'
+    return [{ id: defaultCheese.id, amount: defaultAmount, sections: getSectionPreset(1, 0) }]
+  })
+
   const [selectedToppings, setSelectedToppings] = useState<SelectedTopping[]>(() => {
     if (!isSpecialty) return []
-    // Initialize from specialty defaults
     return specialty.toppings.map((t) => {
       const toppingDef = toppings.find((td) => td.id === t.toppingId)
       return {
@@ -106,6 +130,16 @@ export function PizzaBuilder({
       }
     })
   })
+
+  // --- Derived: primary sauce/cheese for pricing & summary ---
+  const primarySauce = sauceSelections.length > 0
+    ? sauces.find((s) => s.id === sauceSelections[0].id) ?? null
+    : null
+  const primaryCheese = cheeseSelections.length > 0
+    ? cheeses.find((c) => c.id === cheeseSelections[0].id) ?? null
+    : null
+  const primarySauceAmount = sauceSelections[0]?.amount ?? 'regular'
+  const primaryCheeseAmount = cheeseSelections[0]?.amount ?? 'regular'
 
   // --- Handlers ---
   const handleAddTopping = useCallback((topping: SelectedTopping) => {
@@ -127,12 +161,16 @@ export function PizzaBuilder({
 
   const handleSectionModeChange = useCallback((mode: number) => {
     setSectionMode(mode)
-    // Reset all topping placements to whole when mode changes
-    const wholeSections = getSectionPreset(1, 0)
+    const whole = getSectionPreset(1, 0)
     setSelectedToppings((prev) =>
-      prev.map((t) => ({ ...t, sections: wholeSections }))
+      prev.map((t) => ({ ...t, sections: whole }))
     )
-  }, [])
+    // Reset condiment section placements when mode changes
+    if (mode === 1 || !allowCondimentSections) {
+      setSauceSelections((prev) => prev.map((s) => ({ ...s, sections: whole })))
+      setCheeseSelections((prev) => prev.map((c) => ({ ...c, sections: whole })))
+    }
+  }, [allowCondimentSections])
 
   // --- Price estimate input ---
   const priceInput: PizzaPriceInput | null = useMemo(() => {
@@ -141,12 +179,12 @@ export function PizzaBuilder({
       sizeBasePrice: selectedSize.basePrice,
       sizeToppingMultiplier: selectedSize.toppingMultiplier,
       crustPrice: selectedCrust?.price ?? 0,
-      saucePrice: selectedSauce?.price ?? 0,
-      cheesePrice: selectedCheese?.price ?? 0,
-      sauceAmount,
-      cheeseAmount,
-      sauceExtraPrice: selectedSauce?.extraPrice ?? 0,
-      cheeseExtraPrice: selectedCheese?.extraPrice ?? 0,
+      saucePrice: primarySauce?.price ?? 0,
+      cheesePrice: primaryCheese?.price ?? 0,
+      sauceAmount: primarySauceAmount,
+      cheeseAmount: primaryCheeseAmount,
+      sauceExtraPrice: primarySauce?.extraPrice ?? 0,
+      cheeseExtraPrice: primaryCheese?.extraPrice ?? 0,
       toppings: selectedToppings.map((t) => ({
         price: t.basePrice,
         extraPrice: toppings.find((td) => td.id === t.toppingId)?.extraPrice ?? undefined,
@@ -162,9 +200,16 @@ export function PizzaBuilder({
       freeToppingsMode: config.freeToppingsMode,
     }
   }, [
-    selectedSize, selectedCrust, selectedSauce, selectedCheese,
-    sauceAmount, cheeseAmount, selectedToppings, config, toppings,
+    selectedSize, selectedCrust, primarySauce, primaryCheese,
+    primarySauceAmount, primaryCheeseAmount, selectedToppings, config, toppings,
   ])
+
+  // --- FIX 3: Report price changes to parent ---
+  useEffect(() => {
+    if (!priceInput || !onPriceChange) return
+    const estimate = calculatePizzaPriceEstimate(priceInput)
+    onPriceChange(estimate.totalPrice)
+  }, [priceInput, onPriceChange])
 
   // --- Validation ---
   const canComplete = !!selectedSize && !!selectedCrust
@@ -175,17 +220,19 @@ export function PizzaBuilder({
     onComplete({
       sizeId: selectedSize.id,
       crustId: selectedCrust.id,
-      sauceId: selectedSauce?.id ?? null,
-      cheeseId: selectedCheese?.id ?? null,
-      sauceAmount,
-      cheeseAmount,
+      sauceSelections,
+      cheeseSelections,
+      sauceId: sauceSelections[0]?.id ?? null,
+      cheeseId: cheeseSelections[0]?.id ?? null,
+      sauceAmount: primarySauceAmount,
+      cheeseAmount: primaryCheeseAmount,
       sectionMode,
       toppings: selectedToppings,
       estimatedTotal: estimate.totalPrice,
     })
   }, [
-    selectedSize, selectedCrust, selectedSauce, selectedCheese,
-    sauceAmount, cheeseAmount, sectionMode, selectedToppings, priceInput, onComplete,
+    selectedSize, selectedCrust, sauceSelections, cheeseSelections,
+    primarySauceAmount, primaryCheeseAmount, sectionMode, selectedToppings, priceInput, onComplete,
   ])
 
   // --- Specialty editability ---
@@ -224,14 +271,12 @@ export function PizzaBuilder({
       <SauceCheesePanel
         sauces={sauces}
         cheeses={cheeses}
-        selectedSauceId={selectedSauce?.id ?? null}
-        selectedCheeseId={selectedCheese?.id ?? null}
-        sauceAmount={sauceAmount}
-        cheeseAmount={cheeseAmount}
-        onSauceSelect={(s) => setSelectedSauce(s)}
-        onCheeseSelect={(c) => setSelectedCheese(c)}
-        onSauceAmountChange={setSauceAmount}
-        onCheeseAmountChange={setCheeseAmount}
+        sauceSelections={sauceSelections}
+        cheeseSelections={cheeseSelections}
+        onSauceChange={setSauceSelections}
+        onCheeseChange={setCheeseSelections}
+        allowCondimentSections={allowCondimentSections}
+        sectionMode={sectionMode}
         sauceDisabled={sauceDisabled}
         cheeseDisabled={cheeseDisabled}
       />
@@ -252,12 +297,17 @@ export function PizzaBuilder({
       <PizzaSummary
         sizeName={selectedSize ? (selectedSize.displayName || selectedSize.name) : null}
         crustName={selectedCrust ? (selectedCrust.displayName || selectedCrust.name) : null}
-        sauceName={selectedSauce ? (selectedSauce.displayName || selectedSauce.name) : null}
-        cheeseName={selectedCheese ? (selectedCheese.displayName || selectedCheese.name) : null}
-        sauceAmount={sauceAmount}
-        cheeseAmount={cheeseAmount}
-        toppings={selectedToppings}
+        sauceName={primarySauce ? (primarySauce.displayName || primarySauce.name) : null}
+        cheeseName={primaryCheese ? (primaryCheese.displayName || primaryCheese.name) : null}
+        sauceAmount={primarySauceAmount}
+        cheeseAmount={primaryCheeseAmount}
+        sauceSelections={sauceSelections}
+        cheeseSelections={cheeseSelections}
+        sauces={sauces}
+        cheeses={cheeses}
+        allowCondimentSections={allowCondimentSections}
         sectionMode={sectionMode}
+        toppings={selectedToppings}
         priceInput={priceInput}
       />
 
@@ -274,12 +324,8 @@ export function PizzaBuilder({
           type="button"
           onClick={handleComplete}
           disabled={!canComplete}
-          className={`
-            flex-1 rounded-xl py-3 text-sm font-semibold transition-all min-h-[44px]
-            ${canComplete
-              ? 'bg-blue-500 text-white hover:bg-blue-600'
-              : 'cursor-not-allowed opacity-40 bg-blue-500 text-white'}
-          `}
+          className={`flex-1 rounded-xl py-3 text-sm font-semibold text-white transition-all min-h-[44px] ${!canComplete ? 'cursor-not-allowed opacity-40' : ''}`}
+          style={{ backgroundColor: 'var(--site-brand)' }}
         >
           Add to Order
         </button>

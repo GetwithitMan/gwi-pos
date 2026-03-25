@@ -113,17 +113,20 @@ export function ToppingGrid({
                         if (sectionMode > 1) setExpandedTopping(topping.id)
                       }
                     }}
-                    className={`
-                      w-full p-3 rounded-xl border-2 text-left text-sm transition-all min-h-[44px]
-                      ${isSelected
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'}
-                      ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
-                    `}
+                    className={`w-full p-3 rounded-xl border-2 text-left text-sm transition-all min-h-[44px] ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${!isSelected ? 'border-gray-200 hover:border-gray-300' : ''}`}
+                    style={isSelected ? {
+                      borderColor: 'var(--site-brand)',
+                      backgroundColor: 'var(--site-primary-light)',
+                    } : undefined}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className={`truncate font-medium ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
-                        {isSelected && <span className="mr-1 text-blue-500">&#10003;</span>}
+                      <span
+                        className={`truncate font-medium ${!isSelected ? 'text-gray-900' : ''}`}
+                        style={isSelected ? { color: 'var(--site-brand)' } : undefined}
+                      >
+                        {isSelected && (
+                          <span className="mr-1" style={{ color: 'var(--site-brand)' }}>&#10003;</span>
+                        )}
                         {topping.displayName || topping.name}
                       </span>
                       <span className="shrink-0 text-xs text-gray-400">
@@ -167,7 +170,8 @@ export function ToppingGrid({
                     <button
                       type="button"
                       onClick={() => setExpandedTopping(topping.id)}
-                      className="w-full text-center text-xs py-0.5 text-blue-500 min-h-[44px] flex items-center justify-center"
+                      className="w-full text-center text-xs py-0.5 min-h-[44px] flex items-center justify-center"
+                      style={{ color: 'var(--site-brand)' }}
                     >
                       Customize placement
                     </button>
@@ -198,12 +202,8 @@ function AmountToggle({
     <button
       type="button"
       onClick={onClick}
-      className={`
-        px-3 py-1.5 rounded-lg text-xs font-medium transition-all
-        ${isActive
-          ? 'bg-blue-500 text-white'
-          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
-      `}
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${!isActive ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'text-white'}`}
+      style={isActive ? { backgroundColor: 'var(--site-brand)' } : undefined}
     >
       {label}
     </button>

@@ -29,23 +29,31 @@ export function SizeSelector({ sizes, selectedId, onSelect, disabled }: SizeSele
               type="button"
               disabled={disabled}
               onClick={() => onSelect(size)}
-              className={`
-                px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] min-w-[100px] flex-shrink-0
-                ${isSelected
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 hover:border-gray-300'}
-                ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
-              `}
+              className={`px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] min-w-[100px] flex-shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${!isSelected ? 'border-gray-200 hover:border-gray-300' : ''}`}
+              style={isSelected ? {
+                borderColor: 'var(--site-brand)',
+                backgroundColor: 'var(--site-primary-light)',
+                color: 'var(--site-brand)',
+              } : undefined}
             >
               {size.inches && (
-                <div className={`text-2xl font-bold ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
+                <div
+                  className={`text-2xl font-bold ${!isSelected ? 'text-gray-900' : ''}`}
+                  style={isSelected ? { color: 'var(--site-brand)' } : undefined}
+                >
                   {size.inches}&quot;
                 </div>
               )}
-              <div className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
+              <div
+                className={`text-sm font-medium ${!isSelected ? 'text-gray-900' : ''}`}
+                style={isSelected ? { color: 'var(--site-brand)' } : undefined}
+              >
                 {size.displayName || size.name}
               </div>
-              <div className={`mt-1 text-sm font-semibold ${isSelected ? 'text-blue-600' : 'text-blue-500'}`}>
+              <div
+                className="mt-1 text-sm font-semibold"
+                style={{ color: 'var(--site-brand)' }}
+              >
                 {formatCurrency(size.basePrice)}
               </div>
               {size.slices > 0 && (

@@ -448,6 +448,9 @@ export interface PizzaConfig {
   builderMode: 'quick' | 'visual' | 'both'
   defaultBuilderMode: 'quick' | 'visual'
   allowModeSwitch: boolean
+  // Per-section condiment support (Android parity)
+  allowCondimentSections?: boolean
+  condimentDivisionMax?: number  // 1=whole only, 2=halves max
 }
 
 /**

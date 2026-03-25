@@ -249,6 +249,8 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [PizzaBuilderComponent, setPizzaBuilderComponent] = useState<ComponentType<any> | null>(null)
   const [pizzaBuildResult, setPizzaBuildResult] = useState<PizzaBuilderResult | null>(null)
+  const [pizzaTotal, setPizzaTotal] = useState<number | null>(null)
+  const [specialInstructions, setSpecialInstructions] = useState('')
   const sheetRef = useRef<HTMLDivElement>(null)
 
   // ── Fetch item detail ───────────────────────────────────────────────────
@@ -339,33 +341,51 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
     })
   }
 
+  function flattenSelections(sels: Map<string, SelectedModifier[]>): Array<{ modifierId: string; name: string; price: number; quantity: number; preModifier: string | null }> {
+    const result: Array<{ modifierId: string; name: string; price: number; quantity: number; preModifier: string | null }> = []
+    for (const [, groupSels] of sels) {
+      for (const sel of groupSels) {
+        if (sel.isNoneSelection) continue
+        if (sel.isCustomEntry) {
+          result.push({ modifierId: '', name: sel.customEntryText || 'Custom', price: 0, quantity: 1, preModifier: null })
+          continue
+        }
+        result.push({
+          modifierId: sel.modifierId,
+          name: sel.name,
+          price: getModifierPrice(
+            { price: sel.price, extraPrice: 0 } as Parameters<typeof getModifierPrice>[0],
+            sel.preModifier,
+            sel.quantity || 1,
+          ),
+          quantity: sel.quantity || 1,
+          preModifier: sel.preModifier || null,
+        })
+        // Recurse into child selections
+        if (sel.childSelections && sel.childSelections.size > 0) {
+          result.push(...flattenSelections(sel.childSelections))
+        }
+      }
+    }
+    return result
+  }
+
   function handleAddToCart() {
     if (!item || !onAdd) return
     if (!areRequiredGroupsMet(selections, item.modifierGroups)) return
 
-    // Flatten selections for cart
-    const flatMods: Array<{ modifierId: string; name: string; price: number; quantity: number; preModifier: string | null }> = []
-    for (const [, groupSels] of selections) {
-      for (const sel of groupSels) {
-        if (sel.isNoneSelection) continue
-        flatMods.push({
-          modifierId: sel.modifierId,
-          name: sel.name,
-          price: sel.price,
-          quantity: sel.quantity,
-          preModifier: sel.preModifier,
-        })
-      }
-    }
+    const flatMods = flattenSelections(selections)
 
-    const total = calculateTotal(item.price, quantity, selections, item.modifierGroups)
+    const isPizza = item.itemType === 'pizza' && pizzaTotal != null
+    const finalTotal = isPizza ? pizzaTotal * quantity : calculateTotal(item.price, quantity, selections, item.modifierGroups)
 
     onAdd({
       menuItemId: item.id,
       name: item.name,
-      price: total,
+      price: finalTotal,
       quantity,
       modifiers: flatMods,
+      specialInstructions: specialInstructions.trim() || undefined,
       pizzaConfig: item.itemType === 'pizza' ? pizzaBuildResult : undefined,
     })
 
@@ -376,8 +396,9 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
     ? areRequiredGroupsMet(selections, item.modifierGroups) && item.stockStatus !== 'out_of_stock'
     : false
 
+  const isPizza = item?.itemType === 'pizza' && pizzaTotal != null
   const total = item
-    ? calculateTotal(item.price, quantity, selections, item.modifierGroups)
+    ? isPizza ? pizzaTotal * quantity : calculateTotal(item.price, quantity, selections, item.modifierGroups)
     : 0
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -541,6 +562,7 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
                       specialty={item.pizzaSpecialty ?? null}
                       onComplete={(result: PizzaBuilderResult) => setPizzaBuildResult(result)}
                       onCancel={onClose}
+                      onPriceChange={(price: number) => setPizzaTotal(price)}
                     />
                   ) : (
                     item.modifierGroups.map((group) => (
@@ -552,6 +574,22 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
                       />
                     ))
                   )}
+                </div>
+
+                {/* Special Instructions */}
+                <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--site-border)' }}>
+                  <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--site-text-secondary)' }}>
+                    Special Instructions
+                  </label>
+                  <textarea
+                    value={specialInstructions}
+                    onChange={(e) => setSpecialInstructions(e.target.value)}
+                    placeholder="Any special requests? (allergies, preferences...)"
+                    maxLength={200}
+                    rows={2}
+                    className="w-full mt-2 px-3 py-2 rounded-lg border text-sm resize-none"
+                    style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}
+                  />
                 </div>
               </>
             )}

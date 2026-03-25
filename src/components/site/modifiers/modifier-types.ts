@@ -51,13 +51,37 @@ export interface SelectedModifier {
   isNoneSelection?: boolean
 }
 
-/** Calculate the effective price of a modifier selection including pre-modifier adjustments */
+/** Calculate the effective price of a modifier selection including pre-modifier and tiered pricing adjustments */
 export function getModifierPrice(
   option: ModifierOptionData,
   preMod: PreModifier | null,
-  quantity: number
+  quantity: number,
+  tieredConfig?: unknown,
+  groupSelectionCount?: number
 ): number {
   if (preMod === 'no') return 0
+
+  // Tiered pricing overrides base price when configured
+  if (tieredConfig && groupSelectionCount !== undefined) {
+    const config = tieredConfig as { mode: string; tiers?: Array<{ upTo: number; price: number }>; freeThreshold?: number }
+
+    if (config.mode === 'free_threshold' && config.freeThreshold) {
+      // First N selections are free
+      if (groupSelectionCount <= config.freeThreshold) return 0
+    }
+
+    if (config.mode === 'flat_tiers' && config.tiers) {
+      // Price depends on how many selected in the group
+      for (const tier of [...config.tiers].sort((a, b) => b.upTo - a.upTo)) {
+        if (groupSelectionCount <= tier.upTo) {
+          const extra = preMod === 'extra' ? option.extraPrice : 0
+          return (tier.price + extra) * quantity
+        }
+      }
+    }
+  }
+
+  // Standard pricing
   const base = option.price
   const extra = preMod === 'extra' ? option.extraPrice : 0
   return (base + extra) * quantity

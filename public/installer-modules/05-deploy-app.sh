@@ -334,6 +334,22 @@ run_deploy_app() {
         done
         log "  Re-sourced installer libraries"
       fi
+
+      # Validate refreshed modules have expected entry functions
+      local _refresh_ok=true
+      for _expected_mod in 06-schema 07-services 08-ha 09-remote-access 10-finalize 11-system-hardening 12-dashboard; do
+        local _mod_file="$MODULES_DIR/${_expected_mod}.sh"
+        if [[ ! -f "$_mod_file" ]]; then
+          warn "Module $_expected_mod missing after refresh"
+          _refresh_ok=false
+        fi
+      done
+      if [[ "$_refresh_ok" == "true" ]]; then
+        log "  Module integrity validated (all stages 06-12 present)"
+      else
+        warn "  Module refresh incomplete — some stages may use embedded (stale) code"
+        track_warn "Module refresh incomplete after git pull"
+      fi
     fi
 
     # Deploy operational scripts to /opt/gwi-pos for service use

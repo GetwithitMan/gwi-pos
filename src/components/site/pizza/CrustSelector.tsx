@@ -30,19 +30,24 @@ export function CrustSelector({ crusts, selectedId, onSelect, disabled }: CrustS
               type="button"
               disabled={disabled}
               onClick={() => onSelect(crust)}
-              className={`
-                px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] flex-shrink-0
-                ${isSelected
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 hover:border-gray-300'}
-                ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
-              `}
+              className={`px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] flex-shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${!isSelected ? 'border-gray-200 hover:border-gray-300' : ''}`}
+              style={isSelected ? {
+                borderColor: 'var(--site-brand)',
+                backgroundColor: 'var(--site-primary-light)',
+                color: 'var(--site-brand)',
+              } : undefined}
             >
-              <div className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
+              <div
+                className={`text-sm font-medium ${!isSelected ? 'text-gray-900' : ''}`}
+                style={isSelected ? { color: 'var(--site-brand)' } : undefined}
+              >
                 {crust.displayName || crust.name}
               </div>
               {hasUpcharge && (
-                <div className={`mt-1 text-xs ${isSelected ? 'text-blue-500' : 'text-gray-400'}`}>
+                <div
+                  className={`mt-1 text-xs ${!isSelected ? 'text-gray-400' : ''}`}
+                  style={isSelected ? { color: 'var(--site-brand)' } : undefined}
+                >
                   +{formatCurrency(crust.price)}
                 </div>
               )}
