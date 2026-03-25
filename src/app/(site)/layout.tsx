@@ -17,6 +17,7 @@ import { SiteShell } from '@/components/site/SiteShell'
 import { SiteHeader } from '@/components/site/SiteHeader'
 import { SiteFooter } from '@/components/site/SiteFooter'
 import { FloatingCartBar } from '@/components/site/FloatingCartBar'
+import { CartSidebar } from '@/components/site/CartSidebar'
 import type { SiteBootstrapResponse } from '@/lib/site-api-schemas'
 import type { ThemePreset } from '@/lib/site-theme'
 import type { Metadata } from 'next'
@@ -166,9 +167,12 @@ export default async function SiteLayout({
             logoUrl={bootstrap.branding.logoUrl}
             capabilities={bootstrap.capabilities}
           />
-          <main className="flex-1">
-            {children}
-          </main>
+          <div className="flex-1 flex flex-col lg:flex-row">
+            <CartSidebar />
+            <main className="flex-1 min-w-0">
+              {children}
+            </main>
+          </div>
           <FloatingCartBar />
           <SiteFooter
             venueName={bootstrap.venue.name}

@@ -21,7 +21,7 @@ export function FloatingCartBar() {
     <>
       {/* Floating bar */}
       <div
-        className={`fixed bottom-0 inset-x-0 z-40 transition-transform duration-300 ease-out ${
+        className={`fixed bottom-0 inset-x-0 z-40 lg:hidden transition-transform duration-300 ease-out ${
           visible ? 'translate-y-0' : 'translate-y-full'
         }`}
       >

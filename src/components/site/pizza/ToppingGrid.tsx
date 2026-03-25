@@ -24,6 +24,8 @@ interface ToppingGridProps {
   onRemove: (toppingId: string) => void
   onUpdate: (toppingId: string, updates: Partial<Pick<SelectedTopping, 'sections' | 'amount'>>) => void
   disabled?: boolean
+  /** When true, uses wider grid columns for desktop inline view */
+  wide?: boolean
 }
 
 const CATEGORY_ORDER: Record<string, number> = {
@@ -53,6 +55,7 @@ export function ToppingGrid({
   onRemove,
   onUpdate,
   disabled,
+  wide = false,
 }: ToppingGridProps) {
   const [expandedTopping, setExpandedTopping] = useState<string | null>(null)
 
@@ -84,7 +87,7 @@ export function ToppingGrid({
           <h4 className="text-xs font-medium uppercase tracking-wider text-gray-400">
             {CATEGORY_LABELS[category] || category}
           </h4>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className={`grid gap-2 ${wide ? 'grid-cols-2 xl:grid-cols-3' : 'grid-cols-2 sm:grid-cols-3'}`}>
             {items.map((topping) => {
               const selected = selectedMap.get(topping.id)
               const isSelected = !!selected

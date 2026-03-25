@@ -3,11 +3,13 @@
 /**
  * MenuPageClient — Client boundary for the menu page.
  *
- * Wires MenuBrowse with item selection. When an item is tapped,
- * opens the item detail sheet (MenuItemSheet) and handles add-to-cart.
+ * Desktop (lg+): Clicking an item replaces the menu grid with a full-pane
+ * inline customizer. The cart sidebar on the left stays visible.
+ *
+ * Mobile: Opens a bottom-sheet modal over the menu grid.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { MenuBrowse } from '@/components/site/MenuBrowse'
 import { MenuItemSheet } from '@/components/site/MenuItemSheet'
 import { useSiteCartStore } from '@/stores/site-cart-store'
@@ -25,9 +27,22 @@ interface MenuPageClientProps {
   slug: string
 }
 
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    setIsDesktop(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+  return isDesktop
+}
+
 export function MenuPageClient({ categories, slug }: MenuPageClientProps) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
   const addItem = useSiteCartStore((s) => s.addItem)
+  const isDesktop = useIsDesktop()
 
   const handleItemSelect = useCallback((itemId: string) => {
     setSelectedItemId(itemId)
@@ -59,6 +74,27 @@ export function MenuPageClient({ categories, slug }: MenuPageClientProps) {
     setSelectedItemId(null)
   }, [addItem])
 
+  // ── Desktop: inline customizer replaces menu grid ─────────────────────
+
+  if (isDesktop && selectedItemId) {
+    return (
+      <div
+        className="flex flex-col"
+        style={{ height: 'calc(100vh - 64px)' }}
+      >
+        <MenuItemSheet
+          itemId={selectedItemId}
+          slug={slug}
+          onClose={handleCloseSheet}
+          onAdd={handleAddToCart}
+          inline
+        />
+      </div>
+    )
+  }
+
+  // ── Default: menu grid + mobile sheet overlay ─────────────────────────
+
   return (
     <>
       <MenuBrowse
@@ -66,7 +102,7 @@ export function MenuPageClient({ categories, slug }: MenuPageClientProps) {
         onItemSelect={handleItemSelect}
       />
 
-      {selectedItemId && (
+      {selectedItemId && !isDesktop && (
         <MenuItemSheet
           itemId={selectedItemId}
           slug={slug}

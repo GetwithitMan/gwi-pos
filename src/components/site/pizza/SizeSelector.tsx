@@ -8,9 +8,11 @@ interface SizeSelectorProps {
   selectedId: string | null
   onSelect: (size: PizzaSize) => void
   disabled?: boolean
+  /** When true, uses grid layout instead of horizontal scroll */
+  wide?: boolean
 }
 
-export function SizeSelector({ sizes, selectedId, onSelect, disabled }: SizeSelectorProps) {
+export function SizeSelector({ sizes, selectedId, onSelect, disabled, wide = false }: SizeSelectorProps) {
   const activeSizes = sizes
     .filter((s) => s.isActive)
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -20,7 +22,7 @@ export function SizeSelector({ sizes, selectedId, onSelect, disabled }: SizeSele
       <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
         Choose Size
       </h3>
-      <div className="flex gap-2 overflow-x-auto">
+      <div className={wide ? 'grid grid-cols-2 xl:grid-cols-3 gap-2' : 'flex gap-2 overflow-x-auto'}>
         {activeSizes.map((size) => {
           const isSelected = size.id === selectedId
           return (
@@ -29,7 +31,7 @@ export function SizeSelector({ sizes, selectedId, onSelect, disabled }: SizeSele
               type="button"
               disabled={disabled}
               onClick={() => onSelect(size)}
-              className={`px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] min-w-[100px] flex-shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${!isSelected ? 'border-gray-200 hover:border-gray-300' : ''}`}
+              className={`px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] ${wide ? '' : 'min-w-[100px] flex-shrink-0'} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${!isSelected ? 'border-gray-200 hover:border-gray-300' : ''}`}
               style={isSelected ? {
                 borderColor: 'var(--site-brand)',
                 backgroundColor: 'var(--site-primary-light)',

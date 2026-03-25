@@ -1,7 +1,11 @@
 'use client'
 
 /**
- * MenuItemSheet — Item detail bottom sheet (mobile) / modal (desktop).
+ * MenuItemSheet — Item detail view.
+ *
+ * Two modes:
+ *   inline=false (default): Bottom sheet (mobile) / modal overlay
+ *   inline=true: Full-pane inline view for desktop split-screen layout
  *
  * Fetches item detail from the public API, renders image, description,
  * allergens, modifier groups (or pizza builder), quantity selector,
@@ -45,6 +49,8 @@ interface MenuItemSheetProps {
   itemId: string
   slug: string
   onClose: () => void
+  /** When true, renders as full-pane inline view instead of modal overlay */
+  inline?: boolean
   onAdd?: (item: {
     menuItemId: string
     name: string
@@ -105,21 +111,18 @@ function areRequiredGroupsMet(
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
-function ItemSkeleton() {
+function ItemSkeleton({ wide }: { wide?: boolean }) {
   return (
     <div className="animate-pulse">
-      {/* Image placeholder */}
       <div
-        className="w-full aspect-[16/10] rounded-xl"
+        className={`w-full rounded-xl ${wide ? 'aspect-[3/1] max-h-64' : 'aspect-[16/10]'}`}
         style={{ backgroundColor: 'var(--site-border)' }}
       />
-      {/* Title */}
       <div className="mt-4 space-y-3">
         <div className="h-6 rounded-lg w-2/3" style={{ backgroundColor: 'var(--site-border)' }} />
         <div className="h-4 rounded-lg w-full" style={{ backgroundColor: 'var(--site-border)' }} />
         <div className="h-4 rounded-lg w-3/4" style={{ backgroundColor: 'var(--site-border)' }} />
       </div>
-      {/* Modifier placeholders */}
       <div className="mt-6 space-y-4">
         {[1, 2].map((i) => (
           <div key={i}>
@@ -178,10 +181,13 @@ function ItemError({ onRetry }: { onRetry: () => void }) {
 function QuantitySelector({
   quantity,
   onChange,
+  large,
 }: {
   quantity: number
   onChange: (q: number) => void
+  large?: boolean
 }) {
+  const size = large ? 48 : 40
   return (
     <div className="flex items-center gap-4">
       <button
@@ -190,8 +196,8 @@ function QuantitySelector({
         disabled={quantity <= 1}
         className="flex items-center justify-center rounded-full border-2 text-lg font-bold transition-all disabled:opacity-30"
         style={{
-          width: 40,
-          height: 40,
+          width: size,
+          height: size,
           borderColor: 'var(--site-border)',
           color: 'var(--site-text)',
         }}
@@ -199,7 +205,7 @@ function QuantitySelector({
         −
       </button>
       <span
-        className="text-lg font-semibold w-8 text-center"
+        className={`${large ? 'text-xl' : 'text-lg'} font-semibold w-8 text-center`}
         style={{ color: 'var(--site-text)' }}
       >
         {quantity}
@@ -209,8 +215,8 @@ function QuantitySelector({
         onClick={() => onChange(quantity + 1)}
         className="flex items-center justify-center rounded-full border-2 text-lg font-bold transition-all"
         style={{
-          width: 40,
-          height: 40,
+          width: size,
+          height: size,
           borderColor: 'var(--site-brand)',
           backgroundColor: 'var(--site-brand)',
           color: '#fff',
@@ -238,9 +244,169 @@ function AllergenBadge({ allergen }: { allergen: string }) {
   )
 }
 
+// ── Shared item content ─────────────────────────────────────────────────────
+
+interface ItemContentProps {
+  item: ItemDetail
+  inline: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  PizzaBuilderComponent: ComponentType<any> | null
+  selections: Map<string, SelectedModifier[]>
+  onSelectionChange: (groupId: string, sels: SelectedModifier[]) => void
+  specialInstructions: string
+  onSpecialInstructionsChange: (v: string) => void
+  onPizzaComplete: (result: PizzaBuilderResult) => void
+  onPizzaPriceChange: (price: number) => void
+  onClose: () => void
+}
+
+function ItemContent({
+  item,
+  inline,
+  PizzaBuilderComponent,
+  selections,
+  onSelectionChange,
+  specialInstructions,
+  onSpecialInstructionsChange,
+  onPizzaComplete,
+  onPizzaPriceChange,
+  onClose,
+}: ItemContentProps) {
+  return (
+    <>
+      {/* Item image */}
+      {item.imageUrl ? (
+        <div className={`relative w-full ${inline ? 'h-48 lg:h-56 xl:h-64 rounded-xl overflow-hidden' : 'h-48 sm:h-56'}`}>
+          <Image
+            src={item.imageUrl}
+            alt={item.name}
+            fill
+            className="object-cover"
+            sizes={inline ? '(max-width: 1024px) 100vw, 60vw' : '(max-width: 768px) 100vw, 512px'}
+            priority
+          />
+        </div>
+      ) : (
+        <div
+          className={`flex items-center justify-center ${inline ? 'h-32 lg:h-40 rounded-xl' : 'h-32'}`}
+          style={{
+            background: 'linear-gradient(135deg, var(--site-border) 0%, rgba(0,0,0,0.06) 100%)',
+          }}
+        >
+          <span className="text-5xl opacity-20">
+            {item.itemType === 'pizza' ? '🍕' : '🍽️'}
+          </span>
+        </div>
+      )}
+
+      {/* Header: name + price */}
+      <div
+        className={`flex items-start justify-between gap-3 ${inline ? 'pt-5 pb-4' : 'px-4 pt-4 pb-3 md:px-6'} border-b`}
+        style={{ borderColor: 'var(--site-border)' }}
+      >
+        <div className="min-w-0">
+          <h2
+            className={`font-bold ${inline ? 'text-2xl' : 'text-xl'}`}
+            style={{
+              fontFamily: 'var(--site-heading-font)',
+              fontWeight: 'var(--site-heading-weight)',
+              color: 'var(--site-text)',
+            }}
+          >
+            {item.name}
+          </h2>
+          {item.description && (
+            <p className={`mt-1 leading-relaxed ${inline ? 'text-base' : 'text-sm'}`} style={{ color: 'var(--site-text-muted)' }}>
+              {item.description}
+            </p>
+          )}
+        </div>
+        <span
+          className={`font-semibold shrink-0 ${inline ? 'text-xl' : 'text-lg'}`}
+          style={{ color: 'var(--site-brand)' }}
+        >
+          {formatCurrency(item.price)}
+        </span>
+      </div>
+
+      {/* Body content */}
+      <div className={inline ? 'py-4' : 'px-4 py-4 md:px-6'}>
+        {/* Stock status */}
+        {item.stockStatus === 'out_of_stock' && (
+          <div
+            className="mb-3 rounded-lg px-3 py-2 text-sm font-medium"
+            style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}
+          >
+            Currently unavailable
+          </div>
+        )}
+        {item.stockStatus === 'low_stock' && (
+          <div
+            className="mb-3 rounded-lg px-3 py-2 text-sm font-medium"
+            style={{ backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}
+          >
+            Limited availability
+          </div>
+        )}
+
+        {/* Allergens */}
+        {item.allergens && item.allergens.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {item.allergens.map((a) => (
+              <AllergenBadge key={a} allergen={a} />
+            ))}
+          </div>
+        )}
+
+        {/* Pizza builder or standard modifiers */}
+        {item.itemType === 'pizza' && PizzaBuilderComponent && item.pizzaConfig ? (
+          <PizzaBuilderComponent
+            config={item.pizzaConfig}
+            sizes={item.pizzaSizes ?? []}
+            crusts={item.pizzaCrusts ?? []}
+            sauces={item.pizzaSauces ?? []}
+            cheeses={item.pizzaCheeses ?? []}
+            toppings={item.pizzaToppings ?? []}
+            specialty={item.pizzaSpecialty ?? null}
+            onComplete={onPizzaComplete}
+            onCancel={onClose}
+            onPriceChange={onPizzaPriceChange}
+            wide={inline}
+          />
+        ) : (
+          item.modifierGroups.map((group) => (
+            <ModifierGroupRenderer
+              key={group.id}
+              group={group}
+              selections={selections}
+              onSelectionChange={onSelectionChange}
+            />
+          ))
+        )}
+      </div>
+
+      {/* Special Instructions */}
+      <div className={`py-3 border-t ${inline ? '' : 'px-4'}`} style={{ borderColor: 'var(--site-border)' }}>
+        <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--site-text-secondary)' }}>
+          Special Instructions
+        </label>
+        <textarea
+          value={specialInstructions}
+          onChange={(e) => onSpecialInstructionsChange(e.target.value)}
+          placeholder="Any special requests? (allergies, preferences...)"
+          maxLength={200}
+          rows={2}
+          className="w-full mt-2 px-3 py-2 rounded-lg border text-sm resize-none"
+          style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}
+        />
+      </div>
+    </>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetProps) {
+export function MenuItemSheet({ itemId, slug, onClose, onAdd, inline = false }: MenuItemSheetProps) {
   const [item, setItem] = useState<ItemDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
@@ -307,15 +473,16 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
     }
   }, [item?.itemType])
 
-  // ── Lock body scroll while sheet is open ────────────────────────────────
+  // ── Lock body scroll while sheet is open (modal mode only) ────────────
 
   useEffect(() => {
+    if (inline) return
     const original = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = original
     }
-  }, [])
+  }, [inline])
 
   // ── Escape key to close ─────────────────────────────────────────────────
 
@@ -401,7 +568,80 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
     ? isPizza ? pizzaTotal * quantity : calculateTotal(item.price, quantity, selections, item.modifierGroups)
     : 0
 
-  // ── Render ──────────────────────────────────────────────────────────────
+  // ── Inline render (desktop full-pane) ─────────────────────────────────
+
+  if (inline) {
+    return (
+      <div className="flex flex-col h-full">
+        {/* Back button */}
+        <div className="shrink-0 px-6 lg:px-8 pt-4 pb-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-2 text-sm font-medium transition-colors hover:opacity-80"
+            style={{ color: 'var(--site-brand)' }}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+            </svg>
+            Back to Menu
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto px-6 lg:px-8 pb-4">
+          {loading && <ItemSkeleton wide />}
+          {error && <ItemError onRetry={fetchItem} />}
+          {!loading && !error && item && (
+            <ItemContent
+              item={item}
+              inline
+              PizzaBuilderComponent={PizzaBuilderComponent}
+              selections={selections}
+              onSelectionChange={handleSelectionChange}
+              specialInstructions={specialInstructions}
+              onSpecialInstructionsChange={setSpecialInstructions}
+              onPizzaComplete={(result) => setPizzaBuildResult(result)}
+              onPizzaPriceChange={(price) => setPizzaTotal(price)}
+              onClose={onClose}
+            />
+          )}
+        </div>
+
+        {/* Sticky footer: quantity + add to cart */}
+        {!loading && !error && item && (
+          <div
+            className="shrink-0 border-t px-6 lg:px-8 py-4"
+            style={{
+              borderColor: 'var(--site-border)',
+              backgroundColor: 'var(--site-bg)',
+            }}
+          >
+            <div className="flex items-center gap-6 max-w-2xl">
+              <QuantitySelector quantity={quantity} onChange={setQuantity} large />
+              <button
+                type="button"
+                onClick={handleAddToCart}
+                disabled={!canAdd}
+                className="flex-1 rounded-xl py-4 text-base font-bold transition-all disabled:opacity-40"
+                style={{
+                  minHeight: 56,
+                  backgroundColor: 'var(--site-brand)',
+                  color: '#fff',
+                }}
+              >
+                {item.stockStatus === 'out_of_stock'
+                  ? 'Unavailable'
+                  : `Add to Order — ${formatCurrency(total)}`}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ── Modal/sheet render (mobile) ───────────────────────────────────────
 
   return (
     <div className="fixed inset-0 z-[60]">
@@ -461,137 +701,18 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
               </div>
             )}
             {!loading && !error && item && (
-              <>
-                {/* Item image or placeholder */}
-                {item.imageUrl ? (
-                  <div className="relative w-full h-48 sm:h-56">
-                    <Image
-                      src={item.imageUrl}
-                      alt={item.name}
-                      fill
-                      className="object-cover"
-                      sizes="(max-width: 768px) 100vw, 512px"
-                      priority
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className="h-32 flex items-center justify-center"
-                    style={{
-                      background: 'linear-gradient(135deg, var(--site-border) 0%, rgba(0,0,0,0.06) 100%)',
-                    }}
-                  >
-                    <span className="text-4xl opacity-30">🍽️</span>
-                  </div>
-                )}
-
-                {/* Header: name + price */}
-                <div
-                  className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 md:px-6 border-b"
-                  style={{ borderColor: 'var(--site-border)' }}
-                >
-                  <div className="min-w-0">
-                    <h2
-                      className="text-xl font-bold"
-                      style={{
-                        fontFamily: 'var(--site-heading-font)',
-                        fontWeight: 'var(--site-heading-weight)',
-                        color: 'var(--site-text)',
-                      }}
-                    >
-                      {item.name}
-                    </h2>
-                    {item.description && (
-                      <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--site-text-muted)' }}>
-                        {item.description}
-                      </p>
-                    )}
-                  </div>
-                  <span
-                    className="text-lg font-semibold shrink-0"
-                    style={{ color: 'var(--site-brand)' }}
-                  >
-                    {formatCurrency(item.price)}
-                  </span>
-                </div>
-
-                {/* Body content */}
-                <div className="px-4 py-4 md:px-6">
-                  {/* Stock status */}
-                  {item.stockStatus === 'out_of_stock' && (
-                    <div
-                      className="mb-3 rounded-lg px-3 py-2 text-sm font-medium"
-                      style={{
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                        color: '#ef4444',
-                      }}
-                    >
-                      Currently unavailable
-                    </div>
-                  )}
-                  {item.stockStatus === 'low_stock' && (
-                    <div
-                      className="mb-3 rounded-lg px-3 py-2 text-sm font-medium"
-                      style={{
-                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                        color: '#f59e0b',
-                      }}
-                    >
-                      Limited availability
-                    </div>
-                  )}
-
-                  {/* Allergens */}
-                  {item.allergens && item.allergens.length > 0 && (
-                    <div className="mb-4 flex flex-wrap gap-1.5">
-                      {item.allergens.map((a) => (
-                        <AllergenBadge key={a} allergen={a} />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Pizza builder or standard modifiers */}
-                  {item.itemType === 'pizza' && PizzaBuilderComponent && item.pizzaConfig ? (
-                    <PizzaBuilderComponent
-                      config={item.pizzaConfig}
-                      sizes={item.pizzaSizes ?? []}
-                      crusts={item.pizzaCrusts ?? []}
-                      sauces={item.pizzaSauces ?? []}
-                      cheeses={item.pizzaCheeses ?? []}
-                      toppings={item.pizzaToppings ?? []}
-                      specialty={item.pizzaSpecialty ?? null}
-                      onComplete={(result: PizzaBuilderResult) => setPizzaBuildResult(result)}
-                      onCancel={onClose}
-                      onPriceChange={(price: number) => setPizzaTotal(price)}
-                    />
-                  ) : (
-                    item.modifierGroups.map((group) => (
-                      <ModifierGroupRenderer
-                        key={group.id}
-                        group={group}
-                        selections={selections}
-                        onSelectionChange={handleSelectionChange}
-                      />
-                    ))
-                  )}
-                </div>
-
-                {/* Special Instructions */}
-                <div className="px-4 py-3 border-t" style={{ borderColor: 'var(--site-border)' }}>
-                  <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--site-text-secondary)' }}>
-                    Special Instructions
-                  </label>
-                  <textarea
-                    value={specialInstructions}
-                    onChange={(e) => setSpecialInstructions(e.target.value)}
-                    placeholder="Any special requests? (allergies, preferences...)"
-                    maxLength={200}
-                    rows={2}
-                    className="w-full mt-2 px-3 py-2 rounded-lg border text-sm resize-none"
-                    style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-surface)' }}
-                  />
-                </div>
-              </>
+              <ItemContent
+                item={item}
+                inline={false}
+                PizzaBuilderComponent={PizzaBuilderComponent}
+                selections={selections}
+                onSelectionChange={handleSelectionChange}
+                specialInstructions={specialInstructions}
+                onSpecialInstructionsChange={setSpecialInstructions}
+                onPizzaComplete={(result) => setPizzaBuildResult(result)}
+                onPizzaPriceChange={(price) => setPizzaTotal(price)}
+                onClose={onClose}
+              />
             )}
           </div>
 

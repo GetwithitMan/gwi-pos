@@ -68,6 +68,8 @@ interface PizzaBuilderProps {
   onCancel: () => void
   /** Called whenever the estimated total changes (for parent to update "Add to Cart" button) */
   onPriceChange?: (total: number) => void
+  /** When true, uses two-column wide layout for desktop inline view */
+  wide?: boolean
 }
 
 export function PizzaBuilder({
@@ -81,6 +83,7 @@ export function PizzaBuilder({
   onComplete,
   onCancel,
   onPriceChange,
+  wide = false,
 }: PizzaBuilderProps) {
   const isSpecialty = !!specialty
 
@@ -242,95 +245,145 @@ export function PizzaBuilder({
   const cheeseDisabled = isSpecialty && !specialty.allowCheeseChange
   const toppingsDisabled = isSpecialty && !specialty.allowToppingMods
 
+  // ── Shared sub-component blocks ──────────────────────────────────────
+
+  const sizeBlock = (
+    <SizeSelector
+      sizes={sizes}
+      selectedId={selectedSize?.id ?? null}
+      onSelect={setSelectedSize}
+      disabled={sizeDisabled}
+      wide={wide}
+    />
+  )
+
+  const crustBlock = (
+    <CrustSelector
+      crusts={crusts}
+      selectedId={selectedCrust?.id ?? null}
+      onSelect={setSelectedCrust}
+      disabled={crustDisabled}
+    />
+  )
+
+  const sectionBlock = (
+    <SectionSelector
+      sectionOptions={config.sectionOptions}
+      selectedMode={sectionMode}
+      onModeChange={handleSectionModeChange}
+    />
+  )
+
+  const sauceCheeseBlock = (
+    <SauceCheesePanel
+      sauces={sauces}
+      cheeses={cheeses}
+      sauceSelections={sauceSelections}
+      cheeseSelections={cheeseSelections}
+      onSauceChange={setSauceSelections}
+      onCheeseChange={setCheeseSelections}
+      allowCondimentSections={allowCondimentSections}
+      condimentDivisionMax={config.condimentDivisionMax ?? 2}
+      sectionMode={sectionMode}
+      sauceDisabled={sauceDisabled}
+      cheeseDisabled={cheeseDisabled}
+    />
+  )
+
+  const toppingBlock = (
+    <ToppingGrid
+      toppings={toppings}
+      selectedToppings={selectedToppings}
+      sectionMode={sectionMode}
+      sizeToppingMultiplier={selectedSize?.toppingMultiplier ?? 1}
+      onAdd={handleAddTopping}
+      onRemove={handleRemoveTopping}
+      onUpdate={handleUpdateTopping}
+      disabled={toppingsDisabled}
+      wide={wide}
+    />
+  )
+
+  const summaryBlock = (
+    <PizzaSummary
+      sizeName={selectedSize ? (selectedSize.displayName || selectedSize.name) : null}
+      crustName={selectedCrust ? (selectedCrust.displayName || selectedCrust.name) : null}
+      sauceName={primarySauce ? (primarySauce.displayName || primarySauce.name) : null}
+      cheeseName={primaryCheese ? (primaryCheese.displayName || primaryCheese.name) : null}
+      sauceAmount={primarySauceAmount}
+      cheeseAmount={primaryCheeseAmount}
+      sauceSelections={sauceSelections}
+      cheeseSelections={cheeseSelections}
+      sauces={sauces}
+      cheeses={cheeses}
+      allowCondimentSections={allowCondimentSections}
+      sectionMode={sectionMode}
+      toppings={selectedToppings}
+      priceInput={priceInput}
+    />
+  )
+
+  const actionsBlock = (
+    <div className="flex gap-3 py-4">
+      <button
+        type="button"
+        onClick={onCancel}
+        className="flex-1 rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-all hover:border-gray-300 min-h-[44px]"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        onClick={handleComplete}
+        disabled={!canComplete}
+        className={`flex-1 rounded-xl py-3 text-sm font-semibold text-white transition-all min-h-[44px] ${!canComplete ? 'cursor-not-allowed opacity-40' : ''}`}
+        style={{ backgroundColor: 'var(--site-brand)' }}
+      >
+        Add to Order
+      </button>
+    </div>
+  )
+
+  // ── Wide layout: two columns (desktop inline) ─────────────────────────
+
+  if (wide) {
+    return (
+      <div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8">
+          {/* Left column: Size, Crust, Section, Sauce & Cheese */}
+          <div className="divide-y divide-gray-100">
+            {sizeBlock}
+            {crustBlock}
+            {sectionBlock}
+            {sauceCheeseBlock}
+          </div>
+
+          {/* Right column: Toppings */}
+          <div className="divide-y divide-gray-100">
+            {toppingBlock}
+          </div>
+        </div>
+
+        {/* Full width: Summary + Actions */}
+        <div className="divide-y divide-gray-100 mt-4">
+          {summaryBlock}
+          {actionsBlock}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Narrow layout: single column (mobile sheet) ───────────────────────
+
   return (
     <div className="divide-y divide-gray-100">
-      {/* Size */}
-      <SizeSelector
-        sizes={sizes}
-        selectedId={selectedSize?.id ?? null}
-        onSelect={setSelectedSize}
-        disabled={sizeDisabled}
-      />
-
-      {/* Crust */}
-      <CrustSelector
-        crusts={crusts}
-        selectedId={selectedCrust?.id ?? null}
-        onSelect={setSelectedCrust}
-        disabled={crustDisabled}
-      />
-
-      {/* Section mode */}
-      <SectionSelector
-        sectionOptions={config.sectionOptions}
-        selectedMode={sectionMode}
-        onModeChange={handleSectionModeChange}
-      />
-
-      {/* Sauce & Cheese */}
-      <SauceCheesePanel
-        sauces={sauces}
-        cheeses={cheeses}
-        sauceSelections={sauceSelections}
-        cheeseSelections={cheeseSelections}
-        onSauceChange={setSauceSelections}
-        onCheeseChange={setCheeseSelections}
-        allowCondimentSections={allowCondimentSections}
-        condimentDivisionMax={config.condimentDivisionMax ?? 2}
-        sectionMode={sectionMode}
-        sauceDisabled={sauceDisabled}
-        cheeseDisabled={cheeseDisabled}
-      />
-
-      {/* Toppings */}
-      <ToppingGrid
-        toppings={toppings}
-        selectedToppings={selectedToppings}
-        sectionMode={sectionMode}
-        sizeToppingMultiplier={selectedSize?.toppingMultiplier ?? 1}
-        onAdd={handleAddTopping}
-        onRemove={handleRemoveTopping}
-        onUpdate={handleUpdateTopping}
-        disabled={toppingsDisabled}
-      />
-
-      {/* Summary with running price estimate */}
-      <PizzaSummary
-        sizeName={selectedSize ? (selectedSize.displayName || selectedSize.name) : null}
-        crustName={selectedCrust ? (selectedCrust.displayName || selectedCrust.name) : null}
-        sauceName={primarySauce ? (primarySauce.displayName || primarySauce.name) : null}
-        cheeseName={primaryCheese ? (primaryCheese.displayName || primaryCheese.name) : null}
-        sauceAmount={primarySauceAmount}
-        cheeseAmount={primaryCheeseAmount}
-        sauceSelections={sauceSelections}
-        cheeseSelections={cheeseSelections}
-        sauces={sauces}
-        cheeses={cheeses}
-        allowCondimentSections={allowCondimentSections}
-        sectionMode={sectionMode}
-        toppings={selectedToppings}
-        priceInput={priceInput}
-      />
-
-      {/* Actions */}
-      <div className="flex gap-3 py-4">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex-1 rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-all hover:border-gray-300 min-h-[44px]"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={handleComplete}
-          disabled={!canComplete}
-          className={`flex-1 rounded-xl py-3 text-sm font-semibold text-white transition-all min-h-[44px] ${!canComplete ? 'cursor-not-allowed opacity-40' : ''}`}
-          style={{ backgroundColor: 'var(--site-brand)' }}
-        >
-          Add to Order
-        </button>
-      </div>
+      {sizeBlock}
+      {crustBlock}
+      {sectionBlock}
+      {sauceCheeseBlock}
+      {toppingBlock}
+      {summaryBlock}
+      {actionsBlock}
     </div>
   )
 }
