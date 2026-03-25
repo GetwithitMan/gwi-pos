@@ -241,7 +241,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       timedPricing,
       entertainmentStatus,
       visualType,
-      gracePeriodMinutes,
+      gracePeriodMinutes, // Frontend name (maps to graceMinutes in schema)
+      ratePerMinute,
+      minimumCharge,
+      incrementMinutes,
       // Happy hour (MenuItem-level columns used by pricing engine)
       happyHourEnabled,
       happyHourDiscount,
@@ -361,9 +364,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ...(itemType && { itemType }),
         ...(timedPricing && { timedPricing }),
         ...(entertainmentStatus && { entertainmentStatus }),
-        // visualType belongs to FloorPlanElement, not MenuItem — store in metadata
+        // visualType belongs to FloorPlanElement, not MenuItem — store in metadata JSON
         ...(visualType && { metadata: { visualType } }),
-        ...(gracePeriodMinutes !== undefined && { gracePeriodMinutes }),
+        // Frontend sends gracePeriodMinutes, schema column is graceMinutes
+        ...(gracePeriodMinutes !== undefined && { graceMinutes: gracePeriodMinutes }),
+        // Per-minute pricing fields
+        ...(ratePerMinute !== undefined && { ratePerMinute }),
+        ...(minimumCharge !== undefined && { minimumCharge }),
+        ...(incrementMinutes !== undefined && { incrementMinutes }),
         // Happy hour (MenuItem-level columns — used by block-time pricing engine)
         ...(happyHourEnabled !== undefined && { happyHourEnabled }),
         ...(happyHourDiscount !== undefined && { happyHourDiscount: happyHourDiscount ?? null }),
