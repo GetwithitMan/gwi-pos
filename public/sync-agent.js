@@ -639,6 +639,29 @@ function updateComponentsFromCheckout() {
     log('[Components] Watchdog activation failed: ' + (e.message || '').slice(0, 200))
   }
 
+  // Ansible baseline enforcement — ensures hardening is current after every update
+  // Non-fatal — direct hardening fallback in the script covers critical items
+  try {
+    var hardeningScript = path.join(APP_DIR, 'public', 'installer-modules', '11-system-hardening.sh')
+    if (fs.existsSync(hardeningScript)) {
+      log('[Components] Running Ansible baseline enforcement...')
+      var hardenEnv = Object.assign({}, process.env, {
+        APP_BASE: '/opt/gwi-pos',
+        APP_DIR: '/opt/gwi-pos/app',
+        POSUSER: process.env.POSUSER || 'gwipos',
+        STATION_ROLE: process.env.STATION_ROLE || 'server'
+      })
+      execSync('bash "' + hardeningScript + '"', {
+        encoding: 'utf-8',
+        timeout: 600000,  // 10 min
+        env: hardenEnv
+      })
+      log('[Components] Ansible baseline completed')
+    }
+  } catch (e) {
+    log('[Components] Ansible baseline failed (non-fatal): ' + (e.message || '').slice(0, 200))
+  }
+
   return result
 }
 

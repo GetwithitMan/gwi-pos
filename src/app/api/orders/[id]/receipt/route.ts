@@ -129,6 +129,8 @@ export const GET = withVenue(async function GET(
         cardBrand: payment.cardBrand,
         cardLast4: payment.cardLast4,
         authCode: payment.authCode,
+        entryMethod: payment.entryMethod,
+        aid: payment.aid,
         amountTendered: payment.amountTendered ? Number(payment.amountTendered) : null,
         changeGiven: payment.changeGiven ? Number(payment.changeGiven) : null,
       })),

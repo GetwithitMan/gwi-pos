@@ -39,6 +39,8 @@ export interface ReceiptPayment {
   cardBrand?: string | null
   cardLast4?: string | null
   authCode?: string | null
+  entryMethod?: string | null
+  aid?: string | null
   amountTendered?: number | null
   changeGiven?: number | null
 }
@@ -410,9 +412,22 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
                 <span>
                   {PAYMENT_METHOD_LABELS[payment.method] || payment.method}
                   {transactionDisplay && ` ${transactionDisplay}`}
+                  {payment.entryMethod && payment.method !== 'cash' && (
+                    <span className="text-gray-500 ml-1">({payment.entryMethod})</span>
+                  )}
                 </span>
                 <span>{formatCurrency(payment.totalAmount)}</span>
               </div>
+              {payment.method !== 'cash' && payment.method !== 'house_account' && payment.authCode && (
+                <div className="text-gray-500 text-[10px]">
+                  Auth: {payment.authCode}
+                </div>
+              )}
+              {payment.method !== 'cash' && payment.aid && (
+                <div className="text-gray-500 text-[10px]">
+                  AID: {payment.aid}
+                </div>
+              )}
               {payment.method === 'cash' && payment.amountTendered && (
                 <>
                   <div className="flex justify-between text-gray-500">

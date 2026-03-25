@@ -374,6 +374,9 @@ KATMR
       _write_event "baseline_run" "skipped_unavailable" 0 0
     fi
 
+    # Direct hardening ALWAYS runs — screen/sleep prevention is too critical
+    _apply_critical_hardening_direct
+
     end_timer "Stage 11: System Hardening"
     return 0
   fi
@@ -384,27 +387,44 @@ KATMR
   if [[ ! -x "$ANSIBLE_BIN" ]]; then
     log "Bootstrapping Ansible $PINNED_ANSIBLE_VERSION in virtualenv..."
 
-    # Ensure python3-venv is available
+    # Ensure python3-venv is available (required for Ansible venv)
     if ! python3 -m venv --help >/dev/null 2>&1; then
       log "Installing python3-venv..."
+      apt-get update -qq >/dev/null 2>&1 || true
       local PY_VERSION
       PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "3")
-      apt-get update -qq && apt-get install -y -qq "python${PY_VERSION}-venv" python3-venv >/dev/null 2>&1
-      if [[ $? -ne 0 ]]; then
-        warn "Failed to install python3-venv — cannot bootstrap Ansible"
+      # Try version-specific package first, then generic fallback
+      if ! apt-get install -y -qq "python${PY_VERSION}-venv" >/dev/null 2>&1; then
+        if ! apt-get install -y -qq python3-venv >/dev/null 2>&1; then
+          warn "Failed to install python3-venv — cannot bootstrap Ansible"
+          _apply_critical_hardening_direct
+          _write_run_state "degraded"
+          _write_result "failed_required" 1 0
+          _write_event "baseline_run" "failed_required" 1 0
+          track_warn "System hardening: python3-venv installation failed"
+          end_timer "Stage 11: System Hardening"
+          return 0
+        fi
+      fi
+      # Verify the module actually works now
+      if ! python3 -m venv --help >/dev/null 2>&1; then
+        warn "python3-venv installed but module still not available"
+        _apply_critical_hardening_direct
         _write_run_state "degraded"
         _write_result "failed_required" 1 0
         _write_event "baseline_run" "failed_required" 1 0
-        track_warn "System hardening: python3-venv installation failed"
+        track_warn "System hardening: python3-venv module not functional after install"
         end_timer "Stage 11: System Hardening"
         return 0
       fi
+      log "python3-venv installed successfully (Python ${PY_VERSION})"
     fi
 
     # Create venv and install pinned ansible-core
     python3 -m venv "$VENV_DIR" 2>/dev/null
     if [[ $? -ne 0 ]]; then
       warn "Failed to create Python virtualenv at $VENV_DIR"
+      _apply_critical_hardening_direct
       _write_run_state "degraded"
       _write_result "failed_required" 1 0
       _write_event "baseline_run" "failed_required" 1 0
@@ -419,6 +439,7 @@ KATMR
       || "$VENV_DIR/bin/pip" install --quiet "ansible" >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
       warn "Failed to install ansible==$PINNED_ANSIBLE_VERSION"
+      _apply_critical_hardening_direct
       _write_run_state "degraded"
       _write_result "failed_required" 1 0
       _write_event "baseline_run" "failed_required" 1 0
@@ -471,6 +492,7 @@ KATMR
 
   if ! flock -w 300 9; then
     warn "Could not acquire baseline lock within 300 seconds — another baseline run may be in progress"
+    _apply_critical_hardening_direct
     _write_run_state "idle" "\"lock_wait_timeout\": true"
     _write_result "failed_required" 1 0
     _write_event "baseline_run" "failed_required" 1 0
@@ -614,3 +636,46 @@ KATMR
   end_timer "Stage 11: System Hardening"
   return 0
 }
+
+# =============================================================================
+# Self-execution support — when run directly (not sourced by installer orchestrator)
+# Provides stub helpers so the script works standalone from update-agent/sync-agent.
+# =============================================================================
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  # Stub helpers (installer orchestrator provides these; standalone mode needs stubs)
+  if ! declare -f log >/dev/null 2>&1; then
+    log()    { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [Stage11] $*"; }
+  fi
+  if ! declare -f warn >/dev/null 2>&1; then
+    warn()   { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [Stage11] WARNING: $*" >&2; }
+  fi
+  if ! declare -f err >/dev/null 2>&1; then
+    err()    { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [Stage11] ERROR: $*" >&2; }
+  fi
+  if ! declare -f header >/dev/null 2>&1; then
+    header() { echo ""; echo "=== $* ==="; echo ""; }
+  fi
+  if ! declare -f track_warn >/dev/null 2>&1; then
+    track_warn() { warn "$*"; }
+  fi
+  if ! declare -f start_timer >/dev/null 2>&1; then
+    _stage11_start_ts=$(date +%s)
+    start_timer() { _stage11_start_ts=$(date +%s); }
+  fi
+  if ! declare -f end_timer >/dev/null 2>&1; then
+    end_timer() {
+      local elapsed=$(( $(date +%s) - ${_stage11_start_ts:-0} ))
+      log "$1 completed in ${elapsed}s"
+    }
+  fi
+
+  # Default env vars if not set
+  : "${APP_BASE:=/opt/gwi-pos}"
+  : "${APP_DIR:=/opt/gwi-pos/app}"
+  : "${ENV_FILE:=/opt/gwi-pos/.env}"
+  : "${POSUSER:=gwipos}"
+  : "${STATION_ROLE:=server}"
+
+  run_system_hardening
+  exit $?
+fi

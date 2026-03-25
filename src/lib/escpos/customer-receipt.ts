@@ -61,6 +61,9 @@ export interface ReceiptPayment {
   totalAmount: number
   cardBrand?: string | null
   cardLast4?: string | null
+  authCode?: string | null
+  entryMethod?: string | null
+  aid?: string | null
   changeGiven?: number | null
 }
 
@@ -257,14 +260,21 @@ export function buildCustomerReceipt(
   if (payments.length > 0) {
     content.push(line(''))
     for (const pmt of payments) {
+      const entryLabel = pmt.entryMethod ? ` (${pmt.entryMethod})` : ''
       const label =
         pmt.method === 'cash'
           ? 'Cash'
           : pmt.cardBrand
-            ? `${pmt.cardBrand} ****${pmt.cardLast4 || '????'}`
-            : `Card ****${pmt.cardLast4 || '????'}`
+            ? `${pmt.cardBrand} ****${pmt.cardLast4 || '????'}${entryLabel}`
+            : `Card ****${pmt.cardLast4 || '????'}${entryLabel}`
       content.push(twoColumnLine(label, `$${pmt.totalAmount.toFixed(2)}`, width))
 
+      if (pmt.method !== 'cash' && pmt.authCode) {
+        content.push(line(`  Auth: ${pmt.authCode}`))
+      }
+      if (pmt.method !== 'cash' && pmt.aid) {
+        content.push(line(`  AID: ${pmt.aid}`))
+      }
       if (pmt.tipAmount > 0) {
         content.push(twoColumnLine('  Tip:', `$${pmt.tipAmount.toFixed(2)}`, width))
       }

@@ -219,6 +219,9 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         totalAmount: Number(p.totalAmount),
         cardBrand: p.cardBrand,
         cardLast4: p.cardLast4,
+        authCode: p.authCode,
+        entryMethod: p.entryMethod,
+        aid: p.aid,
         changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
       })),
       totals: {

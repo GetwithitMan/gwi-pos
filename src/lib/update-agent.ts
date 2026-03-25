@@ -1128,6 +1128,31 @@ async function updateComponents(): Promise<ComponentUpdateResult> {
     result.watchdog = { active: false }
   }
 
+  // ── Ansible baseline enforcement ──────────────────────────────────────
+  // Run Stage 11 after every update to ensure hardening is current.
+  // Non-fatal — direct hardening fallback in the script covers critical items.
+  try {
+    const hardeningScript = path.join(APP_DIR, 'public/installer-modules/11-system-hardening.sh')
+    if (existsSync(hardeningScript)) {
+      log.info('[update-agent] Running Ansible baseline enforcement...')
+      execSync(`bash "${hardeningScript}"`, {
+        encoding: 'utf8',
+        timeout: 600_000,  // 10 min
+        env: {
+          ...process.env,
+          APP_BASE: '/opt/gwi-pos',
+          APP_DIR: '/opt/gwi-pos/app',
+          POSUSER: process.env.POSUSER || 'gwipos',
+          STATION_ROLE: process.env.STATION_ROLE || 'server',
+        },
+      })
+      log.info('[update-agent] Ansible baseline completed')
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    log.warn(`[update-agent] Ansible baseline failed (non-fatal): ${msg.slice(0, 200)}`)
+  }
+
   return result
 }
 
