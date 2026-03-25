@@ -573,7 +573,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       })
     }
 
-    // If copying from template, get template data
+    // If copying from template, get template data AND group settings
     let templateModifiers: Array<{
       name: string
       price: number
@@ -586,17 +586,28 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       sortOrder: number
     }> = []
 
+    // Template group settings — override body defaults when a template is applied
+    let templateMinSelections: number | null = null
+    let templateMaxSelections: number | null = null
+    let templateIsRequired: boolean | null = null
+
     if (templateId) {
       const template = await db.modifierGroupTemplate.findUnique({
         where: { id: templateId },
         include: {
           modifiers: {
+            where: { deletedAt: null },
             orderBy: { sortOrder: 'asc' },
           },
         },
       })
 
       if (template) {
+        // Copy group settings from the template (minSelections, maxSelections, isRequired)
+        templateMinSelections = template.minSelections
+        templateMaxSelections = template.maxSelections
+        templateIsRequired = template.isRequired
+
         templateModifiers = template.modifiers.map(m => ({
           name: m.name,
           price: Number(m.price),
@@ -611,6 +622,11 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       }
     }
 
+    // Resolve group settings: template values take priority over body defaults
+    const resolvedMinSelections = templateMinSelections ?? minSelections
+    const resolvedMaxSelections = templateMaxSelections ?? maxSelections
+    const resolvedIsRequired = templateIsRequired ?? isRequired
+
     // Use transaction if we need to link to parent modifier
     const group = await db.$transaction(async (tx) => {
       // Create the modifier group owned by this item
@@ -619,9 +635,9 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
           locationId: menuItem.locationId,
           menuItemId, // This makes it item-specific!
           name: name || 'New Group',
-          minSelections,
-          maxSelections,
-          isRequired,
+          minSelections: resolvedMinSelections,
+          maxSelections: resolvedMaxSelections,
+          isRequired: resolvedIsRequired,
           isSpiritGroup,
           sortOrder: (maxSort._max.sortOrder || 0) + 1,
           // Create modifiers from template if provided

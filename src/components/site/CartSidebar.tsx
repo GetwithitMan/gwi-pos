@@ -48,6 +48,7 @@ export function CartSidebar() {
         height: 'calc(100vh - 64px)',
         position: 'sticky',
         top: 64,
+        zIndex: 10,
       }}
     >
       {/* Header */}
