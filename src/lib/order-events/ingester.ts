@@ -289,6 +289,7 @@ export async function ingestAndProject(
       guestCount: state.guestCount,
       tableId: state.tableId,
       tabName: state.tabName,
+      lastMutatedBy: 'cloud' as const,
       ...(isNowClosed ? { paidAt: new Date(), closedAt: new Date() } : {}),
       ...(state.status === 'sent' ? { sentAt: new Date() } : {}),
     }
@@ -317,6 +318,7 @@ export async function ingestAndProject(
               orderNumber: state.orderNumber,
               displayNumber: state.displayNumber,
               ...bridgeData,
+              lastMutatedBy: 'cloud',
             },
           })
         }
@@ -343,6 +345,7 @@ export async function ingestAndProject(
           tipTotal,
           total,
           itemCount: getItemCount(state),
+          lastMutatedBy: 'cloud',
         },
         update: bridgeData,
       })
@@ -368,7 +371,7 @@ export async function ingestAndProject(
     if (removedIds.length > 0) {
       await (db as any).orderItem.updateMany({
         where: { id: { in: removedIds } },
-        data: { deletedAt: new Date(), status: 'voided' },
+        data: { deletedAt: new Date(), status: 'voided', lastMutatedBy: 'cloud' },
       })
     }
 
@@ -407,6 +410,7 @@ export async function ingestAndProject(
           costAtSale: item.costAtSaleCents != null ? item.costAtSaleCents / 100 : null,
           pourSize: item.pourSize ?? null,
           pourMultiplier: item.pourMultiplier ?? null,
+          lastMutatedBy: 'cloud',
         },
         update: {
           name: item.name,
@@ -433,6 +437,7 @@ export async function ingestAndProject(
           costAtSale: item.costAtSaleCents != null ? item.costAtSaleCents / 100 : null,
           pourSize: item.pourSize ?? null,
           pourMultiplier: item.pourMultiplier ?? null,
+          lastMutatedBy: 'cloud',
           deletedAt: null, // Un-delete if re-added
         },
       })
@@ -474,6 +479,7 @@ export async function ingestAndProject(
           cardBrand,
           cardLast4,
           status,
+          lastMutatedBy: 'cloud',
           ...overrides,
         },
         update: {}, // Idempotent — don't overwrite existing Payment
