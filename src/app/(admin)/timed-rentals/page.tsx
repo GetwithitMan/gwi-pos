@@ -245,29 +245,36 @@ export function TimedRentalsContent() {
 
   // Handle URL parameter for item builder
   useEffect(() => {
-    if (!itemIdFromUrl || timedItems.length === 0) return
+    if (!itemIdFromUrl) return
 
     if (itemIdFromUrl === 'new') {
-      // Create new item
-      setBuilderForm({
-        name: '',
-        visualType: 'pool_table',
-        ratePerMinute: DEFAULT_PRICING.ratePerMinute,
-        rateUnit: 'hour',
-        billingGranularity: 15,
-        gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
-        prepaidPackages: DEFAULT_PREPAID_PACKAGES,
-        pricingWindows: [],
-        overtimeEnabled: false,
-        overtimeMode: 'multiplier',
-        overtimeMultiplier: 1.5,
-        overtimePerMinuteRate: 0.50,
-        overtimeFlatFee: 10,
-        overtimeGraceMinutes: 5,
-        status: 'available'
-      })
-      setShowBuilder(true)
-    } else {
+      // Create new item — no need to wait for timedItems to load
+      if (!showBuilder) {
+        setBuilderForm({
+          name: '',
+          visualType: 'pool_table',
+          ratePerMinute: DEFAULT_PRICING.ratePerMinute,
+          rateUnit: 'hour',
+          billingGranularity: 15,
+          gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
+          prepaidPackages: DEFAULT_PREPAID_PACKAGES,
+          pricingWindows: [],
+          overtimeEnabled: false,
+          overtimeMode: 'multiplier',
+          overtimeMultiplier: 1.5,
+          overtimePerMinuteRate: 0.50,
+          overtimeFlatFee: 10,
+          overtimeGraceMinutes: 5,
+          status: 'available'
+        })
+        setShowBuilder(true)
+      }
+      return
+    }
+
+    // Edit existing item — need timedItems loaded first
+    if (timedItems.length === 0) return
+    {
       // Load existing item — fetch from individual item endpoint to get MenuItem-level columns
       const item = timedItems.find(i => i.id === itemIdFromUrl)
       if (item) {
