@@ -299,7 +299,7 @@ export async function pollForCard(
 
     // 7. Create CardDetection row (atomic with suppression update)
     const detectionId = randomUUID()
-    const normalizedName = normalizeCardholderName(cardResult.cardholderName) || null
+    const normalizedName = normalizeCardholderName(cardResult.cardholderName ?? undefined) ?? null
 
     await db.$transaction(async (tx) => {
       // Re-validate lease inside tx (fencing)

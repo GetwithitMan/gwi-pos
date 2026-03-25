@@ -6,7 +6,7 @@ import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
-import { resolveDetection } from '@/lib/domain/payment-readers/listener-service'
+import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
 
 // GET - List all cards on a tab
 export const GET = withVenue(async function GET(

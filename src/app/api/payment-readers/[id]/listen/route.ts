@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { acquireLease, pollForCard } from '@/lib/domain/payment-readers/listener-service'
+import { acquireLease, pollForCard, ListenerError } from '@/lib/domain/payment-readers/listener-service'
 
 // ─── Rate limit: reject if same terminal called within 2s ─────────────
 interface ListenRateLimitEntry {
@@ -105,37 +105,31 @@ export const POST = withVenue(async function POST(
     let currentLeaseVersion = leaseVersion
 
     if (!sessionId) {
-      // New session — acquire lease
-      const leaseResult = await acquireLease(readerId, terminalId, locationId)
-
-      if ('error' in leaseResult) {
-        if (leaseResult.code === 'lease_conflict') {
-          return NextResponse.json(
-            { error: leaseResult.error, code: 'lease_conflict', leasedByTerminalId: leaseResult.leasedByTerminalId },
-            { status: 409 }
-          )
-        }
-        return NextResponse.json({ error: leaseResult.error, code: leaseResult.code }, { status: 400 })
-      }
-
+      // New session — acquire lease (throws ListenerError on conflict)
+      const leaseResult = await acquireLease(readerId, terminalId)
       currentSessionId = leaseResult.sessionId
       currentLeaseVersion = leaseResult.leaseVersion
     }
 
-    // Poll for card detection
-    const result = await pollForCard(readerId, currentSessionId, currentLeaseVersion, locationId, terminalId, {
-      timeoutSeconds: timeoutSeconds || undefined,
-      employeeId: auth.employee.id,
-    })
-
-    if ('error' in result) {
-      const statusCode = result.code === 'stale_lease' ? 409 : 400
-      return NextResponse.json({ error: result.error, code: result.code }, { status: statusCode })
-    }
+    // Poll for card detection (throws ListenerError on stale lease / reader errors)
+    const result = await pollForCard(
+      readerId,
+      locationId,
+      terminalId,
+      currentSessionId,
+      currentLeaseVersion,
+      timeoutSeconds || undefined,
+    )
 
     // Return result — recordNo is NEVER included
     return NextResponse.json({ data: result })
   } catch (error) {
+    if (error instanceof ListenerError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.httpStatus }
+      )
+    }
     console.error('Failed to listen for card:', error)
     return NextResponse.json({ error: 'Failed to listen for card' }, { status: 500 })
   }

@@ -18,6 +18,8 @@ import { getUpstreamSyncMetrics, isInOutageMode } from '@/lib/sync/upstream-sync
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
 import { getReadinessState } from '@/lib/readiness'
 import { APP_VERSION } from '@/lib/version-contract'
+import { readFileSync } from 'fs'
+import path from 'path'
 export const dynamic = 'force-dynamic'
 
 // Track server start time for uptime calculation
@@ -29,7 +31,13 @@ const startTime = Date.now()
 export const GET = withVenue(async function GET(): Promise<NextResponse> {
   const generatedAt = new Date().toISOString()
   const uptime = Math.floor((Date.now() - startTime) / 1000)
-  const version = APP_VERSION
+  // Read version from package.json at RUNTIME (not build time) so it stays current
+  // after git pull + restart, even without a full rebuild
+  let version = APP_VERSION
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'))
+    version = pkg.version || APP_VERSION
+  } catch { /* fallback to build-time version */ }
 
   // ── Health data ─────────────────────────────────────────────────────────────
   let databaseStatus: 'connected' | 'disconnected' | 'error' = 'disconnected'

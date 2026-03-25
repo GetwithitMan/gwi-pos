@@ -77,17 +77,10 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Terminal not found or does not belong to this location' }, { status: 403 })
     }
 
-    // Renew lease
-    const result = await renewLease(readerId, sessionId, leaseVersion)
+    // Renew lease — returns a Date (throws ListenerError on stale/lost lease)
+    const leasedUntil = await renewLease(readerId, sessionId, leaseVersion)
 
-    if ('error' in result) {
-      return NextResponse.json(
-        { error: result.error, code: 'lease_expired_or_taken' },
-        { status: 409 }
-      )
-    }
-
-    return NextResponse.json({ data: { leasedUntil: result.leasedUntil } })
+    return NextResponse.json({ data: { leasedUntil: leasedUntil.toISOString() } })
   } catch (error) {
     console.error('Failed to renew heartbeat:', error)
     return NextResponse.json({ error: 'Failed to renew heartbeat' }, { status: 500 })
