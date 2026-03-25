@@ -1471,4 +1471,14 @@ export interface LocationSettings {
   twilio?: TwilioSettings                               // Twilio SMS integration credentials (optional for backward compat)
   cfdDisplay?: CfdDisplaySettings                         // Customer-facing display configuration (optional for backward compat)
   passiveCardDetection?: PassiveCardDetectionSettings     // Passive card detection / always-listening reader (optional for backward compat)
+  onlineOrdering?: {                                       // Online ordering site settings (optional, Phase G+)
+    prepTime?: number
+    tipSuggestions?: number[]
+    defaultTip?: number
+    requireZip?: boolean
+    allowSpecialRequests?: boolean
+    surchargeType?: string | null
+    surchargeAmount?: number
+    surchargeName?: string
+  }
 }

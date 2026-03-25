@@ -99,7 +99,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       await db.order.updateMany({
         where: { id: { in: abandonedIds } },
         data: {
-          status: 'abandoned',
+          status: 'voided',
           closedAt: new Date(),
           notes: 'EOD cleanup: stuck in_progress order from previous business day — needs manual resolution (has partial payments)',
           lastMutatedBy: 'local',

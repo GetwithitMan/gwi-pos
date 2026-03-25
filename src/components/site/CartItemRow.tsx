@@ -9,6 +9,7 @@ import { flattenModifierPrice } from '@/stores/site-cart-store'
 
 interface CartItemRowProps {
   item: CartItem
+  compact?: boolean
 }
 
 /** Format a pre-modifier label like "No onions", "Extra cheese (+$1.50)" */
