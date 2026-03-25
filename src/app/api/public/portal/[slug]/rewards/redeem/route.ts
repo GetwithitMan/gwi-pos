@@ -185,7 +185,10 @@ export const POST = withVenue(async function POST(
       expiresAt: expiresAt.toISOString(),
       pointsRemaining,
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to redeem loyalty reward:', error)
     return NextResponse.json({ error: 'Failed to redeem reward' }, { status: 500 })
   }
