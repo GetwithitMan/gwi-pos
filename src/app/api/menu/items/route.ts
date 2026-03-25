@@ -431,8 +431,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } })
   } catch (error) {
     console.error('Failed to create item:', error)
+    const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: 'Failed to create item' },
+      { error: `Failed to create item: ${message}` },
       { status: 500 }
     )
   }
