@@ -4,8 +4,8 @@ import { Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
 
-// Allow up to 60s — schema diff + apply to Neon typically takes 10-30s
-export const maxDuration = 60
+// Allow up to 90s — large schemas (100+ tables) can take 30-60s for diff + apply
+export const maxDuration = 90
 
  
 type Row = Record<string, any>

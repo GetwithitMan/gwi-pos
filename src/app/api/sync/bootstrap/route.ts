@@ -11,6 +11,11 @@ import { authenticateTerminal } from '@/lib/terminal-auth'
 const syncBootstrapCache = new Map<string, { data: any; expiry: number }>()
 const SYNC_BOOTSTRAP_TTL = 15_000 // 15 seconds
 
+// Inflight promise coalescing: prevents bootstrap stampede where 10 concurrent
+// requests before cache populates would fire 160 queries on a 25-connection pool.
+// Same pattern as inflightSettings in location-cache.ts.
+const inflightBootstrap = new Map<string, Promise<any>>()
+
 // Allow up to 120s for bootstrap on Vercel (Neon queries can be slow on cold starts)
 export const maxDuration = 120
 
@@ -58,6 +63,39 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     cachedData.syncVersion = Date.now()
     return NextResponse.json({ data: cachedData })
   }
+
+  // Inflight promise coalescing: if another request for this locationId is already
+  // executing the heavy queries, await its result instead of firing a second set.
+  // This prevents 10 concurrent bootstraps from issuing 160 queries on a 25-connection pool.
+  const inflightKey = `bootstrap-${locationId}`
+  const existingInflight = inflightBootstrap.get(inflightKey)
+  if (existingInflight) {
+    const inflightData = await existingInflight
+    // Re-inject terminal-specific config into the coalesced result
+    const personalizedData = { ...inflightData }
+    personalizedData.terminalConfig = {
+      terminalId: auth.terminal.id,
+      locationId: auth.terminal.locationId,
+      cfdTerminalId: auth.terminal.cfdTerminalId ?? null,
+      defaultMode: auth.terminal.defaultMode ?? null,
+      receiptPrinterId: auth.terminal.receiptPrinterId ?? null,
+      kitchenPrinterId: auth.terminal.kitchenPrinterId ?? null,
+      barPrinterId: auth.terminal.barPrinterId ?? null,
+      isTestMode: personalizedData.terminalConfig?.isTestMode ?? false,
+      scaleConfig: scaleConfig ? {
+        id: scaleConfig.id,
+        connectionType: scaleConfig.connectionType,
+        networkHost: scaleConfig.networkHost ?? null,
+        networkPort: scaleConfig.networkPort ?? null,
+        name: scaleConfig.name,
+      } : null,
+    }
+    personalizedData.syncVersion = Date.now()
+    return NextResponse.json({ data: personalizedData })
+  }
+
+  // Create the inflight promise for this locationId — other concurrent requests will await it
+  const bootstrapPromise = (async () => {
 
   const [categories, employees, tables, orderTypes, location, paymentReaders, printers, sections, floorPlanElements, cfdSettings, openOrders, taxRules, pizzaToppings, discountRules, voidReasons, compReasons] = await Promise.all([
     db.category.findMany({
@@ -619,5 +657,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ data: responseData })
+  return responseData
+  })().finally(() => {
+    inflightBootstrap.delete(inflightKey)
+  })
+
+  inflightBootstrap.set(inflightKey, bootstrapPromise)
+  const responseData2 = await bootstrapPromise
+
+  return NextResponse.json({ data: responseData2 })
 })

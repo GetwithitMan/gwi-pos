@@ -150,8 +150,11 @@ export function calculateItemCardPrice(
 
 /**
  * Detect if any items have custom (non-catalog) prices, which requires
- * manager.open_items permission. Excludes weight-based, pizza, and
- * timed-rental items whose prices are inherently dynamic.
+ * manager.open_items permission. Excludes weight-based and timed-rental
+ * items whose prices are inherently dynamic.
+ *
+ * Pizza items are checked separately: a $0 total on a non-free menu item
+ * is flagged as a price-tampering signal requiring manager approval.
  *
  * Returns true if any item has an unexpected price deviation.
  */
@@ -160,6 +163,7 @@ export function hasOpenPricedItems(
   menuItemPrices: Map<string, number>,
   pricingOptionPrices: Map<string, number>
 ): boolean {
+  // Standard items (non-pizza, non-weight, non-timed): check price vs catalog
   const pricableItems = items.filter(i => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
 
   for (const item of pricableItems) {
@@ -176,6 +180,18 @@ export function hasOpenPricedItems(
     }
 
     if (Math.abs(Math.round(item.price * 100) - Math.round(expectedPrice * 100)) > 1) {
+      return true
+    }
+  }
+
+  // Pizza items: flag $0 pizza when the catalog menu item has a non-zero base price.
+  // Pizza prices are computed by the pizza builder, but a $0 total on a non-free
+  // menu item is a price-tampering signal that requires manager approval.
+  const pizzaItems = items.filter(i => !!i.pizzaConfig)
+  for (const item of pizzaItems) {
+    const menuItemPrice = menuItemPrices.get(item.menuItemId)
+    if (menuItemPrice === undefined) continue
+    if (menuItemPrice > 0 && Number(item.pizzaConfig!.totalPrice) <= 0) {
       return true
     }
   }

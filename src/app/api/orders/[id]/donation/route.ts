@@ -62,22 +62,37 @@ export const POST = withVenue(async function POST(
     }
 
     const roundedAmount = Math.round(amount * 100) / 100
-    const previousDonation = Number(order.donationAmount ?? 0)
-    const totalAdjustment = roundedAmount - previousDonation
 
-    const updated = await db.order.update({
-      where: { id: orderId },
-      data: {
-        donationAmount: roundedAmount,
-        total: { increment: totalAdjustment },
-        lastMutatedBy: 'local',
-      },
-      select: {
-        id: true,
-        donationAmount: true,
-        total: true,
-      },
-    })
+    // Wrap in transaction with FOR UPDATE to prevent concurrent donation + discount
+    // from drifting the total (read-then-increment race on stale donationAmount).
+    const updated = await db.$transaction(async (tx) => {
+      // Lock the Order row to serialize concurrent total mutations
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE "id" = $1 FOR UPDATE', orderId)
+
+      // Re-read locked values for accurate delta calculation
+      const locked = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { total: true, donationAmount: true },
+      })
+      if (!locked) throw new Error('Order not found under lock')
+
+      const previousDonation = Number(locked.donationAmount ?? 0)
+      const totalAdjustment = roundedAmount - previousDonation
+
+      return tx.order.update({
+        where: { id: orderId },
+        data: {
+          donationAmount: roundedAmount,
+          total: { increment: totalAdjustment },
+          lastMutatedBy: 'local',
+        },
+        select: {
+          id: true,
+          donationAmount: true,
+          total: true,
+        },
+      })
+    }, { timeout: 10000 })
 
     // Emit order event (mandatory for every Order mutation)
     void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -181,30 +196,51 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    const previousDonation = Number(order.donationAmount ?? 0)
-    if (previousDonation === 0) {
+    // Wrap in transaction with FOR UPDATE to prevent concurrent donation + discount
+    // from drifting the total (read-then-decrement race on stale donationAmount).
+    const txResult = await db.$transaction(async (tx) => {
+      // Lock the Order row to serialize concurrent total mutations
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE "id" = $1 FOR UPDATE', orderId)
+
+      // Re-read locked values for accurate delta calculation
+      const locked = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { total: true, donationAmount: true },
+      })
+      if (!locked) throw new Error('Order not found under lock')
+
+      const previousDonation = Number(locked.donationAmount ?? 0)
+      if (previousDonation === 0) {
+        return { noop: true, orderId: order.id, total: Number(locked.total) } as const
+      }
+
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          donationAmount: null,
+          total: { decrement: previousDonation },
+          lastMutatedBy: 'local',
+        },
+        select: {
+          id: true,
+          donationAmount: true,
+          total: true,
+        },
+      })
+      return { noop: false, ...updated } as const
+    }, { timeout: 10000 })
+
+    if (txResult.noop) {
       return NextResponse.json({
         data: {
-          orderId: order.id,
+          orderId: txResult.orderId,
           donationAmount: 0,
-          total: Number(order.total),
+          total: txResult.total,
         },
       })
     }
 
-    const updated = await db.order.update({
-      where: { id: orderId },
-      data: {
-        donationAmount: null,
-        total: { decrement: previousDonation },
-        lastMutatedBy: 'local',
-      },
-      select: {
-        id: true,
-        donationAmount: true,
-        total: true,
-      },
-    })
+    const updated = txResult
 
     // Emit order event (mandatory for every Order mutation)
     void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {

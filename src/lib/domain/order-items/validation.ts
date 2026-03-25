@@ -130,6 +130,15 @@ export function validateAddItemsInput(items: AddItemInput[]): ValidationResult {
           status: 400,
         }
       }
+
+      // Reject $0 pizza when the item's catalog price is > 0 (anti-theft: crafted zero-breakdown)
+      if (Number(item.pizzaConfig.totalPrice) <= 0 && item.price > 0) {
+        return {
+          valid: false,
+          error: `Pizza price cannot be zero for a non-free menu item "${item.name || item.menuItemId}"`,
+          status: 400,
+        }
+      }
     }
   }
 

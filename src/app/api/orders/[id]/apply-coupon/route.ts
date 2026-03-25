@@ -87,6 +87,20 @@ export const POST = withVenue(async function POST(
         throw Object.assign(new Error('Invalid coupon code'), { statusCode: 404 })
       }
 
+      // Lock the Coupon row to prevent cross-order double-use of single-use/limited coupons.
+      // Two terminals applying the same coupon on different orders will serialize here.
+      await tx.$queryRawUnsafe('SELECT id FROM "Coupon" WHERE "id" = $1 FOR UPDATE', coupon.id)
+
+      // Re-read mutable fields under lock (may have been changed by a concurrent request)
+      const freshCoupon = await tx.coupon.findUnique({
+        where: { id: coupon.id },
+        select: { usageCount: true, isActive: true },
+      })
+      if (freshCoupon) {
+        coupon.usageCount = freshCoupon.usageCount
+        coupon.isActive = freshCoupon.isActive
+      }
+
       // --- Validation ---
 
       // 1. Active check
@@ -108,8 +122,11 @@ export const POST = withVenue(async function POST(
         throw Object.assign(new Error('This coupon has reached its usage limit'), { statusCode: 400 })
       }
 
-      // 4. Per-customer limit (if order has a customer)
+      // 4. Per-customer limit — require a linked customer (prevents anonymous bypass)
       const customerId = (order as any).customerId as string | null
+      if (coupon.perCustomerLimit && coupon.perCustomerLimit > 0 && !customerId) {
+        throw Object.assign(new Error('A customer must be linked to this order to use this coupon'), { statusCode: 400 })
+      }
       if (customerId && coupon.perCustomerLimit) {
         const customerRedemptions = await tx.couponRedemption.count({
           where: {
@@ -122,7 +139,10 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      // 5. Single-use check
+      // 5. Single-use check — require a linked customer (prevents anonymous bypass)
+      if (coupon.singleUse && !customerId) {
+        throw Object.assign(new Error('A customer must be linked to this order to use this coupon'), { statusCode: 400 })
+      }
       if (customerId && coupon.singleUse) {
         const previousUse = await tx.couponRedemption.findFirst({
           where: {

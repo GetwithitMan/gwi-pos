@@ -122,6 +122,10 @@ export const POST = withVenue(async function POST(
     try {
     // ── Phase 1: Validate under lock ──────────────────────────────────────────
     const phase1Result = await db.$transaction(async (tx) => {
+      // Lock both Payment AND Order rows to serialize void-vs-refund on the same order.
+      // The void route locks the Order row; without this, void and refund can both pass
+      // Phase 1 simultaneously on the same order.
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', id)
       await tx.$queryRawUnsafe('SELECT id FROM "Payment" WHERE id = $1 FOR UPDATE', paymentId)
 
       const payment = await PaymentRepository.getPaymentById(paymentId, order.locationId, tx)
