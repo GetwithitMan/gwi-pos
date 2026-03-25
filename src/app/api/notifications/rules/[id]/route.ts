@@ -3,7 +3,7 @@
  * PUT /api/notifications/rules/[id] — Update a routing rule
  * DELETE /api/notifications/rules/[id] — Soft-delete a routing rule
  *
- * Permission: SETTINGS_EDIT
+ * Permission: GET = notifications.view_log, PUT/DELETE = notifications.manage_rules
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const rules: any[] = await db.$queryRawUnsafe(
@@ -79,12 +79,13 @@ export const PUT = withVenue(async function PUT(
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_RULES)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Verify rule exists
     const existing: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "providerId", "targetType" FROM "NotificationRoutingRule"
+      `SELECT id, "providerId", "targetType", "eventType", priority, "criticalityClass"
+       FROM "NotificationRoutingRule"
        WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
       id,
       locationId
@@ -234,6 +235,23 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
     }
 
+    // Audit log: notification_rule_updated
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_rule_updated',
+        entityType: 'notification_routing_rule',
+        entityId: id,
+        details: {
+          changedFields: Object.keys(body),
+          previousEventType: existing[0].eventType,
+          previousPriority: existing[0].priority,
+          previousCriticalityClass: existing[0].criticalityClass,
+        },
+      },
+    }).catch(console.error)
+
     return NextResponse.json({ data: updated[0] })
   } catch (error) {
     console.error('[Notification Rules] PUT error:', error)
@@ -256,8 +274,17 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_RULES)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    // Fetch rule details before deletion for audit
+    const existing: any[] = await db.$queryRawUnsafe(
+      `SELECT id, "eventType", "providerId", "targetType", priority
+       FROM "NotificationRoutingRule"
+       WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
+      id,
+      locationId
+    )
 
     const deleted = await db.$executeRawUnsafe(
       `UPDATE "NotificationRoutingRule"
@@ -270,6 +297,23 @@ export const DELETE = withVenue(async function DELETE(
     if (deleted === 0) {
       return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
     }
+
+    // Audit log: notification_rule_deleted
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_rule_deleted',
+        entityType: 'notification_routing_rule',
+        entityId: id,
+        details: existing[0] ? {
+          eventType: existing[0].eventType,
+          providerId: existing[0].providerId,
+          targetType: existing[0].targetType,
+          priority: existing[0].priority,
+        } : {},
+      },
+    }).catch(console.error)
 
     return NextResponse.json({ success: true })
   } catch (error) {

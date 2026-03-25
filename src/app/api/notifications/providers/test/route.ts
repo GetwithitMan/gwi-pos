@@ -2,7 +2,7 @@
  * POST /api/notifications/providers/test — Test a provider connection
  *
  * Calls the provider's testConnection() method and returns capabilities + health.
- * Permission: SETTINGS_EDIT
+ * Permission: notifications.manage_providers
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -28,7 +28,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()

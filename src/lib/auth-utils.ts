@@ -200,6 +200,15 @@ export const PERMISSIONS = {
   CAKE_CANCEL: 'cake.cancel',
   CAKE_SETTINGS: 'cake.settings',
 
+  // === NOTIFICATIONS ===
+  NOTIFICATIONS_MANAGE_PROVIDERS: 'notifications.manage_providers',
+  NOTIFICATIONS_MANAGE_RULES: 'notifications.manage_rules',
+  NOTIFICATIONS_MANAGE_DEVICES: 'notifications.manage_devices',
+  NOTIFICATIONS_VIEW_LOG: 'notifications.view_log',
+  NOTIFICATIONS_REPLAY_DLQ: 'notifications.replay_dlq',
+  NOTIFICATIONS_MANUAL_PAGE: 'notifications.manual_page',
+  POS_ASSIGN_DEVICE: 'pos.assign_device',
+
   // === ADMIN LEVELS ===
   ADMIN: 'admin',
   MANAGER: 'manager',

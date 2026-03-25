@@ -2,7 +2,7 @@
  * GET /api/notifications/rules — List routing rules for location
  * POST /api/notifications/rules — Create a routing rule with condition validation
  *
- * Permission: SETTINGS_EDIT
+ * Permission: GET = notifications.view_log, POST = notifications.manage_rules
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -41,7 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const searchParams = request.nextUrl.searchParams
@@ -99,7 +99,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_RULES)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()
@@ -259,7 +259,29 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       effectiveEndAt ? new Date(effectiveEndAt) : null
     )
 
-    return NextResponse.json({ data: inserted[0] }, { status: 201 })
+    const rule = inserted[0]
+
+    // Audit log: notification_rule_created
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_rule_created',
+        entityType: 'notification_routing_rule',
+        entityId: rule.id,
+        details: {
+          eventType,
+          providerId,
+          targetType,
+          enabled,
+          priority,
+          criticalityClass,
+          fallbackProviderId: fallbackProviderId || null,
+        },
+      },
+    }).catch(console.error)
+
+    return NextResponse.json({ data: rule }, { status: 201 })
   } catch (error) {
     console.error('[Notification Rules] POST error:', error)
     return NextResponse.json({ error: 'Failed to create rule' }, { status: 500 })

@@ -462,6 +462,25 @@ async function main() {
       () => { /* no teardown — USB handle released on exit */ }
     )
 
+    // ── Notification Worker (opt-in via IS_NOTIFICATION_WORKER env var) ──
+    // Only start on NUC (not Vercel), only when explicitly enabled.
+    // The worker polls NotificationJob rows and processes them via provider adapters.
+    if (process.env.IS_NOTIFICATION_WORKER === 'true' && !process.env.VERCEL) {
+      registerWorker('notificationWorker', 'degraded',
+        async () => {
+          const { startNotificationWorker } = await import('./src/lib/notifications/worker')
+          const zone = process.env.WORKER_EXECUTION_ZONE || 'any'
+          await startNotificationWorker(zone)
+          const role = process.env.WORKER_ROLE || 'notification'
+          logger.info(`Notification worker started (role: ${role})`)
+        },
+        async () => {
+          const { stopNotificationWorker } = await import('./src/lib/notifications/worker')
+          await stopNotificationWorker()
+        }
+      )
+    }
+
     try {
       await startAllWorkers()
     } catch (err) {

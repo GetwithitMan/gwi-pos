@@ -4,7 +4,7 @@
  *
  * Enforces v1 state machine transitions.
  * Logs NotificationDeviceEvent on every status change.
- * Permission: SETTINGS_EDIT
+ * Permission: PATCH/DELETE = notifications.manage_devices
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -42,7 +42,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()
@@ -177,6 +177,25 @@ export const PATCH = withVenue(async function PATCH(
         })
       ).catch(console.error)
 
+      // Audit log: notification_device_override
+      void db.auditLog.create({
+        data: {
+          locationId,
+          employeeId: auth.employee.id,
+          action: 'notification_device_override',
+          entityType: 'notification_device',
+          entityId: id,
+          details: {
+            deviceNumber: device.deviceNumber,
+            previousStatus: device.status,
+            newStatus,
+            force: force || false,
+            assignedToSubjectType: device.assignedToSubjectType,
+            assignedToSubjectId: device.assignedToSubjectId,
+          },
+        },
+      }).catch(console.error)
+
       // If releasing a device that was assigned, also release the corresponding target assignment
       if (newStatus === 'released' && device.status === 'assigned' && device.assignedToSubjectId) {
         void db.$executeRawUnsafe(
@@ -220,7 +239,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Check device exists and is not currently assigned

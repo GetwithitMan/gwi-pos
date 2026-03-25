@@ -2,7 +2,7 @@
  * GET /api/notifications/providers — List notification providers (masked config)
  * POST /api/notifications/providers — Create a provider with Zod validation per providerType
  *
- * Permission: SETTINGS_EDIT
+ * Permission: GET = notifications.view_log, POST = notifications.manage_providers
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -150,12 +150,20 @@ const REQUIRED_CONFIG_FIELDS: Record<string, string[]> = {
 }
 
 /**
+ * Sensitive config keys that must never be returned in GET responses.
+ */
+const SENSITIVE_CONFIG_KEYS = [
+  'apiKey', 'apiToken', 'authToken', 'twilioAuthToken', 'twilioAccountSid',
+  'password', 'secret', 'siteCode', 'accessToken', 'privateKey',
+]
+
+/**
  * Mask sensitive fields in config for GET responses.
+ * Never returns raw apiToken, siteCode, or other secrets.
  */
 function maskConfig(config: Record<string, unknown>): Record<string, unknown> {
   const masked = { ...config }
-  const sensitiveKeys = ['apiKey', 'authToken', 'twilioAuthToken', 'twilioAccountSid', 'password', 'secret']
-  for (const key of sensitiveKeys) {
+  for (const key of SENSITIVE_CONFIG_KEYS) {
     if (masked[key] && typeof masked[key] === 'string') {
       const val = masked[key] as string
       masked[key] = val.length > 4 ? `****${val.slice(-4)}` : '****'
@@ -175,7 +183,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const providers: any[] = await db.$queryRawUnsafe(
@@ -191,7 +199,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       locationId
     )
 
-    // Mask sensitive config fields
+    // Mask sensitive config fields — never return raw secrets
     const masked = providers.map(p => ({
       ...p,
       config: p.config ? maskConfig(p.config as Record<string, unknown>) : null,
@@ -224,7 +232,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()
@@ -308,9 +316,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       JSON.stringify(capabilities)
     )
 
-    // Return with masked config
     const provider = inserted[0]
 
+    // Audit log: notification_provider_created
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_provider_created',
+        entityType: 'notification_provider',
+        entityId: provider.id,
+        details: {
+          providerType,
+          name: name.trim(),
+          isDefault,
+          priority,
+          executionZone,
+          configKeys: Object.keys(config),
+        },
+      },
+    }).catch(console.error)
+
+    // Return with masked config
     return NextResponse.json({
       data: {
         ...provider,

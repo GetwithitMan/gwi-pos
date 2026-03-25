@@ -4,7 +4,7 @@
  * Transactional with FOR UPDATE SKIP LOCKED to prevent double-assign.
  * Creates NotificationTargetAssignment, updates device status, syncs cache fields.
  *
- * Permission: POS_ACCESS
+ * Permission: pos.assign_device
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -37,7 +37,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ASSIGN_DEVICE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()

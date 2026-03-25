@@ -2,7 +2,7 @@
  * GET /api/notifications/devices — List notification devices with status, assignment info, filtering
  * POST /api/notifications/devices — Add a new device to inventory
  *
- * Permission: SETTINGS_EDIT
+ * Permission: GET = notifications.view_log, POST = notifications.manage_devices
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -32,7 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const searchParams = request.nextUrl.searchParams
@@ -183,7 +183,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.SETTINGS_EDIT)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_DEVICES)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()

@@ -1708,6 +1708,100 @@ const PERMISSION_REGISTRY: Record<string, Omit<PermissionMeta, 'key'>> = {
   },
 
   // =========================================================================
+  // NOTIFICATIONS — BUSINESS_SETUP + SHIFT_SERVICE
+  // =========================================================================
+  'notifications.manage_providers': {
+    label: 'Manage Notification Providers',
+    description: 'Allows adding, editing, and removing notification providers (JTECH, SMS, LRS, etc.) and viewing raw provider responses. This controls which paging and messaging systems are connected to your venue. Incorrect configuration can disable all paging. Without this permission, the employee cannot change provider settings. Only give to owners and IT administrators.',
+    details: [
+      'Add, edit, or remove notification providers (JTECH, SMS, LRS, etc.)',
+      'View raw provider responses and test connections',
+      'Incorrect changes can disable all guest paging',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'notifications.manage_rules': {
+    label: 'Manage Notification Rules',
+    description: 'Allows editing routing rules that control which events trigger which notifications through which providers. Includes setting conditions, retry policies, fallback providers, and message templates. Incorrect rules can cause missed notifications or excessive paging. Without this permission, notification routing is locked.',
+    details: [
+      'Edit routing rules, conditions, and retry policies',
+      'Configure fallback providers and message templates',
+      'Incorrect rules can cause missed notifications or excessive paging',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'HIGH',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'notifications.manage_devices': {
+    label: 'Manage Notification Devices',
+    description: 'Allows adding, editing, and removing pager devices from the notification device inventory. Includes changing device status (retire, disable, mark as found), updating labels, and managing device metadata. Without this permission, the employee cannot modify the device inventory.',
+    details: [
+      'Add and remove pager devices from inventory',
+      'Change device status (retire, disable, mark as found)',
+      'Update device labels and metadata',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'notifications.view_log': {
+    label: 'View Notification Log',
+    description: 'Allows viewing the notification log — delivery attempts, provider responses, routing rule evaluations, and device assignment history. This is read-only and does not allow modifying any notification settings. Without this permission, the notification log is hidden.',
+    details: [
+      'Read-only access to notification delivery log',
+      'View routing rule evaluations and provider responses',
+      'View device assignment history',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'notifications.replay_dlq': {
+    label: 'Replay Dead-Letter Notifications',
+    description: 'Allows retrying failed notification jobs from the dead-letter queue. Dead-letter jobs are notifications that exhausted all retry attempts and failed permanently. Replaying them re-enqueues the notification for another delivery attempt. Without this permission, dead-letter jobs remain stuck until an admin replays them.',
+    details: [
+      'Retry failed notification jobs from the dead-letter queue',
+      'Re-enqueues the notification for another delivery attempt',
+      'All replays are logged in the audit trail',
+    ],
+    tab: 'BUSINESS_SETUP',
+    applicableTo: ['ADMIN'],
+    risk: 'MED',
+    recommendedFor: ['Manager', 'Owner'],
+  },
+  'notifications.manual_page': {
+    label: 'Manual Page',
+    description: 'Allows using the "Page Now" button to manually trigger a notification for an order or waitlist entry. Each manual page creates a unique, auditable event. Without this permission, the employee cannot manually page a customer — notifications only fire automatically from KDS bumps and system events.',
+    details: [
+      'Trigger a notification for an order or waitlist entry on demand',
+      'Each manual page creates a unique, auditable event',
+      'Bypasses workflow dedup (always sends)',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Server', 'Bartender', 'Manager'],
+  },
+  'pos.assign_device': {
+    label: 'Assign Notification Device',
+    description: 'Allows using the "Assign Next" button on the order panel to auto-assign or manually assign a pager device to an order or waitlist entry. Without this permission, the employee cannot assign pagers to customers.',
+    details: [
+      'Auto-assign or manually assign a pager to an order or waitlist entry',
+      'Uses FOR UPDATE SKIP LOCKED to prevent double-assign',
+    ],
+    tab: 'SHIFT_SERVICE',
+    applicableTo: ['FOH', 'ADMIN'],
+    risk: 'LOW',
+    recommendedFor: ['Server', 'Bartender', 'Host', 'Manager'],
+  },
+
+  // =========================================================================
   // ADMIN FLAGS — BUSINESS_SETUP
   // =========================================================================
   'admin': {

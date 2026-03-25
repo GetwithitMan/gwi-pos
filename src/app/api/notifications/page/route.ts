@@ -5,7 +5,7 @@
  * Calls notifyEvent() with dispatchOrigin: 'manual_override'.
  * Manual overrides always bypass workflow dedup.
  *
- * Permission: POS_ACCESS
+ * Permission: notifications.manual_page
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -34,7 +34,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const actor = await getActorFromRequest(request)
-    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.POS_ACCESS)
+    const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANUAL_PAGE)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()
@@ -189,6 +189,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         context,
       })
     ).catch(console.error)
+
+    // Audit log: notification_manual_page
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_manual_page',
+        entityType: subjectType,
+        entityId: subjectId,
+        details: {
+          sourceEventId,
+          eventType,
+          pagerNumber: context.pagerNumber || null,
+          dispatched,
+          customMessage: message || null,
+        },
+      },
+    }).catch(console.error)
 
     return NextResponse.json({
       data: {

@@ -105,6 +105,18 @@ interface HealthResponse {
     /** Max venue cache capacity */
     venueCacheMax: number
   } | null
+  /** Notification subsystem health. Null if notification tables not present or query fails. */
+  notifications: {
+    status: 'healthy' | 'degraded' | 'down'
+    pendingQueueDepth: number
+    deadLetterCount: number
+    providerSummary: {
+      healthy: number
+      degraded: number
+      down: number
+      total: number
+    }
+  } | null
   error?: string
 }
 
@@ -284,6 +296,80 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     // Worker not initialized — leave null
   }
 
+  // Notification subsystem health — lightweight check of queue depth + provider status
+  let notifications: HealthResponse['notifications'] = null
+  if (databaseCheck && locationId) {
+    try {
+      const [pendingRow, dlqRow, providerRows] = await Promise.all([
+        db.$queryRawUnsafe<[{ count: bigint }]>(
+          `SELECT COUNT(*) as count FROM "NotificationJob"
+           WHERE "locationId" = $1 AND status IN ('pending', 'claimed', 'processing', 'waiting_retry')`,
+          locationId
+        ),
+        db.$queryRawUnsafe<[{ count: bigint }]>(
+          `SELECT COUNT(*) as count FROM "NotificationJob"
+           WHERE "locationId" = $1 AND status = 'dead_letter'`,
+          locationId
+        ),
+        db.$queryRawUnsafe<Array<{ healthStatus: string; isActive: boolean; circuitBreakerOpenUntil: Date | null }>>(
+          `SELECT "healthStatus", "isActive", "circuitBreakerOpenUntil"
+           FROM "NotificationProvider"
+           WHERE "locationId" = $1 AND "deletedAt" IS NULL`,
+          locationId
+        ),
+      ])
+
+      const pendingQueueDepth = Number(pendingRow[0]?.count ?? 0)
+      const deadLetterCount = Number(dlqRow[0]?.count ?? 0)
+
+      const now = new Date()
+      const activeProviders = providerRows.filter(p => p.isActive)
+      let healthyCount = 0
+      let degradedCount = 0
+      let downCount = 0
+      for (const p of activeProviders) {
+        const circuitOpen = p.circuitBreakerOpenUntil && new Date(p.circuitBreakerOpenUntil) > now
+        if (circuitOpen) {
+          downCount++
+        } else if (p.healthStatus === 'healthy') {
+          healthyCount++
+        } else {
+          degradedCount++
+        }
+      }
+
+      let notifStatus: 'healthy' | 'degraded' | 'down' = 'healthy'
+      if (activeProviders.length === 0 || downCount === activeProviders.length) {
+        notifStatus = 'down'
+      } else if (pendingQueueDepth > 100 || deadLetterCount > 10) {
+        notifStatus = 'degraded'
+      } else if (healthyCount < activeProviders.length) {
+        notifStatus = 'degraded'
+      }
+
+      notifications = {
+        status: notifStatus,
+        pendingQueueDepth,
+        deadLetterCount,
+        providerSummary: {
+          healthy: healthyCount,
+          degraded: degradedCount,
+          down: downCount,
+          total: activeProviders.length,
+        },
+      }
+
+      // Notification health can degrade overall status
+      if (notifStatus === 'down' && status === 'healthy') {
+        status = 'degraded'
+      } else if (notifStatus === 'degraded' && status === 'healthy') {
+        status = 'degraded'
+      }
+    } catch {
+      // Non-critical — notification tables may not exist yet
+    }
+  }
+
   // Connection pool utilization — query pg_stat_activity for live connection counts.
   // Only meaningful on NUC (long-running process); skip on Vercel (1-conn ephemeral).
   let connectionPool: HealthResponse['connectionPool'] = null
@@ -351,6 +437,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
       }
     })(),
     connectionPool,
+    notifications,
   }
 
   // Return appropriate HTTP status
