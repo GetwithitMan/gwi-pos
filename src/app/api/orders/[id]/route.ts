@@ -939,7 +939,7 @@ export const PATCH = withVenue(async function PATCH(
     const updatedOrder = await OrderRepository.updateOrderAndSelect(
       id,
       existing.locationId,
-      { ...updateData, version: { increment: 1 } },
+      { ...updateData, version: { increment: 1 }, lastMutatedBy: 'local' },
       {
         id: true,
         locationId: true,

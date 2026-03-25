@@ -71,6 +71,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             tabStatus: 'closed',
             closedAt: now,
             version: { increment: 1 },
+            lastMutatedBy: 'local',
           },
         })
         processedCount = result.count
@@ -141,6 +142,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             closedAt: now,
             deletedAt: now,
             version: { increment: 1 },
+            lastMutatedBy: 'local',
           },
         })
         processedCount = result.count
@@ -189,7 +191,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           status: { in: ['open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
         },
-        data: { employeeId: toEmployeeId, version: { increment: 1 } },
+        data: { employeeId: toEmployeeId, version: { increment: 1 }, lastMutatedBy: 'local' },
       })
       processedCount = result.count
 

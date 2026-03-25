@@ -59,6 +59,7 @@ export const POST = withVenue(async function POST(
         isWalkout: true,
         walkoutAt: now,
         walkoutMarkedBy: employeeId,
+        lastMutatedBy: 'local',
       },
     })
 

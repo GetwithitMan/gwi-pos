@@ -245,6 +245,11 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   ReservationEvent:       { direction: 'bidirectional', owner: 'both', priority: 259, batchSize: 100 },
   ReservationTable:       { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 },
 
+  // ── Loyalty (MC creates programs/tiers, NUC earns/redeems transactions) ──
+  LoyaltyProgram:         { direction: 'bidirectional', owner: 'both', priority: 278, batchSize: 50 },
+  LoyaltyTier:            { direction: 'bidirectional', owner: 'both', priority: 279, batchSize: 50 },
+  LoyaltyTransaction:     { direction: 'upstream', owner: 'nuc', priority: 280, batchSize: 100 },
+
   // ── Misc Config (downstream — cloud-owned) ─────────────────────────
   ReasonAccess:           { direction: 'downstream', owner: 'cloud', priority: 275, batchSize: 50 },
   QuickBarPreference:     { direction: 'downstream', owner: 'cloud', priority: 276, batchSize: 50 },
@@ -355,8 +360,8 @@ export const LOCAL_ONLY_TABLES = new Set([
   'DeliveryRun', 'DeliveryAddress', 'DeliveryProofOfDelivery', 'DeliveryTracking',
   'DeliveryAuditLog', 'DeliveryException', 'DeliveryNotification', 'DeliveryOrder',
   'DeliveryNotificationAttempt',
-  // Cake/loyalty/portal
-  'CakeCalendarBlock', 'CustomerPortalSession', 'LoyaltyReward', 'LoyaltyRedemption',
+  // Cake/portal
+  'CakeCalendarBlock', 'CustomerPortalSession',
   // Membership
   'MembershipPlan', 'Membership', 'MembershipCharge', 'MembershipEvent',
   // Marketing + upsell

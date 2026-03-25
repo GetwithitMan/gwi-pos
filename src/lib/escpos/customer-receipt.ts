@@ -84,6 +84,13 @@ export interface ReceiptTotals {
   convenienceFeeDisclosure?: string | null
   isTaxExempt?: boolean
   taxExemptReason?: string | null
+  // Dual pricing fields — populated when location uses card/cash pricing
+  cardSubtotal?: number | null
+  cardTax?: number | null
+  cardTotal?: number | null
+  cashSubtotal?: number | null
+  cashTax?: number | null
+  cashTotal?: number | null
 }
 
 export interface CustomerReceiptData {
@@ -255,6 +262,41 @@ export function buildCustomerReceipt(
   content.push(twoColumnLine('TOTAL:', `$${totals.total.toFixed(2)}`, width))
   content.push(ESCPOS.BOLD_OFF)
   content.push(NORMAL)
+
+  // ── Dual Pricing Breakdown (card vs cash comparison) ──
+  const hasDualPricing =
+    totals.cardTotal != null &&
+    totals.cashTotal != null &&
+    totals.cardTotal !== totals.cashTotal
+  if (hasDualPricing) {
+    const cardSub = totals.cardSubtotal ?? totals.subtotal
+    const cardTx = totals.cardTax ?? totals.tax
+    const cardTot = totals.cardTotal!
+    const cashTot = totals.cashTotal!
+    const savings = Math.round((cardTot - cashTot) * 100) / 100
+
+    content.push(line(''))
+    content.push(ESCPOS.ALIGN_CENTER)
+    content.push(ESCPOS.BOLD_ON)
+    content.push(line('\u2500\u2500\u2500\u2500 CARD PRICE \u2500\u2500\u2500\u2500'))
+    content.push(ESCPOS.BOLD_OFF)
+    content.push(ESCPOS.ALIGN_LEFT)
+    content.push(twoColumnLine('Subtotal:', `$${cardSub.toFixed(2)}`, width))
+    content.push(twoColumnLine('Tax:', `$${cardTx.toFixed(2)}`, width))
+    content.push(ESCPOS.BOLD_ON)
+    content.push(twoColumnLine('Total:', `$${cardTot.toFixed(2)}`, width))
+    content.push(ESCPOS.BOLD_OFF)
+    content.push(line(''))
+    content.push(ESCPOS.ALIGN_CENTER)
+    content.push(twoColumnLine('Cash Price:', `$${cashTot.toFixed(2)}`, width))
+    if (savings > 0) {
+      content.push(ESCPOS.BOLD_ON)
+      content.push(line(`You save $${savings.toFixed(2)} by paying cash!`))
+      content.push(ESCPOS.BOLD_OFF)
+    }
+    content.push(line('\u2500'.repeat(Math.min(width, 20))))
+    content.push(ESCPOS.ALIGN_LEFT)
+  }
 
   // ── Payments ──
   if (payments.length > 0) {

@@ -495,6 +495,7 @@ function buildKitchenTicket(
     name: string
     quantity: number
     seatNumber: number | null  // T023: Seat assignment
+    courseNumber: number | null // Course grouping for coursing feature
     sourceTableId: string | null
     sourceTable: { id: string; name: string; abbreviation: string | null } | null
     specialNotes: string | null
@@ -765,8 +766,34 @@ function buildKitchenTicket(
     }
   }
 
+  // Determine if coursing is active (any item has a non-null courseNumber > 0)
+  const coursingActive = items.some(i => i.courseNumber != null && i.courseNumber > 0)
+
+  // Sort items by course number if coursing is active, preserving order within each course
+  const sortedItems = coursingActive
+    ? [...items].sort((a, b) => (a.courseNumber ?? 999) - (b.courseNumber ?? 999))
+    : items
+
+  // Track current course for section headers
+  let currentCourse: number | null = null
+
   // ITEMS
-  for (const item of items) {
+  for (const item of sortedItems) {
+    // Course header — print when course changes and coursing is active
+    if (coursingActive && item.courseNumber != null && item.courseNumber > 0 && item.courseNumber !== currentCourse) {
+      currentCourse = item.courseNumber
+      content.push(line(''))
+      if (hasRed && useRedHeaders) content.push(RED)
+      content.push(ESCPOS.ALIGN_CENTER)
+      content.push(getSizeCommand(headerSize))
+      content.push(ESCPOS.BOLD_ON)
+      const courseLabel = `\u2500\u2500 Course ${currentCourse} \u2500\u2500`
+      content.push(line(courseLabel))
+      content.push(ESCPOS.BOLD_OFF)
+      content.push(NORMAL)
+      content.push(ESCPOS.ALIGN_LEFT)
+      if (hasRed && useRedHeaders) content.push(BLACK)
+    }
     // Item name with quantity and seat notation
     // Format: S3 = Seat 3
     let positionPrefix = ''

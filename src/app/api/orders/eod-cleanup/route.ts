@@ -76,6 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         data: {
           status: 'cancelled',
           deletedAt: new Date(),
+          lastMutatedBy: 'local',
         },
       })
     }

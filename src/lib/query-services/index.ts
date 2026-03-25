@@ -63,6 +63,7 @@ export {
   type SurchargeOrderRow,
   type BusinessDayRange,
   type LiveDashboardOrders,
+  type TimedQueryResult,
 } from './order-reporting-queries'
 
 // ─── Payment / Tips / House Accounts ──────────────────────────────────────────

@@ -14,6 +14,23 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
+// ─── Query Timeout Helper ────────────────────────────────────────────────────
+
+/**
+ * Set a session-local statement timeout for the current connection.
+ * Automatically resets after the query/transaction completes.
+ * Used as a safety net for heavy analytical queries (lateral joins, etc.)
+ */
+async function setQueryTimeout(ms: number = 30000): Promise<void> {
+  await db.$executeRawUnsafe(`SET LOCAL statement_timeout = '${ms}'`)
+}
+
+export interface TimedQueryResult<T> {
+  data: T
+  timedOut?: boolean
+  warning?: string
+}
+
 // ─── SQL Row Types ────────────────────────────────────────────────────────────
 
 export interface RevenueSummaryRow {
@@ -183,49 +200,60 @@ export async function getSalesByOrderType(
 export async function getCategorySales(
   locationId: string,
   range: BusinessDayRange,
-): Promise<CategorySalesRow[]> {
-  return db.$queryRaw<CategorySalesRow[]>(Prisma.sql`
-    SELECT
-      c.id AS category_id,
-      c.name AS category_name,
-      COALESCE(c."categoryType", 'food') AS category_type,
-      COALESCE(SUM(CASE WHEN oi.status = 'active' THEN oi.quantity ELSE 0 END), 0)::int AS units,
-      COALESCE(SUM(
-        CASE WHEN oi.status = 'active'
-          THEN (oi.price * oi.quantity) + COALESCE(mod_totals.mod_total, 0)
-          ELSE 0 END
-      ), 0)::float AS gross,
-      COALESCE(SUM(
-        CASE WHEN oi.status = 'active' AND oi."isTaxInclusive" = true
-          THEN (oi.price * oi.quantity) + COALESCE(mod_totals.mod_total, 0)
-          ELSE 0 END
-      ), 0)::float AS inclusive_gross,
-      COALESCE(SUM(
-        CASE WHEN oi.status = 'active' AND o."subtotal" > 0 AND o."discountTotal" > 0
-          THEN (oi.price * oi.quantity)::float / NULLIF(o."subtotal"::float, 0) * o."discountTotal"::float
-          ELSE 0 END
-      ), 0)::float AS discount_share
-    FROM "OrderItem" oi
-    JOIN "Order" o ON oi."orderId" = o.id
-    JOIN "MenuItem" mi ON oi."menuItemId" = mi.id
-    JOIN "Category" c ON mi."categoryId" = c.id
-    LEFT JOIN LATERAL (
-      SELECT COALESCE(SUM(oim.price), 0)::float AS mod_total
-      FROM "OrderItemModifier" oim
-      WHERE oim."orderItemId" = oi.id
-    ) mod_totals ON true
-    WHERE o."locationId" = ${locationId}
-      AND o.status IN ('completed', 'closed', 'paid')
-      AND o."deletedAt" IS NULL
-      AND o."isTraining" IS NOT TRUE
-      AND oi."deletedAt" IS NULL
-      AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-      AND (
-        (o."businessDayDate" >= ${range.start} AND o."businessDayDate" <= ${range.end})
-        OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${range.start} AND o."createdAt" <= ${range.end})
-      )
-    GROUP BY c.id, c.name, c."categoryType"
-  `)
+): Promise<TimedQueryResult<CategorySalesRow[]>> {
+  try {
+    await setQueryTimeout(30000)
+    const data = await db.$queryRaw<CategorySalesRow[]>(Prisma.sql`
+      SELECT
+        c.id AS category_id,
+        c.name AS category_name,
+        COALESCE(c."categoryType", 'food') AS category_type,
+        COALESCE(SUM(CASE WHEN oi.status = 'active' THEN oi.quantity ELSE 0 END), 0)::int AS units,
+        COALESCE(SUM(
+          CASE WHEN oi.status = 'active'
+            THEN (oi.price * oi.quantity) + COALESCE(mod_totals.mod_total, 0)
+            ELSE 0 END
+        ), 0)::float AS gross,
+        COALESCE(SUM(
+          CASE WHEN oi.status = 'active' AND oi."isTaxInclusive" = true
+            THEN (oi.price * oi.quantity) + COALESCE(mod_totals.mod_total, 0)
+            ELSE 0 END
+        ), 0)::float AS inclusive_gross,
+        COALESCE(SUM(
+          CASE WHEN oi.status = 'active' AND o."subtotal" > 0 AND o."discountTotal" > 0
+            THEN (oi.price * oi.quantity)::float / NULLIF(o."subtotal"::float, 0) * o."discountTotal"::float
+            ELSE 0 END
+        ), 0)::float AS discount_share
+      FROM "OrderItem" oi
+      JOIN "Order" o ON oi."orderId" = o.id
+      JOIN "MenuItem" mi ON oi."menuItemId" = mi.id
+      JOIN "Category" c ON mi."categoryId" = c.id
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(oim.price), 0)::float AS mod_total
+        FROM "OrderItemModifier" oim
+        WHERE oim."orderItemId" = oi.id
+      ) mod_totals ON true
+      WHERE o."locationId" = ${locationId}
+        AND o.status IN ('completed', 'closed', 'paid')
+        AND o."deletedAt" IS NULL
+        AND o."isTraining" IS NOT TRUE
+        AND oi."deletedAt" IS NULL
+        AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
+        AND (
+          (o."businessDayDate" >= ${range.start} AND o."businessDayDate" <= ${range.end})
+          OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${range.start} AND o."createdAt" <= ${range.end})
+        )
+      GROUP BY c.id, c.name, c."categoryType"
+    `)
+    return { data }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('statement timeout') || msg.includes('canceling statement')) {
+      console.error('[getCategorySales] Query timed out after 30s for location', locationId)
+      return { data: [], timedOut: true, warning: 'Category sales query timed out — results may be incomplete' }
+    }
+    throw error
+  }
 }
 
 // ─── Category Voids ───────────────────────────────────────────────────────────
@@ -417,32 +445,41 @@ export async function getEntertainmentSummary(
 export async function getSurchargeBase(
   locationId: string,
   range: BusinessDayRange,
-): Promise<number> {
-  const rows = await db.$queryRaw<SurchargeOrderRow[]>(Prisma.sql`
-    SELECT
-      COALESCE(SUM(
-        CASE WHEN EXISTS (
-          SELECT 1 FROM "Payment" p
-          WHERE p."orderId" = o.id
-            AND p.status = 'completed'
-            AND LOWER(p."paymentMethod"::text) IN ('credit', 'card')
+): Promise<TimedQueryResult<number>> {
+  try {
+    await setQueryTimeout(30000)
+    const rows = await db.$queryRaw<SurchargeOrderRow[]>(Prisma.sql`
+      SELECT
+        COALESCE(SUM(
+          CASE WHEN EXISTS (
+            SELECT 1 FROM "Payment" p
+            WHERE p."orderId" = o.id
+              AND p.status = 'completed'
+              AND LOWER(p."paymentMethod"::text) IN ('credit', 'card')
+          )
+          THEN o.subtotal
+          ELSE 0 END
+        ), 0)::float AS surcharge_base
+      FROM "Order" o
+      WHERE o."locationId" = ${locationId}
+        AND o.status IN ('completed', 'closed', 'paid')
+        AND o."deletedAt" IS NULL
+        AND o."isTraining" IS NOT TRUE
+        AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
+        AND (
+          (o."businessDayDate" >= ${range.start} AND o."businessDayDate" <= ${range.end})
+          OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${range.start} AND o."createdAt" <= ${range.end})
         )
-        THEN o.subtotal
-        ELSE 0 END
-      ), 0)::float AS surcharge_base
-    FROM "Order" o
-    WHERE o."locationId" = ${locationId}
-      AND o.status IN ('completed', 'closed', 'paid')
-      AND o."deletedAt" IS NULL
-      AND o."isTraining" IS NOT TRUE
-      AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
-      AND (
-        (o."businessDayDate" >= ${range.start} AND o."businessDayDate" <= ${range.end})
-        OR (o."businessDayDate" IS NULL AND o."createdAt" >= ${range.start} AND o."createdAt" <= ${range.end})
-      )
-  `)
-
-  return Number(rows[0]?.surcharge_base) || 0
+    `)
+    return { data: Number(rows[0]?.surcharge_base) || 0 }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('statement timeout') || msg.includes('canceling statement')) {
+      console.error('[getSurchargeBase] Query timed out after 30s for location', locationId)
+      return { data: 0, timedOut: true, warning: 'Surcharge base query timed out' }
+    }
+    throw error
+  }
 }
 
 // ─── Dashboard Live Metrics ───────────────────────────────────────────────────
@@ -462,27 +499,38 @@ export interface LiveDashboardOrders {
 export async function getTodayRevenueOrders(
   locationId: string,
   range: BusinessDayRange,
-): Promise<LiveDashboardOrders[]> {
-  return db.order.findMany({
-    where: {
-      locationId,
-      deletedAt: null,
-      isTraining: { not: true },
-      status: { in: [...REVENUE_ORDER_STATUSES] },
-      parentOrderId: null,
-      OR: [
-        { businessDayDate: { gte: range.start, lte: range.end } },
-        { businessDayDate: null, createdAt: { gte: range.start, lte: range.end } },
-      ],
-    },
-    select: {
-      id: true,
-      subtotal: true,
-      total: true,
-      discountTotal: true,
-      taxTotal: true,
-    },
-  })
+): Promise<TimedQueryResult<LiveDashboardOrders[]>> {
+  try {
+    await setQueryTimeout(30000)
+    const data = await db.order.findMany({
+      where: {
+        locationId,
+        deletedAt: null,
+        isTraining: { not: true },
+        status: { in: [...REVENUE_ORDER_STATUSES] },
+        parentOrderId: null,
+        OR: [
+          { businessDayDate: { gte: range.start, lte: range.end } },
+          { businessDayDate: null, createdAt: { gte: range.start, lte: range.end } },
+        ],
+      },
+      select: {
+        id: true,
+        subtotal: true,
+        total: true,
+        discountTotal: true,
+        taxTotal: true,
+      },
+    })
+    return { data }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('statement timeout') || msg.includes('canceling statement')) {
+      console.error('[getTodayRevenueOrders] Query timed out after 30s for location', locationId)
+      return { data: [], timedOut: true, warning: 'Revenue orders query timed out — dashboard may show partial data' }
+    }
+    throw error
+  }
 }
 
 /**

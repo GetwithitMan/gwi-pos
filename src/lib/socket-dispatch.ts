@@ -1232,11 +1232,17 @@ export async function dispatchTipGroupUpdate(
 
 // CFD Events (P2-H03)
 
+/** Convert a dollar amount to cents (integer) */
+function toCents(dollars: number): number {
+  return Math.round(dollars * 100)
+}
+
 /**
  * Dispatch CFD show-order event
  *
  * Called when the payment modal opens with order data.
  * Sends order line items and totals to the Customer-Facing Display.
+ * Includes both dollar fields (web CFD) and cent fields (Android CFD).
  */
 export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
@@ -1249,10 +1255,23 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
   taxFromInclusive?: number
   taxFromExclusive?: number
 }): void {
+  const payload = {
+    ...data,
+    // Android CFD expects cent-denominated fields
+    subtotalCents: toCents(data.subtotal),
+    taxCents: toCents(data.tax),
+    totalCents: toCents(data.total),
+    items: data.items.map((item) => ({
+      ...item,
+      priceCents: toCents(item.price),
+      modifierLines: item.modifiers ?? [],
+    })),
+    currency: 'USD',
+  }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, data).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, data).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order dispatch failed'))
   }
 }
 
@@ -1261,6 +1280,8 @@ export function dispatchCFDShowOrder(locationId: string, cfdTerminalId: string |
  *
  * Called just before payment to show the customer a full itemized confirmation
  * on the CFD screen. Includes item names, quantities, prices, and modifiers.
+ * Also emits as cfd:show-order so the Android CFD (which doesn't handle
+ * show-order-detail separately) displays the latest items and totals.
  */
 export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
@@ -1274,10 +1295,26 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
   taxFromInclusive?: number
   taxFromExclusive?: number
 }): void {
+  const payload = {
+    ...data,
+    // Android CFD expects cent-denominated fields
+    subtotalCents: toCents(data.subtotal),
+    taxCents: toCents(data.tax),
+    totalCents: toCents(data.total),
+    items: data.items.map((item) => ({
+      ...item,
+      priceCents: toCents(item.price),
+      modifierLines: item.modifiers ?? [],
+    })),
+    currency: 'USD',
+  }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
+    // Also emit as show-order so Android CFD picks it up (it doesn't handle show-order-detail)
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from detail) dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, data).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER_DETAIL, payload).catch((err) => log.error({ err }, 'CFD show-order-detail dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from detail) dispatch failed'))
   }
 }
 
@@ -1286,6 +1323,7 @@ export function dispatchCFDShowOrderDetail(locationId: string, cfdTerminalId: st
  *
  * Called when the card reader is activated for a transaction.
  * Transitions the CFD from the order screen to the payment screen.
+ * Android CFD expects { orderId, totalCents }.
  */
 export function dispatchCFDPaymentStarted(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
@@ -1293,10 +1331,14 @@ export function dispatchCFDPaymentStarted(locationId: string, cfdTerminalId: str
   amount: number
   paymentMethod: string
 }): void {
+  const payload = {
+    ...data,
+    totalCents: toCents(data.amount),
+  }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PAYMENT_STARTED, data).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.PAYMENT_STARTED, payload).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, data).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.PAYMENT_STARTED, payload).catch((err) => log.error({ err }, 'CFD payment-started dispatch failed'))
   }
 }
 
@@ -1305,6 +1347,7 @@ export function dispatchCFDPaymentStarted(locationId: string, cfdTerminalId: str
  *
  * Called when the tip selection step is shown to the cashier.
  * Optionally mirrors tip options to the CFD screen.
+ * Android CFD expects { totalCents, tipMode, tipOptions (CSV), tipStyle, showNoTip }.
  */
 export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
@@ -1312,10 +1355,21 @@ export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string |
   subtotal: number
   suggestedTips: Array<{ label: string; percent: number; amount: number }>
 }): void {
+  // POS suggested tips are always percent-based
+  const tipStyle = 'percent' as const
+  const tipOptions = data.suggestedTips.map((t) => t.percent).join(',')
+  const payload = {
+    ...data,
+    totalCents: toCents(data.subtotal),
+    tipMode: 'pre_tap',
+    tipOptions,           // CSV e.g. "15,18,20,25"
+    tipStyle,             // "percent" or "dollar"
+    showNoTip: true,      // Always allow "No Tip" option
+  }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.TIP_PROMPT, data).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.TIP_PROMPT, payload).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, data).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.TIP_PROMPT, payload).catch((err) => log.error({ err }, 'CFD tip-prompt dispatch failed'))
   }
 }
 
@@ -1324,16 +1378,25 @@ export function dispatchCFDTipPrompt(locationId: string, cfdTerminalId: string |
  *
  * Called when the payment terminal requires a signature from the customer.
  * Transitions the CFD to the signature capture screen.
+ * Android CFD expects { amountCents, enabled, thresholdCents }.
  */
 export function dispatchCFDSignatureRequest(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
   orderId: string
   transactionId?: string
+  amount?: number
+  signatureThreshold?: number
 }): void {
+  const payload = {
+    ...data,
+    amountCents: toCents(data.amount ?? 0),
+    enabled: true,
+    thresholdCents: toCents(data.signatureThreshold ?? 0),
+  }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.SIGNATURE_REQUEST, payload).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, data).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.SIGNATURE_REQUEST, payload).catch((err) => log.error({ err }, 'CFD signature-request dispatch failed'))
   }
 }
 
@@ -1342,16 +1405,28 @@ export function dispatchCFDSignatureRequest(locationId: string, cfdTerminalId: s
  *
  * Called after a successful payment DB write when the order is fully paid.
  * Transitions the CFD to the receipt/thank-you screen.
+ * Android CFD expects { orderId, emailEnabled, smsEnabled, printEnabled, timeoutSeconds }.
  */
 export function dispatchCFDReceiptSent(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
   orderId: string
   total: number
+  emailEnabled?: boolean
+  smsEnabled?: boolean
+  printEnabled?: boolean
+  timeoutSeconds?: number
 }): void {
+  const payload = {
+    ...data,
+    emailEnabled: data.emailEnabled ?? true,
+    smsEnabled: data.smsEnabled ?? true,
+    printEnabled: data.printEnabled ?? true,
+    timeoutSeconds: data.timeoutSeconds ?? 30,
+  }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.RECEIPT_SENT, data).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.RECEIPT_SENT, payload).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, data).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.RECEIPT_SENT, payload).catch((err) => log.error({ err }, 'CFD receipt-sent dispatch failed'))
   }
 }
 
@@ -1377,6 +1452,7 @@ export function dispatchCFDProcessing(locationId: string, cfdTerminalId: string 
  *
  * Called when the card payment is approved.
  * Transitions the CFD to the approved/thank-you screen.
+ * Android CFD expects { amountCents, last4? }.
  */
 export function dispatchCFDApproved(locationId: string, cfdTerminalId: string | null, data: {
   terminalId?: string
@@ -1386,10 +1462,14 @@ export function dispatchCFDApproved(locationId: string, cfdTerminalId: string | 
   tipAmount?: number
   total?: number
 }): void {
+  const payload = {
+    ...data,
+    amountCents: toCents(data.total ?? 0),
+  }
   if (cfdTerminalId) {
-    void emitToTerminal(cfdTerminalId, CFD_EVENTS.APPROVED, data).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
+    void emitToTerminal(cfdTerminalId, CFD_EVENTS.APPROVED, payload).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
   } else {
-    void emitToLocation(locationId, CFD_EVENTS.APPROVED, data).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
+    void emitToLocation(locationId, CFD_EVENTS.APPROVED, payload).catch((err) => log.error({ err }, 'CFD approved dispatch failed'))
   }
 }
 
@@ -1430,6 +1510,8 @@ export function dispatchCFDIdle(locationId: string, cfdTerminalId: string | null
  * Called after order mutations (discount, void, merge, comp) so the
  * customer-facing display shows the latest items and totals instantly.
  * Broadcasts to location (all CFDs will filter by orderId).
+ * Also emits as cfd:show-order so the Android CFD (which doesn't handle
+ * cfd:order-updated) refreshes its display.
  */
 export function dispatchCFDOrderUpdated(locationId: string, data: {
   orderId: string
@@ -1442,7 +1524,21 @@ export function dispatchCFDOrderUpdated(locationId: string, data: {
   taxFromInclusive?: number
   taxFromExclusive?: number
 }): void {
-  void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, data).catch((err) => log.error({ err }, 'CFD order-updated dispatch failed'))
+  const payload = {
+    ...data,
+    subtotalCents: toCents(data.subtotal),
+    taxCents: toCents(data.tax),
+    totalCents: toCents(data.total),
+    items: data.items.map((item) => ({
+      ...item,
+      priceCents: toCents(item.price),
+      modifierLines: item.modifiers ?? [],
+    })),
+    currency: 'USD',
+  }
+  void emitToLocation(locationId, CFD_EVENTS.ORDER_UPDATED, payload).catch((err) => log.error({ err }, 'CFD order-updated dispatch failed'))
+  // Also emit as show-order so Android CFD picks up the update (it doesn't handle order-updated)
+  void emitToLocation(locationId, CFD_EVENTS.SHOW_ORDER, payload).catch((err) => log.error({ err }, 'CFD show-order (from update) dispatch failed'))
 }
 
 // ==================== Order Summary Events (Android cross-terminal sync) ====================

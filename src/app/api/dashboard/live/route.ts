@@ -72,10 +72,10 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
       paidInOutTotals,
       pendingDeductionsFailed,
     ] = await Promise.all([
-      getTodayRevenueOrders(locationId, todayRange),
+      getTodayRevenueOrders(locationId, todayRange).then(r => r.data),
 
       // Last week same day - orders closed up to the equivalent time of day
-      getTodayRevenueOrders(locationId, { start: lastWeekRange.start, end: lastWeekPacingEnd }),
+      getTodayRevenueOrders(locationId, { start: lastWeekRange.start, end: lastWeekPacingEnd }).then(r => r.data),
 
       getOpenOrders(locationId),
       getVoidedItemsAggregate(locationId, todayRange),

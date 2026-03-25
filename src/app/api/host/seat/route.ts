@@ -189,6 +189,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           tableId,
           guestCount: size,
           status: 'open',
+          lastMutatedBy: 'local',
         },
         select: { id: true, orderNumber: true },
       })

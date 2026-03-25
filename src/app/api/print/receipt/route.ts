@@ -237,6 +237,20 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         convenienceFee: Number(order.convenienceFee ?? 0),
         isTaxExempt: order.isTaxExempt ?? false,
         taxExemptReason: order.taxExemptReason ?? null,
+        // Dual pricing breakdown — only populated when location has dual pricing enabled
+        ...(dualPricingEnabled ? {
+          cardSubtotal: calculateCardPrice(cashSubtotal, cashDiscountPercent),
+          cardTax: Math.round(Number(order.taxTotal) * 100) / 100,
+          cardTotal: Math.round(
+            (calculateCardPrice(cashSubtotal, cashDiscountPercent) - discountTotal +
+              (hasStoredSplit ? taxFromExclusive : taxTotal)) * 100
+          ) / 100,
+          cashSubtotal: cashSubtotal,
+          cashTax: Math.round(Number(order.taxTotal) * 100) / 100,
+          cashTotal: Math.round(
+            (cashSubtotal - discountTotal + (hasStoredSplit ? taxFromExclusive : taxTotal)) * 100
+          ) / 100,
+        } : {}),
       },
     }
 

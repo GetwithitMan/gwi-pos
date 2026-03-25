@@ -117,7 +117,9 @@ export async function emitOrderEvents(
   }>,
   opts?: EmitOptions
 ): Promise<void> {
-  await Promise.all(events.map(evt =>
-    emitOrderEvent(locationId, orderId, evt.type, evt.payload, opts)
-  ))
+  // Sequential loop — each event must get a monotonically increasing
+  // serverSequence number. Promise.all would race and produce out-of-order sequences.
+  for (const evt of events) {
+    await emitOrderEvent(locationId, orderId, evt.type, evt.payload, opts)
+  }
 }

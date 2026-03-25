@@ -252,7 +252,7 @@ export const POST = withVenue(async function POST(
     const result = await db.$transaction(async (tx) => {
       // Lock the order row to prevent concurrent modifications (FOR UPDATE)
       const [lockedOrder] = await tx.$queryRaw<any[]>`
-        SELECT id, status FROM "Order" WHERE id = ${orderId} FOR UPDATE
+        SELECT id, status, "tabStatus" FROM "Order" WHERE id = ${orderId} FOR UPDATE
       `
 
       if (!lockedOrder) {
@@ -262,6 +262,11 @@ export const POST = withVenue(async function POST(
       // Validate order status via domain
       const statusCheck = validateOrderStatusForAdd(lockedOrder.status)
       if (!statusCheck.valid) throw new Error(statusCheck.error)
+
+      // Block item additions while tab is being closed (race between Phase 1 tabStatus='closing' and Phase 3 capture)
+      if (lockedOrder.tabStatus === 'closing') {
+        throw new Error('TAB_CLOSING')
+      }
 
       // Get full order data with includes (row is already locked within this tx)
       const existingOrder = await OrderRepository.getOrderByIdWithInclude(orderId, locationId, {
@@ -600,6 +605,12 @@ export const POST = withVenue(async function POST(
     if (message === 'ORDER_NOT_MODIFIABLE') {
       return NextResponse.json(
         { error: 'Order cannot be modified — it may have been paid or closed by another terminal' },
+        { status: 409 }
+      )
+    }
+    if (message === 'TAB_CLOSING') {
+      return NextResponse.json(
+        { error: 'Cannot add items — tab is being closed', code: 'TAB_CLOSING' },
         { status: 409 }
       )
     }

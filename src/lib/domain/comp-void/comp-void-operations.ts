@@ -68,6 +68,14 @@ export async function applyCompVoid(
     throw new Error('ITEM_ALREADY_SETTLED')
   }
 
+  // Re-check for completed payments inside the lock to prevent comp/void after payment
+  const completedPaymentCount = await (tx as any).payment.count({
+    where: { orderId, status: 'completed', deletedAt: null },
+  })
+  if (completedPaymentCount > 0) {
+    throw new Error('ORDER_HAS_COMPLETED_PAYMENTS')
+  }
+
   // Collect card payment info for potential Datacap reversal
   const cardPayments: CardPaymentInfo[] = await (tx as any).payment.findMany({
     where: { orderId, status: 'completed', deletedAt: null },
