@@ -1,8 +1,22 @@
 'use client'
 
+/**
+ * SauceCheesePanel — Sauce and cheese selection with placement + amount controls.
+ *
+ * When the pizza is split (halves/quarters) and the venue allows condiment sections:
+ * - Customer selects a sauce, then picks placement (Whole / Left / Right / quarters)
+ * - Same for cheese
+ * - Matches Android register behavior: select the item, then choose where it goes
+ *
+ * When whole pizza or condiment sections disabled:
+ * - Simple single sauce + amount selection
+ */
+
+import { useState } from 'react'
 import type { PizzaSauce, PizzaCheese } from '@/types'
 import { formatCurrency } from '@/lib/utils'
-import { getAllSectionPresetsForMode, getSectionPreset } from '@/lib/pizza-section-utils'
+import { getSectionPreset } from '@/lib/pizza-section-utils'
+import { ToppingPlacementPicker } from './ToppingPlacementPicker'
 import type { CondimentSelection } from './PizzaBuilder'
 
 type Amount = 'none' | 'light' | 'regular' | 'extra'
@@ -34,123 +48,146 @@ export function SauceCheesePanel({
 }: SauceCheesePanelProps) {
   const activeSauces = sauces.filter((s) => s.isActive).sort((a, b) => a.sortOrder - b.sortOrder)
   const activeCheeses = cheeses.filter((c) => c.isActive).sort((a, b) => a.sortOrder - b.sortOrder)
-
-  const perSection = allowCondimentSections && sectionMode >= 2
+  const showPlacement = allowCondimentSections && sectionMode >= 2
 
   return (
-    <div className="py-4 space-y-4">
-      {/* Sauce */}
-      {perSection ? (
-        <PerSectionCondiment
-          label="Sauce"
-          items={activeSauces}
-          selections={sauceSelections}
-          onChange={onSauceChange}
-          sectionMode={sectionMode}
-          disabled={sauceDisabled}
-        />
-      ) : (
-        <SingleCondiment
-          label="Sauce"
-          items={activeSauces}
-          selections={sauceSelections}
-          onChange={onSauceChange}
-          disabled={sauceDisabled}
-        />
-      )}
-
-      {/* Cheese */}
-      {perSection ? (
-        <PerSectionCondiment
-          label="Cheese"
-          items={activeCheeses}
-          selections={cheeseSelections}
-          onChange={onCheeseChange}
-          sectionMode={sectionMode}
-          disabled={cheeseDisabled}
-        />
-      ) : (
-        <SingleCondiment
-          label="Cheese"
-          items={activeCheeses}
-          selections={cheeseSelections}
-          onChange={onCheeseChange}
-          disabled={cheeseDisabled}
-        />
-      )}
+    <div className="py-4 space-y-5">
+      <CondimentSelector
+        label="Sauce"
+        items={activeSauces}
+        selections={sauceSelections}
+        onChange={onSauceChange}
+        showPlacement={showPlacement}
+        sectionMode={sectionMode}
+        disabled={sauceDisabled}
+      />
+      <CondimentSelector
+        label="Cheese"
+        items={activeCheeses}
+        selections={cheeseSelections}
+        onChange={onCheeseChange}
+        showPlacement={showPlacement}
+        sectionMode={sectionMode}
+        disabled={cheeseDisabled}
+      />
     </div>
   )
 }
 
-// ─── Single-selection mode (whole pizza) ─────────────────────────────────────
+// ─── Condiment Selector (sauce or cheese) ──────────────────────────────────
 
-interface SingleCondimentProps {
+interface CondimentSelectorProps {
   label: string
   items: Array<PizzaSauce | PizzaCheese>
   selections: CondimentSelection[]
   onChange: (selections: CondimentSelection[]) => void
+  showPlacement: boolean
+  sectionMode: number
   disabled?: boolean
 }
 
-function SingleCondiment({ label, items, selections, onChange, disabled }: SingleCondimentProps) {
+function CondimentSelector({
+  label,
+  items,
+  selections,
+  onChange,
+  showPlacement,
+  sectionMode,
+  disabled,
+}: CondimentSelectorProps) {
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const wholeSections = getSectionPreset(1, 0)
-  const current = selections[0] ?? null
-  const selectedItem = current ? items.find((i) => i.id === current.id) ?? null : null
+
+  // Current primary selection (for whole-pizza mode there's just one)
+  const primarySel = selections[0] ?? null
+  const selectedItem = primarySel ? items.find(i => i.id === primarySel.id) ?? null : null
 
   const handleSelect = (item: PizzaSauce | PizzaCheese) => {
-    if (current?.id === item.id) return
+    if (primarySel?.id === item.id) {
+      // Already selected — toggle expand for placement
+      if (showPlacement) {
+        setExpandedId(expandedId === item.id ? null : item.id)
+      }
+      return
+    }
+    // New selection — default to whole pizza placement
     onChange([{ id: item.id, amount: 'regular', sections: wholeSections }])
+    if (showPlacement) setExpandedId(item.id)
   }
 
   const handleAmountChange = (amount: Amount) => {
-    if (!current) return
-    onChange([{ ...current, amount }])
+    if (!primarySel) return
+    onChange(selections.map(s => s.id === primarySel.id ? { ...s, amount } : s))
+  }
+
+  const handlePlacementChange = (sections: number[]) => {
+    if (!primarySel) return
+    onChange(selections.map(s => s.id === primarySel.id ? { ...s, sections } : s))
   }
 
   return (
     <div className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
         {label}
       </h3>
 
-      {/* Selection */}
+      {/* Item selection pills */}
       <div className="flex flex-wrap gap-2">
         {items.map((item) => {
-          const isSelected = item.id === current?.id
-          const hasPrice = item.price > 0
+          const isSelected = item.id === primarySel?.id
+          const hasPrice = Number(item.price) > 0
           return (
             <button
               key={item.id}
               type="button"
               disabled={disabled}
               onClick={() => handleSelect(item)}
-              className={`rounded-full border-2 px-4 py-2.5 text-sm font-medium transition-all min-h-[44px] ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${!isSelected ? 'border-gray-200 text-gray-700 hover:border-gray-300' : 'text-white'}`}
+              className={`rounded-full border-2 px-4 py-2.5 text-sm font-medium transition-all min-h-[44px] ${
+                disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+              } ${!isSelected ? 'border-gray-200 text-gray-700 hover:border-gray-300' : 'text-white'}`}
               style={isSelected ? {
                 borderColor: 'var(--site-brand)',
                 backgroundColor: 'var(--site-brand)',
               } : undefined}
             >
               {item.displayName || item.name}
-              {hasPrice && <span className="ml-1 opacity-75">+{formatCurrency(item.price)}</span>}
+              {hasPrice && <span className="ml-1 opacity-75">+{formatCurrency(Number(item.price))}</span>}
             </button>
           )
         })}
       </div>
 
-      {/* Amount controls */}
-      {current && (
-        <div className="flex gap-1">
-          <AmountButton current={current.amount} value="none" label="None" onClick={handleAmountChange} />
-          {(selectedItem?.allowLight ?? true) && (
-            <AmountButton current={current.amount} value="light" label="Light" onClick={handleAmountChange} />
-          )}
-          <AmountButton current={current.amount} value="regular" label="Regular" onClick={handleAmountChange} />
-          {(selectedItem?.allowExtra ?? true) && (
-            <AmountButton
-              current={current.amount}
-              value="extra"
-              label={(selectedItem?.extraPrice ?? 0) > 0 ? `Extra +${formatCurrency(selectedItem!.extraPrice)}` : 'Extra'}
-              onClick={handleAmountChange}
+      {/* Controls for selected item: amount + placement */}
+      {primarySel && (
+        <div className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/50 p-3">
+          {/* Amount row */}
+          <div className="flex gap-1 flex-wrap">
+            <AmountButton current={primarySel.amount} value="none" label="None" onClick={handleAmountChange} />
+            {(selectedItem && 'allowLight' in selectedItem ? selectedItem.allowLight : true) && (
+              <AmountButton current={primarySel.amount} value="light" label="Light" onClick={handleAmountChange} />
+            )}
+            <AmountButton current={primarySel.amount} value="regular" label="Regular" onClick={handleAmountChange} />
+            {(selectedItem && 'allowExtra' in selectedItem ? selectedItem.allowExtra : true) && (
+              <AmountButton
+                current={primarySel.amount}
+                value="extra"
+                label={
+                  selectedItem && 'extraPrice' in selectedItem && Number(selectedItem.extraPrice) > 0
+                    ? `Extra +${formatCurrency(Number(selectedItem.extraPrice))}`
+                    : 'Extra'
+                }
+                onClick={handleAmountChange}
+              />
+            )}
+          </div>
+
+          {/* Placement picker (Whole / Left / Right / quarters) */}
+          {showPlacement && (
+            <ToppingPlacementPicker
+              sectionMode={sectionMode}
+              selectedSections={primarySel.sections}
+              onChange={handlePlacementChange}
+              multiSelect={false}
             />
           )}
         </div>
@@ -159,137 +196,7 @@ function SingleCondiment({ label, items, selections, onChange, disabled }: Singl
   )
 }
 
-// ─── Per-section mode (halves/quarters) ──────────────────────────────────────
-
-interface PerSectionCondimentProps {
-  label: string
-  items: Array<PizzaSauce | PizzaCheese>
-  selections: CondimentSelection[]
-  onChange: (selections: CondimentSelection[]) => void
-  sectionMode: number
-  disabled?: boolean
-}
-
-function PerSectionCondiment({ label, items, selections, onChange, sectionMode, disabled }: PerSectionCondimentProps) {
-  const presets = getAllSectionPresetsForMode(sectionMode)
-
-  // Build a lookup: position -> selection for that section
-  const getSelectionForSection = (sectionIndices: number[]): CondimentSelection | null => {
-    return selections.find((s) =>
-      s.sections.length === sectionIndices.length &&
-      sectionIndices.every((idx) => s.sections.includes(idx))
-    ) ?? null
-  }
-
-  const handleSectionSelect = (sectionIndices: number[], item: PizzaSauce | PizzaCheese) => {
-    const updated = selections.filter((s) =>
-      !(s.sections.length === sectionIndices.length && sectionIndices.every((idx) => s.sections.includes(idx)))
-    )
-    // If it's the same item being re-selected, just toggle it off (keep filtered)
-    const existing = getSelectionForSection(sectionIndices)
-    if (existing?.id === item.id) {
-      onChange(updated)
-      return
-    }
-    updated.push({ id: item.id, amount: 'regular', sections: sectionIndices })
-    onChange(updated)
-  }
-
-  const handleSectionAmountChange = (sectionIndices: number[], amount: Amount) => {
-    onChange(
-      selections.map((s) => {
-        if (s.sections.length === sectionIndices.length && sectionIndices.every((idx) => s.sections.includes(idx))) {
-          return { ...s, amount }
-        }
-        return s
-      })
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
-        {label}
-      </h3>
-
-      {presets.map((preset) => {
-        const sectionSel = getSelectionForSection(preset.sections)
-        const selectedItem = sectionSel ? items.find((i) => i.id === sectionSel.id) ?? null : null
-
-        return (
-          <div key={preset.position} className="space-y-2 rounded-lg border border-gray-100 bg-gray-50/50 p-3">
-            <div
-              className="text-xs font-semibold uppercase tracking-wider mb-2"
-              style={{ color: 'var(--site-brand)' }}
-            >
-              {preset.label} {label}
-            </div>
-
-            {/* Item selection for this section */}
-            <div className="flex flex-wrap gap-2">
-              {items.map((item) => {
-                const isSelected = item.id === sectionSel?.id
-                const hasPrice = item.price > 0
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => handleSectionSelect(preset.sections, item)}
-                    className={`rounded-full border-2 px-3 py-2 text-xs font-medium transition-all min-h-[44px] ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${!isSelected ? 'border-gray-200 text-gray-700 hover:border-gray-300' : 'text-white'}`}
-                    style={isSelected ? {
-                      borderColor: 'var(--site-brand)',
-                      backgroundColor: 'var(--site-brand)',
-                    } : undefined}
-                  >
-                    {item.displayName || item.name}
-                    {hasPrice && <span className="ml-1 opacity-75">+{formatCurrency(item.price)}</span>}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Amount controls for this section */}
-            {sectionSel && (
-              <div className="flex gap-1">
-                <AmountButton
-                  current={sectionSel.amount}
-                  value="none"
-                  label="None"
-                  onClick={(a) => handleSectionAmountChange(preset.sections, a)}
-                />
-                {(selectedItem?.allowLight ?? true) && (
-                  <AmountButton
-                    current={sectionSel.amount}
-                    value="light"
-                    label="Light"
-                    onClick={(a) => handleSectionAmountChange(preset.sections, a)}
-                  />
-                )}
-                <AmountButton
-                  current={sectionSel.amount}
-                  value="regular"
-                  label="Regular"
-                  onClick={(a) => handleSectionAmountChange(preset.sections, a)}
-                />
-                {(selectedItem?.allowExtra ?? true) && (
-                  <AmountButton
-                    current={sectionSel.amount}
-                    value="extra"
-                    label={(selectedItem?.extraPrice ?? 0) > 0 ? `Extra +${formatCurrency(selectedItem!.extraPrice)}` : 'Extra'}
-                    onClick={(a) => handleSectionAmountChange(preset.sections, a)}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ─── Shared amount button ────────────────────────────────────────────────────
+// ─── Amount button ─────────────────────────────────────────────────────────
 
 function AmountButton({
   current,
@@ -307,7 +214,9 @@ function AmountButton({
     <button
       type="button"
       onClick={() => onClick(value)}
-      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${!isActive ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'text-white'}`}
+      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all min-h-[36px] ${
+        !isActive ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'text-white'
+      }`}
       style={isActive ? { backgroundColor: 'var(--site-brand)' } : undefined}
     >
       {label}

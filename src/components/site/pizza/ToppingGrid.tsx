@@ -170,10 +170,13 @@ export function ToppingGrid({
                     <button
                       type="button"
                       onClick={() => setExpandedTopping(topping.id)}
-                      className="w-full text-center text-xs py-0.5 min-h-[44px] flex items-center justify-center"
+                      className="w-full text-center text-xs py-1 flex items-center justify-center gap-1"
                       style={{ color: 'var(--site-brand)' }}
                     >
-                      Customize placement
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                      </svg>
+                      Placement &amp; amount
                     </button>
                   )}
                 </div>
