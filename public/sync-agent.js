@@ -583,9 +583,11 @@ function updateComponentsFromCheckout() {
       var ok = run('sudo dpkg -i "' + debPath + '" 2>/dev/null || sudo apt-get install -f -y', APP_DIR, 60)
       if (ok) {
         run('pkill -f gwi-dashboard || true', APP_DIR, 5)
+        // Restart dashboard via systemd (if service exists) or direct launch
+        run('sudo -u ' + (process.env.POSUSER || 'gwipos') + ' bash -c "export XDG_RUNTIME_DIR=/run/user/$(id -u); export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus; systemctl --user restart gwi-dashboard.service 2>/dev/null || DISPLAY=:0 nohup /usr/bin/gwi-nuc-dashboard >/dev/null 2>&1 &"', APP_DIR, 10)
         result.dashboard = { from: installedVer, to: availableVer, updated: true }
         result._updated = true
-        log('[Components] Dashboard updated successfully')
+        log('[Components] Dashboard updated and restarted')
       }
     } else {
       result.dashboard = { from: installedVer, to: installedVer, updated: false }

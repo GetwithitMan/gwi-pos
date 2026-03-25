@@ -12,6 +12,12 @@ import type {
   MenuItemInfo,
 } from './types'
 
+// ─── String Length Limits (DoS prevention) ──────────────────────────────────
+
+export const MAX_NOTE_LENGTH = 2000
+export const MAX_NAME_LENGTH = 500
+export const MAX_SPECIAL_NOTES_LENGTH = 2000
+
 // ─── Add Item Validation ────────────────────────────────────────────────────
 
 /**
@@ -34,6 +40,29 @@ export function validateAddItemsInput(items: AddItemInput[]): ValidationResult {
   }
 
   for (const item of items) {
+    // String length limits (DoS prevention)
+    if (item.name && item.name.length > MAX_NAME_LENGTH) {
+      return {
+        valid: false,
+        error: `Item name exceeds maximum length of ${MAX_NAME_LENGTH} characters`,
+        status: 400,
+      }
+    }
+    if (item.specialNotes && item.specialNotes.length > MAX_SPECIAL_NOTES_LENGTH) {
+      return {
+        valid: false,
+        error: `Special notes exceeds maximum length of ${MAX_SPECIAL_NOTES_LENGTH} characters`,
+        status: 400,
+      }
+    }
+    if (item.pricingOptionLabel && item.pricingOptionLabel.length > MAX_NAME_LENGTH) {
+      return {
+        valid: false,
+        error: `Pricing option label exceeds maximum length of ${MAX_NAME_LENGTH} characters`,
+        status: 400,
+      }
+    }
+
     if (!Number.isFinite(item.price)) {
       return {
         valid: false,

@@ -213,6 +213,7 @@ export async function POST(request: NextRequest) {
         id: { in: menuItemIds },
         locationId,
         isActive: true,
+        isAvailable: true,
         showOnline: true,
         deletedAt: null,
       },

@@ -67,6 +67,12 @@ export const PUT = withVenue(async function PUT(
         { status: 400 }
       )
     }
+    if (allergyNotes.length > 2000) {
+      return NextResponse.json(
+        { error: 'Allergy notes exceeds maximum length of 2000 characters' },
+        { status: 400 }
+      )
+    }
 
     const order = await db.order.findUnique({
       where: { id: orderId },

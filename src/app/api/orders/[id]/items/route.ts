@@ -6,6 +6,7 @@ import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-re
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded, dispatchTabItemsUpdated, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { calculateIngredientCosts, calculateVariantCost } from '@/lib/inventory/recipe-costing'
@@ -427,7 +428,7 @@ export const POST = withVenue(async function POST(
         await recalculateParentOrderTotals(tx, existingOrder.parentOrderId)
       }
 
-      return { updatedOrder, createdItems, menuItemMap }
+      return { updatedOrder, createdItems, menuItemMap, hasSentItems }
     })
 
     // Fire-and-forget: check if bar tab or bottle service tab needs auto-increment
@@ -572,6 +573,17 @@ export const POST = withVenue(async function POST(
     if (result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.status === 'open') {
       const updatedItemCount = await OrderItemRepository.countItemsForOrder(orderId, locationId)
       dispatchTabItemsUpdated(result.updatedOrder.locationId, { orderId, itemCount: updatedItemCount })
+    }
+
+    // Notify terminal if new items were added to an order that already has sent items.
+    // This prevents the add-then-send race where items stay 'pending' forever because
+    // the employee already sent the order and doesn't realize new items arrived.
+    if (result.hasSentItems && result.createdItems.length > 0) {
+      void emitToLocation(result.updatedOrder.locationId, 'order:pending-items', {
+        orderId: result.updatedOrder.id,
+        count: result.createdItems.length,
+        itemNames: result.createdItems.map((i: any) => i.name).slice(0, 5),
+      }).catch(console.error)
     }
 
     // Evaluate auto-discount rules after items are added (fire-and-forget)

@@ -24,6 +24,12 @@ export const POST = withVenue(async function POST(
         { status: 400 }
       )
     }
+    if (amount > 9999) {
+      return NextResponse.json(
+        { error: 'Donation amount exceeds maximum of $9,999' },
+        { status: 400 }
+      )
+    }
 
     const order = await db.order.findUnique({
       where: { id: orderId },

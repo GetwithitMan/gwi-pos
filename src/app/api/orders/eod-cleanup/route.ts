@@ -31,13 +31,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
     const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
 
-    // Find stale orders: draft/open, whose businessDayDate is before the current business day, not deleted
+    // Find stale orders: draft/open/in_progress, whose businessDayDate is before the current business day, not deleted
     // Read from OrderSnapshot (event-sourced projection) — cents-based fields
+    // in_progress = partial payment started but never completed (stuck from previous day)
     const staleOrders = await db.orderSnapshot.findMany({
       where: {
         locationId,
         deletedAt: null,
-        status: { in: ['draft', 'open'] },
+        status: { in: ['draft', 'open', 'in_progress'] },
         OR: [
           { businessDayDate: { lt: currentBusinessDayStart } },
           { businessDayDate: null, createdAt: { lt: currentBusinessDayStart } },
@@ -46,16 +47,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       select: {
         id: true,
         totalCents: true,
+        paidAmountCents: true,
         tableId: true,
         itemCount: true,
+        status: true,
       },
     })
 
     const toCancelIds: string[] = []
     const toResetTableIds: string[] = []
+    const abandonedIds: string[] = []
     let rolledForward = 0
 
     for (const order of staleOrders) {
+      // in_progress orders have partial payments — flag as abandoned, don't auto-cancel
+      if (order.status === 'in_progress') {
+        abandonedIds.push(order.id)
+        if (order.tableId) {
+          toResetTableIds.push(order.tableId)
+        }
+        continue
+      }
+
       const hasBalance = order.totalCents > 0 && order.itemCount > 0
       if (hasBalance) {
         // Orders with a balance roll forward
@@ -81,6 +94,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
+    // Flag in_progress orders as abandoned — they have partial payments and need manual resolution
+    if (abandonedIds.length > 0) {
+      await db.order.updateMany({
+        where: { id: { in: abandonedIds } },
+        data: {
+          status: 'abandoned',
+          closedAt: new Date(),
+          notes: 'EOD cleanup: stuck in_progress order from previous business day — needs manual resolution (has partial payments)',
+          lastMutatedBy: 'local',
+        },
+      })
+      console.warn(`[EOD Cleanup] ${abandonedIds.length} in_progress order(s) marked as abandoned (partial payments need manual resolution): ${abandonedIds.join(', ')}`)
+    }
+
     // Reset tables to available
     if (toResetTableIds.length > 0) {
       await db.table.updateMany({
@@ -101,8 +128,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
+    // Emit ORDER_CLOSED events for abandoned orders (fire-and-forget)
+    for (const id of abandonedIds) {
+      void emitOrderEvent(locationId, id, 'ORDER_CLOSED', {
+        closedStatus: 'abandoned',
+        reason: 'EOD cleanup: stuck in_progress order with partial payments from previous business day',
+      })
+    }
+
     // Fire socket events so all terminals update
-    if (toCancelIds.length > 0) {
+    if (toCancelIds.length > 0 || abandonedIds.length > 0) {
       void dispatchOpenOrdersChanged(locationId, {
         trigger: 'voided',
       }).catch(console.error)
@@ -113,15 +148,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       void dispatchFloorPlanUpdate(locationId).catch(console.error)
     }
 
-    if (toCancelIds.length > 0 || toResetTableIds.length > 0) {
+    if (toCancelIds.length > 0 || abandonedIds.length > 0 || toResetTableIds.length > 0) {
       pushUpstream()
     }
 
     return NextResponse.json({
       data: {
         cancelled: toCancelIds.length,
+        abandoned: abandonedIds.length,
         rolledForward,
         cancelledOrderIds: toCancelIds,
+        abandonedOrderIds: abandonedIds,
       },
     })
   } catch (error) {
