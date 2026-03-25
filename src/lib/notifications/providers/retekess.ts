@@ -50,7 +50,7 @@ const ALLOWED_PRIVATE_RANGES = [
   /^localhost$/i,
 ]
 
-const ALLOWED_PORTS = new Set([80, 443, 8080, 8443, 9090])
+const ALLOWED_PORTS = new Set([80, 8080, 9000])
 
 function isLocalIpSafe(ip: string, port: number): boolean {
   // Check IP is in a private subnet
