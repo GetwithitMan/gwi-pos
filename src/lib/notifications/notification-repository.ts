@@ -446,7 +446,8 @@ export async function transitionToFallback(
 export async function incrementProviderFailures(
   prisma: PrismaClient,
   providerId: string,
-  openDurationMs: number = 60_000
+  openDurationMs: number = 60_000,
+  forceOpen: boolean = false
 ): Promise<{ consecutiveFailures: number; circuitOpened: boolean }> {
   const openUntil = new Date(Date.now() + openDurationMs)
 
@@ -456,20 +457,22 @@ export async function incrementProviderFailures(
   }[]>(`
     UPDATE "NotificationProvider"
     SET
-      "consecutiveFailures" = "consecutiveFailures" + 1,
+      "consecutiveFailures" = CASE WHEN $3 THEN 5 ELSE "consecutiveFailures" + 1 END,
       "healthStatus" = CASE
+        WHEN $3 THEN 'circuit_open'
         WHEN "consecutiveFailures" + 1 >= 5 THEN 'circuit_open'
         WHEN "consecutiveFailures" + 1 >= 3 THEN 'degraded'
         ELSE "healthStatus"
       END,
       "circuitBreakerOpenUntil" = CASE
+        WHEN $3 THEN $2
         WHEN "consecutiveFailures" + 1 >= 5 THEN $2
         ELSE "circuitBreakerOpenUntil"
       END,
       "updatedAt" = CURRENT_TIMESTAMP
     WHERE "id" = $1
     RETURNING "consecutiveFailures", "healthStatus"
-  `, providerId, openUntil)
+  `, providerId, openUntil, forceOpen)
 
   const row = rows[0]
   if (!row) {

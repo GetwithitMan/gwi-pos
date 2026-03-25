@@ -373,7 +373,7 @@ export async function notifyEvent(input: NotificationInput): Promise<Notificatio
     }
 
     // Get active target assignments for this rule's target type
-    const targets = await getActiveTargets(subjectType, subjectId, rule.targetType)
+    const targets = await getActiveTargets(locationId, subjectType, subjectId, rule.targetType)
 
     // If no targets assigned, try context-provided values
     let targetEntries = targets.map(t => ({

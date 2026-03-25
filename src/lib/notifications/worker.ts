@@ -384,16 +384,19 @@ async function processJob(job: ClaimedJob): Promise<void> {
 
       // Trip circuit breaker if needed
       if (shouldTripCircuit) {
-        // AUTH_FAILED: immediate open
-        const openDuration = normalized === 'AUTH_FAILED' ? 300_000 : 60_000
-        void incrementProviderFailures(db as any, job.providerId, openDuration).catch((err) => {
+        const forceOpen = normalized === 'AUTH_FAILED'
+        const openDuration = forceOpen ? 300_000 : 60_000
+        void incrementProviderFailures(db as any, job.providerId, openDuration, forceOpen).catch((err) => {
           log.warn({ err, providerId: job.providerId }, 'Failed to increment provider failures')
         })
       }
 
+      // Check retryOnTimeout policy override
+      const effectiveShouldRetry = shouldRetry || (normalized === 'TIMEOUT' && policy.retryOnTimeout === true)
+
       // Retry or fail
       const nextAttempt = job.currentAttempt + 1
-      if (shouldRetry && nextAttempt < job.maxAttempts) {
+      if (effectiveShouldRetry && nextAttempt < job.maxAttempts) {
         const delayMs = computeRetryDelay(policy, nextAttempt)
         const nextStage = getNextExecutionStage(job.executionStage, nextAttempt)
         await scheduleRetry(db as any, job.id, nextAttempt, delayMs, nextStage)
