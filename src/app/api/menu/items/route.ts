@@ -361,7 +361,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ...(itemType && { itemType }),
         ...(timedPricing && { timedPricing }),
         ...(entertainmentStatus && { entertainmentStatus }),
-        ...(visualType && { visualType }),
+        // visualType belongs to FloorPlanElement, not MenuItem — store in metadata
+        ...(visualType && { metadata: { visualType } }),
         ...(gracePeriodMinutes !== undefined && { gracePeriodMinutes }),
         // Happy hour (MenuItem-level columns — used by block-time pricing engine)
         ...(happyHourEnabled !== undefined && { happyHourEnabled }),

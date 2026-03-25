@@ -222,6 +222,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
           blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
           waitlistCount: item.itemType === 'timed_rental' ? (waitlistCountMap.get(item.id) || 0) : undefined,
+          visualType: item.itemType === 'timed_rental' ? ((item.metadata as Record<string, unknown>)?.visualType as string || null) : null,
           modifierGroupCount: (item.ownedModifierGroups || []).length,
           modifierGroups: (item.ownedModifierGroups || []).map((mg: any) => ({
             id: mg.id,
