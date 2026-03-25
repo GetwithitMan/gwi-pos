@@ -110,7 +110,7 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   Printer:                { direction: 'downstream', owner: 'cloud', priority: 213, batchSize: 50, skipFields: ['lastPingAt', 'lastPingOk'] },
   PrintRoute:             { direction: 'downstream', owner: 'cloud', priority: 214, batchSize: 50 },
   PrintRule:              { direction: 'downstream', owner: 'cloud', priority: 215, batchSize: 50 },
-  KDSScreen:              { direction: 'downstream', owner: 'cloud', priority: 216, batchSize: 50, skipFields: ['isPaired', 'deviceToken', 'pairingCode', 'pairingCodeExpiresAt', 'lastKnownIp', 'deviceInfo', 'lastSeenAt', 'isOnline'] },
+  KDSScreen:              { direction: 'downstream', owner: 'cloud', priority: 216, batchSize: 50, skipFields: ['isPaired', 'deviceToken', 'lastKnownIp', 'deviceInfo', 'lastSeenAt', 'isOnline'] },
   KDSScreenStation:       { direction: 'downstream', owner: 'cloud', priority: 217, batchSize: 50 },
   // CRITICAL: Terminal is bidirectional — any cloud/Vercel API route that mutates Terminal MUST set lastMutatedBy: 'cloud'.
   // Without it, downstream sync will never deliver the change to the NUC. See docs/features/offline-sync.md "Bidirectional Sync Protocol".
