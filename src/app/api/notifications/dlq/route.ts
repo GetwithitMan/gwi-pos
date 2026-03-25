@@ -246,7 +246,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       .digest('hex')
 
     // Create a new job as a retry of the dead-letter job
-    const newJobId = crypto.randomUUID().replace(/-/g, '').slice(0, 25)
+    const newJobId = crypto.randomUUID()
 
     await db.$executeRawUnsafe(
       `INSERT INTO "NotificationJob" (
@@ -393,12 +393,12 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       action === 'suppress' ? 'suppressed' : 'cancelled',
     )
 
-    // Audit log: notification_dlq_replay (suppress/resolve variant)
+    // Audit log: notification_dlq_resolved (suppress/resolve)
     void db.auditLog.create({
       data: {
         locationId,
         employeeId: auth.employee.id,
-        action: 'notification_dlq_replay',
+        action: 'notification_dlq_resolved',
         entityType: 'notification_job',
         entityId: jobId,
         details: {

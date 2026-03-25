@@ -7,7 +7,7 @@
 
 // ─── Provider Types ──────────────────────────────────────────────────────────
 
-export type ProviderType = 'jtech' | 'lrs' | 'retekess' | 'sms' | 'display' | 'shelf' | 'voice'
+export type ProviderType = 'jtech' | 'lrs' | 'retekess' | 'sms' | 'display' | 'shelf' | 'voice' | 'kiosk'
 
 // ─── Subject Types ───────────────────────────────────────────────────────────
 
@@ -279,6 +279,7 @@ export const TERMINAL_JOB_STATUSES: Set<JobStatus> = new Set([
   'failed',
   'cancelled',
   'dead_letter',
+  'suppressed',
 ])
 
 export const NON_TERMINAL_JOB_STATUSES: Set<JobStatus> = new Set([
@@ -287,5 +288,4 @@ export const NON_TERMINAL_JOB_STATUSES: Set<JobStatus> = new Set([
   'processing',
   'waiting_retry',
   'waiting_fallback',
-  'suppressed',
 ])

@@ -9239,6 +9239,23 @@ model SyncWatermark {
   updatedAt                    DateTime @default(now()) @updatedAt
 }
 
+model SyncConflict {
+  id           String    @id @default(cuid())
+  model        String
+  recordId     String
+  localVersion String
+  cloudVersion String
+  localData    Json      @default("{}")
+  cloudData    Json      @default("{}")
+  detectedAt   DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolution   String?
+
+  @@index([resolvedAt])
+  @@index([detectedAt])
+  @@index([model, recordId])
+}
+
 model GwiSyncState {
   tableName     String   @id @map("table_name")
   highWaterMark DateTime @map("high_water_mark")
@@ -9614,6 +9631,67 @@ model NotificationTemplate {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   deletedAt         DateTime?
+}
+
+// ── Delivery tables (raw SQL — must be in schema so prisma db push doesn't drop them) ──
+
+model DeliveryOrder {
+  id                  String    @id @default(cuid())
+  locationId          String
+  orderId             String?
+  employeeId          String?
+  driverId            String?
+  customerName        String
+  phone               String?
+  address             String?
+  addressLine2        String?
+  city                String?
+  state               String?
+  zipCode             String?
+  notes               String?
+  status              String    @default("pending")
+  deliveryFee         Decimal   @default(0) @db.Decimal(10, 2)
+  estimatedMinutes    Int       @default(45)
+  scheduledFor        DateTime?
+  preparedAt          DateTime?
+  readyAt             DateTime?
+  dispatchedAt        DateTime?
+  deliveredAt         DateTime?
+  cancelledAt         DateTime?
+  cancelReason        String?
+  // Columns added by migration 066
+  zoneId              String?
+  runId               String?
+  runSequence         Int?
+  trackingToken       String?   @unique
+  addressId           String?
+  latitude            Decimal?  @db.Decimal(10, 7)
+  longitude           Decimal?  @db.Decimal(10, 7)
+  geocodePrecision    String?
+  geocodeConfidence   Decimal?  @db.Decimal(3, 2)
+  smsNotificationsSent Json?    @default("[]")
+  confirmedAt         DateTime?
+  assignedAt          DateTime?
+  enRouteAt           DateTime?
+  arrivedAt           DateTime?
+  attemptedAt         DateTime?
+  failedAt            DateTime?
+  returnedAt          DateTime?
+  promisedAt          DateTime?
+  quotedMinutes       Int?
+  serviceRecoveryReason String?
+  exceptionId         String?
+  addressSnapshotJson Json?
+  proofMode           String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @default(now())
+
+  @@index([locationId, status])
+  @@index([driverId])
+  @@index([orderId])
+  @@index([locationId, createdAt(sort: Desc)])
+  @@index([zoneId])
+  @@index([runId])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables

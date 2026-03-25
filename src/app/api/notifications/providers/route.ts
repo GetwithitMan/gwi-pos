@@ -14,7 +14,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 
 export const dynamic = 'force-dynamic'
 
-const VALID_PROVIDER_TYPES = ['jtech', 'lrs', 'retekess', 'sms', 'display', 'shelf', 'voice']
+const VALID_PROVIDER_TYPES = ['jtech', 'lrs', 'retekess', 'sms', 'display', 'shelf', 'voice', 'kiosk']
 
 const VALID_EXECUTION_ZONES = ['any', 'local_nuc', 'cloud']
 
@@ -134,6 +134,22 @@ const DEFAULT_CAPABILITIES: Record<string, Record<string, boolean>> = {
     canCancellation: false,
     canDeliveryConfirmation: false,
   },
+  kiosk: {
+    canPageNumeric: false,
+    canPageAlpha: false,
+    canSms: false,
+    canVoice: false,
+    canDisplayPush: false,
+    canDeviceInventory: false,
+    canDeviceAssignment: true,
+    canDeviceRecall: false,
+    canOutOfRangeDetection: false,
+    canBatteryTelemetry: false,
+    canTracking: false,
+    canKioskDispense: true,
+    canCancellation: false,
+    canDeliveryConfirmation: false,
+  },
 }
 
 /**
@@ -147,6 +163,7 @@ const REQUIRED_CONFIG_FIELDS: Record<string, string[]> = {
   display: ['displayUrl'],
   voice: ['twilioAccountSid', 'twilioAuthToken', 'twilioFromNumber'],
   shelf: ['controllerIp', 'controllerPort'],
+  kiosk: ['kioskId'],
 }
 
 /**

@@ -30,7 +30,7 @@ let _clientSid: string | null = null
  * Load Twilio credentials from DB settings, falling back to env vars.
  * Caches for 1 minute to avoid repeated DB reads.
  */
-async function loadCredentials(): Promise<{ sid: string | null; token: string | null; fromNumber: string | null }> {
+export async function loadCredentials(): Promise<{ sid: string | null; token: string | null; fromNumber: string | null }> {
   if (_cachedSid && Date.now() - _cachedAt < CACHE_TTL) {
     return { sid: _cachedSid, token: _cachedToken, fromNumber: _cachedFromNumber }
   }
@@ -70,7 +70,7 @@ export function clearTwilioCache() {
   _clientSid = null
 }
 
-async function getClient(): Promise<twilio.Twilio> {
+export async function getClient(): Promise<twilio.Twilio> {
   const { sid, token } = await loadCredentials()
   if (!sid || !token) {
     throw new Error('Twilio credentials not configured.')

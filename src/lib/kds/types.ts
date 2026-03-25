@@ -34,6 +34,9 @@ export interface KDSOrderBehavior {
   sendSmsOnReady: boolean
   printOnBump: boolean
   printerId: string | null
+  /** Auto-expire orders older than this many minutes from KDS display.
+   *  0 = disabled (no auto-expiry). Default: 300 (5 hours). */
+  autoExpireMinutes: number
 }
 
 export interface KDSOrderTypeFilters {
@@ -113,6 +116,7 @@ export const KDSOrderBehaviorSchema = z.object({
   sendSmsOnReady: z.boolean(),
   printOnBump: z.boolean(),
   printerId: z.string().nullable(),
+  autoExpireMinutes: z.number().int().min(0).max(1440), // 0=disabled, max 24h
 }).partial().nullable().optional()
 
 export const KDSOrderTypeFiltersSchema = z.record(

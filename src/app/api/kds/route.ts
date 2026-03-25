@@ -11,11 +11,23 @@ import { dispatchAlert } from '@/lib/alert-service'
 import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-links'
 import { sendSMS, isTwilioConfigured, formatPhoneE164 } from '@/lib/twilio'
+import { getReadinessState } from '@/lib/readiness'
+import { mergeOrderBehavior } from '@/lib/kds/defaults'
+
+// Circuit breaker: suppress repeated DeliveryOrder queries when table is missing.
+// Resets on process restart (when migration 108 creates the table).
+let deliveryTableMissing = false
+
+/** Sentinel error: DB lookup failed during BOOT/degraded — caller should return 503. */
+class KdsDbUnavailableError extends Error {
+  constructor() { super('KDS DB unavailable during boot/degraded state') }
+}
 
 /**
  * Validate a KDS device token from request headers.
  * Checks x-device-token header, kds_device_token cookie, or Bearer token against KDSScreen.deviceToken.
  * Returns the screen's locationId if valid, null otherwise.
+ * Throws KdsDbUnavailableError if a valid token was provided but DB is unreachable (BOOT/DEGRADED).
  */
 async function validateKdsDeviceToken(request: NextRequest): Promise<{ locationId: string; screenId: string } | null> {
   const headerToken = request.headers.get('x-device-token')
@@ -34,8 +46,17 @@ async function validateKdsDeviceToken(request: NextRequest): Promise<{ locationI
     if (screen) {
       return { locationId: screen.locationId, screenId: screen.id }
     }
-  } catch {
-    // DB lookup failed — fall through
+  } catch (err) {
+    // DB lookup failed — if server is in BOOT/DEGRADED/FAILED, signal 503 instead of
+    // falling through to employee auth (which KDS devices don't have credentials for).
+    const readiness = getReadinessState()
+    const level = readiness?.level ?? 'BOOT' // null state = pre-boot
+    if (level === 'BOOT' || level === 'DEGRADED' || level === 'FAILED') {
+      console.warn(`[KDS] validateKdsDeviceToken DB error at readiness=${level}:`, err)
+      throw new KdsDbUnavailableError()
+    }
+    // At SYNC/ORDERS level the DB should be up — this is a real error, fall through to employee auth
+    console.error('[KDS] validateKdsDeviceToken DB error at readiness=', level, err)
   }
   return null
 }
@@ -73,12 +94,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
-    // KDS Overhaul: Apply order-type filters from screen config
+    // KDS Overhaul: Apply order-type filters + auto-expiry from screen config
     let orderTypeFilter: string[] | undefined
+    let autoExpireCutoff: Date | undefined
     if (screenId) {
       const screen = await db.kDSScreen.findUnique({
         where: { id: screenId },
-        select: { orderTypeFilters: true },
+        select: { orderTypeFilters: true, orderBehavior: true },
       })
       const filters = screen?.orderTypeFilters as Record<string, boolean> | null
       if (filters) {
@@ -87,6 +109,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           orderTypeFilter = hiddenTypes
         }
       }
+      // Auto-expiry: hide orders older than autoExpireMinutes from the KDS display
+      const behavior = mergeOrderBehavior(screen?.orderBehavior as Partial<import('@/lib/kds/types').KDSOrderBehavior> | null)
+      if (behavior.autoExpireMinutes > 0) {
+        autoExpireCutoff = new Date(Date.now() - behavior.autoExpireMinutes * 60 * 1000)
+      }
+    } else {
+      // No screenId — apply a sensible global default (5 hours) to prevent unbounded growth
+      const defaultExpireMs = 300 * 60 * 1000 // 5 hours
+      autoExpireCutoff = new Date(Date.now() - defaultExpireMs)
     }
 
     // Get orders that have been sent to kitchen (including paid orders with incomplete items)
@@ -103,6 +134,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         items: { some: {} },
         // KDS Overhaul: Server-side order-type filter
         ...(orderTypeFilter ? { orderType: { notIn: orderTypeFilter } } : {}),
+        // Auto-expiry: exclude orders older than autoExpireMinutes to prevent stale tickets
+        ...(autoExpireCutoff ? { createdAt: { gte: autoExpireCutoff } } : {}),
       },
       take: 50,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -185,10 +218,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
 
     // Batch-fetch delivery info for all orders in a single query
-    // DeliveryOrder is a raw SQL table (not in Prisma schema), so we use $queryRawUnsafe
     const orderIds = orders.map(o => o.id)
     let deliveryInfoMap: Record<string, { customerName: string | null; phone: string | null; address: string | null; notes: string | null }> = {}
-    if (orderIds.length > 0) {
+    if (orderIds.length > 0 && !deliveryTableMissing) {
       try {
         const deliveryRows: Array<{ orderId: string; customerName: string | null; phone: string | null; address: string | null; addressLine2: string | null; city: string | null; state: string | null; zipCode: string | null; notes: string | null }> = await db.$queryRawUnsafe(
           `SELECT "orderId", "customerName", "phone", "address", "addressLine2", "city", "state", "zipCode", "notes"
@@ -208,9 +240,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             }
           }
         }
-      } catch (err) {
-        // Non-fatal: delivery info is supplementary
-        console.warn('[KDS] Failed to fetch delivery info:', err)
+      } catch (err: any) {
+        // If table doesn't exist, suppress future attempts until next restart
+        if (err?.message?.includes('does not exist') || err?.code === '42P01') {
+          deliveryTableMissing = true
+          console.warn('[KDS] DeliveryOrder table missing — delivery info disabled until restart or migration 108 runs')
+        } else {
+          // Non-fatal: delivery info is supplementary
+          console.warn('[KDS] Failed to fetch delivery info:', err)
+        }
       }
     }
 
@@ -359,6 +397,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
     } })
   } catch (error) {
+    // If server is booting/degraded, return 503 so KDS retries gracefully
+    const readiness = getReadinessState()
+    const level = readiness?.level ?? 'BOOT'
+    if (level === 'BOOT' || level === 'DEGRADED' || level === 'FAILED') {
+      console.warn(`[KDS] GET failed at readiness=${level}:`, error)
+      return NextResponse.json(
+        { error: 'Server is starting up. KDS will retry automatically.', code: 'SERVER_BOOTING' },
+        { status: 503, headers: { 'Retry-After': '5' } }
+      )
+    }
     console.error('Failed to fetch KDS orders:', error)
     return NextResponse.json(
       { error: 'Failed to fetch KDS orders' },
@@ -817,10 +865,21 @@ const putHandler = async function PUT(request: NextRequest) {
 const authWrappedPut = withAuth('ADMIN', putHandler as any)
 export const PUT = withVenue(async function PUT(request: NextRequest) {
   // Check KDS device token auth first (x-device-token, cookie, or Bearer)
-  const kdsAuth = await validateKdsDeviceToken(request)
-  if (kdsAuth) {
-    // Valid KDS device — proceed directly without employee permission check
-    return putHandler(request)
+  try {
+    const kdsAuth = await validateKdsDeviceToken(request)
+    if (kdsAuth) {
+      // Valid KDS device — proceed directly without employee permission check
+      return putHandler(request)
+    }
+  } catch (err) {
+    if (err instanceof KdsDbUnavailableError) {
+      // Server is booting/degraded — tell KDS to retry instead of returning 401
+      return NextResponse.json(
+        { error: 'Server is starting up. KDS will retry automatically.', code: 'SERVER_BOOTING' },
+        { status: 503, headers: { 'Retry-After': '5' } }
+      )
+    }
+    throw err
   }
   // Fall back to standard employee auth (POS web UI bumps)
   return authWrappedPut(request)

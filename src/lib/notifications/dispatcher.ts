@@ -429,45 +429,55 @@ export async function notifyEvent(input: NotificationInput): Promise<Notificatio
           ? 'suppressed'
           : 'pending'
 
-        await db.notificationJob.create({
-          data: {
-            id: jobId,
-            locationId,
-            eventType,
-            subjectType,
-            subjectId,
-            status: effectiveStatus,
-            currentAttempt: 0,
-            maxAttempts: rule.retryMaxAttempts,
-            dispatchOrigin,
-            businessStage,
-            executionStage: 'first_attempt',
-            routingRuleId: rule.id,
-            providerId: target.providerId,
-            fallbackProviderId: rule.fallbackProviderId,
-            targetType: rule.targetType,
-            targetValue: target.targetValue,
-            executionZone: 'any',
-            contextSnapshot: contextSnapshot as any,
-            messageTemplate: rule.messageTemplateId,
-            messageRendered,
-            policySnapshot: policySnapshot as any,
-            ruleExplainSnapshot: {
-              ruleId: rule.id,
-              rulePriority: rule.priority,
-              conditionsEvaluated: true,
-              criticality,
-            } as any,
-            subjectVersion,
-            isProbe,
-            sourceSystem,
-            sourceEventId,
-            sourceEventVersion,
-            idempotencyKey,
-            correlationId,
-            notificationEngine: 'v1',
-          },
-        })
+        try {
+          await db.notificationJob.create({
+            data: {
+              id: jobId,
+              locationId,
+              eventType,
+              subjectType,
+              subjectId,
+              status: effectiveStatus,
+              currentAttempt: 0,
+              maxAttempts: rule.retryMaxAttempts,
+              dispatchOrigin,
+              businessStage,
+              executionStage: 'first_attempt',
+              routingRuleId: rule.id,
+              providerId: target.providerId,
+              fallbackProviderId: rule.fallbackProviderId,
+              targetType: rule.targetType,
+              targetValue: target.targetValue,
+              executionZone: 'any',
+              contextSnapshot: contextSnapshot as any,
+              messageTemplate: rule.messageTemplateId,
+              messageRendered,
+              policySnapshot: policySnapshot as any,
+              ruleExplainSnapshot: {
+                ruleId: rule.id,
+                rulePriority: rule.priority,
+                conditionsEvaluated: true,
+                criticality,
+              } as any,
+              subjectVersion,
+              isProbe,
+              sourceSystem,
+              sourceEventId,
+              sourceEventVersion,
+              idempotencyKey,
+              correlationId,
+              notificationEngine: 'v1',
+            },
+          })
+        } catch (insertErr: any) {
+          // PostgreSQL unique violation (23505) — treat as dedup, not error
+          if (insertErr?.code === 'P2002' || insertErr?.meta?.code === '23505' || String(insertErr?.code) === '23505') {
+            log.debug({ sourceEventId, idempotencyKey }, 'Source-event dedup caught via unique constraint')
+            result.deduplicated++
+            continue
+          }
+          throw insertErr
+        }
 
         if (effectiveStatus === 'suppressed') {
           result.suppressed++
@@ -477,7 +487,7 @@ export async function notifyEvent(input: NotificationInput): Promise<Notificatio
 
           // ── Emit Postgres NOTIFY for worker ──────────────────────────
           try {
-            await db.$executeRawUnsafe(`NOTIFY notification_jobs, '${jobId}'`)
+            await db.$executeRawUnsafe(`SELECT pg_notify('notification_jobs', $1)`, jobId)
           } catch (notifyErr) {
             // NOTIFY failure is non-fatal — worker poll will catch it
             log.warn({ err: notifyErr, jobId }, 'Failed to emit NOTIFY for notification job')

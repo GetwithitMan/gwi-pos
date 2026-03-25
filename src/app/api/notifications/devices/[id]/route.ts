@@ -261,10 +261,10 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    // Soft delete
+    // Soft delete + set status to retired
     await db.$executeRawUnsafe(
       `UPDATE "NotificationDevice"
-       SET "deletedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP
+       SET "deletedAt" = CURRENT_TIMESTAMP, status = 'retired', "updatedAt" = CURRENT_TIMESTAMP
        WHERE id = $1 AND "locationId" = $2`,
       id,
       locationId

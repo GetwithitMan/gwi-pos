@@ -25,6 +25,7 @@ export const DEFAULT_ORDER_BEHAVIOR: KDSOrderBehavior = {
   sendSmsOnReady: false,
   printOnBump: false,
   printerId: null,
+  autoExpireMinutes: 300, // 5 hours — orders older than this auto-hide from KDS
 }
 
 // Transition times default to null → use global agingWarning/lateWarning from screen record

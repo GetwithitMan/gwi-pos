@@ -106,24 +106,36 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       } else {
         // Auto-select lowest-numbered available device
-        const providerFilter = providerId
-          ? `AND d."providerId" = '${providerId}'`
-          : ''
-
-        const devices: any[] = await tx.$queryRawUnsafe(
-          `SELECT id, "deviceNumber", "providerId", "deviceType"
-           FROM "NotificationDevice" d
-           WHERE d."locationId" = $1
-             AND d."deviceType" = $2
-             AND d.status = 'available'
-             AND d."deletedAt" IS NULL
-             ${providerFilter}
-           ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC
-           FOR UPDATE SKIP LOCKED
-           LIMIT 1`,
-          locationId,
-          deviceType
-        )
+        // Use parameterized query to prevent SQL injection on providerId
+        const devices: any[] = providerId
+          ? await tx.$queryRawUnsafe(
+              `SELECT id, "deviceNumber", "providerId", "deviceType"
+               FROM "NotificationDevice" d
+               WHERE d."locationId" = $1
+                 AND d."deviceType" = $2
+                 AND d.status = 'available'
+                 AND d."deletedAt" IS NULL
+                 AND d."providerId" = $3
+               ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC
+               FOR UPDATE SKIP LOCKED
+               LIMIT 1`,
+              locationId,
+              deviceType,
+              providerId
+            )
+          : await tx.$queryRawUnsafe(
+              `SELECT id, "deviceNumber", "providerId", "deviceType"
+               FROM "NotificationDevice" d
+               WHERE d."locationId" = $1
+                 AND d."deviceType" = $2
+                 AND d.status = 'available'
+                 AND d."deletedAt" IS NULL
+               ORDER BY d."deviceNumber"::int ASC NULLS LAST, d."deviceNumber" ASC
+               FOR UPDATE SKIP LOCKED
+               LIMIT 1`,
+              locationId,
+              deviceType
+            )
         device = devices[0]
         if (!device) {
           throw { code: 'NO_DEVICES_AVAILABLE', message: `No ${deviceType} devices available` }

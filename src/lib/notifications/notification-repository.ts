@@ -210,12 +210,9 @@ export async function scheduleRetry(
     WHERE "id" = $1
   `, jobId, nextAttempt, executionStage, availableAt, now)
 
-  // Return to pending so worker can pick it up again
-  await prisma.$executeRawUnsafe(`
-    UPDATE "NotificationJob"
-    SET "status" = 'pending'
-    WHERE "id" = $1 AND "status" = 'waiting_retry' AND "availableAt" <= CURRENT_TIMESTAMP
-  `, jobId)
+  // The worker's 10s retryPromoteTimer handles promotion from waiting_retry → pending
+  // when availableAt has elapsed. Do NOT call promoteRetryJobs() here — for short
+  // delays it creates a rapid state transition race.
 }
 
 /**
@@ -380,7 +377,7 @@ export async function findActiveJobByIdempotencyKey(
     SELECT "id", "status"
     FROM "NotificationJob"
     WHERE "idempotencyKey" = $1
-      AND "status" NOT IN ('failed', 'dead_letter', 'cancelled')
+      AND "status" NOT IN ('failed', 'dead_letter', 'cancelled', 'suppressed')
     LIMIT 1
   `, idempotencyKey)
 

@@ -217,11 +217,11 @@ function classifyError(errorCode: string | undefined): {
     case 'DEVICE_NOT_FOUND':
       return { normalized: 'DEVICE_NOT_FOUND', shouldTripCircuit: false, shouldRetry: false }
     case 'TIMEOUT':
-      return { normalized: 'TIMEOUT', shouldTripCircuit: true, shouldRetry: false }
+      return { normalized: 'TIMEOUT', shouldTripCircuit: false, shouldRetry: false }
     case 'VALIDATION_ERROR':
       return { normalized: 'VALIDATION_ERROR', shouldTripCircuit: false, shouldRetry: false }
     default:
-      return { normalized: 'PROVIDER_ERROR', shouldTripCircuit: true, shouldRetry: true }
+      return { normalized: 'PROVIDER_ERROR', shouldTripCircuit: false, shouldRetry: true }
   }
 }
 

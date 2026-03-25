@@ -4,13 +4,19 @@
  * `getProvider(providerType, config)` returns the correct provider implementation
  * based on the provider type string.
  *
- * New providers (LRS, Retekess, voice, etc.) are added here in later phases.
+ * Phase 5A providers (LRS, Retekess, Display) are registered below.
+ * Phase 5B providers (Voice, Kiosk) are also registered.
  */
 
 import type { NotificationProvider, ProviderType } from '../types'
 import { jtechProvider } from './jtech'
 import { smsProvider } from './sms'
 import { simulatorProvider } from './simulator'
+import { lrsProvider } from './lrs'
+import { retekessProvider } from './retekess'
+import { displayProvider } from './display'
+import { voiceProvider } from './voice'
+import { kioskProvider } from './kiosk'
 
 // ─── Provider Registry ──────────────────────────────────────────────────────
 
@@ -18,10 +24,19 @@ type ProviderFactory = (config: Record<string, unknown>) => NotificationProvider
 
 const registry = new Map<string, ProviderFactory>()
 
-// Register built-in providers
+// Register built-in providers (Phase 1)
 registry.set('jtech', () => jtechProvider)
 registry.set('sms', () => smsProvider)
 registry.set('simulator', () => simulatorProvider)
+
+// Phase 5A providers
+registry.set('lrs', () => lrsProvider)
+registry.set('retekess', () => retekessProvider)
+registry.set('display', () => displayProvider)
+
+// Phase 5B providers
+registry.set('voice', () => voiceProvider)
+registry.set('kiosk', () => kioskProvider)
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 

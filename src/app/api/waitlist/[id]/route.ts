@@ -71,7 +71,7 @@ export const PUT = withVenue(async function PUT(
       SET status = $1, "updatedAt" = CURRENT_TIMESTAMP ${extraFields}
       WHERE id = $2 AND "locationId" = $3
       RETURNING id, "customerName", "partySize", phone, notes, status, position,
-                "quotedWaitMinutes", "notifiedAt", "seatedAt", "createdAt", "updatedAt"
+                "quotedWaitMinutes", "notifiedAt", "seatedAt", "createdAt", "updatedAt", version
     `, status, id, locationId)
 
     const updatedEntry = updated[0]
@@ -105,7 +105,7 @@ export const PUT = withVenue(async function PUT(
           subjectId: id,
           subjectVersion: 1,
           sourceSystem: 'pos',
-          sourceEventId: `waitlist_notify:${id}:${updatedEntry.updatedAt}`,
+          sourceEventId: `waitlist_notify:${id}:${updatedEntry.version || 1}`,
           dispatchOrigin: 'automatic',
           businessStage: 'initial_ready',
           contextSnapshot: {

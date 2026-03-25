@@ -568,6 +568,28 @@ export function KDSSettingsSidebar({ screenConfig, onSave, saving }: KDSSettings
             checked={orderBehavior.sendSmsOnReady}
             onChange={() => toggleBehavior('sendSmsOnReady')}
           />
+
+          <FieldGroup label={`Auto-Expire: ${orderBehavior.autoExpireMinutes === 0 ? 'Disabled' : `${Math.floor(orderBehavior.autoExpireMinutes / 60)}h ${orderBehavior.autoExpireMinutes % 60}m`}`}>
+            <input
+              type="range"
+              min={0}
+              max={720}
+              step={30}
+              value={orderBehavior.autoExpireMinutes}
+              onChange={e => setBehaviorValue('autoExpireMinutes', parseInt(e.target.value))}
+              className="w-full accent-blue-500"
+            />
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <span>Off</span>
+              <span>3h</span>
+              <span>6h</span>
+              <span>9h</span>
+              <span>12h</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Automatically hide orders older than this from the KDS display. Set to 0 to disable.
+            </p>
+          </FieldGroup>
         </div>
       </Section>
 

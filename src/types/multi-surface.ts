@@ -214,3 +214,22 @@ export const MOBILE_EVENTS = {
   TAB_ALERT_MANAGER: 'tab:alert-manager',
   TAB_ITEMS_UPDATED: 'tab:items-updated',
 } as const
+
+// ============================================
+// NOTIFICATION PLATFORM — ORDER-READY DISPLAY
+// ============================================
+
+/** Notification Platform → Display Screens: order-ready display update */
+export interface OrderReadyDisplayUpdateEvent {
+  action: 'add' | 'remove'
+  orderNumber?: number
+  customerName?: string
+  fulfillmentMode?: string
+  status: 'preparing' | 'ready' | 'picked_up'
+  screenGroupId?: string
+  timestamp: string
+}
+
+export const NOTIFICATION_EVENTS = {
+  ORDER_READY_DISPLAY_UPDATE: 'order-ready-display:update',
+} as const

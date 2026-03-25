@@ -11,6 +11,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
 
 export const dynamic = 'force-dynamic'
 
@@ -280,6 +281,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     }).catch(console.error)
+
+    // Clear cached routing rules so new rule takes effect immediately
+    clearRoutingRulesCache()
 
     return NextResponse.json({ data: rule }, { status: 201 })
   } catch (error) {

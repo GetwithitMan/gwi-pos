@@ -12,6 +12,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
 
 export const dynamic = 'force-dynamic'
 
@@ -252,6 +253,9 @@ export const PUT = withVenue(async function PUT(
       },
     }).catch(console.error)
 
+    // Clear cached routing rules so updates take effect immediately
+    clearRoutingRulesCache()
+
     return NextResponse.json({ data: updated[0] })
   } catch (error) {
     console.error('[Notification Rules] PUT error:', error)
@@ -314,6 +318,9 @@ export const DELETE = withVenue(async function DELETE(
         } : {},
       },
     }).catch(console.error)
+
+    // Clear cached routing rules so deletion takes effect immediately
+    clearRoutingRulesCache()
 
     return NextResponse.json({ success: true })
   } catch (error) {
