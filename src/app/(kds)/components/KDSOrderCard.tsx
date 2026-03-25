@@ -215,19 +215,35 @@ export const KDSOrderCard = memo(function KDSOrderCard({
 
       {/* Items */}
       <div className="divide-y divide-gray-700">
-        {order.items.map(item => (
+        {order.items.map(item => {
+          const voidStatus = voidingItems?.get(item.id)
+          return (
           <div
             key={item.id}
-            className={`px-4 py-3 transition-colors ${
-              item.isCompleted
+            className={`relative px-4 py-3 transition-colors ${
+              voidStatus
+                ? 'bg-red-900/40'
+                : item.isCompleted
                 ? 'bg-green-900/20'
                 : 'hover:bg-gray-750 cursor-pointer'
             }`}
-            onClick={() => item.isCompleted ? onUncompleteItem(item.id) : onBumpItem(item.id)}
+            onClick={() => voidStatus ? undefined : (item.isCompleted ? onUncompleteItem(item.id) : onBumpItem(item.id))}
           >
-            <div className="flex items-start justify-between gap-2">
+            {/* VOIDED / COMPED overlay */}
+            {voidStatus && (
+              <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                <span className={`text-2xl font-black tracking-widest px-4 py-1 rounded border-2 rotate-[-6deg] ${
+                  voidStatus === 'voided'
+                    ? 'text-red-400 border-red-500 bg-red-950/80'
+                    : 'text-yellow-400 border-yellow-500 bg-yellow-950/80'
+                }`}>
+                  {voidStatus === 'voided' ? 'VOIDED' : 'COMPED'}
+                </span>
+              </div>
+            )}
+            <div className={`flex items-start justify-between gap-2 ${voidStatus ? 'opacity-40' : ''}`}>
               <div className="flex-1">
-                <div className={`font-medium ${item.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>
+                <div className={`font-medium ${voidStatus ? 'line-through text-red-400' : item.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>
                   {/* Seat number prefix (T023) */}
                   {item.seatNumber && (
                     <span className="text-purple-400 font-bold mr-1">S{item.seatNumber}:</span>
@@ -374,7 +390,8 @@ export const KDSOrderCard = memo(function KDSOrderCard({
               )}
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {(order.notes || order.deliveryInstructions) && (
