@@ -2628,6 +2628,7 @@ model Order {
   @@index([locationId, businessDayDate])
   @@index([locationId, status, businessDayDate])
   @@index([claimedByEmployeeId, claimedAt])
+  @@index([id, version])
 }
 
 /// ACTIVE: Primary order item table — all reads and writes go here.
@@ -6622,6 +6623,16 @@ model PaymentReader {
   backupFor Terminal[]         @relation("TerminalBackupReader")
   logs      PaymentReaderLog[]
 
+  // Reader Lease (Passive Card Detection — Always-Listening)
+  leaseTerminalId          String?
+  leaseSessionId           String?
+  leaseVersion             Int       @default(0)
+  leasedUntil              DateTime?
+  lastHeartbeatAt          DateTime?
+  lastDetectionFingerprint String?
+  lastDetectionAt          DateTime?
+  readerState              String    @default("idle") // offline | idle | listening | busy | error_backoff
+
   // C-SCHEMA-1: Added reverse relations
   processedPayments Payment[]   @relation("PaymentReaderPayments")
   orderCards        OrderCard[] @relation("OrderCardReader")
@@ -9325,6 +9336,47 @@ model LoyaltyTransaction {
   @@index([type])
   @@index([createdAt])
   @@index([customerId, createdAt(sort: Desc)])
+}
+
+// ─── Card Detection (Passive Card Detection — Always-Listening) ─────────────
+// Short-lived audit/resolution store for passive card reads. Server-side only.
+// recordNo scrubbed after 24h, rows deleted after 30d.
+
+model CardDetection {
+  id                   String    @id @default(cuid())
+  detectionId          String    @unique // UUID from detection
+  readerId             String
+  terminalId           String
+  sessionId            String
+  recordNo             String? // Datacap vault token (scrubbed after 24h)
+  cardType             String?
+  cardLast4            String?
+  cardholderName       String?
+  entryMethod          String?
+  walletType           String?
+  matchKind            String // 'open_tab_found' | 'no_open_tab' | 'ambiguous'
+  matchedOrderId       String?
+  decisionExpiresAt    DateTime
+  status               String    @default("pending") // pending | resolved | expired | suppressed
+  actionTaken          String? // open_tab | save_card | view_tab | dismissed
+  actionResult         String? // success | failed | expired
+  resolvedAt           DateTime?
+  resolvedByUserId     String?
+  resolvedByTerminalId String?
+  leaseVersion         Int?
+  suppressedReason     String? // duplicate_window | dismiss_cooldown
+  errorCode            String?
+  promptShownAt        DateTime?
+  promptDismissedAt    DateTime?
+  locationId           String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([readerId, createdAt(sort: Desc)])
+  @@index([terminalId, createdAt(sort: Desc)])
+  @@index([status, decisionExpiresAt])
+  @@index([matchedOrderId, createdAt(sort: Desc)])
+  @@index([locationId, detectionId])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables

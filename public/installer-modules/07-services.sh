@@ -97,6 +97,13 @@ fi
 echo "[pre-start] Cleaning stale Prisma cache..."
 rm -rf node_modules/.prisma 2>/dev/null || true
 
+# Clean stale .next.backup from inside project dir (Turbopack crash — scans 17k+ files)
+rm -rf "$_APP_DIR/.next.backup" 2>/dev/null || true
+# Also clean the outside-project backup if it exists from a previously failed build
+rm -rf /opt/gwi-pos/.next.backup 2>/dev/null || true
+# Remove stale .next/lock from interrupted builds (prevents build hangs)
+rm -f "$_APP_DIR/.next/lock" 2>/dev/null || true
+
 # Guard: DATABASE_URL must be set for any DB operations
 if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "[pre-start] FATAL: DATABASE_URL is not set. Check /opt/gwi-pos/.env"
@@ -312,6 +319,10 @@ User=$POSUSER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
 Environment=NODE_ENV=production
+# Self-healing sudoers: runs as root (+prefix) before pre-start.sh runs as POSUSER.
+# Existing venues installed before NOPASSWD ALL may have per-command sudoers that break
+# updates, component installs, and watchdog operations. This ensures NOPASSWD ALL on every boot.
+ExecStartPre=+/bin/bash -c 'grep -q "NOPASSWD: ALL" /etc/sudoers.d/gwi-pos 2>/dev/null || { echo "$POSUSER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/gwi-pos && chmod 440 /etc/sudoers.d/gwi-pos && echo "[sudoers] Fixed: NOPASSWD ALL for $POSUSER"; }'
 ExecStartPre=$APP_BASE/pre-start.sh
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always

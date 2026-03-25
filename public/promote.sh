@@ -379,6 +379,10 @@ log "STATION_ROLE=server written to .env"
 
 log "Starting POS application..."
 
+# Enable POS service (backup role has it disabled to prevent stale-data sync).
+# Must enable BEFORE start so the service auto-starts on future reboots.
+systemctl enable thepasspos 2>&1 | tee -a "$LOG_FILE" || true
+
 # Try systemd first (production), fall back to PM2
 if systemctl is-enabled thepasspos >/dev/null 2>&1; then
   systemctl restart thepasspos 2>&1 | tee -a "$LOG_FILE" || true

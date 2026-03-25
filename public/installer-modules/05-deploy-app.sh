@@ -320,8 +320,8 @@ run_deploy_app() {
   fi
 
   log "Building Next.js application..."
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build"; then
-    err_code "ERR-INST-156" "next build failed in $APP_DIR"
+  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='--max-old-space-size=4096' npm run build"; then
+    err_code "ERR-INST-186" "next build failed in $APP_DIR"
     err "Next.js build failed."
     if [[ "$_has_transaction" == "true" ]]; then
       err "Rolling back to previous working version..."

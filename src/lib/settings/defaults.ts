@@ -58,6 +58,7 @@ import type {
   PourControlSettings,
   ConvenienceFeeSettings,
   CfdDisplaySettings,
+  PassiveCardDetectionSettings,
   LocationSettings,
   POSLayoutSettings,
   PricingRule,
@@ -514,6 +515,17 @@ export const DEFAULT_CFD_DISPLAY: CfdDisplaySettings = {
   upsellMessage: 'While you wait...',
   idleScreenMessage: 'Welcome!',
   idleScreenImageUrl: '',
+}
+
+export const DEFAULT_PASSIVE_CARD_DETECTION: PassiveCardDetectionSettings = {
+  enabled: false,
+  mode: 'manual_only',
+  autoLoadExistingTabOnIdle: false,
+  allowSaveCardWithoutPreauth: false,
+  allowCardReuseAcrossOpenOrders: false,
+  duplicateReadSuppressionSeconds: 15,
+  listenTimeoutSeconds: 300,
+  readerErrorBackoffSeconds: 30,
 }
 
 export const DEFAULT_MENU_RESTORE_POINT_SETTINGS: MenuRestorePointSettings = {
@@ -1396,6 +1408,9 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       : undefined,
     cfdDisplay: partial.cfdDisplay
       ? { ...DEFAULT_CFD_DISPLAY, ...partial.cfdDisplay }
+      : undefined,
+    passiveCardDetection: partial.passiveCardDetection
+      ? { ...DEFAULT_PASSIVE_CARD_DETECTION, ...partial.passiveCardDetection }
       : undefined,
   }
 }

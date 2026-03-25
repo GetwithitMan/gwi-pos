@@ -124,7 +124,14 @@ HACHKEOF
 set -euo pipefail
 echo "[HA] Promoting to primary..."
 sudo -u postgres pg_ctl promote -D /var/lib/postgresql/17/main 2>/dev/null || sudo -u postgres pg_ctl promote -D /var/lib/postgresql/16/main 2>/dev/null || true
+# Enable POS service so it survives reboots (backup role has it disabled)
+sudo systemctl enable thepasspos
 sudo systemctl start thepasspos
+# Update STATION_ROLE in .env so POS knows it is now the primary
+if [ -f /opt/gwi-pos/.env ]; then
+  sed -i 's/STATION_ROLE=backup/STATION_ROLE=server/' /opt/gwi-pos/.env
+  echo "[HA] Updated STATION_ROLE to server in .env"
+fi
 echo "[HA] Promotion complete"
 PROMOTE
   chmod +x "$APP_BASE/scripts/promote.sh"

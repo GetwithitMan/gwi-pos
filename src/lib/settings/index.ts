@@ -97,6 +97,7 @@ export type {
   PourControlSettings,
   CfdDisplayMode,
   CfdDisplaySettings,
+  PassiveCardDetectionSettings,
   LocationSettings,
 } from './types'
 
@@ -157,6 +158,7 @@ export {
   DEFAULT_RESERVATION_INTEGRATION,
   RESERVATION_PLATFORMS,
   DEFAULT_CFD_DISPLAY,
+  DEFAULT_PASSIVE_CARD_DETECTION,
   DEFAULT_SETTINGS,
   mergeWithDefaults,
   getPricingProgram,

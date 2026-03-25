@@ -1073,6 +1073,15 @@ async function processCommand(dataStr) {
           log('[Sync] Updated STATION_ROLE to server in .env')
         }
 
+        // Enable POS service (backup role has it disabled to prevent stale-data sync)
+        // Must enable BEFORE restart so the service survives reboots after promotion.
+        try {
+          execSync('sudo systemctl enable thepasspos', { encoding: 'utf8', timeout: 10000 })
+          log('[Sync] POS service enabled for auto-start')
+        } catch (enableErr) {
+          log('[Sync] Warning: POS enable failed: ' + enableErr.message)
+        }
+
         // Restart POS service to pick up new role
         try {
           execSync('sudo systemctl restart thepasspos', { encoding: 'utf8', timeout: 30000 })

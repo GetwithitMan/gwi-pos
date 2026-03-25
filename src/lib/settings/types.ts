@@ -1378,6 +1378,19 @@ export interface CfdDisplaySettings {
   idleScreenImageUrl: string          // custom idle screen image/logo
 }
 
+// ─── Passive Card Detection Settings ────────────────────────────────────────
+
+export interface PassiveCardDetectionSettings {
+  enabled: boolean
+  mode: 'always_on' | 'manual_only' | 'disabled'
+  autoLoadExistingTabOnIdle: boolean
+  allowSaveCardWithoutPreauth: boolean
+  allowCardReuseAcrossOpenOrders: boolean
+  duplicateReadSuppressionSeconds: number
+  listenTimeoutSeconds: number
+  readerErrorBackoffSeconds: number
+}
+
 // ─── The Main LocationSettings Interface ─────────────────────────────────────
 
 export interface LocationSettings {
@@ -1457,4 +1470,5 @@ export interface LocationSettings {
   venuePortal?: VenuePortalSettings                     // Customer-facing portal (branding, rewards, order history) (optional for backward compat)
   twilio?: TwilioSettings                               // Twilio SMS integration credentials (optional for backward compat)
   cfdDisplay?: CfdDisplaySettings                         // Customer-facing display configuration (optional for backward compat)
+  passiveCardDetection?: PassiveCardDetectionSettings     // Passive card detection / always-listening reader (optional for backward compat)
 }
