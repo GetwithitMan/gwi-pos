@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST /api/hardware/kds-screens/[id]/generate-code - Generate a pairing code
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -34,6 +35,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         // Don't reset isPaired - allow re-pairing without losing existing pairing
       },
     })
+
+    void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'updated', entityId: id })
 
     return NextResponse.json({ data: {
       pairingCode,
