@@ -124,7 +124,7 @@ export const POST = withVenue(async function POST(
         taxFromInclusive: orderTotals.taxFromInclusive,
         taxFromExclusive: orderTotals.taxFromExclusive,
         total: orderTotals.total,
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       },
       select: {
         id: true,
@@ -201,6 +201,10 @@ export const DELETE = withVenue(async function DELETE(
     const actor = await getActorFromRequest(request)
     const requestingEmployeeId = actor.employeeId ||
       request.nextUrl.searchParams.get('employeeId')
+
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularDeleteTaxExempt = request.headers.get('x-cellular-authenticated') === '1'
+    const deleteMutationOrigin = isCellularDeleteTaxExempt ? 'cloud' : 'local'
 
     // Fetch order with items for recalculation
     const order = await db.order.findUnique({
@@ -282,7 +286,7 @@ export const DELETE = withVenue(async function DELETE(
         taxFromInclusive: orderTotals.taxFromInclusive,
         taxFromExclusive: orderTotals.taxFromExclusive,
         total: orderTotals.total,
-        lastMutatedBy: 'local',
+        lastMutatedBy: deleteMutationOrigin,
       },
       select: {
         id: true,

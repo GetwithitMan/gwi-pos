@@ -31,6 +31,8 @@ export interface CompVoidInput {
   itemQuantity: number
   itemTotal: number
   isBottleService: boolean
+  /** HA cellular sync — 'cloud' for cellular-originated, 'local' for LAN-originated */
+  mutationOrigin?: 'cloud' | 'local'
 }
 
 export interface RestoreInput {

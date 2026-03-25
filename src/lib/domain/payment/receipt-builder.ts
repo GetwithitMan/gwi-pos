@@ -24,6 +24,8 @@ interface ReceiptOrder {
   tipTotal: unknown
   total: unknown
   convenienceFee?: unknown
+  pagerNumber?: string | null
+  fulfillmentMode?: string | null
   createdAt: Date
   table?: { name: string } | null
   employee?: {
@@ -234,6 +236,9 @@ export function buildReceiptData(
     surchargeDisclosure,
     convenienceFee: convenienceFeeAmount > 0 ? convenienceFeeAmount : null,
     convenienceFeeDisclosure: convenienceFeeAmount > 0 ? convenienceFeeDisclosure : null,
+    // Notification pager info
+    pagerNumber: order.pagerNumber ?? null,
+    fulfillmentMode: order.fulfillmentMode ?? null,
     // Donations
     donationAmount: (order as any).donationAmount != null ? Number((order as any).donationAmount) : null,
     // Tax exemption

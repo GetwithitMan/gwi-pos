@@ -101,6 +101,9 @@ export interface ReceiptData {
   isTaxExempt?: boolean
   taxExemptReason?: string | null
   taxExemptId?: string | null
+  // Notification pager info
+  pagerNumber?: string | null
+  fulfillmentMode?: string | null
 }
 
 interface ReceiptProps {
@@ -196,6 +199,18 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
           <div className="flex justify-between">
             <span>Guests:</span>
             <span>{data.guestCount}</span>
+          </div>
+        )}
+        {data.pagerNumber && (
+          <div className="flex justify-between">
+            <span>Pager:</span>
+            <span className="font-bold">#{data.pagerNumber}</span>
+          </div>
+        )}
+        {data.fulfillmentMode && (
+          <div className="flex justify-between">
+            <span>Fulfillment:</span>
+            <span className="font-semibold uppercase">{data.fulfillmentMode.replace('_', ' ')}</span>
           </div>
         )}
       </div>

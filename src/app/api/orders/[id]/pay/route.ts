@@ -2040,6 +2040,18 @@ export const POST = withVenue(withTiming(async function POST(
       }, { async: true }).catch(() => {})
     }
 
+    // Notification Platform: auto-release pager assignments when order is paid
+    if (orderIsPaid) {
+      void (async () => {
+        try {
+          const { releaseAssignmentsForSubject } = await import('@/lib/notifications/release-assignments')
+          await releaseAssignmentsForSubject(order.locationId, 'order', order.id, 'order_paid', employeeId || undefined)
+        } catch (releaseErr) {
+          console.warn('[Pay] Failed to release notification assignments:', releaseErr)
+        }
+      })()
+    }
+
     // Notify CFD that receipt was sent — transitions CFD to thank-you screen (fire-and-forget)
     if (orderIsPaid) {
       dispatchCFDReceiptSent(order.locationId, null, {

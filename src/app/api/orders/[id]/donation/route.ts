@@ -18,6 +18,10 @@ export const POST = withVenue(async function POST(
     const body = await request.json()
     const { amount } = body as { amount: number }
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularDonation = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularDonation ? 'cloud' : 'local'
+
     if (typeof amount !== 'number' || amount < 0) {
       return NextResponse.json(
         { error: 'amount must be a non-negative number' },
@@ -90,7 +94,7 @@ export const POST = withVenue(async function POST(
         data: {
           donationAmount: roundedAmount,
           total: { increment: totalAdjustment },
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         },
         select: {
           id: true,
@@ -166,6 +170,10 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id: orderId } = await params
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularDeleteDonation = request.headers.get('x-cellular-authenticated') === '1'
+    const deleteMutationOrigin = isCellularDeleteDonation ? 'cloud' : 'local'
+
     const order = await db.order.findUnique({
       where: { id: orderId },
       select: {
@@ -225,7 +233,7 @@ export const DELETE = withVenue(async function DELETE(
         data: {
           donationAmount: null,
           total: { decrement: previousDonation },
-          lastMutatedBy: 'local',
+          lastMutatedBy: deleteMutationOrigin,
         },
         select: {
           id: true,

@@ -79,6 +79,10 @@ interface OrderPanelActionsProps {
   // Repeat Round — repeats all items from the last sent batch
   lastSentItemIds?: Set<string>
   onRepeatRound?: () => void
+  // Notification pager support
+  pagerNumber?: string | null
+  notificationProvidersActive?: boolean
+  onPageNow?: () => void
 }
 
 export const OrderPanelActions = memo(function OrderPanelActions({
@@ -140,6 +144,9 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   onDonation,
   lastSentItemIds,
   onRepeatRound,
+  pagerNumber,
+  notificationProvidersActive,
+  onPageNow,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showDonationPopover, setShowDonationPopover] = useState(false)
@@ -812,6 +819,35 @@ export const OrderPanelActions = memo(function OrderPanelActions({
           </>
         )
       })()}
+
+      {/* Page Now — visible when pager is assigned and notification providers are active */}
+      {pagerNumber && notificationProvidersActive && onPageNow && hasItems && hasSentItems && (
+        <button
+          onClick={onPageNow}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: '10px',
+            border: '2px solid rgba(20, 184, 166, 0.4)',
+            background: 'rgba(20, 184, 166, 0.1)',
+            color: '#14b8a6',
+            fontSize: '13px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            marginBottom: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+          }}
+        >
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+          Page Now (#{pagerNumber})
+        </button>
+      )}
 
       {/* $0 Balance Auto-Close: show "Close Table" when all items are voided/comped */}
       {hasItems && !hasPendingItems && hasSentItems && total === 0 && onPay && (

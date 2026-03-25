@@ -96,6 +96,8 @@ function localToUTC(
   msAdjust: number,
   tz: string
 ): Date {
+  // Sanitize POSIX-style TZ (":UTC" → "UTC") — Vercel/some systems set TZ=:UTC
+  if (tz.startsWith(':')) tz = tz.slice(1)
   // Step 1: Make a rough UTC guess (treat the local time as UTC)
   const [year, month, day] = dateStr.split('-').map(Number)
   const guessUTC = new Date(Date.UTC(year, month - 1, day, h, m, s, 0))

@@ -76,19 +76,75 @@ export const PUT = withVenue(async function PUT(
 
     const updatedEntry = updated[0]
 
-    // Send SMS notification when status changes to 'notified'
-    if (status === 'notified' && waitlistConfig.smsNotifications && entry.phone && isTwilioConfigured()) {
-      // Get venue name for the SMS
-      const location = await db.location.findFirst({
-        where: { id: locationId },
-        select: { name: true },
-      })
-      const venueName = location?.name || 'the restaurant'
+    // Notification Platform: dispatch waitlist_ready notification
+    if (status === 'notified') {
+      // Look up pagerNumber from target assignment (source of truth)
+      let assignedPager: string | null = null
+      try {
+        const pagerAssignment: any[] = await db.$queryRawUnsafe(
+          `SELECT "targetValue" FROM "NotificationTargetAssignment"
+           WHERE "locationId" = $1
+             AND "subjectType" = 'waitlist_entry'
+             AND "subjectId" = $2
+             AND status = 'active'
+             AND "targetType" IN ('guest_pager', 'staff_pager')
+           ORDER BY "isPrimary" DESC LIMIT 1`,
+          locationId, id
+        )
+        assignedPager = pagerAssignment[0]?.targetValue || entry.pagerNumber || null
+      } catch { /* non-fatal */ }
 
-      void sendSMS({
-        to: entry.phone,
-        body: `Hi ${entry.customerName}, your table is ready at ${venueName}! Please check in within ${waitlistConfig.autoRemoveAfterMinutes} minutes.`,
-      }).catch(err => console.error('[Waitlist] SMS send failed:', err))
+      // Try the notification platform first
+      let usedNotificationPlatform = false
+      try {
+        const { notifyEvent } = await import('@/lib/notifications/dispatcher')
+        await notifyEvent({
+          locationId,
+          eventType: 'waitlist_ready',
+          subjectType: 'waitlist_entry',
+          subjectId: id,
+          subjectVersion: 1,
+          sourceSystem: 'pos',
+          sourceEventId: `waitlist_notify:${id}:${updatedEntry.updatedAt}`,
+          dispatchOrigin: 'automatic',
+          businessStage: 'initial_ready',
+          contextSnapshot: {
+            customerName: entry.customerName,
+            partySize: entry.partySize,
+            phone: entry.phone,
+            pagerNumber: assignedPager,
+          },
+        })
+        usedNotificationPlatform = true
+      } catch {
+        // Dispatcher not available — fall back to direct Twilio SMS (legacy path)
+      }
+
+      // Legacy fallback: direct Twilio SMS when notification platform is not active
+      if (!usedNotificationPlatform && waitlistConfig.smsNotifications && entry.phone && isTwilioConfigured()) {
+        const location = await db.location.findFirst({
+          where: { id: locationId },
+          select: { name: true },
+        })
+        const venueName = location?.name || 'the restaurant'
+
+        void sendSMS({
+          to: entry.phone,
+          body: `Hi ${entry.customerName}, your table is ready at ${venueName}! Please check in within ${waitlistConfig.autoRemoveAfterMinutes} minutes.`,
+        }).catch(err => console.error('[Waitlist] SMS send failed:', err))
+      }
+    }
+
+    // Auto-release pager when waitlist entry is seated, cancelled, or no_show
+    if (status === 'seated' || status === 'cancelled' || status === 'no_show') {
+      void (async () => {
+        try {
+          const { releaseAssignmentsForSubject } = await import('@/lib/notifications/release-assignments')
+          await releaseAssignmentsForSubject(locationId, 'waitlist_entry', id, `waitlist_${status}`)
+        } catch (releaseErr) {
+          console.warn('[Waitlist] Failed to release pager assignments:', releaseErr)
+        }
+      })()
     }
 
     // Recalculate positions for remaining active entries

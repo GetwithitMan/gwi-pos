@@ -44,6 +44,10 @@ export const POST = withVenue(async function POST(
       employeeId?: string
     }
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularCombo = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularCombo ? 'cloud' : 'local'
+
     if (!comboTemplateId || !itemIds?.length) {
       return NextResponse.json(
         { error: 'comboTemplateId and itemIds are required' },
@@ -221,7 +225,7 @@ export const POST = withVenue(async function POST(
           categoryType: catType,
           quantity: 1,
           itemTotal: comboItemTotal,
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
           modifiers: {
             create: carryModifiers.map(m => ({
               locationId: m.locationId,
@@ -288,7 +292,7 @@ export const POST = withVenue(async function POST(
         commissionTotal: totals.commissionTotal,
         itemCount: allActiveItems.reduce((sum, i) => sum + i.quantity, 0),
         version: { increment: 1 },
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       }, tx)
       // Re-read the order for the return value (updateOrder uses updateMany, returns count)
       const updatedOrder = await OrderRepository.getOrderByIdOrThrow(orderId, order.locationId, tx)

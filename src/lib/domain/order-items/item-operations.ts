@@ -28,6 +28,8 @@ export interface CreateOrderItemParams {
   hasSentItems: boolean
   idempotencyKey: string | null
   pricingRules?: PricingRule[]
+  /** HA cellular sync — 'cloud' for cellular-originated, 'local' for LAN-originated */
+  mutationOrigin?: 'cloud' | 'local'
 }
 
 /**
@@ -50,6 +52,7 @@ export async function createOrderItem(
     hasSentItems,
     idempotencyKey,
     pricingRules,
+    mutationOrigin = 'local',
   } = params
   const { item, effectivePrice, fullItemTotal: preRuleItemTotal, itemCommission: preRuleCommission, menuItem, catType, itemTaxInclusive } = prepData
 
@@ -179,7 +182,7 @@ export async function createOrderItem(
       pricingOptionLabel: item.pricingOptionLabel ?? null,
       ...(pricingRuleApplied ? { pricingRuleApplied: pricingRuleApplied as object } : {}),
       ...({ tipExempt: (menuItem as any)?.tipExempt ?? false } as any),
-      lastMutatedBy: 'local',
+      lastMutatedBy: mutationOrigin,
       // Modifiers
       modifiers: validatedModifiers?.length ? {
         create: validatedModifiers.map(mod => ({

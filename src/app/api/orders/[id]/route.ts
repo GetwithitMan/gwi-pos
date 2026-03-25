@@ -370,6 +370,7 @@ export const PUT = withVenue(async function PUT(
       employeeId,
       version,
       isTaxExempt,
+      fulfillmentMode: putFulfillmentMode,
     } = body as {
       tabName?: string
       guestCount?: number
@@ -382,6 +383,12 @@ export const PUT = withVenue(async function PUT(
       employeeId?: string
       version?: number
       isTaxExempt?: boolean
+      fulfillmentMode?: string
+    }
+
+    // Notification Platform: reject raw pagerNumber — cache-only field
+    if (body.pagerNumber !== undefined) {
+      console.warn(`[Orders PUT] DEPRECATED: raw pagerNumber sent in PUT body for order ${id}. Use /api/notifications/assign instead. Value ignored.`)
     }
 
     // Input validation for fields that bypass Zod
@@ -551,6 +558,13 @@ export const PUT = withVenue(async function PUT(
     if (orderTypeId !== undefined) updateData.orderTypeId = orderTypeId
     if (customerId !== undefined) updateData.customerId = customerId
     if (employeeId !== undefined) updateData.employeeId = employeeId
+    // Notification Platform: fulfillmentMode (PUT)
+    if (putFulfillmentMode !== undefined) {
+      void db.$executeRawUnsafe(
+        `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2 AND "locationId" = $3`,
+        putFulfillmentMode, id, existingOrder.locationId
+      ).catch(console.error)
+    }
     if (status !== undefined) {
       // Status transition validation — single source of truth in domain module
       const transition = validateTransition(existingOrder.status, status)
@@ -717,6 +731,22 @@ export const PUT = withVenue(async function PUT(
           console.error('[Order Update] Failed to auto-stop entertainment sessions:', cleanupErr)
         }
       })()
+
+      // Notification Platform: auto-release all pager assignments when order closes (PUT)
+      void (async () => {
+        try {
+          const { releaseAssignmentsForSubject } = await import('@/lib/notifications/release-assignments')
+          await releaseAssignmentsForSubject(
+            updatedOrder.locationId,
+            'order',
+            id,
+            `order_${status}`,
+            body.employeeId || undefined
+          )
+        } catch (releaseErr) {
+          console.warn('[Order Update] Failed to release notification assignments:', releaseErr)
+        }
+      })()
     }
 
     // FIX-011: Dispatch real-time totals update if tip changed (fire-and-forget)
@@ -761,6 +791,7 @@ export const PATCH = withVenue(async function PATCH(
       status,
       employeeId,
       isTaxExempt,
+      fulfillmentMode,
     } = body as {
       tabName?: string
       guestCount?: number
@@ -772,6 +803,12 @@ export const PATCH = withVenue(async function PATCH(
       status?: string
       employeeId?: string
       isTaxExempt?: boolean
+      fulfillmentMode?: string
+    }
+
+    // Notification Platform: reject raw pagerNumber — cache-only field
+    if (body.pagerNumber !== undefined) {
+      console.warn(`[Orders PATCH] DEPRECATED: raw pagerNumber sent in PATCH body for order ${id}. Use /api/notifications/assign instead. Value ignored.`)
     }
 
     // Input validation for fields that bypass Zod
@@ -919,6 +956,14 @@ export const PATCH = withVenue(async function PATCH(
     if (orderTypeId !== undefined) updateData.orderTypeId = orderTypeId
     if (customerId !== undefined) updateData.customerId = customerId
     if (employeeId !== undefined) updateData.employeeId = employeeId
+    // Notification Platform: fulfillmentMode (dine_in, takeout, curbside, delivery, etc.)
+    if (fulfillmentMode !== undefined) {
+      // fulfillmentMode is stored via raw SQL since it may not be in Prisma schema yet
+      void db.$executeRawUnsafe(
+        `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2 AND "locationId" = $3`,
+        fulfillmentMode, id, existing.locationId
+      ).catch(console.error)
+    }
     if (isTaxExempt !== undefined) {
       updateData.isTaxExempt = isTaxExempt
       if (taxExemptTotals) {
@@ -1043,6 +1088,22 @@ export const PATCH = withVenue(async function PATCH(
           }
         } catch (cleanupErr) {
           console.error('[Order PATCH] Failed to auto-stop entertainment sessions:', cleanupErr)
+        }
+      })()
+
+      // Notification Platform: auto-release all pager assignments when order closes
+      void (async () => {
+        try {
+          const { releaseAssignmentsForSubject } = await import('@/lib/notifications/release-assignments')
+          await releaseAssignmentsForSubject(
+            updatedOrder.locationId,
+            'order',
+            id,
+            `order_${status}`,
+            body.requestingEmployeeId || body.employeeId || undefined
+          )
+        } catch (releaseErr) {
+          console.warn('[Order PATCH] Failed to release notification assignments:', releaseErr)
         }
       })()
     }

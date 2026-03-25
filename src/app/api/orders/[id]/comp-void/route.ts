@@ -249,6 +249,7 @@ export const POST = withVenue(async function POST(
         itemQuantity: item!.quantity,
         itemTotal,
         isBottleService: order.isBottleService,
+        mutationOrigin: isCellularCompVoid ? 'cloud' : 'local',
       }, order.location.settings as { tax?: { defaultRate?: number } })
     })
 

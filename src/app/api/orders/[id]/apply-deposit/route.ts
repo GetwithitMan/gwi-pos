@@ -33,6 +33,10 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json() as ApplyDepositRequest
+
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularDeposit = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularDeposit ? 'cloud' : 'local'
     const { reservationId } = body
 
     if (!reservationId) {
@@ -231,7 +235,7 @@ export const POST = withVenue(async function POST(
           total: newTotals.total,
           taxTotal: newTotals.taxTotal,
           version: { increment: 1 },
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         },
       })
 

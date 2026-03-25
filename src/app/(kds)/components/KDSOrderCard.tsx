@@ -56,6 +56,8 @@ export interface KDSOrder {
   deliveryAddress?: string | null
   deliveryInstructions?: string | null
   source?: string | null
+  // Notification pager info
+  pagerNumber?: string | null
   items: KDSItem[]
 }
 
@@ -178,6 +180,11 @@ export const KDSOrderCard = memo(function KDSOrderCard({
           <span className={`px-2 py-0.5 rounded text-xs font-medium ${ORDER_TYPE_COLORS[order.orderType]} text-white`}>
             {ORDER_TYPE_LABELS[order.orderType] || order.orderType}
           </span>
+          {order.pagerNumber && (
+            <span className="px-2 py-0.5 rounded text-xs font-bold bg-teal-900/60 text-teal-300 border border-teal-700/50">
+              Pager #{order.pagerNumber}
+            </span>
+          )}
         </div>
         <div className={`text-lg font-mono font-bold ${getTimeStatusColor(order.timeStatus)}`}>
           {formatTime(order.elapsedMinutes)}

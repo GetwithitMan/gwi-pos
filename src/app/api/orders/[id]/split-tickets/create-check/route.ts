@@ -18,6 +18,10 @@ export const POST = withVenue(withAuth(async function POST(
   try {
     const { id } = await params
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularSplit = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularSplit ? 'cloud' : 'local'
+
     // Get parent order
     const parentOrder = await db.order.findUnique({
       where: { id },
@@ -89,7 +93,7 @@ export const POST = withVenue(withAuth(async function POST(
         baseSeatCount: 0,
         extraSeatCount: 0,
         seatVersion: 0,
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       },
       select: {
         id: true,

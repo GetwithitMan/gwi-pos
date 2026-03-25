@@ -49,6 +49,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const showAll = searchParams.get('showAll') === 'true' // Expo mode
     const cursor = searchParams.get('cursor')
     const screenId = searchParams.get('screenId') // KDS Overhaul: for forwarded-item queries
+    const includePager = searchParams.get('includePager') !== 'false' // Default: include pagerNumber when present
 
     if (!locationId) {
       return NextResponse.json(
@@ -286,6 +287,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         elapsedMinutes,
         timeStatus,
         notes: order.notes,
+        // Notification pager info — included by default, opt out with ?includePager=false
+        ...(includePager && (order as any).pagerNumber ? { pagerNumber: (order as any).pagerNumber } : {}),
         // Delivery customer info (from DeliveryOrder table)
         customerName: deliveryInfo?.customerName || null,
         customerPhone: deliveryInfo?.phone || null,
@@ -704,38 +707,92 @@ const putHandler = async function PUT(request: NextRequest) {
         })()
       }
 
-      // Phase 8: SMS on ready — send SMS when order is fully bumped (final) and configured
-      if ((action === 'bump_order') && !isIntermediateBump && !isDoubleBump && screenId && isTwilioConfigured()) {
+      // Phase 8: Notification Platform — order_ready on final bump
+      // Try the notification platform first, fall back to direct SMS
+      if ((action === 'bump_order') && !isIntermediateBump && !isDoubleBump) {
         void (async () => {
           try {
-            const screen = await db.kDSScreen.findUnique({
-              where: { id: screenId },
-              select: { orderBehavior: true },
-            })
-            const behavior = screen?.orderBehavior as { sendSmsOnReady?: boolean } | null
-            if (!behavior?.sendSmsOnReady) return
-
-            // Look up order for customer phone
+            // Look up order info for notification context
             const order = await db.order.findUnique({
               where: { id: orderId },
               select: {
                 orderNumber: true,
                 orderType: true,
+                pagerNumber: true,
+                tabName: true,
                 customer: { select: { phone: true, firstName: true } },
               },
             })
-            if (!order?.customer?.phone) return
+            if (!order) return
 
-            const phone = formatPhoneE164(order.customer.phone)
-            if (!phone) return
+            // Look up pagerNumber from target assignment (source of truth)
+            let pagerNumber: string | null = order.pagerNumber || null
+            try {
+              const pagerResult: any[] = await db.$queryRawUnsafe(
+                `SELECT "targetValue" FROM "NotificationTargetAssignment"
+                 WHERE "locationId" = $1
+                   AND "subjectType" = 'order'
+                   AND "subjectId" = $2
+                   AND status = 'active'
+                   AND "targetType" IN ('guest_pager', 'staff_pager')
+                 ORDER BY "isPrimary" DESC LIMIT 1`,
+                locationId, orderId
+              )
+              if (pagerResult[0]?.targetValue) {
+                pagerNumber = pagerResult[0].targetValue
+              }
+            } catch { /* non-fatal */ }
 
-            const name = order.customer.firstName || 'there'
-            await sendSMS({
-              to: phone,
-              body: `Hi ${name}! Your order #${order.orderNumber} is ready${order.orderType === 'takeout' ? ' for pickup' : ''}. Thank you!`,
-            })
+            // Try notification platform first
+            let usedNotificationPlatform = false
+            try {
+              const { notifyEvent } = await import('@/lib/notifications/dispatcher')
+              const version = order.orderNumber || 1
+              await notifyEvent({
+                locationId,
+                eventType: 'order_ready' as any,
+                subjectType: 'order',
+                subjectId: orderId,
+                subjectVersion: version,
+                sourceSystem: 'kds',
+                sourceEventId: `kds_bump:${orderId}:${screenId}:${version}`,
+                dispatchOrigin: 'automatic',
+                businessStage: 'initial_ready' as any,
+                contextSnapshot: {
+                  orderNumber: order.orderNumber,
+                  orderType: order.orderType,
+                  pagerNumber,
+                  tabName: order.tabName,
+                  customerName: order.customer?.firstName || null,
+                  customerPhone: order.customer?.phone || null,
+                },
+              })
+              usedNotificationPlatform = true
+            } catch {
+              // Dispatcher not available — fall back to legacy SMS
+            }
+
+            // Legacy fallback: direct Twilio SMS
+            if (!usedNotificationPlatform && screenId && isTwilioConfigured()) {
+              const screen = await db.kDSScreen.findUnique({
+                where: { id: screenId },
+                select: { orderBehavior: true },
+              })
+              const behavior = screen?.orderBehavior as { sendSmsOnReady?: boolean } | null
+              if (!behavior?.sendSmsOnReady) return
+              if (!order.customer?.phone) return
+
+              const phone = formatPhoneE164(order.customer.phone)
+              if (!phone) return
+
+              const name = order.customer.firstName || 'there'
+              await sendSMS({
+                to: phone,
+                body: `Hi ${name}! Your order #${order.orderNumber} is ready${order.orderType === 'takeout' ? ' for pickup' : ''}. Thank you!`,
+              })
+            }
           } catch (err) {
-            console.error('[KDS] SMS-on-ready failed:', err)
+            console.error('[KDS] Notification/SMS-on-ready failed:', err)
           }
         })()
       }

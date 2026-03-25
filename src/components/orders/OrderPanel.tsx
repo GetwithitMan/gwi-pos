@@ -173,6 +173,11 @@ export interface OrderPanelProps {
   lastSentItemIds?: Set<string>
   // Repeat Round — repeats all items from the last sent batch
   onRepeatRound?: () => void
+  // Notification pager support
+  pagerNumber?: string | null
+  pagerStatus?: string | null
+  notificationProvidersActive?: boolean
+  onPagerAssigned?: (pagerNumber: string) => void
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -308,6 +313,11 @@ export const OrderPanel = memo(function OrderPanel({
   lastSentItemIds,
   // Repeat Round
   onRepeatRound,
+  // Notification pager
+  pagerNumber,
+  pagerStatus,
+  notificationProvidersActive,
+  onPagerAssigned,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -321,6 +331,35 @@ export const OrderPanel = memo(function OrderPanel({
 
   // Shared ownership modal
   const [showShareOwnership, setShowShareOwnership] = useState(false)
+
+  // Pager assignment
+  const [assigningPager, setAssigningPager] = useState(false)
+  const handleAssignPager = useCallback(async () => {
+    if (!orderId || assigningPager) return
+    setAssigningPager(true)
+    try {
+      const res = await fetch('/api/notifications/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectType: 'order', subjectId: orderId }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const pager = data?.data?.pagerNumber || data?.data?.deviceNumber
+        if (pager) {
+          onPagerAssigned?.(pager)
+          toast.success(`Pager #${pager} assigned`)
+        }
+      } else {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err?.error || 'Failed to assign pager')
+      }
+    } catch {
+      toast.error('Failed to assign pager')
+    } finally {
+      setAssigningPager(false)
+    }
+  }, [orderId, assigningPager, onPagerAssigned])
 
   // Customer modal + linked customer state
   const [showCustomerModal, setShowCustomerModal] = useState(false)
@@ -1531,6 +1570,48 @@ export const OrderPanel = memo(function OrderPanel({
                   <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', textTransform: 'capitalize' }}>
                     {orderType.replace('_', ' ')}
                   </p>
+                )}
+                {/* Pager number badge — visible when notification providers are active */}
+                {pagerNumber && (
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '4px',
+                    padding: '2px 8px', background: 'rgba(20, 184, 166, 0.15)',
+                    border: '1px solid rgba(20, 184, 166, 0.3)', borderRadius: '4px',
+                  }}>
+                    <svg width="12" height="12" fill="none" stroke="#14b8a6" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#14b8a6' }}>
+                      Pager #{pagerNumber}
+                    </span>
+                    {pagerStatus && (
+                      <span style={{
+                        fontSize: '9px', fontWeight: 600,
+                        color: pagerStatus === 'active' ? '#10b981' : '#94a3b8',
+                        textTransform: 'uppercase',
+                      }}>
+                        {pagerStatus}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!pagerNumber && notificationProvidersActive && orderId && !orderId.startsWith('temp-') && (
+                  <button
+                    onClick={handleAssignPager}
+                    disabled={assigningPager}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px',
+                      fontSize: '11px', fontWeight: 500, color: '#14b8a6',
+                      padding: '2px 8px', background: 'rgba(20, 184, 166, 0.1)',
+                      border: '1px solid rgba(20, 184, 166, 0.2)', borderRadius: '4px',
+                      cursor: assigningPager ? 'wait' : 'pointer', opacity: assigningPager ? 0.6 : 1,
+                    }}
+                  >
+                    <svg width="11" height="11" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    {assigningPager ? 'Assigning...' : 'Assign Pager'}
+                  </button>
                 )}
                 {/* Share Table/Tab button + Customer button */}
                 {orderId && (<>

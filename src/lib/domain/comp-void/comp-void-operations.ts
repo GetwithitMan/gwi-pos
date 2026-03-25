@@ -44,6 +44,7 @@ export async function applyCompVoid(
     orderId, itemId, action, reason, employeeId,
     wasMade, approvedById, approvedAt, remoteApprovalId,
     locationId, itemName, itemQuantity, itemTotal, isBottleService,
+    mutationOrigin = 'local',
   } = input
 
   const newStatus = action === 'comp' ? 'comped' : 'voided'
@@ -97,7 +98,7 @@ export async function applyCompVoid(
       status: newStatus,
       voidReason: reason,
       wasMade: itemWasMade,
-      lastMutatedBy: 'local',
+      lastMutatedBy: mutationOrigin,
     },
   })
 
@@ -256,7 +257,7 @@ export async function applyCompVoid(
       ...(isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
       ...(shouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
       version: { increment: 1 },
-      lastMutatedBy: 'local',
+      lastMutatedBy: mutationOrigin,
     },
   })
 

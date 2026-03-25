@@ -38,6 +38,9 @@ export interface ReceiptOrderData {
   locationPhone?: string | null
   createdAt: string
   paidAt?: string | null
+  // Notification pager info
+  pagerNumber?: string | null
+  fulfillmentMode?: string | null
   // Reservation info (populated when order is linked to a reservation)
   reservation?: {
     guestName: string
@@ -161,6 +164,15 @@ export function buildCustomerReceipt(
   content.push(line(dateStr))
   if (order.guestCount && order.guestCount > 0) {
     content.push(line(`Guests: ${order.guestCount}`))
+  }
+
+  // ── Pager / fulfillment mode ──
+  if (order.pagerNumber) {
+    content.push(line(`Pager: #${order.pagerNumber}`))
+  }
+  if (order.fulfillmentMode) {
+    const modeLabel = order.fulfillmentMode.toUpperCase().replace('_', ' ')
+    content.push(line(modeLabel))
   }
 
   // ── Reservation info ──

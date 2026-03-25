@@ -55,6 +55,10 @@ export const PUT = withVenue(async function PUT(
     const body = await request.json()
     const { seatNumber, allergyNotes } = body as { seatNumber: number; allergyNotes: string }
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularSeatNotes = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularSeatNotes ? 'cloud' : 'local'
+
     if (typeof seatNumber !== 'number' || seatNumber < 1) {
       return NextResponse.json(
         { error: 'seatNumber must be a positive integer' },
@@ -114,7 +118,7 @@ export const PUT = withVenue(async function PUT(
       where: { id: orderId },
       data: {
         notes: newNotes,
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       },
       select: {
         id: true,

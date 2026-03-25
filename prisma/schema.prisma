@@ -2601,6 +2601,11 @@ model Order {
   // Loyalty System (Migration 098)
   loyaltyTransactions LoyaltyTransaction[]
 
+  // Notification Platform (Migration 107)
+  pagerNumber       String? // Cache-only. Source of truth = NotificationTargetAssignment
+  fulfillmentMode   String? // dine_in, takeout, delivery, curbside, etc.
+  readyCycleCounter Int     @default(0) // Increments on send-to-kitchen after recall/remake only
+
   @@index([employeeId])
   @@index([tableId])
   @@index([customerId])
@@ -9379,6 +9384,236 @@ model CardDetection {
   @@index([status, decisionExpiresAt])
   @@index([matchedOrderId, createdAt(sort: Desc)])
   @@index([locationId, detectionId])
+}
+
+// ============================================
+// NOTIFICATION PLATFORM (Migration 107)
+// ============================================
+
+/// One row per logical notification workflow. Never modified after terminal state.
+model NotificationJob {
+  id                  String   @id @default(cuid())
+  locationId          String
+  eventType           String
+  subjectType         String
+  subjectId           String
+  status              String   @default("pending")
+  currentAttempt      Int      @default(0)
+  maxAttempts         Int      @default(3)
+  terminalResult      String?
+  dispatchOrigin      String
+  businessStage       String
+  executionStage      String
+  routingRuleId       String?
+  providerId          String
+  fallbackProviderId  String?
+  targetType          String
+  targetValue         String
+  scheduledFor        DateTime?
+  availableAt         DateTime @default(now())
+  executionZone       String   @default("any")
+  claimedByWorkerId   String?
+  claimedAt           DateTime?
+  processingTimeoutAt DateTime?
+  contextSnapshot     Json
+  messageTemplate     String?
+  messageRendered     String?
+  policySnapshot      Json
+  ruleExplainSnapshot Json?
+  subjectVersion      Int
+  isProbe             Boolean  @default(false)
+  sourceSystem        String
+  sourceEventId       String
+  sourceEventVersion  Int      @default(1)
+  idempotencyKey      String
+  correlationId       String
+  parentJobId         String?
+  notificationEngine  String
+  lastAttemptAt       DateTime?
+  resolvedAt          DateTime?
+  resolvedByEmployeeId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  completedAt         DateTime?
+
+  @@unique([locationId, sourceSystem, sourceEventId, sourceEventVersion])
+  @@index([correlationId])
+  @@index([subjectType, subjectId])
+}
+
+/// Immutable delivery execution log. One row per send attempt.
+model NotificationAttempt {
+  id                 String   @id @default(cuid())
+  jobId              String
+  providerId         String
+  providerType       String
+  targetType         String
+  targetValue        String
+  messageRendered    String?
+  attemptNumber      Int
+  startedAt          DateTime
+  completedAt        DateTime?
+  result             String
+  latencyMs          Int?
+  rawResponse        String?
+  providerMessageId  String?
+  providerStatusCode String?
+  deliveryConfidence String?
+  errorCode          String?
+  normalizedError    String?
+  isManual           Boolean  @default(false)
+  isRetry            Boolean  @default(false)
+
+  @@index([jobId])
+  @@index([providerId, startedAt])
+}
+
+/// Vendor-neutral provider configuration per location.
+model NotificationProvider {
+  id                      String    @id @default(cuid())
+  locationId              String
+  providerType            String
+  name                    String
+  isActive                Boolean   @default(true)
+  isDefault               Boolean   @default(false)
+  priority                Int       @default(0)
+  executionZone           String    @default("any")
+  config                  Json
+  configVersion           Int       @default(1)
+  lastValidatedAt         DateTime?
+  lastValidationResult    String?
+  capabilities            Json
+  healthStatus            String    @default("healthy")
+  lastHealthCheckAt       DateTime?
+  consecutiveFailures     Int       @default(0)
+  circuitBreakerOpenUntil DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  deletedAt               DateTime?
+
+  @@index([locationId, isActive])
+}
+
+/// Physical pager/device inventory per location.
+model NotificationDevice {
+  id                    String    @id @default(cuid())
+  locationId            String
+  providerId            String
+  deviceNumber          String
+  humanLabel            String?
+  deviceType            String
+  status                String
+  assignedToSubjectType String?
+  assignedToSubjectId   String?
+  assignedAt            DateTime?
+  releasedAt            DateTime?
+  returnedAt            DateTime?
+  batteryLevel          Int?
+  lastSeenAt            DateTime?
+  lastSignalState       String?
+  capcode               String?
+  firmwareVersion       String?
+  dockId                String?
+  dockSlot              String?
+  metadata              Json?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+}
+
+/// Device lifecycle audit trail. Immutable.
+model NotificationDeviceEvent {
+  id          String   @id @default(cuid())
+  deviceId    String
+  locationId  String
+  eventType   String
+  subjectType String?
+  subjectId   String?
+  employeeId  String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([deviceId, createdAt])
+}
+
+/// Source of truth for who/what to notify.
+model NotificationTargetAssignment {
+  id                  String    @id @default(cuid())
+  locationId          String
+  subjectType         String
+  subjectId           String
+  targetType          String
+  targetValue         String
+  providerId          String?
+  priority            Int       @default(0)
+  isPrimary           Boolean   @default(false)
+  source              String
+  status              String
+  assignedAt          DateTime  @default(now())
+  releasedAt          DateTime?
+  expiresAt           DateTime?
+  releaseReason       String?
+  createdByEmployeeId String?
+  lastUsedAt          DateTime?
+  metadata            Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([subjectType, subjectId, status])
+}
+
+/// Event-to-provider routing rules per location.
+model NotificationRoutingRule {
+  id                        String    @id @default(cuid())
+  locationId                String
+  eventType                 String
+  providerId                String
+  targetType                String
+  enabled                   Boolean   @default(true)
+  priority                  Int       @default(0)
+  messageTemplateId         String?
+  condFulfillmentMode       String?
+  condHasPager              Boolean?
+  condHasPhone              Boolean?
+  condMinPartySize          Int?
+  condOrderTypes            String[]
+  condDuringBusinessHours   Boolean?
+  retryMaxAttempts          Int       @default(2)
+  retryDelayMs              Int       @default(2000)
+  retryBackoffMultiplier    Float     @default(1.5)
+  retryOnTimeout            Boolean   @default(false)
+  fallbackProviderId        String?
+  escalateToStaff           Boolean   @default(false)
+  alsoEmitDisplayProjection Boolean   @default(false)
+  stopProcessingAfterMatch  Boolean   @default(false)
+  cooldownSeconds           Int       @default(0)
+  allowManualOverride       Boolean   @default(true)
+  criticalityClass          String    @default("standard")
+  effectiveStartAt          DateTime?
+  effectiveEndAt            DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  deletedAt                 DateTime?
+
+  @@index([locationId, eventType, enabled])
+}
+
+/// Message templates per event/channel.
+model NotificationTemplate {
+  id                String   @id @default(cuid())
+  locationId        String
+  name              String
+  eventType         String
+  channelType       String
+  body              String
+  locale            String   @default("en")
+  maxLength         Int?
+  version           Int      @default(1)
+  isDefault         Boolean  @default(false)
+  requiredVariables String[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables

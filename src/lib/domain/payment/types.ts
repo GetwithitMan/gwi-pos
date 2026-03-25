@@ -219,6 +219,9 @@ export interface ReceiptData {
   surchargeDisclosure: string | null
   convenienceFee: number | null
   convenienceFeeDisclosure: string | null
+  // Notification pager info
+  pagerNumber?: string | null
+  fulfillmentMode?: string | null
   // Donations
   donationAmount?: number | null
   // Tax exemption

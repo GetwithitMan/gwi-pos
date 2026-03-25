@@ -28,12 +28,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     const entries: any[] = await db.$queryRawUnsafe(`
-      SELECT id, "customerName", "partySize", phone, notes, status, position,
-             "quotedWaitMinutes", "notifiedAt", "seatedAt", "createdAt", "updatedAt"
-      FROM "WaitlistEntry"
-      WHERE "locationId" = $1
-        AND status IN ('waiting', 'notified')
-      ORDER BY position ASC, "createdAt" ASC
+      SELECT w.id, w."customerName", w."partySize", w.phone, w.notes, w.status, w.position,
+             w."quotedWaitMinutes", w."notifiedAt", w."seatedAt", w."createdAt", w."updatedAt",
+             w."pagerNumber",
+             nta."targetValue" as "assignedPagerNumber"
+      FROM "WaitlistEntry" w
+      LEFT JOIN "NotificationTargetAssignment" nta
+        ON nta."subjectType" = 'waitlist_entry'
+        AND nta."subjectId" = w.id
+        AND nta.status = 'active'
+        AND nta."targetType" IN ('guest_pager', 'staff_pager')
+        AND nta."isPrimary" = true
+      WHERE w."locationId" = $1
+        AND w.status IN ('waiting', 'notified')
+      ORDER BY w.position ASC, w."createdAt" ASC
     `, locationId)
 
     // Calculate live wait estimates
@@ -45,6 +53,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       return {
         ...entry,
+        // Prefer target assignment pagerNumber over cache field (source of truth hierarchy)
+        pagerNumber: entry.assignedPagerNumber || entry.pagerNumber || null,
         position: index + 1,
         elapsedMinutes,
         estimatedWaitMinutes,
@@ -77,7 +87,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     const body = await request.json()
-    const { customerName, partySize, phone, notes } = body
+    const { customerName, partySize, phone, notes, assignPager } = body
 
     if (!customerName || typeof customerName !== 'string' || customerName.trim().length === 0) {
       return NextResponse.json({ error: 'Customer name is required' }, { status: 400 })
@@ -119,6 +129,73 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     const entry = inserted[0]
 
+    // Auto-assign pager if requested
+    let pagerNumber: string | null = null
+    if (assignPager) {
+      try {
+        const assignResult: any[] = await db.$queryRawUnsafe(
+          `WITH device AS (
+            SELECT id, "deviceNumber", "providerId"
+            FROM "NotificationDevice"
+            WHERE "locationId" = $1
+              AND "deviceType" = 'pager'
+              AND status = 'available'
+              AND "deletedAt" IS NULL
+            ORDER BY "deviceNumber"::int ASC NULLS LAST, "deviceNumber" ASC
+            FOR UPDATE SKIP LOCKED
+            LIMIT 1
+          ), updated_device AS (
+            UPDATE "NotificationDevice" d
+            SET status = 'assigned',
+                "assignedToSubjectType" = 'waitlist_entry',
+                "assignedToSubjectId" = $2,
+                "assignedAt" = CURRENT_TIMESTAMP,
+                "updatedAt" = CURRENT_TIMESTAMP
+            FROM device
+            WHERE d.id = device.id
+            RETURNING d.id, d."deviceNumber", d."providerId"
+          )
+          SELECT * FROM updated_device`,
+          locationId,
+          entry.id
+        )
+
+        if (assignResult.length > 0) {
+          pagerNumber = assignResult[0].deviceNumber
+
+          // Create target assignment
+          void db.$executeRawUnsafe(
+            `INSERT INTO "NotificationTargetAssignment" (
+              id, "locationId", "subjectType", "subjectId", "targetType", "targetValue",
+              "providerId", "isPrimary", source, status,
+              "assignedAt", "createdAt", "updatedAt"
+            ) VALUES (
+              gen_random_uuid()::text, $1, 'waitlist_entry', $2, 'guest_pager', $3,
+              $4, true, 'auto_assign', 'active',
+              CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )`,
+            locationId, entry.id, pagerNumber, assignResult[0].providerId
+          ).catch(console.error)
+
+          // Sync pagerNumber cache
+          void db.$executeRawUnsafe(
+            `UPDATE "WaitlistEntry" SET "pagerNumber" = $2 WHERE id = $1`,
+            entry.id, pagerNumber
+          ).catch(console.error)
+
+          // Log device event
+          void db.$executeRawUnsafe(
+            `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
+             VALUES (gen_random_uuid()::text, $1, $2, 'assigned', 'waitlist_entry', $3, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)`,
+            assignResult[0].id, locationId, entry.id
+          ).catch(console.error)
+        }
+      } catch (pagerErr) {
+        // Non-fatal: pager assignment is best-effort
+        console.warn('[Waitlist] Auto-assign pager failed:', pagerErr)
+      }
+    }
+
     // Fire-and-forget socket dispatch
     void dispatchWaitlistChanged(locationId, {
       action: 'added',
@@ -128,8 +205,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }).catch(console.error)
 
     return NextResponse.json({
-      data: entry,
-      message: `Added to waitlist at position ${position}. Estimated wait: ~${quotedWaitMinutes} minutes.`,
+      data: { ...entry, pagerNumber },
+      message: `Added to waitlist at position ${position}. Estimated wait: ~${quotedWaitMinutes} minutes.${pagerNumber ? ` Pager ${pagerNumber} assigned.` : ''}`,
     }, { status: 201 })
   } catch (error) {
     console.error('[Waitlist] POST error:', error)

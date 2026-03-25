@@ -34,6 +34,10 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularRefund = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularRefund ? 'cloud' : 'local'
+
     // Cellular terminal: block refunds entirely (canRefund=false for CELLULAR_ROAMING)
     try {
       validateCellularRefundFromHeaders(request)
@@ -246,7 +250,7 @@ export const POST = withVenue(async function POST(
         status: isPartial ? 'completed' : 'refunded',
         refundedAt: new Date(),
         refundedAmount: freshTotalRefunded + refundAmount,
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       }, tx)
 
       const refundLog = await tx.refundLog.create({
@@ -407,13 +411,13 @@ export const POST = withVenue(async function POST(
           await PaymentRepository.updatePayment(paymentId, order.locationId, {
             tipAmount: newTipAmount,
             totalAmount: Number(freshPayment.amount) - totalRefunded + newTipAmount,
-            lastMutatedBy: 'local',
+            lastMutatedBy: mutationOrigin,
           }, tx)
 
           // Update Order.tipTotal from all non-voided payments (inside lock)
           const allPayments = await PaymentRepository.getPaymentsForOrderByStatus(id, order.locationId, ['completed', 'refunded', 'pending'], tx)
           const newOrderTipTotal = allPayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
-          await OrderRepository.updateOrder(id, order.locationId, { tipTotal: newOrderTipTotal, lastMutatedBy: 'local' }, tx)
+          await OrderRepository.updateOrder(id, order.locationId, { tipTotal: newOrderTipTotal, lastMutatedBy: mutationOrigin }, tx)
 
           return { tipReduction, newOrderTipTotal }
         }, { timeout: 15000 })

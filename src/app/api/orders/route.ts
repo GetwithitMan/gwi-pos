@@ -44,6 +44,13 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const { employeeId: claimedEmployeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields, idempotencyKey, scheduledFor } = validation.data
     const reservationId: string | undefined = typeof body.reservationId === 'string' ? body.reservationId : undefined
     const orderSource: string | null = typeof body.source === 'string' ? body.source : null
+    const assignPager: boolean = body.assignPager === true
+    const fulfillmentMode: string | null = typeof body.fulfillmentMode === 'string' ? body.fulfillmentMode : null
+
+    // Notification Platform: reject raw pagerNumber — cache-only field
+    if (body.pagerNumber !== undefined) {
+      console.warn(`[Orders] DEPRECATED: raw pagerNumber sent in order create body. Use assignPager: true instead. Value ignored.`)
+    }
 
     // Cellular employee binding: prevent impersonation by validating bound employee
     let employeeId: string
@@ -221,6 +228,76 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }
 
       timing.end('db-draft', 'Draft order create')
+
+      // Stamp fulfillmentMode if provided (fire-and-forget)
+      if (fulfillmentMode) {
+        void db.$executeRawUnsafe(
+          `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2`,
+          fulfillmentMode, order.id
+        ).catch(console.error)
+      }
+
+      // Auto-assign pager if requested (fire-and-forget)
+      if (assignPager) {
+        void (async () => {
+          try {
+            const assignResult: any[] = await db.$queryRawUnsafe(
+              `WITH device AS (
+                SELECT id, "deviceNumber", "providerId"
+                FROM "NotificationDevice"
+                WHERE "locationId" = $1
+                  AND "deviceType" = 'pager'
+                  AND status = 'available'
+                  AND "deletedAt" IS NULL
+                ORDER BY "deviceNumber"::int ASC NULLS LAST, "deviceNumber" ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+              ), updated_device AS (
+                UPDATE "NotificationDevice" d
+                SET status = 'assigned',
+                    "assignedToSubjectType" = 'order',
+                    "assignedToSubjectId" = $2,
+                    "assignedAt" = CURRENT_TIMESTAMP,
+                    "updatedAt" = CURRENT_TIMESTAMP
+                FROM device
+                WHERE d.id = device.id
+                RETURNING d.id, d."deviceNumber", d."providerId"
+              )
+              SELECT * FROM updated_device`,
+              locationId, order.id
+            )
+            if (assignResult.length > 0) {
+              const pNum = assignResult[0].deviceNumber
+              // Create target assignment
+              await db.$executeRawUnsafe(
+                `INSERT INTO "NotificationTargetAssignment" (
+                  id, "locationId", "subjectType", "subjectId", "targetType", "targetValue",
+                  "providerId", "isPrimary", source, status,
+                  "assignedAt", "createdAt", "updatedAt"
+                ) VALUES (
+                  gen_random_uuid()::text, $1, 'order', $2, 'guest_pager', $3,
+                  $4, true, 'auto_assign', 'active',
+                  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )`,
+                locationId, order.id, pNum, assignResult[0].providerId
+              )
+              // Sync cache
+              await db.$executeRawUnsafe(
+                `UPDATE "Order" SET "pagerNumber" = $2 WHERE id = $1`,
+                order.id, pNum
+              )
+              // Log device event
+              void db.$executeRawUnsafe(
+                `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
+                 VALUES (gen_random_uuid()::text, $1, $2, 'assigned', 'order', $3, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)`,
+                assignResult[0].id, locationId, order.id
+              ).catch(console.error)
+            }
+          } catch (pagerErr) {
+            console.warn('[Orders] Auto-assign pager failed:', pagerErr)
+          }
+        })()
+      }
 
       // Stamp scheduledFor for pre-orders (fire-and-forget, column added by migration 027)
       if (scheduledForDate) {
@@ -730,6 +807,68 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         },
       },
     }).catch(console.error)
+
+    // Notification Platform: stamp fulfillmentMode on full order (fire-and-forget)
+    if (fulfillmentMode) {
+      void db.$executeRawUnsafe(
+        `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2`,
+        fulfillmentMode, order.id
+      ).catch(console.error)
+    }
+
+    // Notification Platform: auto-assign pager for full order (fire-and-forget)
+    if (assignPager) {
+      void (async () => {
+        try {
+          const assignResult: any[] = await db.$queryRawUnsafe(
+            `WITH device AS (
+              SELECT id, "deviceNumber", "providerId"
+              FROM "NotificationDevice"
+              WHERE "locationId" = $1
+                AND "deviceType" = 'pager'
+                AND status = 'available'
+                AND "deletedAt" IS NULL
+              ORDER BY "deviceNumber"::int ASC NULLS LAST, "deviceNumber" ASC
+              FOR UPDATE SKIP LOCKED
+              LIMIT 1
+            ), updated_device AS (
+              UPDATE "NotificationDevice" d
+              SET status = 'assigned',
+                  "assignedToSubjectType" = 'order',
+                  "assignedToSubjectId" = $2,
+                  "assignedAt" = CURRENT_TIMESTAMP,
+                  "updatedAt" = CURRENT_TIMESTAMP
+              FROM device
+              WHERE d.id = device.id
+              RETURNING d.id, d."deviceNumber", d."providerId"
+            )
+            SELECT * FROM updated_device`,
+            locationId, order.id
+          )
+          if (assignResult.length > 0) {
+            const pNum = assignResult[0].deviceNumber
+            await db.$executeRawUnsafe(
+              `INSERT INTO "NotificationTargetAssignment" (
+                id, "locationId", "subjectType", "subjectId", "targetType", "targetValue",
+                "providerId", "isPrimary", source, status,
+                "assignedAt", "createdAt", "updatedAt"
+              ) VALUES (
+                gen_random_uuid()::text, $1, 'order', $2, 'guest_pager', $3,
+                $4, true, 'auto_assign', 'active',
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              )`,
+              locationId, order.id, pNum, assignResult[0].providerId
+            )
+            await db.$executeRawUnsafe(
+              `UPDATE "Order" SET "pagerNumber" = $2 WHERE id = $1`,
+              order.id, pNum
+            )
+          }
+        } catch (pagerErr) {
+          console.warn('[Orders] Full-order auto-assign pager failed:', pagerErr)
+        }
+      })()
+    }
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     if (isInOutageMode()) {

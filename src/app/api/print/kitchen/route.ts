@@ -489,6 +489,9 @@ function buildKitchenTicket(
     deliveryAddress?: string | null
     deliveryInstructions?: string | null
     source?: string | null
+    // Notification pager info
+    pagerNumber?: string | null
+    fulfillmentMode?: string | null
   },
   items: Array<{
     id: string
@@ -693,6 +696,21 @@ function buildKitchenTicket(
   const serverName = order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`
   content.push(line(`Server: ${serverName}`))
   content.push(line(new Date().toLocaleTimeString()))
+
+  // Pager number — tall bold for runner visibility
+  if (order.pagerNumber) {
+    content.push(TALL)
+    content.push(ESCPOS.BOLD_ON)
+    content.push(line(`PAGER #${order.pagerNumber}`))
+    content.push(ESCPOS.BOLD_OFF)
+    content.push(NORMAL)
+  }
+
+  // Fulfillment mode for runner routing
+  if (order.fulfillmentMode) {
+    const modeLabel = order.fulfillmentMode.toUpperCase().replace('_', ' ')
+    content.push(line(modeLabel))
+  }
 
   content.push(divider(width))
 
