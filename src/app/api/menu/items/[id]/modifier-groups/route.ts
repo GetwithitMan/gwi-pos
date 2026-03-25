@@ -749,7 +749,8 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     })
   } catch (error) {
     console.error('Error creating modifier group:', error)
-    return NextResponse.json({ error: 'Failed to create modifier group' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: `Failed to create modifier group: ${message}` }, { status: 500 })
   }
 })
 
