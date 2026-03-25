@@ -546,8 +546,7 @@ export function TimedRentalsContent() {
         gracePeriodMinutes: builderForm.gracePeriodMinutes,
         entertainmentStatus: builderForm.status,
         visualType: builderForm.visualType,
-        // Ensure it's in entertainment category
-        categoryId: null, // Will need to set entertainment category
+        categoryId: null, // Auto-resolved server-side for timed_rental items
         // Sync to MenuItem columns for backward compat with pricing engine
         happyHourEnabled: hhEnabled,
         happyHourDiscount: hhDiscount,

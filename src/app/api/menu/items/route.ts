@@ -279,9 +279,38 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    // Auto-resolve entertainment category when categoryId is missing for timed_rental items
+    let resolvedCategoryId = categoryId
+    const bodyLocationId = body.locationId as string | undefined
+    if (!resolvedCategoryId && itemType === 'timed_rental' && bodyLocationId) {
+      const existing = await db.category.findFirst({
+        where: { locationId: bodyLocationId, categoryType: 'entertainment', deletedAt: null },
+        select: { id: true },
+      })
+      if (existing) {
+        resolvedCategoryId = existing.id
+      } else {
+        const maxSort = await db.category.aggregate({
+          where: { locationId: bodyLocationId },
+          _max: { sortOrder: true },
+        })
+        const created = await db.category.create({
+          data: {
+            locationId: bodyLocationId,
+            name: 'Entertainment',
+            categoryType: 'entertainment',
+            categoryShow: 'entertainment',
+            color: '#8b5cf6',
+            sortOrder: (maxSort._max.sortOrder || 0) + 1,
+          },
+        })
+        resolvedCategoryId = created.id
+      }
+    }
+
     // Get the location from the category
     const category = await db.category.findUnique({
-      where: { id: categoryId },
+      where: { id: resolvedCategoryId },
       select: { locationId: true }
     })
 
@@ -299,14 +328,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Get max sort order in category (scoped to location)
     const maxSortOrder = await db.menuItem.aggregate({
-      where: { categoryId, locationId: category.locationId },
+      where: { categoryId: resolvedCategoryId, locationId: category.locationId },
       _max: { sortOrder: true }
     })
 
     const item = await db.menuItem.create({
       data: {
         locationId: category.locationId,
-        categoryId,
+        categoryId: resolvedCategoryId,
         name: name.trim(),
         price,
         description: description || null,
