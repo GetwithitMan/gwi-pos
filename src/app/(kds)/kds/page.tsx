@@ -1067,6 +1067,7 @@ function KDSContent() {
                         socketConnected={socketConnected}
                         strikeThroughModifiers={screenConfig?.orderBehavior?.strikeThroughModifiers}
                         isSelected={globalIdx === selectedOrderIndex}
+                        voidingItems={voidingItems}
                       />
                     </SilentErrorBoundary>
                     )
@@ -1088,6 +1089,7 @@ function KDSContent() {
                   socketConnected={socketConnected}
                   strikeThroughModifiers={screenConfig?.orderBehavior?.strikeThroughModifiers}
                   isSelected={idx === selectedOrderIndex}
+                  voidingItems={voidingItems}
                 />
               </SilentErrorBoundary>
             ))}
@@ -1105,6 +1107,7 @@ function KDSContent() {
                     socketConnected={socketConnected}
                     strikeThroughModifiers={screenConfig?.orderBehavior?.strikeThroughModifiers}
                     isSelected={idx === selectedOrderIndex}
+                    voidingItems={voidingItems}
                   />
                 </SilentErrorBoundary>
             ))}

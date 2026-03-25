@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback, useState } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { formatCurrency } from '@/lib/utils'
 import { useCartItems, useCartItemCount, useCartSubtotal, useSiteCartStore } from '@/stores/site-cart-store'
 import { CartItemRow } from '@/components/site/CartItemRow'
@@ -18,6 +19,11 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
   const subtotal = useCartSubtotal()
   const clearCart = useSiteCartStore((s) => s.clearCart)
   const [confirmClear, setConfirmClear] = useState(false)
+  const pathname = usePathname()
+  // Compute checkout URL relative to current path
+  // On /VN4U47/shaunels-steaks → /VN4U47/shaunels-steaks/checkout
+  // On /our-menu → /checkout (site route group)
+  const checkoutUrl = pathname.includes('/checkout') ? pathname : `${pathname.replace(/\/$/, '')}/checkout`
 
   useEffect(() => setMounted(true), [])
 
@@ -166,7 +172,7 @@ export function CartDrawer({ open, onClose }: CartDrawerProps) {
               </div>
 
               <Link
-                href="/checkout"
+                href={checkoutUrl}
                 onClick={onClose}
                 className="block w-full text-center py-3.5 rounded-xl text-sm font-bold transition-colors hover:opacity-90"
                 style={{
