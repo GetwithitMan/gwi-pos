@@ -1,8 +1,10 @@
 'use client'
 
+import type { PizzaSauce, PizzaCheese } from '@/types'
 import { formatCurrency } from '@/lib/utils'
 import { humanizeSections } from '@/lib/pizza-section-utils'
 import { calculatePizzaPriceEstimate, type PizzaPriceInput } from '@/lib/pizza-price-utils'
+import type { CondimentSelection } from './PizzaBuilder'
 
 interface PizzaSummaryProps {
   sizeName: string | null
@@ -11,12 +13,17 @@ interface PizzaSummaryProps {
   cheeseName: string | null
   sauceAmount: 'none' | 'light' | 'regular' | 'extra'
   cheeseAmount: 'none' | 'light' | 'regular' | 'extra'
+  sauceSelections: CondimentSelection[]
+  cheeseSelections: CondimentSelection[]
+  sauces: PizzaSauce[]
+  cheeses: PizzaCheese[]
+  allowCondimentSections: boolean
+  sectionMode: number
   toppings: Array<{
     name: string
     sections: number[]
     amount: 'regular' | 'extra'
   }>
-  sectionMode: number
   priceInput: PizzaPriceInput | null
 }
 
@@ -28,11 +35,17 @@ export function PizzaSummary({
   cheeseName,
   sauceAmount,
   cheeseAmount,
-  toppings,
+  sauceSelections,
+  cheeseSelections,
+  sauces,
+  cheeses,
+  allowCondimentSections,
   sectionMode,
+  toppings,
   priceInput,
 }: PizzaSummaryProps) {
   const estimate = priceInput ? calculatePizzaPriceEstimate(priceInput) : null
+  const perSection = allowCondimentSections && sectionMode >= 2
 
   return (
     <div className="py-4">
@@ -56,25 +69,63 @@ export function PizzaSummary({
               showPrice={estimate ? estimate.crustPrice > 0 : false}
             />
           )}
-          {sauceName && sauceAmount !== 'none' && (
-            <SummaryRow
-              label={`${amountPrefix(sauceAmount)}${sauceName}`}
-              price={estimate?.saucePrice}
-              showPrice={estimate ? estimate.saucePrice > 0 : false}
-            />
+
+          {/* Sauce display: per-section or single */}
+          {perSection ? (
+            sauceSelections.map((sel, i) => {
+              const sauceDef = sauces.find((s) => s.id === sel.id)
+              if (!sauceDef || sel.amount === 'none') return null
+              const name = sauceDef.displayName || sauceDef.name
+              const placement = humanizeSections(sel.sections, sectionMode)
+              return (
+                <SummaryRow
+                  key={`sauce-${i}`}
+                  label={`${amountPrefix(sel.amount)}${name} (${placement})`}
+                />
+              )
+            })
+          ) : (
+            <>
+              {sauceName && sauceAmount !== 'none' && (
+                <SummaryRow
+                  label={`${amountPrefix(sauceAmount)}${sauceName}`}
+                  price={estimate?.saucePrice}
+                  showPrice={estimate ? estimate.saucePrice > 0 : false}
+                />
+              )}
+              {sauceAmount === 'none' && sauceSelections.length === 0 && (
+                <SummaryRow label="No Sauce" />
+              )}
+            </>
           )}
-          {sauceAmount === 'none' && (
-            <SummaryRow label="No Sauce" />
-          )}
-          {cheeseName && cheeseAmount !== 'none' && (
-            <SummaryRow
-              label={`${amountPrefix(cheeseAmount)}${cheeseName}`}
-              price={estimate?.cheesePrice}
-              showPrice={estimate ? estimate.cheesePrice > 0 : false}
-            />
-          )}
-          {cheeseAmount === 'none' && (
-            <SummaryRow label="No Cheese" />
+
+          {/* Cheese display: per-section or single */}
+          {perSection ? (
+            cheeseSelections.map((sel, i) => {
+              const cheeseDef = cheeses.find((c) => c.id === sel.id)
+              if (!cheeseDef || sel.amount === 'none') return null
+              const name = cheeseDef.displayName || cheeseDef.name
+              const placement = humanizeSections(sel.sections, sectionMode)
+              return (
+                <SummaryRow
+                  key={`cheese-${i}`}
+                  label={`${amountPrefix(sel.amount)}${name} (${placement})`}
+                />
+              )
+            })
+          ) : (
+            <>
+              {cheeseName && cheeseAmount !== 'none' && (
+                <SummaryRow
+                  label={`${amountPrefix(cheeseAmount)}${cheeseName}`}
+                  price={estimate?.cheesePrice}
+                  showPrice={estimate ? estimate.cheesePrice > 0 : false}
+                />
+              )}
+              {cheeseAmount === 'none' && cheeseSelections.length === 0 && (
+                <SummaryRow label="No Cheese" />
+              )}
+            </>
           )}
 
           {/* Toppings */}
@@ -103,13 +154,16 @@ export function PizzaSummary({
               </div>
             )}
             {estimate.freeToppingsUsed > 0 && (
-              <div className="flex justify-between text-xs text-blue-500">
+              <div
+                className="flex justify-between text-xs"
+                style={{ color: 'var(--site-brand)' }}
+              >
                 <span>{estimate.freeToppingsUsed} free topping{estimate.freeToppingsUsed > 1 ? 's' : ''} applied</span>
               </div>
             )}
             <div className="flex justify-between text-base font-bold text-gray-900">
               <span>Estimated Total</span>
-              <span className="text-blue-600">{formatCurrency(estimate.totalPrice)}</span>
+              <span style={{ color: 'var(--site-brand)' }}>{formatCurrency(estimate.totalPrice)}</span>
             </div>
             <p className="text-[10px] text-gray-400">
               Final price confirmed at checkout
