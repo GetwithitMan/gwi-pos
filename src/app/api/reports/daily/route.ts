@@ -119,6 +119,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       categories,
       ccTipFeesResult,
       entertainmentSummary,
+      refundAggregate,
     ] = await Promise.all([
       getRevenueSummary(locationId, range),
       getSalesByOrderType(locationId, range),
@@ -139,6 +140,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       getCategories(locationId),
       getCCTipFees(locationId, range),
       getEntertainmentSummary(locationId, range),
+      db.refundLog.aggregate({
+        where: {
+          locationId,
+          deletedAt: null,
+          createdAt: { gte: range.start, lte: range.end },
+        },
+        _sum: { refundAmount: true },
+      }),
     ])
 
     // ============================================
@@ -157,7 +166,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalDonations = Number(rev.donation_total) || 0
     const checkCount = Number(rev.order_count) || 0
     const totalCovers = Number(rev.guest_count) || 0
-    const totalRefunds = 0
+    const totalRefunds = Number(refundAggregate._sum.refundAmount) || 0
     const totalCheckTimeMinutes = Number(rev.total_check_time_minutes) || 0
     const closedOrderCount = Number(rev.closed_count) || 0
 
@@ -835,6 +844,7 @@ async function legacyReport(
     tipsCollectedToday,
     tipSharesDistributed,
     categories,
+    legacyRefundAggregate,
   ] = await Promise.all([
     // Completed/paid orders
     // Exclude split parents to prevent double-counting when pay-all-splits
@@ -1024,6 +1034,15 @@ async function legacyReport(
       where: { locationId, deletedAt: null },
       select: { id: true, name: true, categoryType: true },
     }),
+    // Refund totals from RefundLog
+    db.refundLog.aggregate({
+      where: {
+        locationId,
+        deletedAt: null,
+        createdAt: { gte: startOfDay, lte: endOfDay },
+      },
+      _sum: { refundAmount: true },
+    }),
   ])
 
   // ============================================
@@ -1038,7 +1057,7 @@ async function legacyReport(
   let totalSurcharge = 0
   let totalTips = 0
   const totalGratuity = 0
-  const totalRefunds = 0
+  const totalRefunds = Number(legacyRefundAggregate._sum.refundAmount) || 0
   let totalCommission = 0
 
   // Sales by category

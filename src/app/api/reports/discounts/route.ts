@@ -40,12 +40,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ]
     }
 
-    // Get all order discounts with related data
+    // Get all order discounts with related data (exclude training orders)
     const orderDiscounts = await db.orderDiscount.findMany({
       where: {
         order: {
           locationId,
           status: { in: [...REVENUE_ORDER_STATUSES] },
+          isTraining: { not: true },
           parentOrderId: null,
           ...dateFilter,
         },
@@ -83,12 +84,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    // Also get item-level discounts (OrderItemDiscount)
+    // Also get item-level discounts (OrderItemDiscount) — exclude training orders
     const itemDiscounts = await db.orderItemDiscount.findMany({
       where: {
         order: {
           locationId,
           status: { in: [...REVENUE_ORDER_STATUSES] },
+          isTraining: { not: true },
           parentOrderId: null,
           ...dateFilter,
         },

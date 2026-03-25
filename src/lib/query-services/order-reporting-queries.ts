@@ -129,6 +129,7 @@ export async function getRevenueSummary(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
       AND (
         (o."businessDayDate" >= ${range.start} AND o."businessDayDate" <= ${range.end})
@@ -163,6 +164,7 @@ export async function getSalesByOrderType(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
       AND (
         (o."businessDayDate" >= ${range.start} AND o."businessDayDate" <= ${range.end})
@@ -215,6 +217,7 @@ export async function getCategorySales(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND oi."deletedAt" IS NULL
       AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
       AND (
@@ -277,6 +280,7 @@ export async function getPaymentSummary(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND p.status = 'completed'
       AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
       AND (
@@ -307,6 +311,7 @@ export async function getDiscountSummary(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND od."deletedAt" IS NULL
       AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
       AND (
@@ -337,6 +342,7 @@ export async function getWeightBasedSales(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND oi."deletedAt" IS NULL
       AND oi."soldByWeight" = true
       AND oi.weight IS NOT NULL
@@ -370,6 +376,7 @@ export async function getEntertainmentSummary(
         WHERE o2."locationId" = ${locationId}
           AND o2.status IN ('completed', 'closed', 'paid')
           AND o2."deletedAt" IS NULL
+          AND o2."isTraining" IS NOT TRUE
           AND oi2."deletedAt" IS NULL
           AND oi2."blockTimeStartedAt" IS NOT NULL
           AND mi."itemType" = 'timed_rental'
@@ -387,6 +394,7 @@ export async function getEntertainmentSummary(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND oi."deletedAt" IS NULL
       AND oi."blockTimeStartedAt" IS NOT NULL
       AND mi."itemType" = 'timed_rental'
@@ -426,6 +434,7 @@ export async function getSurchargeBase(
     WHERE o."locationId" = ${locationId}
       AND o.status IN ('completed', 'closed', 'paid')
       AND o."deletedAt" IS NULL
+      AND o."isTraining" IS NOT TRUE
       AND NOT EXISTS (SELECT 1 FROM "Order" child WHERE child."parentOrderId" = o.id)
       AND (
         (o."businessDayDate" >= ${range.start} AND o."businessDayDate" <= ${range.end})
@@ -458,6 +467,7 @@ export async function getTodayRevenueOrders(
     where: {
       locationId,
       deletedAt: null,
+      isTraining: { not: true },
       status: { in: [...REVENUE_ORDER_STATUSES] },
       parentOrderId: null,
       OR: [
@@ -553,6 +563,7 @@ export async function getDiscountTotalAggregate(
     where: {
       locationId,
       deletedAt: null,
+      isTraining: { not: true },
       status: { in: [...REVENUE_ORDER_STATUSES] },
       OR: [
         { businessDayDate: { gte: range.start, lte: range.end } },

@@ -1,6 +1,6 @@
 'use client'
 
-import { getAllSectionPresetsForMode, isAllowedSectionMode } from '@/lib/pizza-section-utils'
+import { getAllSectionPresetsForMode } from '@/lib/pizza-section-utils'
 
 interface SectionSelectorProps {
   sectionOptions: number[]
@@ -17,16 +17,19 @@ const MODE_LABELS: Record<number, string> = {
 }
 
 export function SectionSelector({ sectionOptions, selectedMode, onModeChange }: SectionSelectorProps) {
-  const allowedModes = [1, 2, 4, 6, 8].filter((m) => isAllowedSectionMode(sectionOptions, m))
+  // Only show options from venue config; default to [1,2,4] if not configured
+  const allowedModes = (sectionOptions.length > 0 ? sectionOptions : [1, 2, 4])
+    .filter((m) => MODE_LABELS[m])
+    .sort((a, b) => a - b)
 
   if (allowedModes.length <= 1) return null
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--site-text-muted)' }}>
+    <div className="py-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
         Split Pizza
       </h3>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 flex-wrap">
         {allowedModes.map((mode) => {
           const isSelected = mode === selectedMode
           return (
@@ -35,12 +38,11 @@ export function SectionSelector({ sectionOptions, selectedMode, onModeChange }: 
               type="button"
               onClick={() => onModeChange(mode)}
               className={`
-                rounded-full border-2 px-4 py-2 text-sm font-medium transition-all
+                px-4 py-2.5 rounded-full border-2 text-sm font-medium cursor-pointer transition-all min-h-[44px]
                 ${isSelected
-                  ? 'border-[var(--site-brand)] bg-[var(--site-brand)] text-[var(--site-text-on-brand)]'
-                  : 'border-[var(--site-border)] bg-[var(--site-bg)] hover:border-[var(--site-brand)]/50'}
+                  ? 'border-blue-500 bg-blue-500 text-white'
+                  : 'border-gray-200 text-gray-700 hover:border-gray-300'}
               `}
-              style={!isSelected ? { color: 'var(--site-text)' } : undefined}
             >
               {MODE_LABELS[mode] || `${mode} Sections`}
             </button>
@@ -57,12 +59,11 @@ export function SectionSelector({ sectionOptions, selectedMode, onModeChange }: 
 function SectionPreview({ mode }: { mode: number }) {
   const presets = getAllSectionPresetsForMode(mode)
   return (
-    <div className="flex flex-wrap gap-1.5 text-xs" style={{ color: 'var(--site-text-muted)' }}>
+    <div className="flex flex-wrap gap-1.5 text-xs text-gray-400 mt-2">
       {presets.map((p) => (
         <span
           key={p.position}
-          className="rounded-md px-2 py-0.5"
-          style={{ backgroundColor: 'var(--site-bg-secondary)' }}
+          className="rounded-md bg-gray-100 px-2 py-0.5"
         >
           {p.label}
         </span>

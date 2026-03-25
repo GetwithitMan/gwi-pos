@@ -81,6 +81,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: {
           locationId,
           deletedAt: null,
+          isTraining: { not: true },
           ...dateFilter,
           ...additionalFilters,
           status: { in: [...REVENUE_ORDER_STATUSES] },

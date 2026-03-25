@@ -71,6 +71,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where: {
         locationId,
+        deletedAt: null,
+        isTraining: { not: true },
         ...dateFilter,
         ...employeeFilter,
         status: { in: [...REVENUE_ORDER_STATUSES] },

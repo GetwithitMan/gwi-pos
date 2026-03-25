@@ -17,7 +17,7 @@ export function ToppingPlacementPicker({ sectionMode, selectedSections, onChange
   const isWhole = selectedSections.length === wholePreset.length
 
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-1">
       {/* Whole option */}
       <PlacementButton
         label="Whole"
@@ -54,12 +54,11 @@ function PlacementButton({
       type="button"
       onClick={onClick}
       className={`
-        rounded-md border px-2.5 py-1 text-xs font-medium transition-all
+        px-3 py-1.5 rounded-lg text-xs font-medium transition-all
         ${isSelected
-          ? 'border-[var(--site-brand)] bg-[var(--site-brand)]/15 text-[var(--site-brand)]'
-          : 'border-[var(--site-border)] hover:border-[var(--site-brand)]/40'}
+          ? 'bg-blue-500 text-white'
+          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
       `}
-      style={!isSelected ? { color: 'var(--site-text-muted)' } : undefined}
     >
       {label}
     </button>

@@ -41,7 +41,7 @@ export function SauceCheesePanel({
   const selectedCheese = activeCheeses.find((c) => c.id === selectedCheeseId) ?? null
 
   return (
-    <div className="space-y-6">
+    <div className="py-4 space-y-4">
       {/* Sauce */}
       <CondimentSection
         label="Sauce"
@@ -99,8 +99,8 @@ function CondimentSection({
   disabled,
 }: CondimentSectionProps) {
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--site-text-muted)' }}>
+    <div className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
         {label}
       </h3>
 
@@ -116,13 +116,12 @@ function CondimentSection({
               disabled={disabled}
               onClick={() => onSelect(item)}
               className={`
-                rounded-full border-2 px-4 py-2 text-sm font-medium transition-all
+                rounded-full border-2 px-4 py-2.5 text-sm font-medium transition-all min-h-[44px]
                 ${isSelected
-                  ? 'border-[var(--site-brand)] bg-[var(--site-brand)] text-[var(--site-text-on-brand)]'
-                  : 'border-[var(--site-border)] bg-[var(--site-bg)] hover:border-[var(--site-brand)]/50'}
+                  ? 'border-blue-500 bg-blue-500 text-white'
+                  : 'border-gray-200 text-gray-700 hover:border-gray-300'}
                 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
               `}
-              style={!isSelected ? { color: 'var(--site-text)' } : undefined}
             >
               {item.displayName || item.name}
               {hasPrice && <span className="ml-1 opacity-75">+{formatCurrency(item.price)}</span>}
@@ -133,7 +132,7 @@ function CondimentSection({
 
       {/* Amount controls */}
       {selectedId && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex gap-1">
           <AmountButton current={amount} value="none" label="None" onClick={onAmountChange} />
           {allowLight && (
             <AmountButton current={amount} value="light" label="Light" onClick={onAmountChange} />
@@ -170,12 +169,11 @@ function AmountButton({
       type="button"
       onClick={() => onClick(value)}
       className={`
-        rounded-md border px-3 py-1 text-xs font-medium transition-all
+        px-3 py-1.5 rounded-lg text-xs font-medium transition-all
         ${isActive
-          ? 'border-[var(--site-brand)] bg-[var(--site-brand)]/15 text-[var(--site-brand)]'
-          : 'border-[var(--site-border)] hover:border-[var(--site-brand)]/40'}
+          ? 'bg-blue-500 text-white'
+          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
       `}
-      style={!isActive ? { color: 'var(--site-text-muted)' } : undefined}
     >
       {label}
     </button>

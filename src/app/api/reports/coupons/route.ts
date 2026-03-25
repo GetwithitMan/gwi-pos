@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getBusinessDayRange } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -21,17 +24,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date filter for redemptions
+    // Resolve business day boundaries for date filtering
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
+    const dayStartTime = locationSettings.businessDay.dayStartTime
+
     const dateFilter: Record<string, unknown> = {}
     if (startDate || endDate) {
       dateFilter.redeemedAt = {}
       if (startDate) {
-        (dateFilter.redeemedAt as Record<string, Date>).gte = new Date(startDate)
+        const startRange = getBusinessDayRange(startDate, dayStartTime)
+        ;(dateFilter.redeemedAt as Record<string, Date>).gte = startRange.start
       }
       if (endDate) {
-        const end = new Date(endDate)
-        end.setHours(23, 59, 59, 999)
-        ;(dateFilter.redeemedAt as Record<string, Date>).lte = end
+        const endRange = getBusinessDayRange(endDate, dayStartTime)
+        ;(dateFilter.redeemedAt as Record<string, Date>).lte = endRange.end
       }
     }
 

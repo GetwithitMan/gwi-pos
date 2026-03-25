@@ -249,7 +249,6 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [PizzaBuilderComponent, setPizzaBuilderComponent] = useState<ComponentType<any> | null>(null)
   const [pizzaBuildResult, setPizzaBuildResult] = useState<PizzaBuilderResult | null>(null)
-  const backdropRef = useRef<HTMLDivElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
 
   // ── Fetch item detail ───────────────────────────────────────────────────
@@ -340,12 +339,6 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
     })
   }
 
-  function handleBackdropClick(e: React.MouseEvent) {
-    if (e.target === backdropRef.current) {
-      onClose()
-    }
-  }
-
   function handleAddToCart() {
     if (!item || !onAdd) return
     if (!areRequiredGroupsMet(selections, item.modifierGroups)) return
@@ -390,56 +383,67 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
-    <div
-      ref={backdropRef}
-      onClick={handleBackdropClick}
-      className="fixed inset-0 z-[60] flex items-end md:items-center md:justify-center"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
-    >
+    <div className="fixed inset-0 z-[60]">
+      {/* Backdrop overlay */}
       <div
-        ref={sheetRef}
-        className="relative w-full max-h-[90vh] md:max-w-lg md:max-h-[85vh] md:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom md:slide-in-from-bottom-4 md:zoom-in-95 duration-300"
-        style={{ backgroundColor: 'var(--site-bg)' }}
-        role="dialog"
-        aria-modal="true"
-        aria-label={item?.name ?? 'Item details'}
-      >
-        {/* Drag handle (mobile) */}
-        <div className="md:hidden flex justify-center pt-3 pb-1">
-          <div
-            className="w-10 h-1 rounded-full"
-            style={{ backgroundColor: 'var(--site-border)' }}
-          />
-        </div>
+        className="absolute inset-0 backdrop-blur-sm"
+        style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
+        onClick={onClose}
+      />
 
-        {/* Close button */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-3 right-3 z-10 flex items-center justify-center rounded-full backdrop-blur-sm transition-colors"
-          style={{
-            width: 36,
-            height: 36,
-            backgroundColor: 'rgba(0, 0, 0, 0.4)',
-            color: '#fff',
-          }}
-          aria-label="Close"
+      {/* Sheet positioning: bottom-sheet on mobile, centered modal on desktop */}
+      <div className="absolute inset-x-0 bottom-0 md:inset-0 md:flex md:items-center md:justify-center md:p-4">
+        <div
+          ref={sheetRef}
+          className="relative w-full md:max-w-lg max-h-[90vh] md:max-h-[85vh] rounded-t-2xl md:rounded-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom md:slide-in-from-bottom-4 md:zoom-in-95 duration-300"
+          style={{ backgroundColor: 'var(--site-bg)' }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={item?.name ?? 'Item details'}
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+          {/* Drag handle (mobile) */}
+          <div className="md:hidden flex justify-center pt-3 pb-1">
+            <div
+              className="w-10 h-1 rounded-full"
+              style={{ backgroundColor: 'var(--site-border)' }}
+            />
+          </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto overscroll-contain">
-          <div className="px-4 pb-4 md:px-6 md:pb-6">
-            {loading && <ItemSkeleton />}
-            {error && <ItemError onRetry={fetchItem} />}
+          {/* Close button */}
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-3 right-3 z-10 flex items-center justify-center rounded-full backdrop-blur-sm transition-colors"
+            style={{
+              width: 36,
+              height: 36,
+              backgroundColor: 'rgba(0, 0, 0, 0.4)',
+              color: '#fff',
+            }}
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto overscroll-contain">
+            {loading && (
+              <div className="px-4 pb-4 md:px-6 md:pb-6">
+                <ItemSkeleton />
+              </div>
+            )}
+            {error && (
+              <div className="px-4 pb-4 md:px-6 md:pb-6">
+                <ItemError onRetry={fetchItem} />
+              </div>
+            )}
             {!loading && !error && item && (
               <>
-                {/* Item image */}
-                {item.imageUrl && (
-                  <div className="relative w-full aspect-[16/10] rounded-xl overflow-hidden -mx-4 md:-mx-6 mb-4" style={{ width: 'calc(100% + 2rem)' }}>
+                {/* Item image or placeholder */}
+                {item.imageUrl ? (
+                  <div className="relative w-full h-48 sm:h-56">
                     <Image
                       src={item.imageUrl}
                       alt={item.name}
@@ -449,20 +453,39 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
                       priority
                     />
                   </div>
-                )}
-
-                {/* Name + price */}
-                <div className="flex items-start justify-between gap-3 mt-2">
-                  <h2
-                    className="text-xl font-bold"
+                ) : (
+                  <div
+                    className="h-32 flex items-center justify-center"
                     style={{
-                      fontFamily: 'var(--site-heading-font)',
-                      fontWeight: 'var(--site-heading-weight)',
-                      color: 'var(--site-text)',
+                      background: 'linear-gradient(135deg, var(--site-border) 0%, rgba(0,0,0,0.06) 100%)',
                     }}
                   >
-                    {item.name}
-                  </h2>
+                    <span className="text-4xl opacity-30">🍽️</span>
+                  </div>
+                )}
+
+                {/* Header: name + price */}
+                <div
+                  className="flex items-start justify-between gap-3 px-4 pt-4 pb-3 md:px-6 border-b"
+                  style={{ borderColor: 'var(--site-border)' }}
+                >
+                  <div className="min-w-0">
+                    <h2
+                      className="text-xl font-bold"
+                      style={{
+                        fontFamily: 'var(--site-heading-font)',
+                        fontWeight: 'var(--site-heading-weight)',
+                        color: 'var(--site-text)',
+                      }}
+                    >
+                      {item.name}
+                    </h2>
+                    {item.description && (
+                      <p className="mt-1 text-sm leading-relaxed" style={{ color: 'var(--site-text-muted)' }}>
+                        {item.description}
+                      </p>
+                    )}
+                  </div>
                   <span
                     className="text-lg font-semibold shrink-0"
                     style={{ color: 'var(--site-brand)' }}
@@ -471,103 +494,99 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd }: MenuItemSheetPro
                   </span>
                 </div>
 
-                {/* Description */}
-                {item.description && (
-                  <p className="mt-2 text-sm leading-relaxed" style={{ color: 'var(--site-text-muted)' }}>
-                    {item.description}
-                  </p>
-                )}
+                {/* Body content */}
+                <div className="px-4 py-4 md:px-6">
+                  {/* Stock status */}
+                  {item.stockStatus === 'out_of_stock' && (
+                    <div
+                      className="mb-3 rounded-lg px-3 py-2 text-sm font-medium"
+                      style={{
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        color: '#ef4444',
+                      }}
+                    >
+                      Currently unavailable
+                    </div>
+                  )}
+                  {item.stockStatus === 'low_stock' && (
+                    <div
+                      className="mb-3 rounded-lg px-3 py-2 text-sm font-medium"
+                      style={{
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        color: '#f59e0b',
+                      }}
+                    >
+                      Limited availability
+                    </div>
+                  )}
 
-                {/* Stock status */}
-                {item.stockStatus === 'out_of_stock' && (
-                  <div
-                    className="mt-3 rounded-lg px-3 py-2 text-sm font-medium"
-                    style={{
-                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                      color: '#ef4444',
-                    }}
-                  >
-                    Currently unavailable
-                  </div>
-                )}
-                {item.stockStatus === 'low_stock' && (
-                  <div
-                    className="mt-3 rounded-lg px-3 py-2 text-sm font-medium"
-                    style={{
-                      backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                      color: '#f59e0b',
-                    }}
-                  >
-                    Limited availability
-                  </div>
-                )}
+                  {/* Allergens */}
+                  {item.allergens && item.allergens.length > 0 && (
+                    <div className="mb-4 flex flex-wrap gap-1.5">
+                      {item.allergens.map((a) => (
+                        <AllergenBadge key={a} allergen={a} />
+                      ))}
+                    </div>
+                  )}
 
-                {/* Allergens */}
-                {item.allergens && item.allergens.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {item.allergens.map((a) => (
-                      <AllergenBadge key={a} allergen={a} />
-                    ))}
-                  </div>
-                )}
-
-                {/* Divider */}
-                <hr className="my-4" style={{ borderColor: 'var(--site-border)' }} />
-
-                {/* Pizza builder or standard modifiers */}
-                {item.itemType === 'pizza' && PizzaBuilderComponent && item.pizzaConfig ? (
-                  <PizzaBuilderComponent
-                    config={item.pizzaConfig}
-                    sizes={item.pizzaSizes ?? []}
-                    crusts={item.pizzaCrusts ?? []}
-                    sauces={item.pizzaSauces ?? []}
-                    cheeses={item.pizzaCheeses ?? []}
-                    toppings={item.pizzaToppings ?? []}
-                    specialty={item.pizzaSpecialty ?? null}
-                    onComplete={(result: PizzaBuilderResult) => setPizzaBuildResult(result)}
-                    onCancel={onClose}
-                  />
-                ) : (
-                  item.modifierGroups.map((group) => (
-                    <ModifierGroupRenderer
-                      key={group.id}
-                      group={group}
-                      selections={selections}
-                      onSelectionChange={handleSelectionChange}
+                  {/* Pizza builder or standard modifiers */}
+                  {item.itemType === 'pizza' && PizzaBuilderComponent && item.pizzaConfig ? (
+                    <PizzaBuilderComponent
+                      config={item.pizzaConfig}
+                      sizes={item.pizzaSizes ?? []}
+                      crusts={item.pizzaCrusts ?? []}
+                      sauces={item.pizzaSauces ?? []}
+                      cheeses={item.pizzaCheeses ?? []}
+                      toppings={item.pizzaToppings ?? []}
+                      specialty={item.pizzaSpecialty ?? null}
+                      onComplete={(result: PizzaBuilderResult) => setPizzaBuildResult(result)}
+                      onCancel={onClose}
                     />
-                  ))
-                )}
+                  ) : (
+                    item.modifierGroups.map((group) => (
+                      <ModifierGroupRenderer
+                        key={group.id}
+                        group={group}
+                        selections={selections}
+                        onSelectionChange={handleSelectionChange}
+                      />
+                    ))
+                  )}
+                </div>
               </>
             )}
           </div>
-        </div>
 
-        {/* Bottom bar: quantity + add to cart */}
-        {!loading && !error && item && (
-          <div
-            className="shrink-0 border-t px-4 py-3 md:px-6"
-            style={{ borderColor: 'var(--site-border)' }}
-          >
-            <div className="flex items-center gap-4">
-              <QuantitySelector quantity={quantity} onChange={setQuantity} />
-              <button
-                type="button"
-                onClick={handleAddToCart}
-                disabled={!canAdd}
-                className="flex-1 rounded-xl py-3.5 text-sm font-bold transition-all disabled:opacity-40"
-                style={{
-                  minHeight: 48,
-                  backgroundColor: 'var(--site-brand)',
-                  color: '#fff',
-                }}
-              >
-                {item.stockStatus === 'out_of_stock'
-                  ? 'Unavailable'
-                  : `Add to Cart — ${formatCurrency(total)}`}
-              </button>
+          {/* Fixed footer: quantity + add to cart */}
+          {!loading && !error && item && (
+            <div
+              className="shrink-0 border-t px-4 py-3 md:px-6"
+              style={{
+                borderColor: 'var(--site-border)',
+                backgroundColor: 'var(--site-bg)',
+              }}
+            >
+              <div className="flex items-center gap-4">
+                <QuantitySelector quantity={quantity} onChange={setQuantity} />
+                <button
+                  type="button"
+                  onClick={handleAddToCart}
+                  disabled={!canAdd}
+                  className="flex-1 rounded-xl py-3.5 text-sm font-bold transition-all disabled:opacity-40"
+                  style={{
+                    minHeight: 48,
+                    backgroundColor: 'var(--site-brand)',
+                    color: '#fff',
+                  }}
+                >
+                  {item.stockStatus === 'out_of_stock'
+                    ? 'Unavailable'
+                    : `Add to Cart — ${formatCurrency(total)}`}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

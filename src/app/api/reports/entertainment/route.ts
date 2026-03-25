@@ -82,6 +82,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           order: {
             locationId,
             deletedAt: null,
+            isTraining: { not: true },
             status: { in: [...REVENUE_ORDER_STATUSES] },
             OR: [
               { businessDayDate: { gte: startOfRange, lte: endOfRange } },

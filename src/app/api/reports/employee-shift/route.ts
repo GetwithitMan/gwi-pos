@@ -133,13 +133,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Fetch all shift data in parallel (all queries are independent)
     const [orders, voidedOrders, voidLogs, tipOutsReceived, tipOutsGiven, shiftTimeEntries] = await Promise.all([
-      // Completed/paid orders for this employee
+      // Completed/paid orders for this employee (exclude training, deleted, split parents)
       db.order.findMany({
         where: {
           locationId: locationIdToUse,
           employeeId: employee.id,
           createdAt: { gte: shiftStart, lte: shiftEnd },
           status: { in: [...REVENUE_ORDER_STATUSES] },
+          deletedAt: null,
+          isTraining: { not: true },
+          parentOrderId: null,
         },
         include: {
           items: {
@@ -151,7 +154,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
               },
             },
           },
-          payments: true,
+          payments: {
+            where: { status: 'completed' },
+          },
           discounts: {
             include: {
               discountRule: true,
@@ -159,13 +164,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
         },
       }),
-      // Voided orders
+      // Voided orders (exclude training and deleted)
       db.order.findMany({
         where: {
           locationId: locationIdToUse,
           employeeId: employee.id,
           createdAt: { gte: shiftStart, lte: shiftEnd },
           status: 'voided',
+          deletedAt: null,
+          isTraining: { not: true },
         },
         include: {
           items: {
@@ -280,6 +287,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalGratuity = 0
     const totalRefunds = 0
     let totalCommission = 0
+    let totalDonations = 0
 
     // Sales by category
     const salesByCategory: Record<string, {
@@ -314,6 +322,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const orderTip = Number(order.tipTotal) || 0
       const orderDiscount = Number(order.discountTotal) || 0
       const orderCommission = Number(order.commissionTotal) || 0
+      const orderDonation = Number(order.donationAmount) || 0
 
       adjustedGrossSales += orderSubtotal
       totalDiscounts += orderDiscount
@@ -322,6 +331,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       totalTaxFromExclusive += orderTaxFromExclusive
       totalTips += orderTip
       totalCommission += orderCommission
+      totalDonations += orderDonation
 
       // Track by category
       order.items.forEach(item => {
@@ -664,6 +674,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         refunds: round(totalRefunds),
         totalCollected: round(totalCollected),
         commission: round(totalCommission),
+        donations: round(totalDonations),
       },
 
       payments: {

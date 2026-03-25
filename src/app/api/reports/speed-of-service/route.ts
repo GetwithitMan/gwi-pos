@@ -76,6 +76,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const orderWhere: Record<string, unknown> = {
       locationId,
       status: { in: [...REVENUE_ORDER_STATUSES] },
+      isTraining: { not: true },
       createdAt: { gte: start, lte: end },
     }
     if (filterEmployeeId && filterEmployeeId !== requestingEmployeeId) {

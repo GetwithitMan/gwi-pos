@@ -16,11 +16,11 @@ export function CrustSelector({ crusts, selectedId, onSelect, disabled }: CrustS
     .sort((a, b) => a.sortOrder - b.sortOrder)
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--site-text-muted)' }}>
+    <div className="py-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
         Choose Crust
       </h3>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto">
         {activeCrusts.map((crust) => {
           const isSelected = crust.id === selectedId
           const hasUpcharge = crust.price > 0
@@ -31,17 +31,20 @@ export function CrustSelector({ crusts, selectedId, onSelect, disabled }: CrustS
               disabled={disabled}
               onClick={() => onSelect(crust)}
               className={`
-                rounded-full border-2 px-4 py-2 text-sm font-medium transition-all
+                px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] flex-shrink-0
                 ${isSelected
-                  ? 'border-[var(--site-brand)] bg-[var(--site-brand)] text-[var(--site-text-on-brand)]'
-                  : 'border-[var(--site-border)] bg-[var(--site-bg)] hover:border-[var(--site-brand)]/50'}
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 hover:border-gray-300'}
                 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
               `}
-              style={!isSelected ? { color: 'var(--site-text)' } : undefined}
             >
-              {crust.displayName || crust.name}
+              <div className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
+                {crust.displayName || crust.name}
+              </div>
               {hasUpcharge && (
-                <span className="ml-1 opacity-75">+{formatCurrency(crust.price)}</span>
+                <div className={`mt-1 text-xs ${isSelected ? 'text-blue-500' : 'text-gray-400'}`}>
+                  +{formatCurrency(crust.price)}
+                </div>
               )}
             </button>
           )

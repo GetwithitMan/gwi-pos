@@ -74,17 +74,17 @@ export function ToppingGrid({
   const selectedMap = new Map(selectedToppings.map((t) => [t.toppingId, t]))
 
   return (
-    <div className="space-y-5">
-      <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--site-text-muted)' }}>
+    <div className="py-4 space-y-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
         Toppings
       </h3>
 
       {sortedCategories.map(([category, items]) => (
         <div key={category} className="space-y-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--site-text-muted)' }}>
+          <h4 className="text-xs font-medium uppercase tracking-wider text-gray-400">
             {CATEGORY_LABELS[category] || category}
           </h4>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {items.map((topping) => {
               const selected = selectedMap.get(topping.id)
               const isSelected = !!selected
@@ -114,22 +114,19 @@ export function ToppingGrid({
                       }
                     }}
                     className={`
-                      w-full rounded-lg border-2 px-3 py-2.5 text-left text-sm transition-all
+                      w-full p-3 rounded-xl border-2 text-left text-sm transition-all min-h-[44px]
                       ${isSelected
-                        ? 'border-[var(--site-brand)] bg-[var(--site-brand)]/10'
-                        : 'border-[var(--site-border)] bg-[var(--site-bg)] hover:border-[var(--site-brand)]/50'}
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'}
                       ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
                     `}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span
-                        className="truncate font-medium"
-                        style={{ color: isSelected ? 'var(--site-brand)' : 'var(--site-text)' }}
-                      >
-                        {isSelected && <span className="mr-1">&#10003;</span>}
+                      <span className={`truncate font-medium ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
+                        {isSelected && <span className="mr-1 text-blue-500">&#10003;</span>}
                         {topping.displayName || topping.name}
                       </span>
-                      <span className="shrink-0 text-xs" style={{ color: 'var(--site-text-muted)' }}>
+                      <span className="shrink-0 text-xs text-gray-400">
                         +{formatCurrency(displayPrice)}
                       </span>
                     </div>
@@ -137,12 +134,9 @@ export function ToppingGrid({
 
                   {/* Expanded controls for selected topping */}
                   {isSelected && isExpanded && (
-                    <div
-                      className="rounded-lg border p-2 space-y-2"
-                      style={{ borderColor: 'var(--site-border)', backgroundColor: 'var(--site-bg-secondary)' }}
-                    >
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-2 space-y-2">
                       {/* Amount toggle */}
-                      <div className="flex gap-1.5">
+                      <div className="flex gap-1">
                         <AmountToggle
                           current={selected.amount}
                           value="regular"
@@ -173,8 +167,7 @@ export function ToppingGrid({
                     <button
                       type="button"
                       onClick={() => setExpandedTopping(topping.id)}
-                      className="w-full text-center text-xs py-0.5"
-                      style={{ color: 'var(--site-brand)' }}
+                      className="w-full text-center text-xs py-0.5 text-blue-500 min-h-[44px] flex items-center justify-center"
                     >
                       Customize placement
                     </button>
@@ -206,12 +199,11 @@ function AmountToggle({
       type="button"
       onClick={onClick}
       className={`
-        rounded-md border px-2.5 py-1 text-xs font-medium transition-all
+        px-3 py-1.5 rounded-lg text-xs font-medium transition-all
         ${isActive
-          ? 'border-[var(--site-brand)] bg-[var(--site-brand)]/15 text-[var(--site-brand)]'
-          : 'border-[var(--site-border)] hover:border-[var(--site-brand)]/40'}
+          ? 'bg-blue-500 text-white'
+          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}
       `}
-      style={!isActive ? { color: 'var(--site-text-muted)' } : undefined}
     >
       {label}
     </button>

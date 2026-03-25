@@ -61,6 +61,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         order: {
           locationId,
           status: { in: [...REVENUE_ORDER_STATUSES] },
+          isTraining: { not: true },
           paidAt: dateFilter,
         },
         status: 'active',

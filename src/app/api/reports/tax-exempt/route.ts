@@ -3,7 +3,9 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
-import { dateRangeToUTC } from '@/lib/timezone'
+import { getBusinessDayRange } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 
 /**
@@ -40,23 +42,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Rate limited', retryAfter: rateCheck.retryAfterSeconds }, { status: 429 })
     }
 
-    // Resolve timezone for date range conversion
-    const loc = await db.location.findFirst({
-      where: { id: locationId },
-      select: { timezone: true },
-    })
-    const timezone = loc?.timezone || 'America/New_York'
+    // Resolve business day boundaries (matches daily report pattern)
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
+    const dayStartTime = locationSettings.businessDay.dayStartTime
 
     // Default to current month
     const now = new Date()
     const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
     const defaultEnd = now.toISOString().split('T')[0]
 
-    const { start, end } = dateRangeToUTC(
-      startDate || defaultStart,
-      endDate || defaultEnd,
-      timezone,
-    )
+    const startRange = getBusinessDayRange(startDate || defaultStart, dayStartTime)
+    const endRange = getBusinessDayRange(endDate || defaultEnd, dayStartTime)
+    const start = startRange.start
+    const end = endRange.end
 
     // Fetch all tax-exempt orders in the date range
     const orders = await db.order.findMany({
@@ -65,7 +63,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isTaxExempt: true,
         createdAt: { gte: start, lte: end },
         deletedAt: null,
-        status: { in: ['paid', 'closed', 'open', 'in_progress'] },
+        status: { in: ['paid', 'closed', 'completed'] },
+        isTraining: { not: true },
       },
       select: {
         id: true,

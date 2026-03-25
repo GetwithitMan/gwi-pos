@@ -51,12 +51,14 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    // Auth check — require staff.view permission
-    const requestingEmployeeId = request.headers.get('x-employee-id') || request.nextUrl.searchParams.get('requestingEmployeeId')
-    if (requestingEmployeeId) {
-      const auth = await requirePermission(requestingEmployeeId, employee.locationId, PERMISSIONS.STAFF_VIEW)
-      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    // Auth check — always require staff.view permission (no bypass for missing identity)
+    const actor = await getActorFromRequest(request)
+    const requestingEmployeeId = actor.employeeId ?? request.nextUrl.searchParams.get('requestingEmployeeId')
+    if (!requestingEmployeeId) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
     }
+    const auth = await requirePermission(requestingEmployeeId, employee.locationId, PERMISSIONS.STAFF_VIEW)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Get summary stats
     // TODO: Add EmployeeRepository.getEmployeeStats() for tenant-safe aggregate queries

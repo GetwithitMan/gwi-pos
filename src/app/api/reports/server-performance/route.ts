@@ -47,6 +47,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         status: { in: [...REVENUE_ORDER_STATUSES] },
         deletedAt: null,
+        isTraining: { not: true },
         parentOrderId: null,
         ...(Object.keys(paidAtFilter).length > 0 && { paidAt: paidAtFilter }),
       },

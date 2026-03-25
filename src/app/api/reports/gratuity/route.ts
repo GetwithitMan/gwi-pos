@@ -36,6 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const endRange = getBusinessDayRange(endDateStr, dayStartTime)
 
     // Query TipTransactions with kind = 'auto_gratuity' in the date range
+    // Exclude training orders from gratuity report
     const autoGratTransactions = await db.tipTransaction.findMany({
       where: {
         locationId,
@@ -44,6 +45,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         collectedAt: {
           gte: startRange.start,
           lte: endRange.end,
+        },
+        order: {
+          isTraining: { not: true },
         },
       },
       include: {

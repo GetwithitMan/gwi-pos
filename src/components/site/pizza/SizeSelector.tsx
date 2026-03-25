@@ -16,11 +16,11 @@ export function SizeSelector({ sizes, selectedId, onSelect, disabled }: SizeSele
     .sort((a, b) => a.sortOrder - b.sortOrder)
 
   return (
-    <div className="space-y-3">
-      <h3 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--site-text-muted)' }}>
+    <div className="py-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
         Choose Size
       </h3>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="flex gap-2 overflow-x-auto">
         {activeSizes.map((size) => {
           const isSelected = size.id === selectedId
           return (
@@ -30,26 +30,26 @@ export function SizeSelector({ sizes, selectedId, onSelect, disabled }: SizeSele
               disabled={disabled}
               onClick={() => onSelect(size)}
               className={`
-                relative rounded-xl border-2 p-4 text-center transition-all
+                px-4 py-3 rounded-xl border-2 text-center transition-all min-h-[44px] min-w-[100px] flex-shrink-0
                 ${isSelected
-                  ? 'border-[var(--site-brand)] bg-[var(--site-brand)]/10 shadow-md'
-                  : 'border-[var(--site-border)] bg-[var(--site-bg)] hover:border-[var(--site-brand)]/50'}
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 hover:border-gray-300'}
                 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}
               `}
             >
               {size.inches && (
-                <div className="text-2xl font-bold" style={{ color: isSelected ? 'var(--site-brand)' : 'var(--site-text)' }}>
+                <div className={`text-2xl font-bold ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
                   {size.inches}&quot;
                 </div>
               )}
-              <div className="text-sm font-medium" style={{ color: 'var(--site-text)' }}>
+              <div className={`text-sm font-medium ${isSelected ? 'text-blue-700' : 'text-gray-900'}`}>
                 {size.displayName || size.name}
               </div>
-              <div className="mt-1 text-sm font-semibold" style={{ color: 'var(--site-brand)' }}>
+              <div className={`mt-1 text-sm font-semibold ${isSelected ? 'text-blue-600' : 'text-blue-500'}`}>
                 {formatCurrency(size.basePrice)}
               </div>
               {size.slices > 0 && (
-                <div className="mt-0.5 text-xs" style={{ color: 'var(--site-text-muted)' }}>
+                <div className="mt-0.5 text-xs text-gray-400">
                   {size.slices} slices
                 </div>
               )}

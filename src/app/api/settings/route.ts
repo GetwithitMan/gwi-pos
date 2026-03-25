@@ -352,9 +352,43 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       void emitToLocation(location.id, 'cfd:settings-updated', { cfdDisplay: finalSettings.cfdDisplay })
     }
 
+    // P0.1: Strip secrets from response — same as GET handler.
+    // The browser must never receive raw secrets in the PUT response either.
+    const responseSettings = { ...finalSettings } as unknown as Record<string, unknown>
+    if (responseSettings.hotelPms && typeof responseSettings.hotelPms === 'object') {
+      const pms = responseSettings.hotelPms as Record<string, unknown>
+      responseSettings.hotelPms = {
+        ...pms,
+        hasClientSecret: Boolean(pms.clientSecret),
+        hasAppKey: Boolean(pms.appKey),
+        clientSecret: '',
+        appKey: '',
+      }
+    }
+    if (responseSettings.marginEdge && typeof responseSettings.marginEdge === 'object') {
+      const me = responseSettings.marginEdge as Record<string, unknown>
+      responseSettings.marginEdge = {
+        ...me,
+        hasApiKey: Boolean(me.apiKey),
+        apiKey: '',
+      }
+    }
+    if (responseSettings.sevenShifts && typeof responseSettings.sevenShifts === 'object') {
+      const ss = responseSettings.sevenShifts as Record<string, unknown>
+      responseSettings.sevenShifts = {
+        ...ss,
+        hasClientSecret: Boolean(ss.clientSecret),
+        hasWebhookSecret: Boolean(ss.webhookSecret),
+        clientSecret: '',
+        webhookSecret: '',
+        accessToken: undefined,
+        accessTokenExpiresAt: undefined,
+      }
+    }
+
     return NextResponse.json({ data: {
       locationId: location.id,
-      settings: finalSettings,
+      settings: responseSettings,
     } })
   } catch (error) {
     console.error('Failed to update settings:', error)

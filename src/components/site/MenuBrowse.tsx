@@ -54,7 +54,7 @@ export function MenuBrowse({ categories, onItemSelect }: MenuBrowseProps) {
         if (isScrollingToRef.current) return
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            setActiveCategoryId(entry.target.id)
+            setActiveCategoryId(entry.target.id.replace('category-', ''))
             break
           }
         }
@@ -72,7 +72,7 @@ export function MenuBrowse({ categories, onItemSelect }: MenuBrowseProps) {
   // ── Tab click → scroll to section ─────────────────────────────────────
   const handleTabClick = useCallback((categoryId: string) => {
     setActiveCategoryId(categoryId)
-    const el = sectionRefs.current.get(categoryId)
+    const el = sectionRefs.current.get(`category-${categoryId}`)
     if (el) {
       isScrollingToRef.current = true
       const top = el.getBoundingClientRect().top + window.scrollY - 130
@@ -111,7 +111,7 @@ export function MenuBrowse({ categories, onItemSelect }: MenuBrowseProps) {
       )}
 
       {/* Category sections */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-16">
+      <div className="mx-auto max-w-7xl px-4 pb-16">
         {isEmpty && (
           <div className="text-center py-16">
             <p className="text-lg" style={{ color: 'var(--site-text-muted)' }}>
@@ -123,22 +123,15 @@ export function MenuBrowse({ categories, onItemSelect }: MenuBrowseProps) {
         {filteredCategories.map((cat) => (
           <section
             key={cat.id}
-            id={cat.id}
-            ref={(el) => setSectionRef(cat.id, el)}
-            className="pt-8 first:pt-4"
+            id={`category-${cat.id}`}
+            ref={(el) => setSectionRef(`category-${cat.id}`, el)}
+            className="pt-6 first:pt-2"
           >
-            <h2
-              className="text-xl md:text-2xl mb-4"
-              style={{
-                fontFamily: 'var(--site-heading-font)',
-                fontWeight: 'var(--site-heading-weight, 700)',
-                color: 'var(--site-text)',
-              }}
-            >
+            <h2 className="text-lg font-bold text-gray-900 mb-3">
               {cat.name}
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               {cat.items.map((item) => (
                 <MenuItemCard
                   key={item.id}
@@ -186,7 +179,7 @@ export function MenuBrowseSkeleton() {
       />
 
       {/* Card grid skeleton */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <MenuItemCardSkeleton key={i} />
         ))}

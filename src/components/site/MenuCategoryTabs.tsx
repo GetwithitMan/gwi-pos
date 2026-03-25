@@ -57,17 +57,11 @@ export function MenuCategoryTabs({ categories, activeCategoryId, onTabClick }: M
   if (categories.length === 0) return null
 
   return (
-    <div
-      className="sticky top-16 z-40 border-b backdrop-blur-md"
-      style={{
-        backgroundColor: 'var(--site-bg)',
-        borderColor: 'var(--site-border)',
-      }}
-    >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <div className="sticky top-16 z-40 bg-white border-b border-gray-200">
+      <div className="mx-auto max-w-7xl px-4">
         <div
           ref={scrollRef}
-          className="flex gap-1 overflow-x-auto scrollbar-hide py-2"
+          className="flex gap-1.5 overflow-x-auto py-2.5"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {categories.map((cat) => {
@@ -77,11 +71,11 @@ export function MenuCategoryTabs({ categories, activeCategoryId, onTabClick }: M
                 key={cat.id}
                 ref={(el) => setTabRef(cat.id, el)}
                 onClick={() => onTabClick(cat.id)}
-                className="shrink-0 px-4 py-2 text-sm font-medium rounded-full transition-all whitespace-nowrap"
-                style={{
-                  backgroundColor: isActive ? 'var(--site-brand)' : 'transparent',
-                  color: isActive ? 'var(--site-text-on-brand)' : 'var(--site-text-muted)',
-                }}
+                className={`shrink-0 px-4 py-1.5 text-sm font-medium rounded-full transition-colors whitespace-nowrap ${
+                  isActive
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
                 aria-current={isActive ? 'true' : undefined}
               >
                 {cat.name}

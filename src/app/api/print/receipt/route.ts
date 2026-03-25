@@ -228,8 +228,12 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         taxFromInclusive,
         taxFromExclusive,
         tipTotal,
+        donationAmount: Number(order.donationAmount ?? 0),
         total,
         surchargeDisclosure,
+        convenienceFee: Number(order.convenienceFee ?? 0),
+        isTaxExempt: order.isTaxExempt ?? false,
+        taxExemptReason: order.taxExemptReason ?? null,
       },
     }
 

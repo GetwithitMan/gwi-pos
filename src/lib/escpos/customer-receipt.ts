@@ -71,6 +71,7 @@ export interface ReceiptTotals {
   taxFromInclusive?: number   // Tax backed out of inclusive-priced items
   taxFromExclusive?: number   // Tax added on top of exclusive-priced items
   tipTotal: number
+  donationAmount?: number
   total: number
   surchargeAmount?: number
   surchargePercent?: number
@@ -78,6 +79,8 @@ export interface ReceiptTotals {
   tipExemptAmount?: number  // Sum of tip-exempt item totals — excluded from tip suggestion basis
   convenienceFee?: number
   convenienceFeeDisclosure?: string | null
+  isTaxExempt?: boolean
+  taxExemptReason?: string | null
 }
 
 export interface CustomerReceiptData {
@@ -212,6 +215,18 @@ export function buildCustomerReceipt(
   if (totals.convenienceFee && totals.convenienceFee > 0) {
     content.push(twoColumnLine('Convenience Fee:', `$${totals.convenienceFee.toFixed(2)}`, width))
   }
+  // Tax exempt badge — render before tax line when order is tax exempt
+  if (totals.isTaxExempt) {
+    content.push(ESCPOS.ALIGN_CENTER)
+    content.push(ESCPOS.BOLD_ON)
+    content.push(line('*** TAX EXEMPT ***'))
+    content.push(ESCPOS.BOLD_OFF)
+    if (totals.taxExemptReason) {
+      content.push(line(totals.taxExemptReason))
+    }
+    content.push(ESCPOS.ALIGN_LEFT)
+  }
+
   // Tax line(s) — show breakdown if enabled and both inclusive/exclusive present
   const showBreakdown = s.receipt?.totals?.showTaxBreakdown ?? false
   const inclTax = totals.taxFromInclusive ?? 0
@@ -223,8 +238,14 @@ export function buildCustomerReceipt(
     content.push(twoColumnLine('Tax (included):', `$${inclTax.toFixed(2)}`, width))
     content.push(twoColumnLine('Tax (added):', `$${exclTax.toFixed(2)}`, width))
   } else {
-    const taxLabel = allInclusive ? 'Tax (included):' : 'Tax:'
+    const taxLabel = totals.isTaxExempt
+      ? 'Tax (exempt):'
+      : allInclusive ? 'Tax (included):' : 'Tax:'
     content.push(twoColumnLine(taxLabel, `$${totals.tax.toFixed(2)}`, width))
+  }
+  // Donation line — between tip and total
+  if (totals.donationAmount && totals.donationAmount > 0) {
+    content.push(twoColumnLine('Donation:', `$${totals.donationAmount.toFixed(2)}`, width))
   }
   content.push(TALL)
   content.push(ESCPOS.BOLD_ON)

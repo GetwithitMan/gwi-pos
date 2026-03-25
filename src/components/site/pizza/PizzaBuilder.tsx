@@ -196,7 +196,7 @@ export function PizzaBuilder({
   const toppingsDisabled = isSpecialty && !specialty.allowToppingMods
 
   return (
-    <div className="space-y-6">
+    <div className="divide-y divide-gray-100">
       {/* Size */}
       <SizeSelector
         sizes={sizes}
@@ -262,12 +262,11 @@ export function PizzaBuilder({
       />
 
       {/* Actions */}
-      <div className="flex gap-3 pt-2">
+      <div className="flex gap-3 py-4">
         <button
           type="button"
           onClick={onCancel}
-          className="flex-1 rounded-xl border-2 py-3 text-sm font-semibold transition-all hover:opacity-80"
-          style={{ borderColor: 'var(--site-border)', color: 'var(--site-text)' }}
+          className="flex-1 rounded-xl border-2 border-gray-200 py-3 text-sm font-semibold text-gray-700 transition-all hover:border-gray-300 min-h-[44px]"
         >
           Cancel
         </button>
@@ -276,10 +275,10 @@ export function PizzaBuilder({
           onClick={handleComplete}
           disabled={!canComplete}
           className={`
-            flex-1 rounded-xl py-3 text-sm font-semibold transition-all
+            flex-1 rounded-xl py-3 text-sm font-semibold transition-all min-h-[44px]
             ${canComplete
-              ? 'bg-[var(--site-brand)] text-[var(--site-text-on-brand)] hover:opacity-90'
-              : 'cursor-not-allowed opacity-40 bg-[var(--site-brand)] text-[var(--site-text-on-brand)]'}
+              ? 'bg-blue-500 text-white hover:bg-blue-600'
+              : 'cursor-not-allowed opacity-40 bg-blue-500 text-white'}
           `}
         >
           Add to Order

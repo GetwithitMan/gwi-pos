@@ -20,6 +20,7 @@ export function toNumber(value: unknown): number {
  * Use this everywhere money is rounded — never use ad-hoc Math.round(x*100)/100.
  */
 export function roundToCents(value: number): number {
+  if (!Number.isFinite(value)) return 0
   return Math.round(value * 100) / 100
 }
 

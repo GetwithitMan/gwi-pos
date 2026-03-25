@@ -25,6 +25,7 @@ export interface ReceiptItem {
     preModifier?: string | null
     isCustomEntry?: boolean
     isNoneSelection?: boolean
+    noneShowOnReceipt?: boolean
     customEntryName?: string | null
     swapTargetName?: string | null
   }[]
@@ -249,7 +250,7 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
             {/* Modifiers */}
             {item.modifiers && item.modifiers.length > 0 && (
               <div className="pl-4 text-xs text-gray-600">
-                {item.modifiers.map(mod => (
+                {item.modifiers.filter(mod => !(mod.isNoneSelection && !mod.noneShowOnReceipt)).map(mod => (
                   <div key={mod.id} className="flex justify-between">
                     <span>
                       {mod.isCustomEntry && <span className="font-semibold text-emerald-600">CUSTOM: </span>}

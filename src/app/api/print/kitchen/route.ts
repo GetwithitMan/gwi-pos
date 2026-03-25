@@ -43,6 +43,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
                   select: {
                     printerRouting: true,
                     printerIds: true,
+                    modifierGroup: {
+                      select: {
+                        nonePrintsToKitchen: true,
+                      },
+                    },
                   },
                 },
               },
@@ -507,6 +512,11 @@ function buildKitchenTicket(
       isNoneSelection?: boolean
       customEntryName?: string | null
       swapTargetName?: string | null
+      modifier?: {
+        modifierGroup?: {
+          nonePrintsToKitchen?: boolean
+        } | null
+      } | null
     }>
     ingredientModifications: Array<{
       ingredientName: string
@@ -812,6 +822,8 @@ function buildKitchenTicket(
     // Modifiers - SKIP for pizza items (pizzaData has the organized toppings)
     if (!item.pizzaData) {
       for (const mod of item.modifiers) {
+        // Skip "None" selections unless the parent group has nonePrintsToKitchen enabled
+        if (mod.isNoneSelection && !mod.modifier?.modifierGroup?.nonePrintsToKitchen) continue
         const prefix = mod.depth > 0 ? '  '.repeat(mod.depth) + '- ' : '  '
         // T-042: handle compound preModifier strings (e.g. "side,extra" → "Side Extra Ranch")
         const preLabel = mod.preModifier
