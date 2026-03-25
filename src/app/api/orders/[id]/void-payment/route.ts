@@ -58,6 +58,10 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularVoidPayment = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularVoidPayment ? 'cloud' : 'local'
+
     // Cellular terminal: require manager PIN re-authentication for void
     try {
       validateManagerReauthFromHeaders(request, managerId, managerPinHash)
@@ -227,7 +231,7 @@ export const POST = withVenue(async function POST(
           voidedAt: new Date(),
           voidedBy: managerId,
           voidReason: reason,
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         }, tx)
         // Read back for return value (updatePayment returns count, not record)
         const updated = await PaymentRepository.getPaymentByIdOrThrow(paymentId, order.locationId, tx)
@@ -235,7 +239,7 @@ export const POST = withVenue(async function POST(
         // 2. Update order status
         await OrderRepository.updateOrder(orderId, order.locationId, {
           status: newOrderStatus,
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         }, tx)
 
         // 3. Create audit log
@@ -426,7 +430,7 @@ export const POST = withVenue(async function POST(
           if (allTerminal) {
             await OrderRepository.updateOrder(order.parentOrderId!, order.locationId, {
               status: 'voided', closedAt: new Date(),
-              lastMutatedBy: 'local',
+              lastMutatedBy: mutationOrigin,
             })
             void dispatchOrderClosed(order.locationId, {
               orderId: order.parentOrderId!,

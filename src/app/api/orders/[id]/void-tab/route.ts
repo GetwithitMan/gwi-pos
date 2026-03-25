@@ -20,6 +20,10 @@ export const POST = withVenue(async function POST(
     const body = await request.json().catch(() => ({}))
     const { employeeId, reason } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularVoidTab = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularVoidTab ? 'cloud' : 'local'
+
     if (!employeeId) {
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
     }
@@ -64,7 +68,7 @@ export const POST = withVenue(async function POST(
 
         await db.orderCard.update({
           where: { id: card.id },
-          data: { status: voided ? 'voided' : card.status, lastMutatedBy: 'local' },
+          data: { status: voided ? 'voided' : card.status, lastMutatedBy: mutationOrigin },
         })
 
         results.push({
@@ -87,7 +91,7 @@ export const POST = withVenue(async function POST(
       tabStatus: allVoided ? 'closed' : order.tabStatus,
       status: allVoided ? 'voided' : order.status,
       notes: reason ? `Tab voided: ${reason}` : order.notes,
-      lastMutatedBy: 'local',
+      lastMutatedBy: mutationOrigin,
     })
 
     // Reset table to available when tab is fully voided

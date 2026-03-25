@@ -9272,6 +9272,7 @@ model LoyaltyProgram {
   excludedCategoryIds String[] @default([])
   excludedItemTypes   String[] @default([]) // e.g., ['entertainment']
 
+  lastMutatedBy String? // 'cloud' | 'local' | null
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -9297,6 +9298,7 @@ model LoyaltyTier {
   color            String   @default("#6366f1") // For UI badge
   sortOrder        Int      @default(0)
 
+  lastMutatedBy String? // 'cloud' | 'local' | null
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?

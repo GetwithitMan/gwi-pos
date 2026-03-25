@@ -18,6 +18,10 @@ export const POST = withVenue(async function POST(
     const body = await request.json().catch(() => ({}))
     const { employeeId } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularWalkout = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularWalkout ? 'cloud' : 'local'
+
     if (!employeeId) {
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
     }
@@ -59,7 +63,7 @@ export const POST = withVenue(async function POST(
         isWalkout: true,
         walkoutAt: now,
         walkoutMarkedBy: employeeId,
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       },
     })
 

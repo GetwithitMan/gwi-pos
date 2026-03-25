@@ -48,8 +48,11 @@ export const POST = withVenue(withTiming(async function POST(
       // No body or invalid JSON — send all pending items
     }
 
-    // Cellular ownership gating — block send on locally-owned orders
+    // HA cellular sync — detect mutation origin for downstream sync
     const isCellularSend = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularSend ? 'cloud' : 'local'
+
+    // Cellular ownership gating — block send on locally-owned orders
     if (isCellularSend) {
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
@@ -224,15 +227,15 @@ export const POST = withVenue(withTiming(async function POST(
       // Update order: increment version, set sentAt = NOW(), optionally transition draft → open
       if (order.status === 'draft') {
         await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "lastMutatedBy" = 'local', "updatedAt" = NOW()
+          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), status = 'open', "lastMutatedBy" = $3, "updatedAt" = NOW()
            WHERE id = $1 AND "locationId" = $2`,
-          id, order.locationId,
+          id, order.locationId, mutationOrigin,
         )
       } else {
         await tx.$executeRawUnsafe(
-          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "lastMutatedBy" = 'local', "updatedAt" = NOW()
+          `UPDATE "Order" SET version = version + 1, "sentAt" = NOW(), "lastMutatedBy" = $3, "updatedAt" = NOW()
            WHERE id = $1 AND "locationId" = $2`,
-          id, order.locationId,
+          id, order.locationId, mutationOrigin,
         )
       }
 

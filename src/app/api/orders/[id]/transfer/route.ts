@@ -31,6 +31,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     const body = await request.json() as TransferPayload
     const { toEmployeeId, reason, fromEmployeeId } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularTransfer = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularTransfer ? 'cloud' : 'local'
+
     if (!toEmployeeId) {
       return NextResponse.json(
         { error: 'toEmployeeId is required' },
@@ -137,7 +141,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
       await OrderRepository.updateOrder(orderId, order.locationId, {
         employeeId: toEmployeeId,
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
         version: { increment: 1 },
       }, tx)
     })

@@ -24,6 +24,10 @@ export const POST = withVenue(async function POST(
     const actor = await getActorFromRequest(request)
     const requestingEmployeeId = actor.employeeId || body.employeeId
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularTaxExempt = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularTaxExempt ? 'cloud' : 'local'
+
     if (!reason || reason.trim().length === 0) {
       return NextResponse.json({ error: 'Tax exempt reason is required' }, { status: 400 })
     }

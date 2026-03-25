@@ -395,8 +395,11 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // Cellular ownership gating — block mutation of locally-owned orders
+    // HA cellular sync — detect mutation origin for downstream sync
     const isCellularPut = request.headers.get('x-cellular-authenticated') === '1'
+    const putMutationOrigin = isCellularPut ? 'cloud' : 'local'
+
+    // Cellular ownership gating — block mutation of locally-owned orders
     if (isCellularPut) {
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
@@ -564,7 +567,7 @@ export const PUT = withVenue(async function PUT(
     const updatedOrder = await OrderRepository.updateOrderAndSelect(
       id,
       existingOrder.locationId,
-      { ...updateData, version: { increment: 1 } },
+      { ...updateData, version: { increment: 1 }, lastMutatedBy: putMutationOrigin },
       {
         id: true,
         locationId: true,
@@ -782,8 +785,11 @@ export const PATCH = withVenue(async function PATCH(
       return NextResponse.json({ error: 'Notes cannot exceed 500 characters' }, { status: 400 })
     }
 
-    // Cellular ownership gating — block mutation of locally-owned orders
+    // HA cellular sync — detect mutation origin for downstream sync
     const isCellularPatch = request.headers.get('x-cellular-authenticated') === '1'
+    const patchMutationOrigin = isCellularPatch ? 'cloud' : 'local'
+
+    // Cellular ownership gating — block mutation of locally-owned orders
     if (isCellularPatch) {
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
@@ -939,7 +945,7 @@ export const PATCH = withVenue(async function PATCH(
     const updatedOrder = await OrderRepository.updateOrderAndSelect(
       id,
       existing.locationId,
-      { ...updateData, version: { increment: 1 }, lastMutatedBy: 'local' },
+      { ...updateData, version: { increment: 1 }, lastMutatedBy: patchMutationOrigin },
       {
         id: true,
         locationId: true,

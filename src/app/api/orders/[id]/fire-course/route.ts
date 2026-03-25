@@ -21,6 +21,10 @@ export const POST = withVenue(async function POST(
     const body = await request.json()
     const { courseNumber, employeeId } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularFireCourse = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularFireCourse ? 'cloud' : 'local'
+
     if (courseNumber === undefined || courseNumber === null) {
       return NextResponse.json(
         { error: 'courseNumber is required' },
@@ -159,7 +163,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Update current course on the order (tenant-safe)
-    await OrderRepository.updateOrder(id, locationId, { currentCourse: courseNumber, version: { increment: 1 }, lastMutatedBy: 'local' })
+    await OrderRepository.updateOrder(id, locationId, { currentCourse: courseNumber, version: { increment: 1 }, lastMutatedBy: mutationOrigin })
 
     // Route order items to stations using tag-based routing engine
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)

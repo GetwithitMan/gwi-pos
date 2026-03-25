@@ -24,6 +24,10 @@ export const POST = withVenue(async function POST(
     const body = await request.json().catch(() => ({}))
     const { markServed = true } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularAdvance = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularAdvance ? 'cloud' : 'local'
+
     // Resolve employeeId from body or session
     const employeeId = body.employeeId || (await getActorFromRequest(request)).employeeId
 
@@ -121,7 +125,7 @@ export const POST = withVenue(async function POST(
         }, tx)
 
         // Update order's current course
-        await OrderRepository.updateOrder(orderId, order.locationId, { currentCourse: nextCourse, version: { increment: 1 }, lastMutatedBy: 'local' }, tx)
+        await OrderRepository.updateOrder(orderId, order.locationId, { currentCourse: nextCourse, version: { increment: 1 }, lastMutatedBy: mutationOrigin }, tx)
 
         // Queue order:updated inside transaction for crash safety
         const updatedPayload: OrderUpdatedPayload = {

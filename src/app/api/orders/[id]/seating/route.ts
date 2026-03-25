@@ -228,6 +228,10 @@ export const POST = withVenue(async function POST(
     const body: SeatAction = await request.json()
     const { action, position, seatVersion, tableId: resetTableId } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularSeating = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularSeating ? 'cloud' : 'local'
+
     if (!action) {
       return NextResponse.json(
         { error: 'Action is required' },
@@ -394,7 +398,7 @@ export const POST = withVenue(async function POST(
           guestCount: newTotalSeats,
           seatVersion: order.seatVersion + 1,
           seatTimestamps: newTimestamps,
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         }, tx)
         const updatedOrder = { seatVersion: order.seatVersion + 1 }
 
@@ -526,7 +530,7 @@ export const POST = withVenue(async function POST(
           guestCount: currentTotalSeats - 1,
           seatVersion: order.seatVersion + 1,
           seatTimestamps: newTimestamps,
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         }, tx)
         const updatedOrder = { seatVersion: order.seatVersion + 1 }
 

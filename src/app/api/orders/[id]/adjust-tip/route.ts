@@ -25,6 +25,10 @@ export const PATCH = withVenue(async function PATCH(
     const { id: orderId } = await params
     const { paymentId, newTipAmount, reason, managerId } = await request.json()
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularTip = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularTip ? 'cloud' : 'local'
+
     // Validate inputs
     if (!paymentId || newTipAmount === undefined || !reason || !managerId) {
       return NextResponse.json(
@@ -148,7 +152,7 @@ export const PATCH = withVenue(async function PATCH(
       await PaymentRepository.updatePayment(paymentId, locationId, {
         tipAmount: newTipAmount,
         totalAmount: newTotalAmount,
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       }, tx)
       const updatedPayment = await PaymentRepository.getPaymentByIdOrThrow(paymentId, locationId, tx)
 
@@ -167,7 +171,7 @@ export const PATCH = withVenue(async function PATCH(
         tipTotal: newOrderTipTotal,
         total: newOrderTotal,
         version: { increment: 1 },
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       }, tx)
 
       return { order, payment, updatedPayment, oldTipAmount, newTotalAmount, newOrderTipTotal, newOrderTotal }

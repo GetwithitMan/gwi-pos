@@ -29,6 +29,10 @@ export const PUT = withVenue(async function PUT(
     const { action, ...updateData } = body
     const requestingEmployeeId = (body as { requestingEmployeeId?: string }).requestingEmployeeId
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularItemUpdate = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularItemUpdate ? 'cloud' : 'local'
+
     // Resolve locationId for tenant-safe queries
     const locationId = await getLocationId()
     if (!locationId) {
@@ -218,7 +222,7 @@ export const PUT = withVenue(async function PUT(
         await OrderRepository.updateOrder(orderId, locationId, {
           ...totals,
           version: { increment: 1 },
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         }, tx)
 
         // Return full order response so clients get updated totals
@@ -332,6 +336,10 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id: orderId, itemId } = await params
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularDelete = request.headers.get('x-cellular-authenticated') === '1'
+    const deleteMutationOrigin = isCellularDelete ? 'cloud' : 'local'
+
     // Resolve locationId for tenant-safe queries
     const locationId = await getLocationId()
     if (!locationId) {
@@ -426,7 +434,7 @@ export const DELETE = withVenue(async function DELETE(
       await OrderRepository.updateOrder(orderId, locationId, {
         ...totals,
         version: { increment: 1 },
-        lastMutatedBy: 'local',
+        lastMutatedBy: deleteMutationOrigin,
       }, tx)
 
       // Fetch updated order with items for response (tenant-safe)

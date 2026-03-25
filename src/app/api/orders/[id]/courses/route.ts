@@ -168,6 +168,10 @@ export const POST = withVenue(async function POST(
     const body = await request.json()
     const { courseNumber, action, courseMode } = body
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularCourse = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularCourse ? 'cloud' : 'local'
+
     // Resolve locationId for tenant-safe queries
     const postLocationId = await getLocationId()
     if (!postLocationId) {
@@ -199,7 +203,7 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      await OrderRepository.updateOrder(orderId, postLocationId, { courseMode, lastMutatedBy: 'local' })
+      await OrderRepository.updateOrder(orderId, postLocationId, { courseMode, lastMutatedBy: mutationOrigin })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(() => {})
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { courseMode })
@@ -212,7 +216,7 @@ export const POST = withVenue(async function POST(
 
     // Handle set current course
     if (action === 'set_current' && courseNumber !== undefined) {
-      await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: 'local' })
+      await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin })
 
       void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(() => {})
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { currentCourse: courseNumber })
@@ -257,7 +261,7 @@ export const POST = withVenue(async function POST(
 
           // Update current course if this course is higher
           if (courseNumber > order.currentCourse) {
-            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: 'local' }, tx)
+            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin }, tx)
           }
 
           void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
@@ -297,7 +301,7 @@ export const POST = withVenue(async function POST(
 
           // Update current course
           if (courseNumber > order.currentCourse) {
-            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: 'local' }, tx)
+            await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin }, tx)
           }
 
           void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})

@@ -38,6 +38,10 @@ export const POST = withVenue(async function POST(
     const { id: orderId } = await params
     const body = await request.json() as ApplyDiscountRequest
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularDiscount = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularDiscount ? 'cloud' : 'local'
+
     // Order claim check — block if another employee has an active claim
     if (body.employeeId) {
       const terminalId = request.headers.get('x-terminal-id')
@@ -170,7 +174,7 @@ export const POST = withVenue(async function POST(
             taxFromExclusive: totals.taxFromExclusive,
             total: totals.total,
             version: { increment: 1 },
-            lastMutatedBy: 'local',
+            lastMutatedBy: mutationOrigin,
           }, tx)
 
           // Queue critical socket events in the outbox (atomic with discount removal)
@@ -492,7 +496,7 @@ export const POST = withVenue(async function POST(
         taxFromExclusive: totals.taxFromExclusive,
         total: totals.total,
         version: { increment: 1 },
-        lastMutatedBy: 'local',
+        lastMutatedBy: mutationOrigin,
       }, tx)
 
       // Emit order event for discount applied (fire-and-forget)
@@ -694,6 +698,10 @@ export const DELETE = withVenue(async function DELETE(
     const discountId = searchParams.get('discountId')
     const employeeId = searchParams.get('employeeId')
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularDelete = request.headers.get('x-cellular-authenticated') === '1'
+    const deleteMutationOrigin = isCellularDelete ? 'cloud' : 'local'
+
     if (!discountId) {
       return NextResponse.json(
         { error: 'Discount ID is required' },
@@ -826,7 +834,7 @@ export const DELETE = withVenue(async function DELETE(
         taxFromExclusive: totals.taxFromExclusive,
         total: totals.total,
         version: { increment: 1 },
-        lastMutatedBy: 'local',
+        lastMutatedBy: deleteMutationOrigin,
       }, tx)
 
       // Emit order event for discount removed (fire-and-forget)

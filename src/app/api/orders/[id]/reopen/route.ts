@@ -28,6 +28,10 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // HA cellular sync — detect mutation origin for downstream sync
+    const isCellularReopen = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellularReopen ? 'cloud' : 'local'
+
     // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
     // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
     const order = await db.order.findFirst({
@@ -231,7 +235,7 @@ export const POST = withVenue(async function POST(
           reopenedBy: managerId,
           reopenReason: reason,
           version: { increment: 1 },
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         },
         undefined,
         tx,

@@ -157,8 +157,11 @@ export const POST = withVenue(async function POST(
       return apiError.badRequest('Location not found', ERROR_CODES.VALIDATION_ERROR)
     }
 
-    // Cellular ownership gating — block mutation of locally-owned orders
+    // HA cellular sync — detect mutation origin for downstream sync
     const isCellular = request.headers.get('x-cellular-authenticated') === '1'
+    const mutationOrigin = isCellular ? 'cloud' : 'local'
+
+    // Cellular ownership gating — block mutation of locally-owned orders
     if (isCellular) {
       const { validateCellularOrderAccess, CellularAuthError } = await import('@/lib/cellular-validation')
       try {
@@ -390,7 +393,7 @@ export const POST = withVenue(async function POST(
           ...totals,
           ...(existingOrder.isBottleService ? { bottleServiceCurrentSpend: totals.subtotal } : {}),
           version: { increment: 1 },
-          lastMutatedBy: 'local',
+          lastMutatedBy: mutationOrigin,
         },
         {
           employee: {
