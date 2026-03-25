@@ -466,7 +466,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           cardLast4: txResult.cardLast4 || txResult.CardLast4 || txResult.MaskedPan?.slice(-4),
           entryMethod: txResult.entryMethod || txResult.EntryMethod,
           responseCode: txResult.responseCode || txResult.ResponseCode,
-          responseMessage: txResult.responseMessage || txResult.ResponseMessage || txResult.Message,
+          responseMessage: txResult.textResponse || txResult.TextResponse || txResult.responseMessage || txResult.ResponseMessage || txResult.Message,
 
           // Partial Approval tracking
           amountRequested: params.amount,
@@ -486,8 +486,10 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           onSuccess?.(result)
         } else {
           setProcessingStatus('declined')
-          result.error = result.responseMessage || 'Transaction declined'
-          onDeclined?.(result.error)
+          const declineReason = result.responseMessage || 'Card was declined'
+          result.error = declineReason
+          setError(`Declined: ${declineReason}`)
+          onDeclined?.(declineReason)
         }
 
         return result

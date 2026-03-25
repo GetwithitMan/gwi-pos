@@ -125,6 +125,47 @@ run_with_progress() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Install progress reporting to Mission Control
+# ─────────────────────────────────────────────────────────────────────────────
+
+_report_install_progress() {
+  local stage="$1"
+  local status="$2"  # STARTING, COMPLETED, FAILED, SKIPPED
+  local error_code="${3:-}"
+  local output="${4:-}"
+
+  # Only report if we have MC connectivity + server identity
+  [[ -z "$SERVER_NODE_ID" ]] && return 0
+  [[ -z "$SERVER_API_KEY" ]] && return 0
+
+  local mc_url="${MC_URL:-https://app.thepasspos.com}"
+  local payload
+  payload=$(jq -nc \
+    --arg stage "$stage" \
+    --arg status "$status" \
+    --arg errorCode "$error_code" \
+    --arg output "${output:0:500}" \
+    --arg installerVersion "$INSTALLER_VERSION" \
+    --arg role "$STATION_ROLE" \
+    '{stage: $stage, status: $status, errorCode: $errorCode, output: $output, installerVersion: $installerVersion, role: $role}' \
+  ) 2>/dev/null || return 0
+
+  # Compute HMAC signature for fleet auth
+  local sig
+  sig=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}') || return 0
+
+  # Fire and forget — don't block install for reporting
+  curl -sf -X POST "${mc_url}/api/fleet/install-progress" \
+    -H "Content-Type: application/json" \
+    -H "X-Server-Node-Id: $SERVER_NODE_ID" \
+    -H "Authorization: Bearer $SERVER_API_KEY" \
+    -H "X-Hardware-Fingerprint: ${HARDWARE_FINGERPRINT:-none}" \
+    -H "X-Request-Signature: $sig" \
+    -d "$payload" \
+    --connect-timeout 5 --max-time 10 >/dev/null 2>&1 &
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Shared state variables (set by modules, consumed by later modules)
 # ─────────────────────────────────────────────────────────────────────────────
 POSUSER=""
@@ -417,26 +458,39 @@ for stage in "${STAGES[@]}"; do
       log "Resuming from stage: $stage"
     else
       log "Skipping $stage (resuming from $RESUME_FROM)"
+      _report_install_progress "$stage" "SKIPPED"
       continue
     fi
   fi
 
   header "Stage: $stage"
+  _report_install_progress "$stage" "STARTING"
 
   # Call the stage function, passing original args for preflight user detection
+  # Tee stderr to a temp file for error capture while preserving console output
+  _stage_err_file=$(mktemp /tmp/gwi-stage-err-XXXXXX 2>/dev/null || echo "")
   if [[ "$stage" == "preflight" ]]; then
-    if ! run_preflight "${INSTALLER_ARGS[@]}"; then
+    if ! run_preflight "${INSTALLER_ARGS[@]}" 2> >(tee "$_stage_err_file" >&2); then
+      _stage_err=$(tail -c 500 "$_stage_err_file" 2>/dev/null || echo "")
+      rm -f "$_stage_err_file"
+      _report_install_progress "$stage" "FAILED" "ERR-INST-${stage^^}" "$_stage_err"
       err "Stage $stage FAILED."
       err "Fix the issue and re-run with: sudo ./installer.run --resume-from=$stage"
       exit 1
     fi
   else
-    if ! "run_${stage}"; then
+    if ! "run_${stage}" 2> >(tee "$_stage_err_file" >&2); then
+      _stage_err=$(tail -c 500 "$_stage_err_file" 2>/dev/null || echo "")
+      rm -f "$_stage_err_file"
+      _report_install_progress "$stage" "FAILED" "ERR-INST-${stage^^}" "$_stage_err"
       err "Stage $stage FAILED."
       err "Fix the issue and re-run with: sudo ./installer.run --resume-from=$stage"
       exit 1
     fi
   fi
+  rm -f "$_stage_err_file"
+
+  _report_install_progress "$stage" "COMPLETED"
 
   # Record checkpoint
   mkdir -p "$APP_BASE"
