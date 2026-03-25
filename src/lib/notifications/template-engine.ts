@@ -160,7 +160,8 @@ export function validateTemplate(
       detectedVariables.push(varName)
     }
     if (!KNOWN_VARIABLES.has(varName)) {
-      warnings.push(`Unknown template variable: {{${varName}}}`)
+      // W17: Unknown variables are errors, not warnings — prevents typo-based silent failures
+      errors.push(`Unknown template variable: {{${varName}}}. Known variables: ${Array.from(KNOWN_VARIABLES).join(', ')}`)
     }
   }
 

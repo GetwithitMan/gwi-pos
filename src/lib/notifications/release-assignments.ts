@@ -36,52 +36,53 @@ export async function releaseAssignmentsForSubject(
   }
 
   try {
-    // 1. Find all active assignments for this subject
-    const assignments: Array<{
-      id: string
-      targetType: string
-      targetValue: string
-      providerId: string | null
-    }> = await db.$queryRawUnsafe(
-      `SELECT id, "targetType", "targetValue", "providerId"
-       FROM "NotificationTargetAssignment"
-       WHERE "locationId" = $1
-         AND "subjectType" = $2
-         AND "subjectId" = $3
-         AND status = 'active'`,
-      locationId,
-      subjectType,
-      subjectId
-    )
+    // W3: Wrap all DB calls in a transaction so device/assignment states stay consistent
+    await db.$transaction(async (tx) => {
+      // 1. Find all active assignments for this subject
+      const assignments: Array<{
+        id: string
+        targetType: string
+        targetValue: string
+        providerId: string | null
+      }> = await tx.$queryRawUnsafe(
+        `SELECT id, "targetType", "targetValue", "providerId"
+         FROM "NotificationTargetAssignment"
+         WHERE "locationId" = $1
+           AND "subjectType" = $2
+           AND "subjectId" = $3
+           AND status = 'active'`,
+        locationId,
+        subjectType,
+        subjectId
+      )
 
-    if (assignments.length === 0) return result
+      if (assignments.length === 0) return
 
-    // 2. Release all assignments
-    const releasedCount: number = await db.$executeRawUnsafe(
-      `UPDATE "NotificationTargetAssignment"
-       SET status = 'released',
-           "releasedAt" = CURRENT_TIMESTAMP,
-           "releaseReason" = $4,
-           "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "locationId" = $1
-         AND "subjectType" = $2
-         AND "subjectId" = $3
-         AND status = 'active'`,
-      locationId,
-      subjectType,
-      subjectId,
-      reason
-    )
-    result.releasedAssignments = releasedCount
+      // 2. Release all assignments
+      const releasedCount: number = await tx.$executeRawUnsafe(
+        `UPDATE "NotificationTargetAssignment"
+         SET status = 'released',
+             "releasedAt" = CURRENT_TIMESTAMP,
+             "releaseReason" = $4,
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "locationId" = $1
+           AND "subjectType" = $2
+           AND "subjectId" = $3
+           AND status = 'active'`,
+        locationId,
+        subjectType,
+        subjectId,
+        reason
+      )
+      result.releasedAssignments = releasedCount
 
-    // 3. Mark associated devices as 'released' (only pager-type assignments)
-    const pagerAssignments = assignments.filter(
-      a => a.targetType === 'guest_pager' || a.targetType === 'staff_pager'
-    )
+      // 3. Mark associated devices as 'released' (only pager-type assignments)
+      const pagerAssignments = assignments.filter(
+        a => a.targetType === 'guest_pager' || a.targetType === 'staff_pager'
+      )
 
-    for (const assignment of pagerAssignments) {
-      try {
-        const deviceReleased: number = await db.$executeRawUnsafe(
+      for (const assignment of pagerAssignments) {
+        const deviceReleased: number = await tx.$executeRawUnsafe(
           `UPDATE "NotificationDevice"
            SET status = 'released',
                "releasedAt" = CURRENT_TIMESTAMP,
@@ -101,7 +102,7 @@ export async function releaseAssignmentsForSubject(
 
         // Log device event
         if (deviceReleased > 0) {
-          await db.$executeRawUnsafe(
+          await tx.$executeRawUnsafe(
             `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", "employeeId", metadata, "createdAt")
              SELECT gen_random_uuid()::text, d.id, $1, 'released', $2, $3, $5, $6::jsonb, CURRENT_TIMESTAMP
              FROM "NotificationDevice" d
@@ -115,32 +116,25 @@ export async function releaseAssignmentsForSubject(
             JSON.stringify({ reason, autoRelease: true })
           )
         }
-      } catch (deviceErr) {
-        console.error(`[notification-release] Failed to release device ${assignment.targetValue}:`, deviceErr)
       }
-    }
 
-    // 4. Clear the pagerNumber cache field on the subject
-    try {
+      // 4. Clear the pagerNumber cache field on the subject
       if (subjectType === 'order') {
-        await db.$executeRawUnsafe(
+        await tx.$executeRawUnsafe(
           `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
           subjectId,
           locationId
         )
         result.clearedPagerNumber = true
       } else if (subjectType === 'waitlist_entry') {
-        await db.$executeRawUnsafe(
+        await tx.$executeRawUnsafe(
           `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
           subjectId,
           locationId
         )
         result.clearedPagerNumber = true
       }
-    } catch (cacheErr) {
-      // Non-fatal: pagerNumber is cache-only
-      console.warn(`[notification-release] Failed to clear pagerNumber cache for ${subjectType}/${subjectId}:`, cacheErr)
-    }
+    })
   } catch (err) {
     console.error(`[notification-release] Failed to release assignments for ${subjectType}/${subjectId}:`, err)
   }

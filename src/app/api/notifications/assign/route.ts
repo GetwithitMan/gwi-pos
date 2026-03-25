@@ -54,34 +54,30 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'subjectId is required' }, { status: 400 })
     }
 
-    // Check if subject already has an active assignment of this target family
-    const existingAssignment: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "targetValue", "targetType"
-       FROM "NotificationTargetAssignment"
-       WHERE "locationId" = $1
-         AND "subjectType" = $2
-         AND "subjectId" = $3
-         AND status = 'active'
-         AND "targetType" IN ('guest_pager', 'staff_pager')`,
-      locationId,
-      subjectType,
-      subjectId
-    )
+    // W6: Move pre-check inside the transaction to prevent race conditions
+    // Transactional auto-assign with FOR UPDATE SKIP LOCKED
+    const result = await db.$transaction(async (tx) => {
+      // Check if subject already has an active assignment of this target family (inside tx)
+      const existingAssignment: any[] = await tx.$queryRawUnsafe(
+        `SELECT id, "targetValue", "targetType"
+         FROM "NotificationTargetAssignment"
+         WHERE "locationId" = $1
+           AND "subjectType" = $2
+           AND "subjectId" = $3
+           AND status = 'active'
+           AND "targetType" IN ('guest_pager', 'staff_pager')`,
+        locationId,
+        subjectType,
+        subjectId
+      )
 
-    if (existingAssignment.length > 0) {
-      return NextResponse.json({
-        data: {
-          alreadyAssigned: true,
+      if (existingAssignment.length > 0) {
+        return {
+          alreadyAssigned: true as const,
           deviceNumber: existingAssignment[0].targetValue,
           assignmentId: existingAssignment[0].id,
-        },
-        warning: `Subject already has pager ${existingAssignment[0].targetValue} assigned`,
-      })
-    }
-
-    // Transactional auto-assign with FOR UPDATE SKIP LOCKED
-    // This prevents race conditions when multiple terminals assign simultaneously
-    const result = await db.$transaction(async (tx) => {
+        }
+      }
       let device: any
 
       if (deviceNumber) {
@@ -250,6 +246,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         subjectId,
       }
     })
+
+    // Handle alreadyAssigned case from inside the transaction
+    if ('alreadyAssigned' in result && result.alreadyAssigned) {
+      return NextResponse.json({
+        data: {
+          alreadyAssigned: true,
+          deviceNumber: result.deviceNumber,
+          assignmentId: result.assignmentId,
+        },
+        warning: `Subject already has pager ${result.deviceNumber} assigned`,
+      })
+    }
 
     return NextResponse.json({ data: result }, { status: 201 })
   } catch (error: any) {

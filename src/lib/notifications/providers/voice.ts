@@ -120,9 +120,18 @@ export const voiceProvider: NotificationProvider = {
     const { targetValue, message, config: rawConfig } = params
     const startTime = Date.now()
 
-    // Parse config with defaults
+    // W11: Parse config strictly — return error on invalid config instead of silently defaulting
     const parseResult = VoiceConfigSchema.safeParse(rawConfig)
-    const voiceConfig = parseResult.success ? parseResult.data : VoiceConfigSchema.parse({})
+    if (!parseResult.success) {
+      const issues = parseResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join(', ')
+      return {
+        success: false,
+        errorCode: 'VALIDATION_ERROR',
+        normalizedError: `Invalid voice config: ${issues}`,
+        latencyMs: Date.now() - startTime,
+      }
+    }
+    const voiceConfig = parseResult.data
 
     // Check Twilio is configured
     const configured = await isTwilioConfiguredAsync()

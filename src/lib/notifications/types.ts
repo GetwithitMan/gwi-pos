@@ -7,7 +7,7 @@
 
 // ─── Provider Types ──────────────────────────────────────────────────────────
 
-export type ProviderType = 'jtech' | 'lrs' | 'retekess' | 'sms' | 'display' | 'shelf' | 'voice' | 'kiosk'
+export type ProviderType = 'jtech' | 'lrs' | 'retekess' | 'sms' | 'display' | 'shelf' | 'voice' | 'kiosk' | 'simulator'
 
 // ─── Subject Types ───────────────────────────────────────────────────────────
 

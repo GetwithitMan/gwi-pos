@@ -755,24 +755,22 @@ const putHandler = async function PUT(request: NextRequest) {
         })()
       }
 
-      // Phase 8: Notification Platform — order_ready on final bump
-      // Try the notification platform first, fall back to direct SMS
+      // W2: Phase 8: Notification Platform — order_ready on final bump
+      // notifyEvent is now awaited in the same try/catch as the bump update to prevent lost notifications
       if ((action === 'bump_order') && !isIntermediateBump && !isDoubleBump) {
-        void (async () => {
-          try {
-            // Look up order info for notification context
-            const order = await db.order.findUnique({
-              where: { id: orderId },
-              select: {
-                orderNumber: true,
-                orderType: true,
-                pagerNumber: true,
-                tabName: true,
-                customer: { select: { phone: true, firstName: true } },
-              },
-            })
-            if (!order) return
-
+        try {
+          // Look up order info for notification context
+          const order = await db.order.findUnique({
+            where: { id: orderId },
+            select: {
+              orderNumber: true,
+              orderType: true,
+              pagerNumber: true,
+              tabName: true,
+              customer: { select: { phone: true, firstName: true } },
+            },
+          })
+          if (order) {
             // Look up pagerNumber from target assignment (source of truth)
             let pagerNumber: string | null = order.pagerNumber || null
             try {
@@ -791,7 +789,7 @@ const putHandler = async function PUT(request: NextRequest) {
               }
             } catch { /* non-fatal */ }
 
-            // Try notification platform first
+            // Try notification platform first (notifyEvent enqueues a job — fast INSERT)
             let usedNotificationPlatform = false
             try {
               const { notifyEvent } = await import('@/lib/notifications/dispatcher')
@@ -820,29 +818,35 @@ const putHandler = async function PUT(request: NextRequest) {
               // Dispatcher not available — fall back to legacy SMS
             }
 
-            // Legacy fallback: direct Twilio SMS
+            // Legacy fallback: direct Twilio SMS (best-effort, fire-and-forget)
             if (!usedNotificationPlatform && screenId && isTwilioConfigured()) {
-              const screen = await db.kDSScreen.findUnique({
-                where: { id: screenId },
-                select: { orderBehavior: true },
-              })
-              const behavior = screen?.orderBehavior as { sendSmsOnReady?: boolean } | null
-              if (!behavior?.sendSmsOnReady) return
-              if (!order.customer?.phone) return
+              void (async () => {
+                try {
+                  const screen = await db.kDSScreen.findUnique({
+                    where: { id: screenId },
+                    select: { orderBehavior: true },
+                  })
+                  const behavior = screen?.orderBehavior as { sendSmsOnReady?: boolean } | null
+                  if (!behavior?.sendSmsOnReady) return
+                  if (!order.customer?.phone) return
 
-              const phone = formatPhoneE164(order.customer.phone)
-              if (!phone) return
+                  const phone = formatPhoneE164(order.customer.phone)
+                  if (!phone) return
 
-              const name = order.customer.firstName || 'there'
-              await sendSMS({
-                to: phone,
-                body: `Hi ${name}! Your order #${order.orderNumber} is ready${order.orderType === 'takeout' ? ' for pickup' : ''}. Thank you!`,
-              })
+                  const name = order.customer.firstName || 'there'
+                  await sendSMS({
+                    to: phone,
+                    body: `Hi ${name}! Your order #${order.orderNumber} is ready${order.orderType === 'takeout' ? ' for pickup' : ''}. Thank you!`,
+                  })
+                } catch (smsErr) {
+                  console.error('[KDS] Legacy SMS-on-ready failed:', smsErr)
+                }
+              })()
             }
-          } catch (err) {
-            console.error('[KDS] Notification/SMS-on-ready failed:', err)
           }
-        })()
+        } catch (err) {
+          console.error('[KDS] Notification/SMS-on-ready failed:', err)
+        }
       }
     }
 

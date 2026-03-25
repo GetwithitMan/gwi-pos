@@ -59,7 +59,9 @@ export function getProvider(
 
   const factory = registry.get(providerType)
   if (!factory) {
-    throw new Error(`Unknown notification provider type: ${providerType}. Registered: ${Array.from(registry.keys()).join(', ')}`)
+    // W10: Unimplemented provider types (e.g. 'shelf') fall back to simulator with a warning
+    console.warn(`[notification-providers] No provider registered for type "${providerType}" — falling back to simulator. Registered: ${Array.from(registry.keys()).join(', ')}`)
+    return simulatorProvider
   }
 
   return factory(config)

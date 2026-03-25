@@ -280,6 +280,21 @@ export const DELETE = withVenue(async function DELETE(
       JSON.stringify({ action: 'soft_delete', deviceNumber: existing[0].deviceNumber })
     ).catch(console.error)
 
+    // W14: AuditLog for device deletion
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_device_deleted',
+        entityType: 'notification_device',
+        entityId: id,
+        details: {
+          deviceNumber: existing[0].deviceNumber,
+          previousStatus: existing[0].status,
+        },
+      },
+    }).catch(console.error)
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('[Notification Devices] DELETE error:', error)

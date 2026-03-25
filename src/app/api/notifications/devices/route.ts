@@ -260,6 +260,23 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       JSON.stringify({ deviceNumber: device.deviceNumber, deviceType, providerId })
     ).catch(console.error)
 
+    // W13: AuditLog for device creation
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_device_created',
+        entityType: 'notification_device',
+        entityId: device.id,
+        details: {
+          deviceNumber: device.deviceNumber,
+          deviceType,
+          providerId,
+          humanLabel: humanLabel?.trim() || null,
+        },
+      },
+    }).catch(console.error)
+
     return NextResponse.json({ data: device }, { status: 201 })
   } catch (error) {
     console.error('[Notification Devices] POST error:', error)

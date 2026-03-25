@@ -66,73 +66,77 @@ export const PUT = withVenue(async function PUT(
       extraFields = ', "seatedAt" = CURRENT_TIMESTAMP'
     }
 
-    const updated: any[] = await db.$queryRawUnsafe(`
-      UPDATE "WaitlistEntry"
-      SET status = $1, "updatedAt" = CURRENT_TIMESTAMP ${extraFields}
-      WHERE id = $2 AND "locationId" = $3
-      RETURNING id, "customerName", "partySize", phone, notes, status, position,
-                "quotedWaitMinutes", "notifiedAt", "seatedAt", "createdAt", "updatedAt", version
-    `, status, id, locationId)
+    // W1: Wrap UPDATE + notifyEvent in a transaction so notification is not lost on crash
+    const updatedEntry = await db.$transaction(async (tx) => {
+      const updated: any[] = await tx.$queryRawUnsafe(`
+        UPDATE "WaitlistEntry"
+        SET status = $1, "updatedAt" = CURRENT_TIMESTAMP ${extraFields}
+        WHERE id = $2 AND "locationId" = $3
+        RETURNING id, "customerName", "partySize", phone, notes, status, position,
+                  "quotedWaitMinutes", "notifiedAt", "seatedAt", "createdAt", "updatedAt", version
+      `, status, id, locationId)
 
-    const updatedEntry = updated[0]
+      const entry_ = updated[0]
+      if (!entry_) throw new Error('Waitlist entry not found during update')
 
-    // Notification Platform: dispatch waitlist_ready notification
-    if (status === 'notified') {
-      // Look up pagerNumber from target assignment (source of truth)
-      let assignedPager: string | null = null
-      try {
-        const pagerAssignment: any[] = await db.$queryRawUnsafe(
-          `SELECT "targetValue" FROM "NotificationTargetAssignment"
-           WHERE "locationId" = $1
-             AND "subjectType" = 'waitlist_entry'
-             AND "subjectId" = $2
-             AND status = 'active'
-             AND "targetType" IN ('guest_pager', 'staff_pager')
-           ORDER BY "isPrimary" DESC LIMIT 1`,
-          locationId, id
-        )
-        assignedPager = pagerAssignment[0]?.targetValue || entry.pagerNumber || null
-      } catch { /* non-fatal */ }
+      // Notification Platform: dispatch waitlist_ready notification (inside transaction)
+      if (status === 'notified') {
+        // Look up pagerNumber from target assignment (source of truth)
+        let assignedPager: string | null = null
+        try {
+          const pagerAssignment: any[] = await tx.$queryRawUnsafe(
+            `SELECT "targetValue" FROM "NotificationTargetAssignment"
+             WHERE "locationId" = $1
+               AND "subjectType" = 'waitlist_entry'
+               AND "subjectId" = $2
+               AND status = 'active'
+               AND "targetType" IN ('guest_pager', 'staff_pager')
+             ORDER BY "isPrimary" DESC LIMIT 1`,
+            locationId, id
+          )
+          assignedPager = pagerAssignment[0]?.targetValue || entry.pagerNumber || null
+        } catch { /* non-fatal */ }
 
-      // Try the notification platform first
-      let usedNotificationPlatform = false
-      try {
-        const { notifyEvent } = await import('@/lib/notifications/dispatcher')
-        await notifyEvent({
-          locationId,
-          eventType: 'waitlist_ready',
-          subjectType: 'waitlist_entry',
-          subjectId: id,
-          subjectVersion: 1,
-          sourceSystem: 'pos',
-          sourceEventId: `waitlist_notify:${id}:${updatedEntry.version || 1}`,
-          dispatchOrigin: 'automatic',
-          businessStage: 'initial_ready',
-          contextSnapshot: {
-            customerName: entry.customerName,
-            partySize: entry.partySize,
-            phone: entry.phone,
-            pagerNumber: assignedPager,
-          },
-        })
-        usedNotificationPlatform = true
-      } catch {
-        // Dispatcher not available — fall back to direct Twilio SMS (legacy path)
+        // Try the notification platform first (notifyEvent enqueues a job — fast INSERT, safe in tx)
+        try {
+          const { notifyEvent } = await import('@/lib/notifications/dispatcher')
+          await notifyEvent({
+            locationId,
+            eventType: 'waitlist_ready',
+            subjectType: 'waitlist_entry',
+            subjectId: id,
+            subjectVersion: 1,
+            sourceSystem: 'pos',
+            sourceEventId: `waitlist_notify:${id}:${entry_.version || 1}`,
+            dispatchOrigin: 'automatic',
+            businessStage: 'initial_ready',
+            contextSnapshot: {
+              customerName: entry.customerName,
+              partySize: entry.partySize,
+              phone: entry.phone,
+              pagerNumber: assignedPager,
+            },
+          })
+        } catch {
+          // Dispatcher not available — legacy SMS will be attempted outside tx
+        }
       }
 
-      // Legacy fallback: direct Twilio SMS when notification platform is not active
-      if (!usedNotificationPlatform && waitlistConfig.smsNotifications && entry.phone && isTwilioConfigured()) {
-        const location = await db.location.findFirst({
-          where: { id: locationId },
-          select: { name: true },
-        })
-        const venueName = location?.name || 'the restaurant'
+      return entry_
+    })
 
-        void sendSMS({
-          to: entry.phone,
-          body: `Hi ${entry.customerName}, your table is ready at ${venueName}! Please check in within ${waitlistConfig.autoRemoveAfterMinutes} minutes.`,
-        }).catch(err => console.error('[Waitlist] SMS send failed:', err))
-      }
+    // Legacy fallback: direct Twilio SMS when notification platform is not active (outside tx, best-effort)
+    if (status === 'notified' && waitlistConfig.smsNotifications && entry.phone && isTwilioConfigured()) {
+      const location = await db.location.findFirst({
+        where: { id: locationId },
+        select: { name: true },
+      })
+      const venueName = location?.name || 'the restaurant'
+
+      void sendSMS({
+        to: entry.phone,
+        body: `Hi ${entry.customerName}, your table is ready at ${venueName}! Please check in within ${waitlistConfig.autoRemoveAfterMinutes} minutes.`,
+      }).catch(err => console.error('[Waitlist] SMS send failed:', err))
     }
 
     // Auto-release pager when waitlist entry is seated, cancelled, or no_show

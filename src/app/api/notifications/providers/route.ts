@@ -51,8 +51,8 @@ const DEFAULT_CAPABILITIES: Record<string, Record<string, boolean>> = {
     canBatteryTelemetry: false,
     canTracking: false,
     canKioskDispense: false,
-    canCancellation: true,
-    canDeliveryConfirmation: true,
+    canCancellation: false, // W12: Matches actual SMS provider implementation
+    canDeliveryConfirmation: false, // W12: Matches actual SMS provider implementation
   },
   lrs: {
     canPageNumeric: true,

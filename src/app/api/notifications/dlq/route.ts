@@ -376,7 +376,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Only dead_letter jobs can be suppressed/resolved' }, { status: 400 })
     }
 
-    const terminalResult = action === 'suppress' ? 'suppressed' : 'cancelled'
+    // W7: "resolve" should use 'suppressed' (a valid terminal state), not 'cancelled'
+    const terminalResult = 'suppressed'
+    const newStatus = action === 'suppress' ? 'suppressed' : 'completed'
 
     await db.$executeRawUnsafe(
       `UPDATE "NotificationJob"
@@ -390,7 +392,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       locationId,
       auth.employee.id,
       terminalResult,
-      action === 'suppress' ? 'suppressed' : 'cancelled',
+      newStatus,
     )
 
     // Audit log: notification_dlq_resolved (suppress/resolve)

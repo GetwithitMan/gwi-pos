@@ -15,7 +15,6 @@ import type {
   NotificationProvider,
   NotificationCapabilities,
   TestResult,
-  ProviderType,
 } from '../types'
 
 const log = createChildLogger('simulator-provider')
@@ -67,7 +66,7 @@ function getCapabilitiesForMode(mode: SimulatorMode): NotificationCapabilities {
 // ─── Provider Implementation ────────────────────────────────────────────────
 
 export const simulatorProvider: NotificationProvider = {
-  type: 'sms' as ProviderType, // Overridden — simulator is not a real type
+  type: 'simulator', // W9: Use dedicated simulator type instead of misleading 'sms'
 
   async send(params) {
     const { targetType, targetValue, message, config: rawConfig } = params

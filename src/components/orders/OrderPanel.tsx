@@ -178,6 +178,8 @@ export interface OrderPanelProps {
   pagerStatus?: string | null
   notificationProvidersActive?: boolean
   onPagerAssigned?: (pagerNumber: string) => void
+  // W18: Manual page-now callback (wired to OrderPanelActions)
+  onPageNow?: () => void
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -318,6 +320,7 @@ export const OrderPanel = memo(function OrderPanel({
   pagerStatus,
   notificationProvidersActive,
   onPagerAssigned,
+  onPageNow: onPageNowProp,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -360,6 +363,30 @@ export const OrderPanel = memo(function OrderPanel({
       setAssigningPager(false)
     }
   }, [orderId, assigningPager, onPagerAssigned])
+
+  // W18: Default page-now handler — calls /api/notifications/page with current orderId
+  const handlePageNow = useCallback(async () => {
+    if (onPageNowProp) {
+      onPageNowProp()
+      return
+    }
+    if (!orderId) return
+    try {
+      const res = await fetch('/api/notifications/page', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectType: 'order', subjectId: orderId }),
+      })
+      if (res.ok) {
+        toast.success('Page sent')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err?.error || 'Failed to send page')
+      }
+    } catch {
+      toast.error('Failed to send page')
+    }
+  }, [orderId, onPageNowProp])
 
   // Customer modal + linked customer state
   const [showCustomerModal, setShowCustomerModal] = useState(false)
@@ -2195,6 +2222,9 @@ export const OrderPanel = memo(function OrderPanel({
           isTaxExempt={isTaxExempt}
           lastSentItemIds={lastSentItemIds}
           onRepeatRound={onRepeatRound}
+          pagerNumber={pagerNumber}
+          notificationProvidersActive={notificationProvidersActive}
+          onPageNow={handlePageNow}
         />
       </div>
 
