@@ -20,12 +20,13 @@
 export const TOTAL_SECTIONS = 24
 export const DEFAULT_SECTION_OPTIONS = [1, 2, 4]
 
-/** Valid section modes: 1=whole, 2=halves, 4=quarters, 6=sixths, 8=eighths */
-export type SectionMode = 1 | 2 | 4 | 6 | 8
+/** Valid section modes: 1=whole, 2=halves, 3=thirds, 4=quarters, 6=sixths, 8=eighths */
+export type SectionMode = 1 | 2 | 3 | 4 | 6 | 8
 
 const SECTIONS_PER_MODE: Record<number, number> = {
   1: 24,
   2: 12,
+  3: 8,
   4: 6,
   6: 4,
   8: 3,
@@ -47,7 +48,7 @@ const SECTIONS_PER_MODE: Record<number, number> = {
 export function getSectionPreset(mode: number, position: number): number[] {
   const sectionsPerSlice = SECTIONS_PER_MODE[mode]
   if (sectionsPerSlice === undefined) {
-    throw new Error(`Invalid section mode: ${mode}. Must be 1, 2, 4, 6, or 8.`)
+    throw new Error(`Invalid section mode: ${mode}. Must be 1, 2, 3, 4, 6, or 8.`)
   }
   if (position < 0 || position >= mode) {
     throw new Error(`Invalid position ${position} for mode ${mode}. Must be 0-${mode - 1}.`)
@@ -74,6 +75,7 @@ export function isAllowedSectionMode(sectionOptions: number[], mode: number): bo
 
 /** Human-readable labels for halves */
 const HALF_LABELS = ['Right Half', 'Left Half']
+const THIRD_LABELS = ['Third 1', 'Third 2', 'Third 3']
 
 /** Human-readable labels for quarters */
 const QUARTER_LABELS = ['Quarter 1', 'Quarter 2', 'Quarter 3', 'Quarter 4']
@@ -104,7 +106,7 @@ export function humanizeSections(sections: number[], sectionMode: number): strin
   }
 
   // Try to match against presets for the given mode
-  const validModes: number[] = [2, 4, 6, 8]
+  const validModes: number[] = [2, 3, 4, 6, 8]
   const modeToCheck = validModes.includes(sectionMode) ? sectionMode : 0
 
   // First: check against the specified mode
@@ -113,6 +115,7 @@ export function humanizeSections(sections: number[], sectionMode: number): strin
       const preset = getSectionPreset(modeToCheck, pos)
       if (arraysEqual(sorted, preset)) {
         if (modeToCheck === 2) return HALF_LABELS[pos]
+        if (modeToCheck === 3) return THIRD_LABELS[pos]
         if (modeToCheck === 4) return QUARTER_LABELS[pos]
         return getOrdinalLabel(modeToCheck, pos)
       }
@@ -126,6 +129,7 @@ export function humanizeSections(sections: number[], sectionMode: number): strin
       const preset = getSectionPreset(mode, pos)
       if (arraysEqual(sorted, preset)) {
         if (mode === 2) return HALF_LABELS[pos]
+        if (mode === 3) return THIRD_LABELS[pos]
         if (mode === 4) return QUARTER_LABELS[pos]
         return getOrdinalLabel(mode, pos)
       }
@@ -176,7 +180,7 @@ export function getAllSectionPresetsForMode(
   mode: number
 ): Array<{ position: number; sections: number[]; label: string }> {
   if (!SECTIONS_PER_MODE[mode]) {
-    throw new Error(`Invalid section mode: ${mode}. Must be 1, 2, 4, 6, or 8.`)
+    throw new Error(`Invalid section mode: ${mode}. Must be 1, 2, 3, 4, 6, or 8.`)
   }
 
   const results: Array<{ position: number; sections: number[]; label: string }> = []
@@ -190,6 +194,7 @@ export function getAllSectionPresetsForMode(
     const sections = getSectionPreset(mode, pos)
     let label: string
     if (mode === 2) label = HALF_LABELS[pos]
+    else if (mode === 3) label = THIRD_LABELS[pos]
     else if (mode === 4) label = QUARTER_LABELS[pos]
     else label = getOrdinalLabel(mode, pos)
 
