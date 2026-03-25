@@ -77,6 +77,9 @@ export function DatacapPaymentProcessor({
   // W1-P3: Track last approved recordNo for void-on-failure safety
   const lastApprovedRecordNoRef = useRef<string | null>(null)
 
+  // Orphaned card auth: localStorage key for crash recovery
+  const orphanStorageKey = `gwi_orphaned_auth_${locationId}`
+
   const {
     reader,
     backupReader,
@@ -97,6 +100,10 @@ export function DatacapPaymentProcessor({
     employeeId,
     locationId,
     onSuccess: (result) => {
+      // Clear orphaned auth tracking — payment completed successfully
+      try { localStorage.removeItem(orphanStorageKey) } catch { /* non-fatal */ }
+      lastApprovedRecordNoRef.current = null
+
       // Check for partial approval
       if (result.isPartialApproval) {
         setPartialResult({ ...result, tipAmount })
@@ -281,9 +288,30 @@ export function DatacapPaymentProcessor({
       tipMode: externalTipMode || 'none',
     })
 
+    // Ambiguous abort/timeout: if processPayment returned null (timeout/network error),
+    // the card MAY have been charged but we lost the response. Log for awareness.
+    // The orphaned auth localStorage entry (if any from a prior approval) will persist
+    // and be voided on next mount.
+    if (!result && lastApprovedRecordNoRef.current) {
+      console.warn(
+        '[DatacapPaymentProcessor] Payment returned null (timeout/abort) with a prior recordNo still tracked:',
+        lastApprovedRecordNoRef.current,
+        '- Will attempt void on next mount if not cleared.'
+      )
+    }
+
     // W1-P3: Track recordNo from approved transactions for void-on-failure safety
     if (result?.approved && result.recordNo) {
       lastApprovedRecordNoRef.current = result.recordNo
+      // Persist to localStorage for crash recovery — if the browser crashes between
+      // card approval and DB recording, we can void the orphan on next mount
+      try {
+        localStorage.setItem(orphanStorageKey, JSON.stringify({
+          recordNo: result.recordNo,
+          readerId: readerId || reader?.id,
+          storedAt: new Date().toISOString(),
+        }))
+      } catch { /* localStorage full or unavailable — non-fatal */ }
     }
 
     // Success is handled via onSuccess callback
@@ -316,6 +344,57 @@ export function DatacapPaymentProcessor({
       console.error('[DatacapPaymentProcessor] Client-side void request failed:', err)
     }
   }, [locationId, readerId, reader?.id, employeeId])
+
+  // Orphaned auth recovery: void any auth that was stored before a crash/timeout
+  const voidOrphanedSales = useCallback(async () => {
+    try {
+      const stored = localStorage.getItem(orphanStorageKey)
+      if (!stored) return
+
+      const orphan = JSON.parse(stored) as { recordNo: string; readerId?: string; storedAt: string }
+      if (!orphan.recordNo) {
+        localStorage.removeItem(orphanStorageKey)
+        return
+      }
+
+      // Only attempt void for orphans less than 24 hours old
+      const storedAt = new Date(orphan.storedAt).getTime()
+      if (Date.now() - storedAt > 24 * 60 * 60 * 1000) {
+        console.warn('[DatacapPaymentProcessor] Orphaned auth too old (>24h), clearing:', orphan.recordNo)
+        localStorage.removeItem(orphanStorageKey)
+        return
+      }
+
+      console.warn('[DatacapPaymentProcessor] Found orphaned auth, attempting void:', orphan.recordNo)
+      const res = await fetch('/api/datacap/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          readerId: orphan.readerId || readerId || reader?.id,
+          recordNo: orphan.recordNo,
+          employeeId,
+          reason: 'orphaned_auth_recovery',
+        }),
+      })
+      const data = await res.json()
+      if (data.data?.approved) {
+        console.log('[DatacapPaymentProcessor] Orphaned auth voided successfully:', orphan.recordNo)
+        localStorage.removeItem(orphanStorageKey)
+      } else {
+        console.error('[DatacapPaymentProcessor] Orphaned auth void failed:', data.data?.error,
+          '- Record may need manual void in Datacap portal:', orphan.recordNo)
+        // Keep in localStorage so we retry next mount
+      }
+    } catch (err) {
+      console.error('[DatacapPaymentProcessor] Orphaned auth recovery error:', err)
+    }
+  }, [orphanStorageKey, locationId, readerId, reader?.id, employeeId])
+
+  // On mount: check for and void any orphaned authorizations from previous sessions
+  useEffect(() => {
+    void voidOrphanedSales()
+  }, [voidOrphanedSales])
 
   // Void a partial authorization and restart the payment flow
   const handleVoidPartial = async () => {

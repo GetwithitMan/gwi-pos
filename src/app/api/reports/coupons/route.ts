@@ -28,15 +28,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
 
+    // Resolve venue timezone for correct date boundaries on Vercel (UTC)
+    const loc = await prisma.location.findFirst({
+      where: { id: locationId },
+      select: { timezone: true },
+    })
+    const timezone = loc?.timezone || 'America/New_York'
+
     const dateFilter: Record<string, unknown> = {}
     if (startDate || endDate) {
       dateFilter.redeemedAt = {}
       if (startDate) {
-        const startRange = getBusinessDayRange(startDate, dayStartTime)
+        const startRange = getBusinessDayRange(startDate, dayStartTime, timezone)
         ;(dateFilter.redeemedAt as Record<string, Date>).gte = startRange.start
       }
       if (endDate) {
-        const endRange = getBusinessDayRange(endDate, dayStartTime)
+        const endRange = getBusinessDayRange(endDate, dayStartTime, timezone)
         ;(dateFilter.redeemedAt as Record<string, Date>).lte = endRange.end
       }
     }

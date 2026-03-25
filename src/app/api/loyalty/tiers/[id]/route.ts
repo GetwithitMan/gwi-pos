@@ -44,7 +44,10 @@ export const GET = withVenue(async function GET(
     }
 
     return NextResponse.json({ data: rows[0] })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to fetch loyalty tier:', error)
     return NextResponse.json({ error: 'Failed to fetch loyalty tier' }, { status: 500 })
   }
@@ -136,7 +139,10 @@ export const PUT = withVenue(async function PUT(
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'updated', entityId: id })
 
     return NextResponse.json({ data: updated[0] })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to update loyalty tier:', error)
     return NextResponse.json({ error: 'Failed to update loyalty tier' }, { status: 500 })
   }
@@ -199,7 +205,10 @@ export const DELETE = withVenue(async function DELETE(
     void notifyDataChanged({ locationId: locationId!, domain: 'loyalty', action: 'deleted', entityId: id })
 
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to delete loyalty tier:', error)
     return NextResponse.json({ error: 'Failed to delete loyalty tier' }, { status: 500 })
   }

@@ -206,7 +206,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         transactionId: txnId,
       },
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to earn loyalty points:', error)
     return NextResponse.json({ error: 'Failed to earn loyalty points' }, { status: 500 })
   }

@@ -43,7 +43,10 @@ export const GET = withVenue(async function GET(
     }
 
     return NextResponse.json({ data: rows[0] })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to fetch loyalty reward:', error)
     return NextResponse.json({ error: 'Failed to fetch loyalty reward' }, { status: 500 })
   }
@@ -159,7 +162,10 @@ export const PATCH = withVenue(async function PATCH(
     )
 
     return NextResponse.json({ data: updated[0] })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to update loyalty reward:', error)
     return NextResponse.json({ error: 'Failed to update loyalty reward' }, { status: 500 })
   }
@@ -205,7 +211,10 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to delete loyalty reward:', error)
     return NextResponse.json({ error: 'Failed to delete loyalty reward' }, { status: 500 })
   }

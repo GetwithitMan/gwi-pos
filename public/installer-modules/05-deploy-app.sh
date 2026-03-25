@@ -267,7 +267,28 @@ run_deploy_app() {
     fi
   done
 
-  # ── Build ───────────────────────────────────────────────────────────────
+  # ── Build (with atomic-update rollback) ──────────────────────────────────
+  # Source atomic-update library for rollback support
+  _atomic_lib="$(dirname "${BASH_SOURCE[0]}")/lib/atomic-update.sh"
+  if [[ -f "$_atomic_lib" ]]; then
+    source "$_atomic_lib"
+    log "Atomic update library loaded."
+  else
+    log "WARNING: atomic-update.sh not found at $_atomic_lib — build failures will not auto-rollback."
+  fi
+
+  # Start update transaction (creates snapshot for rollback)
+  _has_transaction=false
+  if type start_update_transaction &>/dev/null; then
+    log "Starting atomic update transaction..."
+    if start_update_transaction >/dev/null 2>&1; then
+      _has_transaction=true
+      log "Atomic update transaction started — snapshot created for rollback."
+    else
+      log "WARNING: Failed to start update transaction. Proceeding without rollback safety."
+    fi
+  fi
+
   rm -rf "$APP_DIR/.next" 2>/dev/null || true
 
   log "Installing npm dependencies..."
@@ -277,6 +298,11 @@ run_deploy_app() {
     if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && rm -rf node_modules && npm ci --production=false"; then
       err_code "ERR-INST-153" "npm ci failed after retry in $APP_DIR"
       err "npm install failed after retry. Check Node.js version and network."
+      if [[ "$_has_transaction" == "true" ]]; then
+        err "Rolling back to previous working version..."
+        rollback_transaction
+        err "Rollback complete. Previous version restored."
+      fi
       return 1
     fi
   fi
@@ -285,7 +311,30 @@ run_deploy_app() {
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma generate"; then
     err_code "ERR-INST-154" "npx prisma generate failed in $APP_DIR"
     err "Prisma generate failed. Check schema.prisma for errors."
+    if [[ "$_has_transaction" == "true" ]]; then
+      err "Rolling back to previous working version..."
+      rollback_transaction
+      err "Rollback complete. Previous version restored."
+    fi
     return 1
+  fi
+
+  log "Building Next.js application..."
+  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npm run build"; then
+    err_code "ERR-INST-156" "next build failed in $APP_DIR"
+    err "Next.js build failed."
+    if [[ "$_has_transaction" == "true" ]]; then
+      err "Rolling back to previous working version..."
+      rollback_transaction
+      err "Rollback complete. Previous version restored."
+    fi
+    return 1
+  fi
+
+  # Build succeeded — commit the atomic update transaction (cleans up snapshot)
+  if [[ "$_has_transaction" == "true" ]]; then
+    commit_update
+    log "Atomic update committed — build verified successfully."
   fi
 
   # ── Refresh installer modules from git checkout ──────────────────────────

@@ -116,7 +116,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         changed,
       },
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to check loyalty tier:', error)
     return NextResponse.json({ error: 'Failed to check loyalty tier' }, { status: 500 })
   }

@@ -39,7 +39,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
 
     return NextResponse.json({ data: programs })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to list loyalty programs:', error)
     return NextResponse.json({ error: 'Failed to list loyalty programs' }, { status: 500 })
   }
@@ -135,7 +138,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void notifyDataChanged({ locationId, domain: 'loyalty', action: 'created', entityId: id })
 
     return NextResponse.json({ data: created[0] })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to create loyalty program:', error)
     return NextResponse.json({ error: 'Failed to create loyalty program' }, { status: 500 })
   }

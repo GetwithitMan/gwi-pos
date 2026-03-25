@@ -126,7 +126,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       programId: resolvedProgramId,
       welcomeBonusAwarded: welcomeBonus,
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to enroll in loyalty program:', error)
     return NextResponse.json({ error: 'Failed to enroll in loyalty program' }, { status: 500 })
   }

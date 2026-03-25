@@ -226,6 +226,26 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
+    // Validate dual pricing: creditMarkupPercent compliance cap
+    if (
+      (settings.pricingProgram?.model === 'dual_price' || settings.pricingProgram?.model === 'dual_price_pan_debit') &&
+      settings.pricingProgram?.creditMarkupPercent !== undefined
+    ) {
+      const markup = settings.pricingProgram.creditMarkupPercent
+      if (markup > 10) {
+        return NextResponse.json(
+          { error: 'Credit markup exceeds maximum allowed (10%)' },
+          { status: 400 }
+        )
+      }
+      if (markup > 4) {
+        console.warn(
+          `[settings] Dual pricing creditMarkupPercent=${markup}% exceeds 4% advisory threshold for location ${location.id}. ` +
+          'High markups may draw scrutiny from card networks.'
+        )
+      }
+    }
+
     // Validate surcharge pricing program: state legality + card network cap
     if (settings.pricingProgram?.model === 'surcharge' && settings.pricingProgram.enabled) {
       const { validateSurchargeCompliance } = await import('@/lib/pricing')

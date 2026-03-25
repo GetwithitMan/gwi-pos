@@ -446,6 +446,79 @@ export const POST = withVenue(async function POST(
       })()
     }
 
+    // Gift card balance restoration: if this void is on a gift card payment,
+    // restore the full payment amount to the gift card balance (fire-and-forget)
+    void (async () => {
+      try {
+        if (payment.paymentMethod !== 'gift_card') return
+
+        const voidAmount = Number(payment.amount)
+        if (voidAmount <= 0) return
+
+        // Find the GiftCardTransaction for this payment via orderId + type='redemption'
+        const gcTxns = await db.$queryRawUnsafe<Array<{ giftCardId: string }>>(
+          `SELECT DISTINCT "giftCardId" FROM "GiftCardTransaction"
+           WHERE "orderId" = $1 AND "type" = 'redemption' AND "deletedAt" IS NULL
+           LIMIT 1`,
+          orderId,
+        )
+
+        if (gcTxns.length === 0) {
+          console.warn(`[void-payment] Gift card payment voided but no GiftCardTransaction found for orderId=${orderId}`)
+          return
+        }
+
+        const giftCardId = gcTxns[0].giftCardId
+
+        // Lock the gift card row and restore balance
+        await db.$transaction(async (tx) => {
+          await tx.$queryRawUnsafe('SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE', giftCardId)
+
+          const gcRows = await tx.$queryRawUnsafe<Array<{ currentBalance: unknown; status: string }>>(
+            `SELECT "currentBalance", "status" FROM "GiftCard" WHERE "id" = $1`,
+            giftCardId,
+          )
+          if (gcRows.length === 0) return
+
+          const currentBalance = Number(gcRows[0].currentBalance)
+          const newBalance = currentBalance + voidAmount
+
+          await tx.$executeRawUnsafe(
+            `UPDATE "GiftCard"
+             SET "currentBalance" = $2, "status" = 'active', "updatedAt" = NOW()
+             WHERE "id" = $1`,
+            giftCardId,
+            newBalance,
+          )
+
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "GiftCardTransaction" (
+              "id", "locationId", "giftCardId", "type", "amount",
+              "balanceBefore", "balanceAfter", "orderId", "employeeId", "notes",
+              "createdAt", "updatedAt"
+            ) VALUES (
+              $1, $2, $3, 'refund', $4,
+              $5, $6, $7, $8, $9,
+              NOW(), NOW()
+            )`,
+            crypto.randomUUID(),
+            order.locationId,
+            giftCardId,
+            voidAmount,
+            currentBalance,
+            newBalance,
+            orderId,
+            managerId || null,
+            `Payment voided — $${voidAmount.toFixed(2)} restored to gift card`,
+          )
+        }, { timeout: 10000 })
+
+        console.log(`[void-payment] Gift card ${giftCardId} balance restored by $${voidAmount.toFixed(2)} for orderId=${orderId}`)
+      } catch (err) {
+        console.error('[void-payment] Gift card balance restoration failed:', err)
+      }
+    })()
+
     // Loyalty point reversal: reverse earned points when payment is voided (fire-and-forget)
     void (async () => {
       try {

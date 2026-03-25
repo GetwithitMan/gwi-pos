@@ -90,7 +90,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       data: transactions,
       pagination: { total, limit, offset },
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to list loyalty transactions:', error)
     return NextResponse.json({ error: 'Failed to list loyalty transactions' }, { status: 500 })
   }

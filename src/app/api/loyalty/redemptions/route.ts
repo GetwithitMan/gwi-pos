@@ -77,7 +77,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
 
     return NextResponse.json({ data: redemptions })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message?.includes('does not exist') || error?.code === '42P01') {
+      return NextResponse.json({ error: 'Loyalty system not yet configured. Please run database migrations.' }, { status: 503 })
+    }
     console.error('Failed to list loyalty redemptions:', error)
     return NextResponse.json({ error: 'Failed to list loyalty redemptions' }, { status: 500 })
   }

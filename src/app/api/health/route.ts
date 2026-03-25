@@ -8,6 +8,7 @@
  */
 
 import { NextResponse } from 'next/server'
+import { execSync } from 'child_process'
 import { db, getVenueClientCount } from '@/lib/db'
 import { CONNECTION_BUDGET } from '@/lib/db-connection-budget'
 import { withVenue } from '@/lib/with-venue'
@@ -31,6 +32,7 @@ interface HealthResponse {
   checks: {
     database: boolean
     memory: boolean
+    disk: boolean
   }
   pgRole: 'primary' | 'standby' | 'unknown'
   stationRole: string
@@ -84,6 +86,11 @@ interface HealthResponse {
     syncContractReady: boolean
     initialSyncComplete: boolean
     degradedReasons: string[]
+  } | null
+  /** Disk usage (NUC only, null on Vercel) */
+  disk: {
+    usedPercent: number
+    healthy: boolean
   } | null
   /** Connection pool utilization (NUC only, null on Vercel) */
   connectionPool: {
@@ -146,6 +153,23 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
   const heapTotalMB = Math.round(memoryUsage.heapTotal / 1024 / 1024)
   const memoryCheck = heapUsedMB < heapTotalMB * 0.9 // Less than 90% heap used
 
+  // Check disk usage (NUC only — Vercel is ephemeral and has no meaningful disk)
+  let diskInfo: HealthResponse['disk'] = null
+  let diskCheck = true
+  if (!process.env.VERCEL) {
+    try {
+      const dfOutput = execSync('df -P / | tail -1', { timeout: 5000 }).toString().trim()
+      const parts = dfOutput.split(/\s+/)
+      const usedPercent = parseInt(parts[4], 10) // e.g. "85%" → 85
+      if (!isNaN(usedPercent)) {
+        diskCheck = usedPercent < 90
+        diskInfo = { usedPercent, healthy: usedPercent < 90 }
+      }
+    } catch {
+      // Non-critical — disk check unavailable (e.g. container without df)
+    }
+  }
+
   // Determine overall status
   let status: HealthResponse['status'] = 'healthy'
 
@@ -153,6 +177,15 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     status = 'unhealthy'
   } else if (!memoryCheck) {
     status = 'degraded'
+  }
+
+  // Disk > 95% → unhealthy; > 90% → degraded
+  if (diskInfo) {
+    if (diskInfo.usedPercent >= 95 && status !== 'unhealthy') {
+      status = 'unhealthy'
+    } else if (diskInfo.usedPercent >= 90 && status === 'healthy') {
+      status = 'degraded'
+    }
   }
 
   // Schema verification failure degrades health — sync workers won't be running
@@ -283,6 +316,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     checks: {
       database: databaseCheck,
       memory: memoryCheck,
+      disk: diskCheck,
     },
     pgRole,
     stationRole,
@@ -295,6 +329,7 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
     pendingReconciliation,
     downstreamSync,
     upstreamSync,
+    disk: diskInfo,
     updateAgent: getUpdateAgentStatus(),
     schemaVerification: getSchemaVerificationResult(),
     schemaVerified: isSchemaVerified(),

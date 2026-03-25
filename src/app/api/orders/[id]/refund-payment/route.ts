@@ -498,6 +498,79 @@ export const POST = withVenue(async function POST(
       }
     })()
 
+    // Gift card balance restoration: if this refund is on a gift card payment,
+    // restore the refund amount to the gift card balance (fire-and-forget)
+    void (async () => {
+      try {
+        if (payment.paymentMethod !== 'gift_card') return
+
+        // Find the GiftCardTransaction for this payment via orderId + type='redemption'
+        // The gift card payment creates a 'redemption' transaction linked to the orderId
+        const gcTxns = await db.$queryRawUnsafe<Array<{ giftCardId: string }>>(
+          `SELECT DISTINCT "giftCardId" FROM "GiftCardTransaction"
+           WHERE "orderId" = $1 AND "type" = 'redemption' AND "deletedAt" IS NULL
+           LIMIT 1`,
+          id,
+        )
+
+        if (gcTxns.length === 0) {
+          console.warn(`[refund-payment] Gift card payment refunded but no GiftCardTransaction found for orderId=${id}`)
+          return
+        }
+
+        const giftCardId = gcTxns[0].giftCardId
+
+        // Lock the gift card row and restore balance
+        await db.$transaction(async (tx) => {
+          await tx.$queryRawUnsafe('SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE', giftCardId)
+
+          const gcRows = await tx.$queryRawUnsafe<Array<{ currentBalance: unknown; status: string }>>(
+            `SELECT "currentBalance", "status" FROM "GiftCard" WHERE "id" = $1`,
+            giftCardId,
+          )
+          if (gcRows.length === 0) return
+
+          const currentBalance = Number(gcRows[0].currentBalance)
+          const newBalance = currentBalance + refundAmount
+
+          await tx.$executeRawUnsafe(
+            `UPDATE "GiftCard"
+             SET "currentBalance" = $2, "status" = 'active', "updatedAt" = NOW()
+             WHERE "id" = $1`,
+            giftCardId,
+            newBalance,
+          )
+
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "GiftCardTransaction" (
+              "id", "locationId", "giftCardId", "type", "amount",
+              "balanceBefore", "balanceAfter", "orderId", "employeeId", "notes",
+              "createdAt", "updatedAt"
+            ) VALUES (
+              $1, $2, $3, 'refund', $4,
+              $5, $6, $7, $8, $9,
+              NOW(), NOW()
+            )`,
+            crypto.randomUUID(),
+            order.locationId,
+            giftCardId,
+            refundAmount,
+            currentBalance,
+            newBalance,
+            id,
+            managerId || null,
+            isPartial
+              ? `Partial refund of $${refundAmount.toFixed(2)} restored to gift card`
+              : `Full refund of $${refundAmount.toFixed(2)} restored to gift card`,
+          )
+        }, { timeout: 10000 })
+
+        console.log(`[refund-payment] Gift card ${giftCardId} balance restored by $${refundAmount.toFixed(2)} for orderId=${id}`)
+      } catch (err) {
+        console.error('[refund-payment] Gift card balance restoration failed:', err)
+      }
+    })()
+
     // Restore inventory deductions when a FULL refund leaves no active payments.
     // Check all payments on the order: if every one is now voided or fully refunded,
     // the sale is fully reversed and stock should be restored. Fire-and-forget.

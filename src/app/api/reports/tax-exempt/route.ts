@@ -46,13 +46,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
 
+    // Resolve venue timezone for correct date boundaries on Vercel (UTC)
+    const loc = await db.location.findFirst({
+      where: { id: locationId },
+      select: { timezone: true },
+    })
+    const timezone = loc?.timezone || 'America/New_York'
+
     // Default to current month
     const now = new Date()
     const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
     const defaultEnd = now.toISOString().split('T')[0]
 
-    const startRange = getBusinessDayRange(startDate || defaultStart, dayStartTime)
-    const endRange = getBusinessDayRange(endDate || defaultEnd, dayStartTime)
+    const startRange = getBusinessDayRange(startDate || defaultStart, dayStartTime, timezone)
+    const endRange = getBusinessDayRange(endDate || defaultEnd, dayStartTime, timezone)
     const start = startRange.start
     const end = endRange.end
 

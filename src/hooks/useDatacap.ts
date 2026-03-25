@@ -477,6 +477,10 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           signatureData: txResult.signatureData || txResult.SignatureData ||
                          txResult.Signature || txResult.signature,
 
+          // Record tracking for void/orphan recovery
+          recordNo: txResult.recordNo || txResult.RecordNo || txResult.recordNumber || txResult.RecordNumber,
+          sequenceNo: txResult.sequenceNo || txResult.SequenceNo || txResult.SequenceNumber,
+
           // SAF status
           storedOffline,
         }

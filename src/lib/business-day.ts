@@ -25,19 +25,41 @@ export function parseTimeString(timeStr: string): { hours: number; minutes: numb
 
 /**
  * Given a calendar date string (YYYY-MM-DD) and a dayStartTime ("HH:MM"),
- * return the business day's start and end timestamps.
+ * return the business day's start and end timestamps as UTC Date objects.
  *
  * Business day "2026-02-10" with dayStartTime "04:00" means:
- *   start: 2026-02-10T04:00:00.000 (local)
- *   end:   2026-02-11T03:59:59.999 (local)
+ *   start: 2026-02-10T04:00:00.000 (in venue timezone)
+ *   end:   2026-02-11T03:59:59.999 (in venue timezone)
+ *
+ * When `timezone` is provided (e.g. 'America/New_York'), the boundaries are
+ * computed in that timezone and converted to UTC — correct for Vercel (UTC)
+ * querying the DB for US venues. When omitted, the existing server-local-time
+ * behavior is preserved (works on NUC where TZ matches the venue).
  */
 export function getBusinessDayRange(
   dateStr: string,
-  dayStartTime: string
+  dayStartTime: string,
+  timezone?: string
 ): { start: Date; end: Date } {
   const { hours, minutes } = parseTimeString(dayStartTime)
 
-  // Start: the given date at dayStartTime
+  if (timezone) {
+    // Build the start Date in the target timezone, then convert to UTC.
+    // We use Intl.DateTimeFormat to discover the UTC offset for the target
+    // local time, then construct the correct UTC instant.
+    const start = localToUTC(dateStr, hours, minutes, 0, 0, timezone)
+
+    // End: next day at dayStartTime - 1ms
+    // Advance by exactly 24h - 1ms (handles DST because we re-derive from
+    // the next calendar day in the target timezone)
+    const nextDay = new Date(new Date(dateStr + 'T12:00:00Z').getTime() + 86400000)
+    const nextDateStr = nextDay.toISOString().split('T')[0]
+    const end = localToUTC(nextDateStr, hours, minutes, 0, -1, timezone)
+
+    return { start, end }
+  }
+
+  // Fallback: server-local-time (NUC where process TZ matches the venue)
   const start = new Date(dateStr + 'T00:00:00')
   start.setHours(hours, minutes, 0, 0)
 
@@ -47,6 +69,70 @@ export function getBusinessDayRange(
   end.setMilliseconds(end.getMilliseconds() - 1)
 
   return { start, end }
+}
+
+/**
+ * Convert a local date/time in a given IANA timezone to a UTC Date.
+ * Uses Intl.DateTimeFormat to resolve the correct UTC offset (DST-aware).
+ *
+ * @param dateStr  "YYYY-MM-DD"
+ * @param h        hours (0-23)
+ * @param m        minutes
+ * @param s        seconds
+ * @param msAdjust milliseconds to add after construction (e.g. -1 for end-of-day)
+ * @param tz       IANA timezone string, e.g. "America/Denver"
+ */
+function localToUTC(
+  dateStr: string,
+  h: number,
+  m: number,
+  s: number,
+  msAdjust: number,
+  tz: string
+): Date {
+  // Step 1: Make a rough UTC guess (treat the local time as UTC)
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const guessUTC = new Date(Date.UTC(year, month - 1, day, h, m, s, 0))
+
+  // Step 2: Find the actual offset by formatting guessUTC in the target timezone
+  // and comparing. We use 'en-US' with explicit parts to parse reliably.
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
+
+  const parts = fmt.formatToParts(guessUTC)
+  const p = (type: string) => parseInt(parts.find(x => x.type === type)?.value || '0', 10)
+  const localAtGuess = new Date(Date.UTC(p('year'), p('month') - 1, p('day'), p('hour') === 24 ? 0 : p('hour'), p('minute'), p('second')))
+
+  // offsetMs = how far the target local time is ahead of UTC
+  // If localAtGuess shows 19:00 and guessUTC is 00:00 next day, offset = -5h
+  const offsetMs = localAtGuess.getTime() - guessUTC.getTime()
+
+  // Step 3: The correct UTC instant = desired local time minus offset
+  const correctUTC = new Date(guessUTC.getTime() - offsetMs)
+
+  // Verify by round-tripping (handles DST edge cases where offset changes)
+  const verifyParts = fmt.formatToParts(correctUTC)
+  const vp = (type: string) => parseInt(verifyParts.find(x => x.type === type)?.value || '0', 10)
+  const verifyH = vp('hour') === 24 ? 0 : vp('hour')
+  if (verifyH !== h || vp('minute') !== m) {
+    // DST transition edge — re-derive with the verified offset
+    const verifyLocal = new Date(Date.UTC(vp('year'), vp('month') - 1, vp('day'), verifyH, vp('minute'), vp('second')))
+    const offset2 = verifyLocal.getTime() - correctUTC.getTime()
+    const corrected = new Date(guessUTC.getTime() - offset2)
+    if (msAdjust) corrected.setMilliseconds(corrected.getMilliseconds() + msAdjust)
+    return corrected
+  }
+
+  if (msAdjust) correctUTC.setMilliseconds(correctUTC.getMilliseconds() + msAdjust)
+  return correctUTC
 }
 
 /**
@@ -97,7 +183,7 @@ export function getCurrentBusinessDay(dayStartTime: string, timezone?: string): 
   }
 
   const dateStr = `${businessDate.getFullYear()}-${String(businessDate.getMonth() + 1).padStart(2, '0')}-${String(businessDate.getDate()).padStart(2, '0')}`
-  const range = getBusinessDayRange(dateStr, dayStartTime)
+  const range = getBusinessDayRange(dateStr, dayStartTime, tz)
 
   return { date: dateStr, ...range }
 }
@@ -156,8 +242,9 @@ export function getBusinessDateForTimestamp(
 export function isWithinBusinessDay(
   timestamp: Date,
   businessDateStr: string,
-  dayStartTime: string
+  dayStartTime: string,
+  timezone?: string
 ): boolean {
-  const { start, end } = getBusinessDayRange(businessDateStr, dayStartTime)
+  const { start, end } = getBusinessDayRange(businessDateStr, dayStartTime, timezone)
   return timestamp >= start && timestamp <= end
 }
