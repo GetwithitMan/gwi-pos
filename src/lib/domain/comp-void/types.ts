@@ -60,6 +60,7 @@ export interface OrderTotals {
 }
 
 export interface ParentTotals extends OrderTotals {
+  tipTotal: number
   itemCount: number
 }
 

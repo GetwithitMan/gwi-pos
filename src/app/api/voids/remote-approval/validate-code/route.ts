@@ -28,80 +28,77 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Find approved request with matching code
-    const approval = await db.remoteVoidApproval.findFirst({
-      where: {
-        orderId,
-        orderItemId: orderItemId || null,
-        approvalCode: code,
-        status: 'approved',
-      },
-      include: {
-        manager: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-        requestedBy: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-      },
-    })
+    // Atomically find + lock + mark-as-used to prevent double-use race condition
+    const result = await db.$transaction(async (tx) => {
+      // Lock the approval row with FOR UPDATE to prevent concurrent validation
+      const [lockedRow] = await tx.$queryRawUnsafe<any[]>(
+        `SELECT * FROM "RemoteVoidApproval" WHERE "orderId" = $1 AND "approvalCode" = $2 FOR UPDATE`,
+        orderId, code
+      )
 
-    if (!approval) {
-      // Check if code exists but was already used
-      const usedApproval = await db.remoteVoidApproval.findFirst({
-        where: {
-          orderId,
-          approvalCode: code,
-          status: 'used',
+      if (!lockedRow || (lockedRow.orderItemId !== (orderItemId || null) && orderItemId)) {
+        // Check if code was already used (for better error message)
+        const [usedRow] = await tx.$queryRawUnsafe<any[]>(
+          `SELECT id FROM "RemoteVoidApproval" WHERE "orderId" = $1 AND "approvalCode" = $2 AND status = 'used'`,
+          orderId, code
+        )
+        if (usedRow) {
+          return { error: 'This approval code has already been used', status: 400 }
+        }
+        return { error: 'Invalid approval code', status: 400 }
+      }
+
+      if (lockedRow.status === 'used') {
+        return { error: 'This approval code has already been used', status: 400 }
+      }
+
+      if (lockedRow.status !== 'approved') {
+        return { error: 'Invalid approval code', status: 400 }
+      }
+
+      // Check if code has expired
+      const now = new Date()
+      if (lockedRow.approvalCodeExpiry && new Date(lockedRow.approvalCodeExpiry) < now) {
+        await tx.remoteVoidApproval.update({
+          where: { id: lockedRow.id },
+          data: { status: 'expired' },
+        })
+        return { error: 'Approval code has expired', status: 400 }
+      }
+
+      // Mark as used atomically (still under FOR UPDATE lock)
+      await tx.remoteVoidApproval.update({
+        where: { id: lockedRow.id },
+        data: { status: 'used', usedAt: now },
+      })
+
+      // Fetch full approval with manager info for response
+      const approval = await tx.remoteVoidApproval.findUnique({
+        where: { id: lockedRow.id },
+        include: {
+          manager: {
+            select: { id: true, firstName: true, lastName: true, displayName: true },
+          },
         },
       })
 
-      if (usedApproval) {
-        return NextResponse.json(
-          { error: 'This approval code has already been used', valid: false },
-          { status: 400 }
-        )
-      }
+      return { approval }
+    })
 
+    if ('error' in result) {
+      return NextResponse.json(
+        { error: result.error, valid: false },
+        { status: result.status }
+      )
+    }
+
+    const { approval } = result
+    if (!approval) {
       return NextResponse.json(
         { error: 'Invalid approval code', valid: false },
         { status: 400 }
       )
     }
-
-    // Check if code has expired
-    const now = new Date()
-    if (approval.approvalCodeExpiry && approval.approvalCodeExpiry < now) {
-      // Mark as expired
-      await db.remoteVoidApproval.update({
-        where: { id: approval.id },
-        data: { status: 'expired' },
-      })
-
-      return NextResponse.json(
-        { error: 'Approval code has expired', valid: false },
-        { status: 400 }
-      )
-    }
-
-    // Mark as used
-    await db.remoteVoidApproval.update({
-      where: { id: approval.id },
-      data: {
-        status: 'used',
-        usedAt: now,
-      },
-    })
 
     const managerName =
       approval.manager.displayName ||

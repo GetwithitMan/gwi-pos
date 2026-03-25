@@ -53,10 +53,18 @@ export const POST = withVenue(withAuth(async function POST(
     // Find all open orders for this table and transfer them
     const openOrders = await OrderRepository.getActiveOrdersForTable(tableId, table.locationId)
 
-    // Update all orders to new employee (filter to open/sent only like original)
-    const transferableOrders = openOrders.filter(o => o.status === 'open' || o.status === 'sent')
+    // Update all orders to new employee (open, sent, and split parents)
+    const transferableOrders = openOrders.filter(o => o.status === 'open' || o.status === 'sent' || o.status === 'split')
     for (const order of transferableOrders) {
       await OrderRepository.updateOrder(order.id, table.locationId, { employeeId: toEmployeeId })
+
+      // When transferring a split parent, also update all its child orders
+      if (order.status === 'split') {
+        await db.order.updateMany({
+          where: { parentOrderId: order.id, deletedAt: null },
+          data: { employeeId: toEmployeeId },
+        })
+      }
     }
 
     // Create audit log entry for each transferred order

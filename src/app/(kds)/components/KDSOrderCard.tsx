@@ -69,6 +69,8 @@ export interface KDSOrderCardProps {
   strikeThroughModifiers?: boolean
   // Phase 10: Keyboard navigation
   isSelected?: boolean
+  // Voided/comped item overlay: map of itemId -> 'voided' | 'comped'
+  voidingItems?: Map<string, 'voided' | 'comped'>
 }
 
 export const ORDER_TYPE_LABELS: Record<string, string> = {
@@ -153,6 +155,7 @@ export const KDSOrderCard = memo(function KDSOrderCard({
   socketConnected,
   strikeThroughModifiers = false,
   isSelected = false,
+  voidingItems,
 }: KDSOrderCardProps) {
   const allCompleted = order.items.every(item => item.isCompleted)
 

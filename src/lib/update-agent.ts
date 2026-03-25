@@ -590,8 +590,9 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
     }
 
     // Build — back up .next first so a failed build doesn't leave the server without a working build
+    // IMPORTANT: backup goes OUTSIDE the project dir to avoid Turbopack scanning 17k+ files
     const nextDir = path.join(APP_DIR, '.next')
-    const nextBackup = path.join(APP_DIR, '.next.backup')
+    const nextBackup = '/opt/gwi-pos/.next.backup'
     try {
       if (existsSync(nextDir)) {
         // Remove stale backup, then rename current build to backup

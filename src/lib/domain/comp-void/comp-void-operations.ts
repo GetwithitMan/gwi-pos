@@ -400,6 +400,7 @@ async function recalcParentTotals(
       taxFromExclusive: true,
       total: true,
       discountTotal: true,
+      tipTotal: true,
       items: {
         where: { status: 'active', deletedAt: null },
         select: { quantity: true },
@@ -413,6 +414,7 @@ async function recalcParentTotals(
   const parentTaxFromExclusive = siblings.reduce((sum: number, s: any) => sum + Number(s.taxFromExclusive ?? 0), 0)
   const parentTotal = siblings.reduce((sum: number, s: any) => sum + Number(s.total), 0)
   const parentDiscountTotal = siblings.reduce((sum: number, s: any) => sum + Number(s.discountTotal), 0)
+  const parentTipTotal = siblings.reduce((sum: number, s: any) => sum + Number(s.tipTotal ?? 0), 0)
   const parentItemCount = siblings.reduce(
     (sum: number, s: any) => sum + s.items.reduce((iSum: number, i: any) => iSum + i.quantity, 0), 0,
   )
@@ -437,6 +439,7 @@ async function recalcParentTotals(
     taxFromExclusive: parentTaxFromExclusive,
     total: parentTotal,
     discountTotal: parentDiscountTotal,
+    tipTotal: parentTipTotal,
     itemCount: parentItemCount,
   }
 }

@@ -627,7 +627,7 @@ export const POST = withVenue(async function POST(
       void dispatchOrderTotalsUpdate(order.locationId, order.parentOrderId, {
         subtotal: parentTotals.subtotal,
         taxTotal: parentTotals.taxTotal,
-        tipTotal: 0,
+        tipTotal: parentTotals.tipTotal,
         discountTotal: parentTotals.discountTotal,
         total: parentTotals.total,
       }, { async: true }).catch(() => {})
@@ -694,6 +694,12 @@ export const POST = withVenue(async function POST(
       if (error.message === 'ITEM_ALREADY_SETTLED') {
         return NextResponse.json(
           { error: 'Item has already been voided or comped' },
+          { status: 409 }
+        )
+      }
+      if (error.message === 'ORDER_HAS_COMPLETED_PAYMENTS') {
+        return NextResponse.json(
+          { error: 'Cannot comp/void — order has completed payments. Void the payment first.' },
           { status: 409 }
         )
       }

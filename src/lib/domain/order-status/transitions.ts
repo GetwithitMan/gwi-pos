@@ -22,8 +22,9 @@ export const VALID_TRANSITIONS: Record<string, string[]> = {
   in_progress: ['open', 'closed', 'void', 'cancelled'],
   split: ['open', 'closed', 'void', 'cancelled'],
   closed: ['void'],       // needs manager auth
-  void: [],               // terminal state
-  paid: [],               // terminal state — only via payment flow
+  void: ['open'],         // reopen via manager override (MGR_VOID_ORDERS)
+  voided: ['open'],       // reopen via manager override (MGR_VOID_ORDERS)
+  paid: [],               // terminal state — only via payment flow (reopen bypasses transition map)
   cancelled: [],          // terminal state
 }
 

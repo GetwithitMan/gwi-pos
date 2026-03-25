@@ -167,6 +167,9 @@ function KDSContent() {
   const [flashActive, setFlashActive] = useState(false)
   const socketRef = useRef<Socket | null>(null)
 
+  // Voided/comped items: show "VOIDED" or "COMPED" overlay for 5s before removing
+  const [voidingItems, setVoidingItems] = useState<Map<string, 'voided' | 'comped'>>(new Map())
+
   // Phase 10: Bump bar / keyboard navigation
   const [selectedOrderIndex, setSelectedOrderIndex] = useState(0)
 
@@ -332,7 +335,28 @@ function KDSContent() {
       }
       debouncedLoadOrders()
     }
-    const onItemStatus = () => debouncedLoadOrders()
+    const onItemStatus = (payload: { orderId?: string; itemId?: string; status?: string }) => {
+      // Show "VOIDED" / "COMPED" overlay for 5 seconds before refreshing
+      if (payload?.itemId && (payload.status === 'voided' || payload.status === 'comped')) {
+        const status = payload.status as 'voided' | 'comped'
+        setVoidingItems(prev => {
+          const next = new Map(prev)
+          next.set(payload.itemId!, status)
+          return next
+        })
+        // After 5 seconds, clear the overlay and refresh
+        setTimeout(() => {
+          setVoidingItems(prev => {
+            const next = new Map(prev)
+            next.delete(payload.itemId!)
+            return next
+          })
+          debouncedLoadOrders()
+        }, 5000)
+        return
+      }
+      debouncedLoadOrders()
+    }
     const onOrderBumped = () => debouncedLoadOrders()
     const onOrderCreated = () => debouncedLoadOrders()
     const onOrderClosed = () => debouncedLoadOrders()
