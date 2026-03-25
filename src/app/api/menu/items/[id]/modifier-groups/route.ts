@@ -627,16 +627,42 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
     const resolvedMaxSelections = templateMaxSelections ?? maxSelections
     const resolvedIsRequired = templateIsRequired ?? isRequired
 
-    // Deduplicate group name if a unique constraint on (locationId, name) still exists.
-    // Migration 105 drops this stale constraint, but until it runs on all venues we
-    // handle it here by appending a counter suffix.
-    let groupName = name || 'New Group'
-    const existingCount = await db.modifierGroup.count({
-      where: { locationId: menuItem.locationId, name: groupName, deletedAt: null },
-    })
-    if (existingCount > 0) {
-      groupName = `${groupName} (${existingCount + 1})`
+    const groupName = name || 'New Group'
+
+    // Self-healing: drop stale unique constraint on (locationId, name) if it still
+    // exists on this venue DB. Migration 043 created it as a partial unique index
+    // named "ModifierGroup_locationId_name_active_key". It's no longer valid since
+    // groups are now per-item (via menuItemId). We drop it once on first encounter.
+    async function dropStaleConstraintIfNeeded() {
+      try {
+        // Check if the partial unique index from migration 043 exists
+        const rows = await db.$queryRawUnsafe<Array<{ indexname: string }>>(
+          `SELECT indexname FROM pg_indexes WHERE indexname = $1 LIMIT 1`,
+          'ModifierGroup_locationId_name_active_key'
+        )
+        if (rows.length > 0) {
+          await db.$executeRawUnsafe(
+            `DROP INDEX IF EXISTS "ModifierGroup_locationId_name_active_key"`
+          )
+          console.log('[modifier-groups] Dropped stale unique index ModifierGroup_locationId_name_active_key')
+        }
+        // Also check for the non-partial variant
+        const rows2 = await db.$queryRawUnsafe<Array<{ indexname: string }>>(
+          `SELECT indexname FROM pg_indexes WHERE indexname = $1 LIMIT 1`,
+          'ModifierGroup_locationId_name_key'
+        )
+        if (rows2.length > 0) {
+          await db.$executeRawUnsafe(
+            `ALTER TABLE "ModifierGroup" DROP CONSTRAINT IF EXISTS "ModifierGroup_locationId_name_key"`
+          )
+          console.log('[modifier-groups] Dropped stale unique constraint ModifierGroup_locationId_name_key')
+        }
+      } catch (e) {
+        // Non-fatal — the constraint might not exist, or we don't have DDL permissions
+        console.warn('[modifier-groups] Could not drop stale constraint:', e)
+      }
     }
+    await dropStaleConstraintIfNeeded()
 
     // Use transaction if we need to link to parent modifier
     const group = await db.$transaction(async (tx) => {
