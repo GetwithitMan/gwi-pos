@@ -2205,3 +2205,19 @@ export async function dispatchCakeOrdersListChanged(
     log.error({ err }, 'Failed to dispatch cake-orders:list-changed')
   }
 }
+
+/**
+ * Dispatch card:detected event for multi-terminal awareness
+ *
+ * Called when the card listener detects a card tap/insert on a reader.
+ * Notifies all POS terminals at this location so they can show awareness
+ * (e.g., "Card detected on Terminal 1") and prevent conflicting actions.
+ */
+export function dispatchCardDetected(
+  locationId: string,
+  data: { readerId: string; detectionId: string; cardLast4: string }
+): void {
+  emitToLocation(locationId, 'card:detected', data).catch((err) =>
+    log.error({ err }, 'Failed to dispatch card:detected')
+  )
+}

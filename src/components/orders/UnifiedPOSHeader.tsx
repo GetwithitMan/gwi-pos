@@ -76,6 +76,10 @@ export interface UnifiedPOSHeaderProps {
   scaleId?: string | null
   employeeId?: string
   locationId?: string
+  // Card listener
+  isCardListening?: boolean
+  onToggleCardListener?: () => void
+  cardListenerEnabled?: boolean
 }
 
 export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
@@ -119,6 +123,9 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   scaleId,
   employeeId,
   locationId,
+  isCardListening,
+  onToggleCardListener,
+  cardListenerEnabled,
 }: UnifiedPOSHeaderProps) {
   const [showEmployeeMenu, setShowEmployeeMenu] = useState(false)
   const [showGearMenu, setShowGearMenu] = useState(false)
@@ -581,6 +588,39 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
           </span>
         )}
       </button>
+
+      {/* ── Ready for Card ── */}
+      {cardListenerEnabled && onToggleCardListener && (
+        <button
+          onClick={onToggleCardListener}
+          title={isCardListening ? 'Listening for card — tap to stop' : 'Ready for Card'}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '5px',
+            height: '30px', padding: '0 10px',
+            background: isCardListening ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+            border: `1px solid ${isCardListening ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255, 255, 255, 0.1)'}`,
+            borderRadius: '6px',
+            color: isCardListening ? '#6ee7b7' : '#94a3b8',
+            fontSize: '12px', fontWeight: 600,
+            cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H5a3 3 0 00-3 3v8a3 3 0 003 3z"
+            />
+          </svg>
+          {isCardListening && (
+            <span style={{
+              width: '6px', height: '6px', borderRadius: '50%',
+              background: '#34d399',
+              boxShadow: '0 0 6px rgba(52, 211, 153, 0.6)',
+              animation: 'pulse-dot 2s ease-in-out infinite',
+            }} />
+          )}
+        </button>
+      )}
 
       {/* ── Printer Status ── */}
       <PrinterStatusIndicator />

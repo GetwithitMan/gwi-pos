@@ -51,7 +51,7 @@ export class DatacapReaderAdapter implements PaymentReaderAdapter {
 
   async padReset(readerId: string): Promise<void> {
     const client = await getDatacapClient(this.locationId)
-    await client.emvPadReset(readerId)
+    await client.padReset(readerId)
   }
 
   private mapResponse(response: DatacapResponse): CardReadResult {

@@ -8,9 +8,9 @@ import { ToggleRow, NumberRow, SettingsSaveBar, PaymentPricingReadOnly } from '@
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
-import type { PaymentSettings, PriceRoundingSettings, EodSettings, PricingProgram, AutoGratuitySettings } from '@/lib/settings'
+import type { PaymentSettings, PriceRoundingSettings, EodSettings, PricingProgram, AutoGratuitySettings, PassiveCardDetectionSettings } from '@/lib/settings'
 import { getPricingProgram } from '@/lib/settings'
-import { DEFAULT_AUTO_GRATUITY } from '@/lib/settings/defaults'
+import { DEFAULT_AUTO_GRATUITY, DEFAULT_PASSIVE_CARD_DETECTION } from '@/lib/settings/defaults'
 import type { ConvenienceFeeSettings } from '@/lib/settings/types'
 
 export default function PaymentSettingsPage() {
@@ -26,6 +26,7 @@ export default function PaymentSettingsPage() {
   const [pricingProgram, setPricingProgram] = useState<PricingProgram | undefined>()
   const [convenienceFees, setConvenienceFees] = useState<ConvenienceFeeSettings | undefined>()
   const [autoGratuity, setAutoGratuity] = useState<AutoGratuitySettings>({ ...DEFAULT_AUTO_GRATUITY })
+  const [passiveCardDetection, setPassiveCardDetection] = useState<PassiveCardDetectionSettings | null>(null)
   const [settingsUpdatedAt, setSettingsUpdatedAt] = useState<string | null>(null)
 
   useUnsavedWarning(isDirty)
@@ -44,6 +45,9 @@ export default function PaymentSettingsPage() {
         setPricingProgram(getPricingProgram(data.settings))
         setConvenienceFees(data.settings.convenienceFees)
         setAutoGratuity({ ...DEFAULT_AUTO_GRATUITY, ...data.settings.autoGratuity })
+        setPassiveCardDetection(data.settings.passiveCardDetection
+          ? { ...DEFAULT_PASSIVE_CARD_DETECTION, ...data.settings.passiveCardDetection }
+          : null)
         setSettingsUpdatedAt(data.settingsUpdatedAt ?? null)
       } catch (err) {
         if ((err as DOMException).name !== 'AbortError') {
@@ -502,6 +506,41 @@ export default function PaymentSettingsPage() {
             />
           </div>
         </section>
+
+        {/* ═══════════════════════════════════════════
+            Card 7b: Ready for Card Mode (read-only, MC-managed)
+            ═══════════════════════════════════════════ */}
+        {passiveCardDetection && (
+          <section className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="text-lg font-semibold text-gray-900">Ready for Card Mode</h2>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">View only</span>
+            </div>
+            <p className="text-sm text-gray-600 mb-4">Passive card detection — detect and match cards before the payment screen. Managed from Mission Control.</p>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="bg-white rounded-xl p-3 border border-gray-100">
+                <div className="text-xs text-gray-600 mb-0.5">Status</div>
+                <div className="font-medium text-gray-900">{passiveCardDetection.enabled ? 'Enabled' : 'Disabled'}</div>
+              </div>
+              <div className="bg-white rounded-xl p-3 border border-gray-100">
+                <div className="text-xs text-gray-600 mb-0.5">Mode</div>
+                <div className="font-medium text-gray-900">
+                  {passiveCardDetection.mode === 'always_on' ? 'Always On' :
+                   passiveCardDetection.mode === 'manual_only' ? 'Manual Only' : 'Disabled'}
+                </div>
+              </div>
+              <div className="bg-white rounded-xl p-3 border border-gray-100">
+                <div className="text-xs text-gray-600 mb-0.5">Duplicate Suppression</div>
+                <div className="font-medium text-gray-900">{passiveCardDetection.duplicateReadSuppressionSeconds}s</div>
+              </div>
+              <div className="bg-white rounded-xl p-3 border border-gray-100">
+                <div className="text-xs text-gray-600 mb-0.5">Listen Timeout</div>
+                <div className="font-medium text-gray-900">{Math.floor(passiveCardDetection.listenTimeoutSeconds / 60)} min</div>
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* ═══════════════════════════════════════════
             Card 8: Bottle Service

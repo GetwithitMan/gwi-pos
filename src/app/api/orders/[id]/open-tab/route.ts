@@ -13,6 +13,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { resolveDetection } from '@/lib/domain/payment-readers/listener-service'
 
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
@@ -33,7 +34,7 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json().catch(() => ({}))
-    const { readerId, employeeId } = body
+    const { readerId, employeeId, detectionId, expectedOrderVersion } = body
 
     if (!readerId || !employeeId) {
       return NextResponse.json({ error: 'Missing required fields: readerId, employeeId' }, { status: 400 })
@@ -57,6 +58,178 @@ export const POST = withVenue(async function POST(
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
+
+    // ── Optimistic concurrency check ──────────────────────────────────
+    // If expectedOrderVersion is provided, verify the order hasn't been modified
+    // since the client last read it. Prevents stale-state mutations.
+    if (expectedOrderVersion !== undefined) {
+      const currentVersion = (order as any).version ?? 1
+      if (currentVersion !== expectedOrderVersion) {
+        return NextResponse.json(
+          { error: 'Order has been modified by another terminal', code: 'order_version_conflict' },
+          { status: 409 }
+        )
+      }
+    }
+
+    // ── Passive card detection path ───────────────────────────────────
+    // If detectionId is present, resolve server-side CardDetection → card data,
+    // then skip CollectCardData + EMVPreAuth and go straight to recordTab().
+    if (detectionId) {
+      const resolved = await resolveDetection(detectionId, 'open_tab', {
+        locationId,
+        terminalId: body.terminalId,
+        employeeId: auth.employee.id,
+        targetOrderId: orderId,
+      })
+
+      if ('error' in resolved) {
+        const statusMap: Record<string, number> = {
+          detection_expired: 409,
+          unauthorized: 403,
+          detection_not_found: 404,
+          already_resolved: 409,
+          invalid_card_payload: 400,
+        }
+        return NextResponse.json(
+          { error: resolved.error, code: resolved.code },
+          { status: statusMap[resolved.code] || 400 }
+        )
+      }
+
+      // Use resolved card data from the detection (recordNo stays server-side)
+      const { recordNo, cardType, cardLast4, cardholderName: resolvedName } = resolved
+
+      if (!recordNo) {
+        return NextResponse.json(
+          { error: 'Detection has no recordNo — card data is invalid', code: 'invalid_card_payload' },
+          { status: 400 }
+        )
+      }
+
+      const finalCardholderName = normalizeCardholderName(resolvedName || undefined)
+      const orderTotal = Number(order.total) || 0
+      const preAuthAmount = Math.max(orderTotal, 1)
+      const settings = parseSettings(order.location.settings)
+
+      // Set pending_auth
+      await OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'pending_auth', version: { increment: 1 } })
+
+      // PreAuth using the detection's recordNo (card-not-present, by record)
+      let resolvedReaderId = readerId
+      try {
+        await validateReader(readerId, locationId)
+      } catch {
+        const fallbackReader = await db.paymentReader.findFirst({
+          where: { locationId, deletedAt: null, isActive: true },
+          select: { id: true },
+        })
+        if (!fallbackReader) {
+          return NextResponse.json({ error: 'No active payment reader found for this location' }, { status: 400 })
+        }
+        resolvedReaderId = fallbackReader.id
+      }
+
+      const client = await requireDatacapClient(locationId)
+      const preAuthResponse = await client.preAuth(resolvedReaderId, {
+        invoiceNo: orderId,
+        amount: preAuthAmount,
+        requestRecordNo: true,
+        recordNo, // Use the resolved recordNo from detection
+      })
+
+      const preAuthError = parseError(preAuthResponse)
+      const approved = preAuthResponse.cmdStatus === 'Approved'
+
+      if (!approved) {
+        const declineFirstName = finalCardholderName
+        await db.$transaction(async (tx) => {
+          await OrderRepository.updateOrder(orderId, locationId, {
+            tabStatus: 'auth_failed',
+            tabName: declineFirstName || order.tabName,
+            version: { increment: 1 },
+          }, tx)
+          const tabPayload: TabUpdatedPayload = { orderId, status: 'auth_failed' }
+          await queueSocketEvent(tx, locationId, SOCKET_EVENTS.TAB_UPDATED, tabPayload)
+          const listPayload: OrdersListChangedPayload = { trigger: 'updated', orderId, tableId: order.tableId || undefined }
+          await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
+        })
+        void flushSocketOutbox(locationId).catch((err) => {
+          console.warn('[open-tab] Outbox flush failed:', err)
+        })
+        void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
+          tabStatus: 'auth_failed',
+          tabName: declineFirstName || order.tabName || null,
+        }).catch(err => console.error('[order-events] open-tab detection decline:', err))
+
+        return NextResponse.json({
+          data: {
+            approved: false,
+            tabStatus: 'auth_failed',
+            cardholderName: declineFirstName,
+            cardType: cardType || preAuthResponse.cardType,
+            cardLast4: cardLast4 || preAuthResponse.cardLast4,
+            error: preAuthError
+              ? { code: preAuthError.code, message: preAuthError.text, isRetryable: preAuthError.isRetryable }
+              : { code: 'DECLINED', message: 'Pre-authorization declined', isRetryable: true },
+          },
+        })
+      }
+
+      const finalRecordNo = preAuthResponse.recordNo || recordNo
+      try {
+        const result = await recordTab({
+          locationId,
+          orderId,
+          readerId: resolvedReaderId,
+          recordNo: finalRecordNo,
+          cardType: cardType || preAuthResponse.cardType || 'unknown',
+          cardLast4: cardLast4 || preAuthResponse.cardLast4 || '????',
+          cardholderName: finalCardholderName,
+          authAmount: preAuthAmount,
+          authCode: preAuthResponse.authCode,
+          tabName: order.tabName || undefined,
+          tableId: order.tableId,
+          tokenFrequency: 'Recurring',
+          acqRefData: preAuthResponse.acqRefData,
+          processData: preAuthResponse.processData,
+          aid: preAuthResponse.aid,
+          cvm: preAuthResponse.cvm ? String(preAuthResponse.cvm) : undefined,
+          refNo: preAuthResponse.refNo,
+        })
+
+        pushUpstream()
+
+        return NextResponse.json({
+          data: {
+            approved: true,
+            tabStatus: 'open',
+            cardholderName: finalCardholderName,
+            cardType: cardType || preAuthResponse.cardType || 'unknown',
+            cardLast4: cardLast4 || preAuthResponse.cardLast4 || '????',
+            authAmount: preAuthAmount,
+            recordNo: finalRecordNo,
+            orderCardId: result.orderCardId,
+          },
+        })
+      } catch (err) {
+        if (err instanceof DuplicateTabError) {
+          void client.voidSale(resolvedReaderId, { recordNo: finalRecordNo }).catch(voidErr =>
+            console.error('[Tab Open] Failed to void duplicate hold (detection path):', voidErr)
+          )
+          void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(() => {})
+          return NextResponse.json({
+            data: {
+              tabStatus: 'existing_tab_found',
+              existingTab: err.existingTab,
+            },
+          })
+        }
+        throw err
+      }
+    }
+
+    // ── Standard card-present flow (no detectionId) ───────────────────
     const settings = parseSettings(order.location.settings)
 
     // Pre-auth amount = current order total (first drink), minimum $1
