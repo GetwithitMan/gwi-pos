@@ -193,6 +193,35 @@ else
   echo "[pre-start] WARNING: scripts/nuc-pre-migrate.js not found — skipping custom migrations."
 fi
 
+# Run migrations against Neon cloud DB too (ensures venue Neon is always current)
+# This is the REAL fix for neon-schema-version-incompatible — not just a version bump.
+# The NUC has the migration scripts + Neon URL, so it can directly migrate Neon.
+if [[ -f scripts/nuc-pre-migrate.js ]] && [[ -n "${NEON_DATABASE_URL:-}" ]]; then
+  echo "[pre-start] Running migrations against Neon cloud DB..."
+  NEON_MIGRATE=true timeout 120 node scripts/nuc-pre-migrate.js 2>&1 || {
+    _NEON_EXIT=$?
+    if [[ $_NEON_EXIT -eq 124 ]]; then
+      echo "[pre-start] WARNING: Neon migrations timed out (120s) — will retry next boot"
+    else
+      echo "[pre-start] WARNING: Neon migrations failed (exit $_NEON_EXIT) — will retry next boot"
+    fi
+  }
+
+  # Update _venue_schema_state.schemaVersion in Neon to match what we just migrated
+  # This prevents neon-schema-version-incompatible on the POS readiness check
+  if [[ -f public/version-contract.json ]] && command -v jq >/dev/null 2>&1; then
+    _EXPECTED_SCHEMA=$(jq -r '.schemaVersion // empty' public/version-contract.json 2>/dev/null)
+    if [[ -n "$_EXPECTED_SCHEMA" ]]; then
+      echo "[pre-start] Updating Neon _venue_schema_state to schema $_EXPECTED_SCHEMA..."
+      psql "$NEON_DATABASE_URL" -c "UPDATE \"_venue_schema_state\" SET \"schemaVersion\" = '$_EXPECTED_SCHEMA' WHERE id = 1" 2>/dev/null && {
+        echo "[pre-start] Neon schema version updated to $_EXPECTED_SCHEMA"
+      } || {
+        echo "[pre-start] WARNING: Could not update Neon _venue_schema_state"
+      }
+    fi
+  fi
+fi
+
 # Check seed completion status — hard stop on first boot if incomplete
 _SEED_STATUS="/opt/gwi-pos/.seed-status"
 if [[ -f "$_SEED_STATUS" ]]; then

@@ -662,8 +662,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     inflightBootstrap.delete(inflightKey)
   })
 
+  // MUST set before awaiting so concurrent requests find the inflight promise
   inflightBootstrap.set(inflightKey, bootstrapPromise)
-  const responseData2 = await bootstrapPromise
 
-  return NextResponse.json({ data: responseData2 })
+  const finalData = await bootstrapPromise
+
+  return NextResponse.json({ data: finalData })
 })
