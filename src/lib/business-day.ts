@@ -11,6 +11,12 @@ const log = createChildLogger('business-day')
  *   - An order at 4:30 AM on Feb 11 belongs to business day Feb 11
  */
 
+/** Strip leading colon from POSIX-style TZ values for Intl compatibility */
+export function sanitizeTimezone(tz: string | undefined): string | undefined {
+  if (!tz) return tz
+  return tz.startsWith(':') ? tz.slice(1) : tz
+}
+
 if (Intl.DateTimeFormat().resolvedOptions().timeZone === 'UTC') {
   log.warn('[BUSINESS-DAY] WARNING: System timezone is UTC. Business day calculations may be incorrect. Set TZ environment variable to the location timezone.')
 }
@@ -150,7 +156,9 @@ export function getCurrentBusinessDay(dayStartTime: string, timezone?: string): 
   const { hours, minutes } = parseTimeString(dayStartTime)
 
   // Use timezone-aware local time if a timezone is provided (or via TZ env var)
-  const tz = timezone || process.env.TIMEZONE || process.env.TZ
+  // Strip leading colon from POSIX-style TZ values (e.g. ":UTC" → "UTC")
+  const rawTz = timezone || process.env.TIMEZONE || process.env.TZ
+  const tz = rawTz?.startsWith(':') ? rawTz.slice(1) : rawTz
   let currentHours: number
   let currentMins: number
   let localDateStr: string
@@ -200,7 +208,9 @@ export function getBusinessDateForTimestamp(
   const startMinutes = hours * 60 + minutes
 
   // Use timezone-aware date extraction
-  const tz = process.env.TIMEZONE || process.env.TZ
+  // Strip leading colon from POSIX-style TZ values (e.g. ":UTC" → "UTC")
+  const rawTz = process.env.TIMEZONE || process.env.TZ
+  const tz = rawTz?.startsWith(':') ? rawTz.slice(1) : rawTz
   let tsHours: number
   let tsMinutes: number
   let localDateStr: string
