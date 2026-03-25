@@ -337,21 +337,22 @@ export const OrderPanel = memo(function OrderPanel({
 
   // Pager assignment
   const [assigningPager, setAssigningPager] = useState(false)
-  const handleAssignPager = useCallback(async () => {
+  const [unassigningPager, setUnassigningPager] = useState(false)
+  const handleAssignPager = useCallback(async (replaceExisting = false) => {
     if (!orderId || assigningPager) return
     setAssigningPager(true)
     try {
       const res = await fetch('/api/notifications/assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subjectType: 'order', subjectId: orderId }),
+        body: JSON.stringify({ subjectType: 'order', subjectId: orderId, replaceExisting }),
       })
       if (res.ok) {
         const data = await res.json()
         const pager = data?.data?.pagerNumber || data?.data?.deviceNumber
         if (pager) {
           onPagerAssigned?.(pager)
-          toast.success(`Pager #${pager} assigned`)
+          toast.success(replaceExisting ? `Pager changed to #${pager}` : `Pager #${pager} assigned`)
         }
       } else {
         const err = await res.json().catch(() => ({}))
@@ -363,6 +364,29 @@ export const OrderPanel = memo(function OrderPanel({
       setAssigningPager(false)
     }
   }, [orderId, assigningPager, onPagerAssigned])
+
+  const handleUnassignPager = useCallback(async () => {
+    if (!orderId || unassigningPager) return
+    setUnassigningPager(true)
+    try {
+      const res = await fetch('/api/notifications/unassign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subjectType: 'order', subjectId: orderId }),
+      })
+      if (res.ok) {
+        onPagerAssigned?.('')
+        toast.success('Pager unassigned')
+      } else {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err?.error || 'Failed to unassign pager')
+      }
+    } catch {
+      toast.error('Failed to unassign pager')
+    } finally {
+      setUnassigningPager(false)
+    }
+  }, [orderId, unassigningPager, onPagerAssigned])
 
   // W18: Default page-now handler — calls /api/notifications/page with current orderId
   const handlePageNow = useCallback(async () => {
@@ -1620,11 +1644,45 @@ export const OrderPanel = memo(function OrderPanel({
                         {pagerStatus}
                       </span>
                     )}
+                    {/* Change Pager button */}
+                    <button
+                      onClick={() => handleAssignPager(true)}
+                      disabled={assigningPager}
+                      title="Change Pager"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: '18px', height: '18px', padding: 0,
+                        background: 'rgba(20, 184, 166, 0.2)', border: '1px solid rgba(20, 184, 166, 0.3)',
+                        borderRadius: '3px', cursor: assigningPager ? 'wait' : 'pointer',
+                        opacity: assigningPager ? 0.5 : 1,
+                      }}
+                    >
+                      <svg width="10" height="10" fill="none" stroke="#14b8a6" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                    {/* Unassign Pager button */}
+                    <button
+                      onClick={handleUnassignPager}
+                      disabled={unassigningPager}
+                      title="Unassign Pager"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: '18px', height: '18px', padding: 0,
+                        background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: '3px', cursor: unassigningPager ? 'wait' : 'pointer',
+                        opacity: unassigningPager ? 0.5 : 1,
+                      }}
+                    >
+                      <svg width="10" height="10" fill="none" stroke="#ef4444" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
                 )}
                 {!pagerNumber && notificationProvidersActive && orderId && !orderId.startsWith('temp-') && (
                   <button
-                    onClick={handleAssignPager}
+                    onClick={() => handleAssignPager(false)}
                     disabled={assigningPager}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '4px',

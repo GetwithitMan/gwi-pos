@@ -25,6 +25,7 @@ export const dynamic = 'force-dynamic'
  *   orderId — string (required)
  *   message — string (optional, custom message override)
  *   waitlistEntryId — string (optional, for waitlist paging instead of order)
+ *   targetOverride — string (optional, page a specific pager number instead of looking up from assignment)
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -38,7 +39,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()
-    const { orderId, waitlistEntryId, message } = body
+    const { orderId, waitlistEntryId, message, targetOverride } = body
 
     if (!orderId && !waitlistEntryId) {
       return NextResponse.json({ error: 'orderId or waitlistEntryId is required' }, { status: 400 })
@@ -85,9 +86,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       context = {
         orderNumber: order.orderNumber,
         tabName: order.tabName,
-        pagerNumber: assignments[0]?.targetValue || order.pagerNumber || null,
+        pagerNumber: targetOverride || assignments[0]?.targetValue || order.pagerNumber || null,
         orderStatus: order.status,
         customerName: order.customerName || null,
+        ...(targetOverride ? { target_override: true } : {}),
       }
     } else {
       subjectType = 'waitlist_entry'
@@ -125,8 +127,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         customerName: entry.customerName,
         partySize: entry.partySize,
         phone: entry.phone,
-        pagerNumber: assignments[0]?.targetValue || entry.pagerNumber || null,
+        pagerNumber: targetOverride || assignments[0]?.targetValue || entry.pagerNumber || null,
         entryStatus: entry.status,
+        ...(targetOverride ? { target_override: true } : {}),
       }
     }
 

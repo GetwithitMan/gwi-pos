@@ -8,6 +8,7 @@
  *   available → assigned
  *   assigned → released
  *   released → returned_pending
+ *   released → missing (customer walked out with device after auto-release)
  *   returned_pending → available (physical confirmation only)
  *   assigned → missing
  *   missing → available (manual "found" action only)
@@ -37,7 +38,7 @@ export type DeviceStatus =
 const TRANSITIONS: Record<DeviceStatus, Set<DeviceStatus>> = {
   available: new Set(['assigned', 'disabled', 'retired']),
   assigned: new Set(['released', 'missing', 'disabled', 'retired']),
-  released: new Set(['returned_pending', 'disabled', 'retired']),
+  released: new Set(['returned_pending', 'missing', 'disabled', 'retired']),
   returned_pending: new Set(['available', 'disabled', 'retired']),
   missing: new Set(['available', 'disabled', 'retired']),
   disabled: new Set(['available', 'retired']),

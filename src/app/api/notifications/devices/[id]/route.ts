@@ -107,8 +107,8 @@ export const PATCH = withVenue(async function PATCH(
         updateFields.push(`"releasedAt" = NULL`)
       }
 
-      // When device goes to missing, clear assignment
-      if (newStatus === 'missing') {
+      // When device goes to missing or disabled, clear assignment
+      if (newStatus === 'missing' || newStatus === 'disabled') {
         updateFields.push(`"assignedToSubjectType" = NULL`)
         updateFields.push(`"assignedToSubjectId" = NULL`)
       }
@@ -196,13 +196,16 @@ export const PATCH = withVenue(async function PATCH(
         },
       }).catch(console.error)
 
-      // If releasing a device that was assigned, also release the corresponding target assignment
-      if (newStatus === 'released' && device.status === 'assigned' && device.assignedToSubjectId) {
+      // If releasing or disabling a device that was assigned, also release the corresponding target assignment
+      // and clear pagerNumber cache on the subject
+      if ((newStatus === 'released' || newStatus === 'disabled') && device.assignedToSubjectId) {
+        const releaseReason = newStatus === 'disabled' ? 'device_disabled' : 'device_returned'
+
         void db.$executeRawUnsafe(
           `UPDATE "NotificationTargetAssignment"
            SET status = 'released',
                "releasedAt" = CURRENT_TIMESTAMP,
-               "releaseReason" = 'device_returned',
+               "releaseReason" = $5,
                "updatedAt" = CURRENT_TIMESTAMP
            WHERE "locationId" = $1
              AND "subjectType" = $2
@@ -212,8 +215,24 @@ export const PATCH = withVenue(async function PATCH(
           locationId,
           device.assignedToSubjectType,
           device.assignedToSubjectId,
-          device.deviceNumber
+          device.deviceNumber,
+          releaseReason
         ).catch(console.error)
+
+        // Clear pagerNumber cache on the subject
+        if (device.assignedToSubjectType === 'order') {
+          void db.$executeRawUnsafe(
+            `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
+            device.assignedToSubjectId,
+            locationId
+          ).catch(console.error)
+        } else if (device.assignedToSubjectType === 'waitlist_entry') {
+          void db.$executeRawUnsafe(
+            `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
+            device.assignedToSubjectId,
+            locationId
+          ).catch(console.error)
+        }
       }
     }
 

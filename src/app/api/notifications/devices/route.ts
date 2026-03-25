@@ -193,6 +193,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!deviceNumber || typeof deviceNumber !== 'string' || deviceNumber.trim().length === 0) {
       return NextResponse.json({ error: 'deviceNumber is required' }, { status: 400 })
     }
+    // W4: Validate deviceNumber format (1-4 digits only)
+    if (!/^\d{1,4}$/.test(deviceNumber.trim())) {
+      return NextResponse.json({ error: 'Device number must be 1-4 digits' }, { status: 400 })
+    }
     if (!deviceType || typeof deviceType !== 'string') {
       return NextResponse.json({ error: 'deviceType is required' }, { status: 400 })
     }

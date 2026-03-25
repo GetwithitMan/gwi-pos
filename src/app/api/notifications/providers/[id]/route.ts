@@ -363,9 +363,9 @@ export const DELETE = withVenue(async function DELETE(
     const activeRules: any[] = await db.$queryRawUnsafe(
       `SELECT id, name
        FROM "NotificationRoutingRule"
-       WHERE ("primaryProviderId" = $1 OR "fallbackProviderId" = $1)
+       WHERE ("providerId" = $1 OR "fallbackProviderId" = $1)
          AND "locationId" = $2
-         AND "isActive" = true
+         AND "enabled" = true
          AND "deletedAt" IS NULL
        LIMIT 5`,
       params.id,

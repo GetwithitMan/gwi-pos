@@ -767,6 +767,7 @@ const putHandler = async function PUT(request: NextRequest) {
               orderType: true,
               pagerNumber: true,
               tabName: true,
+              parentOrderId: true,
               customer: { select: { phone: true, firstName: true } },
             },
           })
@@ -788,6 +789,25 @@ const putHandler = async function PUT(request: NextRequest) {
                 pagerNumber = pagerResult[0].targetValue
               }
             } catch { /* non-fatal */ }
+
+            // If split child with no pager, inherit from parent order's assignment
+            if (!pagerNumber && order.parentOrderId) {
+              try {
+                const parentPagerResult: any[] = await db.$queryRawUnsafe(
+                  `SELECT "targetValue" FROM "NotificationTargetAssignment"
+                   WHERE "locationId" = $1
+                     AND "subjectType" = 'order'
+                     AND "subjectId" = $2
+                     AND status = 'active'
+                     AND "targetType" IN ('guest_pager', 'staff_pager')
+                   ORDER BY "isPrimary" DESC LIMIT 1`,
+                  locationId, order.parentOrderId
+                )
+                if (parentPagerResult[0]?.targetValue) {
+                  pagerNumber = parentPagerResult[0].targetValue
+                }
+              } catch { /* non-fatal — parent lookup is best-effort */ }
+            }
 
             // Try notification platform first (notifyEvent enqueues a job — fast INSERT)
             let usedNotificationPlatform = false

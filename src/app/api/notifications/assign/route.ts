@@ -28,6 +28,7 @@ const VALID_SUBJECT_TYPES = ['order', 'waitlist_entry', 'reservation', 'staff_ta
  *   deviceType — string (optional, default 'pager')
  *   providerId — string (optional, use specific provider)
  *   deviceNumber — string (optional, request specific device number)
+ *   replaceExisting — boolean (optional, release current pager and reassign)
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -41,7 +42,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     const body = await request.json()
-    const { subjectType, subjectId, deviceType = 'pager', providerId, deviceNumber } = body
+    const { subjectType, subjectId, deviceType = 'pager', providerId, deviceNumber, replaceExisting } = body
 
     // Validate inputs
     if (!subjectType || !VALID_SUBJECT_TYPES.includes(subjectType)) {
@@ -54,30 +55,111 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'subjectId is required' }, { status: 400 })
     }
 
+    // W4: Validate deviceNumber format (1-4 digits only)
+    if (deviceNumber && !/^\d{1,4}$/.test(deviceNumber)) {
+      return NextResponse.json({ error: 'Device number must be 1-4 digits' }, { status: 400 })
+    }
+
     // W6: Move pre-check inside the transaction to prevent race conditions
     // Transactional auto-assign with FOR UPDATE SKIP LOCKED
     const result = await db.$transaction(async (tx) => {
       // Check if subject already has an active assignment of this target family (inside tx)
       const existingAssignment: any[] = await tx.$queryRawUnsafe(
-        `SELECT id, "targetValue", "targetType"
-         FROM "NotificationTargetAssignment"
-         WHERE "locationId" = $1
-           AND "subjectType" = $2
-           AND "subjectId" = $3
-           AND status = 'active'
-           AND "targetType" IN ('guest_pager', 'staff_pager')`,
+        `SELECT nta.id, nta."targetValue", nta."targetType"
+         FROM "NotificationTargetAssignment" nta
+         WHERE nta."locationId" = $1
+           AND nta."subjectType" = $2
+           AND nta."subjectId" = $3
+           AND nta.status = 'active'
+           AND nta."targetType" IN ('guest_pager', 'staff_pager')`,
         locationId,
         subjectType,
         subjectId
       )
 
       if (existingAssignment.length > 0) {
-        return {
-          alreadyAssigned: true as const,
-          deviceNumber: existingAssignment[0].targetValue,
-          assignmentId: existingAssignment[0].id,
+        if (!replaceExisting) {
+          return {
+            alreadyAssigned: true as const,
+            deviceNumber: existingAssignment[0].targetValue,
+            assignmentId: existingAssignment[0].id,
+          }
+        }
+
+        // Release the old pager assignment atomically within this transaction
+        const oldDeviceNumber = existingAssignment[0].targetValue
+
+        // 1. Release the target assignment
+        await tx.$executeRawUnsafe(
+          `UPDATE "NotificationTargetAssignment"
+           SET status = 'released',
+               "releasedAt" = CURRENT_TIMESTAMP,
+               "releaseReason" = 'replaced',
+               "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "locationId" = $1
+             AND "subjectType" = $2
+             AND "subjectId" = $3
+             AND status = 'active'
+             AND "targetType" IN ('guest_pager', 'staff_pager')`,
+          locationId,
+          subjectType,
+          subjectId
+        )
+
+        // 2. Mark the old device as released
+        const oldDevices: any[] = await tx.$queryRawUnsafe(
+          `UPDATE "NotificationDevice"
+           SET status = 'released',
+               "releasedAt" = CURRENT_TIMESTAMP,
+               "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "locationId" = $1
+             AND "deviceNumber" = $2
+             AND status = 'assigned'
+             AND "assignedToSubjectType" = $3
+             AND "assignedToSubjectId" = $4
+             AND "deletedAt" IS NULL
+           RETURNING id`,
+          locationId,
+          oldDeviceNumber,
+          subjectType,
+          subjectId
+        )
+
+        // 3. Clear pagerNumber cache on the subject
+        if (subjectType === 'order') {
+          await tx.$executeRawUnsafe(
+            `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
+            subjectId,
+            locationId
+          )
+        } else if (subjectType === 'waitlist_entry') {
+          await tx.$executeRawUnsafe(
+            `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
+            subjectId,
+            locationId
+          )
+        }
+
+        // 4. Log the release event
+        if (oldDevices.length > 0) {
+          await tx.$executeRawUnsafe(
+            `INSERT INTO "NotificationDeviceEvent" (
+              id, "deviceId", "locationId", "eventType",
+              "subjectType", "subjectId", "employeeId", metadata, "createdAt"
+            ) VALUES (
+              gen_random_uuid()::text, $1, $2, 'released',
+              $3, $4, $5, $6::jsonb, CURRENT_TIMESTAMP
+            )`,
+            oldDevices[0].id,
+            locationId,
+            subjectType,
+            subjectId,
+            auth.employee.id,
+            JSON.stringify({ reason: 'replaced', oldDeviceNumber, replaceExisting: true })
+          )
         }
       }
+
       let device: any
 
       if (deviceNumber) {
@@ -234,7 +316,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         subjectType,
         subjectId,
         auth.employee.id,
-        JSON.stringify({ autoAssign: true, deviceNumber: device.deviceNumber })
+        JSON.stringify({ autoAssign: true, deviceNumber: device.deviceNumber, replaceExisting: !!replaceExisting })
       )
 
       return {

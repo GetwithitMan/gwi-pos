@@ -414,27 +414,51 @@ export async function findJobBySourceEvent(
 
 /**
  * Transition a job to use its fallback provider.
+ *
+ * When the fallback provider uses a different channel (e.g. pager → SMS),
+ * `targetOverride` re-resolves targetType + targetValue so we don't send
+ * a pager number to an SMS provider.
  */
 export async function transitionToFallback(
   prisma: PrismaClient,
   jobId: string,
-  fallbackProviderId: string
+  fallbackProviderId: string,
+  targetOverride?: { targetType: string; targetValue: string }
 ): Promise<void> {
   const now = new Date()
-  await prisma.$executeRawUnsafe(`
-    UPDATE "NotificationJob"
-    SET
-      "status" = 'pending',
-      "providerId" = $2,
-      "executionStage" = 'fallback_1',
-      "currentAttempt" = 0,
-      "claimedByWorkerId" = NULL,
-      "claimedAt" = NULL,
-      "processingTimeoutAt" = NULL,
-      "availableAt" = $3,
-      "updatedAt" = $3
-    WHERE "id" = $1
-  `, jobId, fallbackProviderId, now)
+  if (targetOverride) {
+    await prisma.$executeRawUnsafe(`
+      UPDATE "NotificationJob"
+      SET
+        "status" = 'pending',
+        "providerId" = $2,
+        "executionStage" = 'fallback_1',
+        "currentAttempt" = 0,
+        "targetType" = $3,
+        "targetValue" = $4,
+        "claimedByWorkerId" = NULL,
+        "claimedAt" = NULL,
+        "processingTimeoutAt" = NULL,
+        "availableAt" = $5,
+        "updatedAt" = $5
+      WHERE "id" = $1
+    `, jobId, fallbackProviderId, targetOverride.targetType, targetOverride.targetValue, now)
+  } else {
+    await prisma.$executeRawUnsafe(`
+      UPDATE "NotificationJob"
+      SET
+        "status" = 'pending',
+        "providerId" = $2,
+        "executionStage" = 'fallback_1',
+        "currentAttempt" = 0,
+        "claimedByWorkerId" = NULL,
+        "claimedAt" = NULL,
+        "processingTimeoutAt" = NULL,
+        "availableAt" = $3,
+        "updatedAt" = $3
+      WHERE "id" = $1
+    `, jobId, fallbackProviderId, now)
+  }
 }
 
 // ─── Provider Health (Circuit Breaker) ──────────────────────────────────────

@@ -237,6 +237,68 @@ function computeRetryDelay(policy: NotificationPolicySnapshot, attempt: number):
   return Math.round(policy.retryDelayMs * Math.pow(policy.retryBackoffMultiplier, attempt - 1))
 }
 
+// ─── Fallback Target Resolution ─────────────────────────────────────────────
+
+/**
+ * When falling back from a pager provider to an SMS provider, the targetType
+ * and targetValue must be re-resolved. A pager number ("12") is not a valid
+ * SMS target — we need the customer's phone number from the context snapshot.
+ *
+ * Returns a targetOverride if channel types differ, or undefined to keep the
+ * same target. Returns `{ failed: true }` if fallback cannot proceed (e.g.
+ * no phone number available for SMS fallback).
+ */
+async function resolveFallbackTarget(
+  job: ClaimedJob,
+  fallbackProviderId: string
+): Promise<{ targetType: string; targetValue: string } | 'no_target' | undefined> {
+  // Only re-resolve if original target was a pager type
+  const pagerTargetTypes = new Set(['guest_pager', 'staff_pager'])
+  if (!pagerTargetTypes.has(job.targetType)) {
+    return undefined // Same channel, no re-resolution needed
+  }
+
+  try {
+    // Look up the fallback provider's capabilities
+    const fallbackProvider = await db.notificationProvider.findUnique({
+      where: { id: fallbackProviderId },
+      select: { capabilities: true },
+    })
+    if (!fallbackProvider) return undefined
+
+    const caps = fallbackProvider.capabilities as Record<string, boolean> | null
+    if (!caps) return undefined
+
+    // If fallback provider can handle pager numbers, no re-resolution needed
+    if (caps.canPageNumeric || caps.canPageAlpha) {
+      return undefined
+    }
+
+    // Fallback provider is SMS-only (or voice) — resolve phone from context
+    if (caps.canSms) {
+      const ctx = job.contextSnapshot || {}
+      const phone = (ctx.phone as string) || (ctx.customerPhone as string) || null
+      if (!phone) {
+        return 'no_target'
+      }
+      return { targetType: 'phone_sms', targetValue: phone }
+    }
+
+    if (caps.canVoice) {
+      const ctx = job.contextSnapshot || {}
+      const phone = (ctx.phone as string) || (ctx.customerPhone as string) || null
+      if (!phone) {
+        return 'no_target'
+      }
+      return { targetType: 'phone_voice', targetValue: phone }
+    }
+  } catch (err) {
+    log.warn({ err, jobId: job.id, fallbackProviderId }, 'Failed to resolve fallback target — using original')
+  }
+
+  return undefined
+}
+
 // ─── Process Single Job ─────────────────────────────────────────────────────
 
 async function processJob(job: ClaimedJob): Promise<void> {
@@ -274,7 +336,13 @@ async function processJob(job: ClaimedJob): Promise<void> {
     await recordSkippedAttempt(job, 'skipped_circuit_open')
     // Try fallback if available
     if (job.fallbackProviderId) {
-      await transitionToFallback(db as any, job.id, job.fallbackProviderId)
+      const targetOverride = await resolveFallbackTarget(job, job.fallbackProviderId)
+      if (targetOverride === 'no_target') {
+        log.warn({ jobId: job.id }, 'No phone number available for SMS fallback — failing job')
+        await failJob(db as any, job.id, 'failed')
+        return
+      }
+      await transitionToFallback(db as any, job.id, job.fallbackProviderId, targetOverride)
       return
     }
     await failJob(db as any, job.id, 'failed')
@@ -401,8 +469,14 @@ async function processJob(job: ClaimedJob): Promise<void> {
         const nextStage = getNextExecutionStage(job.executionStage, nextAttempt)
         await scheduleRetry(db as any, job.id, nextAttempt, delayMs, nextStage)
       } else if (job.fallbackProviderId && job.executionStage !== 'fallback_1') {
-        // Transition to fallback
-        await transitionToFallback(db as any, job.id, job.fallbackProviderId)
+        // Transition to fallback — re-resolve target if channel types differ
+        const targetOverride = await resolveFallbackTarget(job, job.fallbackProviderId)
+        if (targetOverride === 'no_target') {
+          log.warn({ jobId: job.id }, 'No phone number available for SMS fallback — failing job')
+          await failJob(db as any, job.id, 'failed')
+        } else {
+          await transitionToFallback(db as any, job.id, job.fallbackProviderId, targetOverride)
+        }
       } else if (nextAttempt >= job.maxAttempts) {
         // Exhausted all retries — dead letter
         await deadLetterJob(db as any, job.id, 'failed')
