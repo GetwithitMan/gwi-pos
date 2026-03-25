@@ -35,6 +35,9 @@ export type {
 
 export {
   validateAddItemsInput,
+  MAX_NOTE_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_SPECIAL_NOTES_LENGTH,
   validateOrderModifiable,
   validateOrderStatusForAdd,
   validateNoActivePayments,

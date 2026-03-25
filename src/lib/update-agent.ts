@@ -549,6 +549,39 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env')) } catch {}
     try { const { copyFileSync } = await import('fs'); copyFileSync(envFile, path.join(APP_DIR, '.env.local')) } catch {}
 
+    // Pre-deploy schema version gate: compare version-contract requirements vs local DB
+    try {
+      const contractPath = path.join(APP_DIR, 'public', 'version-contract.json')
+      if (existsSync(contractPath)) {
+        const contract = JSON.parse(readFileSync(contractPath, 'utf8'))
+        const requiredMigrations = parseInt(contract.migrationCount, 10) || 0
+        log.info(`[UpdateAgent] Version contract: schema=${contract.schemaVersion} migrations=${requiredMigrations}`)
+
+        // Query local DB for applied migration count
+        try {
+          const countOutput = execSync(
+            `psql "${process.env.DATABASE_URL}" -t -A -c "SELECT COUNT(*) FROM _gwi_migrations" 2>/dev/null`,
+            { encoding: 'utf8', timeout: 10_000, stdio: 'pipe' }
+          ).trim()
+          const localMigrationCount = parseInt(countOutput, 10) || 0
+          const migrationGap = requiredMigrations - localMigrationCount
+
+          if (migrationGap > 0) {
+            log.info(`[UpdateAgent] Schema gap: ${migrationGap} migrations pending (local: ${localMigrationCount}, required: ${requiredMigrations})`)
+            if (migrationGap > 10) {
+              log.warn(`[UpdateAgent] Large migration gap (${migrationGap}). Deploy may take longer.`)
+            }
+          } else {
+            log.info(`[UpdateAgent] Schema check passed: ${localMigrationCount} migrations applied`)
+          }
+        } catch {
+          log.info('[UpdateAgent] Schema check: could not query _gwi_migrations (may not exist yet)')
+        }
+      }
+    } catch (contractErr) {
+      log.info(`[UpdateAgent] Schema version check skipped: ${contractErr instanceof Error ? contractErr.message : contractErr}`)
+    }
+
     // Install dependencies (with retry on failure)
     log.info('[UpdateAgent] Running npm ci...')
     try {

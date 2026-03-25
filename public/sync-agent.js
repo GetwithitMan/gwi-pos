@@ -414,13 +414,57 @@ async function handleForceUpdate(payload, cmdId) {
   }
 
   // Verify version-contract.json after checkout (schema + seed versions for diagnostics)
+  // Pre-deploy schema check: compare contract requirements vs local DB state
+  var contract = null
   try {
-    var contract = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'public', 'version-contract.json'), 'utf-8'))
+    contract = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'public', 'version-contract.json'), 'utf-8'))
     log('  Version contract: schema=' + contract.schemaVersion + ' seed=' + contract.seedVersion +
         ' migrations=' + contract.migrationCount + ' generated=' + contract.generatedAt)
     steps.push('contract: schema=' + contract.schemaVersion)
   } catch (e) {
     log('  Warning: could not read version-contract.json')
+  }
+
+  // Pre-deploy schema version gate: ensure local DB can support the new code's schema requirements.
+  // If the local DB has fewer migrations than the code requires, migrations MUST succeed or the
+  // deploy will produce a broken app. Query _gwi_migrations to get the current migration count.
+  if (contract && contract.migrationCount) {
+    try {
+      var dbUrl = env.DATABASE_URL || ''
+      var localMigrationCount = 0
+      if (dbUrl) {
+        try {
+          var countOutput = execSync(
+            'psql "' + dbUrl + '" -t -A -c "SELECT COUNT(*) FROM _gwi_migrations" 2>/dev/null',
+            { encoding: 'utf-8', timeout: 10000, stdio: 'pipe' }
+          ).trim()
+          localMigrationCount = parseInt(countOutput, 10) || 0
+        } catch (psqlErr) {
+          // _gwi_migrations may not exist yet (fresh install) — that's OK, count = 0
+          log('  Schema check: could not query _gwi_migrations (may not exist yet)')
+        }
+      }
+
+      var requiredMigrations = parseInt(contract.migrationCount, 10) || 0
+      var migrationGap = requiredMigrations - localMigrationCount
+
+      if (migrationGap > 0) {
+        log('  Schema check: local DB has ' + localMigrationCount + ' migrations, code requires ' + requiredMigrations + ' (gap: ' + migrationGap + ')')
+        // Large gap (>10 migrations) is a warning — migrations will run during build but
+        // a very large jump increases the risk of failure
+        if (migrationGap > 10) {
+          log('  WARNING: Large migration gap (' + migrationGap + ' pending). Deploy may take longer. Migrations will run during build.')
+          steps.push('schema-gap-warning: ' + migrationGap + ' pending migrations')
+        } else {
+          steps.push('schema-gap: ' + migrationGap + ' pending migrations')
+        }
+      } else {
+        log('  Schema check: local DB is current (' + localMigrationCount + ' migrations applied)')
+        steps.push('schema-check OK')
+      }
+    } catch (schemaCheckErr) {
+      log('  Schema check skipped: ' + ((schemaCheckErr.message || '') + '').slice(0, 100))
+    }
   }
 
   // Re-copy env files in case they were updated
