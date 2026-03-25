@@ -6,13 +6,17 @@ import { withVenue } from '@/lib/with-venue'
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
 // NO withAuth — this route does its own token validation against the Terminal table.
 // Terminals authenticate via Bearer token (not session cookie or cellular JWT).
+// Cellular terminals are pre-authenticated by the proxy (x-cellular-authenticated header);
+// their Bearer token is a JWT, not a deviceToken, so we look up by x-terminal-id instead.
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    const isCellularAuth = request.headers.get('x-cellular-authenticated') === '1'
+
     // Get token from Authorization header instead of cookie
     const authHeader = request.headers.get('authorization')
     const terminalToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
-    if (!terminalToken) {
+    if (!terminalToken && !isCellularAuth) {
       return NextResponse.json({ error: 'Not authenticated. Provide Authorization: Bearer {token}' }, { status: 401 })
     }
 
@@ -33,21 +37,44 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       'unknown'
 
-    // Find terminal by token
-    const terminal = await db.terminal.findFirst({
-      where: {
-        deviceToken: terminalToken,
-        deletedAt: null,
-      },
-      include: {
-        receiptPrinter: {
-          select: {
-            id: true,
-            name: true,
-            ipAddress: true,
-          },
+    // ── Cellular fast-path ────────────────────────────────────────────────────
+    // Cellular terminals don't have a Terminal record in the POS Neon DB —
+    // their terminalId is a virtual MC-generated ID. The proxy already verified
+    // the JWT, so we just return success to keep the Android health check happy.
+    if (isCellularAuth) {
+      const cellularTerminalId = request.headers.get('x-terminal-id')
+      const cellularRole = request.headers.get('x-terminal-role') || 'CELLULAR_ROAMING'
+
+      return NextResponse.json({ data: {
+        success: true,
+        terminal: {
+          id: cellularTerminalId || 'cellular',
+          name: `Cellular ${cellularRole}`,
+          category: 'CELLULAR',
+          roleSkipRules: null,
+          forceAllPrints: false,
+          receiptPrinter: null,
+        },
+      } })
+    }
+
+    // ── LAN terminal path ──────────────────────────────────────────────────
+    const terminalInclude = {
+      receiptPrinter: {
+        select: {
+          id: true,
+          name: true,
+          ipAddress: true,
         },
       },
+    }
+
+    const terminal = await db.terminal.findFirst({
+      where: {
+        deviceToken: terminalToken!,
+        deletedAt: null,
+      },
+      include: terminalInclude,
     })
 
     if (!terminal) {

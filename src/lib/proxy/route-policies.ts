@@ -40,6 +40,7 @@ export const CELLULAR_ALLOWLIST: Array<string | RegExp> = [
   '/api/barcode/lookup',        // barcode scanning
   '/api/auth/refresh-cellular', // token refresh
   /^\/api\/health(\/|$)/,       // health check
+  /^\/api\/hardware\/terminals\/heartbeat-native$/, // terminal heartbeat (connectivity check)
 ]
 
 /** Routes hard-blocked for CELLULAR_ROAMING (403 always) */
