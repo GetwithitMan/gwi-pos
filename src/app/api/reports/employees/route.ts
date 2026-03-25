@@ -60,6 +60,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         locationId,
         deletedAt: null,
+        isTraining: { not: true },
         status: { in: [...REVENUE_ORDER_STATUSES] },
         parentOrderId: null,
         ...orderDateFilter,

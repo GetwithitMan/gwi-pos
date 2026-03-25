@@ -54,6 +54,7 @@ export const GET = withVenue(async function GET(
         order: {
           locationId,
           status: { in: [...REVENUE_ORDER_STATUSES] },
+          isTraining: { not: true },
           parentOrderId: null,
           paidAt: dateFilter,
         },
