@@ -134,11 +134,11 @@ export const PUT = withVenue(async function PUT(
         ...(sectionId !== undefined && { sectionId: sectionId || null }),
         ...(visualType !== undefined && { visualType }),
         ...(linkedMenuItemId !== undefined && { linkedMenuItemId: linkedMenuItemId || null }),
-        ...(posX !== undefined && { posX }),
-        ...(posY !== undefined && { posY }),
-        ...(width !== undefined && { width }),
-        ...(height !== undefined && { height }),
-        ...(rotation !== undefined && { rotation }),
+        ...(posX !== undefined && { posX: Math.round(Number(posX)) }),
+        ...(posY !== undefined && { posY: Math.round(Number(posY)) }),
+        ...(width !== undefined && { width: Math.round(Number(width)) }),
+        ...(height !== undefined && { height: Math.round(Number(height)) }),
+        ...(rotation !== undefined && { rotation: Math.round(Number(rotation)) }),
         ...(geometry !== undefined && { geometry }),
         ...(thickness !== undefined && { thickness }),
         ...(fillColor !== undefined && { fillColor }),
@@ -180,7 +180,8 @@ export const PUT = withVenue(async function PUT(
     return NextResponse.json({ data: { element } })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] PUT error:', error)
-    return NextResponse.json({ error: 'Failed to update element' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: `Failed to update element: ${message}` }, { status: 500 })
   }
 })
 
