@@ -82,26 +82,15 @@ export const POST = withVenue(withAuth(async function POST(
     // ── Passive card detection path ───────────────────────────────────
     // If detectionId is present, resolve to card data and skip CollectCardData + PreAuth
     if (detectionId) {
-      const resolved = await resolveDetection(detectionId, 'save_card', {
+      const resolved = await resolveDetection(
+        detectionId,
         locationId,
-        terminalId: body.terminalId,
+        'save_card',
+        'pending',
         employeeId,
-        targetOrderId: orderId,
-      })
-
-      if ('error' in resolved) {
-        const statusMap: Record<string, number> = {
-          detection_expired: 409,
-          unauthorized: 403,
-          detection_not_found: 404,
-          already_resolved: 409,
-          invalid_card_payload: 400,
-        }
-        return NextResponse.json(
-          { error: resolved.error, code: resolved.code },
-          { status: statusMap[resolved.code] || 400 }
-        )
-      }
+        body.terminalId,
+        expectedOrderVersion,
+      )
 
       const { recordNo, cardType, cardLast4, cardholderName } = resolved
 
@@ -123,7 +112,6 @@ export const POST = withVenue(withAuth(async function POST(
         invoiceNo: orderId,
         amount: preAuthAmount,
         requestRecordNo: true,
-        recordNo, // Use detection's recordNo
       })
 
       const error = parseError(response)
@@ -161,7 +149,6 @@ export const POST = withVenue(withAuth(async function POST(
           authAmount: preAuthAmount,
           isDefault: makeDefault,
           status: 'authorized',
-          source: 'passive_detect',
         },
       })
 
@@ -261,6 +248,12 @@ export const POST = withVenue(withAuth(async function POST(
       },
     })
   } catch (error) {
+    if (error instanceof ListenerError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.httpStatus }
+      )
+    }
     console.error('Failed to add card to tab:', error)
     return NextResponse.json({ error: 'Failed to add card to tab' }, { status: 500 })
   }

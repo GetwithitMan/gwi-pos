@@ -13,7 +13,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
-import { resolveDetection } from '@/lib/domain/payment-readers/listener-service'
+import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
 
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
@@ -76,26 +76,15 @@ export const POST = withVenue(async function POST(
     // If detectionId is present, resolve server-side CardDetection → card data,
     // then skip CollectCardData + EMVPreAuth and go straight to recordTab().
     if (detectionId) {
-      const resolved = await resolveDetection(detectionId, 'open_tab', {
+      const resolved = await resolveDetection(
+        detectionId,
         locationId,
-        terminalId: body.terminalId,
-        employeeId: auth.employee.id,
-        targetOrderId: orderId,
-      })
-
-      if ('error' in resolved) {
-        const statusMap: Record<string, number> = {
-          detection_expired: 409,
-          unauthorized: 403,
-          detection_not_found: 404,
-          already_resolved: 409,
-          invalid_card_payload: 400,
-        }
-        return NextResponse.json(
-          { error: resolved.error, code: resolved.code },
-          { status: statusMap[resolved.code] || 400 }
-        )
-      }
+        'open_tab',
+        'pending',
+        auth.employee.id,
+        body.terminalId,
+        expectedOrderVersion,
+      )
 
       // Use resolved card data from the detection (recordNo stays server-side)
       const { recordNo, cardType, cardLast4, cardholderName: resolvedName } = resolved
@@ -135,7 +124,6 @@ export const POST = withVenue(async function POST(
         invoiceNo: orderId,
         amount: preAuthAmount,
         requestRecordNo: true,
-        recordNo, // Use the resolved recordNo from detection
       })
 
       const preAuthError = parseError(preAuthResponse)
@@ -453,6 +441,12 @@ export const POST = withVenue(async function POST(
       throw err
     }
   } catch (error) {
+    if (error instanceof ListenerError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.httpStatus }
+      )
+    }
     console.error('Failed to open tab:', error)
 
     // PAYMENT-SAFETY: If preAuth timed out or threw, the order is stuck in 'pending_auth'.

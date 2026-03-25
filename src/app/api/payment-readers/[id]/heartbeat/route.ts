@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { renewLease } from '@/lib/domain/payment-readers/listener-service'
+import { renewLease, ListenerError } from '@/lib/domain/payment-readers/listener-service'
 
 // ─── Rate limit: max 1 heartbeat per 5s per terminal ─────────────────
 interface HeartbeatRateLimitEntry {
@@ -82,6 +82,12 @@ export const POST = withVenue(async function POST(
 
     return NextResponse.json({ data: { leasedUntil: leasedUntil.toISOString() } })
   } catch (error) {
+    if (error instanceof ListenerError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.httpStatus }
+      )
+    }
     console.error('Failed to renew heartbeat:', error)
     return NextResponse.json({ error: 'Failed to renew heartbeat' }, { status: 500 })
   }
