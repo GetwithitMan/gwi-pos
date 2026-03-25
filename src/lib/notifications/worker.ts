@@ -178,6 +178,7 @@ async function revalidateTarget(job: ClaimedJob): Promise<AttemptResult | null> 
   try {
     const activeTargets = await db.notificationTargetAssignment.findFirst({
       where: {
+        locationId: job.locationId,
         subjectType: job.subjectType,
         subjectId: job.subjectId,
         targetType: job.targetType,

@@ -275,12 +275,14 @@ async function renderTemplateForRule(
 // ─── Find Active Target Assignments ─────────────────────────────────────────
 
 async function getActiveTargets(
+  locationId: string,
   subjectType: string,
   subjectId: string,
   targetType: string
 ): Promise<{ targetValue: string; providerId: string | null }[]> {
   const assignments = await db.notificationTargetAssignment.findMany({
     where: {
+      locationId,
       subjectType,
       subjectId,
       targetType,
