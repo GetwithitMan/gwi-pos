@@ -81,8 +81,8 @@ interface OrderBehaviorData {
 }
 
 interface TransitionTimeEntry {
-  cautionMinutes: number
-  lateMinutes: number
+  caution: number
+  late: number
 }
 
 interface TransitionTimesData {
@@ -127,10 +127,10 @@ const DEFAULT_ORDER_BEHAVIOR: OrderBehaviorData = {
 }
 
 const DEFAULT_TRANSITION_TIMES: TransitionTimesData = {
-  dine_in: { cautionMinutes: 8, lateMinutes: 15 },
-  takeout: { cautionMinutes: 6, lateMinutes: 12 },
-  delivery: { cautionMinutes: 10, lateMinutes: 20 },
-  bar_tab: { cautionMinutes: 5, lateMinutes: 10 },
+  dine_in: { caution: 8, late: 15 },
+  takeout: { caution: 6, late: 12 },
+  delivery: { caution: 10, late: 20 },
+  bar_tab: { caution: 5, late: 10 },
 }
 
 const DEFAULT_FORM_DATA: FormData = {
@@ -239,10 +239,10 @@ export default function KDSScreensPage() {
         printerId: ob.printerId ?? DEFAULT_ORDER_BEHAVIOR.printerId,
       },
       transitionTimes: {
-        dine_in: { cautionMinutes: tt.dine_in?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.dine_in.cautionMinutes, lateMinutes: tt.dine_in?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.dine_in.lateMinutes },
-        takeout: { cautionMinutes: tt.takeout?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.takeout.cautionMinutes, lateMinutes: tt.takeout?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.takeout.lateMinutes },
-        delivery: { cautionMinutes: tt.delivery?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.delivery.cautionMinutes, lateMinutes: tt.delivery?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.delivery.lateMinutes },
-        bar_tab: { cautionMinutes: tt.bar_tab?.cautionMinutes ?? DEFAULT_TRANSITION_TIMES.bar_tab.cautionMinutes, lateMinutes: tt.bar_tab?.lateMinutes ?? DEFAULT_TRANSITION_TIMES.bar_tab.lateMinutes },
+        dine_in: { caution: tt.dine_in?.caution ?? DEFAULT_TRANSITION_TIMES.dine_in.caution, late: tt.dine_in?.late ?? DEFAULT_TRANSITION_TIMES.dine_in.late },
+        takeout: { caution: tt.takeout?.caution ?? DEFAULT_TRANSITION_TIMES.takeout.caution, late: tt.takeout?.late ?? DEFAULT_TRANSITION_TIMES.takeout.late },
+        delivery: { caution: tt.delivery?.caution ?? DEFAULT_TRANSITION_TIMES.delivery.caution, late: tt.delivery?.late ?? DEFAULT_TRANSITION_TIMES.delivery.late },
+        bar_tab: { caution: tt.bar_tab?.caution ?? DEFAULT_TRANSITION_TIMES.bar_tab.caution, late: tt.bar_tab?.late ?? DEFAULT_TRANSITION_TIMES.bar_tab.late },
       },
     })
     setLinkTargetScreenId('')
@@ -1226,12 +1226,12 @@ export default function KDSScreensPage() {
                         <label className="block text-xs text-gray-500 mb-0.5">Caution (min)</label>
                         <input
                           type="number"
-                          value={formData.transitionTimes[key].cautionMinutes}
+                          value={formData.transitionTimes[key].caution}
                           onChange={(e) => setFormData({
                             ...formData,
                             transitionTimes: {
                               ...formData.transitionTimes,
-                              [key]: { ...formData.transitionTimes[key], cautionMinutes: Math.max(1, parseInt(e.target.value) || 1) },
+                              [key]: { ...formData.transitionTimes[key], caution: Math.max(1, parseInt(e.target.value) || 1) },
                             },
                           })}
                           className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"
@@ -1242,12 +1242,12 @@ export default function KDSScreensPage() {
                         <label className="block text-xs text-gray-500 mb-0.5">Late (min)</label>
                         <input
                           type="number"
-                          value={formData.transitionTimes[key].lateMinutes}
+                          value={formData.transitionTimes[key].late}
                           onChange={(e) => setFormData({
                             ...formData,
                             transitionTimes: {
                               ...formData.transitionTimes,
-                              [key]: { ...formData.transitionTimes[key], lateMinutes: Math.max(1, parseInt(e.target.value) || 1) },
+                              [key]: { ...formData.transitionTimes[key], late: Math.max(1, parseInt(e.target.value) || 1) },
                             },
                           })}
                           className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-amber-500 focus:outline-none"

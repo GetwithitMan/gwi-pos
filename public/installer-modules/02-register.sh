@@ -245,13 +245,14 @@ attempt_quick_code_registration() {
   HARDWARE_FINGERPRINT="$hw_fp"
 
   # Encrypted secrets
-  local enc_api_key enc_db_url enc_direct_url enc_deploy_token enc_backoffice_url enc_repo_url
+  local enc_api_key enc_db_url enc_direct_url enc_deploy_token enc_backoffice_url enc_repo_url enc_cellular_claim_key
   enc_api_key=$(echo "$response" | jq -r '.data.encryptedApiKey // empty')
   enc_db_url=$(echo "$response" | jq -r '.data.encryptedDatabaseUrl // empty')
   enc_direct_url=$(echo "$response" | jq -r '.data.encryptedDirectUrl // empty')
   enc_deploy_token=$(echo "$response" | jq -r '.data.encryptedDeployToken // empty')
   enc_backoffice_url=$(echo "$response" | jq -r '.data.encryptedBackofficeUrl // empty')
   enc_repo_url=$(echo "$response" | jq -r '.data.encryptedRepoUrl // empty')
+  enc_cellular_claim_key=$(echo "$response" | jq -r '.data.encryptedCellularClaimKey // empty')
 
   if [[ -z "$SERVER_NODE_ID" ]] || [[ -z "$enc_api_key" ]]; then
     warn "Missing serverNodeId or encryptedApiKey in quick-code response."
@@ -304,6 +305,15 @@ attempt_quick_code_registration() {
     if [[ -n "$decrypted_bo_url" ]]; then
       BACKOFFICE_API_URL="$decrypted_bo_url"
       log "Backoffice URL from quick-code registration."
+    fi
+  fi
+
+  if [[ -n "$enc_cellular_claim_key" ]]; then
+    local decrypted_claim_key
+    decrypted_claim_key=$(_qc_decrypt_rsa "$enc_cellular_claim_key" "cellularClaimKey")
+    if [[ -n "$decrypted_claim_key" ]]; then
+      CELLULAR_CLAIM_KEY="$decrypted_claim_key"
+      log "Cellular claim key from quick-code registration."
     fi
   fi
 
@@ -926,6 +936,18 @@ run_register() {
         log "Backoffice URL from registration: $BACKOFFICE_API_URL"
       else
         log "Backoffice URL decryption failed — using default: $BACKOFFICE_API_URL"
+      fi
+    fi
+
+    # Decrypt cellular claim key (shared secret for cellular device pairing)
+    ENCRYPTED_CELLULAR_CLAIM_KEY=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedCellularClaimKey // empty')
+    if [[ -n "$ENCRYPTED_CELLULAR_CLAIM_KEY" ]]; then
+      DECRYPTED_CLAIM_KEY=$(decrypt_rsa "$ENCRYPTED_CELLULAR_CLAIM_KEY" "cellularClaimKey")
+      if [[ -n "$DECRYPTED_CLAIM_KEY" ]]; then
+        CELLULAR_CLAIM_KEY="$DECRYPTED_CLAIM_KEY"
+        log "Cellular claim key from registration."
+      else
+        log "Cellular claim key decryption failed — cellular pairing will not work until manually configured."
       fi
     fi
 

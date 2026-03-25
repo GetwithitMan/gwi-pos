@@ -72,6 +72,7 @@ NEXT_PUBLIC_EVENT_PROVIDER=socket
 PORT=3005
 INTERNAL_API_SECRET=${INTERNAL_SECRET}
 CELLULAR_TOKEN_SECRET=${CELLULAR_SECRET}
+CELLULAR_CLAIM_KEY=${CELLULAR_CLAIM_KEY:-}
 SESSION_SECRET=${SESSION_SECRET}
 TENANT_SIGNING_KEY=${TENANT_SIGNING_KEY}
 SERVER_URL=${SERVER_URL}${HA_ENV_SECTION}
@@ -152,6 +153,18 @@ ENVEOF
     if ! grep -q "^CELLULAR_TOKEN_SECRET=" "$ENV_FILE" 2>/dev/null; then
       echo "CELLULAR_TOKEN_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
       log "Added CELLULAR_TOKEN_SECRET to existing .env"
+    fi
+
+    # Ensure cellular claim key is present (shared secret for cellular device pairing with MC)
+    # This is provided by MC during registration. On re-runs where it was never set,
+    # log a warning — it must be set manually or by re-registering with an updated MC.
+    if ! grep -q "^CELLULAR_CLAIM_KEY=" "$ENV_FILE" 2>/dev/null; then
+      if [[ -n "${CELLULAR_CLAIM_KEY:-}" ]]; then
+        echo "CELLULAR_CLAIM_KEY=$CELLULAR_CLAIM_KEY" >> "$ENV_FILE"
+        log "Added CELLULAR_CLAIM_KEY to existing .env (from registration)"
+      else
+        log "WARNING: CELLULAR_CLAIM_KEY not set — cellular device pairing will not work. Set it manually or re-register."
+      fi
     fi
 
     # Ensure session secret is present (for POS httpOnly session cookies)
