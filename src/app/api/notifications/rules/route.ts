@@ -85,7 +85,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ data: rules })
   } catch (error) {
     console.error('[Notification Rules] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch rules' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('does not exist') || msg.includes('relation')) {
+      return NextResponse.json({ data: [] })
+    }
+    return NextResponse.json({ error: `Failed to fetch rules: ${msg}` }, { status: 500 })
   }
 })
 

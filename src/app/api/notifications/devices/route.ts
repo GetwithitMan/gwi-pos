@@ -162,7 +162,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('[Notification Devices] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch devices' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('does not exist') || msg.includes('relation')) {
+      return NextResponse.json({ data: [], counts: {}, total: 0 })
+    }
+    return NextResponse.json({ error: `Failed to fetch devices: ${msg}` }, { status: 500 })
   }
 })
 

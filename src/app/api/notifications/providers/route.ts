@@ -226,8 +226,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: masked })
   } catch (error) {
-    console.error('[Notification Providers] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch providers' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    console.error('[Notification Providers] GET error:', msg)
+    // If the table doesn't exist yet (schema not synced), return empty data
+    if (msg.includes('does not exist') || msg.includes('relation')) {
+      return NextResponse.json({ data: [] })
+    }
+    return NextResponse.json({ error: `Failed to fetch providers: ${msg}` }, { status: 500 })
   }
 })
 
@@ -365,6 +370,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { status: 201 })
   } catch (error) {
     console.error('[Notification Providers] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create provider' }, { status: 500 })
+    const msg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: `Failed to create provider: ${msg}` }, { status: 500 })
   }
 })
