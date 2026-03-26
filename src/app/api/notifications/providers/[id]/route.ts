@@ -41,7 +41,7 @@ const JTechConfigSchema = z.object({
   deliveryMethod: z.enum(['cloud_alert', 'direct_sms', 'local_http']),
   siteCode: z.string().min(1),
   apiToken: z.string().min(1),
-  localIp: z.string().ip().optional(),
+  localIp: z.string().regex(/^(\d{1,3}\.){3}\d{1,3}$/, 'Must be a valid IP address').optional(),
   localPort: z.number().default(80),
   defaultPagerType: z.number().min(1).max(2).default(2),
   defaultBaudRate: z.number().min(0).max(1).default(1),
@@ -49,7 +49,7 @@ const JTechConfigSchema = z.object({
 })
 
 const RetekessConfigSchema = z.object({
-  localIp: z.string().ip(),
+  localIp: z.string().regex(/^(\d{1,3}\.){3}\d{1,3}$/, 'Must be a valid IP address'),
   localPort: z.number().default(80),
   protocol: z.enum(['http', 'serial']).default('http'),
   defaultPagerType: z.number().min(1).max(2).default(1),
@@ -67,7 +67,7 @@ const LrsConfigSchema = z.object({
 })
 
 // Fallback: accept any object for provider types that don't have strict schemas yet
-const GenericConfigSchema = z.record(z.unknown())
+const GenericConfigSchema = z.record(z.string(), z.unknown())
 
 const CONFIG_SCHEMAS: Record<string, z.ZodType<any>> = {
   jtech: JTechConfigSchema,

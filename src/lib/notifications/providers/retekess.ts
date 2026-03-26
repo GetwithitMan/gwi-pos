@@ -32,7 +32,7 @@ const log = createChildLogger('retekess-provider')
 // ─── Config Schema ──────────────────────────────────────────────────────────
 
 const RetekessConfigSchema = z.object({
-  localIp: z.string().ip(),
+  localIp: z.string().regex(/^(\d{1,3}\.){3}\d{1,3}$/, 'Must be a valid IP address'),
   localPort: z.number().default(80),
   protocol: z.enum(['http', 'serial']).default('http'),
   defaultPagerType: z.number().min(1).max(2).default(1),

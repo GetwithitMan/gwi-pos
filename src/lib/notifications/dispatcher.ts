@@ -86,7 +86,7 @@ async function getRoutingRules(locationId: string, eventType: string): Promise<R
     return cached.rules
   }
 
-  const rules = await db.notificationRoutingRule.findMany({
+  const rules = await (db as any).notificationRoutingRule.findMany({
     where: {
       locationId,
       eventType,
@@ -215,7 +215,7 @@ async function buildPolicySnapshot(
   }
 
   try {
-    const provider = await db.notificationProvider.findUnique({
+    const provider = await (db as any).notificationProvider.findUnique({
       where: { id: rule.providerId },
       select: { healthStatus: true, capabilities: true },
     })
@@ -255,7 +255,7 @@ async function renderTemplateForRule(
   if (!rule.messageTemplateId) return null
 
   try {
-    const template = await db.notificationTemplate.findUnique({
+    const template = await (db as any).notificationTemplate.findUnique({
       where: { id: rule.messageTemplateId },
       select: { body: true, maxLength: true },
     })
@@ -280,7 +280,7 @@ async function getActiveTargets(
   subjectId: string,
   targetType: string
 ): Promise<{ targetValue: string; providerId: string | null }[]> {
-  const assignments = await db.notificationTargetAssignment.findMany({
+  const assignments = await (db as any).notificationTargetAssignment.findMany({
     where: {
       locationId,
       subjectType,
@@ -432,7 +432,7 @@ export async function notifyEvent(input: NotificationInput): Promise<Notificatio
           : 'pending'
 
         try {
-          await db.notificationJob.create({
+          await (db as any).notificationJob.create({
             data: {
               id: jobId,
               locationId,

@@ -81,7 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           success: result.success,
           latencyMs: Date.now() - startTime,
           message: result.error || (result.success ? 'Connection successful' : 'Connection failed'),
-          capabilities: result.capabilities as Record<string, boolean>,
+          capabilities: result.capabilities as unknown as Record<string, boolean>,
           rawResponse: result.rawResponse ? String(result.rawResponse).slice(0, 500) : undefined,
         }
       }

@@ -176,7 +176,7 @@ async function revalidateSubject(
  */
 async function revalidateTarget(job: ClaimedJob): Promise<AttemptResult | null> {
   try {
-    const activeTargets = await db.notificationTargetAssignment.findFirst({
+    const activeTargets = await (db as any).notificationTargetAssignment.findFirst({
       where: {
         locationId: job.locationId,
         subjectType: job.subjectType,
@@ -260,7 +260,7 @@ async function resolveFallbackTarget(
 
   try {
     // Look up the fallback provider's capabilities
-    const fallbackProvider = await db.notificationProvider.findUnique({
+    const fallbackProvider = await (db as any).notificationProvider.findUnique({
       where: { id: fallbackProviderId },
       select: { capabilities: true },
     })
@@ -364,7 +364,7 @@ async function processJob(job: ClaimedJob): Promise<void> {
 
   try {
     // Get provider config
-    const providerRecord = await db.notificationProvider.findUnique({
+    const providerRecord = await (db as any).notificationProvider.findUnique({
       where: { id: job.providerId },
       select: { providerType: true, config: true },
     })

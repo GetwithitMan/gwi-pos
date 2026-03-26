@@ -42,7 +42,7 @@ const JTechConfigSchema = z.object({
   deliveryMethod: z.enum(['cloud_alert', 'direct_sms', 'local_http']),
   siteCode: z.string().min(1),           // 'sid' or 'code' param
   apiToken: z.string().min(1),           // 'token' param
-  localIp: z.string().ip().optional(),   // local transmitter IP (local_http only)
+  localIp: z.string().regex(/^(\d{1,3}\.){3}\d{1,3}$/, 'Must be a valid IP address').optional(),   // local transmitter IP (local_http only)
   localPort: z.number().default(80),
   defaultPagerType: z.number().min(1).max(2).default(2),  // 1=vibe/numeric, 2=alphanumeric
   defaultBaudRate: z.number().min(0).max(1).default(1),   // 0=512, 1=1200
