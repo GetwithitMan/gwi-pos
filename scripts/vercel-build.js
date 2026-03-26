@@ -68,7 +68,13 @@ async function main() {
   console.log('[vercel-build] Generating versioned artifacts...')
   execSync('node scripts/generate-artifacts.mjs', { stdio: 'inherit' })
 
-  // 5. Build Next.js
+  // 5. Build self-contained installer bundle (modules embedded in installer.run)
+  // Without this, installer.run on Vercel is just the orchestrator — no modules.
+  // NUCs self-update from this file, so it MUST be the full bundle.
+  console.log('[vercel-build] Building installer bundle...')
+  execSync('bash scripts/build-installer-bundle.sh', { stdio: 'inherit' })
+
+  // 6. Build Next.js
   console.log('[vercel-build] Running next build...')
   execSync('npx next build', { stdio: 'inherit' })
 
