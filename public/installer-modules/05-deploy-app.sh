@@ -148,7 +148,9 @@ run_deploy_app() {
   fi
 
   # Disk space check — build requires ~5 GB temp space
-  AVAIL_KB=$(df -k "$APP_BASE" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
+  local _disk_path="$APP_BASE"
+  [[ ! -d "$_disk_path" ]] && _disk_path=$(dirname "$APP_BASE")
+  AVAIL_KB=$(df -k "$_disk_path" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
   if [[ "$AVAIL_KB" -lt 5000000 ]]; then
     err_code "ERR-INST-003" "$(( AVAIL_KB / 1024 ))MB free in $APP_BASE, need 5GB for build"
     err "Insufficient disk space: $(( AVAIL_KB / 1024 )) MB free in $APP_BASE (need ~5 GB)"

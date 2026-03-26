@@ -136,8 +136,14 @@ run_preflight() {
   log "DNS: OK"
 
   # ── Disk space — 8GB minimum (hard fail) ──
+  # If APP_BASE doesn't exist yet (fresh install), check parent mount point
+  local DISK_CHECK_PATH="$APP_BASE"
+  if [[ ! -d "$DISK_CHECK_PATH" ]]; then
+    DISK_CHECK_PATH=$(dirname "$APP_BASE")
+    [[ ! -d "$DISK_CHECK_PATH" ]] && DISK_CHECK_PATH="/"
+  fi
   local AVAIL_KB
-  AVAIL_KB=$(df -k "$APP_BASE" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
+  AVAIL_KB=$(df -k "$DISK_CHECK_PATH" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
   if [[ "$AVAIL_KB" -lt 8000000 ]]; then
     err_code "ERR-INST-003" "$(( AVAIL_KB / 1024 ))MB free on $APP_BASE, need 8GB"
     err "Insufficient disk: $(( AVAIL_KB / 1024 )) MB free (need 8 GB)"
