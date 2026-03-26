@@ -620,8 +620,9 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                     }
 
                     const created = await res.json()
+                    const createdOrderId = created.data?.id || created.id
 
-                    const sendRes = await fetch(`/api/orders/${created.id}/send`, {
+                    const sendRes = await fetch(`/api/orders/${createdOrderId}/send`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ employeeId: capturedEmployeeId }),
@@ -709,8 +710,9 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                     }
 
                     const created = await res.json()
+                    const createdOrderId = created.data?.id || created.id
 
-                    const sendRes = await fetch(`/api/orders/${created.id}/send`, {
+                    const sendRes = await fetch(`/api/orders/${createdOrderId}/send`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ employeeId: capturedEmployeeId }),
@@ -933,8 +935,9 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                     }
 
                     const created = await res.json()
+                    const createdOrderId = created.data?.id || created.id
 
-                    const sendRes = await fetch(`/api/orders/${created.id}/send`, {
+                    const sendRes = await fetch(`/api/orders/${createdOrderId}/send`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ employeeId: capturedEmployeeId }),
