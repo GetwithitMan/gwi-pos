@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List inventory counts
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -151,11 +153,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         notes,
         countDate: new Date(),
         status: 'in_progress',
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         items: {
           create: items.map(item => ({
             locationId,
             inventoryItemId: item.id,
             expectedQty: item.currentStock,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           })),
         },
         entries: countType !== 'spot' ? {
@@ -178,6 +182,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         },
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: count.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { count } })
   } catch (error) {

@@ -5,6 +5,8 @@ import { getLocationId, getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_RESERVATION_SETTINGS, DEFAULT_DEPOSIT_RULES } from '@/lib/settings'
 import { repriceAndRevalidate } from '@/lib/reservations/revalidate'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -109,7 +111,10 @@ export const POST = withVenue(async function POST(
     }
 
     // Apply the modification
-    const updateData: Record<string, any> = { updatedAt: new Date() }
+    const updateData: Record<string, any> = {
+      updatedAt: new Date(),
+      lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
+    }
     if (date) {
       updateData.reservationDate = new Date(date + 'T00:00:00Z')
     }
@@ -121,6 +126,9 @@ export const POST = withVenue(async function POST(
       where: { id: reservation.id },
       data: updateData,
     })
+
+    void notifyDataChanged({ locationId, domain: 'reservations', action: 'updated', entityId: reservation.id })
+    void pushUpstream()
 
     // Log modification event
     void db.reservationEvent.create({

@@ -25,6 +25,8 @@ import { createReservationWithRules } from '@/lib/reservations/create-reservatio
 import { transition } from '@/lib/reservations/state-machine'
 import type { SourceType } from '@/lib/reservations/state-machine'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── Rate Limiting ───────────────────────────────────────────────────────────
 
@@ -416,6 +418,7 @@ export async function POST(
       // ─── Update existing ─────────────────────────────────────
       const updateData: Record<string, unknown> = {
         sourceMetadata: normalized.rawPayload as any,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
       if (normalized.guestName) updateData.guestName = normalized.guestName
       if (normalized.guestPhone) updateData.guestPhone = normalized.guestPhone
@@ -509,7 +512,7 @@ export async function POST(
       // Store sourceMetadata
       await db.reservation.update({
         where: { id: result.reservation.id },
-        data: { sourceMetadata: normalized.rawPayload as any },
+        data: { sourceMetadata: normalized.rawPayload as any, lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
 
       // Auto-confirm if configured
@@ -553,6 +556,8 @@ export async function POST(
       reservationId,
       action: normalized.action,
     }).catch(console.error)
+    void notifyDataChanged({ locationId, domain: 'reservations', action: normalized.action === 'cancel' ? 'deleted' : normalized.action === 'create' ? 'created' : 'updated', entityId: reservationId })
+    void pushUpstream()
 
     return NextResponse.json({
       success: true,

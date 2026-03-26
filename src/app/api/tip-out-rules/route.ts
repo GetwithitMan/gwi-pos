@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // Valid basisType values
 const VALID_BASIS_TYPES = ['tips_earned', 'food_sales', 'bar_sales', 'total_sales', 'net_sales'] as const
@@ -148,6 +150,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       ...(maxPercentage !== undefined && maxPercentage !== null && { maxPercentage: Number(maxPercentage) }),
       ...(effectiveDate !== undefined && effectiveDate !== null && { effectiveDate: new Date(effectiveDate) }),
       ...(expiresAt !== undefined && expiresAt !== null && { expiresAt: new Date(expiresAt) }),
+      lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
     }
 
     // Create the rule
@@ -162,6 +165,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         }
       }
     })
+
+    void notifyDataChanged({ locationId, domain: 'tip-out-rules', action: 'created', entityId: rule.id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

@@ -66,6 +66,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     const updateData: Record<string, unknown> = {
       safStatus: newStatus,
       safUploadedAt: success ? new Date() : undefined,
+      lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
     }
     if (!success) {
       updateData.safError = response.textResponse || response.cmdStatus || 'SAF forward failed'

@@ -276,13 +276,13 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       // Soft delete ingredients first
       await tx.menuItemRecipeIngredient.updateMany({
         where: { recipeId: recipe.id },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
 
       // Soft delete recipe
       await tx.menuItemRecipe.update({
         where: { id: recipe.id },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
     })
 

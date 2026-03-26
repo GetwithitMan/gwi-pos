@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { PayrollPeriodStatus } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 // TODO: Phase 1 - No PayrollPeriodRepository yet.
 // db.payrollPeriod calls remain direct.
 
@@ -106,8 +108,12 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         periodEnd: new Date(periodEnd),
         periodType: periodType || 'biweekly',
         status: 'open',
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
+
+    void notifyDataChanged({ locationId, domain: 'payroll', action: 'created', entityId: period.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       period: {

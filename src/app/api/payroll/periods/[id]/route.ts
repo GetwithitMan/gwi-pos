@@ -4,6 +4,8 @@ import { calculateTaxes, TaxCalculationInput } from '@/lib/payroll/tax-calculato
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get payroll period details with pay stubs
 export const GET = withVenue(async function GET(
@@ -130,7 +132,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       // Delete existing pay stubs for this period (to regenerate)
-      await db.payStub.updateMany({ where: { payrollPeriodId: id }, data: { deletedAt: new Date() } })
+      await db.payStub.updateMany({ where: { payrollPeriodId: id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
 
       let totalRegularHours = 0
       let totalOvertimeHours = 0
@@ -312,6 +314,7 @@ export const PUT = withVenue(async function PUT(
               timeEntryIds: timeEntries.map(te => te.id),
               paymentMethod: employee.paymentMethod,
               status: 'pending',
+              lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
             },
           })
 
@@ -338,6 +341,7 @@ export const PUT = withVenue(async function PUT(
           totalCommissions,
           totalBankedTips,
           grandTotal,
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
       })
 
@@ -363,13 +367,14 @@ export const PUT = withVenue(async function PUT(
           status: 'closed',
           closedAt: new Date(),
           closedBy,
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
       })
 
       // Approve all pay stubs
       await db.payStub.updateMany({
         where: { payrollPeriodId: id },
-        data: { status: 'approved' },
+        data: { status: 'approved', lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
 
       return NextResponse.json({ data: { message: 'Payroll period closed' } })
@@ -385,7 +390,7 @@ export const PUT = withVenue(async function PUT(
       const paidAt = new Date()
       await db.payStub.updateMany({
         where: { payrollPeriodId: id },
-        data: { status: 'paid', paidAt },
+        data: { status: 'paid', paidAt, lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
 
       // Aggregate YTD increments per employee, then update each
@@ -440,6 +445,7 @@ export const PUT = withVenue(async function PUT(
         data: {
           status: 'paid',
           paidAt: new Date(),
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
       })
 
@@ -479,10 +485,13 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     // Soft delete pay stubs first
-    await db.payStub.updateMany({ where: { payrollPeriodId: id }, data: { deletedAt: new Date() } })
+    await db.payStub.updateMany({ where: { payrollPeriodId: id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
 
     // Soft delete period
-    await db.payrollPeriod.update({ where: { id }, data: { deletedAt: new Date() } })
+    await db.payrollPeriod.update({ where: { id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
+
+    void notifyDataChanged({ locationId: period.locationId, domain: 'payroll', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { message: 'Payroll period deleted' } })
   } catch (error) {

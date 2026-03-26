@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get single inventory count with items
 export const GET = withVenue(async function GET(
@@ -118,6 +120,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
             variancePct: variancePct,
             countedAt: new Date(),
             notes: itemUpdate.notes,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           },
         })
       }
@@ -235,6 +238,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       updateData.notes = body.notes
     }
 
+    updateData.lastMutatedBy = process.env.VERCEL ? 'cloud' : 'local'
+
     const count = await db.inventoryCount.update({
       where: { id },
       data: updateData,
@@ -247,6 +252,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         },
       },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       count: {
@@ -286,8 +294,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     await db.inventoryCount.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

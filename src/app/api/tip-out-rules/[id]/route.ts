@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET: Get a single tip-out rule
 export const GET = withVenue(async function GET(
@@ -122,6 +124,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       updateData.expiresAt = expiresAt !== null ? new Date(expiresAt) : null
     }
 
+    updateData.lastMutatedBy = process.env.VERCEL ? 'cloud' : 'local'
+
     const rule = await db.tipOutRule.update({
       where: { id },
       data: updateData,
@@ -134,6 +138,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         }
       }
     })
+
+    void notifyDataChanged({ locationId: existingRule.locationId, domain: 'tip-out-rules', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {
@@ -184,7 +191,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       // Instead of deleting, deactivate it
       await db.tipOutRule.update({
         where: { id },
-        data: { isActive: false }
+        data: { isActive: false, lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' }
       })
       return NextResponse.json({ data: {
         message: 'Tip-out rule has been deactivated (it has historical tip data)'
@@ -194,8 +201,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     // Soft delete the rule
     await db.tipOutRule.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
     })
+
+    void notifyDataChanged({ locationId: existingRule.locationId, domain: 'tip-out-rules', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       message: 'Tip-out rule deleted successfully'
