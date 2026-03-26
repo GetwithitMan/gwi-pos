@@ -152,75 +152,53 @@ run_dashboard() {
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Verify binary exists
+  # Resolve dashboard binary path (must exist before creating service)
   # ─────────────────────────────────────────────────────────────────────────
-  # Detect actual binary name (Tauri uses productName from tauri.conf.json)
-  local DASHBOARD_BIN=""
-  for candidate in gwi-dashboard gwi-nuc-dashboard; do
-    if command -v "$candidate" >/dev/null 2>&1; then
-      DASHBOARD_BIN="$candidate"
-      break
-    fi
-  done
-  if [[ -n "$DASHBOARD_BIN" ]]; then
-    log "Dashboard binary verified: $(which "$DASHBOARD_BIN")"
-  else
-    track_warn "Dashboard binary not found in PATH after install"
+  local DASHBOARD_EXEC=""
+  DASHBOARD_EXEC=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
+  if [[ -z "$DASHBOARD_EXEC" ]]; then
+    track_warn "Dashboard binary not found in PATH — skipping systemd service creation (install may be broken)"
+    # Still continue to desktop shortcut + sudoers below
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Set up systemd user service (primary autostart mechanism)
+  # Set up systemd user service (sole autostart mechanism)
   # ─────────────────────────────────────────────────────────────────────────
-  local SYSTEMD_USER_DIR
-  SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
-  mkdir -p "$SYSTEMD_USER_DIR"
-  chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
+  if [[ -n "$DASHBOARD_EXEC" ]]; then
+    local SYSTEMD_USER_DIR
+    SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
+    mkdir -p "$SYSTEMD_USER_DIR"
+    chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
 
-  cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
+    cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
 [Unit]
 Description=GWI NUC Dashboard
 After=graphical-session.target
 
 [Service]
-ExecStart=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || echo /usr/bin/gwi-dashboard)
-Restart=always
-RestartSec=3
+ExecStart=${DASHBOARD_EXEC}
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=120
 Environment=DISPLAY=:0
 Environment=GWI_POS_URL=http://localhost:3005
 
 [Install]
 WantedBy=default.target
 SVCEOF
-  chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
+    chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
 
-  # Enable the user service (requires loginctl enable-linger for boot-time start)
-  loginctl enable-linger "${POSUSER}" 2>/dev/null || true
-  sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service" 2>/dev/null || {
-    track_warn "Could not enable systemd user service for dashboard — falling back to XDG autostart"
-  }
-  log "Systemd user service created at ${SYSTEMD_USER_DIR}/gwi-dashboard.service (Restart=always, RestartSec=3)"
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # Set up XDG autostart (fallback if systemd user service fails)
-  # ─────────────────────────────────────────────────────────────────────────
-  local AUTOSTART_DIR="/etc/xdg/autostart"
-  if [[ -d "$AUTOSTART_DIR" ]]; then
-    cat > "${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop" << 'DESKTOP'
-[Desktop Entry]
-Name=GWI NUC Dashboard
-Comment=Auto-start GWI system dashboard (fallback for systemd user service)
-Exec=gwi-dashboard
-Type=Application
-X-GNOME-Autostart-enabled=true
-X-GNOME-Autostart-Delay=10
-Hidden=false
-NoDisplay=false
-DESKTOP
-    chmod 644 "${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop"
-    log "XDG autostart entry created as fallback at ${AUTOSTART_DIR}/gwi-dashboard-autostart.desktop"
-  else
-    track_warn "Autostart directory ${AUTOSTART_DIR} not found — dashboard relies solely on systemd user service"
+    # Enable the user service (requires loginctl enable-linger for boot-time start)
+    loginctl enable-linger "${POSUSER}" 2>/dev/null || true
+    sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service" 2>/dev/null || {
+      track_warn "Could not enable systemd user service for dashboard"
+    }
+    log "Systemd user service created at ${SYSTEMD_USER_DIR}/gwi-dashboard.service (Restart=on-failure, RestartSec=5, burst=5/120s)"
   fi
+
+  # Remove stale XDG autostart entry if it exists from a previous install
+  rm -f /etc/xdg/autostart/gwi-dashboard-autostart.desktop 2>/dev/null
 
   # ─────────────────────────────────────────────────────────────────────────
   # Create desktop shortcut (clickable icon on desktop for manual launch)
@@ -289,13 +267,17 @@ SUDOERS
 # ─────────────────────────────────────────────────────────────────────────────
 # _ensure_dashboard_autostart — idempotent autostart + sudoers setup
 # Called when dashboard is already at the correct version (skip install)
-# but we still want to make sure systemd/XDG/sudoers are configured.
+# but we still want to make sure systemd service + sudoers are configured.
 # ─────────────────────────────────────────────────────────────────────────────
 _ensure_dashboard_autostart() {
+  # Resolve dashboard binary — skip service creation if missing
+  local DASHBOARD_EXEC=""
+  DASHBOARD_EXEC=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
+
   # Systemd user service
   local SYSTEMD_USER_DIR
   SYSTEMD_USER_DIR=$(eval echo "~${POSUSER}/.config/systemd/user")
-  if [[ ! -f "${SYSTEMD_USER_DIR}/gwi-dashboard.service" ]]; then
+  if [[ -n "$DASHBOARD_EXEC" ]] && [[ ! -f "${SYSTEMD_USER_DIR}/gwi-dashboard.service" ]]; then
     mkdir -p "$SYSTEMD_USER_DIR"
     chown -R "${POSUSER}:${POSUSER}" "$(eval echo "~${POSUSER}/.config")"
     cat > "${SYSTEMD_USER_DIR}/gwi-dashboard.service" << SVCEOF
@@ -304,9 +286,11 @@ Description=GWI NUC Dashboard
 After=graphical-session.target
 
 [Service]
-ExecStart=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || echo /usr/bin/gwi-dashboard)
-Restart=always
-RestartSec=3
+ExecStart=${DASHBOARD_EXEC}
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=120
 Environment=DISPLAY=:0
 Environment=GWI_POS_URL=http://localhost:3005
 
@@ -318,6 +302,9 @@ SVCEOF
     sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service" 2>/dev/null || true
     log "Dashboard autostart configured"
   fi
+
+  # Remove stale XDG autostart entry if it exists from a previous install
+  rm -f /etc/xdg/autostart/gwi-dashboard-autostart.desktop 2>/dev/null
 
   # Sudoers
   local SUDOERS_FILE="/etc/sudoers.d/gwi-dashboard"

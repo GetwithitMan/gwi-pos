@@ -6,7 +6,7 @@
 # Provisions Ubuntu 22.04+ NUCs as POS stations.
 #
 # Roles:
-#   Server   — POS app + Chromium kiosk + heartbeat + sync agent + backups + x11vnc + RealVNC
+#   Server   — POS app + web UI + heartbeat + sync agent + backups + x11vnc + RealVNC (no kiosk)
 #   Backup   — Hot standby: PG streaming replication + keepalived VIP failover
 #   Terminal — Chromium kiosk pointing at server + x11vnc + RealVNC
 #
@@ -51,13 +51,15 @@ for _arg in "$@"; do
   [[ "$_arg" == "--skip-self-update" ]] && _SKIP_SELF_UPDATE=true
 done
 
-if [[ "$_SKIP_SELF_UPDATE" == "false" ]]; then
+if [[ "$_SKIP_SELF_UPDATE" == "false" ]] && [[ "${GWI_OFFLINE_INSTALL:-}" != "1" ]]; then
   echo -e "\033[0;36m[GWI POS]\033[0m Checking for latest installer..."
   _TEMP_INSTALLER=$(mktemp /tmp/installer-update.XXXXXX)
   if curl -fsSL --connect-timeout 10 --max-time 30 "$_SELF_UPDATE_URL" -o "$_TEMP_INSTALLER" 2>/dev/null; then
     _REMOTE_SHA=$(grep '^INSTALLER_GIT_SHA=' "$_TEMP_INSTALLER" 2>/dev/null | head -1 | cut -d'"' -f2)
     if [[ -n "$_REMOTE_SHA" && "$_REMOTE_SHA" != "$INSTALLER_GIT_SHA" ]]; then
       echo -e "\033[0;32m[GWI POS]\033[0m Updating installer: $INSTALLER_GIT_SHA → $_REMOTE_SHA"
+      # Keep last-known-good copy for rollback
+      cp "$0" "${0}.bak"
       # Replace ourselves with the new version
       cp "$_TEMP_INSTALLER" "$0"
       chmod +x "$0"
@@ -141,6 +143,8 @@ _start_spinner() {
     ) &
     _SPINNER_PID=$!
   fi
+  # Ensure spinner is cleaned up on unexpected script exit
+  trap 'kill $_SPINNER_PID 2>/dev/null || true' EXIT
 }
 _stop_spinner() {
   if [[ -n "$_SPINNER_PID" ]] && kill -0 "$_SPINNER_PID" 2>/dev/null; then
@@ -188,7 +192,8 @@ _report_install_progress() {
 
   # Compute HMAC signature for fleet auth
   local sig
-  sig=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}') || return 0
+  sig=$(printf '%s' "$payload" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}') \
+    || { [[ -z "${_HMAC_WARNED:-}" ]] && warn "Progress reporting disabled (openssl HMAC failed)" && _HMAC_WARNED=1; return 0; }
 
   # Fire and forget — don't block install for reporting
   curl -sf -X POST "${mc_url}/api/fleet/install-progress" \
@@ -234,7 +239,6 @@ DB_NAME=""
 DB_PASSWORD=""
 REPL_PASSWORD=""
 NEON_PSQL="psql"
-KIOSK_OK=true
 CHROMIUM_BIN=""
 POS_READY=false
 VENUE_NAME=""
@@ -380,7 +384,7 @@ check_installer_update "$@"
 header "GWI POS Installer"
 
 # Display version info
-if [[ "$INSTALLER_VERSION" != "1.1.1357" ]] && [[ -n "$INSTALLER_VERSION" ]]; then
+if [[ "$INSTALLER_VERSION" != "__INSTALLER_VERSION__" ]] && [[ -n "$INSTALLER_VERSION" ]]; then
   log "Installer v${INSTALLER_VERSION} (built ${INSTALLER_BUILD_DATE:-unknown}, sha ${INSTALLER_GIT_SHA:-unknown})"
 else
   log "Installer version: development (unstamped)"
@@ -476,6 +480,10 @@ if [[ -n "$RESUME_FROM" ]]; then
   log "Restored state: STATION_ROLE=$STATION_ROLE, POSUSER=$POSUSER"
 fi
 
+# ── Soft dependency checks (warn-only, never block install) ──
+command -v jq >/dev/null 2>&1 || track_warn "jq not found — install progress reporting will be degraded"
+command -v python3 >/dev/null 2>&1 || track_warn "python3 not found — version checking will be degraded"
+
 # Define stages in order
 STAGES=(preflight register secrets database deploy_app schema services ha remote_access finalize system_hardening dashboard)
 
@@ -549,45 +557,40 @@ if [[ "$DRY_RUN" == "true" ]]; then
   echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
   echo ""
 elif [[ -z "$RESUME_FROM" ]]; then
+  # Quick health check — confirm POS is responding before reboot
+  if [[ "$STATION_ROLE" == "server" ]] || [[ "$STATION_ROLE" == "backup" ]]; then
+    log "Running post-install health check..."
+    _health_ok=false
+    for _attempt in 1 2 3; do
+      if curl -sf --connect-timeout 3 --max-time 5 http://localhost:3005/api/health >/dev/null 2>&1; then
+        _health_ok=true
+        break
+      fi
+      sleep 2
+    done
+    if [[ "$_health_ok" == "true" ]]; then
+      log "Health check passed — POS is responding on port 3005"
+    else
+      err "Health check FAILED — POS not responding on port 3005 after 3 attempts"
+      warn "Proceeding to reboot anyway — services should recover on boot"
+      _report_install_progress "health_check" "FAILED" "" "POS not responding on port 3005 after 3 attempts"
+    fi
+  fi
+
   log ""
-  log "Installation complete! System will reboot in 60 seconds..."
+  log "Installation complete! System will reboot in 15 seconds..."
   log "  All services, dashboard, and autostart entries will activate on boot."
   log "  Press Ctrl+C to cancel reboot."
   log ""
-  sleep 60
+  sleep 15
   log "Rebooting now..."
   reboot
 else
   log ""
-  log "Resume install complete. Run 'gwi-dashboard &' to start the dashboard,"
-  log "or reboot to activate all autostart entries."
+  log "Resume install complete. Reboot to activate all services and the dashboard."
+  log "  Run: sudo reboot"
   log ""
 fi
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # End of installer — payload below
 exit 0

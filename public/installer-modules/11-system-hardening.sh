@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 11-system-hardening.sh — Stage 11: Ansible Baseline Enforcement
+# 11-system-hardening.sh — Stage 11: System Hardening
 # =============================================================================
 # Entry: run_system_hardening
 # Expects: APP_BASE, APP_DIR, ENV_FILE, POSUSER, STATION_ROLE, SERVER_NODE_ID
 # Uses:    header(), log(), warn(), err(), track_warn(), start_timer(), end_timer()
 #
-# Bootstraps a pinned Ansible venv, acquires the shared baseline execution
-# lock, runs the versioned site.yml playbook, and writes structured JSON
-# artifacts for all outcomes (success, warning, failure, skip).
+# Two-layer approach:
+#   1. _apply_critical_hardening_direct() — ALWAYS runs. Disables screen sleep,
+#      DPMS, screensavers, and notification nags via direct systemd/xset/Xorg.
+#   2. Ansible baseline (optional) — if installer/site.yml exists, bootstraps a
+#      pinned Ansible venv and runs the versioned playbook for full enforcement.
 #
-# Environment overrides:
+# Environment overrides (Ansible path only):
 #   HARDENING_TAGS       — Ansible --tags filter (e.g. "firewall,sshd_hardening")
 #   SKIP_HARDENING_TAGS  — Ansible --skip-tags filter (e.g. "branding,optional")
 #   HARDENING_DRY_RUN    — Set to "true" for check mode (--check)
@@ -18,7 +20,7 @@
 
 run_system_hardening() {
   start_timer
-  header "Stage 11: System Hardening (Ansible Baseline)"
+  header "Stage 11: System Hardening"
 
   # ─────────────────────────────────────────────────────────────────────────
   # Constants
@@ -271,20 +273,25 @@ XSRC
       chmod +x "$home_dir/.xsessionrc"
       chown "$POSUSER:$POSUSER" "$home_dir/.xsessionrc"
 
-      # Apply DPMS off NOW if X11 is running
-      if [[ -S /tmp/.X11-unix/X0 ]]; then
+      # Apply DPMS off NOW if X11 is running and accepting connections
+      if [[ -S /tmp/.X11-unix/X0 ]] && sudo -u "$POSUSER" DISPLAY=:0 xset q &>/dev/null; then
         sudo -u "$POSUSER" DISPLAY=:0 xset s off -dpms 2>/dev/null || true
         sudo -u "$POSUSER" DISPLAY=:0 xset s noblank 2>/dev/null || true
         sudo -u "$POSUSER" DISPLAY=:0 xset dpms 0 0 0 2>/dev/null || true
+        log "  xset DPMS-off applied to live X11 session"
       fi
 
-      # GNOME settings
-      if command -v gsettings &>/dev/null; then
-        local dbus="unix:path=/run/user/$(id -u "$POSUSER")/bus"
+      # GNOME settings — requires both gsettings binary and a live DBUS session bus
+      local _uid_posuser
+      _uid_posuser=$(id -u "$POSUSER" 2>/dev/null || echo "")
+      local _dbus_path="/run/user/${_uid_posuser}/bus"
+      if command -v gsettings &>/dev/null && [[ -n "$_uid_posuser" ]] && [[ -S "$_dbus_path" ]]; then
+        local dbus="unix:path=$_dbus_path"
         sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.desktop.session idle-delay 0 2>/dev/null || true
         sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.desktop.screensaver lock-enabled false 2>/dev/null || true
         sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.desktop.screensaver lock-delay 0 2>/dev/null || true
         sudo -u "$POSUSER" DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS="$dbus" gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type "nothing" 2>/dev/null || true
+        log "  GNOME idle/screensaver settings applied"
       fi
 
       # KDE settings (KDE Power Devil overrides xset — must be fully disabled)
@@ -327,14 +334,16 @@ XORGCONF
       cat > /etc/systemd/user/gwi-keep-awake.service <<'KASVC'
 [Unit]
 Description=GWI POS Keep Screen Awake
+After=graphical-session.target
 [Service]
 Type=oneshot
 Environment=DISPLAY=:0
-ExecStart=/bin/bash -c "xset -dpms; xset s off; xset s noblank 2>/dev/null || true"
+ExecStart=/bin/bash -c "if xset q &>/dev/null; then xset -dpms; xset s off; xset s noblank; fi"
 KASVC
       cat > /etc/systemd/user/gwi-keep-awake.timer <<'KATMR'
 [Unit]
 Description=GWI POS Keep Screen Awake Timer
+After=graphical-session.target
 [Timer]
 OnBootSec=30s
 OnUnitActiveSec=60s
@@ -420,9 +429,8 @@ KATMR
       log "python3-venv installed successfully (Python ${PY_VERSION})"
     fi
 
-    # Create venv and install pinned ansible-core
-    python3 -m venv "$VENV_DIR" 2>/dev/null
-    if [[ $? -ne 0 ]]; then
+    # Create venv and install pinned ansible
+    if ! python3 -m venv "$VENV_DIR" 2>/dev/null; then
       warn "Failed to create Python virtualenv at $VENV_DIR"
       _apply_critical_hardening_direct
       _write_run_state "degraded"
@@ -435,15 +443,14 @@ KATMR
 
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip >/dev/null 2>&1
     # Install full ansible (not just ansible-core) — includes json callback plugin
-    "$VENV_DIR/bin/pip" install --quiet "ansible==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1 \
-      || "$VENV_DIR/bin/pip" install --quiet "ansible" >/dev/null 2>&1
-    if [[ $? -ne 0 ]]; then
+    if ! { "$VENV_DIR/bin/pip" install --quiet "ansible==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1 \
+      || "$VENV_DIR/bin/pip" install --quiet "ansible" >/dev/null 2>&1; }; then
       warn "Failed to install ansible==$PINNED_ANSIBLE_VERSION"
       _apply_critical_hardening_direct
       _write_run_state "degraded"
       _write_result "failed_required" 1 0
       _write_event "baseline_run" "failed_required" 1 0
-      track_warn "System hardening: ansible-core installation failed"
+      track_warn "System hardening: ansible installation failed"
       end_timer "Stage 11: System Hardening"
       return 0
     fi
@@ -455,7 +462,7 @@ KATMR
     installed_version=$("$VENV_DIR/bin/ansible" --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "unknown")
     if [[ "$installed_version" != "$PINNED_ANSIBLE_VERSION" ]]; then
       log "Ansible version mismatch (have $installed_version, want $PINNED_ANSIBLE_VERSION) — upgrading..."
-      "$VENV_DIR/bin/pip" install --quiet "ansible-core==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1
+      "$VENV_DIR/bin/pip" install --quiet "ansible==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1
     fi
   fi
 

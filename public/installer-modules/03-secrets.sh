@@ -131,7 +131,6 @@ ENVEOF
         PRIMARY_NUC_IP) [[ -z "$PRIMARY_NUC_IP" ]] && PRIMARY_NUC_IP="$val" ;;
         VIRTUAL_IP)   [[ -z "$VIRTUAL_IP" ]] && VIRTUAL_IP="$val" ;;
         LOCATION_NAME) [[ -z "${LOCATION_NAME:-}" ]] && LOCATION_NAME="$val" && VENUE_NAME="$val" ;;
-        REALVNC_CLOUD_TOKEN) REALVNC_CLOUD_TOKEN="$val" ;;
       esac
     done < "$ENV_FILE"
 

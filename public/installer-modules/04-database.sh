@@ -30,16 +30,18 @@ run_database() {
   cat > /opt/gwi-pos/wait-for-pos.sh <<'WAITEOF'
 #!/bin/bash
 URL="${1:-http://localhost:3005/login}"
-TIMEOUT=300
+TIMEOUT=60
 ELAPSED=0
+echo "[wait-for-pos] Waiting up to ${TIMEOUT}s for POS at $URL..."
 while [ $ELAPSED -lt $TIMEOUT ]; do
   if curl -sf -o /dev/null "$URL" 2>/dev/null; then
+    echo "[wait-for-pos] POS is reachable after ${ELAPSED}s"
     exit 0
   fi
   sleep 5
   ELAPSED=$((ELAPSED + 5))
 done
-echo "POS server not ready after ${TIMEOUT}s — kiosk will retry via systemd" >&2
+echo "[wait-for-pos] POS server not ready after ${TIMEOUT}s — kiosk will retry via systemd Restart=always" >&2
 exit 1
 WAITEOF
   chmod +x /opt/gwi-pos/wait-for-pos.sh
@@ -61,6 +63,12 @@ for PROFILE in "$SNAP_PROFILE" "$NATIVE_PROFILE" "$KIOSK_PROFILE"; do
            "$PROFILE/Service Worker/CacheStorage"
   fi
 done
+
+# Detect actual X11 display (fallback to :0)
+DISPLAY=${DISPLAY:-$(w -hs | awk '{print $3}' | grep : | head -1)}
+DISPLAY=${DISPLAY:-:0}
+echo "DISPLAY=$DISPLAY" > /opt/gwi-pos/kiosk-display.env
+
 exit 0
 CLEAREOF
   chmod +x /opt/gwi-pos/clear-kiosk-session.sh
@@ -563,8 +571,8 @@ HBAEOF
     # RLS blocks downstream sync, menu queries, and login. Must be disabled.
     sudo -u postgres psql -d "$DB_NAME" -c "
       DO \$\$ DECLARE r RECORD; BEGIN
-        FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true LOOP
-          EXECUTE 'ALTER TABLE public.\"' || r.tablename || '\" DISABLE ROW LEVEL SECURITY';
+        FOR r IN SELECT relname FROM pg_class WHERE relrowsecurity = true AND relkind = 'r' LOOP
+          EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', r.relname);
         END LOOP;
       END \$\$;
     " >/dev/null 2>&1

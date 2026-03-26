@@ -269,26 +269,14 @@ run_deploy_app() {
     fi
   done
 
-  # ── Build (with atomic-update rollback) ──────────────────────────────────
-  # Source atomic-update library for rollback support
+  # ── npm install + prisma generate (build deferred to 06-schema after DB setup) ──
+  # Source atomic-update library for rollback support (used by 06-schema build)
   _atomic_lib="$(dirname "${BASH_SOURCE[0]}")/lib/atomic-update.sh"
   if [[ -f "$_atomic_lib" ]]; then
     source "$_atomic_lib"
     log "Atomic update library loaded."
   else
     log "WARNING: atomic-update.sh not found at $_atomic_lib — build failures will not auto-rollback."
-  fi
-
-  # Start update transaction (creates snapshot for rollback)
-  _has_transaction=false
-  if type start_update_transaction &>/dev/null; then
-    log "Starting atomic update transaction..."
-    if start_update_transaction >/dev/null 2>&1; then
-      _has_transaction=true
-      log "Atomic update transaction started — snapshot created for rollback."
-    else
-      log "WARNING: Failed to start update transaction. Proceeding without rollback safety."
-    fi
   fi
 
   rm -rf "$APP_DIR/.next" 2>/dev/null || true
@@ -300,11 +288,6 @@ run_deploy_app() {
     if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && rm -rf node_modules && npm ci --production=false"; then
       err_code "ERR-INST-153" "npm ci failed after retry in $APP_DIR"
       err "npm install failed after retry. Check Node.js version and network."
-      if [[ "$_has_transaction" == "true" ]]; then
-        err "Rolling back to previous working version..."
-        rollback_transaction
-        err "Rollback complete. Previous version restored."
-      fi
       return 1
     fi
   fi
@@ -313,34 +296,13 @@ run_deploy_app() {
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma generate"; then
     err_code "ERR-INST-154" "npx prisma generate failed in $APP_DIR"
     err "Prisma generate failed. Check schema.prisma for errors."
-    if [[ "$_has_transaction" == "true" ]]; then
-      err "Rolling back to previous working version..."
-      rollback_transaction
-      err "Rollback complete. Previous version restored."
-    fi
     return 1
   fi
 
-  # Clear stale tsc incremental cache — prevents false type errors after schema changes
-  rm -f "$APP_DIR/tsconfig.tsbuildinfo" 2>/dev/null || true
-
-  log "Building Next.js application..."
-  if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='--max-old-space-size=4096' npm run build"; then
-    err_code "ERR-INST-186" "next build failed in $APP_DIR"
-    err "Next.js build failed."
-    if [[ "$_has_transaction" == "true" ]]; then
-      err "Rolling back to previous working version..."
-      rollback_transaction
-      err "Rollback complete. Previous version restored."
-    fi
-    return 1
-  fi
-
-  # Build succeeded — commit the atomic update transaction (cleans up snapshot)
-  if [[ "$_has_transaction" == "true" ]]; then
-    commit_update
-    log "Atomic update committed — build verified successfully."
-  fi
+  # NOTE: Next.js build is NOT run here — it happens in 06-schema.sh AFTER
+  # prisma db push + nuc-pre-migrate.js apply the schema to local PG.
+  # Building here would waste 3-5 minutes on NUC hardware since 06-schema
+  # must rebuild anyway after schema changes.
 
   # ── Refresh installer modules from git checkout ──────────────────────────
   # The git checkout has the LATEST modules. The installer.run we're running

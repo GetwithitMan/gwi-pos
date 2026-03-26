@@ -214,19 +214,8 @@ if [[ -f scripts/nuc-pre-migrate.js ]] && [[ -n "${NEON_DATABASE_URL:-}" ]]; the
     fi
   }
 
-  # Update _venue_schema_state.schemaVersion in Neon to match what we just migrated
-  # This prevents neon-schema-version-incompatible on the POS readiness check
-  if [[ -f public/version-contract.json ]] && command -v jq >/dev/null 2>&1; then
-    _EXPECTED_SCHEMA=$(jq -r '.schemaVersion // empty' public/version-contract.json 2>/dev/null)
-    if [[ -n "$_EXPECTED_SCHEMA" ]]; then
-      echo "[pre-start] Updating Neon _venue_schema_state to schema $_EXPECTED_SCHEMA..."
-      psql "$NEON_DATABASE_URL" -c "UPDATE \"_venue_schema_state\" SET \"schemaVersion\" = '$_EXPECTED_SCHEMA' WHERE id = 1" 2>/dev/null && {
-        echo "[pre-start] Neon schema version updated to $_EXPECTED_SCHEMA"
-      } || {
-        echo "[pre-start] WARNING: Could not update Neon _venue_schema_state"
-      }
-    fi
-  fi
+  # NOTE: _venue_schema_state is owned by MC (sole source of truth).
+  # The NUC must NEVER write to it — observe and report only.
 fi
 
 # Check seed completion status — hard stop on first boot if incomplete
@@ -327,7 +316,7 @@ ExecStartPre=$APP_BASE/pre-start.sh
 ExecStart=/usr/bin/node -r ./preload.js server.js
 Restart=always
 RestartSec=3
-TimeoutStartSec=600
+TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=thepasspos
@@ -535,20 +524,8 @@ BKEOF
 
     header "Configuring Sudoers"
 
-    # Dedicated kiosk control script — no pkill, no eval, no untrusted input
-    cat > /opt/gwi-pos/kiosk-control.sh <<'KIOSKCTL'
-#!/bin/bash
-set -euo pipefail
-ACTION="${1:-stop}"
-case "$ACTION" in
-  stop)    systemctl stop    thepasspos-kiosk 2>/dev/null || true ;;
-  start)   systemctl start   thepasspos-kiosk 2>/dev/null || true ;;
-  restart) systemctl restart thepasspos-kiosk 2>/dev/null || true ;;
-  *) echo "Usage: $0 {stop|start|restart}"; exit 1 ;;
-esac
-KIOSKCTL
-    chown root:root /opt/gwi-pos/kiosk-control.sh
-    chmod 755 /opt/gwi-pos/kiosk-control.sh
+    # NOTE: kiosk-control.sh is only needed on terminal role (created in terminal section).
+    # Server role has no kiosk service.
 
     cat > /etc/sudoers.d/gwi-pos <<SUDEOF
 # GWI POS — full passwordless sudo for POS service user
@@ -604,6 +581,135 @@ SVCEOF
       track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js — sync agent will not start."
       systemctl disable thepasspos-sync 2>/dev/null || true
     fi
+
+    # ───────────────────────────────────────────────────────────────────────────
+    # Server + Backup Roles: Boot Diagnostic (post-boot forensic snapshot)
+    # ───────────────────────────────────────────────────────────────────────────
+
+    header "Installing Boot Diagnostic Service"
+
+    BOOT_DIAG_SCRIPT="$APP_BASE/boot-diagnostic.sh"
+    cat > "$BOOT_DIAG_SCRIPT" <<'DIAGEOF'
+#!/usr/bin/env bash
+# GWI POS Boot Diagnostic — runs once after boot to capture system state.
+# Output: /opt/gwi-pos/.last-boot-diagnostic.json
+set -euo pipefail
+
+OUT="/opt/gwi-pos/.last-boot-diagnostic.json"
+
+# Helper: escape a string for safe JSON embedding (handles quotes, backslashes, newlines)
+json_escape() {
+  local s="$1"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+# Gather data
+_ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+_hostname=$(hostname 2>/dev/null || echo "unknown")
+_uptime=$(uptime -s 2>/dev/null || echo "unknown")
+
+# Service statuses (active, failed, activating, inactive, not-found)
+_pos_status=$(systemctl is-active thepasspos 2>/dev/null || echo "not-found")
+_sync_status=$(systemctl is-active thepasspos-sync 2>/dev/null || echo "not-found")
+_dashboard_status=$(systemctl is-active gwi-dashboard 2>/dev/null || echo "not-found")
+_kiosk_status=$(systemctl is-active thepasspos-kiosk 2>/dev/null || echo "not-found")
+
+# POS health check
+_health_raw=$(curl -sf --max-time 10 http://localhost:3005/api/health 2>/dev/null || echo "unreachable")
+_health=$(json_escape "$_health_raw")
+
+# Listening ports (3005 = POS, 5432 = PostgreSQL)
+_port_3005=$(ss -tlnp 2>/dev/null | grep ':3005 ' || echo "not listening")
+_port_3005=$(json_escape "$_port_3005")
+_port_5432=$(ss -tlnp 2>/dev/null | grep ':5432 ' || echo "not listening")
+_port_5432=$(json_escape "$_port_5432")
+
+# Display session state
+_display="${DISPLAY:-unset}"
+if [[ -e /tmp/.X11-unix/X0 ]]; then
+  _x11_socket="exists"
+else
+  _x11_socket="missing"
+fi
+
+# Disk space on /opt
+_disk_free=$(df -h /opt 2>/dev/null | tail -1 | awk '{print $4}' || echo "unknown")
+_disk_pct=$(df -h /opt 2>/dev/null | tail -1 | awk '{print $5}' || echo "unknown")
+
+# Last 5 lines of thepasspos journal
+_journal_raw=$(journalctl -u thepasspos --no-pager -n 5 2>/dev/null || echo "unavailable")
+_journal=$(json_escape "$_journal_raw")
+
+# State file checks
+_first_boot_done="false"
+[[ -f /opt/gwi-pos/.first-boot-done ]] && _first_boot_done="true"
+_env_exists="false"
+_env_readable="false"
+if [[ -f /opt/gwi-pos/.env ]]; then
+  _env_exists="true"
+  [[ -r /opt/gwi-pos/.env ]] && _env_readable="true"
+fi
+
+# Write JSON
+printf '{\n' > "$OUT"
+printf '  "timestamp": "%s",\n' "$_ts" >> "$OUT"
+printf '  "hostname": "%s",\n' "$_hostname" >> "$OUT"
+printf '  "bootedAt": "%s",\n' "$_uptime" >> "$OUT"
+printf '  "services": {\n' >> "$OUT"
+printf '    "thepasspos": "%s",\n' "$_pos_status" >> "$OUT"
+printf '    "thepasspos-sync": "%s",\n' "$_sync_status" >> "$OUT"
+printf '    "gwi-dashboard": "%s",\n' "$_dashboard_status" >> "$OUT"
+printf '    "thepasspos-kiosk": "%s"\n' "$_kiosk_status" >> "$OUT"
+printf '  },\n' >> "$OUT"
+printf '  "healthCheck": "%s",\n' "$_health" >> "$OUT"
+printf '  "ports": {\n' >> "$OUT"
+printf '    "3005": "%s",\n' "$_port_3005" >> "$OUT"
+printf '    "5432": "%s"\n' "$_port_5432" >> "$OUT"
+printf '  },\n' >> "$OUT"
+printf '  "display": {\n' >> "$OUT"
+printf '    "DISPLAY": "%s",\n' "$_display" >> "$OUT"
+printf '    "x11Socket": "%s"\n' "$_x11_socket" >> "$OUT"
+printf '  },\n' >> "$OUT"
+printf '  "disk": {\n' >> "$OUT"
+printf '    "optFree": "%s",\n' "$_disk_free" >> "$OUT"
+printf '    "optUsedPct": "%s"\n' "$_disk_pct" >> "$OUT"
+printf '  },\n' >> "$OUT"
+printf '  "journal": "%s",\n' "$_journal" >> "$OUT"
+printf '  "firstBootDone": %s,\n' "$_first_boot_done" >> "$OUT"
+printf '  "envExists": %s,\n' "$_env_exists" >> "$OUT"
+printf '  "envReadable": %s\n' "$_env_readable" >> "$OUT"
+printf '}\n' >> "$OUT"
+
+echo "[boot-diagnostic] Snapshot written to $OUT"
+DIAGEOF
+    chmod +x "$BOOT_DIAG_SCRIPT"
+    chown "$POSUSER":"$POSUSER" "$BOOT_DIAG_SCRIPT"
+
+    # gwi-boot-diagnostic.service — oneshot, runs 30s after POS starts
+    cat > /etc/systemd/system/gwi-boot-diagnostic.service <<SVCEOF
+[Unit]
+Description=GWI POS Boot Diagnostic
+After=thepasspos.service
+Wants=thepasspos.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 30
+ExecStart=$APP_BASE/boot-diagnostic.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+    systemctl daemon-reload
+    systemctl enable gwi-boot-diagnostic
+    log "Boot diagnostic service installed and enabled (runs 30s after boot)."
 
     # ── Force convergence to current baseline (removes legacy services/configs) ──
     source "${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/lib/legacy-cleanup.sh" 2>/dev/null || true
@@ -684,13 +790,14 @@ SVCEOF
 Description=ThePassPOS Kiosk (Terminal)
 After=graphical.target network-online.target
 Wants=network-online.target
-StartLimitIntervalSec=60
+StartLimitIntervalSec=120
 StartLimitBurst=5
 
 [Service]
 Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
+EnvironmentFile=-/opt/gwi-pos/kiosk-display.env
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
 Environment=POS_SERVER_URL=$SERVER_URL
 ExecStartPre=-/usr/bin/pkill -u %u -f 'chromium.*kiosk'
@@ -699,6 +806,7 @@ ExecStartPre=/opt/gwi-pos/wait-for-pos.sh ${SERVER_URL}/login
 ExecStart=$TERM_CHROMIUM_PATH --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --check-for-update-interval=31536000 --user-data-dir=/opt/gwi-pos/kiosk-profile $SERVER_URL
 Restart=always
 RestartSec=10
+TimeoutStartSec=60
 
 [Install]
 WantedBy=graphical.target

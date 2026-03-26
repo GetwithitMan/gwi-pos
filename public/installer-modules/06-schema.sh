@@ -77,52 +77,23 @@ run_schema() {
       track_warn "nuc-pre-migrate.js failed"
     fi
 
-    # ── Step 2.5: Ensure _venue_schema_state exists in Neon (fallback) ──
-    # MC owns _venue_schema_state, but if provisioning didn't complete or the
-    # venue was set up manually, this table may be missing. Without it, the
-    # readiness gate blocks sync permanently. Create it as a safety net.
+    # ── Step 2.5: Warn if _venue_schema_state missing in Neon ──
+    # AUTHORITY MODEL: _venue_schema_state is MC-owned. The installer must NOT
+    # create or write to it in Neon. MC provisions that table during venue setup.
+    # If it's missing, the readiness gate will block sync — that's the correct
+    # behavior until MC completes provisioning. Log a clear warning so the tech
+    # knows to check MC provisioning status.
     if [[ -n "$NEON_DIRECT_URL" ]] && [[ -z "$NEON_SCHEMA_VERSION" ]]; then
-      # Check if Neon has tables but no _venue_schema_state
       TABLE_COUNT=$(PGPASSWORD="" $NEON_PSQL "$NEON_DIRECT_URL" --connect-timeout=10 -tAc \
         "SELECT COUNT(*)::text FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'" \
         2>/dev/null | tr -d '[:space:]' || echo "0")
 
       if [[ "$TABLE_COUNT" -gt "0" ]]; then
-        # Read schema version from the freshly built version-contract
-        FALLBACK_VERSION=""
-        if [[ -f "$APP_DIR/src/generated/version-contract.json" ]]; then
-          FALLBACK_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
-        fi
-        if [[ -z "$FALLBACK_VERSION" ]] && [[ -f "$APP_DIR/public/version-contract.json" ]]; then
-          FALLBACK_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/public/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
-        fi
-        FALLBACK_VERSION="${FALLBACK_VERSION:-092}"
-
-        log "Neon has $TABLE_COUNT tables but missing _venue_schema_state — creating fallback (v$FALLBACK_VERSION)..."
-        local _neon_err
-        _neon_err=$(PGPASSWORD="" $NEON_PSQL "$NEON_DIRECT_URL" --connect-timeout=10 -c "
-          CREATE TABLE IF NOT EXISTS \"_venue_schema_state\" (
-            \"id\" INTEGER PRIMARY KEY DEFAULT 1,
-            \"schemaVersion\" TEXT NOT NULL,
-            \"seedVersion\" TEXT DEFAULT 'v1',
-            \"provisionerVersion\" TEXT,
-            \"provisionedAt\" TIMESTAMPTZ DEFAULT NOW(),
-            \"provisionedBy\" TEXT,
-            \"appVersion\" TEXT,
-            \"repairCount\" INTEGER DEFAULT 0,
-            \"lastRepairReason\" TEXT,
-            \"updatedAt\" TIMESTAMPTZ DEFAULT NOW()
-          );
-          INSERT INTO \"_venue_schema_state\" (id, \"schemaVersion\", \"seedVersion\", \"provisionerVersion\", \"provisionedBy\", \"lastRepairReason\")
-          VALUES (1, '$FALLBACK_VERSION', 'v1', '1', 'installer-fallback', 'mc-provisioning-incomplete')
-          ON CONFLICT (id) DO NOTHING;
-        " 2>&1) && {
-          NEON_SCHEMA_VERSION="$FALLBACK_VERSION"
-          log "Neon _venue_schema_state created (version=$FALLBACK_VERSION, provisionedBy=installer-fallback)"
-        } || {
-          warn "Could not create _venue_schema_state in Neon: $_neon_err"
-          track_warn "Neon _venue_schema_state creation failed"
-        }
+        warn "Neon has $TABLE_COUNT tables but _venue_schema_state is MISSING."
+        warn "This means MC provisioning did not complete for this venue."
+        warn "Sync readiness gate will block until MC provisions this table."
+        warn "Fix: Go to Mission Control -> this venue -> re-run provisioning."
+        track_warn "Neon _venue_schema_state missing — MC provisioning incomplete"
       fi
     fi
 

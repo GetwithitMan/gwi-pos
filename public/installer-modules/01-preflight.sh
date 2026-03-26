@@ -72,16 +72,6 @@ run_preflight() {
   fi
   log "Service user: $POSUSER (home: $POSUSER_HOME)"
 
-  # ── Disk Space Check — abort if less than 2GB free ──
-  FREE_MB=$(df -BM /opt 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'M')
-  if [[ -n "$FREE_MB" ]] && [[ "$FREE_MB" -lt 2000 ]]; then
-    err_code "ERR-INST-003" "${FREE_MB}MB free, need 2000MB on /opt"
-    err "Insufficient disk space: ${FREE_MB}MB free, need at least 2000MB."
-    err "Free up space before running the installer."
-    return 1
-  fi
-  log "Disk space: ${FREE_MB}MB free — OK"
-
   # ── Install Essential Tools (BEFORE registration — jq and openssl required) ──
   header "Installing Essential Tools"
 

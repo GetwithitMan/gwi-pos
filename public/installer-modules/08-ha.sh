@@ -19,7 +19,11 @@ run_ha() {
 
   header "Setting Up keepalived (VIP Failover)"
 
-  apt-get install -y keepalived
+  if ! apt-get install -y keepalived; then
+    track_warn "Failed to install keepalived — HA failover will not be available"
+    log "Stage: ha — completed in $(( $(date +%s) - _start ))s (degraded)"
+    return 0
+  fi
 
   # Auto-detect network interface
   HA_IFACE=$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')

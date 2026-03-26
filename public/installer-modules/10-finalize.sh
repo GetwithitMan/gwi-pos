@@ -31,10 +31,12 @@ run_finalize() {
   fi
 
   if [[ ${#INSTALL_WARNINGS[@]} -eq 0 ]]; then
-    header "Installation Complete!"
+    header "Core Installation Complete"
   else
-    header "Installation Complete (with warnings)"
+    header "Core Installation Complete (with warnings)"
   fi
+  echo -e "  ${YELLOW}Note:${NC} System hardening and dashboard stages still follow this summary."
+  echo ""
 
   echo -e "  ${GREEN}Total time:${NC} ${TOTAL_MINS}m ${TOTAL_SECS}s"
   echo -e "  ${GREEN}Role:${NC}     $STATION_ROLE"
@@ -157,9 +159,9 @@ run_finalize() {
   echo "    curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run"
   echo ""
 
-  # Honest health summary
+  # Honest health summary (hardening + dashboard stages still follow)
   if [[ ${#INSTALL_WARNINGS[@]} -eq 0 ]]; then
-    log "Done! GWI POS is fully installed and healthy."
+    log "Core install healthy. System hardening and dashboard stages remain."
   else
     echo -e "${YELLOW}═══════════════════════════════════════════════════════${NC}"
     echo -e "${YELLOW}  Installation completed with ${#INSTALL_WARNINGS[@]} warning(s):${NC}"

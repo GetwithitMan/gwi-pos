@@ -126,10 +126,11 @@ VNCSVC
 
     if [[ -n "$REALVNC_EMAIL" ]] && [[ -n "$REALVNC_PASSWORD" ]]; then
       log "Signing in to RealVNC cloud..."
-      if vncserver-x11 -service -login -email "$REALVNC_EMAIL" -password "$REALVNC_PASSWORD" 2>/dev/null; then
+      # Timeout after 30s to prevent blocking the installer if RealVNC hangs
+      if timeout 30 vncserver-x11 -service -login -email "$REALVNC_EMAIL" -password "$REALVNC_PASSWORD" 2>/dev/null; then
         log "Signed in to RealVNC cloud — device: $FRIENDLY_NAME"
       else
-        warn "RealVNC auto-sign-in failed. Sign in manually via desktop icon."
+        warn "RealVNC auto-sign-in failed or timed out. Sign in manually via desktop icon."
       fi
     else
       log "No RealVNC credentials configured. Sign in manually via desktop icon."
@@ -267,8 +268,12 @@ DTEOF
         dpkg -i "$tv_deb" 2>/dev/null || true
         apt-get install -f -y -qq 2>/dev/null || true
         rm -f "$tv_deb"
-        systemctl enable teamviewerd.service 2>/dev/null || true
-        log "TeamViewer installed"
+        if command -v teamviewer >/dev/null 2>&1; then
+          systemctl enable teamviewerd.service 2>/dev/null || true
+          log "TeamViewer installed"
+        else
+          warn "TeamViewer package install failed (non-fatal)"
+        fi
       else
         warn "TeamViewer download failed (non-fatal)"
       fi
