@@ -103,7 +103,7 @@ async function triggerWaitlistBridge(reservation: any, reservationId: string) {
 
   const settings = parseSettings(location.settings)
   const templates = settings.reservationTemplates
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006'
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
 
   await offerSlotToWaitlist({
     cancelledReservation: {

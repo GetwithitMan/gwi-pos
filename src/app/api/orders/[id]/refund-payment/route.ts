@@ -181,7 +181,7 @@ export const POST = withVenue(async function POST(
     let datacapRefNo: string | null = null
     let refundActionId: string | null = null
     const isCardPayment =
-      payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
+      payment.paymentMethod === 'card' || payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
 
     const effectiveReaderId = readerId ?? payment.paymentReaderId ?? null
     if (isCardPayment && effectiveReaderId && payment.datacapRecordNo) {

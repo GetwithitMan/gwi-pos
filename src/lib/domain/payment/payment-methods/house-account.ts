@@ -81,7 +81,7 @@ export async function processHouseAccountPayment(
   await tx.houseAccount.update({
     where: { id: freshAccount.id },
     data: {
-      currentBalance: { increment: haPaymentAmount },
+      currentBalance: haNewBalance,
       transactions: {
         create: {
           locationId,

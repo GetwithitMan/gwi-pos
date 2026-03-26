@@ -174,6 +174,21 @@ export const POST = withVenue(async function POST(
         discountAmount = Math.round(Number(item.itemTotal) * (body.value / 100) * 100) / 100
       }
 
+      // Cap the new discount so total item-level discounts never exceed the item price
+      const existingItemDiscounts = await tx.orderItemDiscount.aggregate({
+        where: { orderItemId: itemId, deletedAt: null },
+        _sum: { amount: true },
+      })
+      const existingDiscountSum = Number(existingItemDiscounts._sum.amount || 0)
+      const maxNewDiscount = Math.max(0, Number(item.itemTotal) - existingDiscountSum)
+      discountAmount = Math.min(discountAmount, maxNewDiscount)
+      if (discountAmount <= 0) {
+        return NextResponse.json(
+          { error: 'Item is already fully discounted' },
+          { status: 400 }
+        )
+      }
+
       // Create the OrderItemDiscount record
       const itemDiscount = await tx.orderItemDiscount.create({
         data: {

@@ -85,7 +85,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       //   • dispatchNewOrder() → kds:order-received socket to KDS screens
       //   • printKitchenTicketsForManifests() → kitchen printer jobs
       const sendRes = await fetch(
-        `http://localhost:${PORT}/api/orders/${order.id}/send`,
+        `${process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${PORT}`}/api/orders/${order.id}/send`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

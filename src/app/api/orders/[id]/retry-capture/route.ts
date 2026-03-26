@@ -243,8 +243,8 @@ export const POST = withVenue(withAuth(async function POST(
       }
 
       // Create cash payment with FSM-validated status + queue socket events atomically
-      const paymentAmount = Number(order.total)
       const tipAmount = Number(order.tipTotal) || 0
+      const paymentAmount = Number(order.total) - tipAmount
       await db.$transaction(async (tx) => {
         // Row-level lock to prevent concurrent retry captures
         await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
@@ -257,10 +257,10 @@ export const POST = withVenue(withAuth(async function POST(
             employeeId,
             paymentMethod: 'cash',
             amount: paymentAmount,
-            totalAmount: paymentAmount,
+            totalAmount: paymentAmount + tipAmount,
             tipAmount,
             status: PAYMENT_STATES.COMPLETED,
-            amountTendered: paymentAmount,
+            amountTendered: paymentAmount + tipAmount,
             changeGiven: 0,
           },
         })

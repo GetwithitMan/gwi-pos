@@ -240,7 +240,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         phone: location.phone || undefined,
         address: location.address || undefined,
         slug: '',
-        baseUrl: process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006',
+        baseUrl: process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`,
       },
     })
 

@@ -809,9 +809,9 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    if (paymentBaseTotal < remaining - 0.01) {
+    if (paymentBaseTotal < validationRemaining - 0.01) {
       return { earlyReturn: NextResponse.json(
-        { error: `Payment amount ($${paymentBaseTotal.toFixed(2)}) is less than remaining balance ($${remaining.toFixed(2)})` },
+        { error: `Payment amount ($${paymentBaseTotal.toFixed(2)}) is less than remaining balance ($${validationRemaining.toFixed(2)})` },
         { status: 400 }
       ) }
     }
@@ -2092,7 +2092,7 @@ export const POST = withVenue(withTiming(async function POST(
     if (orderIsPaid && order.orderType && ['online', 'pickup', 'delivery'].includes(order.orderType)) {
       const customerEmail = (order.customer as any)?.email
       if (customerEmail) {
-        void fetch(`http://localhost:${process.env.PORT || '3005'}/api/receipts/email`, {
+        void fetch(`${process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/receipts/email`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

@@ -139,6 +139,17 @@ export const POST = withVenue(async function POST(
         throw new Error('SOURCE_ORDER_INVALID')
       }
 
+      // Block merging orders with existing payments (would corrupt financial totals)
+      const sourcePaymentCount = await tx.payment.count({
+        where: { orderId: sourceOrder.id, status: 'completed', deletedAt: null },
+      })
+      const targetPaymentCount = await tx.payment.count({
+        where: { orderId: targetOrder.id, status: 'completed', deletedAt: null },
+      })
+      if (sourcePaymentCount > 0 || targetPaymentCount > 0) {
+        throw new Error('ORDERS_HAVE_PAYMENTS')
+      }
+
       // TX-KEEP: RELATION — move items to target order; orderId is a relation FK not in OrderItemUpdateManyMutationInput
       const moved = await tx.orderItem.updateMany({
         where: { orderId: sourceOrderId, locationId, deletedAt: null },
@@ -363,6 +374,12 @@ export const POST = withVenue(async function POST(
         return NextResponse.json(
           { error: 'Source order can no longer be merged — it may have been paid or closed' },
           { status: 409 }
+        )
+      }
+      if (error.message === 'ORDERS_HAVE_PAYMENTS') {
+        return NextResponse.json(
+          { error: 'Cannot merge orders that have existing payments. Void the payments first.' },
+          { status: 400 }
         )
       }
     }

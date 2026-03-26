@@ -13,7 +13,7 @@ import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('twilio')
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
 
 // Cached credentials (loaded from DB or env)
 let _cachedSid: string | null = null

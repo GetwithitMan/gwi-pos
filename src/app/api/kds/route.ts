@@ -535,7 +535,7 @@ const putHandler = async function PUT(request: NextRequest) {
         // If print fails, KDS shows RESEND badge but no physical ticket prints.
         try {
           void dispatchPrintWithRetry(
-            `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`,
+            `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/print/kitchen`,
             { orderId: firstItemForDispatch.orderId, itemIds },
             { locationId: locationId!, employeeId: body.employeeId || null, orderId: firstItemForDispatch.orderId }
           )
@@ -756,7 +756,7 @@ const putHandler = async function PUT(request: NextRequest) {
             const behavior = screen?.orderBehavior as { printOnBump?: boolean } | null
             if (behavior?.printOnBump) {
               void dispatchPrintWithRetry(
-                `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`,
+                `${process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/print/kitchen`,
                 { orderId, itemIds },
                 { locationId, employeeId: body.employeeId || null, orderId }
               )

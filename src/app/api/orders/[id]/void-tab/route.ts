@@ -28,28 +28,47 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
     }
 
-    // TODO: Initial fetch uses raw db because locationId is unknown until fetch.
-    // Once withVenue injects locationId, replace with OrderRepository.getOrderByIdWithInclude.
-    const order = await db.order.findFirst({
-      where: { id: orderId, deletedAt: null },
-      include: {
-        cards: {
-          where: { deletedAt: null, status: 'authorized' },
-        },
-      },
-    })
-
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    if (!reason) {
+      return NextResponse.json({ error: 'Void reason is required' }, { status: 400 })
     }
+
+    // Phase 1: Read order under FOR UPDATE lock to prevent double-void races
+    const lockedRead = await db.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
+      const order = await tx.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        include: {
+          cards: {
+            where: { deletedAt: null, status: 'authorized' },
+          },
+        },
+      })
+
+      if (!order) {
+        return { error: 'Order not found', status: 404 } as const
+      }
+
+      if (order.status === 'voided') {
+        return { error: 'Tab already voided', status: 400 } as const
+      }
+
+      if (order.cards.length === 0) {
+        return { error: 'No authorized cards to void on this tab', status: 400 } as const
+      }
+
+      return { order }
+    }, { timeout: 15000 })
+
+    if ('error' in lockedRead) {
+      return NextResponse.json({ error: lockedRead.error }, { status: lockedRead.status })
+    }
+
+    const { order } = lockedRead
 
     // Require manager void permission — voiding a tab is a high-risk financial action
     const authResult = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_VOID_ORDERS)
     if (!authResult.authorized) return NextResponse.json({ error: authResult.error }, { status: authResult.status })
-
-    if (order.cards.length === 0) {
-      return NextResponse.json({ error: 'No authorized cards to void on this tab' }, { status: 400 })
-    }
 
     const locationId = order.locationId
     const results: Array<{ cardLast4: string; voided: boolean; error?: string }> = []
@@ -85,14 +104,49 @@ export const POST = withVenue(async function POST(
     }
 
     const allVoided = results.every((r) => r.voided)
+    const totalAmount = order.cards.reduce((sum, c) => sum + Number(c.authAmount || 0), 0)
 
-    // Update order status
-    await OrderRepository.updateOrder(orderId, locationId, {
-      tabStatus: allVoided ? 'closed' : order.tabStatus,
-      status: allVoided ? 'voided' : order.status,
-      notes: reason ? `Tab voided: ${reason}` : order.notes,
-      lastMutatedBy: mutationOrigin,
-    })
+    // Phase 2: Update order + audit log atomically under FOR UPDATE lock
+    await db.$transaction(async (tx) => {
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
+      // Re-check status inside lock (may have changed since Phase 1)
+      const freshOrder = await tx.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { status: true },
+      })
+      if (freshOrder?.status === 'voided') {
+        throw new Error('Tab already voided')
+      }
+
+      await OrderRepository.updateOrder(orderId, locationId, {
+        tabStatus: allVoided ? 'closed' : order.tabStatus,
+        status: allVoided ? 'voided' : order.status,
+        notes: `Tab voided: ${reason}`,
+        lastMutatedBy: mutationOrigin,
+      }, tx)
+
+      // Audit trail — financial compliance requirement
+      await tx.auditLog.create({
+        data: {
+          locationId,
+          employeeId,
+          action: 'tab_voided',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            orderId,
+            tabName: order.tabName || order.orderNumber,
+            reason,
+            cardResults: results,
+            totalAmount,
+            allVoided,
+          },
+          ipAddress: request.headers.get('x-forwarded-for'),
+          userAgent: request.headers.get('user-agent'),
+        },
+      })
+    }, { timeout: 15000 })
 
     // Reset table to available when tab is fully voided
     if (allVoided && order.tableId) {

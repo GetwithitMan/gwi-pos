@@ -873,10 +873,11 @@ export const PATCH = withVenue(withAuth(async function PATCH(
         // Recalculate totals on all affected splits (split-aware tax)
         for (const split of parentOrder.splitOrders) {
           if (split.payments.length > 0) continue
-          const freshItems = await OrderItemRepository.getItemsForOrder(split.id, parentOrder.locationId, tx)
+          const freshItems = await OrderItemRepository.getItemsForOrderWithModifiers(split.id, parentOrder.locationId, tx)
           let inclSub = 0, exclSub = 0
           for (const fi of freshItems) {
-            const t = Number(fi.price) * fi.quantity
+            const modTotal = (fi.modifiers || []).reduce((ms: number, m: any) => ms + Number(m.price) * (m.quantity ?? 1), 0)
+            const t = (Number(fi.price) + modTotal) * fi.quantity
             if (fi.isTaxInclusive) inclSub += t; else exclSub += t
           }
           const subtotal = inclSub + exclSub

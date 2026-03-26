@@ -10,7 +10,7 @@ import { sendEmail } from '@/lib/email-service'
 import { sendSMS, formatPhoneE164 } from '@/lib/twilio'
 import crypto from 'crypto'
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
 
 // POST - Send a campaign
 export const POST = withVenue(async function POST(

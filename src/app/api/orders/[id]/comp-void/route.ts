@@ -199,25 +199,24 @@ export const POST = withVenue(async function POST(
     // Calculate the item total (price + modifiers) * quantity
     const itemTotal = calculateItemTotal(item!.price, item!.modifiers, item!.quantity)
 
-    if (action === 'void') {
-      const approvalError = validateVoidApproval(
-        itemTotal, settings.approvals, !!approvedById, !!remoteApprovalCode,
+    // Approval + 2FA checks apply to BOTH comp and void — never let either bypass manager approval
+    const compVoidApprovalError = validateVoidApproval(
+      itemTotal, settings.approvals, !!approvedById, !!remoteApprovalCode,
+    )
+    if (compVoidApprovalError) {
+      return NextResponse.json(
+        { error: compVoidApprovalError.error, requiresApproval: compVoidApprovalError.requiresApproval },
+        { status: compVoidApprovalError.status }
       )
-      if (approvalError) {
-        return NextResponse.json(
-          { error: approvalError.error, requiresApproval: approvalError.requiresApproval },
-          { status: approvalError.status }
-        )
-      }
+    }
 
-      // W5-11: 2FA enforcement for large voids
-      const twoFAError = validateVoid2FA(itemTotal, settings.security, !!remoteApprovalCode)
-      if (twoFAError) {
-        return NextResponse.json(
-          { error: twoFAError.error, requiresRemoteApproval: twoFAError.requiresRemoteApproval },
-          { status: twoFAError.status }
-        )
-      }
+    // W5-11: 2FA enforcement for large comps/voids
+    const twoFAError = validateVoid2FA(itemTotal, settings.security, !!remoteApprovalCode)
+    if (twoFAError) {
+      return NextResponse.json(
+        { error: twoFAError.error, requiresRemoteApproval: twoFAError.requiresRemoteApproval },
+        { status: twoFAError.status }
+      )
     }
 
     // Guard: cannot void/cancel a split parent with unpaid children
@@ -784,10 +783,28 @@ export const PUT = withVenue(async function PUT(
       )
     })
 
+    // Audit log for restore — captures who undid the comp/void and the previous status
+    const previousStatus = item!.status as string // 'comped' or 'voided'
+    await db.auditLog.create({
+      data: {
+        locationId: order.locationId,
+        employeeId,
+        action: 'item_restored',
+        entityType: 'orderItem',
+        entityId: itemId,
+        details: {
+          orderId,
+          itemName: item!.name,
+          previousStatus,
+          reason: item!.voidReason || null,
+        },
+      },
+    })
+
     // Emit order event for item restore (fire-and-forget)
     void emitOrderEvent(order.locationId, orderId, 'COMP_VOID_APPLIED', {
       lineItemId: itemId,
-      action: item!.status === 'comped' ? 'uncomp' : 'unvoid',
+      action: previousStatus === 'comped' ? 'uncomp' : 'unvoid',
       reason: null,
       employeeId,
       approvedById: null,

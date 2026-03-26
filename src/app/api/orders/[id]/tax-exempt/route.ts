@@ -40,133 +40,151 @@ export const POST = withVenue(async function POST(
       return NextResponse.json({ error: 'Tax ID cannot exceed 50 characters' }, { status: 400 })
     }
 
-    // Fetch order with items for recalculation
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      select: {
-        id: true,
-        locationId: true,
-        isTaxExempt: true,
-        taxTotal: true,
-        subtotal: true,
-        discountTotal: true,
-        tipTotal: true,
-        total: true,
-        inclusiveTaxRate: true,
-        status: true,
-        items: {
-          where: { deletedAt: null, status: 'active' },
-          select: {
-            price: true,
-            quantity: true,
-            isTaxInclusive: true,
-            status: true,
-            modifiers: { where: { deletedAt: null }, select: { price: true, quantity: true } },
-            commissionAmount: true,
+    // Wrap read-calculate-update in a transaction with FOR UPDATE to prevent lost updates
+    const updated = await db.$transaction(async (tx) => {
+      // Lock the Order row to prevent concurrent tax-exempt toggles from producing incorrect totals
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
+      // Fetch order with items for recalculation
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          locationId: true,
+          isTaxExempt: true,
+          taxTotal: true,
+          subtotal: true,
+          discountTotal: true,
+          tipTotal: true,
+          total: true,
+          inclusiveTaxRate: true,
+          status: true,
+          items: {
+            where: { deletedAt: null, status: 'active' },
+            select: {
+              price: true,
+              quantity: true,
+              isTaxInclusive: true,
+              status: true,
+              modifiers: { where: { deletedAt: null }, select: { price: true, quantity: true } },
+              commissionAmount: true,
+            },
           },
+          location: { select: { settings: true } },
         },
-        location: { select: { settings: true } },
-      },
+      })
+
+      if (!order) {
+        return { error: 'Order not found', status: 404 } as const
+      }
+
+      // Permission check
+      const auth = await requirePermission(requestingEmployeeId, order.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
+      if (!auth.authorized) {
+        return { error: auth.error, status: auth.status } as const
+      }
+
+      // Guard: cannot modify paid/closed orders
+      if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
+        return { error: 'Cannot modify a closed order', status: 400 } as const
+      }
+
+      // Already exempt — return early
+      if (order.isTaxExempt) {
+        return { earlyReturn: true } as const
+      }
+
+      // Calculate the tax that would be saved (for audit)
+      const currentTaxTotal = roundToCents(Number(order.taxTotal ?? 0))
+
+      // Recalculate with tax exempt
+      const orderTotals = calculateOrderTotals(
+        order.items.map(i => ({
+          price: Number(i.price),
+          quantity: i.quantity,
+          isTaxInclusive: i.isTaxInclusive ?? false,
+          status: i.status,
+          modifiers: (i.modifiers ?? []).map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+          commissionAmount: Number(i.commissionAmount ?? 0),
+        })),
+        order.location.settings as Record<string, unknown> | null,
+        Number(order.discountTotal ?? 0),
+        Number(order.tipTotal ?? 0),
+        undefined,
+        'card',
+        true, // isTaxExempt
+        Number(order.inclusiveTaxRate) || undefined
+      )
+
+      // Update order
+      const result = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          isTaxExempt: true,
+          taxExemptReason: reason.trim(),
+          taxExemptId: taxId?.trim() || null,
+          taxExemptApprovedBy: requestingEmployeeId || null,
+          taxExemptSavedAmount: currentTaxTotal,
+          taxTotal: orderTotals.taxTotal,
+          taxFromInclusive: orderTotals.taxFromInclusive,
+          taxFromExclusive: orderTotals.taxFromExclusive,
+          total: orderTotals.total,
+          lastMutatedBy: mutationOrigin,
+        },
+        select: {
+          id: true,
+          isTaxExempt: true,
+          taxExemptReason: true,
+          taxExemptId: true,
+          taxExemptApprovedBy: true,
+          taxExemptSavedAmount: true,
+          taxTotal: true,
+          total: true,
+          subtotal: true,
+          discountTotal: true,
+          tipTotal: true,
+          locationId: true,
+          orderNumber: true,
+          tabName: true,
+          guestCount: true,
+          employeeId: true,
+          tableId: true,
+          table: { select: { name: true } },
+          status: true,
+          updatedAt: true,
+        },
+      })
+
+      return { data: result, locationId: order.locationId }
     })
 
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Handle transaction results
+    if ('error' in updated) {
+      return NextResponse.json({ error: updated.error }, { status: updated.status })
     }
-
-    // Permission check
-    const auth = await requirePermission(requestingEmployeeId, order.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
-    }
-
-    // Guard: cannot modify paid/closed orders
-    if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
-      return NextResponse.json({ error: 'Cannot modify a closed order' }, { status: 400 })
-    }
-
-    // Already exempt — return early
-    if (order.isTaxExempt) {
+    if ('earlyReturn' in updated) {
       return NextResponse.json({ data: { success: true, alreadyExempt: true } })
     }
 
-    // Calculate the tax that would be saved (for audit)
-    const currentTaxTotal = roundToCents(Number(order.taxTotal ?? 0))
-
-    // Recalculate with tax exempt
-    const orderTotals = calculateOrderTotals(
-      order.items.map(i => ({
-        price: Number(i.price),
-        quantity: i.quantity,
-        isTaxInclusive: i.isTaxInclusive ?? false,
-        status: i.status,
-        modifiers: (i.modifiers ?? []).map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
-        commissionAmount: Number(i.commissionAmount ?? 0),
-      })),
-      order.location.settings as Record<string, unknown> | null,
-      Number(order.discountTotal ?? 0),
-      Number(order.tipTotal ?? 0),
-      undefined,
-      'card',
-      true, // isTaxExempt
-      Number(order.inclusiveTaxRate) || undefined
-    )
-
-    // Update order
-    const updated = await db.order.update({
-      where: { id: orderId },
-      data: {
-        isTaxExempt: true,
-        taxExemptReason: reason.trim(),
-        taxExemptId: taxId?.trim() || null,
-        taxExemptApprovedBy: requestingEmployeeId || null,
-        taxExemptSavedAmount: currentTaxTotal,
-        taxTotal: orderTotals.taxTotal,
-        taxFromInclusive: orderTotals.taxFromInclusive,
-        taxFromExclusive: orderTotals.taxFromExclusive,
-        total: orderTotals.total,
-        lastMutatedBy: mutationOrigin,
-      },
-      select: {
-        id: true,
-        isTaxExempt: true,
-        taxExemptReason: true,
-        taxExemptId: true,
-        taxExemptApprovedBy: true,
-        taxExemptSavedAmount: true,
-        taxTotal: true,
-        total: true,
-        subtotal: true,
-        discountTotal: true,
-        tipTotal: true,
-        locationId: true,
-        orderNumber: true,
-        tabName: true,
-        guestCount: true,
-        employeeId: true,
-        tableId: true,
-        table: { select: { name: true } },
-        status: true,
-        updatedAt: true,
-      },
-    })
+    const { data: updatedOrder, locationId } = updated
 
     // Emit order event
-    void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+    void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
       changes: ['isTaxExempt', 'taxExemptReason', 'taxExemptId', 'taxTotal', 'total'],
     }).catch(console.error)
 
     // Socket dispatch for cross-terminal sync
-    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
-      subtotal: Number(updated.subtotal),
-      taxTotal: Number(updated.taxTotal),
-      tipTotal: Number(updated.tipTotal),
-      discountTotal: Number(updated.discountTotal),
-      total: Number(updated.total),
+    void dispatchOrderTotalsUpdate(locationId, orderId, {
+      subtotal: Number(updatedOrder.subtotal),
+      taxTotal: Number(updatedOrder.taxTotal),
+      tipTotal: Number(updatedOrder.tipTotal),
+      discountTotal: Number(updatedOrder.discountTotal),
+      total: Number(updatedOrder.total),
       commissionTotal: 0,
     }, { async: true }).catch(console.error)
-    void dispatchOrderUpdated(order.locationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
-    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
-    void dispatchOrderSummaryUpdated(order.locationId, buildOrderSummary(updated), { async: true }).catch(console.error)
+    void dispatchOrderUpdated(locationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
+    void dispatchOpenOrdersChanged(locationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
+    void dispatchOrderSummaryUpdated(locationId, buildOrderSummary(updatedOrder), { async: true }).catch(console.error)
 
     // Upstream sync
     pushUpstream()
@@ -175,11 +193,11 @@ export const POST = withVenue(async function POST(
       data: {
         success: true,
         isTaxExempt: true,
-        taxExemptReason: updated.taxExemptReason,
-        taxExemptId: updated.taxExemptId,
-        taxExemptSavedAmount: Number(updated.taxExemptSavedAmount),
-        taxTotal: Number(updated.taxTotal),
-        total: Number(updated.total),
+        taxExemptReason: updatedOrder.taxExemptReason,
+        taxExemptId: updatedOrder.taxExemptId,
+        taxExemptSavedAmount: Number(updatedOrder.taxExemptSavedAmount),
+        taxTotal: Number(updatedOrder.taxTotal),
+        total: Number(updatedOrder.total),
       },
     })
   } catch (error) {
@@ -206,115 +224,133 @@ export const DELETE = withVenue(async function DELETE(
     const isCellularDeleteTaxExempt = request.headers.get('x-cellular-authenticated') === '1'
     const deleteMutationOrigin = isCellularDeleteTaxExempt ? 'cloud' : 'local'
 
-    // Fetch order with items for recalculation
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      select: {
-        id: true,
-        locationId: true,
-        isTaxExempt: true,
-        subtotal: true,
-        discountTotal: true,
-        tipTotal: true,
-        total: true,
-        inclusiveTaxRate: true,
-        status: true,
-        items: {
-          where: { deletedAt: null, status: 'active' },
-          select: {
-            price: true,
-            quantity: true,
-            isTaxInclusive: true,
-            status: true,
-            modifiers: { where: { deletedAt: null }, select: { price: true, quantity: true } },
-            commissionAmount: true,
+    // Wrap read-calculate-update in a transaction with FOR UPDATE to prevent lost updates
+    const deleteResult = await db.$transaction(async (tx) => {
+      // Lock the Order row to prevent concurrent tax-exempt toggles from producing incorrect totals
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
+      // Fetch order with items for recalculation
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          id: true,
+          locationId: true,
+          isTaxExempt: true,
+          subtotal: true,
+          discountTotal: true,
+          tipTotal: true,
+          total: true,
+          inclusiveTaxRate: true,
+          status: true,
+          items: {
+            where: { deletedAt: null, status: 'active' },
+            select: {
+              price: true,
+              quantity: true,
+              isTaxInclusive: true,
+              status: true,
+              modifiers: { where: { deletedAt: null }, select: { price: true, quantity: true } },
+              commissionAmount: true,
+            },
           },
+          location: { select: { settings: true } },
         },
-        location: { select: { settings: true } },
-      },
+      })
+
+      if (!order) {
+        return { error: 'Order not found', status: 404 } as const
+      }
+
+      // Permission check
+      const auth = await requirePermission(requestingEmployeeId, order.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
+      if (!auth.authorized) {
+        return { error: auth.error, status: auth.status } as const
+      }
+
+      // Guard: cannot modify paid/closed orders
+      if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
+        return { error: 'Cannot modify a closed order', status: 400 } as const
+      }
+
+      // Not exempt — return early
+      if (!order.isTaxExempt) {
+        return { earlyReturn: true } as const
+      }
+
+      // Recalculate with tax re-applied
+      const orderTotals = calculateOrderTotals(
+        order.items.map(i => ({
+          price: Number(i.price),
+          quantity: i.quantity,
+          isTaxInclusive: i.isTaxInclusive ?? false,
+          status: i.status,
+          modifiers: (i.modifiers ?? []).map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
+          commissionAmount: Number(i.commissionAmount ?? 0),
+        })),
+        order.location.settings as Record<string, unknown> | null,
+        Number(order.discountTotal ?? 0),
+        Number(order.tipTotal ?? 0),
+        undefined,
+        'card',
+        false, // isTaxExempt = false
+        Number(order.inclusiveTaxRate) || undefined
+      )
+
+      // Update order — clear all exempt fields
+      const result = await tx.order.update({
+        where: { id: orderId },
+        data: {
+          isTaxExempt: false,
+          taxExemptReason: null,
+          taxExemptId: null,
+          taxExemptApprovedBy: null,
+          taxExemptSavedAmount: null,
+          taxTotal: orderTotals.taxTotal,
+          taxFromInclusive: orderTotals.taxFromInclusive,
+          taxFromExclusive: orderTotals.taxFromExclusive,
+          total: orderTotals.total,
+          lastMutatedBy: deleteMutationOrigin,
+        },
+        select: {
+          id: true,
+          isTaxExempt: true,
+          taxTotal: true,
+          total: true,
+          subtotal: true,
+          discountTotal: true,
+          tipTotal: true,
+          locationId: true,
+          orderNumber: true,
+          tabName: true,
+          guestCount: true,
+          employeeId: true,
+          tableId: true,
+          table: { select: { name: true } },
+          status: true,
+          updatedAt: true,
+        },
+      })
+
+      return { data: result, locationId: order.locationId }
     })
 
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    // Handle transaction results
+    if ('error' in deleteResult) {
+      return NextResponse.json({ error: deleteResult.error }, { status: deleteResult.status })
     }
-
-    // Permission check
-    const auth = await requirePermission(requestingEmployeeId, order.locationId, PERMISSIONS.MGR_TAX_EXEMPT)
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
-    }
-
-    // Guard: cannot modify paid/closed orders
-    if (['paid', 'closed', 'cancelled', 'voided'].includes(order.status)) {
-      return NextResponse.json({ error: 'Cannot modify a closed order' }, { status: 400 })
-    }
-
-    // Not exempt — return early
-    if (!order.isTaxExempt) {
+    if ('earlyReturn' in deleteResult) {
       return NextResponse.json({ data: { success: true, alreadyNotExempt: true } })
     }
 
-    // Recalculate with tax re-applied
-    const orderTotals = calculateOrderTotals(
-      order.items.map(i => ({
-        price: Number(i.price),
-        quantity: i.quantity,
-        isTaxInclusive: i.isTaxInclusive ?? false,
-        status: i.status,
-        modifiers: (i.modifiers ?? []).map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
-        commissionAmount: Number(i.commissionAmount ?? 0),
-      })),
-      order.location.settings as Record<string, unknown> | null,
-      Number(order.discountTotal ?? 0),
-      Number(order.tipTotal ?? 0),
-      undefined,
-      'card',
-      false, // isTaxExempt = false
-      Number(order.inclusiveTaxRate) || undefined
-    )
-
-    // Update order — clear all exempt fields
-    const updated = await db.order.update({
-      where: { id: orderId },
-      data: {
-        isTaxExempt: false,
-        taxExemptReason: null,
-        taxExemptId: null,
-        taxExemptApprovedBy: null,
-        taxExemptSavedAmount: null,
-        taxTotal: orderTotals.taxTotal,
-        taxFromInclusive: orderTotals.taxFromInclusive,
-        taxFromExclusive: orderTotals.taxFromExclusive,
-        total: orderTotals.total,
-        lastMutatedBy: deleteMutationOrigin,
-      },
-      select: {
-        id: true,
-        isTaxExempt: true,
-        taxTotal: true,
-        total: true,
-        subtotal: true,
-        discountTotal: true,
-        tipTotal: true,
-        locationId: true,
-        orderNumber: true,
-        tabName: true,
-        guestCount: true,
-        employeeId: true,
-        tableId: true,
-        table: { select: { name: true } },
-        status: true,
-        updatedAt: true,
-      },
-    })
+    const { data: updated, locationId: delLocationId } = deleteResult
 
     // Emit order event
-    void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
+    void emitOrderEvent(delLocationId, orderId, 'ORDER_METADATA_UPDATED', {
       changes: ['isTaxExempt', 'taxExemptReason', 'taxExemptId', 'taxTotal', 'total'],
     }).catch(console.error)
 
     // Socket dispatch
-    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+    void dispatchOrderTotalsUpdate(delLocationId, orderId, {
       subtotal: Number(updated.subtotal),
       taxTotal: Number(updated.taxTotal),
       tipTotal: Number(updated.tipTotal),
@@ -322,9 +358,9 @@ export const DELETE = withVenue(async function DELETE(
       total: Number(updated.total),
       commissionTotal: 0,
     }, { async: true }).catch(console.error)
-    void dispatchOrderUpdated(order.locationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
-    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
-    void dispatchOrderSummaryUpdated(order.locationId, buildOrderSummary(updated), { async: true }).catch(console.error)
+    void dispatchOrderUpdated(delLocationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
+    void dispatchOpenOrdersChanged(delLocationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
+    void dispatchOrderSummaryUpdated(delLocationId, buildOrderSummary(updated), { async: true }).catch(console.error)
 
     // Upstream sync
     pushUpstream()

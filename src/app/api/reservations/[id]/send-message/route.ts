@@ -57,7 +57,7 @@ export const POST = withVenue(async function POST(
         phone: reservation.location.phone || undefined,
         address: reservation.location.address || undefined,
         slug: '',
-        baseUrl: process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006',
+        baseUrl: process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`,
       },
       customMessage,
       channels: channel ? [channel] : undefined,

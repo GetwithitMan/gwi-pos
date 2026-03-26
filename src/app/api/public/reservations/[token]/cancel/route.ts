@@ -131,7 +131,7 @@ export const POST = withVenue(async function POST(
       })
       if (!location) return
       const s = parseSettings(location.settings)
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006'
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
       await offerSlotToWaitlist({
         cancelledReservation: {
           id: reservation.id,

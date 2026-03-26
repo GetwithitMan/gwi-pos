@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { recalculateOrderTotals } from '@/lib/domain/order-items/order-totals'
 
 export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { removeAtSeatNumber } = await req.json()
@@ -26,8 +27,25 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
 
   try {
     return await db.$transaction(async (tx) => {
-      // 1. Lock the order row
-      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`
+      // 1. Lock the order row and check status
+      const [lockedOrder] = await (tx as any).$queryRaw`
+        SELECT "id", "status", "locationId", "tableId", "baseSeatCount", "extraSeatCount",
+               "tipTotal", "isTaxExempt"
+        FROM "Order" WHERE "id" = ${orderId} FOR UPDATE
+      ` as Array<{ id: string; status: string; locationId: string; tableId: string | null; baseSeatCount: number; extraSeatCount: number; tipTotal: any; isTaxExempt: boolean }>
+
+      if (!lockedOrder) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+
+      // Status guard: cannot remove seats from settled orders
+      const blockedStatuses = ['paid', 'closed', 'voided', 'cancelled']
+      if (blockedStatuses.includes(lockedOrder.status)) {
+        return NextResponse.json(
+          { error: `Cannot remove seat from ${lockedOrder.status} order` },
+          { status: 400 }
+        )
+      }
 
       // 2. Soft-delete items assigned to the seat being removed (preserve audit trail)
       await OrderItemRepository.updateItemsWhere(
@@ -38,7 +56,6 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       )
 
       // 3. Shift all active items ABOVE the removed seat DOWN by 1
-      // We sort ASCENDING to fill the gap sequentially
       const itemsToShift = await OrderItemRepository.getItemsForOrderWhere(
         orderId, locationId,
         { seatNumber: { gt: removeAtSeatNumber }, deletedAt: null },
@@ -56,45 +73,44 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         )
       }
 
-      // 4. Recalculate itemCount from remaining active items
-      const remainingItems = await OrderItemRepository.getItemsForOrderWhere(
-        orderId, locationId,
-        { deletedAt: null, status: 'active' },
-        tx,
+      // 4. Recalculate order totals from remaining active items
+      const location = await tx.location.findUnique({
+        where: { id: locationId },
+        select: { settings: true },
+      })
+      const tipTotal = Number(lockedOrder.tipTotal ?? 0)
+      const totals = await recalculateOrderTotals(
+        tx, orderId, location?.settings, tipTotal, lockedOrder.isTaxExempt
       )
-      const newItemCount = remainingItems.reduce((sum, i) => sum + i.quantity, 0)
 
-      // 5. Update Order Metadata
+      // 5. Update Order with recalculated totals + seat metadata
       await OrderRepository.updateOrder(orderId, locationId, {
         extraSeatCount: { decrement: 1 },
         seatVersion: { increment: 1 },
-        itemCount: newItemCount,
+        subtotal: totals.subtotal,
+        taxTotal: totals.taxTotal,
+        taxFromInclusive: totals.taxFromInclusive,
+        taxFromExclusive: totals.taxFromExclusive,
+        total: totals.total,
+        commissionTotal: totals.commissionTotal,
+        itemCount: totals.itemCount,
       }, tx)
 
-      // Get order for tableId and seat counts (needed for socket dispatch + events)
-      const orderData = await OrderRepository.getOrderByIdWithSelect(
-        orderId, locationId,
-        { locationId: true, tableId: true, baseSeatCount: true, extraSeatCount: true },
-        tx,
-      )
+      // 6. Event emission
+      void emitOrderEvent(locationId, orderId, 'GUEST_COUNT_CHANGED', {
+        count: lockedOrder.baseSeatCount + lockedOrder.extraSeatCount - 1,
+      }).catch(console.error)
 
-      if (orderData) {
-        // Event emission: seat removed — guest count decreased
-        void emitOrderEvent(orderData.locationId, orderId, 'GUEST_COUNT_CHANGED', {
-          count: orderData.baseSeatCount + orderData.extraSeatCount,
-        }).catch(console.error)
-
-        // Dispatch socket events (fire-and-forget, outside transaction)
-        void dispatchOrderUpdated(orderData.locationId, { orderId, changes: ['seats'] }).catch(() => {})
-        if (orderData.tableId) {
-          void dispatchFloorPlanUpdate(orderData.locationId, { async: true }).catch(() => {})
-        }
+      // Socket dispatch (fire-and-forget)
+      void dispatchOrderUpdated(locationId, { orderId, changes: ['seats', 'totals'] }).catch(() => {})
+      if (lockedOrder.tableId) {
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
       }
 
       return NextResponse.json({ data: { success: true } })
     })
   } catch (error) {
-    console.error('[seating/remove] Shift-down failed:', error)
-    return NextResponse.json({ error: 'SHIFT_DOWN_FAILED' }, { status: 500 })
+    console.error('[seating/remove] Failed:', error)
+    return NextResponse.json({ error: 'SEAT_REMOVE_FAILED' }, { status: 500 })
   }
 }))

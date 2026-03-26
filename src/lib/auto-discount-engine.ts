@@ -148,7 +148,10 @@ export async function evaluateAutoDiscounts(
       menuItem: item.menuItem ? { categoryId: item.menuItem.categoryId } : null,
     }))
 
-    const subtotal = orderItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+    const subtotal = order.items.reduce((sum, item) => {
+      const modTotal = (item.modifiers || []).reduce((ms, m) => ms + Number(m.price), 0)
+      return sum + ((Number(item.price) + modTotal) * item.quantity)
+    }, 0)
 
     // Extract location timezone from settings for timezone-aware schedule evaluation
     const locationSettings = order.location.settings as Record<string, any> | null
@@ -228,6 +231,9 @@ export async function evaluateAutoDiscounts(
 
     // 5. Execute in a transaction
     await db.$transaction(async (tx) => {
+      // Lock the Order row to prevent concurrent auto-discount evaluations from doubling discounts
+      await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId)
+
       // Remove auto-discounts that no longer match
       for (const discountId of toRemove) {
         await tx.orderDiscount.update({

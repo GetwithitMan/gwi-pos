@@ -232,7 +232,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
           // Build the internal request to close-tab
           // Use the origin from the incoming request for the internal fetch
-          const origin = request.nextUrl.origin || `http://localhost:${process.env.PORT || 3000}`
+          const origin = request.nextUrl.origin || process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
           const closeUrl = `${origin}/api/orders/${tab.id}/close-tab`
 
           const closeRes = await fetch(closeUrl, {

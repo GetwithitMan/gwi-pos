@@ -73,7 +73,7 @@ async function pollAndDispatch(port: number, locationId: string): Promise<void> 
 
     // Then dispatch via existing local endpoint (reads from local PG)
     const res = await fetch(
-      `http://localhost:${port}/api/internal/dispatch-online-order`,
+      `${process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${port}`}/api/internal/dispatch-online-order`,
       {
         method: 'POST',
         headers: {

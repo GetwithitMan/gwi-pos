@@ -763,7 +763,7 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
           for (let i = 0; i < 6; i++) {
             await new Promise(r => setTimeout(r, 10_000)) // 10s intervals, 60s total
             try {
-              const res = await fetch('http://localhost:3005/api/health', {
+              const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/health`, {
                 signal: AbortSignal.timeout(5000),
               })
               if (res.ok) {

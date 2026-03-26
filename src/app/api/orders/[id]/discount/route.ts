@@ -411,12 +411,20 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      // Ensure discount doesn't exceed subtotal
+      // Ensure discount doesn't exceed subtotal (considering both order-level AND item-level discounts)
       const currentDiscountTotal = order.discounts.reduce(
         (sum, d) => sum + Number(d.amount),
         0
       )
-      const maxAllowedDiscount = Number(order.subtotal) - currentDiscountTotal
+      const itemLevelDiscounts = await tx.orderItemDiscount.aggregate({
+        where: {
+          orderItem: { orderId, deletedAt: null, status: 'active' },
+          deletedAt: null,
+        },
+        _sum: { amount: true },
+      })
+      const totalExistingDiscounts = currentDiscountTotal + Number(itemLevelDiscounts._sum.amount || 0)
+      const maxAllowedDiscount = Number(order.subtotal) - totalExistingDiscounts
 
       // Fix 4: Reject fixed discounts that exceed remaining subtotal (don't silently clamp)
       if (discountPercent == null && discountAmount > Number(order.subtotal)) {

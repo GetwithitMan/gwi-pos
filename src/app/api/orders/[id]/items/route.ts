@@ -312,7 +312,7 @@ export const POST = withVenue(async function POST(
       const menuItemIds = items.map(item => item.menuItemId)
       const menuItemsWithCommission = await tx.menuItem.findMany({
         where: { id: { in: menuItemIds } },
-        select: { id: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, categoryId: true, category: { select: { categoryType: true } }, tipExempt: true },
+        select: { id: true, price: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, categoryId: true, category: { select: { categoryType: true } }, tipExempt: true },
       })
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
 
@@ -336,6 +336,50 @@ export const POST = withVenue(async function POST(
       // Server-side modifier price validation via domain
       const modifierPriceMap = await fetchModifierPrices(tx, items)
       overrideModifierPrices(items, modifierPriceMap)
+
+      // Server-side base item price enforcement: override client-sent prices with catalog prices.
+      // Weight-based, pizza, and timed-rental items have inherently dynamic prices and are excluded.
+      // Items with a pricingOptionId use that option's catalog price instead of the base menu item price.
+      {
+        const pricableItems = items.filter(i => !i.soldByWeight && !i.pizzaConfig && !i.blockTimeMinutes)
+        if (pricableItems.length > 0) {
+          const pricingOptionIds = pricableItems.filter(i => i.pricingOptionId).map(i => i.pricingOptionId!)
+          const pricingOptions = pricingOptionIds.length > 0
+            ? await tx.pricingOption.findMany({
+                where: { id: { in: pricingOptionIds } },
+                select: { id: true, price: true },
+              })
+            : []
+          const pricingOptionPrices = new Map(pricingOptions.map(p => [p.id, Number(p.price)]))
+
+          for (const item of pricableItems) {
+            // Determine the canonical catalog price (pricing option overrides base price)
+            let catalogPrice: number | undefined
+            if (item.pricingOptionId) {
+              const optPrice = pricingOptionPrices.get(item.pricingOptionId)
+              if (optPrice != null) catalogPrice = optPrice
+            }
+            if (catalogPrice === undefined) {
+              const mi = menuItemMap.get(item.menuItemId)
+              if (mi) catalogPrice = Number(mi.price)
+            }
+
+            if (catalogPrice !== undefined) {
+              // Apply pour multiplier (liquor sizing: double, tall, short)
+              let expectedPrice = catalogPrice
+              if (item.pourMultiplier && item.pourMultiplier !== 1) {
+                expectedPrice = Math.round(catalogPrice * item.pourMultiplier * 100) / 100
+              }
+
+              // If client price deviates from expected, enforce catalog price.
+              // Permission check for open-priced items still happens above when requestingEmployeeId is present.
+              if (Math.abs(Math.round(item.price * 100) - Math.round(expectedPrice * 100)) > 1) {
+                item.price = expectedPrice
+              }
+            }
+          }
+        }
+      }
 
       // Server-side required modifier group validation (safety net — clients already validate)
       const modGroupError = await validateRequiredModifierGroups(tx, items)
@@ -437,7 +481,7 @@ export const POST = withVenue(async function POST(
 
     // Fire-and-forget: check if bar tab or bottle service tab needs auto-increment
     if ((result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.isBottleService) && result.updatedOrder.preAuthRecordNo) {
-      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'}/api/orders/${orderId}/auto-increment`, {
+      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`}/api/orders/${orderId}/auto-increment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId: result.updatedOrder.employeeId }),

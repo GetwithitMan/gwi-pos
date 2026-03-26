@@ -79,6 +79,12 @@ export async function processLoyaltyPayment(
     transactionId: `LOYALTY:${payment.pointsUsed}pts`,
   }
 
+  // Acquire row lock to prevent concurrent redemption race
+  await tx.$queryRawUnsafe(
+    `SELECT id FROM "Customer" WHERE id = $1 FOR UPDATE`,
+    customer.id,
+  )
+
   // Re-check balance inside transaction for safety
   const freshCustomer = await tx.customer.findUnique({
     where: { id: customer.id },

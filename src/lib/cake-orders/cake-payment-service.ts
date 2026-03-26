@@ -480,7 +480,7 @@ export async function requestCakePaymentViaText(
   )
 
   // Build payment URL and send SMS
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006'
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
   const payUrl = `${baseUrl}/pay/${token}`
 
   const label = appliedTo === 'deposit' ? 'deposit' : 'balance'

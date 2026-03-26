@@ -92,6 +92,28 @@ export const POST = withVenue(async function POST(
       )
     }
 
+    // Block transfers from orders with existing payments (would create overpayment on source)
+    const sourcePayments = await db.payment.count({
+      where: { orderId: fromOrderId, status: 'completed', deletedAt: null },
+    })
+    if (sourcePayments > 0) {
+      return NextResponse.json(
+        { error: 'Cannot transfer items from an order with existing payments. Void the payment first.' },
+        { status: 400 }
+      )
+    }
+
+    // Block transfers from orders with active pre-auth card holds
+    const activePreAuths = await db.orderCard.count({
+      where: { orderId: fromOrderId, status: 'authorized', deletedAt: null },
+    })
+    if (activePreAuths > 0) {
+      return NextResponse.json(
+        { error: 'Cannot transfer items from an order with active card pre-authorization. Close the tab first.' },
+        { status: 400 }
+      )
+    }
+
     // Get destination order (same location as source)
     const toOrder = await OrderRepository.getOrderByIdWithInclude(toOrderId, fromOrder.locationId, {
       location: true,
@@ -107,6 +129,14 @@ export const POST = withVenue(async function POST(
     if (toOrder.status !== 'open' && toOrder.status !== 'in_progress') {
       return NextResponse.json(
         { error: 'Cannot transfer items to a closed order' },
+        { status: 400 }
+      )
+    }
+
+    // Block cross-location transfers
+    if (fromOrder.locationId !== toOrder.locationId) {
+      return NextResponse.json(
+        { error: 'Cannot transfer items between different locations' },
         { status: 400 }
       )
     }

@@ -163,7 +163,7 @@ export const POST = withVenue(async (
     )
 
     // Build payment link URL
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
     const payUrl = `${baseUrl}/pay/${token}`
 
     // Send SMS (fire-and-forget)

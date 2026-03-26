@@ -289,7 +289,7 @@ export const DELETE = withVenue(async function DELETE(
           })
           if (!location) return
           const settings = parseSettings(location.settings)
-          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3006'
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`
           await offerSlotToWaitlist({
             cancelledReservation: {
               id,
