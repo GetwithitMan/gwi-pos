@@ -95,7 +95,7 @@ create_pre_update_backup() {
 
   # ── pg_dump with 120s timeout ──
   _pus_log "Starting pg_dump → ${backup_path}"
-  if ! timeout 120 pg_dump -Fc -U "$DB_USER" -d "$DB_NAME" -f "$backup_path" 2>&1; then
+  if ! timeout --kill-after=10 120 pg_dump -Fc -U "$DB_USER" -d "$DB_NAME" -f "$backup_path" 2>&1; then
     _pus_log "ERROR: pg_dump failed"
     rm -f "$backup_path"
     return 1

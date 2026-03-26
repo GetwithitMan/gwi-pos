@@ -15,6 +15,13 @@ run_schema() {
   # Load error codes library
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
 
+  # Stop POS service if running — prevents database lock conflicts with prisma db push
+  if systemctl is-active --quiet thepasspos 2>/dev/null; then
+    log "Stopping POS service for schema operations..."
+    systemctl stop thepasspos 2>/dev/null || true
+    sleep 2
+  fi
+
   # Only server + backup roles need schema work
   if [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
     log "Stage: schema — skipped (terminal role)"
@@ -51,10 +58,12 @@ run_schema() {
     PRE_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
 
     log "Applying schema to local PostgreSQL..."
-    if ! timeout 120 sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -3; then
+    if ! timeout --kill-after=10 120 setsid sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5; then
       warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
     else
       log "Schema applied successfully"
+      # Write marker so pre-start.sh skips duplicate prisma db push during this install
+      touch /opt/gwi-pos/.schema-stage-done
     fi
 
     # Capture post-push tables and detect dropped tables

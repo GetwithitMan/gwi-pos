@@ -111,7 +111,7 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
 fi
 
 echo "[pre-start] Regenerating Prisma client..."
-if timeout 60 npx --yes prisma generate 2>&1; then
+if timeout --kill-after=10 60 npx --yes prisma generate 2>&1; then
   echo "[pre-start] Prisma client regenerated."
 else
   EXIT_CODE=$?
@@ -130,23 +130,29 @@ if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
   exit 0
 fi
 
-echo "[pre-start] Checking database schema..."
-# --accept-data-loss is BANNED — schema must only move forward.
-# Pre-push migrations handle all data safety. TIMEOUT: 120s prevents hung prisma schema engine.
-PUSH_OUTPUT=$(timeout 120 npx --yes prisma db push 2>&1) && {
-  echo "[pre-start] Schema sync complete."
-} || {
-  EXIT_CODE=$?
-  if [[ $EXIT_CODE -eq 124 ]]; then
-    echo "[pre-start] WARNING: prisma db push timed out after 120s — continuing with existing schema."
-  elif echo "$PUSH_OUTPUT" | grep -qi "error\|fatal"; then
-    echo "[pre-start] WARNING: prisma db push had errors — continuing with existing schema."
-    echo "[pre-start] Details: $PUSH_OUTPUT"
-  else
-    echo "[pre-start] WARNING: prisma db push failed (non-destructive): $PUSH_OUTPUT"
-    # Non-destructive failure (e.g., network issue) — continue anyway
-  fi
-}
+# Skip prisma db push if schema stage just ran (installer sets this marker)
+if [[ -f /opt/gwi-pos/.schema-stage-done ]]; then
+  echo "[pre-start] Schema stage already completed — skipping prisma db push"
+  rm -f /opt/gwi-pos/.schema-stage-done
+else
+  echo "[pre-start] Checking database schema..."
+  # --accept-data-loss is BANNED — schema must only move forward.
+  # Pre-push migrations handle all data safety. TIMEOUT: 120s prevents hung prisma schema engine.
+  PUSH_OUTPUT=$(timeout --kill-after=10 120 npx --yes prisma db push 2>&1) && {
+    echo "[pre-start] Schema sync complete."
+  } || {
+    EXIT_CODE=$?
+    if [[ $EXIT_CODE -eq 124 ]]; then
+      echo "[pre-start] WARNING: prisma db push timed out after 120s — continuing with existing schema."
+    elif echo "$PUSH_OUTPUT" | grep -qi "error\|fatal"; then
+      echo "[pre-start] WARNING: prisma db push had errors — continuing with existing schema."
+      echo "[pre-start] Details: $PUSH_OUTPUT"
+    else
+      echo "[pre-start] WARNING: prisma db push failed (non-destructive): $PUSH_OUTPUT"
+      # Non-destructive failure (e.g., network issue) — continue anyway
+    fi
+  }
+fi
 
 # Disable RLS on all tables after schema push.
 # prisma db push may (re-)enable RLS via the Prisma schema, but the POS app
@@ -180,7 +186,7 @@ fi
 # TIMEOUT: 300s (5min) matches the internal timeout in nuc-pre-migrate.js
 if [[ -f scripts/nuc-pre-migrate.js ]]; then
   echo "[pre-start] Running custom migrations..."
-  timeout 300 node scripts/nuc-pre-migrate.js 2>&1 || {
+  timeout --kill-after=10 300 node scripts/nuc-pre-migrate.js 2>&1 || {
     EXIT_CODE=$?
     if [[ $EXIT_CODE -eq 124 ]]; then
       echo "[pre-start] WARNING: custom migrations timed out after 300s — continuing."
@@ -205,7 +211,7 @@ fi
 # The NUC has the migration scripts + Neon URL, so it can directly migrate Neon.
 if [[ -f scripts/nuc-pre-migrate.js ]] && [[ -n "${NEON_DATABASE_URL:-}" ]]; then
   echo "[pre-start] Running migrations against Neon cloud DB..."
-  NEON_MIGRATE=true timeout 120 node scripts/nuc-pre-migrate.js 2>&1 || {
+  NEON_MIGRATE=true timeout --kill-after=10 120 node scripts/nuc-pre-migrate.js 2>&1 || {
     _NEON_EXIT=$?
     if [[ $_NEON_EXIT -eq 124 ]]; then
       echo "[pre-start] WARNING: Neon migrations timed out (120s) — will retry next boot"
@@ -345,7 +351,7 @@ SVCEOF
       [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
 
       log "Starting POS server..."
-      systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; warn "POS service failed to start — will retry on reboot"; track_warn "POS service restart failed — will retry on reboot"; }
+      timeout --kill-after=10 180 systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; warn "POS service failed to start — will retry on reboot"; track_warn "POS service restart failed — will retry on reboot"; }
 
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"

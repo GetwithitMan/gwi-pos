@@ -127,7 +127,7 @@ VNCSVC
     if [[ -n "$REALVNC_EMAIL" ]] && [[ -n "$REALVNC_PASSWORD" ]]; then
       log "Signing in to RealVNC cloud..."
       # Timeout after 30s to prevent blocking the installer if RealVNC hangs
-      if timeout 30 vncserver-x11 -service -login -email "$REALVNC_EMAIL" -password "$REALVNC_PASSWORD" 2>/dev/null; then
+      if timeout --kill-after=10 30 vncserver-x11 -service -login -email "$REALVNC_EMAIL" -password "$REALVNC_PASSWORD" 2>/dev/null; then
         log "Signed in to RealVNC cloud — device: $FRIENDLY_NAME"
       else
         warn "RealVNC auto-sign-in failed or timed out. Sign in manually via desktop icon."
