@@ -1,6 +1,16 @@
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('socket-ack')
 
+/** Lazy DB reference to avoid circular imports */
+let dbRef: any = null
+async function getDb() {
+  if (!dbRef) {
+    const { masterClient } = await import('./db')
+    dbRef = masterClient
+  }
+  return dbRef
+}
+
 /**
  * Socket Acknowledgment Queue — QoS 1 for Critical Events
  *
@@ -105,16 +115,13 @@ export function acknowledgeEvent(ackId: string, socketId?: string): boolean {
  * The event will be delivered via catch-up when it reconnects.
  */
 export function removeSocketFromAcks(socketId: string): void {
-  for (const [ackId, pending] of pendingAcks) {
-    // Only auto-delete if this socket was actually being tracked per-client.
-    // Set.delete() returns true if the element existed — false for legacy entries
-    // (empty set, room-level ack) which must NOT be prematurely deleted.
-    const wasTracked = pending.unackedSocketIds.delete(socketId)
-    if (wasTracked && pending.unackedSocketIds.size === 0) {
-      // All tracked sockets have now acked or disconnected.
-      // Catch-up handles reconnecting clients.
-      pendingAcks.delete(ackId)
-    }
+  for (const [, pending] of pendingAcks) {
+    // Remove disconnected socket from tracking — it will receive the event
+    // via catch-up protocol when it reconnects.
+    // Do NOT delete the ack entry even if unackedSocketIds becomes empty.
+    // Other terminals may reconnect and need catch-up delivery.
+    // The normal timeout handler (ACK_TIMEOUT_MS) will clean up abandoned entries.
+    pending.unackedSocketIds.delete(socketId)
   }
 }
 
@@ -130,15 +137,28 @@ export function getRetryableEvents(): Array<PendingAck & { retrySocketIds: strin
   const retryable: Array<PendingAck & { retrySocketIds: string[] }> = []
 
   for (const [ackId, pending] of pendingAcks) {
-    // Expired — remove and warn
+    // Expired — persist for catch-up recovery, then remove
     if (now - pending.createdAt > ACK_TIMEOUT_MS) {
-      log.warn('[socket-ack] Event expired without acknowledgment', {
+      log.error('[socket-ack] Event expired without acknowledgment', {
         ackId,
         event: pending.event,
         locationId: pending.locationId,
         attempts: pending.attempts,
         unackedCount: pending.unackedSocketIds.size,
       })
+
+      // Persist to SocketEventLog so catch-up protocol can deliver it on reconnect
+      void (async () => {
+        try {
+          const db = await getDb()
+          await db.$executeRawUnsafe(
+            `INSERT INTO "SocketEventLog" ("locationId", "event", "data", "room", "status", "createdAt")
+             VALUES ($1, $2, $3::jsonb, $4, 'ack_expired', NOW())`,
+            pending.locationId, pending.event, JSON.stringify(pending.data), pending.room
+          )
+        } catch { /* best effort — PG may be down */ }
+      })().catch(() => {})
+
       pendingAcks.delete(ackId)
       continue
     }

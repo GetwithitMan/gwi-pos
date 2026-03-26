@@ -464,6 +464,39 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // R1: SECONDARY IDEMPOTENCY — amount+time dedup for network retries with new keys.
+    // If a terminal retries a payment with a DIFFERENT idempotencyKey (client generated
+    // a fresh UUID on retry), the key-based check above won't catch it. This query
+    // detects a Payment for the same order with the same amount created in the last 30s.
+    // MUST run BEFORE Datacap is called to prevent double-charging the card.
+    const requestedBaseTotal = payments.reduce((sum, p) => sum + p.amount, 0)
+    const recentDuplicate = await tx.payment.findFirst({
+      where: {
+        orderId,
+        amount: { gte: requestedBaseTotal - 0.01, lte: requestedBaseTotal + 0.01 },
+        createdAt: { gte: new Date(Date.now() - 30000) },
+        status: { in: ['completed', 'pending'] },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true },
+    })
+    if (recentDuplicate) {
+      log.warn({ orderId, existingPaymentId: recentDuplicate.id, amount: requestedBaseTotal }, 'R1: Blocked duplicate payment (amount+time dedup)')
+      return { earlyReturn: NextResponse.json({ data: {
+        success: true,
+        duplicate: true,
+        orderId,
+        paymentId: recentDuplicate.id,
+        amount: toNumber(recentDuplicate.amount),
+        tipAmount: toNumber(recentDuplicate.tipAmount),
+        totalAmount: toNumber(recentDuplicate.totalAmount),
+        paymentMethod: recentDuplicate.paymentMethod,
+        newOrderBalance: 0,
+        remainingBalance: 0,
+        message: 'Duplicate payment detected (same amount within 30s window)',
+      } }) }
+    }
+
     // C18: Permission checks moved OUTSIDE the FOR UPDATE transaction (above)
     // to reduce lock contention. No duplicate check needed here.
 
@@ -1393,6 +1426,62 @@ export const POST = withVenue(withTiming(async function POST(
       autoGratNote,
       isTrainingPayment,
     } = txResult as any
+
+    // R3: TOTAL DRIFT DETECTION — detect if the order total changed between capture and recording.
+    // When Terminal A adds items while Terminal B is processing payment, the captured amount
+    // may be less than the current order total. The card is ALREADY charged at this point,
+    // so we do NOT reject or void — just flag it for review.
+    // Fire-and-forget: must never fail the payment response.
+    void (async () => {
+      try {
+        const currentOrder = await db.order.findUnique({
+          where: { id: orderId },
+          select: { total: true },
+        })
+        if (!currentOrder) return
+        const capturedTotal = toNumber(order.total ?? 0)
+        const currentTotal = toNumber(currentOrder.total ?? 0)
+        const drift = roundToCents(currentTotal - capturedTotal)
+        if (drift > 0.01) {
+          log.warn({
+            orderId,
+            capturedTotal,
+            currentTotal,
+            drift,
+          }, 'R3: Payment captured on stale order total — customer may have underpaid')
+          // Create audit log entry for staff review
+          await db.auditLog.create({
+            data: {
+              locationId: order.locationId,
+              employeeId: employeeId || null,
+              action: 'TOTAL_DRIFT_DETECTED',
+              entityType: 'order',
+              entityId: orderId,
+              details: JSON.stringify({
+                orderNumber: order.orderNumber,
+                capturedTotal,
+                currentTotal,
+                drift,
+                paymentIds: ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id),
+                message: `Payment captured at $${capturedTotal.toFixed(2)} but order total is now $${currentTotal.toFixed(2)} (underpaid by $${drift.toFixed(2)})`,
+              }),
+            },
+          })
+          // Emit socket event so the terminal/manager is alerted
+          void dispatchPaymentProcessed(order.locationId, {
+            orderId,
+            status: 'total_drift_warning',
+            totalDriftDetected: true,
+            capturedTotal,
+            currentTotal,
+            drift,
+            sourceTerminalId: terminalId || undefined,
+          } as any).catch(err => log.warn({ err }, 'R3: total drift socket dispatch failed'))
+        }
+      } catch (err) {
+        log.warn({ err, orderId }, 'R3: Total drift detection failed (non-blocking)')
+      }
+    })()
 
     if (isInOutageMode()) {
       // Flag payments processed during outage for reconciliation visibility

@@ -164,10 +164,23 @@ export async function getEventsSince(
   } catch (err) {
     log.warn('[SocketEventLog] PG read failed, using in-memory only:', err instanceof Error ? err.message : err)
     // Fall back to whatever is in memory
-    if (!buffer) return []
-    return buffer.events.filter(
+    if (!buffer) {
+      // PG failed AND no in-memory buffer (e.g. server just restarted).
+      // If client had events before (lastEventId > 0), it has a gap we can't fill.
+      // Return a marker event so the client knows to do a full data refresh.
+      if (afterEventId > 0) {
+        return [{ eventId: -1, event: 'system:full-sync-needed', data: {}, room: '', timestamp: Date.now() }]
+      }
+      return []
+    }
+    const inMemoryEvents = buffer.events.filter(
       e => e.eventId > afterEventId && roomSet.has(e.room)
     )
+    // In-memory buffer exists but doesn't cover the requested range — gap detected
+    if (inMemoryEvents.length === 0 && afterEventId > 0) {
+      return [{ eventId: -1, event: 'system:full-sync-needed', data: {}, room: '', timestamp: Date.now() }]
+    }
+    return inMemoryEvents
   }
 }
 

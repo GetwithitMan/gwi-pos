@@ -429,6 +429,27 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   loadOrder: (orderData) => {
+    // FIX C1+C5: Guard against stale API responses overwriting newer state.
+    // If the store already has a terminal status (closed/paid/voided/cancelled) for this order
+    // but the incoming data shows it as open, skip the update (stale fetch arrived after socket close).
+    // Also skip if the incoming version is lower than what's already in the store.
+    const TERMINAL_STATUSES = ['closed', 'paid', 'voided', 'cancelled']
+    const { currentOrder } = get()
+    if (currentOrder?.id === orderData.id) {
+      // Version guard: skip if incoming data has a lower version
+      const currentVersion = currentOrder.version ?? 0
+      if (orderData.version !== undefined && orderData.version < currentVersion) {
+        return // Skip stale data — store already has a newer version
+      }
+      // Status guard: don't resurrect a closed order with stale open-status data
+      if (
+        TERMINAL_STATUSES.includes(currentOrder.status ?? '') &&
+        !TERMINAL_STATUSES.includes(orderData.status ?? '')
+      ) {
+        return // Stale fetch — order was closed while fetch was in flight
+      }
+    }
+
     // Convert API order data to store format - mark existing items as sent to kitchen
     const items: OrderItem[] = orderData.items.map(item => ({
       id: item.id,

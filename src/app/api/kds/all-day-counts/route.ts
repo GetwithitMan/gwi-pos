@@ -87,7 +87,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // since in UTC = sinceLocal adjusted by timezone offset
     const sinceUtc = new Date(sinceLocal.getTime() + offsetMs)
 
-    // Query OrderItem counts grouped by item name
+    // K14: Query OrderItem counts grouped by item name.
+    // Exclude resent items (resendCount > 0) to avoid inflated counts —
+    // only count the original send of each item.
     const results = await db.orderItem.groupBy({
       by: ['name'],
       where: {
@@ -95,6 +97,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         kitchenSentAt: { gte: sinceUtc },
         deletedAt: null,
         status: { not: 'voided' },
+        resendCount: { equals: 0 },
       },
       _sum: {
         quantity: true,

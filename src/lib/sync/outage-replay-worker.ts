@@ -51,6 +51,9 @@ const processingEntryIds = new Set<string>()
 /** Maximum retry attempts before an entry is dead-lettered */
 const MAX_RETRY_ATTEMPTS = 10
 
+/** Maximum conflict retry attempts before moving to DEAD_LETTER */
+const MAX_CONFLICT_RETRIES = 3
+
 /** Cached column names per table (loaded on first access, refreshed periodically) */
 const columnCache = new Map<string, string[]>()
 /** Cached column PG casts: tableName → columnName → cast expression */
@@ -93,7 +96,11 @@ function isConnectivityError(err: unknown): boolean {
 
 /** Build PG type cast from column metadata */
 function buildCast(dataType: string, udtName: string): string {
-  if (dataType.includes('timestamp')) return '::timestamptz'
+  // CRITICAL: Use ::timestamp (not ::timestamptz) for "timestamp without time zone"
+  // columns. Using ::timestamptz causes PostgreSQL to convert from UTC to the session
+  // timezone, which silently shifts all timestamps by the timezone offset.
+  if (dataType === 'timestamp with time zone') return '::timestamptz'
+  if (dataType.includes('timestamp')) return '::timestamp'
   if (dataType === 'jsonb') return '::jsonb'
   if (dataType === 'json') return '::json'
   if (dataType === 'boolean') return '::boolean'
@@ -362,6 +369,41 @@ async function processOutageQueue(): Promise<void> {
           log.error({ err }, 'Failed to emit dead-letter cloud event')
         }
       })().catch((err) => log.error({ err }, 'dead-letter cloud event top-level error'))
+    }
+
+    // Retry CONFLICT entries: conflicts may have resolved (e.g., the conflicting row was
+    // deleted or updated). Move CONFLICT entries older than 60s back to PENDING for retry.
+    // Dead-letter entries that have been retried as CONFLICT too many times.
+    const conflictDeadLettered = await masterClient.$executeRawUnsafe(
+      `UPDATE "OutageQueueEntry" SET status = 'DEAD_LETTER'
+       WHERE status = 'CONFLICT'
+         AND COALESCE(("metadata"->>'conflictRetryCount')::int, 0) >= $1`,
+      MAX_CONFLICT_RETRIES
+    ) as number
+
+    if (conflictDeadLettered && conflictDeadLettered > 0) {
+      log.error({ cycleId, conflictDeadLettered, maxConflictRetries: MAX_CONFLICT_RETRIES },
+        'CONFLICT entries exceeded max retries — moved to DEAD_LETTER')
+    }
+
+    // Move retryable CONFLICT entries (older than 60s, under max retries) back to PENDING
+    const conflictRetried = await masterClient.$executeRawUnsafe(
+      `UPDATE "OutageQueueEntry"
+       SET status = 'PENDING',
+           metadata = jsonb_set(
+             COALESCE(metadata, '{}'::jsonb),
+             '{conflictRetryCount}',
+             to_jsonb(COALESCE(("metadata"->>'conflictRetryCount')::int, 0) + 1)
+           )
+       WHERE status = 'CONFLICT'
+         AND "updatedAt" < NOW() - INTERVAL '60 seconds'
+         AND COALESCE(("metadata"->>'conflictRetryCount')::int, 0) < $1`,
+      MAX_CONFLICT_RETRIES
+    ) as number
+
+    if (conflictRetried && conflictRetried > 0) {
+      log.info({ cycleId, conflictRetried, maxConflictRetries: MAX_CONFLICT_RETRIES },
+        'CONFLICT entries moved back to PENDING for retry')
     }
 
     // Reset failed entries < 24h old back to pending for retry, incrementing retry count

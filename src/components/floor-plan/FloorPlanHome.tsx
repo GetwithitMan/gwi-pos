@@ -1025,6 +1025,13 @@ export function FloorPlanHome({
       logger.log('[FloorPlanHome] entertainment:session-update — full reload')
       loadFloorPlanData(false)
     }
+    // Entertainment element status changed (available/in_use/reserved/maintenance)
+    const onEntertainmentStatusChanged = (data: any) => {
+      const { itemId, entertainmentStatus } = data || {}
+      logger.log(`[FloorPlanHome] entertainment:status-changed itemId=${itemId} status=${entertainmentStatus}`)
+      // Reload floor plan to reflect the new element status (glow color, availability badge)
+      loadFloorPlanData(false)
+    }
     // EOD reset complete — show manager summary overlay
      
     const onEodReset = (data: any) => {
@@ -1060,6 +1067,14 @@ export function FloorPlanHome({
       if (table) {
         removeTableOrder(table.id)
       }
+
+      // FIX C4: Ensure order store is consistent with floor plan.
+      // If the closed order is still in the order store (but wasn't the active panel order),
+      // clear it to prevent contradictory state between floor plan and order store.
+      const storeOrderIdAfter = useOrderStore.getState().currentOrder?.id
+      if (storeOrderIdAfter === orderId) {
+        useOrderStore.getState().clearOrder()
+      }
     }
 
     const onWaitlistNotify = (data: { customerName?: string; elementName?: string; message?: string; action?: string }) => {
@@ -1078,6 +1093,7 @@ export function FloorPlanHome({
     socket.on('table:status-changed', onTableStatusChanged)
     // payment:processed — already handled by orders:list-changed trigger='paid' (delta remove).
     socket.on('entertainment:session-update', onEntertainmentUpdate)
+    socket.on('entertainment:status-changed', onEntertainmentStatusChanged)
     socket.on('eod:reset-complete', onEodReset)
     socket.on('order:closed', onOrderClosed)
     socket.on('entertainment:waitlist-notify', onWaitlistNotify)
@@ -1089,6 +1105,7 @@ export function FloorPlanHome({
       socket.off('order:totals-updated', onTotalsUpdated)
       socket.off('table:status-changed', onTableStatusChanged)
       socket.off('entertainment:session-update', onEntertainmentUpdate)
+      socket.off('entertainment:status-changed', onEntertainmentStatusChanged)
       socket.off('eod:reset-complete', onEodReset)
       socket.off('order:closed', onOrderClosed)
       socket.off('entertainment:waitlist-notify', onWaitlistNotify)

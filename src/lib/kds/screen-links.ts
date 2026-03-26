@@ -80,14 +80,46 @@ export async function processScreenLinks(
       continue
     }
 
-    // Persist forwarding state on OrderItems
+    // K18: For delivery orders, skip forwarding if the order has already been picked up.
+    // This prevents items from being forwarded to downstream screens after a delivery
+    // driver has already left with the order.
     try {
-      await db.orderItem.updateMany({
-        where: { id: { in: itemIds } },
-        data: {
-          kdsForwardedToScreenId: target.id,
-          kdsFinalCompleted: false,
-        },
+      const deliveryRows = await db.$queryRawUnsafe<Array<{ status: string }>>(
+        `SELECT status FROM "DeliveryOrder" WHERE "orderId" = $1 LIMIT 1`,
+        orderId,
+      )
+      if (deliveryRows.length > 0 && ['picked_up', 'delivered', 'completed'].includes(deliveryRows[0].status)) {
+        log.warn(`[KDS] Skipping forward for delivery order ${orderId} — already ${deliveryRows[0].status}`)
+        continue
+      }
+    } catch {
+      // Non-fatal: DeliveryOrder table may not exist or query may fail — proceed with forward
+    }
+
+    // K8 FIX: Wrap target screen validation + item update in a transaction with
+    // SELECT FOR UPDATE on the target screen. This prevents the screen from being
+    // deleted between the check and the item update, which would orphan items.
+    try {
+      await db.$transaction(async (tx) => {
+        // Lock the target screen row and re-check it's still valid
+        const [screenRow] = await tx.$queryRawUnsafe<Array<{ id: string; deletedAt: Date | null; isActive: boolean }>>(
+          `SELECT id, "deletedAt", "isActive" FROM "KDSScreen" WHERE id = $1 FOR UPDATE`,
+          target.id,
+        )
+
+        if (!screenRow || screenRow.deletedAt || !screenRow.isActive) {
+          log.warn(`[KDS] K8: Target screen ${target.id} was deleted/deactivated between check and update — skipping forward`)
+          return // exits the transaction without updating items
+        }
+
+        // Screen is confirmed active and locked — safe to update items
+        await tx.orderItem.updateMany({
+          where: { id: { in: itemIds } },
+          data: {
+            kdsForwardedToScreenId: target.id,
+            kdsFinalCompleted: false,
+          },
+        })
       })
     } catch (err) {
       log.error({ err: err }, `[KDS] Failed to persist forwarding state for items → screen ${target.id}:`)
@@ -271,4 +303,46 @@ export async function screenHasForwardTargets(
     },
   })
   return count > 0
+}
+
+/**
+ * K8 Cleanup: Find items with kdsForwardedToScreenId pointing to deleted/inactive
+ * screens and reset them so they appear as completed on expo. This prevents items
+ * from being permanently stuck when a screen is deleted after items were forwarded.
+ *
+ * Should be called periodically (e.g. every 60s from a cron or health check).
+ * Returns the count of orphaned items that were cleaned up.
+ */
+export async function cleanupOrphanedForwardedItems(
+  locationId: string,
+): Promise<number> {
+  try {
+    // Find items forwarded to screens that are now deleted or inactive
+    const result = await db.$executeRawUnsafe(
+      `UPDATE "OrderItem" oi
+       SET "kdsForwardedToScreenId" = NULL,
+           "kdsFinalCompleted" = true,
+           "updatedAt" = NOW()
+       WHERE oi."locationId" = $1
+         AND oi."kdsForwardedToScreenId" IS NOT NULL
+         AND oi."kdsFinalCompleted" = false
+         AND oi."deletedAt" IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM "KDSScreen" s
+           WHERE s.id = oi."kdsForwardedToScreenId"
+             AND s."isActive" = true
+             AND s."deletedAt" IS NULL
+         )`,
+      locationId,
+    )
+
+    const cleanedCount = typeof result === 'number' ? result : 0
+    if (cleanedCount > 0) {
+      log.warn(`[KDS] K8 cleanup: Reset ${cleanedCount} orphaned forwarded items at location ${locationId}`)
+    }
+    return cleanedCount
+  } catch (err) {
+    log.error({ err }, '[KDS] K8 cleanup failed')
+    return 0
+  }
 }

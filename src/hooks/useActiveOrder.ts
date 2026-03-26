@@ -188,6 +188,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     }))
   }, [currentOrder?.items])
 
+  // Terminal statuses that represent a closed/finalized order
+  const TERMINAL_STATUSES = ['closed', 'paid', 'voided', 'cancelled']
+
   // Load order from API
   const loadOrder = useCallback(async (orderId: string) => {
     try {
@@ -199,6 +202,26 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
       const raw = await res.json()
       const order = raw.data ?? raw
+
+      // FIX C5: Version guard — skip stale API responses that have a lower version
+      // than what's already in the store (another terminal may have updated while fetch was in flight)
+      const storeOrder = useOrderStore.getState().currentOrder
+      if (storeOrder && storeOrder.id === order.id) {
+        const currentVersion = storeOrder.version ?? 0
+        if (order.version !== undefined && order.version < currentVersion) {
+          return // Skip stale data — store already has a newer version
+        }
+
+        // FIX C1: Status guard — if the store already shows the order as closed/paid/voided
+        // but the API response shows it as open, this is a stale fetch that arrived after a
+        // socket order:closed event. Skip the update to prevent order "resurrection."
+        if (
+          TERMINAL_STATUSES.includes(storeOrder.status ?? '') &&
+          !TERMINAL_STATUSES.includes(order.status ?? '')
+        ) {
+          return // Stale fetch — order was closed by another terminal while fetch was in flight
+        }
+      }
 
       // Pass raw API response directly — store.loadOrder() is the SINGLE source of truth for mapping
       useOrderStore.getState().loadOrder(order)
@@ -213,30 +236,34 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     const store = useOrderStore.getState()
     const order = store.currentOrder
 
-    // If order has a real DB ID and no items were sent, soft-delete the draft
-    if (order?.id && !isTempId(order.id)) {
-      const hasSentItems = order.items.some(i => i.sentToKitchen)
-      if (!hasSentItems) {
-        // Bug 10 fix: Empty drafts (0 items) get deletedAt for proper soft-delete cleanup
-        const body: Record<string, unknown> = { status: 'cancelled' }
-        if (order.items.length === 0) {
-          body.deletedAt = new Date().toISOString()
-        }
-        fetch(`/api/orders/${order.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }).catch(err => console.warn('fire-and-forget failed in useActiveOrder:', err))
-      }
-    }
+    // FIX C3: Capture the order ID and sent-items state BEFORE clearing the store,
+    // so the fire-and-forget PATCH targets the correct order and cannot race with
+    // a subsequent startOrder POST (which would create a new order in the store).
+    const capturedOrderId = order?.id
+    const capturedHasSentItems = order?.items.some(i => i.sentToKitchen) ?? false
+    const capturedItemCount = order?.items.length ?? 0
 
     // Abandon any pending draft creation — bump generation so stale callbacks are ignored
     draftGenRef.current++
     draftPromiseRef.current = null
 
+    // Clear store FIRST — before the PATCH — so any new startOrder() won't be affected
     store.clearOrder()
     setExpandedItemId(null)
     options.onOrderCleared?.()
+
+    // Fire-and-forget PATCH to cancel the old draft (uses captured ID, not store)
+    if (capturedOrderId && !isTempId(capturedOrderId) && !capturedHasSentItems) {
+      const body: Record<string, unknown> = { status: 'cancelled' }
+      if (capturedItemCount === 0) {
+        body.deletedAt = new Date().toISOString()
+      }
+      fetch(`/api/orders/${capturedOrderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(err => console.warn('fire-and-forget failed in useActiveOrder:', err))
+    }
   }, [options])
 
   // Start a new order (dine_in, bar_tab, takeout, etc.)
@@ -724,7 +751,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     const socket = getSharedSocket() as { on: (e: string, cb: (...args: unknown[]) => void) => void; off: (e: string, cb?: (...args: unknown[]) => void) => void }
 
     const onListChanged = (data: unknown) => {
-      const payload = data as { orderId?: string; trigger?: string }
+      const payload = data as { orderId?: string; trigger?: string; sourceTerminalId?: string }
       if (payload.orderId !== orderId) return
 
       // Skip events triggered by our own mutations (within 5000ms for slow networks / 4G)
@@ -737,7 +764,11 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         return
       }
 
-      loadOrder(orderId)
+      // FIX C8: Wrap loadOrder in try/catch so unhandled fetch errors don't crash.
+      // The polling fallback (useOrderSockets 15s interval) will eventually sync the data.
+      loadOrder(orderId).catch(err => {
+        console.warn('[useActiveOrder] onListChanged loadOrder failed:', err)
+      })
     }
 
     socket.on('orders:list-changed', onListChanged)

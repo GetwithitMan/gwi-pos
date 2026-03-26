@@ -271,6 +271,43 @@ export class OrderRouter {
       stations
     )
 
+    // K9: Defense-in-depth — verify referenced stationIds still exist.
+    // Stations could be deleted between initial fetch and routing completion.
+    if (manifests.length > 0) {
+      const currentStations = await db.station.findMany({
+        where: {
+          locationId: orderData.locationId,
+          isActive: true,
+          deletedAt: null,
+        },
+        select: { id: true },
+      })
+      const currentStationIds = new Set(currentStations.map((s) => s.id))
+
+      const orphanedManifests = manifests.filter((m) => !currentStationIds.has(m.stationId))
+      if (orphanedManifests.length > 0) {
+        // Find a valid station to absorb orphaned items
+        const validManifest = manifests.find((m) => currentStationIds.has(m.stationId))
+        for (const orphan of orphanedManifests) {
+          console.warn(
+            `[OrderRouter] Station "${orphan.stationName}" (${orphan.stationId}) was deleted after routing — re-routing ${orphan.primaryItems.length} items`
+          )
+          if (validManifest) {
+            // Move orphaned items to a valid station
+            validManifest.primaryItems.push(...orphan.primaryItems)
+            validManifest.items.push(...orphan.primaryItems)
+          } else {
+            // No valid stations remain — items become unrouted
+            unroutedItems.push(...orphan.primaryItems)
+          }
+        }
+        // Remove orphaned manifests
+        const validManifests = manifests.filter((m) => currentStationIds.has(m.stationId))
+        manifests.length = 0
+        manifests.push(...validManifests)
+      }
+    }
+
     // 6. Calculate stats
     const routingStats = {
       totalItems: routedItems.length,
@@ -472,9 +509,35 @@ export class OrderRouter {
         wasRouted = true
       }
 
-      // 3. Track unrouted items
+      // 3. Track unrouted items — fallback route to avoid silent vanishing
       if (!wasRouted) {
-        unroutedItems.push(item)
+        // K2: Items with no matching route tags must not silently vanish.
+        // Prefer expo station > first active station > first manifest entry.
+        const fallbackStation =
+          expoStations[0] ||
+          regularStations[0] ||
+          stations[0]
+
+        if (fallbackStation) {
+          console.warn(
+            `[OrderRouter] Item "${item.name}" (${item.id}) has no matching station — fallback routing to "${fallbackStation.name}" (${fallbackStation.id}). Tags: [${item.routeTags.join(', ')}]`
+          )
+          this.addItemToManifest(
+            manifestMap,
+            fallbackStation,
+            item,
+            item.routeTags,
+            fallbackStation.isExpo ?? false,
+            true
+          )
+          itemToStations.get(item.id)?.add(fallbackStation.id)
+        } else {
+          // No stations exist at all — add to unroutedItems but log critical warning
+          console.warn(
+            `[OrderRouter] Item "${item.name}" (${item.id}) has NO available stations at all — item will be unrouted`
+          )
+          unroutedItems.push(item)
+        }
       }
     }
 

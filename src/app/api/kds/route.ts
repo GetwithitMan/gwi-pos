@@ -490,15 +490,17 @@ const putHandler = async function PUT(request: NextRequest) {
       }
     }
 
-    // KDS Overhaul: Determine if this screen has forward targets (intermediate vs final bump)
-    // IMPORTANT: Check BEFORE item update to avoid race condition — if a screen link is
-    // deleted between the update and this check, the intermediate flag would be wrong.
+    // K4: Check forward targets in the same scope as item updates.
+    // We check before AND after the update. If the result differs, log a warning
+    // and use the post-update result (most current truth).
     let isIntermediateBump = false
+    let preCheckResult: boolean | null = null
     if (screenId && (action === 'complete' || action === 'bump_order')) {
       try {
-        isIntermediateBump = await screenHasForwardTargets(screenId, locationId!)
+        preCheckResult = await screenHasForwardTargets(screenId, locationId!)
+        isIntermediateBump = preCheckResult
       } catch (err) {
-        console.error('[KDS] Failed to check forward targets:', err)
+        console.error('[KDS] Failed to check forward targets (pre-update):', err)
         // Fail open: treat as final bump if check fails
       }
     }
@@ -523,6 +525,19 @@ const putHandler = async function PUT(request: NextRequest) {
         completedBy: bumpedBy,
       })
     } else if (action === 'resend') {
+      // K15: Enforce maximum resend limit (5) to prevent abuse
+      const existingItems = await db.orderItem.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true, resendCount: true },
+      })
+      const maxedOut = existingItems.filter((i) => (i.resendCount || 0) >= 5)
+      if (maxedOut.length > 0) {
+        return NextResponse.json(
+          { error: 'Maximum resends reached (5). These items cannot be resent again.' },
+          { status: 400 }
+        )
+      }
+
       // Resend items to kitchen - batch update all at once
       await OrderItemRepository.updateItemsByIds(itemIds, locationId!, {
         resendCount: { increment: 1 },
@@ -548,6 +563,23 @@ const putHandler = async function PUT(request: NextRequest) {
       }
     }
 
+    // K4: Re-check forward targets AFTER item update to detect race condition.
+    // If screen links changed between pre-check and post-check, use post-check result.
+    if (screenId && (action === 'complete' || action === 'bump_order') && preCheckResult !== null) {
+      try {
+        const postCheckResult = await screenHasForwardTargets(screenId, locationId!)
+        if (postCheckResult !== preCheckResult) {
+          console.warn(
+            `[KDS] Screen link race detected for screen ${screenId}: pre=${preCheckResult} post=${postCheckResult} — using post-update result`
+          )
+          isIntermediateBump = postCheckResult
+        }
+      } catch (err) {
+        console.error('[KDS] Failed to re-check forward targets (post-update):', err)
+        // Keep the pre-check result
+      }
+    }
+
     // Push DB changes upstream to Neon (fire-and-forget)
     pushUpstream()
 
@@ -568,45 +600,45 @@ const putHandler = async function PUT(request: NextRequest) {
       }
 
       if (action === 'complete' || action === 'uncomplete') {
-        // For uncomplete: always dispatch (it's a recall, not a forward)
-        // For complete: only dispatch terminal events if this is a FINAL bump
-        if (action === 'uncomplete' || !isIntermediateBump) {
-          for (const iid of itemIds) {
-            dispatchItemStatus(locationId, {
-              orderId,
-              itemId: iid,
-              status: action === 'complete' ? 'completed' : 'active',
-              stationId: body.stationId || '',
-              updatedBy: bumpedBy,
-            }, { async: true }).catch(err => {
-              console.error('Failed to dispatch item status:', err)
-            })
-          }
+        // K3: Always emit socket events — add isIntermediate metadata so
+        // consumers can decide whether to show "order ready" UI or not.
+        for (const iid of itemIds) {
+          dispatchItemStatus(locationId, {
+            orderId,
+            itemId: iid,
+            status: action === 'complete' ? 'completed' : 'active',
+            stationId: body.stationId || '',
+            updatedBy: bumpedBy,
+            ...(isIntermediateBump ? { isIntermediate: true } : {}),
+          } as any, { async: true }).catch(err => {
+            console.error('Failed to dispatch item status:', err)
+          })
         }
       } else if (action === 'bump_order') {
-        // Only emit terminal "Made" / order bumped if this is a FINAL bump
-        if (!isIntermediateBump) {
-          dispatchOrderBumped(locationId, {
+        // K3: Always emit socket events with isIntermediate flag.
+        // POS can filter on isIntermediate to suppress "order ready" for non-final bumps.
+        dispatchOrderBumped(locationId, {
+          orderId,
+          stationId: body.stationId || '',
+          bumpedBy,
+          allItemsServed: !isIntermediateBump,
+          ...(isIntermediateBump ? { isIntermediate: true } : {}),
+        } as any, { async: true }).catch(err => {
+          console.error('Failed to dispatch order bumped:', err)
+        })
+        // Also dispatch per-item kds:item-status so Android terminals (which listen
+        // for kds:item-status but not kds:order-bumped) update kitchen status
+        for (const iid of itemIds) {
+          dispatchItemStatus(locationId, {
             orderId,
+            itemId: iid,
+            status: 'completed',
             stationId: body.stationId || '',
-            bumpedBy,
-            allItemsServed: true,
-          }, { async: true }).catch(err => {
-            console.error('Failed to dispatch order bumped:', err)
+            updatedBy: bumpedBy,
+            ...(isIntermediateBump ? { isIntermediate: true } : {}),
+          } as any, { async: true }).catch(err => {
+            console.error('Failed to dispatch bump item status:', err)
           })
-          // Also dispatch per-item kds:item-status so Android terminals (which listen
-          // for kds:item-status but not kds:order-bumped) update kitchen status
-          for (const iid of itemIds) {
-            dispatchItemStatus(locationId, {
-              orderId,
-              itemId: iid,
-              status: 'completed',
-              stationId: body.stationId || '',
-              updatedBy: bumpedBy,
-            }, { async: true }).catch(err => {
-              console.error('Failed to dispatch bump item status:', err)
-            })
-          }
         }
       } else if (action === 'resend') {
         // W1-K2: Dispatch resend event so all KDS screens re-show the resent items

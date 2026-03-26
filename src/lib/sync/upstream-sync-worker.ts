@@ -188,6 +188,14 @@ let timer: ReturnType<typeof setInterval> | null = null
 /** Guard against overlapping sync cycles */
 let cycleRunning = false
 
+/**
+ * FK violation retry tracker: "tableName:recordId" → consecutive FK failure count.
+ * After FK_MAX_RETRIES failures, the row is stamped as synced to prevent infinite loops.
+ * The counter resets if the row syncs successfully or hasn't been seen recently.
+ */
+const fkRetryMap = new Map<string, number>()
+const FK_MAX_RETRIES = 5
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Serialize a JS/Prisma value for parameterized SQL */
@@ -278,8 +286,12 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
   const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
 
   const quotedSelectCols = columns.map((c) => `"${c}"`).join(', ')
+  // FOR UPDATE SKIP LOCKED: hold row-level locks until syncedAt is stamped.
+  // Prevents race condition where a row modified between read and stamp becomes
+  // permanently unsyncable (updatedAt < syncedAt). SKIP LOCKED ensures concurrent
+  // sync cycles or API writes don't block — they simply skip locked rows.
   const rows = await masterClient.$queryRawUnsafe<Record<string, unknown>[]>(
-    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE ${whereClause} ORDER BY "updatedAt" ASC LIMIT $1`,
+    `SELECT ${quotedSelectCols} FROM "${tableName}" WHERE ${whereClause} ORDER BY "updatedAt" ASC LIMIT $1 FOR UPDATE SKIP LOCKED`,
     batchSize
   )
 
@@ -378,6 +390,30 @@ async function syncTable(tableName: string, batchSize: number): Promise<number> 
             } catch {
               // Best effort
             }
+          } else if (rowErrMsg.includes('foreign key') || rowErrMsg.includes('violates foreign key') || rowErrMsg.includes('23503')) {
+            // FK violation: parent row may not have synced yet. Don't stamp syncedAt —
+            // the row will retry next cycle when the parent may have been synced.
+            // Track retries to prevent infinite loops if parent is genuinely missing.
+            const fkKey = `${tableName}:${row.id as string}`
+            const fkCount = (fkRetryMap.get(fkKey) || 0) + 1
+            fkRetryMap.set(fkKey, fkCount)
+
+            if (fkCount >= FK_MAX_RETRIES) {
+              log.error({ table: tableName, recordId: row.id, fkRetries: fkCount, errMsg: rowErrMsg },
+                'FK violation persisted after max retries — marking synced to prevent infinite loop')
+              try {
+                await masterClient.$executeRawUnsafe(
+                  `UPDATE "${tableName}" SET "syncedAt" = (NOW() AT TIME ZONE 'UTC') WHERE id = $1`,
+                  row.id as string
+                )
+              } catch {
+                // Best effort
+              }
+              fkRetryMap.delete(fkKey)
+            } else {
+              log.warn({ table: tableName, recordId: row.id, fkRetries: fkCount, maxRetries: FK_MAX_RETRIES, errMsg: rowErrMsg },
+                'FK violation — will retry next cycle (parent may not have synced yet)')
+            }
           } else {
             log.error({ table: tableName, recordId: row.id, errMsg: rowErrMsg }, 'Row sync failed')
           }
@@ -433,38 +469,56 @@ async function runSyncCycle(): Promise<void> {
     let totalSynced = 0
     let totalPending = 0
 
-    // Parallelize table sync in batches of 5 for 2-3x throughput
+    // FK-respecting batch order: group models by priority tier so parents sync
+    // before children. Within the same tier, parallelize in batches of 5.
+    // Models are already sorted by priority (ascending) from getUpstreamModels().
     const modelEntries = Array.from(models.entries()).filter(([, [tableName]]) => columnCache.has(tableName))
-    for (let i = 0; i < modelEntries.length; i += 5) {
-      const batch = modelEntries.slice(i, i + 5)
-      const results = await Promise.allSettled(
-        batch.map(async ([, [tableName, config]]) => {
-          const columns = columnCache.get(tableName)!
-          const hasSyncedAt = columns.includes('syncedAt')
-          const hasUpdatedAt = columns.includes('updatedAt')
-          if (!hasUpdatedAt || !hasSyncedAt) return { synced: 0, pending: 0 }
 
-          // Count pending rows (bidirectional models exclude cloud-originated rows)
-          const isBiDir = biDirModels.has(tableName) && columns.includes('lastMutatedBy')
-          const biDirFilter = isBiDir ? ` AND ("lastMutatedBy" IS NULL OR "lastMutatedBy" != 'cloud')` : ''
-          const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
-          const [{ count }] = await masterClient.$queryRawUnsafe<{ count: bigint }[]>(
-            `SELECT COUNT(*) as count FROM "${tableName}" WHERE ${whereClause}`
-          )
+    // Group models into FK tiers by priority value. Models at the same priority
+    // level have no FK dependencies between them and can safely run in parallel.
+    const tiers = new Map<number, typeof modelEntries>()
+    for (const entry of modelEntries) {
+      const priority = entry[1][1].priority
+      if (!tiers.has(priority)) tiers.set(priority, [])
+      tiers.get(priority)!.push(entry)
+    }
+    // Process tiers in priority order (lowest first = parents before children)
+    const sortedTierKeys = Array.from(tiers.keys()).sort((a, b) => a - b)
 
-          const synced = await syncTable(tableName, config.batchSize)
-          if (synced > 0) {
-            log.info({ cycleId, table: tableName, rows: synced }, 'Table synced')
+    for (const tierKey of sortedTierKeys) {
+      const tierEntries = tiers.get(tierKey)!
+      // Within a tier, parallelize in batches of 5 for throughput
+      for (let i = 0; i < tierEntries.length; i += 5) {
+        const batch = tierEntries.slice(i, i + 5)
+        const results = await Promise.allSettled(
+          batch.map(async ([, [tableName, config]]) => {
+            const columns = columnCache.get(tableName)!
+            const hasSyncedAt = columns.includes('syncedAt')
+            const hasUpdatedAt = columns.includes('updatedAt')
+            if (!hasUpdatedAt || !hasSyncedAt) return { synced: 0, pending: 0 }
+
+            // Count pending rows (bidirectional models exclude cloud-originated rows)
+            const isBiDir = biDirModels.has(tableName) && columns.includes('lastMutatedBy')
+            const biDirFilter = isBiDir ? ` AND ("lastMutatedBy" IS NULL OR "lastMutatedBy" != 'cloud')` : ''
+            const whereClause = `"updatedAt" > COALESCE("syncedAt", '1970-01-01'::timestamptz)${biDirFilter}`
+            const [{ count }] = await masterClient.$queryRawUnsafe<{ count: bigint }[]>(
+              `SELECT COUNT(*) as count FROM "${tableName}" WHERE ${whereClause}`
+            )
+
+            const synced = await syncTable(tableName, config.batchSize)
+            if (synced > 0) {
+              log.info({ cycleId, table: tableName, rows: synced }, 'Table synced')
+            }
+            return { synced, pending: Number(count) }
+          })
+        )
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            totalSynced += result.value.synced
+            totalPending += result.value.pending
+          } else {
+            metrics.errorCount++
           }
-          return { synced, pending: Number(count) }
-        })
-      )
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          totalSynced += result.value.synced
-          totalPending += result.value.pending
-        } else {
-          metrics.errorCount++
         }
       }
     }

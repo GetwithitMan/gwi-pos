@@ -79,19 +79,28 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
-    // Atomic fetch: use interactive transaction with row-level lock to prevent
-    // two concurrent POST /send requests from processing the same pending items.
-    // SELECT ... FOR UPDATE on the order row serialises concurrent sends.
+    // R2 FIX: Unified atomic transaction — SELECT FOR UPDATE lock on the Order row
+    // is held from item fetch through status update. This prevents items added by
+    // Terminal A between the read and write from being missed (the lock serialises
+    // all concurrent sends AND item additions that also lock the Order row).
     timing.start('db-fetch')
-    const order = await db.$transaction(async (tx) => {
+
+    // Phase 1: Lock + fetch inside transaction. We need the order data for guards
+    // that may cause early return, so we split into: (1) lock+fetch, (2) guards,
+    // (3) write — but (1) and (3) share the same transaction.
+    //
+    // To achieve this without holding a long-lived transaction across permission
+    // checks, we perform the lock+fetch+write atomically: fetch items, filter,
+    // and mark as sent all within a single transaction scope.
+    const sendResult = await db.$transaction(async (tx) => {
       // Lock the order row — any concurrent send will block here until we commit
       const [locked] = await tx.$queryRawUnsafe<Array<{ id: string; locationId: string }>>(
         `SELECT id, "locationId" FROM "Order" WHERE id = $1 AND "deletedAt" IS NULL FOR UPDATE`,
         id,
       )
-      if (!locked) return null
+      if (!locked) return { type: 'not_found' as const }
 
-      return OrderRepository.getOrderByIdWithInclude(id, locked.locationId, {
+      const order = await OrderRepository.getOrderByIdWithInclude(id, locked.locationId, {
         table: { select: { id: true, name: true, abbreviation: true } },
         employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
         items: {
@@ -103,129 +112,92 @@ export const POST = withVenue(withTiming(async function POST(
           }
         }
       }, tx)
-    })
 
-    timing.end('db-fetch', 'Fetch order (locked)')
+      if (!order) return { type: 'not_found' as const }
 
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
-    }
-
-    // Status guard: only modifiable statuses allowed
-    if (!isModifiable(order.status)) {
-      return NextResponse.json(
-        { error: `Cannot send order in '${order.status}' status` },
-        { status: 400 }
-      );
-    }
-
-    // Guard: sending another employee's order requires pos.edit_others_orders
-    if (sendEmployeeId && order.employeeId && order.employeeId !== sendEmployeeId) {
-      const auth = await requirePermission(sendEmployeeId, order.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
-      if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      // Status guard: only modifiable statuses allowed
+      if (!isModifiable(order.status)) {
+        return { type: 'status_error' as const, status: order.status }
       }
-    }
 
-    // Filter: only non-held, pending items. isHeld is a hard gate — held items never send.
-    // When filterItemIds is provided: only process those specific items (for selective firing)
-    // When no filterItemIds: process all eligible items EXCEPT those with active delays
-    // Uses shared getEligibleKitchenItems to stay aligned with kitchen print route
-    const itemsToProcess = getEligibleKitchenItems(order.items, {
-      filterItemIds,
-      expectedStatus: 'pending',
-    })
-
-    // M2: Count held items so the client can warn "X items held back"
-    const heldItemCount = await db.orderItem.count({
-      where: { orderId: id, isHeld: true, deletedAt: null, status: { not: 'voided' } },
-    })
-
-    // Identify delayed items that need their timer started.
-    // Bug 19 fix: Only stamp delayStartedAt on items that are part of this send request.
-    // When filterItemIds is provided, only those items are being sent — don't stamp unrelated
-    // delayed items that belong to a different batch or course.
-    const delayedItems = order.items.filter(item => {
-      if (!item.delayMinutes || item.delayMinutes <= 0 || item.isHeld || item.delayStartedAt) return false
-      // When filterItemIds is set, only stamp items in the current send scope
-      if (filterItemIds && !filterItemIds.includes(item.id)) return false
-      return true
-    })
-
-    // Clock discipline: use DB-generated NOW() for all timestamps written to the database.
-    // `jsNow` is used ONLY for in-memory calculations (entertainment session end, socket payloads)
-    // that don't get persisted as timestamps. All DB writes use SQL NOW().
-    const jsNow = new Date()
-
-    // Stamp delayStartedAt on delayed items so countdown survives page reload
-    // Clock discipline: DB-generated NOW()
-    if (delayedItems.length > 0) {
-      const delayedIds = delayedItems.map(i => i.id)
-      await db.$executeRawUnsafe(
-        `UPDATE "OrderItem" SET "delayStartedAt" = NOW(), "updatedAt" = NOW()
-         WHERE id = ANY($1::text[])`,
-        delayedIds,
-      )
-    }
-
-    // Short-circuit: if no items to process, return early without dispatching events.
-    // This is the natural idempotency guard — a second concurrent send finds 0 pending items.
-    if (itemsToProcess.length === 0) {
-      return NextResponse.json({ data: {
-        success: true,
-        sentItemCount: 0,
-        sentItemIds: [],
-        alreadySent: true,
-        delayedItemCount: delayedItems.length,
-        heldItemCount,
-        routing: { stations: [], unroutedCount: 0 },
-      } })
-    }
-    const updatedItemIds: string[] = []
-
-    // FIX-010: Batch updates to avoid N+1 query problem
-    // Separate regular items from entertainment items for efficient batch processing
-    const regularItemIds: string[] = []
-    const entertainmentUpdates: Array<{
-      itemId: string
-      menuItemId: string
-      sessionEnd: Date
-    }> = []
-
-    // Collect items and prepare batch updates
-    for (const item of itemsToProcess) {
-      // Track for routing
-      updatedItemIds.push(item.id)
-
-      // Check if entertainment item with timer
-      if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
-        const sessionEnd = new Date(jsNow.getTime() + item.blockTimeMinutes * 60 * 1000)
-        entertainmentUpdates.push({
-          itemId: item.id,
-          menuItemId: item.menuItem.id,
-          sessionEnd,
-        })
-      } else {
-        regularItemIds.push(item.id)
+      // Guard: sending another employee's order requires pos.edit_others_orders
+      if (sendEmployeeId && order.employeeId && order.employeeId !== sendEmployeeId) {
+        const auth = await requirePermission(sendEmployeeId, order.locationId, PERMISSIONS.POS_EDIT_OTHERS_ORDERS)
+        if (!auth.authorized) {
+          return { type: 'auth_error' as const, error: auth.error, authStatus: auth.status }
+        }
       }
-    }
 
-    // Transition draft → open on first send (so Open Orders panel sees it)
-    // Always increment version for optimistic concurrency control
-    // Record sentAt for ghost order protection — the void route should check
-    // if (order.sentAt && Date.now() - order.sentAt.getTime() < 30000) to require
-    // manager approval for voids within 30 seconds of sending (prevents send→void→pocket-cash fraud).
-    // TODO: Add the 30-second void-delay guard in comp-void/route.ts (requires manager approval
-    // for voids within 30s of sentAt to prevent send→void→pocket-cash attacks).
-    timing.start('db-update')
-    const newStatus = order.status === 'draft' ? 'open' : order.status
+      // Filter: only non-held, pending items. isHeld is a hard gate — held items never send.
+      // When filterItemIds is provided: only process those specific items (for selective firing)
+      // When no filterItemIds: process all eligible items EXCEPT those with active delays
+      // Uses shared getEligibleKitchenItems to stay aligned with kitchen print route
+      const itemsToProcess = getEligibleKitchenItems(order.items, {
+        filterItemIds,
+        expectedStatus: 'pending',
+      })
 
-    // Atomic transaction: order update + item status + socket event outbox
-    // Clock discipline: all DB timestamps use SQL NOW()
-    await db.$transaction(async (tx) => {
+      // M2: Count held items so the client can warn "X items held back"
+      const heldItemCount = await tx.orderItem.count({
+        where: { orderId: id, isHeld: true, deletedAt: null, status: { not: 'voided' } },
+      })
+
+      // Identify delayed items that need their timer started.
+      // Bug 19 fix: Only stamp delayStartedAt on items that are part of this send request.
+      const delayedItems = order.items.filter(item => {
+        if (!item.delayMinutes || item.delayMinutes <= 0 || item.isHeld || item.delayStartedAt) return false
+        if (filterItemIds && !filterItemIds.includes(item.id)) return false
+        return true
+      })
+
+      // Clock discipline: use DB-generated NOW() for all timestamps written to the database.
+      // `jsNow` is used ONLY for in-memory calculations (entertainment session end, socket payloads)
+      const jsNow = new Date()
+
+      // Stamp delayStartedAt on delayed items so countdown survives page reload
+      if (delayedItems.length > 0) {
+        const delayedIds = delayedItems.map(i => i.id)
+        await tx.$executeRawUnsafe(
+          `UPDATE "OrderItem" SET "delayStartedAt" = NOW(), "updatedAt" = NOW()
+           WHERE id = ANY($1::text[])`,
+          delayedIds,
+        )
+      }
+
+      // Short-circuit: if no items to process, return early
+      if (itemsToProcess.length === 0) {
+        return {
+          type: 'empty' as const,
+          delayedItemCount: delayedItems.length,
+          heldItemCount,
+        }
+      }
+
+      const updatedItemIds: string[] = []
+      const regularItemIds: string[] = []
+      const entertainmentUpdates: Array<{
+        itemId: string
+        menuItemId: string
+        sessionEnd: Date
+      }> = []
+
+      for (const item of itemsToProcess) {
+        updatedItemIds.push(item.id)
+        if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
+          const sessionEnd = new Date(jsNow.getTime() + item.blockTimeMinutes * 60 * 1000)
+          entertainmentUpdates.push({
+            itemId: item.id,
+            menuItemId: item.menuItem.id,
+            sessionEnd,
+          })
+        } else {
+          regularItemIds.push(item.id)
+        }
+      }
+
+      // Transition draft → open on first send (so Open Orders panel sees it)
+      const newStatus = order.status === 'draft' ? 'open' : order.status
+
       // Update order: increment version, set sentAt = NOW(), optionally transition draft → open
       if (order.status === 'draft') {
         await tx.$executeRawUnsafe(
@@ -310,7 +282,60 @@ export const POST = withVenue(withTiming(async function POST(
         stations: [],  // Routing not yet resolved; real-time dispatch fills this
       }
       await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_CREATED, orderCreatedPayload)
+
+      return {
+        type: 'success' as const,
+        order,
+        itemsToProcess,
+        updatedItemIds,
+        regularItemIds,
+        entertainmentUpdates,
+        heldItemCount,
+        newStatus,
+        jsNow,
+      }
     })
+
+    timing.end('db-fetch', 'Atomic lock + fetch + update (R2 fix)')
+
+    // Handle early-return cases from the unified transaction
+    if (sendResult.type === 'not_found') {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+    if (sendResult.type === 'status_error') {
+      return NextResponse.json(
+        { error: `Cannot send order in '${sendResult.status}' status` },
+        { status: 400 }
+      )
+    }
+    if (sendResult.type === 'auth_error') {
+      return NextResponse.json(
+        { error: sendResult.error },
+        { status: sendResult.authStatus }
+      )
+    }
+    if (sendResult.type === 'empty') {
+      return NextResponse.json({ data: {
+        success: true,
+        sentItemCount: 0,
+        sentItemIds: [],
+        alreadySent: true,
+        delayedItemCount: sendResult.delayedItemCount,
+        heldItemCount: sendResult.heldItemCount,
+        routing: { stations: [], unroutedCount: 0 },
+      } })
+    }
+
+    // Destructure successful result for the rest of the route
+    const {
+      order, itemsToProcess, updatedItemIds, regularItemIds,
+      entertainmentUpdates, heldItemCount, newStatus, jsNow,
+    } = sendResult
+
+    timing.start('post-commit')
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
     flushOutboxSafe(order.locationId)
@@ -324,7 +349,7 @@ export const POST = withVenue(withTiming(async function POST(
       )
     }
 
-    timing.end('db-update', 'Batch status updates')
+    timing.end('post-commit', 'Post-commit: outbox flush + entertainment sessions')
 
     // Queue for Neon replay if in outage mode — read back full row to
     // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)

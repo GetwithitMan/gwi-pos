@@ -94,7 +94,9 @@ export const POST = withVenue(async function POST(
     }
 
     // Bug 18 fix: Validate order status — don't fire courses on completed orders
-    if (['paid', 'closed', 'voided', 'cancelled'].includes(order.status)) {
+    // K17: Allow fire-course on 'paid' orders — restaurants need to fire remaining
+    // courses after payment (e.g. dessert course after check has been settled).
+    if (['closed', 'voided', 'cancelled'].includes(order.status)) {
       return NextResponse.json(
         { error: `Cannot fire course on ${order.status} order` },
         { status: 400 }

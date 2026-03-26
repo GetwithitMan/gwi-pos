@@ -314,6 +314,8 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
 
   let synced = 0
   let maxSyncedAt = hwm   // Only tracks successfully synced rows — failed rows must NOT advance HWM
+  /** Minimum timestamp of any failed row — HWM must not advance past this so the failed row is retried */
+  let minFailedAt: Date | null = null
   const strategy = getConflictStrategy(tableName)
   /** Collect IDs of successfully synced rows for batch syncedAt stamping */
   const syncedIds: string[] = []
@@ -562,7 +564,15 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
         log.error({ table: tableName, recordId: row.id, errMsg }, 'Row sync failed')
       }
       metrics.conflictCount++
-      // Do NOT advance HWM for failed rows — they must be retried on next cycle
+      // Track the minimum failed row timestamp so HWM never advances past it.
+      // Since rows are ordered by updatedAt ASC, any subsequent successful row
+      // would otherwise push HWM beyond this failed row, permanently skipping it.
+      const failedRowUpdatedAt = row.updatedAt instanceof Date
+        ? row.updatedAt
+        : new Date(row.updatedAt as string)
+      if (!minFailedAt || failedRowUpdatedAt < minFailedAt) {
+        minFailedAt = failedRowUpdatedAt
+      }
     }
   }
 
@@ -576,6 +586,18 @@ async function syncTableDown(tableName: string, batchSize: number): Promise<numb
     } catch (err) {
       log.error({ err, table: tableName, rowCount: syncedIds.length }, 'Batch syncedAt stamp failed (will retry next cycle)')
     }
+  }
+
+  // Cap HWM at the earliest failed row's timestamp so it is retried next cycle.
+  // Without this, successful rows after a failed row would push HWM past the failure,
+  // permanently skipping the failed row (rows are ordered by updatedAt ASC).
+  if (minFailedAt && maxSyncedAt >= minFailedAt) {
+    // Roll back HWM to just before the first failure — use 1ms before to ensure
+    // the >= comparison in the next fetch includes the failed row
+    const cappedAt = new Date(minFailedAt.getTime() - 1)
+    log.warn({ table: tableName, maxSyncedAt: maxSyncedAt.toISOString(), cappedAt: cappedAt.toISOString(), minFailedAt: minFailedAt.toISOString() },
+      'HWM capped below failed row timestamp to ensure retry')
+    maxSyncedAt = cappedAt
   }
 
   // Advance high-water mark (in-memory + persisted to DB) — only based on successful rows
@@ -1120,7 +1142,7 @@ async function runDownstreamCycle(): Promise<void> {
       try {
         const { advanceToOrders } = await import('../readiness')
         const criticalCounts: Record<string, number> = {}
-        const criticalTables = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType']
+        const criticalTables = ['Location', 'Organization', 'Role', 'Employee', 'Category', 'OrderType', 'MenuItem']
         for (const table of criticalTables) {
           try {
             const rows = await masterClient.$queryRawUnsafe<[{ count: bigint }]>(
@@ -1131,7 +1153,15 @@ async function runDownstreamCycle(): Promise<void> {
             criticalCounts[table] = 0
           }
         }
-        advanceToOrders(criticalCounts)
+        // Guard: require at least 1 MenuItem before advancing to ORDERS state.
+        // Without menu items, orders cannot be placed — the gate would be premature.
+        if ((criticalCounts['MenuItem'] ?? 0) < 1) {
+          log.warn({ criticalCounts }, 'ORDERS gate deferred — MenuItem table empty, waiting for menu sync')
+          // Reset initialSyncDone so the gate re-checks on next cycle
+          initialSyncDone = false
+        } else {
+          advanceToOrders(criticalCounts)
+        }
       } catch {
         // readiness module may not be loaded yet — server.ts will handle it
       }

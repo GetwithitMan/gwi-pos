@@ -104,7 +104,7 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   MenuItem:               { direction: 'downstream', owner: 'cloud', priority: 207, batchSize: 200, businessKey: ['categoryId', 'name'] },
   ModifierGroup:          { direction: 'downstream', owner: 'cloud', priority: 208, batchSize: 200, businessKey: ['locationId', 'name'] },
   Modifier:               { direction: 'downstream', owner: 'cloud', priority: 209, batchSize: 200, businessKey: ['modifierGroupId', 'name'] },
-  Table:                  { direction: 'downstream', owner: 'cloud', priority: 210, batchSize: 100, businessKey: ['locationId', 'name'], skipFields: ['status', 'isLocked', 'version'] },
+  Table:                  { direction: 'downstream', owner: 'cloud', priority: 210, batchSize: 100, businessKey: ['locationId', 'name'], skipFields: ['isLocked', 'version'] },
   Section:                { direction: 'downstream', owner: 'cloud', priority: 211, batchSize: 50, businessKey: ['locationId', 'name'] },
   OrderType:              { direction: 'downstream', owner: 'cloud', priority: 212, batchSize: 50 },
   Printer:                { direction: 'downstream', owner: 'cloud', priority: 213, batchSize: 50, skipFields: ['lastPingAt', 'lastPingOk'] },
@@ -270,8 +270,10 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   SyncAuditEntry:         { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
   HealthCheck:            { direction: 'none', owner: 'none', priority: 0, batchSize: 0 },
 
+  // ── Fulfillment Events (NUC → Neon) ─────────────────────────────────
+  FulfillmentEvent:       { direction: 'upstream', owner: 'nuc', priority: 80, batchSize: 100 },
+
   // ── NUC-local operational tables (not synced to Neon) ───────────────
-  FulfillmentEvent:       { direction: 'none', owner: 'nuc', priority: 80, batchSize: 100 },
   BridgeCheckpoint:       { direction: 'none', owner: 'nuc', priority: 81, batchSize: 10 },
   OutageQueueEntry:       { direction: 'none', owner: 'nuc', priority: 82, batchSize: 100 },
   SocketEventLog:         { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 },
@@ -351,7 +353,7 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
 /** Tables that must NEVER sync — operational/ephemeral NUC-local data */
 export const LOCAL_ONLY_TABLES = new Set([
   'HardwareCommand', 'CloudEventQueue', 'SyncAuditEntry', 'HealthCheck',
-  'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog', 'CellularEvent',
+  'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog', 'CellularEvent',
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
   'SyncConflict', 'SyncWatermark', // quarantine infrastructure
   'LocalSchemaState', 'LocalInstallState', // NUC-owned infrastructure (never synced)
