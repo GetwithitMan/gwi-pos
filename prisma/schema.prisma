@@ -179,9 +179,31 @@ enum PrintRuleLevel {
 
 enum GiftCardStatus {
   active
+  unactivated
   depleted
   expired
   frozen
+}
+
+enum PerformedByType {
+  employee
+  system
+  cloud
+  webhook
+}
+
+enum DeliveryStatus {
+  pending
+  sent
+  delivered
+  failed
+}
+
+enum WebhookProcessingStatus {
+  received
+  processed
+  failed
+  ignored
 }
 
 enum HouseAccountStatus {
@@ -1172,6 +1194,7 @@ model Employee {
   tipGroupsOwned               TipGroup[]                @relation("TipGroupOwner")
   orderOwnershipsCreated       OrderOwnership[]          @relation("OrderOwnershipCreatedBy")
   giftCardsSold                GiftCard[]                @relation("GiftCardSoldBy")
+  giftCardsActivated           GiftCard[]                @relation("GiftCardActivatedBy")
   giftCardTransactions         GiftCardTransaction[]     @relation("GiftCardTransactionEmployee")
   houseAccountTransactions_emp HouseAccountTransaction[] @relation("HouseAcctTxnEmployee")
   timedSessionsStarted         TimedSession[]            @relation("TimedSessionStartedBy")
@@ -3960,6 +3983,24 @@ model GiftCard {
   orderId String? // Order where it was purchased
   order   Order?  @relation("GiftCardOrder", fields: [orderId], references: [id])
 
+  // Pool / import tracking
+  source         String? // 'manual' | 'import' | 'range' | 'online' | 'datacap_virtual'
+  batchId        String? // Groups imported/range-generated cards
+  activatedAt    DateTime? // When an unactivated card was activated
+  activatedById  String? // Employee who activated
+  activatedBy    Employee? @relation("GiftCardActivatedBy", fields: [activatedById], references: [id])
+
+  // External system tracking (Datacap Virtual Gift)
+  externalProvider      String? // 'datacap_virtual_gift'
+  externalTransactionId String? // Datacap transactionId (for reconciliation)
+  externalPageId        String? // Datacap giftCardPageId (links to source storefront)
+
+  // Delivery tracking
+  deliveryStatus          DeliveryStatus?
+  deliveryAttempts        Int       @default(0)
+  lastDeliveryAttemptAt   DateTime?
+  deliveryFailureReason   String?
+
   lastMutatedBy String? // 'cloud' | 'local' | null
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -3974,6 +4015,9 @@ model GiftCard {
   @@index([status])
   @@index([locationId, cardNumber]) // Gift card lookup by number per location
   @@index([locationId, status]) // Active gift cards per location
+  @@index([locationId, status, source]) // Pool inventory queries
+  @@index([batchId]) // Batch operations
+  @@index([externalProvider, externalTransactionId]) // Datacap reconciliation
 }
 
 model GiftCardTransaction {
@@ -3998,6 +4042,11 @@ model GiftCardTransaction {
   employee   Employee? @relation("GiftCardTransactionEmployee", fields: [employeeId], references: [id])
   notes      String?
 
+  // Ledger integrity
+  idempotencyKey    String? // Prevents duplicate transactions
+  externalReference String? // Datacap transactionId for externally-originated transactions
+  performedByType   PerformedByType? // employee | system | cloud | webhook
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -4005,10 +4054,12 @@ model GiftCardTransaction {
   deletedAt DateTime?
   syncedAt  DateTime?
 
+  @@unique([giftCardId, idempotencyKey]) // DB-level idempotency guarantee
   @@index([locationId])
   @@index([giftCardId])
   @@index([orderId])
   @@index([createdAt])
+  @@index([externalReference]) // Datacap reconciliation lookups
 }
 
 // ============================================
@@ -9696,6 +9747,33 @@ model DeliveryOrder {
   @@index([locationId, createdAt(sort: Desc)])
   @@index([zoneId])
   @@index([runId])
+}
+
+// ============================================
+// EXTERNAL WEBHOOK EVENTS (idempotency + replay protection)
+// ============================================
+
+model ExternalWebhookEvent {
+  id                    String   @id @default(cuid())
+  provider              String   // 'datacap_virtual_gift'
+  externalTransactionId String   // e.g. Datacap transactionId
+  eventType             String   // e.g. 'payment.completed', 'payment.failed'
+  signatureValid        Boolean
+  payload               Json     // Raw webhook body (CVV stripped, contains PII — 90-day retention)
+  processingStatus      WebhookProcessingStatus @default(received)
+  ignoredReason         String?  // Why event was ignored (unknown type, etc.)
+  relatedGiftCardId     String?  // GiftCard created/affected by this event
+  providerPageId        String?  // e.g. Datacap giftCardPageId
+  providerMerchantId    String?  // e.g. Datacap merchantId
+  attemptCount          Int      @default(1)
+  receivedAt            DateTime @default(now())
+  processedAt           DateTime?
+  errorMessage          String?
+
+  // Unique per (provider, transaction, event type) — Datacap sends
+  // multiple event types for the same transaction lifecycle
+  @@unique([provider, externalTransactionId, eventType])
+  @@index([provider, processingStatus])
 }
 
 // NOTE: _local_schema_state and _local_install_state are NUC-only tables

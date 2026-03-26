@@ -937,6 +937,8 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     acceptCredit: true,
     acceptDebit: true,
     acceptGiftCards: false,
+    giftCardPoolMode: 'open' as const,
+    giftCardLowPoolThreshold: 10,
     acceptHouseAccounts: false,
     acceptHotelRoomCharge: false,
     cashRounding: 'none',

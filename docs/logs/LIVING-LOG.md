@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-03-26 — Gift Card System Enhancement (Full Build)
+
+### Summary
+Complete gift card system overhaul: card number pool management, balance adjustments, enhanced owner management page, Datacap Virtual Gift integration, and full test suite (88 tests).
+
+### What Was Built
+- **Phase A:** Schema migration 109 — `unactivated` status, pool/import columns, delivery tracking, `ExternalWebhookEvent` model, new enums (`PerformedByType`, `DeliveryStatus`, `WebhookProcessingStatus`)
+- **Phase B:** 7 domain commands extracted to `src/lib/domain/gift-cards/` (ledger-first, Prisma Decimal math, Zod validation)
+- **Phase C:** 4 new API routes — bulk import (CSV/JSON), range generator (with dry-run), pool stats, card activation. Pool-mode card creation with `FOR UPDATE SKIP LOCKED`
+- **Phase D:** Complete admin page rewrite — 7 sub-components (Dashboard, List, Detail, Import, PoolStatus, Adjustment, Export), 3 supporting APIs (stats, export, batch), cursor-based pagination
+- **Phase E:** Datacap Virtual Gift — API client, MC setup page + component, HMAC-verified webhook (event dispatcher, CVV never stored), public site iframe widget with postMessage handling
+- **Phase F:** 11 test files, 88 tests — unit, contract (webhook), domain command, secret leakage guard. All passing.
+
+### Key Design Decisions
+- **Print delivery only** from Datacap → we get full card numbers in webhook → handle email/SMS ourselves → one unified card system
+- **MC configures** Datacap credentials (dealer/tech provisioning), POS only receives non-secret storefront state
+- **Ledger-first:** `GiftCardTransaction` is source of truth, `currentBalance` is cached projection
+- **`ExternalWebhookEvent`** table with `@@unique([provider, externalTransactionId, eventType])` for webhook idempotency
+- **giftCardCvv never stored** — stripped before any persistence/logging
+
+### Files
+- ~37 new files, ~11 modified across gwi-pos + gwi-mission-control
+- Migration: `scripts/migrations/109-gift-card-pool.js`
+- Plan: `~/.claude/plans/curious-plotting-rose.md`
+
+### Status
+Built, type-checks clean, tests passing. Not yet deployed (awaiting user "deploy" command).
+
+---
+
 ## 2026-03-22 — Deploy Pipeline Fix + Terminal Pairing + Sync Hardening
 
 ### Summary

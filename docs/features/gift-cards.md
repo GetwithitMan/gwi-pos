@@ -16,7 +16,8 @@ Gift card redemption is tightly integrated with the payment pipeline: the balanc
 
 | Repo | Role | Coverage |
 |------|------|----------|
-| `gwi-pos` | API routes, admin management UI, POS payment UI, reports | Full |
+| `gwi-pos` | API routes, admin management UI, POS payment UI, reports, Datacap Virtual Gift webhook | Full |
+| `gwi-mission-control` | Datacap Virtual Gift storefront config, venue settings | Full |
 | `gwi-android-register` | PayOrderUseCase, gift card payment path in PaymentSheet | Full (commit `78fdb35`) |
 | `gwi-cfd` | N/A — CFD is not involved in gift card flows (no tip prompt) | None |
 
@@ -56,8 +57,20 @@ Gift card redemption is tightly integrated with the payment pipeline: the balanc
 | `src/components/payment/PaymentModal.tsx` | POS web — orchestrates `GiftCardStep`; holds `GiftCardInfo` state |
 | `src/components/receipt/Receipt.tsx` | Receipt renderer — shows "Gift Card ending in XXXX" and remaining balance if partial |
 | `src/lib/settings.ts` | `PaymentSettings.acceptGiftCards` field; defaults to `false` |
+| `src/lib/settings/types.ts` | `giftCardPoolMode`, `giftCardLowPoolThreshold`, `PublicDatacapVirtualGiftSettings` type |
 | `src/lib/permission-registry.ts` | `customers.gift_cards` permission key (CRITICAL risk level) |
-| `prisma/schema.prisma` | `GiftCard` model, `GiftCardTransaction` model, `GiftCardStatus` enum |
+| `prisma/schema.prisma` | `GiftCard` model, `GiftCardTransaction` model, `GiftCardStatus` enum, `ExternalWebhookEvent` model |
+| `src/lib/domain/gift-cards/` | Domain commands: adjust, activate, allocate, freeze, import, process-datacap, schemas |
+| `src/app/api/gift-cards/import/route.ts` | `POST` — Bulk import card numbers (CSV/JSON) |
+| `src/app/api/gift-cards/generate-range/route.ts` | `POST` — Generate card number range |
+| `src/app/api/gift-cards/pool/route.ts` | `GET` — Pool inventory stats |
+| `src/app/api/gift-cards/[id]/activate/route.ts` | `POST` — Activate pool card with amount |
+| `src/app/api/gift-cards/stats/route.ts` | `GET` — Dashboard stats (liability, counts) |
+| `src/app/api/gift-cards/export/route.ts` | `GET` — Streamed CSV export (cards or transactions) |
+| `src/app/api/gift-cards/batch/route.ts` | `POST` — Batch operations (activate, freeze, unfreeze, delete) |
+| `src/app/api/webhooks/datacap-virtual-gift/route.ts` | `POST` — Datacap Virtual Gift webhook receiver |
+| `src/lib/datacap/virtual-gift-client.ts` | Datacap Virtual Gift API client (create/get/update/archive page, get transactions) |
+| `src/app/(admin)/gift-cards/components/` | 7 sub-components: Dashboard, List, Detail, Import, PoolStatus, Adjustment, Export |
 
 ---
 
@@ -76,7 +89,49 @@ Gift card redemption is tightly integrated with the payment pipeline: the balanc
 
 | `action` | Required fields | Effect |
 |----------|----------------|--------|
-| `freeze` | `reason?` | Sets `status → 'frozen'`, writes `frozenAt` + `frozenReason`. Only on `active` cards. |
+| `freeze` | `reason` | Sets `status → 'frozen'`, writes `frozenAt` + `frozenReason`. Only on `active` cards. |
+| `adjust` | `amount`, `notes` (required) | Manual balance +/- with required reason. Creates `adjustment_credit` or `adjustment_debit` transaction. |
+
+### New Endpoints (Pool Management + Datacap Virtual Gift)
+
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| `POST` | `/api/gift-cards/import` | `customers.gift_cards` | Bulk import card numbers (CSV or JSON). Creates `unactivated` cards with shared `batchId`. |
+| `POST` | `/api/gift-cards/generate-range` | `customers.gift_cards` | Generate card number range (prefix + start/end). Supports `dryRun` preview. Max 5000/batch. |
+| `GET` | `/api/gift-cards/pool` | Read-only | Pool inventory: total, available (unactivated), activated, low-pool alert, per-batch breakdown. |
+| `POST` | `/api/gift-cards/[id]/activate` | `customers.gift_cards` | Activate a pool card with a specific amount. Creates `activated` transaction. |
+| `GET` | `/api/gift-cards/stats` | Read-only | Dashboard stats: total liability, counts by status, recent transactions. |
+| `GET` | `/api/gift-cards/export` | `customers.gift_cards` | Streamed CSV export. `?type=cards` or `?type=transactions`, optional date range. |
+| `POST` | `/api/gift-cards/batch` | `customers.gift_cards` | Batch operations (activate/freeze/unfreeze/delete). Per-card validation, partial success. |
+| `POST` | `/api/webhooks/datacap-virtual-gift` | Public (HMAC verified) | Datacap Virtual Gift webhook. Creates local GiftCard on `payment.completed`. CVV never stored. |
+
+### Transaction Type Taxonomy
+
+| Type | Direction | Meaning |
+|------|-----------|---------|
+| `purchased` | + | Online or in-store purchase (new card) |
+| `activated` | + | Pool card activated at register |
+| `imported` | 0 | Card number imported into pool (balance = 0) |
+| `redeemed` | - | Used as payment on an order |
+| `reloaded` | + | Additional funds added |
+| `adjustment_credit` | + | Manual balance increase (with reason) |
+| `adjustment_debit` | - | Manual balance decrease (with reason) |
+| `refunded` | + | Payment refund returned to card |
+| `frozen` | 0 | Card frozen (status change only) |
+| `unfrozen` | 0 | Card unfrozen (status change only) |
+| `expired` | 0 | Card expired (status change only) |
+
+### Card Number Pool
+
+Cards can be issued from a pre-imported pool (`giftCardPoolMode: 'pool'`) or generated randomly (`giftCardPoolMode: 'open'`, default).
+
+**Pool mode:** Import physical card numbers via CSV/JSON → creates `unactivated` GiftCard records → when sold at register, `FOR UPDATE SKIP LOCKED` allocates next available → activates with amount.
+
+**Datacap Virtual Gift:** Hosted storefront (configured in Mission Control) sells digital gift cards online. Webhook creates local GiftCard record with `source: 'datacap_virtual'`. Print delivery only (we handle email/SMS ourselves). CVV never stored.
+
+### PCI Scope Note
+
+Gift card CVV from Datacap Virtual Gift webhook is **never stored, logged, or persisted**. Card numbers are stored as required for redemption lookup. The `ExternalWebhookEvent.payload` has CVV stripped before storage. 90-day PII retention policy on webhook payloads.
 | `unfreeze` | — | Sets `status → 'active'`, clears `frozenAt` / `frozenReason`. Only on `frozen` cards. |
 | `reload` | `amount` (positive) | Increments `currentBalance` by amount. Creates `GiftCardTransaction` of type `reload` (positive amount). Only on `active` cards. |
 | `redeem` | `amount`, `employeeId?`, `orderId?`, `notes?` | Decrements `currentBalance`; sets `status → 'depleted'` if balance reaches zero. Creates `GiftCardTransaction` of type `redemption` (negative amount). Fails if balance insufficient. |

@@ -3,19 +3,27 @@
 /**
  * GiftCardPurchaseClient — Virtual gift card purchase flow.
  *
- * Steps:
+ * Two modes:
+ *   A. Datacap Virtual Gift (iframe-embedded storefront) — when datacapVirtualGift prop provided
+ *   B. PayAPI 4-step form (original) — fallback when Datacap iframe not configured
+ *
+ * Mode A renders an iframe with postMessage listeners for:
+ *   - widget_ready: hide loading spinner
+ *   - height_change: auto-resize iframe
+ *   - payment_success: show transitional message
+ *   - payment_error: show error with retry
+ *
+ * Mode B steps:
  *   1. Choose amount ($25, $50, $100, or custom)
  *   2. Recipient info (name, email, message)
  *   3. Your info (purchaser name, email)
  *   4. Payment via Datacap hosted token iframe
- *
- * On success: shows confirmation with masked card number.
- * On failure: shows error, preserves form state.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import type { SiteBootstrapResponse } from '@/lib/site-api-schemas'
+import type { PublicDatacapVirtualGiftSettings } from '@/lib/settings/types'
 
 // Datacap Hosted Web Token global (loaded via CDN script)
 declare const DatacapHostedWebToken: {
@@ -34,13 +42,287 @@ interface DatacapTokenResponse {
 interface GiftCardPurchaseClientProps {
   bootstrap: SiteBootstrapResponse
   slug: string
+  datacapVirtualGift?: PublicDatacapVirtualGiftSettings | null
 }
+
+// Allowed Datacap origins for postMessage validation
+const DATACAP_ORIGINS = new Set([
+  'https://paylink.dcap.com',
+  'https://paylink-cert.dcap.com',
+])
 
 const PRESET_AMOUNTS = [25, 50, 100]
 const MIN_AMOUNT = 5
 const MAX_AMOUNT = 500
 
-export function GiftCardPurchaseClient({ bootstrap, slug }: GiftCardPurchaseClientProps) {
+// ─── Datacap Virtual Gift Iframe Mode ─────────────────────────────────────────
+
+function DatacapVirtualGiftWidget({ embeddedUrl, publicLinkUrl }: { embeddedUrl: string; publicLinkUrl: string | null }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const [iframeLoading, setIframeLoading] = useState(true)
+  const [iframeHeight, setIframeHeight] = useState(600)
+  const [iframeError, setIframeError] = useState(false)
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [paymentErrorMsg, setPaymentErrorMsg] = useState('')
+  const loadTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // PostMessage listener
+  useEffect(() => {
+    function handleMessage(event: MessageEvent) {
+      // Validate origin — only accept messages from Datacap domains
+      if (!DATACAP_ORIGINS.has(event.origin)) return
+
+      const data = event.data
+      if (!data || typeof data !== 'object') return
+
+      const type = data.type || data.event
+
+      switch (type) {
+        case 'widget_ready':
+          setIframeLoading(false)
+          if (loadTimeout.current) {
+            clearTimeout(loadTimeout.current)
+            loadTimeout.current = null
+          }
+          break
+
+        case 'height_change':
+          if (typeof data.height === 'number' && data.height > 200) {
+            setIframeHeight(data.height)
+          }
+          break
+
+        case 'payment_success':
+          setPaymentStatus('success')
+          break
+
+        case 'payment_error':
+          setPaymentStatus('error')
+          setPaymentErrorMsg(
+            typeof data.message === 'string' ? data.message : 'Payment failed. Please try again.'
+          )
+          break
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [])
+
+  // Fallback timeout — if iframe doesn't send widget_ready in 15s, show fallback
+  useEffect(() => {
+    loadTimeout.current = setTimeout(() => {
+      if (iframeLoading) {
+        setIframeError(true)
+        setIframeLoading(false)
+      }
+    }, 15_000)
+
+    return () => {
+      if (loadTimeout.current) clearTimeout(loadTimeout.current)
+    }
+  }, [iframeLoading])
+
+  // Payment success transitional message
+  if (paymentStatus === 'success') {
+    return (
+      <div className="py-12 md:py-20 px-4">
+        <div className="max-w-md mx-auto text-center">
+          <div
+            className="w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--site-brand) 15%, transparent)' }}
+          >
+            <svg className="w-8 h-8" style={{ color: 'var(--site-brand)' }} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+          </div>
+          <h2
+            className="text-2xl md:text-3xl mb-3"
+            style={{
+              fontFamily: 'var(--site-heading-font)',
+              fontWeight: 'var(--site-heading-weight, 700)',
+            }}
+          >
+            Payment Received
+          </h2>
+          <p className="mb-6" style={{ color: 'var(--site-text-muted)' }}>
+            Preparing your gift card... You will receive a confirmation shortly.
+          </p>
+          <a
+            href="/"
+            className="inline-block py-3 px-8 rounded-xl font-semibold transition-opacity hover:opacity-90"
+            style={{
+              backgroundColor: 'var(--site-brand)',
+              color: 'var(--site-brand-text)',
+            }}
+          >
+            Back to Home
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  // Payment error with retry
+  if (paymentStatus === 'error') {
+    return (
+      <div className="py-12 md:py-20 px-4">
+        <div className="max-w-md mx-auto text-center">
+          <div className="w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center bg-red-50">
+            <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+            </svg>
+          </div>
+          <h2
+            className="text-2xl md:text-3xl mb-3"
+            style={{
+              fontFamily: 'var(--site-heading-font)',
+              fontWeight: 'var(--site-heading-weight, 700)',
+            }}
+          >
+            Payment Error
+          </h2>
+          <p className="mb-6" style={{ color: 'var(--site-text-muted)' }}>
+            {paymentErrorMsg}
+          </p>
+          <button
+            onClick={() => {
+              setPaymentStatus('idle')
+              setPaymentErrorMsg('')
+            }}
+            className="inline-block py-3 px-8 rounded-xl font-semibold transition-opacity hover:opacity-90"
+            style={{
+              backgroundColor: 'var(--site-brand)',
+              color: 'var(--site-brand-text)',
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // iframe load error — show fallback link
+  if (iframeError) {
+    return (
+      <div className="py-8 md:py-14 px-4">
+        <div className="max-w-lg mx-auto text-center">
+          <h1
+            className="text-2xl md:text-3xl mb-2"
+            style={{
+              fontFamily: 'var(--site-heading-font)',
+              fontWeight: 'var(--site-heading-weight, 700)',
+            }}
+          >
+            Purchase a Gift Card
+          </h1>
+          <p className="mb-6" style={{ color: 'var(--site-text-muted)' }}>
+            The gift card form could not be loaded inline. Click below to continue on the Datacap secure page.
+          </p>
+          <a
+            href={publicLinkUrl || embeddedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block py-3 px-8 rounded-xl font-semibold transition-opacity hover:opacity-90"
+            style={{
+              backgroundColor: 'var(--site-brand)',
+              color: 'var(--site-brand-text)',
+            }}
+          >
+            Open Gift Card Store
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="py-8 md:py-14 px-4">
+      <div className="max-w-2xl mx-auto">
+        <h1
+          className="text-2xl md:text-3xl mb-2 text-center"
+          style={{
+            fontFamily: 'var(--site-heading-font)',
+            fontWeight: 'var(--site-heading-weight, 700)',
+          }}
+        >
+          Purchase a Gift Card
+        </h1>
+        <p className="text-center mb-6" style={{ color: 'var(--site-text-muted)' }}>
+          Choose an amount and send a virtual gift card
+        </p>
+
+        {/* Loading spinner */}
+        {iframeLoading && (
+          <div className="flex items-center justify-center py-12">
+            <svg className="animate-spin h-8 w-8" style={{ color: 'var(--site-brand)' }} viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="ml-3 text-sm" style={{ color: 'var(--site-text-muted)' }}>
+              Loading gift card store...
+            </span>
+          </div>
+        )}
+
+        {/* Datacap embedded iframe */}
+        <div
+          className="rounded-xl overflow-hidden transition-opacity"
+          style={{
+            border: '1px solid var(--site-border)',
+            opacity: iframeLoading ? 0 : 1,
+          }}
+        >
+          <iframe
+            ref={iframeRef}
+            src={embeddedUrl}
+            title="Gift Card Store"
+            className="w-full border-0"
+            style={{ height: `${iframeHeight}px`, minHeight: '400px' }}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation"
+            onLoad={() => {
+              // If widget_ready postMessage hasn't fired yet, give it a moment
+              // The 15s fallback timeout will catch true failures
+            }}
+          />
+        </div>
+
+        {/* Security note */}
+        <div className="flex items-center justify-center gap-1.5 text-xs mt-4" style={{ color: 'var(--site-text-muted)' }}>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+          </svg>
+          <span>Secure payment powered by Datacap</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export function GiftCardPurchaseClient({ bootstrap, slug, datacapVirtualGift }: GiftCardPurchaseClientProps) {
+  // ── Datacap Virtual Gift iframe mode ─────────────────────────────
+  const useDatacapWidget = datacapVirtualGift?.enabled && datacapVirtualGift?.embeddedUrl
+
+  // If Datacap Virtual Gift is enabled with an embedded URL, render the iframe widget
+  if (useDatacapWidget) {
+    return (
+      <DatacapVirtualGiftWidget
+        embeddedUrl={datacapVirtualGift.embeddedUrl!}
+        publicLinkUrl={datacapVirtualGift.publicLinkUrl}
+      />
+    )
+  }
+
+  // ── Original PayAPI 4-step form (Mode B) ─────────────────────────
+  return <PayApiGiftCardForm bootstrap={bootstrap} slug={slug} />
+}
+
+// ─── PayAPI Form (extracted from original component) ──────────────────────────
+
+function PayApiGiftCardForm({ bootstrap, slug }: { bootstrap: SiteBootstrapResponse; slug: string }) {
   // ── Form State ─────────────────────────────────────────────────
   const [amount, setAmount] = useState<number>(50)
   const [customAmount, setCustomAmount] = useState('')

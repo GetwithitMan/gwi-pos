@@ -1,53 +1,44 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { formatCurrency, formatDate } from '@/lib/utils'
 import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
-import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import { toast } from '@/stores/toast-store'
+import { GiftCardDashboard } from './components/GiftCardDashboard'
+import { GiftCardList } from './components/GiftCardList'
+import { GiftCardDetail } from './components/GiftCardDetail'
+import { GiftCardImport } from './components/GiftCardImport'
+import { GiftCardPoolStatus } from './components/GiftCardPoolStatus'
+import { GiftCardExport } from './components/GiftCardExport'
 
-interface GiftCard {
+type Tab = 'cards' | 'import' | 'reports'
+
+const TAB_CONFIG: { key: Tab; label: string }[] = [
+  { key: 'cards', label: 'Cards' },
+  { key: 'import', label: 'Import' },
+  { key: 'reports', label: 'Reports' },
+]
+
+interface SelectedCard {
   id: string
   cardNumber: string
   initialBalance: number
   currentBalance: number
   status: string
+  source?: string | null
   recipientName?: string | null
   recipientEmail?: string | null
+  recipientPhone?: string | null
   purchaserName?: string | null
   message?: string | null
   expiresAt?: string | null
+  activatedAt?: string | null
+  frozenAt?: string | null
+  frozenReason?: string | null
   createdAt: string
-  _count?: { transactions: number }
-}
-
-interface GiftCardTransaction {
-  id: string
-  type: string
-  amount: number
-  balanceBefore: number
-  balanceAfter: number
-  notes?: string | null
-  createdAt: string
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  active: 'bg-green-100 text-green-700',
-  depleted: 'bg-gray-100 text-gray-900',
-  expired: 'bg-red-100 text-red-700',
-  frozen: 'bg-blue-100 text-blue-700',
-}
-
-const TRANSACTION_TYPE_LABELS: Record<string, string> = {
-  purchase: 'Initial Purchase',
-  redemption: 'Redemption',
-  reload: 'Reload',
-  refund: 'Refund',
-  adjustment: 'Adjustment',
 }
 
 export default function GiftCardsPage() {
@@ -55,148 +46,54 @@ export default function GiftCardsPage() {
   const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
 
-  const crud = useAdminCRUD<GiftCard>({
-    apiBase: '/api/gift-cards',
-    locationId,
-    resourceName: 'gift card',
-    parseResponse: (data) => Array.isArray(data) ? data : data.giftCards || [],
-  })
+  const [activeTab, setActiveTab] = useState<Tab>('cards')
+  const [selectedCard, setSelectedCard] = useState<SelectedCard | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const {
-    items: giftCards,
-    showModal: showCreateModal,
-    isSaving,
-    modalError,
-    openAddModal,
-    closeModal,
-    handleSave,
-    setItems: setGiftCards,
-  } = crud
-
-  // Custom state — filters, detail panel, reload modal
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [selectedCard, setSelectedCard] = useState<GiftCard | null>(null)
-  const [cardTransactions, setCardTransactions] = useState<GiftCardTransaction[]>([])
-  const [showReloadModal, setShowReloadModal] = useState(false)
-
-  // Create form
+  // Create modal state
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
   const [newAmount, setNewAmount] = useState('')
   const [recipientName, setRecipientName] = useState('')
   const [recipientEmail, setRecipientEmail] = useState('')
   const [purchaserName, setPurchaserName] = useState('')
   const [message, setMessage] = useState('')
 
-  // Reload form
-  const [reloadAmount, setReloadAmount] = useState('')
+  function triggerRefresh() {
+    setRefreshKey(k => k + 1)
+  }
 
-  // Custom load — useAdminCRUD's loadItems doesn't support status/search filters
-  const loadGiftCards = useCallback(async () => {
-    if (!locationId) return
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ locationId })
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter)
-      }
-      if (searchTerm) {
-        params.append('search', searchTerm)
-      }
-      const response = await fetch(`/api/gift-cards?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setGiftCards(Array.isArray(data) ? data : data.giftCards || [])
-      }
-    } catch (error) {
-      console.error('Failed to load gift cards:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [locationId, statusFilter, searchTerm, setGiftCards])
-
-  useEffect(() => {
-    if (locationId) {
-      loadGiftCards()
-    }
-  }, [locationId, statusFilter, loadGiftCards])
-
-  async function loadCardDetails(card: GiftCard) {
+  function handleSelectCard(card: SelectedCard) {
     setSelectedCard(card)
+  }
+
+  function handleCloseDetail() {
+    setSelectedCard(null)
+  }
+
+  function handleCardUpdated() {
+    triggerRefresh()
+    // Re-fetch selected card detail
+    if (selectedCard) {
+      void loadSelectedCardDetail(selectedCard.id).catch(console.error)
+    }
+  }
+
+  async function loadSelectedCardDetail(cardId: string) {
     try {
-      const response = await fetch(`/api/gift-cards/${card.id}`)
+      const response = await fetch(`/api/gift-cards/${cardId}`)
       if (response.ok) {
         const data = await response.json()
-        setCardTransactions(data.data.transactions || [])
+        const card = data.data
+        setSelectedCard({
+          ...card,
+          initialBalance: Number(card.initialBalance),
+          currentBalance: Number(card.currentBalance),
+        })
       }
     } catch (error) {
-      console.error('Failed to load card details:', error)
-    }
-  }
-
-  async function handleCreateGiftCard(e: React.FormEvent) {
-    e.preventDefault()
-    if (!locationId) return
-
-    const payload = {
-      locationId,
-      amount: parseFloat(newAmount),
-      recipientName: recipientName || null,
-      recipientEmail: recipientEmail || null,
-      purchaserName: purchaserName || null,
-      message: message || null,
-    }
-
-    const ok = await handleSave(payload)
-    if (ok) {
-      resetCreateForm()
-      loadGiftCards()
-    }
-  }
-
-  async function handleReload(e: React.FormEvent) {
-    e.preventDefault()
-    if (!selectedCard) return
-
-    try {
-      const response = await fetch(`/api/gift-cards/${selectedCard.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'reload',
-          amount: parseFloat(reloadAmount),
-        }),
-      })
-
-      if (response.ok) {
-        setShowReloadModal(false)
-        setReloadAmount('')
-        loadGiftCards()
-        loadCardDetails(selectedCard)
-      }
-    } catch (error) {
-      console.error('Failed to reload gift card:', error)
-    }
-  }
-
-  async function handleToggleFreeze(card: GiftCard) {
-    const action = card.status === 'frozen' ? 'unfreeze' : 'freeze'
-    try {
-      const response = await fetch(`/api/gift-cards/${card.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      })
-
-      if (response.ok) {
-        loadGiftCards()
-        if (selectedCard?.id === card.id) {
-          const data = await response.json()
-          setSelectedCard(data.data)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to toggle freeze:', error)
+      console.error('Failed to reload card detail:', error)
     }
   }
 
@@ -206,6 +103,53 @@ export default function GiftCardsPage() {
     setRecipientEmail('')
     setPurchaserName('')
     setMessage('')
+    setCreateError(null)
+  }
+
+  async function handleCreateGiftCard(e: React.FormEvent) {
+    e.preventDefault()
+    if (!locationId) return
+
+    const amount = parseFloat(newAmount)
+    if (!amount || amount <= 0) {
+      setCreateError('Enter a valid positive amount')
+      return
+    }
+
+    setCreating(true)
+    setCreateError(null)
+
+    try {
+      const payload = {
+        locationId,
+        amount,
+        recipientName: recipientName || null,
+        recipientEmail: recipientEmail || null,
+        purchaserName: purchaserName || null,
+        message: message || null,
+        skipPaymentCheck: true,
+      }
+
+      const response = await fetch('/api/gift-cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (response.ok) {
+        toast.success('Gift card created')
+        setShowCreateModal(false)
+        resetCreateForm()
+        triggerRefresh()
+      } else {
+        const data = await response.json()
+        setCreateError(data.error || 'Failed to create gift card')
+      }
+    } catch (error) {
+      setCreateError('Failed to create gift card')
+    } finally {
+      setCreating(false)
+    }
   }
 
   if (!hydrated) return null
@@ -215,230 +159,107 @@ export default function GiftCardsPage() {
       <AdminPageHeader
         title="Gift Cards"
         actions={
-          <Button variant="primary" onClick={openAddModal}>
-            Create Gift Card
+          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+            + Create Gift Card
           </Button>
         }
       />
 
-      {/* Filters */}
-      <div className="max-w-7xl mx-auto mt-6">
-      <div className="flex gap-4 mb-6">
-        <div className="flex-1">
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && loadGiftCards()}
-            placeholder="Search by card number, name, or email..."
-            className="w-full px-3 py-2 border rounded-lg"
-          />
-        </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 border rounded-lg"
-        >
-          <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="depleted">Depleted</option>
-          <option value="expired">Expired</option>
-          <option value="frozen">Frozen</option>
-        </select>
-        <Button variant="outline" onClick={loadGiftCards}>
-          Search
-        </Button>
-      </div>
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Gift Cards List */}
-        <div className="lg:col-span-2">
-          <Card className="p-4">
-            {loading ? (
-              <div className="text-center py-8 text-gray-900">Loading...</div>
-            ) : giftCards.length === 0 ? (
-              <div className="text-center py-8 text-gray-900">No gift cards found</div>
-            ) : (
-              <div className="divide-y">
-                {giftCards.map((card) => (
-                  <div
-                    key={card.id}
-                    className={`p-4 cursor-pointer hover:bg-gray-50 ${
-                      selectedCard?.id === card.id ? 'bg-blue-50' : ''
-                    }`}
-                    onClick={() => loadCardDetails(card)}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-mono font-medium">{card.cardNumber}</div>
-                        {card.recipientName && (
-                          <div className="text-sm text-gray-900">To: {card.recipientName}</div>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[card.status] || 'bg-gray-100'}`}>
-                          {card.status.toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex justify-between mt-2 text-sm">
-                      <span className="text-gray-900">
-                        Initial: {formatCurrency(card.initialBalance)}
-                      </span>
-                      <span className="font-medium text-green-600">
-                        Balance: {formatCurrency(card.currentBalance)}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-600 mt-1">
-                      Created: {formatDate(card.createdAt)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
+      {/* Tabs */}
+      <div className="max-w-7xl mx-auto mt-4">
+        <div className="border-b border-gray-200 mb-6">
+          <nav className="flex gap-0" aria-label="Gift card tabs">
+            {TAB_CONFIG.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                  activeTab === tab.key
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
         </div>
 
-        {/* Card Details */}
-        <div>
-          {selectedCard ? (
-            <Card className="p-4">
-              <h2 className="text-lg font-bold mb-4">Card Details</h2>
+        {/* ── Cards Tab ──────────────────────────────────────────────── */}
+        {activeTab === 'cards' && (
+          <>
+            <GiftCardDashboard locationId={locationId} />
 
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs text-gray-900">Card Number</label>
-                  <div className="font-mono">{selectedCard.cardNumber}</div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs text-gray-900">Initial</label>
-                    <div>{formatCurrency(selectedCard.initialBalance)}</div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-900">Current</label>
-                    <div className="text-xl font-bold text-green-600">
-                      {formatCurrency(selectedCard.currentBalance)}
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-900">Status</label>
-                  <div>
-                    <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[selectedCard.status]}`}>
-                      {selectedCard.status.toUpperCase()}
-                    </span>
-                  </div>
-                </div>
-
-                {selectedCard.recipientName && (
-                  <div>
-                    <label className="text-xs text-gray-900">Recipient</label>
-                    <div>{selectedCard.recipientName}</div>
-                    {selectedCard.recipientEmail && (
-                      <div className="text-sm text-gray-900">{selectedCard.recipientEmail}</div>
-                    )}
-                  </div>
-                )}
-
-                {selectedCard.purchaserName && (
-                  <div>
-                    <label className="text-xs text-gray-900">Purchased By</label>
-                    <div>{selectedCard.purchaserName}</div>
-                  </div>
-                )}
-
-                {selectedCard.message && (
-                  <div>
-                    <label className="text-xs text-gray-900">Message</label>
-                    <div className="text-sm italic">&ldquo;{selectedCard.message}&rdquo;</div>
-                  </div>
-                )}
-
-                {selectedCard.expiresAt && (
-                  <div>
-                    <label className="text-xs text-gray-900">Expires</label>
-                    <div>{formatDate(selectedCard.expiresAt)}</div>
-                  </div>
-                )}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Card list (2/3 width or full when no selection) */}
+              <div className={selectedCard ? 'lg:col-span-2' : 'lg:col-span-3'}>
+                <GiftCardList
+                  locationId={locationId}
+                  selectedCardId={selectedCard?.id || null}
+                  onSelectCard={handleSelectCard}
+                  refreshKey={refreshKey}
+                />
               </div>
 
-              {/* Actions */}
-              <div className="mt-4 pt-4 border-t flex gap-2">
-                {selectedCard.status === 'active' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowReloadModal(true)}
-                  >
-                    Reload
-                  </Button>
-                )}
-                <Button
-                  variant={selectedCard.status === 'frozen' ? 'primary' : 'outline'}
-                  size="sm"
-                  onClick={() => handleToggleFreeze(selectedCard)}
-                >
-                  {selectedCard.status === 'frozen' ? 'Unfreeze' : 'Freeze'}
-                </Button>
-              </div>
+              {/* Detail panel (1/3 width, slide-over) */}
+              {selectedCard && (
+                <div className="lg:col-span-1">
+                  <GiftCardDetail
+                    card={selectedCard}
+                    onClose={handleCloseDetail}
+                    onCardUpdated={handleCardUpdated}
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
-              {/* Transaction History */}
-              <div className="mt-4 pt-4 border-t">
-                <h3 className="font-medium mb-2">Transaction History</h3>
-                {cardTransactions.length === 0 ? (
-                  <div className="text-sm text-gray-900">No transactions</div>
-                ) : (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {cardTransactions.map((txn) => (
-                      <div key={txn.id} className="text-sm p-2 bg-gray-50 rounded">
-                        <div className="flex justify-between">
-                          <span>{TRANSACTION_TYPE_LABELS[txn.type] || txn.type}</span>
-                          <span className={txn.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {txn.amount >= 0 ? '+' : ''}{formatCurrency(txn.amount)}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-900">
-                          Balance: {formatCurrency(txn.balanceAfter)}
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          {formatDate(txn.createdAt)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </Card>
-          ) : (
-            <Card className="p-8 text-center text-gray-900">
-              Select a gift card to view details
-            </Card>
-          )}
-        </div>
-      </div>
+        {/* ── Import Tab ─────────────────────────────────────────────── */}
+        {activeTab === 'import' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <GiftCardImport
+              locationId={locationId}
+              onImportComplete={triggerRefresh}
+            />
+            <GiftCardPoolStatus
+              locationId={locationId}
+              refreshKey={refreshKey}
+            />
+          </div>
+        )}
+
+        {/* ── Reports Tab ────────────────────────────────────────────── */}
+        {activeTab === 'reports' && (
+          <div className="space-y-6">
+            <GiftCardDashboard locationId={locationId} expanded />
+            <GiftCardExport locationId={locationId} />
+          </div>
+        )}
       </div>
 
-      {/* Create Modal */}
-      <Modal isOpen={showCreateModal} onClose={() => { closeModal(); resetCreateForm() }} title="Create Gift Card" size="md">
-        {modalError && (
-          <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-            {modalError}
+      {/* ── Create Gift Card Modal ─────────────────────────────────────── */}
+      <Modal
+        isOpen={showCreateModal}
+        onClose={() => { setShowCreateModal(false); resetCreateForm() }}
+        title="Create Gift Card"
+        size="md"
+      >
+        {createError && (
+          <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            {createError}
           </div>
         )}
         <form onSubmit={handleCreateGiftCard} className="space-y-4">
           <div>
             <label className="text-sm font-medium block mb-1">Amount *</label>
             <div className="relative">
-              <span className="absolute left-3 top-2 text-gray-900">$</span>
+              <span className="absolute left-3 top-2 text-gray-400">$</span>
               <input
                 type="number"
                 value={newAmount}
                 onChange={(e) => setNewAmount(e.target.value)}
-                className="w-full pl-7 pr-3 py-2 border rounded-lg"
+                className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 placeholder="0.00"
                 step="0.01"
                 min="1"
@@ -453,7 +274,7 @@ export default function GiftCardsPage() {
               type="text"
               value={recipientName}
               onChange={(e) => setRecipientName(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               placeholder="John Doe"
             />
           </div>
@@ -464,7 +285,7 @@ export default function GiftCardsPage() {
               type="email"
               value={recipientEmail}
               onChange={(e) => setRecipientEmail(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               placeholder="john@example.com"
             />
           </div>
@@ -475,7 +296,7 @@ export default function GiftCardsPage() {
               type="text"
               value={purchaserName}
               onChange={(e) => setPurchaserName(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
               placeholder="Jane Doe"
             />
           </div>
@@ -485,7 +306,7 @@ export default function GiftCardsPage() {
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
               placeholder="Happy Birthday!"
               rows={2}
             />
@@ -496,66 +317,15 @@ export default function GiftCardsPage() {
               type="button"
               variant="outline"
               className="flex-1"
-              onClick={() => {
-                closeModal()
-                resetCreateForm()
-              }}
+              onClick={() => { setShowCreateModal(false); resetCreateForm() }}
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
-              {isSaving ? 'Creating...' : 'Create Gift Card'}
+            <Button type="submit" variant="primary" className="flex-1" disabled={creating}>
+              {creating ? 'Creating...' : 'Create Gift Card'}
             </Button>
           </div>
         </form>
-      </Modal>
-
-      {/* Reload Modal */}
-      <Modal isOpen={showReloadModal && !!selectedCard} onClose={() => { setShowReloadModal(false); setReloadAmount('') }} title="Reload Gift Card" size="sm">
-        {selectedCard && (
-          <>
-            <div className="mb-4 text-sm text-gray-900">
-              {selectedCard.cardNumber}
-              <br />
-              Current Balance: {formatCurrency(selectedCard.currentBalance)}
-            </div>
-            <form onSubmit={handleReload} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium block mb-1">Reload Amount *</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-gray-900">$</span>
-                  <input
-                    type="number"
-                    value={reloadAmount}
-                    onChange={(e) => setReloadAmount(e.target.value)}
-                    className="w-full pl-7 pr-3 py-2 border rounded-lg"
-                    placeholder="0.00"
-                    step="0.01"
-                    min="1"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setShowReloadModal(false)
-                    setReloadAmount('')
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" className="flex-1">
-                  Reload
-                </Button>
-              </div>
-            </form>
-          </>
-        )}
       </Modal>
     </div>
   )

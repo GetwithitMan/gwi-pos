@@ -1,6 +1,10 @@
 /**
  * Gift Cards Page — Server component that fetches bootstrap data,
  * checks showGiftCards flag, and renders the client purchase flow.
+ *
+ * Supports two modes:
+ *   1. Datacap Virtual Gift (iframe-embedded storefront) — when datacapVirtualGift.enabled
+ *   2. PayAPI 4-step form (original) — fallback when Datacap iframe not configured
  */
 
 import { headers } from 'next/headers'
@@ -9,6 +13,7 @@ import { getDbForVenue } from '@/lib/db'
 import { getSiteBootstrapData } from '@/lib/site-bootstrap'
 import { GiftCardPurchaseClient } from './client'
 import type { SiteBootstrapResponse } from '@/lib/site-api-schemas'
+import type { PublicDatacapVirtualGiftSettings } from '@/lib/settings/types'
 import type { Metadata } from 'next'
 
 export const dynamic = 'force-dynamic'
@@ -24,6 +29,7 @@ export default async function GiftCardsPage() {
   if (!slug) notFound()
 
   let bootstrap: SiteBootstrapResponse | null = null
+  let datacapVirtualGift: PublicDatacapVirtualGiftSettings | null = null
   try {
     const venueDb = await getDbForVenue(slug)
     const location = await venueDb.location.findFirst({
@@ -38,6 +44,20 @@ export default async function GiftCardsPage() {
         timezone: location.timezone,
         settings: location.settings,
       })
+
+      // Extract Datacap Virtual Gift settings from location settings
+      const settings = location.settings as Record<string, unknown> | null
+      const vgRaw = settings?.datacapVirtualGift as Record<string, unknown> | undefined
+      if (vgRaw?.enabled && vgRaw?.embeddedUrl) {
+        datacapVirtualGift = {
+          enabled: true,
+          pageId: (vgRaw.pageId as string) || null,
+          publicLinkUrl: (vgRaw.publicLinkUrl as string) || null,
+          embeddedUrl: (vgRaw.embeddedUrl as string) || null,
+          qrCodeUrl: (vgRaw.qrCodeUrl as string) || null,
+          pageStatus: (vgRaw.pageStatus as 'Active' | 'Archived') || null,
+        }
+      }
     }
   } catch {
     notFound()
@@ -50,5 +70,11 @@ export default async function GiftCardsPage() {
     redirect('/')
   }
 
-  return <GiftCardPurchaseClient bootstrap={bootstrap} slug={slug} />
+  return (
+    <GiftCardPurchaseClient
+      bootstrap={bootstrap}
+      slug={slug}
+      datacapVirtualGift={datacapVirtualGift}
+    />
+  )
 }

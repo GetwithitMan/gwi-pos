@@ -250,6 +250,8 @@ export interface PaymentSettings {
   acceptCredit: boolean
   acceptDebit: boolean
   acceptGiftCards: boolean
+  giftCardPoolMode: 'open' | 'pool' // 'open' = freeform (default), 'pool' = must come from imported pool
+  giftCardLowPoolThreshold: number  // Alert when pool drops below this count (default: 10)
   acceptHouseAccounts: boolean
   acceptHotelRoomCharge: boolean   // Bill to Room via Oracle OPERA PMS
 
@@ -1481,4 +1483,16 @@ export interface LocationSettings {
     surchargeAmount?: number
     surchargeName?: string
   }
+  datacapVirtualGift?: PublicDatacapVirtualGiftSettings     // Read-only Datacap Virtual Gift storefront state (MC writes, POS reads)
+}
+
+// Datacap Virtual Gift — public storefront state only (no secrets)
+// Secret fields (apiKey, webhookSecret, ecommerceMid) live in MC venue settings only
+export interface PublicDatacapVirtualGiftSettings {
+  enabled: boolean
+  pageId: string | null
+  publicLinkUrl: string | null
+  embeddedUrl: string | null
+  qrCodeUrl: string | null
+  pageStatus: 'Active' | 'Archived' | null
 }

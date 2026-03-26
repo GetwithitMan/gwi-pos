@@ -6,6 +6,9 @@ import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { sendGiftCardEmail } from '@/lib/gift-card-email'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { parseSettings } from '@/lib/settings'
+import { allocatePooledGiftCard } from '@/lib/domain/gift-cards/allocate-pooled-gift-card'
+import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
 
 // Generate a unique gift card number
 function generateCardNumber(): string {
@@ -113,70 +116,117 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       )
     }
 
-    // Generate unique card number
-    let cardNumber = generateCardNumber()
-    let attempts = 0
-    while (attempts < 10) {
-      const existing = await db.giftCard.findUnique({
-        where: { cardNumber }
+    // ── Check pool mode from location settings ──────────────────────────
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { name: true, address: true, settings: true },
+    })
+    const settings = parseSettings(location?.settings)
+    const isPoolMode = settings.payments?.giftCardPoolMode === 'pool'
+
+    let giftCard: Record<string, unknown>
+
+    if (isPoolMode) {
+      // ── Pool mode: allocate from pool and activate ──────────────────
+      const result = await db.$transaction(async (tx) => {
+        const allocation = await allocatePooledGiftCard(tx as any, locationId)
+        if (!allocation.success) {
+          return { success: false as const, error: allocation.error }
+        }
+
+        const activation = await activateGiftCard(tx as any, allocation.cardId as string, amount, ctx.auth.employeeId ?? 'system', {
+          recipientName,
+          recipientEmail,
+          recipientPhone,
+          purchaserName,
+          message,
+        })
+
+        if (!activation.success) {
+          return { success: false as const, error: activation.error }
+        }
+
+        // Also link the order if provided
+        if (orderId) {
+          await (tx as any).giftCard.update({
+            where: { id: allocation.cardId },
+            data: { orderId },
+          })
+        }
+
+        return { success: true as const, data: activation.data }
       })
-      if (!existing) break
-      cardNumber = generateCardNumber()
-      attempts++
+
+      if (!result.success) {
+        return NextResponse.json(
+          { error: result.error },
+          { status: 400 }
+        )
+      }
+
+      giftCard = result.data as Record<string, unknown>
+    } else {
+      // ── Open mode: generate random card number (existing behavior) ──
+      let cardNumber = generateCardNumber()
+      let attempts = 0
+      while (attempts < 10) {
+        const existing = await db.giftCard.findUnique({
+          where: { cardNumber }
+        })
+        if (!existing) break
+        cardNumber = generateCardNumber()
+        attempts++
+      }
+
+      const created = await db.giftCard.create({
+        data: {
+          locationId,
+          cardNumber,
+          initialBalance: amount,
+          currentBalance: amount,
+          status: 'active',
+          source: 'manual',
+          recipientName,
+          recipientEmail,
+          recipientPhone,
+          purchaserName,
+          message,
+          purchasedById,
+          orderId,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+          transactions: {
+            create: {
+              locationId,
+              type: 'purchase',
+              amount,
+              balanceBefore: 0,
+              balanceAfter: amount,
+              orderId,
+              employeeId: purchasedById,
+              notes: 'Initial purchase',
+            }
+          }
+        },
+        include: {
+          transactions: true,
+        }
+      })
+
+      giftCard = created as unknown as Record<string, unknown>
     }
 
-    const giftCard = await db.giftCard.create({
-      data: {
-        locationId,
-        cardNumber,
-        initialBalance: amount,
-        currentBalance: amount,
-        status: 'active',
-        recipientName,
-        recipientEmail,
-        recipientPhone,
-        purchaserName,
-        message,
-        purchasedById,
-        orderId,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
-        transactions: {
-          create: {
-            locationId,
-            type: 'purchase',
-            amount,
-            balanceBefore: 0,
-            balanceAfter: amount,
-            orderId,
-            employeeId: purchasedById,
-            notes: 'Initial purchase',
-          }
-        }
-      },
-      include: {
-        transactions: true,
-      }
-    })
-
     // Audit trail for gift card creation
-    console.log(`[AUDIT] GIFT_CARD_CREATED: card=${giftCard.cardNumber}, balance=$${Number(giftCard.initialBalance)}, by employee ${purchasedById}, orderId=${orderId || 'NONE'}`)
+    console.log(`[AUDIT] GIFT_CARD_CREATED: card=${giftCard.cardNumber}, balance=$${Number(giftCard.initialBalance)}, mode=${isPoolMode ? 'pool' : 'open'}, by employee ${purchasedById}, orderId=${orderId || 'NONE'}`)
 
-    void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created', entityId: giftCard.id })
+    void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created', entityId: giftCard.id as string })
     void pushUpstream()
 
     // Fire-and-forget: Send gift card email to recipient if email provided
     if (recipientEmail) {
-      // Look up location name for the email
-      const location = await db.location.findUnique({
-        where: { id: locationId },
-        select: { name: true, address: true },
-      })
-
       void sendGiftCardEmail({
         recipientEmail,
         recipientName: recipientName || undefined,
-        cardCode: giftCard.cardNumber,
+        cardCode: giftCard.cardNumber as string,
         balance: Number(giftCard.initialBalance),
         fromName: purchaserName || undefined,
         message: message || undefined,
