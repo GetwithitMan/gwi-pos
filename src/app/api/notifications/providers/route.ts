@@ -16,6 +16,116 @@ const log = createChildLogger('notifications-providers')
 
 export const dynamic = 'force-dynamic'
 
+/**
+ * Self-bootstrap: create notification tables if they don't exist.
+ * Handles the case where MC schema sync hasn't pushed these tables yet.
+ */
+let tablesBootstrapped = false
+async function ensureNotificationTables() {
+  if (tablesBootstrapped) return
+  try {
+    await db.$executeRawUnsafe(`SELECT 1 FROM "NotificationProvider" LIMIT 0`)
+    tablesBootstrapped = true
+  } catch {
+    // Table doesn't exist — create all notification tables
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "NotificationProvider" (
+        "id" TEXT NOT NULL,
+        "locationId" TEXT NOT NULL,
+        "providerType" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "isActive" BOOLEAN NOT NULL DEFAULT true,
+        "isDefault" BOOLEAN NOT NULL DEFAULT false,
+        "priority" INTEGER NOT NULL DEFAULT 0,
+        "executionZone" TEXT NOT NULL DEFAULT 'any',
+        "config" JSONB NOT NULL,
+        "configVersion" INTEGER NOT NULL DEFAULT 1,
+        "lastValidatedAt" TIMESTAMP(3),
+        "lastValidationResult" TEXT,
+        "capabilities" JSONB NOT NULL,
+        "healthStatus" TEXT NOT NULL DEFAULT 'healthy',
+        "lastHealthCheckAt" TIMESTAMP(3),
+        "consecutiveFailures" INTEGER NOT NULL DEFAULT 0,
+        "circuitBreakerOpenUntil" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "deletedAt" TIMESTAMP(3),
+        CONSTRAINT "NotificationProvider_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "NotificationProvider_locationId_isActive_idx" ON "NotificationProvider" ("locationId", "isActive")`)
+
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "NotificationRoutingRule" (
+        "id" TEXT NOT NULL,
+        "locationId" TEXT NOT NULL,
+        "eventType" TEXT NOT NULL,
+        "providerId" TEXT NOT NULL,
+        "targetType" TEXT NOT NULL,
+        "enabled" BOOLEAN NOT NULL DEFAULT true,
+        "priority" INTEGER NOT NULL DEFAULT 0,
+        "messageTemplateId" TEXT,
+        "condFulfillmentMode" TEXT,
+        "condHasPager" BOOLEAN,
+        "condHasPhone" BOOLEAN,
+        "condMinPartySize" INTEGER,
+        "condOrderTypes" TEXT[],
+        "condDuringBusinessHours" BOOLEAN,
+        "retryMaxAttempts" INTEGER NOT NULL DEFAULT 2,
+        "retryDelayMs" INTEGER NOT NULL DEFAULT 2000,
+        "retryBackoffMultiplier" DOUBLE PRECISION NOT NULL DEFAULT 1.5,
+        "retryOnTimeout" BOOLEAN NOT NULL DEFAULT false,
+        "fallbackProviderId" TEXT,
+        "escalateToStaff" BOOLEAN NOT NULL DEFAULT false,
+        "alsoEmitDisplayProjection" BOOLEAN NOT NULL DEFAULT false,
+        "stopProcessingAfterMatch" BOOLEAN NOT NULL DEFAULT false,
+        "cooldownSeconds" INTEGER NOT NULL DEFAULT 0,
+        "allowManualOverride" BOOLEAN NOT NULL DEFAULT true,
+        "criticalityClass" TEXT NOT NULL DEFAULT 'standard',
+        "effectiveStartAt" TIMESTAMP(3),
+        "effectiveEndAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "deletedAt" TIMESTAMP(3),
+        CONSTRAINT "NotificationRoutingRule_pkey" PRIMARY KEY ("id")
+      )
+    `)
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "NotificationRoutingRule_locationId_eventType_enabled_idx" ON "NotificationRoutingRule" ("locationId", "eventType", "enabled")`)
+
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "NotificationDevice" (
+        "id" TEXT NOT NULL,
+        "locationId" TEXT NOT NULL,
+        "providerId" TEXT NOT NULL,
+        "deviceNumber" TEXT NOT NULL,
+        "humanLabel" TEXT,
+        "deviceType" TEXT NOT NULL,
+        "status" TEXT NOT NULL,
+        "assignedToSubjectType" TEXT,
+        "assignedToSubjectId" TEXT,
+        "assignedAt" TIMESTAMP(3),
+        "releasedAt" TIMESTAMP(3),
+        "returnedAt" TIMESTAMP(3),
+        "batteryLevel" INTEGER,
+        "lastSeenAt" TIMESTAMP(3),
+        "lastSignalState" TEXT,
+        "capcode" TEXT,
+        "firmwareVersion" TEXT,
+        "dockId" TEXT,
+        "dockSlot" TEXT,
+        "metadata" JSONB,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "deletedAt" TIMESTAMP(3),
+        CONSTRAINT "NotificationDevice_pkey" PRIMARY KEY ("id")
+      )
+    `)
+
+    tablesBootstrapped = true
+    log.info('Self-bootstrapped notification tables')
+  }
+}
+
 const VALID_PROVIDER_TYPES = ['jtech', 'lrs', 'retekess', 'sms', 'display', 'shelf', 'voice', 'kiosk']
 
 const VALID_EXECUTION_ZONES = ['any', 'local_nuc', 'cloud']
@@ -205,6 +315,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_VIEW_LOG)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
+    await ensureNotificationTables()
+
     const providers: any[] = await db.$queryRawUnsafe(
       `SELECT id, "locationId", "providerType", name, "isActive", "isDefault",
               priority, "executionZone", config, "configVersion",
@@ -258,6 +370,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const actor = await getActorFromRequest(request)
     const auth = await requirePermission(actor.employeeId, locationId, PERMISSIONS.NOTIFICATIONS_MANAGE_PROVIDERS)
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+    await ensureNotificationTables()
 
     const body = await request.json()
     const {
