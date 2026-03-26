@@ -406,8 +406,8 @@ run_register() {
 
   # 1. Role
   echo "What role is this station?"
-  echo "  1) Server  — Runs POS app + database + kiosk"
-  echo "  2) Terminal — Kiosk only (connects to a server)"
+  echo "  1) Server  — Runs POS app + database + web UI (no kiosk)"
+  echo "  2) Terminal — Chromium kiosk (connects to a server)"
   echo "  3) Backup  — Hot standby (PG replication + VIP failover)"
   echo ""
   while true; do

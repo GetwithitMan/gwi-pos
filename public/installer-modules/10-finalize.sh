@@ -232,10 +232,16 @@ run_finalize() {
   cat > "$report_file" <<REPORT
 {
   "installId": "$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo unknown)",
+  "bootId": "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)",
   "deviceId": "${HARDWARE_FINGERPRINT:-unknown}",
   "venueId": "${LOCATION_ID:-unknown}",
+  "venueSlug": "${VENUE_SLUG:-unknown}",
   "installedAt": "$(date -u +%FT%TZ)",
   "installerVersion": "${INSTALLER_VERSION:-unknown}",
+  "installerGitSha": "${INSTALLER_GIT_SHA:-unknown}",
+  "moduleSource": "$([ -n "${RESUME_FROM:-}" ] && echo 'git-checkout' || echo 'embedded-payload')",
+  "resumedFrom": "${RESUME_FROM:-null}",
+  "dryRun": ${DRY_RUN:-false},
   "role": "${STATION_ROLE:-unknown}",
   "gitSha": "${_git_sha}",
   "commitDate": "${_commit_date}",

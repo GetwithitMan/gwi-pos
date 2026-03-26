@@ -618,12 +618,26 @@ json_escape() {
 _ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 _hostname=$(hostname 2>/dev/null || echo "unknown")
 _uptime=$(uptime -s 2>/dev/null || echo "unknown")
+_boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo "unknown")
 
 # Service statuses (active, failed, activating, inactive, not-found)
 _pos_status=$(systemctl is-active thepasspos 2>/dev/null || echo "not-found")
 _sync_status=$(systemctl is-active thepasspos-sync 2>/dev/null || echo "not-found")
 _dashboard_status=$(systemctl is-active gwi-dashboard 2>/dev/null || echo "not-found")
 _kiosk_status=$(systemctl is-active thepasspos-kiosk 2>/dev/null || echo "not-found")
+
+# Failed units (catch anything systemd considers broken)
+_failed_units_raw=$(systemctl --failed --no-legend --no-pager 2>/dev/null | awk '{print $1}' | head -10 | tr '\n' ',' || echo "none")
+_failed_units=$(json_escape "${_failed_units_raw%,}")
+
+# Kiosk/dashboard resolved environment (for display debugging)
+_kiosk_env_raw=$(systemctl show thepasspos-kiosk -p Environment --no-pager 2>/dev/null || echo "not-found")
+_kiosk_env=$(json_escape "$_kiosk_env_raw")
+_xauthority="${XAUTHORITY:-unset}"
+
+# loginctl session state
+_sessions_raw=$(loginctl list-sessions --no-legend --no-pager 2>/dev/null | head -5 || echo "none")
+_sessions=$(json_escape "$_sessions_raw")
 
 # POS health check
 _health_raw=$(curl -sf --max-time 10 http://localhost:3005/api/health 2>/dev/null || echo "unreachable")
@@ -665,6 +679,7 @@ fi
 printf '{\n' > "$OUT"
 printf '  "timestamp": "%s",\n' "$_ts" >> "$OUT"
 printf '  "hostname": "%s",\n' "$_hostname" >> "$OUT"
+printf '  "bootId": "%s",\n' "$_boot_id" >> "$OUT"
 printf '  "bootedAt": "%s",\n' "$_uptime" >> "$OUT"
 printf '  "services": {\n' >> "$OUT"
 printf '    "thepasspos": "%s",\n' "$_pos_status" >> "$OUT"
@@ -672,6 +687,7 @@ printf '    "thepasspos-sync": "%s",\n' "$_sync_status" >> "$OUT"
 printf '    "gwi-dashboard": "%s",\n' "$_dashboard_status" >> "$OUT"
 printf '    "thepasspos-kiosk": "%s"\n' "$_kiosk_status" >> "$OUT"
 printf '  },\n' >> "$OUT"
+printf '  "failedUnits": "%s",\n' "$_failed_units" >> "$OUT"
 printf '  "healthCheck": "%s",\n' "$_health" >> "$OUT"
 printf '  "ports": {\n' >> "$OUT"
 printf '    "3005": "%s",\n' "$_port_3005" >> "$OUT"
@@ -679,7 +695,10 @@ printf '    "5432": "%s"\n' "$_port_5432" >> "$OUT"
 printf '  },\n' >> "$OUT"
 printf '  "display": {\n' >> "$OUT"
 printf '    "DISPLAY": "%s",\n' "$_display" >> "$OUT"
-printf '    "x11Socket": "%s"\n' "$_x11_socket" >> "$OUT"
+printf '    "XAUTHORITY": "%s",\n' "$_xauthority" >> "$OUT"
+printf '    "x11Socket": "%s",\n' "$_x11_socket" >> "$OUT"
+printf '    "kioskEnv": "%s",\n' "$_kiosk_env" >> "$OUT"
+printf '    "sessions": "%s"\n' "$_sessions" >> "$OUT"
 printf '  },\n' >> "$OUT"
 printf '  "disk": {\n' >> "$OUT"
 printf '    "optFree": "%s",\n' "$_disk_free" >> "$OUT"
@@ -688,10 +707,15 @@ printf '  },\n' >> "$OUT"
 printf '  "journal": "%s",\n' "$_journal" >> "$OUT"
 printf '  "firstBootDone": %s,\n' "$_first_boot_done" >> "$OUT"
 printf '  "envExists": %s,\n' "$_env_exists" >> "$OUT"
-printf '  "envReadable": %s\n' "$_env_readable" >> "$OUT"
+printf '  "envReadable": %s,\n' "$_env_readable" >> "$OUT"
+# Overall boot health verdict
+_boot_healthy="false"
+[[ "$_pos_status" == "active" && "$_failed_units_raw" == "," ]] && _boot_healthy="true"
+[[ "$_pos_status" == "active" && "$_failed_units_raw" == "none" ]] && _boot_healthy="true"
+printf '  "bootHealthy": %s\n' "$_boot_healthy" >> "$OUT"
 printf '}\n' >> "$OUT"
 
-echo "[boot-diagnostic] Snapshot written to $OUT"
+echo "[boot-diagnostic] Snapshot written to $OUT (healthy=$_boot_healthy)"
 DIAGEOF
     chmod +x "$BOOT_DIAG_SCRIPT"
     chown "$POSUSER":"$POSUSER" "$BOOT_DIAG_SCRIPT"
