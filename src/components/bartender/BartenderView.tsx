@@ -1333,13 +1333,15 @@ export function BartenderView({
       pricingOptionLabel: item.pricingOptionLabel || null,
     }))
 
-    // Close UI instantly — don't wait for API calls
+    // Clear items from UI instantly — keep tab selected so subsequent items
+    // can be added without re-selecting the tab or triggering NewTabModal.
     toast.success('Order sent')
     useOrderStore.getState().clearOrder()
-    setSelectedTabId(null)
-    loadedTabIdRef.current = null
+    // Keep selectedTabId and loadedTabIdRef — do NOT clear them.
+    // The background send will reload the tab order when complete.
 
     // Fire-and-forget: append new items (if any) then send to kitchen in background
+    const tabIdForReload = orderId
     void (async () => {
       try {
         // Only POST if there are items not yet in DB
@@ -1366,6 +1368,41 @@ export function BartenderView({
       } finally {
         sendInProgressRef.current = false
         setTabRefreshTrigger(t => t + 1)
+        // Reload the tab order from server so the order panel shows the sent items
+        // and new items can be added to this tab without re-selecting it.
+        // Skip reload if user has already started adding new unsent items (don't clobber).
+        if (selectedTabIdRef.current === tabIdForReload) {
+          const freshStore = useOrderStore.getState()
+          const hasNewUnsent = (freshStore.currentOrder?.items || []).some(i => !i.sentToKitchen)
+          if (!hasNewUnsent) {
+            try {
+              const res = await fetch(`/api/orders/${tabIdForReload}?locationId=${locationId}`)
+              if (res.ok) {
+                const data = await res.json()
+                const order = data.data || data
+                useOrderStore.getState().loadOrder({
+                  id: order.id,
+                  orderNumber: order.orderNumber,
+                  orderType: order.orderType || 'bar_tab',
+                  tableId: order.tableId || undefined,
+                  tableName: order.tableName || order.table?.name || undefined,
+                  tabName: order.tabName || undefined,
+                  guestCount: order.guestCount || 1,
+                  status: order.status || 'open',
+                  items: order.items || [],
+                  subtotal: Number(order.subtotal) || 0,
+                  discountTotal: Number(order.discountTotal) || 0,
+                  taxTotal: Number(order.taxTotal) || 0,
+                  tipTotal: Number(order.tipTotal) || 0,
+                  total: Number(order.total) || 0,
+                })
+                loadedTabIdRef.current = tabIdForReload
+              }
+            } catch (reloadErr) {
+              console.error('[BartenderView] Failed to reload tab after send:', reloadErr)
+            }
+          }
+        }
       }
     })()
    
