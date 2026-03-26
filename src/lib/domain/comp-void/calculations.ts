@@ -20,11 +20,17 @@ type PriceValue = number | string | Decimal
  */
 export function calculateItemTotal(
   itemPrice: PriceValue,
-  modifiers: Array<{ price: PriceValue }>,
+  modifiers: Array<{ price: PriceValue; quantity?: number }>,
   quantity: number,
+  ingredientModifications?: Array<{ priceAdjustment: PriceValue }>,
 ): number {
-  const modifiersTotal = modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-  return (Number(itemPrice) + modifiersTotal) * quantity
+  const modifiersTotal = modifiers.reduce(
+    (sum, m) => sum + Number(m.price) * (Number(m.quantity) || 1), 0
+  )
+  const ingredientTotal = ingredientModifications
+    ? ingredientModifications.reduce((sum, ing) => sum + Number(ing.priceAdjustment), 0)
+    : 0
+  return (Number(itemPrice) + modifiersTotal + ingredientTotal) * quantity
 }
 
 // ─── Subtotal Split ─────────────────────────────────────────────────────────
@@ -44,15 +50,28 @@ export function calculateSubtotalSplit(
     price: PriceValue
     quantity: number
     isTaxInclusive?: boolean
-    modifiers: Array<{ price: PriceValue }>
+    modifiers: Array<{ price: PriceValue; quantity?: number }>
+    ingredientModifications?: Array<{ priceAdjustment: PriceValue }>
+    soldByWeight?: boolean
+    weight?: number | null
+    unitPrice?: PriceValue | null
   }>,
 ): SubtotalSplit {
   let inclusiveSubtotal = 0
   let exclusiveSubtotal = 0
 
   items.forEach(item => {
-    const mods = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-    const itemTotal = (Number(item.price) + mods) * item.quantity
+    // Weight-based items: use unitPrice * weight instead of stored price
+    const basePrice = item.soldByWeight && item.weight && item.unitPrice
+      ? roundToCents(Number(item.unitPrice) * Number(item.weight))
+      : Number(item.price)
+    const mods = item.modifiers.reduce(
+      (sum, m) => sum + Number(m.price) * (Number(m.quantity) || 1), 0
+    )
+    const ingredientTotal = item.ingredientModifications
+      ? item.ingredientModifications.reduce((sum, ing) => sum + Number(ing.priceAdjustment), 0)
+      : 0
+    const itemTotal = (basePrice + mods + ingredientTotal) * item.quantity
     if (item.isTaxInclusive === true) {
       inclusiveSubtotal += itemTotal
     } else {

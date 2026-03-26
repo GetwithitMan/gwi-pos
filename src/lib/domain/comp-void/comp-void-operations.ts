@@ -198,7 +198,7 @@ export async function applyCompVoid(
   // 4. Recalculate order totals
   const activeItems = await (tx as any).orderItem.findMany({
     where: { orderId, status: 'active' },
-    include: { modifiers: true },
+    include: { modifiers: { where: { deletedAt: null } }, ingredientModifications: true },
   })
 
   const split = calculateSubtotalSplit(activeItems)
@@ -323,7 +323,7 @@ export async function applyRestore(
   // 2. Recalculate order totals
   const activeItems = await (tx as any).orderItem.findMany({
     where: { orderId, status: 'active' },
-    include: { modifiers: true },
+    include: { modifiers: { where: { deletedAt: null } }, ingredientModifications: true },
   })
 
   const split = calculateSubtotalSplit(activeItems)

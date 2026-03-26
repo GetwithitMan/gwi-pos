@@ -13,6 +13,7 @@ import { checkOrderClaim } from '@/lib/order-claim'
 import { dispatchAlert } from '@/lib/alert-service'
 import { getLocationSettings } from '@/lib/location-cache'
 import { isDiscountable } from '@/lib/domain/order-status'
+import { roundToCents } from '@/lib/pricing'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
@@ -160,19 +161,25 @@ export const POST = withVenue(async function POST(
             orderItems,
             order.location.settings as { tax?: { defaultRate?: number } },
             newDiscountTotal,
-            0,
+            Number(order.tipTotal || 0),
             undefined,
             'card',
             order.isTaxExempt,
             Number(order.inclusiveTaxRate) || undefined
           )
 
+          const donationAmount = Number(order.donationAmount || 0)
+          const convenienceFee = Number(order.convenienceFee || 0)
+          const finalTotal = donationAmount > 0 || convenienceFee > 0
+            ? roundToCents(totals.total + donationAmount + convenienceFee)
+            : totals.total
+
           await OrderRepository.updateOrder(orderId, order.locationId, {
             discountTotal: totals.discountTotal,
             taxTotal: totals.taxTotal,
             taxFromInclusive: totals.taxFromInclusive,
             taxFromExclusive: totals.taxFromExclusive,
-            total: totals.total,
+            total: finalTotal,
             version: { increment: 1 },
             lastMutatedBy: mutationOrigin,
           }, tx)
@@ -185,7 +192,7 @@ export const POST = withVenue(async function POST(
               taxTotal: totals.taxTotal,
               tipTotal: Number(order.tipTotal),
               discountTotal: totals.discountTotal,
-              total: totals.total,
+              total: finalTotal,
               commissionTotal: Number(order.commissionTotal || 0),
             },
             timestamp: new Date().toISOString(),
@@ -211,7 +218,7 @@ export const POST = withVenue(async function POST(
             taxTotalCents: Math.round(totals.taxTotal * 100),
             discountTotalCents: Math.round(totals.discountTotal * 100),
             tipTotalCents: Math.round(Number(order.tipTotal) * 100),
-            totalCents: Math.round(totals.total * 100),
+            totalCents: Math.round(finalTotal * 100),
             itemCount: order.itemCount ?? 0,
             updatedAt: new Date().toISOString(),
             locationId: order.locationId,
@@ -236,7 +243,7 @@ export const POST = withVenue(async function POST(
             })),
             subtotal: totals.subtotal,
             tax: totals.taxTotal,
-            total: totals.total,
+            total: finalTotal,
             discountTotal: totals.discountTotal,
             taxFromInclusive: totals.taxFromInclusive,
             taxFromExclusive: totals.taxFromExclusive,
@@ -249,7 +256,7 @@ export const POST = withVenue(async function POST(
               subtotal: totals.subtotal,
               discountTotal: totals.discountTotal,
               taxTotal: totals.taxTotal,
-              total: totals.total,
+              total: finalTotal,
             },
           } })
         }
@@ -495,14 +502,20 @@ export const POST = withVenue(async function POST(
         isTaxInclusive: (i as any).isTaxInclusive ?? false,
         modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
       }))
-      const totals = calculateOrderTotals(applyItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, 0, undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
+      const totals = calculateOrderTotals(applyItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
+
+      const applyDonationAmount = Number(order.donationAmount || 0)
+      const applyConvenienceFee = Number(order.convenienceFee || 0)
+      const applyFinalTotal = applyDonationAmount > 0 || applyConvenienceFee > 0
+        ? roundToCents(totals.total + applyDonationAmount + applyConvenienceFee)
+        : totals.total
 
       await OrderRepository.updateOrder(orderId, order.locationId, {
         discountTotal: totals.discountTotal,
         taxTotal: totals.taxTotal,
         taxFromInclusive: totals.taxFromInclusive,
         taxFromExclusive: totals.taxFromExclusive,
-        total: totals.total,
+        total: applyFinalTotal,
         version: { increment: 1 },
         lastMutatedBy: mutationOrigin,
       }, tx)
@@ -524,7 +537,7 @@ export const POST = withVenue(async function POST(
           taxTotal: totals.taxTotal,
           tipTotal: Number(order.tipTotal),
           discountTotal: totals.discountTotal,
-          total: totals.total,
+          total: applyFinalTotal,
           commissionTotal: Number(order.commissionTotal || 0),
         },
         timestamp: new Date().toISOString(),
@@ -550,7 +563,7 @@ export const POST = withVenue(async function POST(
         taxTotalCents: Math.round(totals.taxTotal * 100),
         discountTotalCents: Math.round(totals.discountTotal * 100),
         tipTotalCents: Math.round(Number(order.tipTotal) * 100),
-        totalCents: Math.round(totals.total * 100),
+        totalCents: Math.round(applyFinalTotal * 100),
         itemCount: order.itemCount ?? 0,
         updatedAt: new Date().toISOString(),
         locationId: order.locationId,
@@ -569,7 +582,7 @@ export const POST = withVenue(async function POST(
         })),
         subtotal: totals.subtotal,
         tax: totals.taxTotal,
-        total: totals.total,
+        total: applyFinalTotal,
         discountTotal: totals.discountTotal,
         taxFromInclusive: totals.taxFromInclusive,
         taxFromExclusive: totals.taxFromExclusive,
@@ -595,7 +608,7 @@ export const POST = withVenue(async function POST(
           subtotal: totals.subtotal,
           discountTotal: totals.discountTotal,
           taxTotal: totals.taxTotal,
-          total: totals.total,
+          total: applyFinalTotal,
         },
         requiresApproval,
       } })
@@ -831,14 +844,20 @@ export const DELETE = withVenue(async function DELETE(
         isTaxInclusive: (i as any).isTaxInclusive ?? false,
         modifiers: i.modifiers.map(m => ({ price: Number(m.price), quantity: m.quantity ?? 1 })),
       }))
-      const totals = calculateOrderTotals(deleteItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, 0, undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
+      const totals = calculateOrderTotals(deleteItems, order.location.settings as { tax?: { defaultRate?: number } }, newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt, Number(order.inclusiveTaxRate) || undefined)
+
+      const delDonationAmount = Number(order.donationAmount || 0)
+      const delConvenienceFee = Number(order.convenienceFee || 0)
+      const delFinalTotal = delDonationAmount > 0 || delConvenienceFee > 0
+        ? roundToCents(totals.total + delDonationAmount + delConvenienceFee)
+        : totals.total
 
       await OrderRepository.updateOrder(orderId, order.locationId, {
         discountTotal: totals.discountTotal,
         taxTotal: totals.taxTotal,
         taxFromInclusive: totals.taxFromInclusive,
         taxFromExclusive: totals.taxFromExclusive,
-        total: totals.total,
+        total: delFinalTotal,
         version: { increment: 1 },
         lastMutatedBy: deleteMutationOrigin,
       }, tx)
@@ -856,7 +875,7 @@ export const DELETE = withVenue(async function DELETE(
           taxTotal: totals.taxTotal,
           tipTotal: Number(order.tipTotal),
           discountTotal: totals.discountTotal,
-          total: totals.total,
+          total: delFinalTotal,
           commissionTotal: Number(order.commissionTotal || 0),
         },
         timestamp: new Date().toISOString(),
@@ -882,7 +901,7 @@ export const DELETE = withVenue(async function DELETE(
         taxTotalCents: Math.round(totals.taxTotal * 100),
         discountTotalCents: Math.round(totals.discountTotal * 100),
         tipTotalCents: Math.round(Number(order.tipTotal) * 100),
-        totalCents: Math.round(totals.total * 100),
+        totalCents: Math.round(delFinalTotal * 100),
         itemCount: order.itemCount ?? 0,
         updatedAt: new Date().toISOString(),
         locationId: order.locationId,
@@ -901,7 +920,7 @@ export const DELETE = withVenue(async function DELETE(
         })),
         subtotal: totals.subtotal,
         tax: totals.taxTotal,
-        total: totals.total,
+        total: delFinalTotal,
         discountTotal: totals.discountTotal,
         taxFromInclusive: totals.taxFromInclusive,
         taxFromExclusive: totals.taxFromExclusive,
@@ -913,7 +932,7 @@ export const DELETE = withVenue(async function DELETE(
           subtotal: totals.subtotal,
           discountTotal: totals.discountTotal,
           taxTotal: totals.taxTotal,
-          total: totals.total,
+          total: delFinalTotal,
         },
       } }), locationId: order.locationId }
     })

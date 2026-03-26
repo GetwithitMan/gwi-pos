@@ -53,8 +53,11 @@ export async function handleTipChargeback(params: {
   locationId: string
   paymentId: string
   memo?: string
+  /** When set, only reverse this many cents of the original tip (for partial refunds).
+   *  When omitted, reverses the FULL original tip amount (for full refunds/voids). */
+  tipReductionCents?: number
 }): Promise<ChargebackResult> {
-  const { locationId, paymentId, memo } = params
+  const { locationId, paymentId, memo, tipReductionCents } = params
 
   // ── 1. Find TipTransaction(s) for this payment ─────────────────────────
   const tipTransactions = await db.tipTransaction.findMany({
@@ -83,7 +86,7 @@ export async function handleTipChargeback(params: {
     return handleBusinessAbsorbs(tipTxn, tipTransactions)
   }
 
-  return handleEmployeeChargeback(tipTxn, tipTransactions, settings, memo)
+  return handleEmployeeChargeback(tipTxn, tipTransactions, settings, memo, tipReductionCents)
 }
 
 // ─── Policy Handlers ─────────────────────────────────────────────────────────
@@ -125,7 +128,8 @@ async function handleEmployeeChargeback(
   primaryTxn: TipTransactionRecord,
   allTxns: TipTransactionRecord[],
   settings: TipBankSettings,
-  memo?: string
+  memo?: string,
+  tipReductionCents?: number
 ): Promise<ChargebackResult> {
   const txnIds = allTxns.map((t) => t.id)
 
@@ -141,19 +145,45 @@ async function handleEmployeeChargeback(
     },
   })
 
+  // ── Calculate proportional debit amounts per CREDIT entry ─────────────
+  // When tipReductionCents is set (partial refund), distribute the reduction
+  // proportionally across all CREDIT entries instead of reversing each fully.
+  const totalOriginalCreditCents = creditEntries.reduce(
+    (sum, c) => sum + Math.max(0, Number(c.amountCents)),
+    0
+  )
+
   const resultEntries: ChargebackResult['entries'] = []
   let totalChargedBack = 0
   let totalFlaggedForReview = 0
 
+  // Track remaining reduction for rounding (last entry absorbs remainder)
+  let remainingReduction = tipReductionCents ?? totalOriginalCreditCents
+
   // ── Create a DEBIT for each CREDIT entry ──────────────────────────────
-  for (const credit of creditEntries) {
+  for (let i = 0; i < creditEntries.length; i++) {
+    const credit = creditEntries[i]
     // The credit amountCents is stored as a positive signed value
     const originalCreditCents = Number(credit.amountCents)
 
     // Skip zero or negative entries (should not happen, but be safe)
     if (originalCreditCents <= 0) continue
 
-    let debitCents = originalCreditCents
+    // Calculate this entry's proportional share of the reduction
+    let debitCents: number
+    if (tipReductionCents !== undefined && totalOriginalCreditCents > 0) {
+      // Partial refund: proportional debit
+      if (i === creditEntries.length - 1) {
+        // Last entry absorbs rounding remainder
+        debitCents = remainingReduction
+      } else {
+        debitCents = Math.round(tipReductionCents * (originalCreditCents / totalOriginalCreditCents))
+        remainingReduction -= debitCents
+      }
+    } else {
+      // Full refund/void: reverse the entire CREDIT
+      debitCents = originalCreditCents
+    }
     let cappedAtBalance = false
 
     // If negative balances are not allowed, cap at current balance

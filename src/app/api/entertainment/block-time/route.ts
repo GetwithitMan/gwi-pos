@@ -8,6 +8,9 @@ import type { OvertimeConfig } from '@/lib/entertainment-pricing'
 
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('entertainment-block-time')
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
@@ -213,7 +216,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       entertainmentStatus: 'in_use',
       currentOrderId: orderItem.orderId,
       expiresAt: expiresAt.toISOString(),
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Emit session update for KDS Pit Boss + Android timers (includes startedAt)
     void dispatchEntertainmentUpdate(orderItem.order.locationId, {
@@ -223,7 +226,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action: 'started',
       expiresAt: expiresAt.toISOString(),
       startedAt: updatedItem.blockTimeStartedAt?.toISOString() ?? null,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Audit trail: session started
     void db.auditLog.create({
@@ -416,7 +419,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       entertainmentStatus: 'in_use',
       currentOrderId: orderItem.orderId,
       expiresAt: newExpiresAt.toISOString(),
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Emit session update for KDS Pit Boss + Android timers (includes startedAt)
     void dispatchEntertainmentUpdate(orderItem.order.locationId, {
@@ -427,7 +430,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       expiresAt: newExpiresAt.toISOString(),
       startedAt: updatedItem.blockTimeStartedAt?.toISOString() ?? null,
       addedMinutes: additionalMinutes,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Audit trail: session extended
     void db.auditLog.create({
@@ -574,7 +577,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       entertainmentStatus: 'in_use',
       currentOrderId: orderItem.orderId,
       expiresAt: parsedExpiresAt.toISOString(),
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Emit session update for KDS Pit Boss + Android timers
     void dispatchEntertainmentUpdate(orderItem.order.locationId, {
@@ -584,7 +587,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       action: 'time_override',
       expiresAt: parsedExpiresAt.toISOString(),
       startedAt: txResult.blockTimeStartedAt?.toISOString() ?? null,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Audit trail: management time override
     void db.auditLog.create({
@@ -759,7 +762,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       entertainmentStatus: 'available',
       currentOrderId: null,
       expiresAt: null,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Emit session update for KDS Pit Boss + Android timers
     const socketAction = reason === 'comp' ? 'comped' as const
@@ -774,10 +777,10 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       action: socketAction,
       expiresAt: null,
       startedAt: null,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Auto-notify next waitlist entry for this entertainment item
-    void notifyNextWaitlistEntry(orderItem.order.locationId, orderItem.menuItemId, itemName).catch(() => {})
+    void notifyNextWaitlistEntry(orderItem.order.locationId, orderItem.menuItemId, itemName).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // Audit trail: management override action
     const auditAction = reason === 'comp' ? 'entertainment_session_comped'

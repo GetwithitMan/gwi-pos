@@ -212,6 +212,7 @@ export const POST = withVenue(async function POST(
     }
 
     let voidedPayment
+    let recalculatedTipTotal = Number(order.tipTotal)
     try {
       voidedPayment = await db.$transaction(async (tx) => {
         // Acquire row locks on Order + Payment + synchronous replication for void durability
@@ -239,6 +240,19 @@ export const POST = withVenue(async function POST(
         // 2. Update order status
         await OrderRepository.updateOrder(orderId, order.locationId, {
           status: newOrderStatus,
+          lastMutatedBy: mutationOrigin,
+        }, tx)
+
+        // 2b. Recalculate tipTotal from remaining non-voided payments
+        const remainingPayments = await tx.payment.findMany({
+          where: { orderId, status: 'completed', deletedAt: null },
+          select: { tipAmount: true },
+        })
+        const newTipTotal = remainingPayments.reduce((sum, p) => sum + Number(p.tipAmount || 0), 0)
+        recalculatedTipTotal = newTipTotal
+
+        await OrderRepository.updateOrder(orderId, order.locationId, {
+          tipTotal: newTipTotal,
           lastMutatedBy: mutationOrigin,
         }, tx)
 
@@ -365,7 +379,7 @@ export const POST = withVenue(async function POST(
     void dispatchOrderTotalsUpdate(order.locationId, orderId, {
       subtotal: Number(order.subtotal),
       taxTotal: Number(order.taxTotal),
-      tipTotal: Number(order.tipTotal),
+      tipTotal: recalculatedTipTotal,
       discountTotal: Number(order.discountTotal),
       total: Number(order.total),
     }, { async: true }).catch(() => {})

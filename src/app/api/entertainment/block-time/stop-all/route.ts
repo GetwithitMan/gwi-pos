@@ -9,6 +9,9 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 
 import { stopAllSessions } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('entertainment-stop-all')
 
 // POST - Force-stop all active entertainment sessions (closing time)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -162,7 +165,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         entertainmentStatus: 'available',
         currentOrderId: null,
         expiresAt: null,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
       // Emit session update for KDS Pit Boss + Android timers
       void dispatchEntertainmentUpdate(locationId, {
@@ -172,7 +175,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         action: 'force_stopped',
         expiresAt: null,
         startedAt: null,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
     }
 
     // Dispatch floor plan update once (covers all elements)

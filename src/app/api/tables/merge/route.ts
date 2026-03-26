@@ -7,6 +7,9 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('tables-merge')
 
 /**
  * POST /api/tables/merge
@@ -121,7 +124,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     // --- Socket events (fire-and-forget) ---
     void dispatchTableStatusChanged(locationId, { tableId: sourceTableId, status: 'available' }).catch(console.error)
-    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     for (const order of openOrders) {
       void dispatchOpenOrdersChanged(locationId, {
@@ -129,13 +132,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         orderId: order.id,
         tableId: targetTableId,
         orderNumber: order.orderNumber,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
       void emitOrderEvent(locationId, order.id, 'ORDER_METADATA_UPDATED', {
         tableId: targetTableId,
         tableName: targetTable.name,
         mergedFrom: sourceTable.name,
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
     }
 
     return NextResponse.json({

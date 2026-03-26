@@ -428,11 +428,15 @@ export const POST = withVenue(async function POST(
             tipTotalCents: Math.round(tipReductionResult.newOrderTipTotal * 100),
           }).catch(console.error)
 
-          // Trigger tip chargeback for the proportional amount
+          // Trigger tip chargeback for the proportional amount only.
+          // Pass tipReductionCents so chargeback creates proportional DEBITs
+          // instead of reversing the full original CREDIT amounts.
+          const tipReductionCents = Math.round(tipReductionResult.tipReduction * 100)
           void handleTipChargeback({
             locationId: order.locationId,
             paymentId,
             memo: `Partial refund ($${refundAmount.toFixed(2)}): proportional tip reduction of $${tipReductionResult.tipReduction.toFixed(2)}`,
+            tipReductionCents,
           }).catch(err => {
             console.warn('[refund-payment] Tip chargeback skipped or failed:', err.message)
           })

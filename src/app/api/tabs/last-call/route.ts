@@ -16,6 +16,9 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('tabs-last-call')
 
 /**
  * GET /api/tabs/last-call
@@ -220,7 +223,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             batchClose: true,
           })
 
-          void dispatchTabUpdated(locationId, { orderId: tab.id, status: 'closed' }).catch(() => {})
+          void dispatchTabUpdated(locationId, { orderId: tab.id, status: 'closed' }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
           dispatchTabClosed(locationId, { orderId: tab.id, total: 0, tipAmount: 0 })
 
           closedCount++
@@ -309,7 +312,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             closedStatus: 'paid',
           })
 
-          void dispatchTabUpdated(locationId, { orderId: tab.id, status: 'closed' }).catch(() => {})
+          void dispatchTabUpdated(locationId, { orderId: tab.id, status: 'closed' }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
           dispatchTabStatusUpdate(locationId, { orderId: tab.id, status: 'closed' })
           dispatchTabClosed(locationId, {
             orderId: tab.id,
@@ -328,7 +331,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // ── Dispatch bulk refresh ──
-    void dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any }, { async: true }).catch(() => {})
+    void dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any }, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     // ── Sync upstream ──
     void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })

@@ -6,6 +6,10 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDriverSessionStatus } from '@/lib/delivery/state-machine'
+import { dispatchDriverLocationUpdate } from '@/lib/delivery/dispatch-events'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('delivery-driver-status')
 
 export const dynamic = 'force-dynamic'
 
@@ -94,6 +98,14 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
       if (updated.length) {
         session = updated[0]
+
+        // Fire socket event for real-time map tracking
+        void dispatchDriverLocationUpdate(locationId, {
+          driverId: session.driverId,
+          lat: latNum,
+          lng: lngNum,
+          recordedAt: new Date().toISOString(),
+        }).catch(err => log.warn({ err }, 'GPS location dispatch failed'))
       }
     }
 
