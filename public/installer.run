@@ -11,7 +11,7 @@
 #   Terminal — Chromium kiosk pointing at server + x11vnc + RealVNC
 #
 # Usage:
-#   curl -fsSL https://app.thepasspos.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
+#   curl -fsSL https://ordercontrolcenter.com/installer.run -o installer.run && chmod +x installer.run && sudo ./installer.run
 #
 # Resume after failure:
 #   sudo ./installer.run --resume-from=schema
@@ -45,7 +45,9 @@ INSTALLER_GIT_SHA="2feb7827"
 # Never run stale code. Every install, every update, every --resume-from.
 # Skip only if --skip-self-update is passed (for the re-exec after update).
 # ─────────────────────────────────────────────────────────────────────────────
-_SELF_UPDATE_URL="https://app.thepasspos.com/installer.run"
+# Installer is built + bundled in the POS Vercel deployment (vercel-build.js).
+# DO NOT serve from MC — MC has an unbundled copy without embedded modules.
+_SELF_UPDATE_URL="https://ordercontrolcenter.com/installer.run"
 _SKIP_SELF_UPDATE=false
 for _arg in "$@"; do
   [[ "$_arg" == "--skip-self-update" ]] && _SKIP_SELF_UPDATE=true
@@ -265,7 +267,7 @@ if grep -q '^__MODULES_PAYLOAD__$' "$0"; then
   log "Extracted $(ls "$MODULES_DIR"/*.sh | wc -l) modules"
 else
   err "No embedded payload in installer.run"
-  err "Download the full installer: curl -fsSL https://app.thepasspos.com/installer.run"
+  err "Download the full installer: curl -fsSL https://ordercontrolcenter.com/installer.run"
   exit 1
 fi
 
@@ -353,7 +355,7 @@ check_installer_update() {
     log "Downloading latest installer..."
 
     local new_installer="/tmp/installer-${remote_version}.run"
-    if curl -fsSL "${mc_url}/installer.run" -o "$new_installer" 2>/dev/null; then
+    if curl -fsSL "$_SELF_UPDATE_URL" -o "$new_installer" 2>/dev/null; then
       chmod +x "$new_installer"
       # Verify the new one has the expected version
       local new_ver
