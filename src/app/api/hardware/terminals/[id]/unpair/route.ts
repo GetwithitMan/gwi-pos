@@ -37,6 +37,15 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       },
     })
 
+    // Clear CellularDevice record so the fingerprint doesn't block re-pairing.
+    // Without this, the old ACTIVE record persists in Neon and the device
+    // can't obtain a new cellular JWT on re-pair.
+    void db.$executeRawUnsafe(
+      `DELETE FROM "CellularDevice" WHERE "terminalId" = $1 AND "locationId" = $2`,
+      id,
+      terminal.locationId
+    ).catch(err => console.warn('[unpair] CellularDevice cleanup failed (non-fatal):', err instanceof Error ? err.message : err))
+
     void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 
