@@ -4,6 +4,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/inventory/deduction-queue — list pending deductions with summary
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -145,6 +147,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           lastError: null,
         },
       })
+
+      void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: updated.id })
+      pushUpstream()
 
       return NextResponse.json({
         data: { id: updated.id, status: updated.status },

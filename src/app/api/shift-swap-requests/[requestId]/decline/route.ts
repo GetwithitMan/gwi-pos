@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('shift-swap-requests-decline')
 
@@ -65,6 +65,8 @@ export const POST = withVenue(withAuth(async function POST(
       }
       throw err
     }
+
+    pushUpstream()
 
     // Socket event
     void dispatchShiftRequestUpdate(locationId, {

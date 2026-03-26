@@ -12,6 +12,7 @@ import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { OrderRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-reopen')
 
@@ -376,6 +377,8 @@ export const POST = withVenue(async function POST(
     if (order.tableId) {
       void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

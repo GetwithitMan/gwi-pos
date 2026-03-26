@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get single prep item
 export const GET = withVenue(async function GET(
@@ -154,6 +156,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+    pushUpstream()
+
     return NextResponse.json({ data: {
       prepItem: {
         ...prepItem,
@@ -203,6 +208,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

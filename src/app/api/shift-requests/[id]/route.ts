@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('shift-requests')
 
@@ -72,6 +73,7 @@ export const PUT = withVenue(async function PUT(
         updateData.requestedToEmployeeId = resolvedEmployeeId
       }
       const updated = await db.shiftSwapRequest.update({ where: { id: requestId }, data: updateData })
+      pushUpstream()
       void dispatchShiftRequestUpdate(locationId, {
         action: 'accepted', requestId, type: requestType,
         requestedByEmployeeId: swapRequest.requestedByEmployeeId,
@@ -100,6 +102,7 @@ export const PUT = withVenue(async function PUT(
         where: { id: requestId },
         data: { status: 'rejected', respondedAt: now, declineReason: reason || null },
       })
+      pushUpstream()
       void dispatchShiftRequestUpdate(locationId, {
         action: 'declined', requestId, type: requestType,
         requestedByEmployeeId: swapRequest.requestedByEmployeeId,
@@ -132,6 +135,7 @@ export const PUT = withVenue(async function PUT(
           where: { shiftId: swapRequest.shiftId, status: 'pending', id: { not: requestId }, deletedAt: null },
           data: { status: 'cancelled' },
         })
+        pushUpstream()
         void dispatchShiftRequestUpdate(locationId, {
           action: 'approved', requestId, type: 'drop',
           requestedByEmployeeId: swapRequest.requestedByEmployeeId,
@@ -172,6 +176,7 @@ export const PUT = withVenue(async function PUT(
         where: { shiftId: swapRequest.shiftId, status: 'pending', id: { not: requestId }, deletedAt: null },
         data: { status: 'cancelled' },
       })
+      pushUpstream()
       void dispatchShiftRequestUpdate(locationId, {
         action: 'approved', requestId, type: requestType,
         requestedByEmployeeId: swapRequest.requestedByEmployeeId,
@@ -197,6 +202,7 @@ export const PUT = withVenue(async function PUT(
         approvedAt: now,
       },
     })
+    pushUpstream()
     void dispatchShiftRequestUpdate(locationId, {
       action: 'rejected', requestId, type: requestType,
       requestedByEmployeeId: swapRequest.requestedByEmployeeId,
@@ -247,6 +253,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id: requestId },
       data: { deletedAt: new Date(), status: 'cancelled' },
     })
+
+    pushUpstream()
 
     void dispatchShiftRequestUpdate(locationId, {
       action: 'cancelled', requestId, type: requestType,

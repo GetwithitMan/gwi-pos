@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-sync')
 
@@ -281,6 +282,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         })),
       ]).catch(err => log.warn({ err }, 'Background task failed'))
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

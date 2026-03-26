@@ -15,6 +15,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { OPEN_ORDER_STATUSES } from '@/lib/domain/order-status'
 import type { OrderStatus } from '@/generated/prisma/client'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('shifts-transfer-orders')
 
@@ -184,6 +185,9 @@ export const POST = withVenue(async function POST(
 
       return { transferred: openOrders.length, orders: openOrders }
     })
+
+    // Push DB changes upstream to Neon (fire-and-forget)
+    pushUpstream()
 
     // ── Emit order events for each transferred order (fire-and-forget) ──
     if (result.orders.length > 0) {

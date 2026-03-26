@@ -5,7 +5,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('shift-swap-requests-approve')
 
@@ -127,6 +127,8 @@ export const POST = withVenue(withAuth(async function POST(
         throw err
       }
 
+      pushUpstream()
+
       // Socket event
       void dispatchShiftRequestUpdate(locationId, {
         action: 'approved',
@@ -181,6 +183,8 @@ export const POST = withVenue(withAuth(async function POST(
       }
       throw err
     }
+
+    pushUpstream()
 
     // Socket event
     void dispatchShiftRequestUpdate(locationId, {

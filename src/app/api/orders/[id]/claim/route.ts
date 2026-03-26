@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderClaimed, dispatchOrderReleased } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-claim')
 
@@ -126,6 +127,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       claimedAt: now.toISOString(),
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
+    pushUpstream()
+
     return NextResponse.json({ claimed: true })
   } catch (error) {
     console.error('Failed to claim order:', error)
@@ -217,6 +220,8 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     void dispatchOrderReleased(result.locationId, {
       orderId,
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     return NextResponse.json({ released: true })
   } catch (error) {

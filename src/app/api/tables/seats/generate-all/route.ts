@@ -4,6 +4,7 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { generateSeatPositions as generateSeatPositionsFromLib, type SeatPattern as LibSeatPattern } from '@/lib/seat-generation'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // Helper function to generate seat labels
 function getLabel(index: number): string {
@@ -140,6 +141,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       })
 
     }
+
+    pushUpstream()
 
     dispatchFloorPlanUpdate(locationId, { async: true })
 

@@ -5,6 +5,7 @@ import { getActorFromRequest } from '@/lib/api-auth'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { Prisma } from '@/generated/prisma/client'
 import type { ShiftRequestType, ShiftSwapRequestStatus } from '@/generated/prisma/client'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('shift-requests')
 
@@ -217,6 +218,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    pushUpstream()
 
     // Socket event
     void dispatchShiftRequestUpdate(locationId, {

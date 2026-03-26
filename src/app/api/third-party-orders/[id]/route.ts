@@ -18,6 +18,7 @@ import { createPosOrderFromDelivery, dispatchDeliveryEvent } from '@/lib/deliver
 import type { DeliveryPlatform, PlatformItem } from '@/lib/delivery/order-mapper'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
 import type { DeliveryPlatformId } from '@/lib/delivery/clients/types'
 
@@ -174,6 +175,8 @@ export const PUT = withVenue(async function PUT(
             .catch(err => console.error(`[third-party-orders] Failed to confirm ${platform} order:`, err))
         }
 
+        pushUpstream()
+
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {
           thirdPartyOrderId: id,
           platform,
@@ -193,6 +196,8 @@ export const PUT = withVenue(async function PUT(
            WHERE "id" = $1`,
           id,
         )
+
+        pushUpstream()
 
         // Notify platform of rejection (best-effort, don't block response)
         const rejectSettings = parseSettings(await getLocationSettings(locationId))
@@ -220,6 +225,8 @@ export const PUT = withVenue(async function PUT(
            WHERE "id" = $1`,
           id,
         )
+
+        pushUpstream()
 
         // Notify platform that order is ready for pickup (best-effort)
         const readySettings = parseSettings(await getLocationSettings(locationId))
@@ -257,6 +264,8 @@ export const PUT = withVenue(async function PUT(
           newStatus,
           id,
         )
+
+        pushUpstream()
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {
           thirdPartyOrderId: id,

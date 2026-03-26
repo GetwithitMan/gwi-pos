@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -159,6 +160,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
       return cancelledReservations
     })
+
+    pushUpstream()
 
     // In production, send notifications here if notifyGuests is true
     // This would integrate with email/SMS service

@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('entertainment-waitlist-deposit')
 
@@ -86,6 +87,8 @@ export const POST = withVenue(withAuth(async function POST(
         },
       })
 
+      pushUpstream()
+
       // Emit socket event (fire-and-forget)
       const elementName = entry.element?.name || entry.element?.visualType || null
       void dispatchEntertainmentWaitlistNotify(locationId, {
@@ -143,6 +146,8 @@ export const POST = withVenue(withAuth(async function POST(
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
+
+    pushUpstream()
 
     // Emit socket event (fire-and-forget)
     const elementName = entry.element?.name || entry.element?.visualType || null
@@ -263,6 +268,8 @@ export const DELETE = withVenue(withAuth(async function DELETE(
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
+
+    pushUpstream()
 
     // Emit socket event (fire-and-forget)
     const elementName = entry.element?.name || entry.element?.visualType || null

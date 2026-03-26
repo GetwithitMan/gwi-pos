@@ -19,7 +19,7 @@ import {
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('tips-payouts')
 
@@ -119,6 +119,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       }
       throw err
     }
+
+    pushUpstream()
 
     // Emit cloud event for tip payout (fire-and-forget)
     void emitCloudEvent("tip_settled", {

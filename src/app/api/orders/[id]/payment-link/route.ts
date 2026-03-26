@@ -19,6 +19,7 @@ import { parseSettings, type TextToPaySettings, DEFAULT_TEXT_TO_PAY } from '@/li
 import { sendSMS } from '@/lib/twilio'
 import { sendEmail } from '@/lib/email-service'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 const CreatePaymentLinkSchema = z.object({
   employeeId: z.string().min(1),
@@ -187,6 +188,8 @@ export const POST = withVenue(async (
         html: buildPaymentLinkEmail(location.name, payUrl, balance, expMinutes),
       }).catch(err => console.error('[text-to-pay] Email send failed:', err))
     }
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

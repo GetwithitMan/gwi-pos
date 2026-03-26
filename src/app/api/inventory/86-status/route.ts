@@ -6,6 +6,8 @@ import { emitToLocation } from '@/lib/socket-server'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('inventory-86-status')
 
@@ -350,6 +352,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       affectedMenuItemIds: affectedMenuItems.map(m => m.id),
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
+    void notifyDataChanged({ locationId: ingredient.locationId, domain: 'inventory', action: 'updated', entityId: updated.id })
+    pushUpstream()
+
     return NextResponse.json({
       data: {
         ingredient: {
@@ -411,6 +416,9 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
         showOnQuick86: true
       }
     })
+
+    void notifyDataChanged({ locationId: ingredientForAuth.locationId, domain: 'inventory', action: 'updated', entityId: updated.id })
+    pushUpstream()
 
     return NextResponse.json({
       data: {

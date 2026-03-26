@@ -10,6 +10,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDeliveryStatus, writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery')
 
@@ -185,6 +186,8 @@ export const PUT = withVenue(async function PUT(
         }).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
+      pushUpstream()
+
       return NextResponse.json({
         data: {
           ...delivery,
@@ -311,6 +314,8 @@ export const PUT = withVenue(async function PUT(
       previousValue: previousValues,
       newValue: changes,
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     // Fire-and-forget socket dispatch
     void emitToLocation(locationId, 'delivery:updated', {

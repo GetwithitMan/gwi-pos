@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-add-ha-payment')
 
@@ -216,6 +217,8 @@ export const POST = withVenue(async function POST(
       discountTotal,
       total: newTotal,
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     return NextResponse.json({
       success: true,

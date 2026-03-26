@@ -10,6 +10,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.bottle-service')
@@ -207,6 +208,8 @@ export const POST = withVenue(async function POST(
       orderId,
       changes: ['bottle-service', 'tabStatus'],
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.bottle-service'))
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

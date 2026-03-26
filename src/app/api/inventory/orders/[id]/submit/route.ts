@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Submit PO: draft → sent
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -42,6 +44,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       where: { id },
       data: { status: 'sent' },
     })
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: id })
+    pushUpstream()
 
     return NextResponse.json({ data: { id, status: 'sent' } })
   } catch (error) {

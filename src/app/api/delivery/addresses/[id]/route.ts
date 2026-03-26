@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-addresses')
 
@@ -228,6 +229,8 @@ export const PUT = withVenue(async function PUT(
 
     const saved = updated[0]
 
+    pushUpstream()
+
     return NextResponse.json({
       address: {
         ...saved,
@@ -273,6 +276,8 @@ export const DELETE = withVenue(async function DELETE(
     if (result === 0) {
       return NextResponse.json({ error: 'Address not found' }, { status: 404 })
     }
+
+    pushUpstream()
 
     return NextResponse.json({ success: true })
   } catch (error) {

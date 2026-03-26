@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET — List barcodes for a menu item or inventory item
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -121,6 +122,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         inventoryItem: { select: { id: true, name: true, currentStock: true } },
       },
     })
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

@@ -4,6 +4,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('liquor.bottles.sync-inventory')
@@ -171,6 +172,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     const synced = results.filter(r => r.status === 'created').length
     const errors = results.filter(r => r.status === 'error').length
+
+    if (synced > 0) pushUpstream()
 
     // Real-time cross-terminal update
     if (synced > 0 && locationId) {

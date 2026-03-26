@@ -5,6 +5,7 @@ import { generateSeatPositions as generateSeatPositionsFromLib, type SeatPattern
 import { SEAT_RADIUS } from '@/lib/floorplan/constants'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 type LabelPattern = 'numeric' | 'alpha' | 'alphanumeric'
 
@@ -348,6 +349,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
 
       return createdSeats
     })
+
+    pushUpstream()
 
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 

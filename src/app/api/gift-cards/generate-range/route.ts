@@ -15,6 +15,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { generateRangeSchema } from '@/lib/domain/gift-cards/schemas'
 
 function generateCardNumbers(prefix: string, start: number, end: number, zeroPad: number): string[] {
@@ -103,6 +104,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       `[AUDIT] GIFT_CARDS_GENERATED: batch=${batchId}, prefix=${prefix}, range=${start}-${end}, count=${toCreate.length}, skipped=${skipped}, by employee ${ctx.auth.employeeId}`
     )
 
+    pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created' })
 
     return NextResponse.json({

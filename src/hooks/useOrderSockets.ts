@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
+import { getSharedSocket, releaseSharedSocket, getTerminalId, onSocketReconnect } from '@/lib/shared-socket'
+import { useOrderStore } from '@/stores/order-store'
 
 // Socket.io client type
 type SocketCallback = (...args: unknown[]) => void
@@ -79,6 +80,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
 
   const [isConnected, setIsConnected] = useState(false)
   const socketRef = useRef<Socket | null>(null)
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Store callbacks in a ref so socket listeners always call the latest version
   // without triggering reconnection when callbacks change
@@ -91,9 +93,40 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     const socket = getSharedSocket() as Socket
     socketRef.current = socket
 
+    // Fallback polling: refetch current order + trigger list-changed during disconnect
+    const POLL_INTERVAL_MS = 15_000
+    const startPolling = () => {
+      if (pollingIntervalRef.current) return
+      pollingIntervalRef.current = setInterval(() => {
+        // Refetch open order if one exists
+        const orderId = useOrderStore.getState().currentOrder?.id
+        if (orderId) {
+          fetch(`/api/orders/${orderId}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(raw => {
+              if (!raw) return
+              const order = raw.data ?? raw
+              if (useOrderStore.getState().currentOrder?.id === orderId) {
+                useOrderStore.getState().loadOrder(order)
+              }
+            })
+            .catch(() => {})
+        }
+        // Notify list-changed listeners so open orders panel stays current
+        callbacksRef.current.onOpenOrdersChanged?.({ locationId: locationId!, trigger: 'poll' })
+      }, POLL_INTERVAL_MS)
+    }
+    const stopPolling = () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+    }
+
     // Named handlers so we can remove them explicitly on cleanup
     const onConnect = () => {
       setIsConnected(true)
+      stopPolling()
 
       // Join location room via join_station (server joins location:{locationId} room)
       socket.emit('join_station', {
@@ -105,6 +138,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
 
     const onDisconnect = () => {
       setIsConnected(false)
+      startPolling()
     }
 
     const onConnectError = (error: unknown) => {
@@ -206,13 +240,35 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     socket.on('order:released', onOrderReleased)
     socket.on('order:summary-updated', onOrderSummaryUpdated)
 
+    // On reconnect, refetch the current open order to clear stale data
+    const unsubReconnect = onSocketReconnect(() => {
+      const orderId = useOrderStore.getState().currentOrder?.id
+      if (!orderId) return
+      fetch(`/api/orders/${orderId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(raw => {
+          if (!raw) return
+          const order = raw.data ?? raw
+          // Only apply if same order is still open
+          if (useOrderStore.getState().currentOrder?.id === orderId) {
+            useOrderStore.getState().loadOrder(order)
+          }
+        })
+        .catch(err => console.warn('[useOrderSockets] reconnect refetch failed:', err))
+    })
+
     // If already connected (shared socket was created by another consumer), join immediately
     if (socket.connected) {
       onConnect()
+    } else {
+      // Socket starts disconnected — begin polling immediately
+      startPolling()
     }
 
-    // Cleanup: remove our listeners, release shared socket reference
+    // Cleanup: remove our listeners, stop polling, release shared socket reference
     return () => {
+      unsubReconnect()
+      stopPolling()
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
       socket.off('connect_error', onConnectError)

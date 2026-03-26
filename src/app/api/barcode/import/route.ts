@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface ImportRow {
   barcode: string
@@ -161,6 +162,10 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           }
         }
       }
+    }
+
+    if (created > 0) {
+      pushUpstream()
     }
 
     return NextResponse.json({

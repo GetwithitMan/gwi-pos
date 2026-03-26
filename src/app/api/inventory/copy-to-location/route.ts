@@ -21,6 +21,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(withAuth('ADMIN', async function POST(request: NextRequest) {
   try {
@@ -367,6 +369,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
       return { copied, skipped, recipesLinked, failed }
     })
+
+    void notifyDataChanged({ locationId: targetLocationId, domain: 'inventory', action: 'created', entityId: targetLocationId })
+    pushUpstream()
 
     return NextResponse.json({
       data: {

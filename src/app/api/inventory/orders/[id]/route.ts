@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Full PO detail
 export const GET = withVenue(async function GET(
@@ -177,6 +179,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       })
     })
 
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: id })
+    pushUpstream()
+
     return NextResponse.json({ data: { order } })
   } catch (error) {
     console.error('Update purchase order error:', error)
@@ -221,6 +226,9 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       where: { id },
       data: { deletedAt: now },
     })
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'deleted', entityId: id })
+    pushUpstream()
 
     return NextResponse.json({ data: { id, deletedAt: now } })
   } catch (error) {

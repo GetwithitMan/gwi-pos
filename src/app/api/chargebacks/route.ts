@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PaymentRepository } from '@/lib/repositories'
 
 // POST - Create a chargeback case (manual entry for now)
@@ -99,6 +100,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       return cbCase
     })
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

@@ -8,6 +8,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 import { getDerivedBottleStock } from '@/lib/liquor-inventory'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('liquor.bottles')
@@ -392,6 +393,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
       return { bottle, inventoryItemId }
     })
+
+    pushUpstream()
 
     // Real-time cross-terminal update
     void dispatchMenuUpdate(spiritCategory.locationId, {

@@ -6,6 +6,7 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { generateDepositToken } from '@/lib/reservations/deposit-rules'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('reservations-deposit-text-to-pay')
 
@@ -75,6 +76,8 @@ export const POST = withVenue(async function POST(
         },
       },
     })
+
+    pushUpstream()
 
     // Send SMS notification (fire-and-forget)
     void sendReservationNotification({

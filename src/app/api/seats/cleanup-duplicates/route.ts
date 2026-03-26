@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * GWI POS - Seats Cleanup API
@@ -101,6 +102,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         isActive: false,
       },
     });
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       message: `Cleaned up ${allDeleteIds.length} duplicate seats`,

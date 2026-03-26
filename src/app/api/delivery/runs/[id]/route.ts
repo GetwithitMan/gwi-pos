@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceRunStatus, advanceDeliveryStatus } from '@/lib/delivery/state-machine'
 import type { DeliveryOrderStatus } from '@/lib/delivery/state-machine'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -253,6 +254,7 @@ export const PUT = withVenue(async function PUT(
     )
 
     const updatedRun = updatedRows[0]
+    pushUpstream()
 
     return NextResponse.json({
       run: {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
-import { queueIfOutage } from '@/lib/sync/outage-safe-write'
+import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Check in a ticket
 export const POST = withVenue(async function POST(
@@ -146,6 +146,7 @@ export const POST = withVenue(async function POST(
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('Ticket', locationId, updatedTicket.id, 'UPDATE', updatedTicket as unknown as Record<string, unknown>)
+    pushUpstream()
 
     // Get check-in stats for the event
     const checkInStats = await db.ticket.groupBy({
@@ -253,6 +254,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('Ticket', locationId, updated.id, 'UPDATE', updated as unknown as Record<string, unknown>)
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

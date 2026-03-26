@@ -4,6 +4,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { PizzaPrintSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/pizza/config - Get pizza configuration for location
 export const GET = withVenue(async function GET() {
@@ -39,6 +40,7 @@ export const GET = withVenue(async function GET() {
           condimentDivisionMax: 1,
         }
       })
+      pushUpstream()
     }
 
     return NextResponse.json({ data: {
@@ -117,6 +119,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       ...config,

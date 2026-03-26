@@ -1128,7 +1128,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             for (const item of freshStore.currentOrder.items) {
               const itemCourse = item.courseNumber ?? 1
               if (itemCourse === cn && !item.sentToKitchen && !item.isHeld) {
-                freshStore.updateItem(item.id, { sentToKitchen: true, courseStatus: 'fired' })
+                freshStore.updateItem(item.id, { sentToKitchen: true, sentToKitchenAt: Date.now(), courseStatus: 'fired' })
               }
             }
           }
@@ -1196,8 +1196,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         if (immediateItems.length > 0 || delayedItems.length > 0) {
           // Optimistically mark immediate items as sent — UI clears instantly
           if (immediateItems.length > 0) {
+            const sentAt = Date.now()
             for (const item of immediateItems) {
-              store.updateItem(item.id, { sentToKitchen: true })
+              store.updateItem(item.id, { sentToKitchen: true, sentToKitchenAt: sentAt })
             }
           }
 
@@ -1361,7 +1362,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       if (store.currentOrder) {
         for (const item of store.currentOrder.items) {
           if (item.courseNumber === courseNumber && !item.sentToKitchen && !item.isHeld) {
-            store.updateItem(item.id, { sentToKitchen: true, courseStatus: 'fired' })
+            store.updateItem(item.id, { sentToKitchen: true, sentToKitchenAt: Date.now(), courseStatus: 'fired' })
           }
         }
       }
@@ -1405,9 +1406,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
       // Mark non-held items as sent (held items stay pending)
       if (store.currentOrder) {
+        const sentAt = Date.now()
         for (const item of store.currentOrder.items) {
           if (!item.sentToKitchen && !item.isHeld) {
-            store.updateItem(item.id, { sentToKitchen: true })
+            store.updateItem(item.id, { sentToKitchen: true, sentToKitchenAt: sentAt })
           }
         }
       }
@@ -1474,7 +1476,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       if (item?.delayMinutes && item.delayMinutes > 0) {
         store.markItemDelayFired(itemId)
       }
-      store.updateItem(itemId, { sentToKitchen: true })
+      store.updateItem(itemId, { sentToKitchen: true, sentToKitchenAt: Date.now() })
 
       toast.success(item?.isHeld ? 'Held item fired to kitchen' : 'Delayed item fired to kitchen')
 

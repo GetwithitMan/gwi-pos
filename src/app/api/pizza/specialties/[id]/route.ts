@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/pizza/specialties/[id] - Get single specialty pizza
 export const GET = withVenue(async function GET(
@@ -86,6 +87,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
         defaultCheese: true,
       }
     })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       ...specialty,
@@ -128,6 +130,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       where: { id },
       data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
     })
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

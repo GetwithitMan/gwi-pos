@@ -13,6 +13,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { sendGiftCardEmail } from '@/lib/gift-card-email'
 import { activateCardSchema } from '@/lib/domain/gift-cards/schemas'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
@@ -106,6 +107,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       }).catch(err => console.error('[GiftCard] Email delivery failed:', err))
     }
 
+    pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'updated', entityId: id })
 
     // Serialize Decimal fields for JSON response

@@ -12,7 +12,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── GET: List templates ─────────────────────────────────────────────────────
 
@@ -144,6 +144,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       }
       throw err
     }
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all seats for a table
@@ -154,6 +154,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       where: { tableId, deletedAt: null, isActive: true },
       orderBy: { seatNumber: 'asc' },
     })
+
+    pushUpstream()
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true })

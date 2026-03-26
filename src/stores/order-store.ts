@@ -74,6 +74,7 @@ interface OrderItem {
   firedAt?: string
   commissionAmount?: number  // Commission earned on this item
   sentToKitchen?: boolean  // Track if this item has been sent to kitchen
+  sentToKitchenAt?: number  // Timestamp (Date.now()) when sent — used for dedup window
   isCompleted?: boolean  // KDS completion status (kitchen marked done)
   completedAt?: string  // When kitchen marked it done
   resendCount?: number  // How many times resent to kitchen
@@ -545,10 +546,14 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     // BUG-M2/M3 FIX: Dedup rapid taps — if an identical unsent item already exists,
     // increment its quantity instead of creating a duplicate.
     // Only dedup simple items (no special notes, no modifiers that differ, no pizza, no weight, no timed rental).
+    const now = Date.now()
     const existingMatch = currentOrder.items.find(existing => {
-      // Only merge into unsent items with temp IDs (not yet persisted)
-      if (!isTempId(existing.id)) return false
-      if (existing.sentToKitchen) return false
+      // Dedup candidates: unsent temp-ID items OR recently-sent items (within 2s of send)
+      const isTempUnsent = isTempId(existing.id) && !existing.sentToKitchen
+      const isRecentlySent = existing.sentToKitchen &&
+        existing.sentToKitchenAt != null &&
+        (now - existing.sentToKitchenAt) < 2000
+      if (!isTempUnsent && !isRecentlySent) return false
       // Must be same menu item at same price
       if (existing.menuItemId !== item.menuItemId) return false
       if (existing.price !== item.price) return false

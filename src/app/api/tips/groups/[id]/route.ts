@@ -18,7 +18,7 @@ import {
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── GET: Get group details ─────────────────────────────────────────────────
 
@@ -238,6 +238,8 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       throw err
     }
 
+    pushUpstream()
+
     // ── Return updated group ──────────────────────────────────────────────
 
     const updatedGroup = await getGroupInfo(id)
@@ -318,6 +320,8 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
       }
       throw err
     }
+
+    pushUpstream()
 
     // ── Socket dispatch (fire-and-forget) ─────────────────────────────────
 

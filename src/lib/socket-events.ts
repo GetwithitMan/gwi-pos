@@ -60,6 +60,11 @@ export const SOCKET_EVENTS = {
   ORDER_ITEM_ADDED:       'order:item-added',
   ORDER_ITEM_REMOVED:     'order:item-removed',
   ORDER_ITEM_UPDATED:     'order:item-updated',
+  ORDER_ITEM_VOIDED:      'order:item-voided',
+  ORDER_ITEM_HELD:        'order:item-held',
+
+  // ── Order Reopening ───────────────────────────────────────────────────
+  ORDER_REOPENED:          'order:reopened',
 
   // ── Payment ─────────────────────────────────────────────────────────────
   PAYMENT_PROCESSED:      'payment:processed',
@@ -82,6 +87,7 @@ export const SOCKET_EVENTS = {
   MENU_ITEM_CHANGED:       'menu:item-changed',
   MENU_STOCK_CHANGED:      'menu:stock-changed',
   MENU_STRUCTURE_CHANGED:  'menu:structure-changed',
+  MENU_MODIFIER_CHANGED:   'menu:modifier-changed',
   INGREDIENT_LIBRARY_UPDATE: 'ingredient:library-update',
   INVENTORY_ADJUSTMENT:    'inventory:adjustment',
   INVENTORY_STOCK_CHANGE:  'inventory:stock-change',
@@ -363,6 +369,24 @@ export interface OrderItemUpdatedPayload {
   changes: Record<string, unknown>
 }
 
+export interface OrderItemVoidedPayload {
+  orderId: string
+  itemId: string
+  action: 'voided' | 'comped'
+  reason: string | null
+}
+
+export interface OrderItemHeldPayload {
+  orderId: string
+  itemId: string
+  isHeld: boolean
+}
+
+export interface OrderReopenedPayload {
+  orderId: string
+  reason: string | null
+}
+
 // ── Payment ──────────────────────────────────────────────────────────────
 
 export interface PaymentProcessedPayload {
@@ -527,6 +551,11 @@ export interface MenuStructureChangedPayload {
   action: 'category-created' | 'category-updated' | 'category-deleted' | 'modifier-group-updated'
   entityId: string
   entityType: 'category' | 'modifier-group'
+}
+
+export interface MenuModifierChangedPayload {
+  menuItemId: string | null
+  modifierGroupId: string
 }
 
 export interface IngredientLibraryUpdatePayload {
@@ -705,6 +734,12 @@ export interface ServerFailoverResolvedPayload {
   resolvedAt: string
 }
 
+// ── Settings ─────────────────────────────────────────────────────────────
+
+export interface SettingsUpdatedPayload {
+  changedKeys: string[]
+}
+
 // ── Quick Bar ────────────────────────────────────────────────────────────
 
 // quickbar:changed carries no payload (empty object)
@@ -873,6 +908,11 @@ export interface SocketEventPayloadMap {
   [SOCKET_EVENTS.ORDER_ITEM_ADDED]: OrderItemAddedPayload
   [SOCKET_EVENTS.ORDER_ITEM_REMOVED]: OrderItemRemovedPayload
   [SOCKET_EVENTS.ORDER_ITEM_UPDATED]: OrderItemUpdatedPayload
+  [SOCKET_EVENTS.ORDER_ITEM_VOIDED]: OrderItemVoidedPayload
+  [SOCKET_EVENTS.ORDER_ITEM_HELD]: OrderItemHeldPayload
+
+  // Order reopening
+  [SOCKET_EVENTS.ORDER_REOPENED]: OrderReopenedPayload
 
   // Payment
   [SOCKET_EVENTS.PAYMENT_PROCESSED]: PaymentProcessedPayload
@@ -895,6 +935,7 @@ export interface SocketEventPayloadMap {
   [SOCKET_EVENTS.MENU_ITEM_CHANGED]: MenuItemChangedPayload
   [SOCKET_EVENTS.MENU_STOCK_CHANGED]: MenuStockChangedPayload
   [SOCKET_EVENTS.MENU_STRUCTURE_CHANGED]: MenuStructureChangedPayload
+  [SOCKET_EVENTS.MENU_MODIFIER_CHANGED]: MenuModifierChangedPayload
   [SOCKET_EVENTS.INGREDIENT_LIBRARY_UPDATE]: IngredientLibraryUpdatePayload
   [SOCKET_EVENTS.INVENTORY_ADJUSTMENT]: InventoryAdjustmentPayload
   [SOCKET_EVENTS.INVENTORY_STOCK_CHANGE]: InventoryStockChangePayload
@@ -935,6 +976,9 @@ export interface SocketEventPayloadMap {
   [SOCKET_EVENTS.SYNC_OUTAGE_STATUS]: SyncOutageStatusPayload
   [SOCKET_EVENTS.SERVER_FAILOVER_ACTIVE]: ServerFailoverActivePayload
   [SOCKET_EVENTS.SERVER_FAILOVER_RESOLVED]: ServerFailoverResolvedPayload
+
+  // Settings
+  [SOCKET_EVENTS.SETTINGS_UPDATED]: SettingsUpdatedPayload
 
   // Quick bar
   [SOCKET_EVENTS.QUICKBAR_CHANGED]: QuickBarChangedPayload

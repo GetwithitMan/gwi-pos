@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { normalizeCardholderName } from '@/lib/datacap/helpers'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 import { dispatchOpenOrdersChanged, dispatchTabUpdated } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-record-card-auth')
 
@@ -119,6 +120,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       // Fire-and-forget socket dispatches so other terminals see the card auth
       void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId }).catch(err => log.warn({ err }, 'Background task failed'))
       void dispatchTabUpdated(locationId, { orderId }).catch(err => log.warn({ err }, 'Background task failed'))
+      pushUpstream()
 
       return NextResponse.json({
         data: {

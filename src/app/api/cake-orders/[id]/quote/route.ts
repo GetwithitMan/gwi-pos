@@ -19,6 +19,7 @@ import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { createQuoteSchema, parseCakeConfig, parseDesignConfig, parseDietaryConfig } from '@/lib/cake-orders/schemas'
 import { assembleQuote, generateQuoteLineItems } from '@/lib/cake-orders/cake-quote-service'
 import type { PricingInputsV1 } from '@/lib/cake-orders/schemas'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -260,6 +261,8 @@ export const POST = withVenue(async function POST(
         newStatus: shouldTransition ? 'quoted' : currentStatus,
       }),
     )
+
+    pushUpstream()
 
     // ── Socket event ────────────────────────────────────────────────────
     void dispatchCakeOrderUpdated(locationId, {

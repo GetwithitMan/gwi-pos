@@ -21,6 +21,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.ownership')
@@ -168,6 +169,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       splitType,
     }).catch(err => console.error('[ownership] Failed to emit ORDER_METADATA_UPDATED event:', err))
 
+    pushUpstream()
+
     return NextResponse.json({ data: { ownership } })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -266,6 +269,8 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       orderId,
       changes: ['ownership'],
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.ownership'))
+
+    pushUpstream()
 
     return NextResponse.json({ data: { ownership } })
   } catch (error) {
@@ -383,6 +388,8 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         ownershipAction: deactivated ? 'ownership_deactivated' : 'owner_removed',
       }).catch(err => console.error('[ownership] Failed to emit ORDER_METADATA_UPDATED event:', err))
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-driver-proof')
 
@@ -136,6 +137,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     const proof = inserted[0]
+
+    pushUpstream()
 
     // Fire-and-forget audit log
     void writeDeliveryAuditLog({

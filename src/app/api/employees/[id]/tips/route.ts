@@ -7,6 +7,7 @@ import { centsToDollars, getLedgerBalance, findActiveGroupForEmployee } from '@/
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get pending tips for an employee
 export const GET = withVenue(async function GET(
@@ -239,6 +240,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       })
 
       const totalAccepted = updatedPendingShares.count + updatedBankedShares.count
+      pushUpstream()
 
       return NextResponse.json({ data: {
         message: `Accepted ${totalAccepted} tip share(s) - will be added to payroll`,

@@ -11,6 +11,7 @@ import type { OrderStatus } from '@/generated/prisma/client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List open tabs with pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -303,6 +304,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
     flushOutboxSafe(resolvedLocationId)
+    pushUpstream()
 
     // Emit order events for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(resolvedLocationId, tab.id, 'ORDER_CREATED', {

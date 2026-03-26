@@ -8,6 +8,7 @@ import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('waitlist')
 
@@ -168,6 +169,8 @@ export const PUT = withVenue(async function PUT(
       `, locationId)
     }
 
+    pushUpstream()
+
     // Fire-and-forget socket dispatch
     void dispatchWaitlistChanged(locationId, {
       action: status as any,
@@ -234,6 +237,8 @@ export const DELETE = withVenue(async function DELETE(
       FROM ranked r
       WHERE w.id = r.id
     `, locationId)
+
+    pushUpstream()
 
     // Fire-and-forget socket dispatch
     void dispatchWaitlistChanged(locationId, {

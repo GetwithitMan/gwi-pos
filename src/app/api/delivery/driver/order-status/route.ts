@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDeliveryStatus } from '@/lib/delivery/state-machine'
 import { canMarkDelivered } from '@/lib/delivery/dispatch-policy'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -123,6 +124,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
+
+    pushUpstream()
 
     // Auto-complete of the run is now handled inside advanceDeliveryStatus()
     // when an order reaches a terminal state (delivered, cancelled_before_dispatch,

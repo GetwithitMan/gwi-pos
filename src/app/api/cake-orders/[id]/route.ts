@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { updateCakeOrderSchema } from '@/lib/cake-orders/schemas'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/cake-orders/[id] — get full cake order detail
 export const GET = withVenue(async function GET(
@@ -308,6 +309,8 @@ export const PATCH = withVenue(async function PATCH(
       auth.employee.id,
       JSON.stringify({ changedFields }),
     )
+
+    pushUpstream()
 
     // ── Socket event ──────────────────────────────────────────────────
     void dispatchCakeOrderUpdated(locationId, {

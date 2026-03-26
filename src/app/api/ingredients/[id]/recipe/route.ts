@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('ingredients.id.recipe')
@@ -124,6 +125,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
     })
 
+    pushUpstream()
+
     // Real-time cross-terminal update
     void emitToLocation(ingredient.locationId, 'inventory:changed', { ingredientId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
@@ -176,6 +179,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       },
     })
 
+    pushUpstream()
+
     return NextResponse.json({
       data: {
         id: recipe.id,
@@ -208,6 +213,8 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
       where: { id: recipeId },
       data: { deletedAt: new Date() },
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: { message: 'Component removed' } })
   } catch (error) {

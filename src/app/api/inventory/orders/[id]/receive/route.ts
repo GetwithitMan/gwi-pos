@@ -7,6 +7,8 @@ import { cascadeCostUpdate } from '@/lib/cost-cascade'
 import { convertUnits } from '@/lib/inventory/unit-conversion'
 import { autoClear86ForRestockedItems } from '@/lib/inventory'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Receive items against PO
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -262,6 +264,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         console.error('[orders/receive] auto-un-86 failed:', err)
       )
     }
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: orderId })
+    pushUpstream()
 
     return NextResponse.json({ data: result })
   } catch (error) {

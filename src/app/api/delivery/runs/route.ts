@@ -10,6 +10,7 @@ import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canAssignDriver, getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { evaluateEffectiveProofMode } from '@/lib/delivery/proof-resolver'
 import { dispatchRunEvent, dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-runs')
 
@@ -451,6 +452,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       return { run, orders: updatedOrders, isDuplicate: false }
     })
+
+    pushUpstream()
 
     // Fire socket events (fire-and-forget, outside transaction)
     void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(err => log.warn({ err }, 'Background task failed'))

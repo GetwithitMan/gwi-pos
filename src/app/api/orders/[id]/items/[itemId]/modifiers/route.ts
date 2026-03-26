@@ -6,6 +6,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-modifiers')
 
@@ -114,6 +115,8 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
         console.error('[modifiers/route] Failed to dispatch order summary:', err)
       }
     })()
+
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

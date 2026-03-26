@@ -16,6 +16,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-split-tickets')
 
@@ -719,6 +720,8 @@ export const POST = withVenue(withAuth(async function POST(
       reason: `Split into ${createdSplits.length} tickets`,
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
+    pushUpstream()
+
     return NextResponse.json({ data: {
       message: 'Split tickets created successfully',
       parentOrderId: parentOrder.id,
@@ -900,6 +903,8 @@ export const PATCH = withVenue(withAuth(async function PATCH(
         specialNotes: `Split ${ways} ways`,
       }).catch(err => log.warn({ err }, 'Background task failed'))
 
+      pushUpstream()
+
       return NextResponse.json({ data: { message: `Item split ${ways} ways` } })
     }
 
@@ -1017,6 +1022,8 @@ export const PATCH = withVenue(withAuth(async function PATCH(
     void emitOrderEvent(parentOrder.locationId, toSplitId, 'ORDER_METADATA_UPDATED', {
       reason: `Received item ${itemId} from split ${fromSplitId}`,
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     return NextResponse.json({ data: { message: 'Item moved successfully' } })
   } catch (error) {
@@ -1198,6 +1205,8 @@ export const DELETE = withVenue(withAuth(async function DELETE(
     void emitOrderEvent(parentOrder.locationId, id, 'ORDER_REOPENED', {
       reason: 'Splits merged back to parent',
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       message: 'Split tickets merged successfully',

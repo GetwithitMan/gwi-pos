@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
+import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { createChildLogger } from '@/lib/logger'
@@ -87,12 +90,19 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       },
     })
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(updated.locationId)
+
     // Fire-and-forget socket dispatch for real-time menu updates
     void dispatchMenuItemChanged(updated.locationId, {
       itemId: menuItemId,
       action: 'updated',
       changes: { ingredients: true },
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.ingredients.ingredientId'))
+
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId: updated.locationId, domain: 'menu', action: 'updated', entityId: menuItemId })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

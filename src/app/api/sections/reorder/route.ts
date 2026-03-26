@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // PUT - Reorder sections by updating sortOrder
 export const PUT = withVenue(withAuth('ADMIN', async function PUT(req: Request) {
@@ -41,6 +42,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(req: Request) 
         })
       )
     )
+
+    pushUpstream()
 
     dispatchFloorPlanUpdate(locationId, { async: true })
 

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
+import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -207,12 +210,19 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Filter out links where ingredient was soft-deleted
     const activeUpdated = updated.filter(mi => mi.ingredient && !mi.ingredient.deletedAt)
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(locationId)
+
     // Fire-and-forget socket dispatch for real-time menu updates
     void dispatchMenuItemChanged(locationId, {
       itemId: menuItemId,
       action: 'updated',
       changes: { ingredients: true },
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.ingredients'))
+
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId, domain: 'menu', action: 'updated', entityId: menuItemId })
+    void pushUpstream()
 
     return NextResponse.json({
       data: activeUpdated.map(mi => ({

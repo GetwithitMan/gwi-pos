@@ -12,6 +12,7 @@ import { roundToCents } from '@/lib/pricing'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-transfer-items')
 
@@ -341,6 +342,8 @@ export const POST = withVenue(async function POST(
     void emitOrderEvent(fromOrder.locationId, toOrderId, 'ORDER_METADATA_UPDATED', {
       reason: `Received ${itemIds.length} items transferred from order ${fromOrderId}`,
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

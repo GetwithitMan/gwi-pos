@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-zones')
 
@@ -255,6 +256,8 @@ export const PUT = withVenue(async function PUT(
 
     const zone = updated[0]
 
+    pushUpstream()
+
     // Fire-and-forget audit log
     void writeDeliveryAuditLog({
       locationId,
@@ -315,6 +318,8 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     const zone = deleted[0]
+
+    pushUpstream()
 
     // Fire-and-forget audit log
     void writeDeliveryAuditLog({

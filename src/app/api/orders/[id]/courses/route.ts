@@ -9,6 +9,7 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.courses')
@@ -492,6 +493,9 @@ export const POST = withVenue(async function POST(
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
+
+    pushUpstream()
+
     return NextResponse.json(result)
   } catch (error) {
     console.error('Failed to update course:', error)

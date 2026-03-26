@@ -21,6 +21,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
 import type { ReservationIntegration, ReservationPlatform } from '@/lib/settings'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── Platform-Specific Formatters (stubs) ────────────────────────────────────
 
@@ -321,6 +322,8 @@ export const POST = withVenue(withAuth(async function POST(
       })
     }
   }
+
+  pushUpstream()
 
   return NextResponse.json({
     success: true,

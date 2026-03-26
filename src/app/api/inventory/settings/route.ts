@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 const DEFAULT_SETTINGS = {
   // Tracking mode
@@ -191,6 +193,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
       update: updateData,
     })
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: settings.id })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       settings: {

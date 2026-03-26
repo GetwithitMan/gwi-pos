@@ -10,6 +10,7 @@ import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository, PaymentRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-split-tickets')
 
@@ -192,6 +193,8 @@ export const DELETE = withVenue(withAuth(async function DELETE(
         reason: 'Last split auto-merged back to parent',
       }).catch(err => log.warn({ err }, 'Background task failed'))
     }
+
+    pushUpstream()
 
     if (merged) {
       return NextResponse.json({ data: {

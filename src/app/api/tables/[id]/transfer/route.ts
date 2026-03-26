@@ -5,6 +5,7 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Transfer table to another server
 export const POST = withVenue(withAuth(async function POST(
@@ -115,6 +116,8 @@ export const POST = withVenue(withAuth(async function POST(
         employeeId: toEmployeeId,
       })
     }
+
+    pushUpstream()
 
     // Notify POS terminals of table transfer
     dispatchFloorPlanUpdate(table.locationId, { async: true })

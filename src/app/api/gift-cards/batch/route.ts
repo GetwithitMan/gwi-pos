@@ -15,6 +15,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { batchActionSchema } from '@/lib/domain/gift-cards/schemas'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
 import { freezeGiftCard, unfreezeGiftCard } from '@/lib/domain/gift-cards/freeze-gift-card'
@@ -129,6 +130,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       `[AUDIT] GIFT_CARD_BATCH: action=${action}, total=${cardIds.length}, succeeded=${succeeded}, failed=${failed.length}, by employee ${employeeId}`
     )
 
+    pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'updated' })
 
     return NextResponse.json({ succeeded, failed })

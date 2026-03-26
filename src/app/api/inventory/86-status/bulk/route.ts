@@ -5,6 +5,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('inventory-86-status-bulk')
 
@@ -94,6 +96,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       affectedMenuItemIds,
       bulk: true,
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'updated', entityId: ingredientIds[0] })
+    pushUpstream()
 
     return NextResponse.json({
       data: {

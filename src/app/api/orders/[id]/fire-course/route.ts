@@ -10,6 +10,7 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.fire-course')
@@ -224,6 +225,8 @@ export const POST = withVenue(async function POST(
     deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {
       console.error('[API /fire-course] Prep stock deduction failed:', err)
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

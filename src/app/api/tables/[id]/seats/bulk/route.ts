@@ -4,6 +4,7 @@ import { SeatType } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface SeatUpdate {
   id: string
@@ -79,6 +80,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         })
       )
     )
+
+    pushUpstream()
 
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 

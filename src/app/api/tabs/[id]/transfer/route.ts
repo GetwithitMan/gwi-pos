@@ -9,6 +9,7 @@ import type { TabUpdatedPayload, TabTransferCompletePayload, OrdersListChangedPa
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationId } from '@/lib/location-cache'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface TransferRequest {
   toEmployeeId: string
@@ -166,6 +167,7 @@ export const POST = withVenue(async function POST(
 
     // Transaction committed — flush outbox
     flushOutboxSafe(tab.locationId)
+    pushUpstream()
 
     // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, tabId, 'ORDER_METADATA_UPDATED', {

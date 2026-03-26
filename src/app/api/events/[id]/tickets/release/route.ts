@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Release held tickets
 export const POST = withVenue(withAuth(async function POST(
@@ -57,6 +58,8 @@ export const POST = withVenue(withAuth(async function POST(
       data: { deletedAt: new Date(), status: 'available' },
     })
 
+    pushUpstream()
+
     return NextResponse.json({ data: {
       success: true,
       releasedCount: result.count,
@@ -98,6 +101,8 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       where: whereClause,
       data: { deletedAt: new Date(), status: 'available' },
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

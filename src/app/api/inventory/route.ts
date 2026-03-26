@@ -20,6 +20,8 @@ import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { InventoryAdjustmentPayload, InventoryStockChangePayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List inventory levels and transactions
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -209,6 +211,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Transaction committed — flush outbox
     flushOutboxSafe(locationId)
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: transaction.id })
+    pushUpstream()
 
     // Check for low stock alert (non-critical, outside transaction)
     if (quantityAfter <= (item.lowStockAlert ?? 0) && quantityAfter > 0) {

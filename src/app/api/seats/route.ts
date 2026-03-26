@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List seats with filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -109,6 +110,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         seatType: seatType || 'standard',
       },
     });
+
+    pushUpstream()
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(locationId, { async: true });

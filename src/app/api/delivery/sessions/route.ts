@@ -7,6 +7,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-sessions')
 
@@ -180,6 +181,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if ('error' in result) {
       return NextResponse.json({ error: result.error }, { status: result.status })
     }
+
+    pushUpstream()
 
     // Write audit log (fire-and-forget, outside transaction)
     void writeDeliveryAuditLog({

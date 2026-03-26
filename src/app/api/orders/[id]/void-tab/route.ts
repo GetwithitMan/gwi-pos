@@ -8,6 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { OrderRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-void-tab')
 
@@ -258,6 +259,8 @@ export const POST = withVenue(async function POST(
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       }
     }
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

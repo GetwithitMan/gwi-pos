@@ -22,6 +22,7 @@ import {
 } from '@/lib/cake-orders/cake-state-machine'
 import { parseSettings, DEFAULT_CAKE_ORDERING } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -226,6 +227,8 @@ export const PATCH = withVenue(async function PATCH(
         reason: reason || null,
       }),
     )
+
+    pushUpstream()
 
     // ── Socket event ───────────────────────────────────────────────────
     void dispatchCakeOrderUpdated(locationId, {

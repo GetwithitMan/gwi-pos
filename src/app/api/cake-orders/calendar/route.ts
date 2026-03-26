@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ── Color maps ──────────────────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
@@ -268,6 +269,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       assignedEmployeeId,
       notes || null,
     )
+
+    pushUpstream()
 
     // ── Fetch and return created block ────────────────────────────────
     const created = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(

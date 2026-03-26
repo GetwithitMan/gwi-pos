@@ -574,6 +574,20 @@ export const PATCH = withVenue(async function PATCH(
       id: true, name: true, isFeaturedCfd: true, entertainmentStatus: true,
     })
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(locationId)
+
+    // Fire-and-forget socket dispatch for real-time menu updates
+    void dispatchMenuItemChanged(locationId, {
+      itemId: id,
+      action: 'updated',
+      changes: data,
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id PATCH'))
+
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId, domain: 'menu', action: 'updated', entityId: id })
+    void pushUpstream()
+
     return NextResponse.json({ data: { item } })
   } catch (error) {
     console.error('Failed to patch menu item:', error)

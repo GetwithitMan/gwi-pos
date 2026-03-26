@@ -11,6 +11,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationId } from '@/lib/location-cache'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('tabs')
 
@@ -257,6 +258,7 @@ export const PUT = withVenue(async function PUT(
 
     // Transaction committed — flush outbox
     flushOutboxSafe(tab.locationId)
+    pushUpstream()
 
     // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, id, 'ORDER_METADATA_UPDATED', {
@@ -381,6 +383,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Transaction committed — flush outbox
     flushOutboxSafe(tab.locationId)
+    pushUpstream()
 
     // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, id, 'ORDER_CLOSED', {

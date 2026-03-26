@@ -6,6 +6,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET tip settings for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -119,6 +120,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         settings: updatedRawSettings as object,
       },
     })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       tipBank: mergedTipBank,

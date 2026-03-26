@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDriverSessionStatus } from '@/lib/delivery/state-machine'
 import { dispatchDriverLocationUpdate } from '@/lib/delivery/dispatch-events'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('delivery-driver-status')
@@ -108,6 +109,8 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }).catch(err => log.warn({ err }, 'GPS location dispatch failed'))
       }
     }
+
+    pushUpstream()
 
     return NextResponse.json({
       session: {

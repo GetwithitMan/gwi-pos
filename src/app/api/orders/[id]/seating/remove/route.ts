@@ -7,6 +7,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { recalculateOrderTotals } from '@/lib/domain/order-items/order-totals'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-seating-remove')
 
@@ -106,6 +107,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       if (lockedOrder.tableId) {
         void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       }
+
+      pushUpstream()
 
       return NextResponse.json({ data: { success: true } })
     })

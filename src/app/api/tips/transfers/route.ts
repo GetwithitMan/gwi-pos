@@ -18,7 +18,7 @@ import {
 } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── POST: Create a tip transfer ────────────────────────────────────────────
 
@@ -189,6 +189,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       }
       throw err
     }
+
+    pushUpstream()
 
     // ── Return success ────────────────────────────────────────────────────
     return NextResponse.json({

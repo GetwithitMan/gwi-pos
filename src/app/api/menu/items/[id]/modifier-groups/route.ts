@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { MenuItemRepository } from '@/lib/repositories'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
+import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
@@ -563,12 +566,20 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         })),
       })
 
+      // Invalidate server-side menu cache
+      invalidateMenuCache(menuItem.locationId)
+
       // Fire-and-forget socket dispatch for real-time menu structure updates
       void dispatchMenuStructureChanged(menuItem.locationId, {
         action: 'modifier-group-updated',
         entityId: newGroup.id,
         entityType: 'modifier-group',
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups'))
+
+      // Notify cloud → NUC sync for real-time updates
+      void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'created', entityId: newGroup.id })
+      void pushUpstream()
+
       return NextResponse.json({
         data: formatGroup(newGroup),
       })
@@ -718,12 +729,19 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       return newGroup
     })
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(menuItem.locationId)
+
     // Fire-and-forget socket dispatch for real-time menu structure updates
     void dispatchMenuStructureChanged(menuItem.locationId, {
       action: 'modifier-group-updated',
       entityId: group.id,
       entityType: 'modifier-group',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups'))
+
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'created', entityId: group.id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {
@@ -841,6 +859,22 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest, { para
       )
     )
 
+    // Invalidate server-side menu cache
+    if (patchLocationId) {
+      invalidateMenuCache(patchLocationId)
+
+      // Fire-and-forget socket dispatch for real-time menu structure updates
+      void dispatchMenuStructureChanged(patchLocationId, {
+        action: 'modifier-group-updated',
+        entityId: menuItemId,
+        entityType: 'modifier-group',
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups PATCH'))
+
+      // Notify cloud → NUC sync for real-time updates
+      void notifyDataChanged({ locationId: patchLocationId, domain: 'menu', action: 'updated', entityId: menuItemId })
+      void pushUpstream()
+    }
+
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Error updating modifier group sort orders:', error)
@@ -924,6 +958,22 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         })
       }
     })
+
+    // Invalidate server-side menu cache
+    if (putLocationId) {
+      invalidateMenuCache(putLocationId)
+
+      // Fire-and-forget socket dispatch for real-time menu structure updates
+      void dispatchMenuStructureChanged(putLocationId, {
+        action: 'modifier-group-updated',
+        entityId: groupId,
+        entityType: 'modifier-group',
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups PUT/reparent'))
+
+      // Notify cloud → NUC sync for real-time updates
+      void notifyDataChanged({ locationId: putLocationId, domain: 'menu', action: 'updated', entityId: groupId })
+      void pushUpstream()
+    }
 
     return NextResponse.json({ data: { success: true } })
   } catch (error: any) {

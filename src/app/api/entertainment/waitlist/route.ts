@@ -7,6 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { formatWaitTime, calculateWaitMinutes } from '@/lib/domain/entertainment'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List waitlist entries for floor plan elements
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -230,6 +231,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
     })
+
+    pushUpstream()
 
     // Notify all terminals of new waitlist entry
     dispatchEntertainmentWaitlistNotify(locationId, {

@@ -2206,6 +2206,179 @@ export async function dispatchCakeOrdersListChanged(
   }
 }
 
+// ==================== Order Item Void/Hold Events ====================
+
+/**
+ * Dispatch order:item-voided event
+ *
+ * Called when an item is voided or comped after being sent to kitchen.
+ * Notifies all terminals so they can update order displays and KDS can
+ * mark the item appropriately.
+ */
+export async function dispatchOrderItemVoided(
+  locationId: string,
+  payload: {
+    orderId: string
+    itemId: string
+    action: 'voided' | 'comped'
+    reason: string | null
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:item-voided', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch order:item-voided')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async order:item-voided failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+/**
+ * Dispatch order:item-held event
+ *
+ * Called when an item's hold status is toggled.
+ * Notifies all terminals and KDS screens to update hold indicators.
+ */
+export async function dispatchOrderItemHeld(
+  locationId: string,
+  payload: {
+    orderId: string
+    itemId: string
+    isHeld: boolean
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:item-held', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch order:item-held')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async order:item-held failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+// ==================== Order Reopen Events ====================
+
+/**
+ * Dispatch order:reopened event
+ *
+ * Called when a closed order is reopened for additional items or corrections.
+ * Notifies all terminals to add the order back to the open orders list.
+ */
+export async function dispatchOrderReopened(
+  locationId: string,
+  payload: {
+    orderId: string
+    reason: string | null
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:reopened', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch order:reopened')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async order:reopened failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+// ==================== Menu Modifier Events ====================
+
+/**
+ * Dispatch menu:modifier-changed event
+ *
+ * Called when a modifier group or individual modifier is added/updated/deleted.
+ * Notifies all POS terminals and menu builders to refresh modifier data.
+ */
+export async function dispatchModifierChanged(
+  locationId: string,
+  payload: {
+    menuItemId: string | null
+    modifierGroupId: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'menu:modifier-changed', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch menu:modifier-changed')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async menu:modifier-changed failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+// ==================== Settings Events ====================
+
+/**
+ * Dispatch settings:updated event
+ *
+ * Called when location settings change (tax rates, pricing model, etc.).
+ * Notifies all terminals to refresh their cached settings.
+ */
+export async function dispatchSettingsUpdated(
+  locationId: string,
+  payload: {
+    changedKeys: string[]
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'settings:updated', payload)
+      return true
+    } catch (error) {
+      log.error({ err: error }, 'Failed to dispatch settings:updated')
+      return false
+    }
+  }
+
+  if (options.async) {
+    doEmit().catch((err) => log.error({ err }, 'Async settings:updated failed'))
+    return true
+  }
+
+  return doEmit()
+}
+
+// ==================== Card Detection Events ====================
+
 /**
  * Dispatch card:detected event for multi-terminal awareness
  *

@@ -30,6 +30,7 @@ import {
   buildOrderSummary,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-apply-combo')
 
@@ -376,6 +377,8 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void dispatchOrderSummaryUpdated(result.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

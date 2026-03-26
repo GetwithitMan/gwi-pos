@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { dispatchRunEvent } from '@/lib/delivery/dispatch-events'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-runs-reorder')
 
@@ -191,6 +192,8 @@ export const POST = withVenue(async function POST(
 
       return { run: updatedRun[0], previousSequence: run.orderSequence, newSequence: newOrderSequence }
     })
+
+    pushUpstream()
 
     // Write audit log
     void writeDeliveryAuditLog({

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { cascadeCostUpdate, type CostUpdateResult } from '@/lib/cost-cascade'
 
 // POST /api/invoices/[id]/post — finalize invoice and cascade costs
@@ -81,6 +82,8 @@ export const POST = withVenue(async function POST(
         approvedAt: new Date(),
       },
     })
+
+    pushUpstream()
 
     // Identify significant cost changes (>5%)
     const significantChanges = costResults.filter(r => Math.abs(r.changePercent) > 5)

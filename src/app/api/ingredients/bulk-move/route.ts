@@ -4,6 +4,7 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('ingredients.bulk-move')
@@ -57,6 +58,10 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
       return updateResult.count
     })
+
+    if (result > 0) {
+      pushUpstream()
+    }
 
     // Real-time cross-terminal update — need locationId for socket dispatch
     if (result > 0) {

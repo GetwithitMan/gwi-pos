@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 
 import { stopAllSessions } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('entertainment-stop-all')
@@ -108,6 +109,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     const totalCharges = txResult.results.reduce((sum, r) => sum + r.charge, 0)
+
+    // Push DB changes upstream to Neon (fire-and-forget)
+    pushUpstream()
 
     // Fire-and-forget: recalculate full order totals (subtotal, tax, total) for each affected order
     const affectedOrderIds = [...new Set(txResult.results.map(r => r.orderId))]

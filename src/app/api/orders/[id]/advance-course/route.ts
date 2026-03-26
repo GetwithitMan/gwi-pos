@@ -12,6 +12,7 @@ import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-advance-course')
 
@@ -203,6 +204,8 @@ export const POST = withVenue(async function POST(
         console.error('[advance-course] Audit log failed:', err)
       })
 
+      pushUpstream()
+
       return NextResponse.json({ data: {
         success: true,
         previousCourse: currentCourse,
@@ -273,6 +276,8 @@ export const POST = withVenue(async function POST(
     }).catch(err => {
       console.error('[advance-course] Audit log failed:', err)
     })
+
+    pushUpstream()
 
     // No more courses
     return NextResponse.json({ data: {

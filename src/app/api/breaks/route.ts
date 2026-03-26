@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List breaks for employee/time clock entry
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -84,6 +85,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       },
     })
 
+    pushUpstream()
+
     return NextResponse.json({ data: {
       break: {
         id: breakEntry.id,
@@ -146,6 +149,8 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
         breakMinutes: { increment: duration },
       },
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       break: {

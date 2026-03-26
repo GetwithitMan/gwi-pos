@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/pizza/sizes/[id] - Get single pizza size
 export const GET = withVenue(async function GET(
@@ -80,6 +81,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       ...size,
@@ -117,6 +119,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       where: { id },
       data: { isActive: false, lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' }
     })
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

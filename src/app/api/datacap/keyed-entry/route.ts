@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { db } from '@/lib/db'
 import { logger } from '@/lib/logger'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── Validation Helpers ─────────────────────────────────────────────────────
 
@@ -165,6 +166,8 @@ export const POST = withVenue(withAuth('manager.keyed_entry', async function POS
         pendingId
       ).catch(e => console.error('[Keyed Entry] Failed to mark pending sale as declined:', e))
     }
+
+    pushUpstream()
 
     return Response.json({
       data: {

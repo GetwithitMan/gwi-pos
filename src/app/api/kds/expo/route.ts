@@ -8,6 +8,7 @@ import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks, processExpoFinalBump } from '@/lib/kds/screen-links'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('kds-expo')
 
@@ -285,6 +286,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         }).catch(err => console.error('[Expo] Screen link processing failed:', err))
       }
     }
+
+    // Push DB changes upstream to Neon (fire-and-forget)
+    pushUpstream()
 
     if (firstItem?.order) {
       const locationId = firstItem.order.locationId

@@ -6,6 +6,8 @@ import { dispatchInventoryAdjustment, dispatchStockLevelChange } from '@/lib/soc
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * Calculate cost per unit from ingredient data
@@ -252,6 +254,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       unit,
       stockLevel,
     }, { async: true }).catch(err => console.error('Stock dispatch failed:', err))
+
+    void notifyDataChanged({ locationId: ingredient.locationId, domain: 'inventory', action: 'updated', entityId: ingredientId })
+    pushUpstream()
 
     // Build response message
     let message: string
@@ -506,6 +511,11 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(request: N
 
     const successCount = results.filter(r => r.success).length
     const failCount = results.filter(r => !r.success).length
+
+    if (resolvedLocationId && successCount > 0) {
+      void notifyDataChanged({ locationId: resolvedLocationId, domain: 'inventory', action: 'updated', entityId: resolvedLocationId })
+      pushUpstream()
+    }
 
     // Dispatch real-time update for all changes
     if (resolvedLocationId && successCount > 0) {

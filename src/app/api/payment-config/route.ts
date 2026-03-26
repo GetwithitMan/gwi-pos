@@ -5,6 +5,7 @@ import { parseSettings, mergeWithDefaults } from '@/lib/settings'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * GET /api/payment-config
@@ -112,6 +113,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       where: { id: location.id },
       data: { settings: updated as object },
     })
+    pushUpstream()
 
     invalidateLocationCache(location.id)
     invalidatePaymentSettings(location.id)

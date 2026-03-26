@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/pizza - Get all pizza builder data at once (for PizzaBuilderModal)
 export const GET = withVenue(async function GET() {
@@ -70,6 +71,8 @@ export const GET = withVenue(async function GET() {
         select: { id: true, name: true, printerRole: true }
       }),
     ])
+
+    pushUpstream()
 
     // Helper: check if a pizza component is available based on linked inventory
     const checkAvailable = (item: { inventoryItem?: { isActive: boolean; trackInventory: boolean; currentStock: unknown } | null }): boolean => {

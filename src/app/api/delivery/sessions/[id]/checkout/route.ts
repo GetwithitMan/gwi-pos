@@ -8,6 +8,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canEndDriverShift, requiresCashShortageApproval } from '@/lib/delivery/dispatch-policy'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-sessions-checkout')
 
@@ -201,6 +202,8 @@ export const POST = withVenue(async function POST(
       }
       return NextResponse.json(response, { status: result.status })
     }
+
+    pushUpstream()
 
     // Write audit log (fire-and-forget, outside transaction)
     void writeDeliveryAuditLog({

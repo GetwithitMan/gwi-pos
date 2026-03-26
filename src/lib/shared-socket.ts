@@ -27,6 +27,20 @@ let visibilityHandlerAttached = false
 let lastPongAt = 0 // Timestamp of last successful pong/event from server
 let lastReconnectAttempt = 0 // Timestamp of last visibility-triggered reconnect
 
+// ==================== Reconnect Callbacks ====================
+// Subscribers (e.g. order store) register callbacks to refresh stale data on reconnect.
+type ReconnectCallback = () => void
+const reconnectCallbacks = new Set<ReconnectCallback>()
+
+/**
+ * Register a callback to run on socket reconnect (not initial connect).
+ * Returns an unsubscribe function.
+ */
+export function onSocketReconnect(cb: ReconnectCallback): () => void {
+  reconnectCallbacks.add(cb)
+  return () => { reconnectCallbacks.delete(cb) }
+}
+
 // ==================== Event Buffer Catch-Up State ====================
 // Tracks the highest _eid seen from the server, so on reconnect we can
 // request replay of missed events.
@@ -153,6 +167,16 @@ function attachVisibilityHandler(socket: Socket) {
       }
       socket.emit('catch-up', { lastEventId, locationId: trackedLocationId })
     }
+
+    // Fire reconnect callbacks (debounced 200ms to avoid thundering herd)
+    if (!isInitialConnect) {
+      setTimeout(() => {
+        reconnectCallbacks.forEach(cb => {
+          try { cb() } catch (e) { console.error('[SharedSocket] reconnect callback error:', e) }
+        })
+      }, 200)
+    }
+
     isInitialConnect = false
   })
 

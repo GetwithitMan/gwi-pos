@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 interface RouteParams {
@@ -61,6 +62,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         },
       },
     })
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
     return NextResponse.json({

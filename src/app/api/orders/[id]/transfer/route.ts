@@ -15,6 +15,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { isOpen } from '@/lib/domain/order-status'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-transfer')
 
@@ -197,6 +198,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     void dispatchTabUpdated(order.locationId, {
       orderId,
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

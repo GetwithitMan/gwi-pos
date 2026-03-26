@@ -6,6 +6,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { dispatchDriverLocationUpdate } from '@/lib/delivery/dispatch-events'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-driver-location')
 
@@ -165,6 +166,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           "updatedAt" = CURRENT_TIMESTAMP
       WHERE "id" = $4 AND "locationId" = $5
     `, latest.lat, latest.lng, latest.recordedAt, sessionId, locationId)
+
+    pushUpstream()
 
     // Fire socket event (fire-and-forget)
     void dispatchDriverLocationUpdate(locationId, {

@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-bottle-service-re-auth')
 
@@ -87,6 +88,10 @@ export const POST = withVenue(withAuth(async function POST(
         orderId,
         changes: ['bottle-service-reauth', 'preAuthAmount'],
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.bottle-service.re-auth'))
+    }
+
+    if (approved) {
+      pushUpstream()
     }
 
     return NextResponse.json({

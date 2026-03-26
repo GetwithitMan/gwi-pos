@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List waste log entries
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -168,6 +170,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Audit trail for waste recording
     console.log(`[AUDIT] WASTE_RECORDED: item=${inventoryItemId}, qty=${qtyNum}, reason="${reason}", by employee ${employeeId}, locationId=${locationId}`)
+
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: entry.id })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       entry: {

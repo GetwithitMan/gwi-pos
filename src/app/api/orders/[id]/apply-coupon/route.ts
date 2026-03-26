@@ -9,6 +9,7 @@ import { OrderRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.apply-coupon')
@@ -378,6 +379,8 @@ export const POST = withVenue(async function POST(
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
     }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.apply-coupon'))
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       discount: {

@@ -8,6 +8,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-auto-increment')
 
@@ -156,6 +157,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.auto-increment'))
         dispatchTabStatusUpdate(locationId, { orderId, status: 'incremented' })
 
+        pushUpstream()
+
         return NextResponse.json({
           data: {
             action: 'incremented',
@@ -180,6 +183,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           status: 'increment_failed',
         }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.auto-increment'))
         dispatchTabStatusUpdate(locationId, { orderId, status: 'increment_failed' })
+
+        pushUpstream()
 
         return NextResponse.json({
           data: {

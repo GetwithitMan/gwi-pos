@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Check in by ticket number or barcode (event-scoped)
 // This is a convenience endpoint that wraps /api/tickets/[id]/check-in
@@ -127,6 +128,8 @@ export const POST = withVenue(withAuth(async function POST(
         },
       },
     })
+
+    pushUpstream()
 
     // Get updated stats
     const checkInStats = await db.ticket.groupBy({

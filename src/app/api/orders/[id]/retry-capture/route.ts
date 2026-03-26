@@ -19,6 +19,7 @@ import type {
 } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-retry-capture')
 
@@ -322,6 +323,8 @@ export const POST = withVenue(withAuth(async function POST(
         },
       ]).catch(err => log.warn({ err }, 'Background task failed'))
 
+      pushUpstream()
+
       return NextResponse.json({ data: { success: true, paymentMethod: 'cash', amount: paymentAmount } })
 
     } else if (retryMode === 'manager_void') {
@@ -394,6 +397,8 @@ export const POST = withVenue(withAuth(async function POST(
         closedStatus: PAYMENT_STATES.VOIDED,
         reason: 'Manager voided declined capture tab',
       }).catch(err => log.warn({ err }, 'Background task failed'))
+
+      pushUpstream()
 
       return NextResponse.json({ data: { success: true, action: PAYMENT_STATES.VOIDED } })
     }

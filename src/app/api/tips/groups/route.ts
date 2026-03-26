@@ -15,7 +15,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // ─── GET: List active tip groups for a location ─────────────────────────────
 
@@ -194,7 +194,9 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       throw err
     }
 
-    // ── Socket dispatch (fire-and-forget) ─────────────────────────────────
+    pushUpstream()
+
+    // ── Socket dispatch (fire-and-forget) ─────────────────────────���───────
 
     dispatchTipGroupUpdate(
       locationId,

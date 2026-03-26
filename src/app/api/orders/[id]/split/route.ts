@@ -18,6 +18,7 @@ import {
   createTableSplit,
   calculateCustomSplit,
 } from '@/lib/domain/split-order'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.split')
@@ -237,6 +238,8 @@ export const POST = withVenue(async function POST(
 
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=even, children=${splitOrders.length}, by employee ${body.employeeId}`)
 
+      pushUpstream()
+
       return NextResponse.json({ data: {
         type: 'even',
         parentOrder: {
@@ -356,6 +359,8 @@ export const POST = withVenue(async function POST(
       }
 
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_item, children=1, by employee ${body.employeeId}`)
+
+      pushUpstream()
 
       return NextResponse.json({ data: {
         type: 'by_item',
@@ -490,6 +495,8 @@ export const POST = withVenue(async function POST(
 
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_seat, children=${splitOrders.length}, by employee ${body.employeeId}`)
 
+      pushUpstream()
+
       return NextResponse.json({ data: {
         type: 'by_seat',
         parentOrder: {
@@ -612,6 +619,8 @@ export const POST = withVenue(async function POST(
       }
 
       console.log(`[AUDIT] ORDER_SPLIT: parentId=${id}, type=by_table, children=${splitOrders.length}, by employee ${body.employeeId}`)
+
+      pushUpstream()
 
       return NextResponse.json({ data: {
         type: 'by_table',

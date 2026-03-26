@@ -18,6 +18,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { recordPaymentSchema } from '@/lib/cake-orders/schemas'
 import { createSettlementOrder, recordCakePayment } from '@/lib/cake-orders/cake-payment-service'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -227,6 +228,8 @@ export const POST = withVenue(async function POST(
         }),
       )
     }
+
+    pushUpstream()
 
     // ── Socket event ────────────────────────────────────────────────────
     // Determine new status: if auto-advanced to deposit_paid, use that; otherwise keep current

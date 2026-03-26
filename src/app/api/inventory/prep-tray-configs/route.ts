@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List tray configs for a prep item or all daily count items
 // This works with Ingredients that have preparationType (prep-style ingredients)
@@ -164,6 +166,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
     })
 
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: config.id })
+    pushUpstream()
+
     return NextResponse.json({
       data: {
         ...config,
@@ -193,6 +198,9 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       where: { id: ingredientId },
       data: { isDailyCountItem },
     })
+
+    void notifyDataChanged({ locationId: ingredient.locationId, domain: 'inventory', action: 'updated', entityId: ingredient.id })
+    pushUpstream()
 
     return NextResponse.json({
       data: {

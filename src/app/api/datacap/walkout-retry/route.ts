@@ -9,6 +9,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { logger } from '@/lib/logger'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Retry capture for a walkout tab (manual trigger)
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -62,6 +63,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         where: { id: walkoutRetryId },
         data: { status: 'exhausted' },
       })
+      pushUpstream()
       return NextResponse.json({
         data: {
           success: false,
@@ -139,6 +141,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         )
         const createdPaymentId = paymentRows[0]?.id
 
+        pushUpstream()
+
         // Emit PAYMENT_APPLIED + ORDER_CLOSED events (fire-and-forget)
         void emitOrderEvents(locationId, retry.orderId, [
           {
@@ -193,6 +197,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           exhausted ? retry.nextRetryAt : nextRetry,
           walkoutRetryId,
         )
+        pushUpstream()
 
         return NextResponse.json({
           data: {
@@ -216,6 +221,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         errorMsg,
         walkoutRetryId,
       )
+      pushUpstream()
 
       return NextResponse.json({
         data: { success: false, error: errorMsg },

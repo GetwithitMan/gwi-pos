@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET — Get single barcode by ID
 export const GET = withVenue(async function GET(
@@ -105,6 +106,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       },
     })
 
+    pushUpstream()
+
     return NextResponse.json({
       data: {
         id: updated.id,
@@ -153,6 +156,8 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

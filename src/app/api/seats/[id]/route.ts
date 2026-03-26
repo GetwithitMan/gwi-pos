@@ -4,6 +4,7 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { softDeleteData } from '@/lib/floorplan/queries';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get a single seat with table info
 export const GET = withVenue(async function GET(
@@ -108,6 +109,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       },
     });
 
+    pushUpstream()
+
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(currentSeat.locationId, { async: true });
 
@@ -157,6 +160,8 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       where: { id },
       data: softDeleteData(),
     });
+
+    pushUpstream()
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(seat.locationId, { async: true });

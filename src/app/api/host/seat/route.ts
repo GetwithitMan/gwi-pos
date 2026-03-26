@@ -9,6 +9,7 @@ import { getNextServer, buildServerInfoList } from '@/lib/host/server-rotation'
 import { dispatchFloorPlanUpdate, dispatchWaitlistChanged, dispatchTableStatusChanged, dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { transition } from '@/lib/reservations/state-machine'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('host-seat')
 
@@ -220,6 +221,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           "updatedAt" = CURRENT_TIMESTAMP
       `, locationId, assignedServerId, table.sectionId)
     }
+
+    pushUpstream()
 
     // Fire-and-forget socket dispatches
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))

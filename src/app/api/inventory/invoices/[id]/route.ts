@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single invoice with line items
@@ -183,6 +184,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       },
     })
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
     pushUpstream()
 
     return NextResponse.json({ data: {
@@ -224,6 +226,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       data: { deletedAt: new Date() },
     })
 
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     pushUpstream()
 
     return NextResponse.json({ data: { success: true } })

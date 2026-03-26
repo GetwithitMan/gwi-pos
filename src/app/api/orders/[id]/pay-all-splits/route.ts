@@ -15,6 +15,7 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-pay-all-splits')
 
@@ -497,6 +498,8 @@ export const POST = withVenue(withAuth(async function POST(
         })
       }
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

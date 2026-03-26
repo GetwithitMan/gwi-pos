@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/pizza/cheeses - Get all pizza cheeses
 export const GET = withVenue(async function GET() {
@@ -74,6 +75,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }
     })
+    pushUpstream()
 
     return NextResponse.json({ data: {
       ...cheese,

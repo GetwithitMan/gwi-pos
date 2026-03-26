@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Reflow seats when table is resized
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -135,6 +136,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         });
       })
     );
+
+    pushUpstream()
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true });

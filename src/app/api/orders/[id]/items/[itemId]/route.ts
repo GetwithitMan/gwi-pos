@@ -17,6 +17,7 @@ import {
   softDeleteOrderItem,
   recalculateOrderTotals,
 } from '@/lib/domain/order-items'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-items')
 
@@ -129,6 +130,7 @@ export const PUT = withVenue(async function PUT(
           }
 
           await OrderRepository.incrementVersion(orderId, locationId)
+          pushUpstream()
           return NextResponse.json({ data: { success: true, item: fired } })
 
         case 'mark_ready':
@@ -138,6 +140,7 @@ export const PUT = withVenue(async function PUT(
             kitchenStatus: 'ready',
           })
           await OrderRepository.incrementVersion(orderId, locationId)
+          pushUpstream()
           return NextResponse.json({ data: { success: true, item: ready } })
 
         case 'mark_served':
@@ -147,6 +150,7 @@ export const PUT = withVenue(async function PUT(
             kitchenStatus: 'delivered',
           })
           await OrderRepository.incrementVersion(orderId, locationId)
+          pushUpstream()
           return NextResponse.json({ data: { success: true, item: served } })
 
         // Hold & Fire (Skill 13)
@@ -156,6 +160,7 @@ export const PUT = withVenue(async function PUT(
             holdUntil: updateData.holdUntil ? new Date(updateData.holdUntil) : null,
           })
           await OrderRepository.incrementVersion(orderId, locationId)
+          pushUpstream()
           return NextResponse.json({ data: { success: true, item: held } })
 
         case 'fire':
@@ -167,6 +172,7 @@ export const PUT = withVenue(async function PUT(
             courseStatus: item.courseNumber ? 'fired' : item.courseStatus,
           })
           await OrderRepository.incrementVersion(orderId, locationId)
+          pushUpstream()
           return NextResponse.json({ data: { success: true, item: firedItem } })
 
         case 'release':
@@ -176,6 +182,7 @@ export const PUT = withVenue(async function PUT(
             holdUntil: null,
           })
           await OrderRepository.incrementVersion(orderId, locationId)
+          pushUpstream()
           return NextResponse.json({ data: { success: true, item: released } })
 
         default:
@@ -263,6 +270,8 @@ export const PUT = withVenue(async function PUT(
         quantity: updateData.quantity,
       })
 
+      pushUpstream()
+
       return NextResponse.json({ data: mapOrderForResponse(txResult) })
     }
 
@@ -305,6 +314,8 @@ export const PUT = withVenue(async function PUT(
         updatedBy: 'system',
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,
@@ -458,6 +469,8 @@ export const DELETE = withVenue(async function DELETE(
 
       return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
     })
+
+    pushUpstream()
 
     return result
   } catch (error) {

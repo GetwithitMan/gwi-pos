@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -56,6 +58,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
           rejectionReason: rejectionReason || 'Rejected by manager',
         },
       })
+
+      void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+      pushUpstream()
 
       return NextResponse.json({ data: count })
     }
@@ -151,6 +156,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         transactions: true,
       },
     })
+
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+    pushUpstream()
 
     return NextResponse.json({
       data: {

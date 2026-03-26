@@ -4,6 +4,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { withVenue } from '@/lib/with-venue'
 import { EmployeeRepository } from '@/lib/repositories'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Check if employee has open tabs/orders
 export const GET = withVenue(async function GET(
@@ -125,6 +126,9 @@ export const POST = withVenue(withAuth(async function POST(
         employeeId: targetEmployeeId,
       },
     })
+
+    // Push DB changes upstream to Neon (fire-and-forget)
+    pushUpstream()
 
     // Emit order events for each transferred order (fire-and-forget)
     for (const order of affectedOrders) {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List reason access rules
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -82,6 +83,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         accessType: accessType || 'allow',
       },
     })
+    pushUpstream()
 
     return NextResponse.json({ data: { rule } })
   } catch (error) {
@@ -115,6 +117,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
 
     // Hard delete: ReasonAccess has no deletedAt column
     await db.reasonAccess.delete({ where: { id } })
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

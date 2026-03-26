@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { Prisma } from '@/generated/prisma/client'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single seat
@@ -117,6 +117,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       throw err
     }
 
+    pushUpstream()
+
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
     return NextResponse.json({ data: {
@@ -221,6 +223,8 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       }
       throw err
     }
+
+    pushUpstream()
 
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 

@@ -5,6 +5,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -202,6 +203,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     )
 
     const saved = inserted[0]
+
+    pushUpstream()
 
     return NextResponse.json({
       address: {

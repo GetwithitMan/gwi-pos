@@ -15,6 +15,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { validateTransition, isModifiable } from '@/lib/domain/order-status'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders')
 
@@ -768,6 +769,8 @@ export const PUT = withVenue(async function PUT(
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
+    pushUpstream()
+
     return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to update order:', error)
@@ -1123,6 +1126,8 @@ export const PATCH = withVenue(async function PATCH(
         }
       })()
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       id: updatedOrder.id,

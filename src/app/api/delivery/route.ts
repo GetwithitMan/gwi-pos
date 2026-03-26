@@ -9,6 +9,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery')
 
@@ -258,6 +259,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         address: address?.trim() || null,
       }).catch(err => console.error('[delivery] Failed to emit ORDER_METADATA_UPDATED:', err))
     }
+
+    pushUpstream()
 
     // Fire-and-forget socket dispatch
     void emitToLocation(locationId, 'delivery:updated', {

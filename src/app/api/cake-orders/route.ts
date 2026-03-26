@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchCakeOrderNew } from '@/lib/socket-dispatch'
 import { adminCreateCakeOrderSchema } from '@/lib/cake-orders/schemas'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/cake-orders — list cake orders (cursor-based pagination)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -285,6 +286,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         trigger: 'admin_create',
       }),
     )
+
+    pushUpstream()
 
     // ── Socket event ──────────────────────────────────────────────────
     void dispatchCakeOrderNew(locationId, {

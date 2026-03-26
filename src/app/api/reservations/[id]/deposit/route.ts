@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get deposit status for a reservation
 export const GET = withVenue(async function GET(
@@ -222,6 +223,8 @@ export const POST = withVenue(async function POST(
       metadata
     )
 
+    pushUpstream()
+
     const newTotal = currentPaid + amount
     const fullyPaid = depositTarget > 0 ? newTotal >= depositTarget : false
 
@@ -379,6 +382,10 @@ export const DELETE = withVenue(async function DELETE(
       )
 
       totalRefunded += refundAmount
+    }
+
+    if (totalRefunded > 0) {
+      pushUpstream()
     }
 
     if (totalRefunded === 0) {

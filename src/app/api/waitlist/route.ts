@@ -6,6 +6,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('waitlist')
 
@@ -197,6 +198,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         console.warn('[Waitlist] Auto-assign pager failed:', pagerErr)
       }
     }
+
+    pushUpstream()
 
     // Fire-and-forget socket dispatch
     void dispatchWaitlistChanged(locationId, {

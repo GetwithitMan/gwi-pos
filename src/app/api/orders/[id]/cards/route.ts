@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.cards')
@@ -161,6 +162,8 @@ export const POST = withVenue(withAuth(async function POST(
         status: 'authorized',
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
 
+      pushUpstream()
+
       return NextResponse.json({
         data: {
           approved: true,
@@ -237,6 +240,8 @@ export const POST = withVenue(withAuth(async function POST(
       paymentId: orderCard.id,
       status: 'authorized',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

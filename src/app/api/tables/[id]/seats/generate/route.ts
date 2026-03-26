@@ -4,6 +4,7 @@ import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { generateSeatPositions, type SeatPattern } from '@/lib/seat-generation';
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Generate/regenerate default seat layout
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -77,6 +78,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         })
       )
     );
+
+    pushUpstream()
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true });

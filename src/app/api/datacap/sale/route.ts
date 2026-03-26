@@ -7,6 +7,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { roundToCents } from '@/lib/pricing'
 import { db } from '@/lib/db'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface SaleRequest {
   locationId: string
@@ -121,6 +122,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         pendingId
       ).catch(e => console.error('[Datacap Sale] Failed to mark pending sale as declined:', e))
     }
+
+    pushUpstream()
 
     // Fire-and-forget: card recognition (Phase 8)
     // Use server-relative URL to avoid exposing internal endpoints via NEXT_PUBLIC_ vars

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Refund a ticket
 export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(
@@ -87,6 +88,8 @@ export const POST = withVenue(withAuth('MGR_REFUNDS', async function POST(
 
       return updated
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

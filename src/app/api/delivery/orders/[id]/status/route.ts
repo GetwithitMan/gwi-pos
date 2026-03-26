@@ -5,6 +5,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDeliveryStatus, type DeliveryOrderStatus } from '@/lib/delivery/state-machine'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +57,8 @@ export const PATCH = withVenue(async function PATCH(
     if (!result.success) {
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
+
+    pushUpstream()
 
     return NextResponse.json({
       data: {

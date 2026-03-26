@@ -9,6 +9,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.id.items.itemId.discount')
@@ -292,6 +293,8 @@ export const POST = withVenue(async function POST(
       })
     })
 
+    pushUpstream()
+
     return result
   } catch (error) {
     console.error('Failed to apply item discount:', error)
@@ -445,6 +448,8 @@ export const DELETE = withVenue(async function DELETE(
         },
       })
     })
+
+    pushUpstream()
 
     return result
   } catch (error) {

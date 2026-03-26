@@ -16,6 +16,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { importCardsSchema } from '@/lib/domain/gift-cards/schemas'
 
 // Card number validation: uppercase alphanumeric with dashes, 4-30 chars
@@ -181,6 +182,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       `[AUDIT] GIFT_CARDS_IMPORTED: batch=${batchId}, count=${toImport.length}, skipped=${errors.length}, by employee ${ctx.auth.employeeId}`
     )
 
+    pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created' })
 
     return NextResponse.json({

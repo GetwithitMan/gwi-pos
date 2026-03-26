@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('tables-merge')
@@ -121,6 +122,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         },
       },
     })
+
+    pushUpstream()
 
     // --- Socket events (fire-and-forget) ---
     void dispatchTableStatusChanged(locationId, { tableId: sourceTableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))

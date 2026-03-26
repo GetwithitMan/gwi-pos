@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET /api/invoices/[id] — get invoice with line items
 export const GET = withVenue(async function GET(
@@ -123,6 +124,8 @@ export const PATCH = withVenue(async function PATCH(
       },
     })
 
+    pushUpstream()
+
     return NextResponse.json({
       data: {
         invoice: {
@@ -172,6 +175,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

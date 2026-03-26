@@ -13,6 +13,7 @@ import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-li
 import { sendSMS, isTwilioConfigured, formatPhoneE164 } from '@/lib/twilio'
 import { getReadinessState } from '@/lib/readiness'
 import { mergeOrderBehavior } from '@/lib/kds/defaults'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('kds')
 
@@ -546,6 +547,9 @@ const putHandler = async function PUT(request: NextRequest) {
         }
       }
     }
+
+    // Push DB changes upstream to Neon (fire-and-forget)
+    pushUpstream()
 
     if (firstItemForDispatch?.order) {
       const locationId = firstItemForDispatch.order.locationId

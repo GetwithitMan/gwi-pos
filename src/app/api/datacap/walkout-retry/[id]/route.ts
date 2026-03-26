@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { logger } from '@/lib/logger'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // PUT - Write off a walkout retry (mark as unrecoverable)
 export const PUT = withVenue(async function PUT(
@@ -88,6 +89,7 @@ export const PUT = withVenue(async function PUT(
         },
       }),
     ])
+    pushUpstream()
 
     return NextResponse.json({
       data: {

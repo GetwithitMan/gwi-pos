@@ -6,6 +6,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('liquor.bottles.id.create-menu-item')
@@ -165,6 +166,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         },
       },
     })
+
+    pushUpstream()
 
     // Dispatch socket events for real-time update (fire-and-forget)
     void dispatchMenuUpdate(bottle.locationId, {

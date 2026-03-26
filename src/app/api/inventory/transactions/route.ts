@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List inventory transactions with pagination
@@ -147,6 +148,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     queueIfOutage('InventoryItemTransaction', locationId, transaction.id, 'INSERT', transaction as unknown as Record<string, unknown>)
+    void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: transaction.id })
     pushUpstream()
 
     // Update inventory stock

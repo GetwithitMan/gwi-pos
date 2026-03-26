@@ -15,6 +15,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { approveQuoteSchema } from '@/lib/cake-orders/schemas'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -189,6 +190,8 @@ export const PATCH = withVenue(async function PATCH(
         previousOrderStatus: quote.orderStatus,
       }),
     )
+
+    pushUpstream()
 
     // ── Socket event ────────────────────────────────────────────────────
     void dispatchCakeOrderUpdated(locationId, {

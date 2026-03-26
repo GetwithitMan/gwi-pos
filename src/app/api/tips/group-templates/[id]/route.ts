@@ -12,7 +12,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
-import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -144,6 +144,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       throw err
     }
 
+    pushUpstream()
+
     return NextResponse.json({
       data: {
         id: template.id,
@@ -217,6 +219,8 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
       }
       throw err
     }
+
+    pushUpstream()
 
     return NextResponse.json({ success: true })
   } catch (error) {

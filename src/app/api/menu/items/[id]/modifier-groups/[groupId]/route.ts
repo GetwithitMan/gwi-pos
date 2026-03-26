@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
+import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -95,12 +98,19 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       },
     })
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(group.locationId)
+
     // Fire-and-forget socket dispatch for real-time menu structure updates
     void dispatchMenuStructureChanged(group.locationId, {
       action: 'modifier-group-updated',
       entityId: groupId,
       entityType: 'modifier-group',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups.groupId'))
+
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'updated', entityId: groupId })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {
@@ -305,12 +315,19 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       }),
     ])
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(group.locationId)
+
     // Fire-and-forget socket dispatch for real-time menu structure updates
     void dispatchMenuStructureChanged(group.locationId, {
       action: 'modifier-group-updated',
       entityId: groupId,
       entityType: 'modifier-group',
     }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups.groupId'))
+
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'deleted', entityId: groupId })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

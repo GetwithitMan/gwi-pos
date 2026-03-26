@@ -11,6 +11,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('orders.replay-cart-events')
@@ -647,6 +648,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           }
         }
       }
+    }
+
+    if (processed > 0) {
+      pushUpstream()
     }
 
     return NextResponse.json({

@@ -13,6 +13,7 @@ import {
   calculateMinutesElapsed,
   isExpiringSoon,
 } from '@/lib/domain/entertainment'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('entertainment.status')
@@ -433,6 +434,9 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     if (status === 'available' && element.linkedMenuItemId) {
       void notifyNextWaitlistEntry(locationId, element.linkedMenuItemId, updatedElement.name || undefined).catch(err => log.warn({ err }, 'waitlist notify failed'))
     }
+
+    // Push DB changes upstream to Neon (fire-and-forget)
+    pushUpstream()
 
     // Dispatch real-time update to all connected clients (fire-and-forget)
     dispatchFloorPlanUpdate(locationId, { async: true })

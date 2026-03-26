@@ -9,6 +9,7 @@ import { advanceDeliveryStatus, writeDeliveryAuditLog } from '@/lib/delivery/sta
 import { dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-orders-assign')
 
@@ -134,6 +135,7 @@ export const PATCH = withVenue(async function PATCH(
     }
 
     const deliveryOrder = result.deliveryOrder
+    pushUpstream()
 
     // Audit log for driver assignment
     void writeDeliveryAuditLog({

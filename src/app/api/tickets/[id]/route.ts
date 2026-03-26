@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get ticket details
 export const GET = withVenue(async function GET(
@@ -204,6 +205,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    pushUpstream()
+
     return NextResponse.json({ data: {
       success: true,
       ticket: updated,
@@ -271,6 +274,8 @@ export const DELETE = withVenue(async function DELETE(
         })
       }
     })
+
+    pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

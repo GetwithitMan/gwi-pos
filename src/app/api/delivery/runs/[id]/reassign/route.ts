@@ -9,6 +9,7 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canAssignDriver } from '@/lib/delivery/dispatch-policy'
 import { dispatchRunEvent, dispatchDriverStatusChanged, dispatchOrderReassigned } from '@/lib/delivery/dispatch-events'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('delivery-runs-reassign')
 
@@ -190,6 +191,8 @@ export const POST = withVenue(async function POST(
         newDriverName: `${newDriver.firstName} ${newDriver.lastName}`.trim(),
       }
     })
+
+    pushUpstream()
 
     // Write audit log (outside tx for non-blocking)
     void writeDeliveryAuditLog({

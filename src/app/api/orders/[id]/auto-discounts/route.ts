@@ -13,6 +13,7 @@ import { OrderRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-auto-discounts')
 
@@ -103,6 +104,10 @@ export const POST = withVenue(async function POST(
           buildOrderSummary(updatedOrder),
         ).catch(err => log.warn({ err }, 'Background task failed'))
       }
+    }
+
+    if (result.applied.length > 0 || result.removed.length > 0) {
+      pushUpstream()
     }
 
     return NextResponse.json({

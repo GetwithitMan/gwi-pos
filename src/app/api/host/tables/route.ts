@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('host-tables')
 
@@ -298,6 +299,8 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
       where: { id: tableId },
       data: { status },
     })
+
+    pushUpstream()
 
     // Fire-and-forget socket dispatches
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))

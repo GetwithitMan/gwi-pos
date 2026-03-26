@@ -9,6 +9,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateWaitMinutes, validateWaitlistStatus } from '@/lib/domain/entertainment'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get a specific waitlist entry
 export const GET = withVenue(async function GET(
@@ -287,6 +288,8 @@ export const PATCH = withVenue(async function PATCH(
       return updated
     })
 
+    pushUpstream()
+
     // Dispatch waitlist notification event when status changes
     if (status && status !== entry.status) {
       const actionMap: Record<string, 'notified' | 'seated' | 'cancelled' | 'expired'> = {
@@ -469,6 +472,8 @@ export const DELETE = withVenue(async function DELETE(
         })
       }
     })
+
+    pushUpstream()
 
     // Dispatch waitlist removal notification to all terminals
     dispatchEntertainmentWaitlistNotify(locationId, {

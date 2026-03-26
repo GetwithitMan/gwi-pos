@@ -17,6 +17,7 @@ import { roundToCents } from '@/lib/pricing'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-discount')
 
@@ -621,6 +622,8 @@ export const POST = withVenue(async function POST(
       flushOutboxSafe(outboxLocationId)
     }
 
+    pushUpstream()
+
     // Audit trail for discount application
     if (alertRef.info) {
       const auditInfo = alertRef.info
@@ -942,6 +945,7 @@ export const DELETE = withVenue(async function DELETE(
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
     if (result && 'locationId' in result) {
       flushOutboxSafe(result.locationId)
+      pushUpstream()
       return result.response
     }
 

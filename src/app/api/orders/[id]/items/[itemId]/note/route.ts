@@ -6,6 +6,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
 import { OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('orders-note')
 
@@ -64,6 +65,8 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         updatedBy: 'system',
       }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
+
+    pushUpstream()
 
     return NextResponse.json({ data: { item: updated } })
   } catch (error) {

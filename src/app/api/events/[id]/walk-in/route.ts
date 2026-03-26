@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { randomBytes } from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // Generate ticket number: EVT-YYYYMMDD-XXXXX
 function generateTicketNumber(eventDate: Date, sequence: number): string {
@@ -171,6 +172,8 @@ export const POST = withVenue(withAuth(async function POST(
 
       return tickets
     })
+
+    pushUpstream()
 
     const totalPrice = result.reduce((sum, t) => sum + Number(t.totalPrice), 0)
 
