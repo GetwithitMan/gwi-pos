@@ -110,10 +110,14 @@ GWI_ERROR_CODES[ERR-WDG-453]="Escalation to MC failed"
 
 # Helper function to log with error code
 err_code() {
-  local code="$1"
-  shift
-  local desc="${GWI_ERROR_CODES[$code]:-Unknown error}"
-  local detail="$*"
+  local code="${1:-UNKNOWN}"
+  shift || true
+  # Defensive: if GWI_ERROR_CODES isn't declared yet (subshell, sourced late), skip lookup
+  local desc="Unknown error"
+  if declare -p GWI_ERROR_CODES &>/dev/null; then
+    desc="${GWI_ERROR_CODES[$code]:-Unknown error}"
+  fi
+  local detail="${*:-}"
   echo -e "\033[0;31m[$code] $desc${detail:+: $detail}\033[0m" >&2
   # Also log to structured event log
   local event_log="/opt/gwi-pos/state/install-events.jsonl"
