@@ -66,6 +66,8 @@ main() {
 
   # Install deps and build in staging (while current app still serves traffic)
   log "Phase 2: Building in staging (current app still serving)..."
+  # Clear stale tsc incremental cache — prevents false type errors after schema changes
+  rm -f tsconfig.tsbuildinfo 2>/dev/null || true
   npm ci --production=false 2>&1 | tail -5 || {
     err "npm ci failed in staging"
     cleanup_staging

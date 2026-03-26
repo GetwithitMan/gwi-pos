@@ -321,6 +321,9 @@ run_deploy_app() {
     return 1
   fi
 
+  # Clear stale tsc incremental cache — prevents false type errors after schema changes
+  rm -f "$APP_DIR/tsconfig.tsbuildinfo" 2>/dev/null || true
+
   log "Building Next.js application..."
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='--max-old-space-size=4096' npm run build"; then
     err_code "ERR-INST-186" "next build failed in $APP_DIR"

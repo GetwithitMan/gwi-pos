@@ -242,6 +242,9 @@ run_schema() {
   # 3. Type errors don't affect runtime behavior (Next.js builds fine without tsc)
   local BUILD_NODE_OPTS="--max-old-space-size=4096"
 
+  # Clear stale tsc incremental cache — prevents false type errors after schema changes
+  rm -f "$APP_DIR/tsconfig.tsbuildinfo" 2>/dev/null || true
+
   log "Building POS application (this takes a few minutes)..."
   if ! sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && SKIP_TYPECHECK=1 NODE_OPTIONS='$BUILD_NODE_OPTS' npm run build" 2>&1 | tail -5; then
     err_code "ERR-INST-186" "npm run build failed in $APP_DIR"
