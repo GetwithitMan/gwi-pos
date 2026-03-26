@@ -17,7 +17,7 @@ import type {
   OrderClosedPayload,
   OrdersListChangedPayload,
 } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { getRequestLocationId } from '@/lib/request-context'
 
 export const POST = withVenue(withAuth(async function POST(
@@ -111,9 +111,7 @@ export const POST = withVenue(withAuth(async function POST(
           const listPayload: OrdersListChangedPayload = { trigger: 'updated', orderId }
           await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
         })
-        void flushSocketOutbox(locationId).catch((err) => {
-          console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
-        })
+        flushOutboxSafe(locationId)
 
         // Event emission: capture retry failed
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -196,9 +194,7 @@ export const POST = withVenue(withAuth(async function POST(
       })
 
       // Flush outbox after commit
-      void flushSocketOutbox(locationId).catch((err) => {
-        console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(locationId)
 
       // Floor plan update is non-critical UI — fire-and-forget
       if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
@@ -304,9 +300,7 @@ export const POST = withVenue(withAuth(async function POST(
       })
 
       // Flush outbox after commit
-      void flushSocketOutbox(locationId).catch((err) => {
-        console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(locationId)
 
       // Floor plan update is non-critical UI — fire-and-forget
       if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
@@ -394,9 +388,7 @@ export const POST = withVenue(withAuth(async function POST(
       })
 
       // Flush outbox after commit
-      void flushSocketOutbox(locationId).catch((err) => {
-        console.warn('[retry-capture] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(locationId)
 
       // Floor plan update is non-critical UI — fire-and-forget
       if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})

@@ -6,7 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { TabUpdatedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import type { OrderStatus } from '@/generated/prisma/client'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -302,9 +302,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
-    void flushSocketOutbox(resolvedLocationId).catch((err) => {
-      console.warn('[tabs/create] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(resolvedLocationId)
 
     // Emit order events for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(resolvedLocationId, tab.id, 'ORDER_CREATED', {

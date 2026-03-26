@@ -21,8 +21,8 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { isModifiable } from '@/lib/domain/order-status'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
-import type { OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import type { OrdersListChangedPayload, OrderSummaryUpdatedPayload, OrderCreatedPayload } from '@/lib/socket-events'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -290,12 +290,28 @@ export const POST = withVenue(withTiming(async function POST(
         locationId: order.locationId,
       }
       await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_SUMMARY_UPDATED, summaryPayload)
+
+      // Queue ORDER_CREATED for crash-durable delivery to the location channel.
+      // dispatchNewOrder() (after commit) handles real-time per-station KDS routing
+      // via emitToTags, which the outbox doesn't support. This outbox event is the
+      // safety net: if the server crashes between commit and dispatchNewOrder(), the
+      // catch-up protocol delivers ORDER_CREATED to all location subscribers (including
+      // KDS screens), which triggers a re-fetch so no order is silently lost.
+      const orderCreatedPayload: OrderCreatedPayload = {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        orderType: order.orderType || 'dine_in',
+        tableName: order.table?.name || order.tabName || null,
+        tabName: order.tabName || null,
+        employeeName: order.employee?.displayName || order.employee?.firstName || null,
+        createdAt: order.createdAt.toISOString(),
+        stations: [],  // Routing not yet resolved; real-time dispatch fills this
+      }
+      await queueSocketEvent(tx, order.locationId, SOCKET_EVENTS.ORDER_CREATED, orderCreatedPayload)
     })
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
-    void flushSocketOutbox(order.locationId).catch((err) => {
-      console.warn('[send] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(order.locationId)
 
     // Start entertainment sessions outside transaction (touches menu items + floor plan)
     if (entertainmentUpdates.length > 0) {
@@ -457,8 +473,10 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Dispatch real-time socket events to KDS screens (fire-and-forget)
     // KDS uses tag-based routing (emitToTags) which the outbox doesn't support,
-    // so this remains fire-and-forget. The outbox handles ORDERS_LIST_CHANGED
-    // and ORDER_SUMMARY_UPDATED above for crash-safe delivery.
+    // so per-station dispatch remains fire-and-forget here. The outbox handles
+    // ORDERS_LIST_CHANGED, ORDER_SUMMARY_UPDATED, and ORDER_CREATED above for
+    // crash-safe delivery. ORDER_CREATED is the safety net — if the server crashes
+    // before this line, KDS clients receive it via catch-up and trigger a re-fetch.
     void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {
       console.error('[API /orders/[id]/send] Socket dispatch failed:', err)
     })

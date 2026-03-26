@@ -7,7 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { TabUpdatedPayload, OrdersListChangedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { recordTab, DuplicateTabError } from '@/lib/datacap/record-tab'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -142,9 +142,7 @@ export const POST = withVenue(async function POST(
           const listPayload: OrdersListChangedPayload = { trigger: 'updated', orderId, tableId: order.tableId || undefined }
           await queueSocketEvent(tx, locationId, SOCKET_EVENTS.ORDERS_LIST_CHANGED, listPayload)
         })
-        void flushSocketOutbox(locationId).catch((err) => {
-          console.warn('[open-tab] Outbox flush failed:', err)
-        })
+        flushOutboxSafe(locationId)
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
           tabStatus: 'auth_failed',
           tabName: declineFirstName || order.tabName || null,
@@ -349,9 +347,7 @@ export const POST = withVenue(async function POST(
       })
 
       // Flush outbox after commit
-      void flushSocketOutbox(locationId).catch((err) => {
-        console.warn('[open-tab] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(locationId)
 
       // Event sourcing: record the auth failure as metadata update
       void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {

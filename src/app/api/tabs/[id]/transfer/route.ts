@@ -6,7 +6,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { TabUpdatedPayload, TabTransferCompletePayload, OrdersListChangedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -165,9 +165,7 @@ export const POST = withVenue(async function POST(
     })
 
     // Transaction committed — flush outbox
-    void flushSocketOutbox(tab.locationId).catch((err) => {
-      console.warn('[tabs/transfer] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(tab.locationId)
 
     // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, tabId, 'ORDER_METADATA_UPDATED', {

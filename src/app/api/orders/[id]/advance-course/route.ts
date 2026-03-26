@@ -8,7 +8,7 @@ import { dispatchNewOrder, dispatchItemStatus } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderUpdatedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -138,9 +138,7 @@ export const POST = withVenue(async function POST(
       })
 
       // Flush outbox after commit
-      void flushSocketOutbox(order.locationId).catch((err) => {
-        console.warn('[advance-course] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(order.locationId)
 
       // Dispatch kds:item-status for current course items marked as served/delivered
       if (markServed && currentCourseItems.length > 0) {
@@ -226,9 +224,7 @@ export const POST = withVenue(async function POST(
     })
 
     // Flush outbox after commit
-    void flushSocketOutbox(order.locationId).catch((err) => {
-      console.warn('[advance-course] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(order.locationId)
 
     // Dispatch kds:item-status for current course items marked as served/delivered
     if (markServed && currentCourseItems.length > 0) {

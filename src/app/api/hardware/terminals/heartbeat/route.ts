@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 // POST terminal heartbeat - updates online status
 // NO withAuth — this route does its own token validation via terminal_token cookie.
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -56,6 +58,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         })
 
+        void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
+        void pushUpstream()
+
         const response = NextResponse.json(
           {
             error: 'IP mismatch - terminal must be re-paired',
@@ -80,6 +85,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         lastMutatedBy: 'local',
       },
     })
+
+    void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

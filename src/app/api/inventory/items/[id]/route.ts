@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { InventoryStockChangePayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
@@ -175,9 +175,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     // Transaction committed — flush outbox if stock changed
     if (stockChanged) {
-      void flushSocketOutbox(existing.locationId).catch((err) => {
-        console.warn('[inventory/items/update] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(existing.locationId)
     }
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
@@ -240,9 +238,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     // Transaction committed — flush outbox
-    void flushSocketOutbox(existing.locationId).catch((err) => {
-      console.warn('[inventory/items/delete] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(existing.locationId)
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
     void pushUpstream()

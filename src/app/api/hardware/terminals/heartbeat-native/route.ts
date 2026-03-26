@@ -3,6 +3,8 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
 // NO withAuth — this route does its own token validation against the Terminal table.
 // Terminals authenticate via Bearer token (not session cookie or cellular JWT).
@@ -95,6 +97,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         })
 
+        void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
+        void pushUpstream()
+
         return NextResponse.json(
           {
             error: 'IP mismatch - terminal must be re-paired',
@@ -128,6 +133,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         } : {}),
       },
     })
+
+    void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
+    void pushUpstream()
 
     // Notify admin browsers of offline→online transition
     if (wasOffline) {

@@ -219,6 +219,22 @@ export async function flushSocketOutbox(
 }
 
 /**
+ * Flush the socket outbox with a timeout guard.
+ * Fire-and-forget — logs errors but never throws or blocks the caller.
+ * Unflushed events are recovered by flushAllPendingOutbox() on server restart.
+ */
+export function flushOutboxSafe(locationId: string): void {
+  void Promise.race([
+    flushSocketOutbox(locationId),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Outbox flush timeout (5s)')), 5000)
+    ),
+  ]).catch((err) => {
+    log.warn({ err, locationId }, 'Outbox flush failed or timed out — startup recovery will handle')
+  })
+}
+
+/**
  * Flush unflushed socket events for ALL locations.
  *
  * Called on server startup / reconnection recovery to drain any events

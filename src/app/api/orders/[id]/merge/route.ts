@@ -10,6 +10,8 @@ import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlan
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST - Merge another order into this one
 export const POST = withVenue(async function POST(
@@ -212,6 +214,7 @@ export const POST = withVenue(async function POST(
           ? `${targetOrder.notes}\nMerged from order #${sourceOrder.orderNumber}`
           : `Merged from order #${sourceOrder.orderNumber}`,
         version: { increment: 1 },
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }, tx)
 
       // Void the source order (soft delete)
@@ -222,6 +225,7 @@ export const POST = withVenue(async function POST(
           ? `${sourceOrder.notes}\nMerged into order #${targetOrder.orderNumber}`
           : `Merged into order #${targetOrder.orderNumber}`,
         version: { increment: 1 },
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       }, tx)
 
       // Create audit log entry
@@ -244,6 +248,11 @@ export const POST = withVenue(async function POST(
 
       return { movedItems: moved, movedDiscounts: movedDisc }
     })
+
+    // Sync: notify cloud of bidirectional Order/OrderItem changes
+    void notifyDataChanged({ locationId, domain: 'orders', action: 'updated', entityId: targetOrderId })
+    void notifyDataChanged({ locationId, domain: 'orders', action: 'updated', entityId: sourceOrderId })
+    void pushUpstream()
 
     // C12: Release the source order's table after merge (prevent zombie tables)
     if (sourceOrder.tableId && sourceOrder.tableId !== targetOrder.tableId) {

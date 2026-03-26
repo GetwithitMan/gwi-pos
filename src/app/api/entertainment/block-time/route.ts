@@ -12,6 +12,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * BUG-L1 FIX: Recalculate full order totals (subtotal, tax, total) after
@@ -187,6 +189,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const updatedItem = result.updatedItem!
+
+    // Sync: notify cloud of bidirectional OrderItem changes
+    void notifyDataChanged({ locationId, domain: 'events', action: 'created', entityId: orderItemId })
+    void pushUpstream()
 
     // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
     void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
@@ -388,6 +394,10 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       })
     }
 
+    // Sync: notify cloud of bidirectional OrderItem changes
+    void notifyDataChanged({ locationId, domain: 'events', action: 'updated', entityId: orderItemId })
+    void pushUpstream()
+
     // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
     void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
 
@@ -539,6 +549,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         newPrice,
       })
     })
+
+    // Sync: notify cloud of bidirectional OrderItem changes
+    void notifyDataChanged({ locationId, domain: 'events', action: 'updated', entityId: orderItemId })
+    void pushUpstream()
 
     // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
     void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)
@@ -714,6 +728,10 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     }
 
     const { actualMinutes, calculatedCharge, breakdown, overtimeBreakdown, updatedMenuItem } = txResult
+
+    // Sync: notify cloud of bidirectional OrderItem changes
+    void notifyDataChanged({ locationId, domain: 'events', action: 'updated', entityId: orderItemId })
+    void pushUpstream()
 
     // Fire-and-forget: recalculate full order totals (subtotal, tax, total)
     void recalculateOrderAfterPriceChange(orderItem.orderId, orderItem.order.locationId)

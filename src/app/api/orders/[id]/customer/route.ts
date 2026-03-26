@@ -6,7 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderUpdatedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -98,9 +98,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     // Flush outbox after commit
-    void flushSocketOutbox(order.locationId).catch((err) => {
-      console.warn('[customer] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(order.locationId)
 
     // Fire-and-forget event emission
     void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {

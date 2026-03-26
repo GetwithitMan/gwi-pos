@@ -4,6 +4,8 @@ import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * PUT /api/liquor/bottles/reorder
@@ -51,10 +53,16 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       bottleIds.map((id: string, index: number) =>
         db.bottleProduct.update({
           where: { id },
-          data: { sortOrder: index },
+          data: {
+            sortOrder: index,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
+          },
         })
       )
     )
+
+    void notifyDataChanged({ locationId, domain: 'liquor', action: 'updated', entityId: bottleIds[0] })
+    void pushUpstream()
 
     // Real-time cross-terminal update
     void dispatchMenuUpdate(locationId, {

@@ -18,7 +18,7 @@ import { db as prisma } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { InventoryAdjustmentPayload, InventoryStockChangePayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List inventory levels and transactions
@@ -208,9 +208,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     // Transaction committed — flush outbox
-    void flushSocketOutbox(locationId).catch((err) => {
-      console.warn('[inventory/adjust] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(locationId)
 
     // Check for low stock alert (non-critical, outside transaction)
     if (quantityAfter <= (item.lowStockAlert ?? 0) && quantityAfter > 0) {

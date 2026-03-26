@@ -12,7 +12,7 @@ import { roundToCents } from '@/lib/pricing'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 
 interface ApplyDepositRequest {
   reservationId: string
@@ -298,7 +298,7 @@ export const POST = withVenue(async function POST(
 
     // Flush socket events after transaction commits
     if (outboxLocationId) {
-      void flushSocketOutbox(outboxLocationId).catch(console.error)
+      flushOutboxSafe(outboxLocationId)
     }
 
     // Emit order event for event sourcing (fire-and-forget, post-transaction)

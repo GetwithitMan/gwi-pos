@@ -15,7 +15,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { isDiscountable } from '@/lib/domain/order-status'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -595,9 +595,7 @@ export const POST = withVenue(async function POST(
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
     if (outboxLocationId) {
-      void flushSocketOutbox(outboxLocationId).catch((err) => {
-        console.warn('[discount] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(outboxLocationId)
     }
 
     // Audit trail for discount application
@@ -914,9 +912,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
     if (result && 'locationId' in result) {
-      void flushSocketOutbox(result.locationId).catch((err) => {
-        console.warn('[discount/delete] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(result.locationId)
       return result.response
     }
 

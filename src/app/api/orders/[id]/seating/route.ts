@@ -8,7 +8,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderUpdatedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -575,9 +575,7 @@ export const POST = withVenue(async function POST(
 
     // Flush outbox after transaction commits
     if (locationIdForDispatch) {
-      void flushSocketOutbox(locationIdForDispatch).catch((err) => {
-        console.warn('[seating] Outbox flush failed, catch-up will deliver:', err)
-      })
+      flushOutboxSafe(locationIdForDispatch)
     }
 
     // BUG-C2 fix: Dispatch floor plan update AFTER transaction commits.

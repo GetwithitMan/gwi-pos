@@ -6,7 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { TabUpdatedPayload, OrdersListChangedPayload, FloorPlanUpdatedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import * as OrderRepository from '@/lib/repositories/order-repository'
@@ -254,9 +254,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     // Transaction committed — flush outbox
-    void flushSocketOutbox(tab.locationId).catch((err) => {
-      console.warn('[tabs/update] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(tab.locationId)
 
     // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, id, 'ORDER_METADATA_UPDATED', {
@@ -380,9 +378,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     // Transaction committed — flush outbox
-    void flushSocketOutbox(tab.locationId).catch((err) => {
-      console.warn('[tabs/delete] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(tab.locationId)
 
     // Emit order event for event-sourced log (fire-and-forget, non-critical)
     void emitOrderEvent(tab.locationId, id, 'ORDER_CLOSED', {

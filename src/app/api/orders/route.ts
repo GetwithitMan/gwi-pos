@@ -25,7 +25,7 @@ import { validateCellularEmployeeFromHeaders, CellularAuthError } from '@/lib/ce
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
-import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
+import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -746,9 +746,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     }
 
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
-    void flushSocketOutbox(locationId).catch((err) => {
-      console.warn('[orders/create] Outbox flush failed, catch-up will deliver:', err)
-    })
+    flushOutboxSafe(locationId)
 
     timing.end('db', 'Order create with items')
 
