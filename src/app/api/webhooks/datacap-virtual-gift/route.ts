@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'crypto'
 import { db } from '@/lib/db'
+import { Prisma } from '@/generated/prisma/client'
 import { processDcVirtualGiftWebhook } from '@/lib/domain/gift-cards/process-datacap-virtual-gift'
 import { createChildLogger } from '@/lib/logger'
 import type { VirtualGiftWebhookPayload } from '@/lib/datacap/virtual-gift-client'
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
         externalTransactionId: transactionId || `page_${pageId}_${Date.now()}`,
         eventType,
         signatureValid: true,
-        payload: safePayload,
+        payload: safePayload as unknown as Prisma.InputJsonValue,
         processingStatus: 'received',
         providerPageId: pageId || null,
         providerMerchantId: merchantId || null,

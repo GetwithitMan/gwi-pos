@@ -10,6 +10,7 @@ const mockDb = vi.hoisted(() => ({
     findMany: vi.fn(),
     findUnique: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
   },
   location: {
     findUnique: vi.fn(),

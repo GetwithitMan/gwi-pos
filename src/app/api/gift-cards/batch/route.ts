@@ -129,7 +129,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
       `[AUDIT] GIFT_CARD_BATCH: action=${action}, total=${cardIds.length}, succeeded=${succeeded}, failed=${failed.length}, by employee ${employeeId}`
     )
 
-    void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'updated' }).catch(console.error)
+    void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'updated' })
 
     return NextResponse.json({ succeeded, failed })
   } catch (error) {
