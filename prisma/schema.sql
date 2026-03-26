@@ -1071,6 +1071,9 @@ CREATE TABLE "Order" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "pagerNumber" TEXT,
+    "fulfillmentMode" TEXT,
+    "readyCycleCounter" INTEGER NOT NULL DEFAULT 0,
 
     CONSTRAINT "Order_pkey" PRIMARY KEY ("id")
 );
@@ -3275,6 +3278,14 @@ CREATE TABLE "PaymentReader" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
+    "leaseTerminalId" TEXT,
+    "leaseSessionId" TEXT,
+    "leaseVersion" INTEGER NOT NULL DEFAULT 0,
+    "leasedUntil" TIMESTAMP(3),
+    "lastHeartbeatAt" TIMESTAMP(3),
+    "lastDetectionFingerprint" TEXT,
+    "lastDetectionAt" TIMESTAMP(3),
+    "readerState" TEXT NOT NULL DEFAULT 'idle',
 
     CONSTRAINT "PaymentReader_pkey" PRIMARY KEY ("id")
 );
@@ -4909,6 +4920,22 @@ CREATE TABLE "SyncWatermark" (
 );
 
 -- CreateTable
+CREATE TABLE "SyncConflict" (
+    "id" TEXT NOT NULL,
+    "model" TEXT NOT NULL,
+    "recordId" TEXT NOT NULL,
+    "localVersion" TEXT NOT NULL,
+    "cloudVersion" TEXT NOT NULL,
+    "localData" JSONB NOT NULL DEFAULT '{}',
+    "cloudData" JSONB NOT NULL DEFAULT '{}',
+    "detectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "resolvedAt" TIMESTAMP(3),
+    "resolution" TEXT,
+
+    CONSTRAINT "SyncConflict_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "_gwi_sync_state" (
     "table_name" TEXT NOT NULL,
     "high_water_mark" TIMESTAMP(3) NOT NULL,
@@ -4942,9 +4969,11 @@ CREATE TABLE "LoyaltyProgram" (
     "roundingMode" TEXT NOT NULL DEFAULT 'floor',
     "excludedCategoryIds" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "excludedItemTypes" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "lastMutatedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "LoyaltyProgram_pkey" PRIMARY KEY ("id")
 );
@@ -4959,9 +4988,11 @@ CREATE TABLE "LoyaltyTier" (
     "perks" JSONB NOT NULL DEFAULT '{}',
     "color" TEXT NOT NULL DEFAULT '#6366f1',
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "lastMutatedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "LoyaltyTier_pkey" PRIMARY KEY ("id")
 );
@@ -4980,8 +5011,325 @@ CREATE TABLE "LoyaltyTransaction" (
     "employeeId" TEXT,
     "metadata" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "LoyaltyTransaction_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CardDetection" (
+    "id" TEXT NOT NULL,
+    "detectionId" TEXT NOT NULL,
+    "readerId" TEXT NOT NULL,
+    "terminalId" TEXT NOT NULL,
+    "sessionId" TEXT NOT NULL,
+    "recordNo" TEXT,
+    "cardType" TEXT,
+    "cardLast4" TEXT,
+    "cardholderName" TEXT,
+    "entryMethod" TEXT,
+    "walletType" TEXT,
+    "matchKind" TEXT NOT NULL,
+    "matchedOrderId" TEXT,
+    "decisionExpiresAt" TIMESTAMP(3) NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "actionTaken" TEXT,
+    "actionResult" TEXT,
+    "resolvedAt" TIMESTAMP(3),
+    "resolvedByUserId" TEXT,
+    "resolvedByTerminalId" TEXT,
+    "leaseVersion" INTEGER,
+    "suppressedReason" TEXT,
+    "errorCode" TEXT,
+    "promptShownAt" TIMESTAMP(3),
+    "promptDismissedAt" TIMESTAMP(3),
+    "locationId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CardDetection_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationJob" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "subjectType" TEXT NOT NULL,
+    "subjectId" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "currentAttempt" INTEGER NOT NULL DEFAULT 0,
+    "maxAttempts" INTEGER NOT NULL DEFAULT 3,
+    "terminalResult" TEXT,
+    "dispatchOrigin" TEXT NOT NULL,
+    "businessStage" TEXT NOT NULL,
+    "executionStage" TEXT NOT NULL,
+    "routingRuleId" TEXT,
+    "providerId" TEXT NOT NULL,
+    "fallbackProviderId" TEXT,
+    "targetType" TEXT NOT NULL,
+    "targetValue" TEXT NOT NULL,
+    "scheduledFor" TIMESTAMP(3),
+    "availableAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "executionZone" TEXT NOT NULL DEFAULT 'any',
+    "claimedByWorkerId" TEXT,
+    "claimedAt" TIMESTAMP(3),
+    "processingTimeoutAt" TIMESTAMP(3),
+    "contextSnapshot" JSONB NOT NULL,
+    "messageTemplate" TEXT,
+    "messageRendered" TEXT,
+    "policySnapshot" JSONB NOT NULL,
+    "ruleExplainSnapshot" JSONB,
+    "subjectVersion" INTEGER NOT NULL,
+    "isProbe" BOOLEAN NOT NULL DEFAULT false,
+    "sourceSystem" TEXT NOT NULL,
+    "sourceEventId" TEXT NOT NULL,
+    "sourceEventVersion" INTEGER NOT NULL DEFAULT 1,
+    "idempotencyKey" TEXT NOT NULL,
+    "correlationId" TEXT NOT NULL,
+    "parentJobId" TEXT,
+    "notificationEngine" TEXT NOT NULL,
+    "lastAttemptAt" TIMESTAMP(3),
+    "resolvedAt" TIMESTAMP(3),
+    "resolvedByEmployeeId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "completedAt" TIMESTAMP(3),
+
+    CONSTRAINT "NotificationJob_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationAttempt" (
+    "id" TEXT NOT NULL,
+    "jobId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "providerType" TEXT NOT NULL,
+    "targetType" TEXT NOT NULL,
+    "targetValue" TEXT NOT NULL,
+    "messageRendered" TEXT,
+    "attemptNumber" INTEGER NOT NULL,
+    "startedAt" TIMESTAMP(3) NOT NULL,
+    "completedAt" TIMESTAMP(3),
+    "result" TEXT NOT NULL,
+    "latencyMs" INTEGER,
+    "rawResponse" TEXT,
+    "providerMessageId" TEXT,
+    "providerStatusCode" TEXT,
+    "deliveryConfidence" TEXT,
+    "errorCode" TEXT,
+    "normalizedError" TEXT,
+    "isManual" BOOLEAN NOT NULL DEFAULT false,
+    "isRetry" BOOLEAN NOT NULL DEFAULT false,
+
+    CONSTRAINT "NotificationAttempt_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationProvider" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "providerType" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "priority" INTEGER NOT NULL DEFAULT 0,
+    "executionZone" TEXT NOT NULL DEFAULT 'any',
+    "config" JSONB NOT NULL,
+    "configVersion" INTEGER NOT NULL DEFAULT 1,
+    "lastValidatedAt" TIMESTAMP(3),
+    "lastValidationResult" TEXT,
+    "capabilities" JSONB NOT NULL,
+    "healthStatus" TEXT NOT NULL DEFAULT 'healthy',
+    "lastHealthCheckAt" TIMESTAMP(3),
+    "consecutiveFailures" INTEGER NOT NULL DEFAULT 0,
+    "circuitBreakerOpenUntil" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "NotificationProvider_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationDevice" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "deviceNumber" TEXT NOT NULL,
+    "humanLabel" TEXT,
+    "deviceType" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "assignedToSubjectType" TEXT,
+    "assignedToSubjectId" TEXT,
+    "assignedAt" TIMESTAMP(3),
+    "releasedAt" TIMESTAMP(3),
+    "returnedAt" TIMESTAMP(3),
+    "batteryLevel" INTEGER,
+    "lastSeenAt" TIMESTAMP(3),
+    "lastSignalState" TEXT,
+    "capcode" TEXT,
+    "firmwareVersion" TEXT,
+    "dockId" TEXT,
+    "dockSlot" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "NotificationDevice_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationDeviceEvent" (
+    "id" TEXT NOT NULL,
+    "deviceId" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "subjectType" TEXT,
+    "subjectId" TEXT,
+    "employeeId" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "NotificationDeviceEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationTargetAssignment" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "subjectType" TEXT NOT NULL,
+    "subjectId" TEXT NOT NULL,
+    "targetType" TEXT NOT NULL,
+    "targetValue" TEXT NOT NULL,
+    "providerId" TEXT,
+    "priority" INTEGER NOT NULL DEFAULT 0,
+    "isPrimary" BOOLEAN NOT NULL DEFAULT false,
+    "source" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "releasedAt" TIMESTAMP(3),
+    "expiresAt" TIMESTAMP(3),
+    "releaseReason" TEXT,
+    "createdByEmployeeId" TEXT,
+    "lastUsedAt" TIMESTAMP(3),
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "NotificationTargetAssignment_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationRoutingRule" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "targetType" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "priority" INTEGER NOT NULL DEFAULT 0,
+    "messageTemplateId" TEXT,
+    "condFulfillmentMode" TEXT,
+    "condHasPager" BOOLEAN,
+    "condHasPhone" BOOLEAN,
+    "condMinPartySize" INTEGER,
+    "condOrderTypes" TEXT[],
+    "condDuringBusinessHours" BOOLEAN,
+    "retryMaxAttempts" INTEGER NOT NULL DEFAULT 2,
+    "retryDelayMs" INTEGER NOT NULL DEFAULT 2000,
+    "retryBackoffMultiplier" DOUBLE PRECISION NOT NULL DEFAULT 1.5,
+    "retryOnTimeout" BOOLEAN NOT NULL DEFAULT false,
+    "fallbackProviderId" TEXT,
+    "escalateToStaff" BOOLEAN NOT NULL DEFAULT false,
+    "alsoEmitDisplayProjection" BOOLEAN NOT NULL DEFAULT false,
+    "stopProcessingAfterMatch" BOOLEAN NOT NULL DEFAULT false,
+    "cooldownSeconds" INTEGER NOT NULL DEFAULT 0,
+    "allowManualOverride" BOOLEAN NOT NULL DEFAULT true,
+    "criticalityClass" TEXT NOT NULL DEFAULT 'standard',
+    "effectiveStartAt" TIMESTAMP(3),
+    "effectiveEndAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "NotificationRoutingRule_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "NotificationTemplate" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "channelType" TEXT NOT NULL,
+    "body" TEXT NOT NULL,
+    "locale" TEXT NOT NULL DEFAULT 'en',
+    "maxLength" INTEGER,
+    "version" INTEGER NOT NULL DEFAULT 1,
+    "isDefault" BOOLEAN NOT NULL DEFAULT false,
+    "requiredVariables" TEXT[],
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+
+    CONSTRAINT "NotificationTemplate_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DeliveryOrder" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "orderId" TEXT,
+    "employeeId" TEXT,
+    "driverId" TEXT,
+    "customerName" TEXT NOT NULL,
+    "phone" TEXT,
+    "address" TEXT,
+    "addressLine2" TEXT,
+    "city" TEXT,
+    "state" TEXT,
+    "zipCode" TEXT,
+    "notes" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "deliveryFee" DECIMAL(10,2) NOT NULL DEFAULT 0,
+    "estimatedMinutes" INTEGER NOT NULL DEFAULT 45,
+    "scheduledFor" TIMESTAMP(3),
+    "preparedAt" TIMESTAMP(3),
+    "readyAt" TIMESTAMP(3),
+    "dispatchedAt" TIMESTAMP(3),
+    "deliveredAt" TIMESTAMP(3),
+    "cancelledAt" TIMESTAMP(3),
+    "cancelReason" TEXT,
+    "zoneId" TEXT,
+    "runId" TEXT,
+    "runSequence" INTEGER,
+    "trackingToken" TEXT,
+    "addressId" TEXT,
+    "latitude" DECIMAL(10,7),
+    "longitude" DECIMAL(10,7),
+    "geocodePrecision" TEXT,
+    "geocodeConfidence" DECIMAL(3,2),
+    "smsNotificationsSent" JSONB DEFAULT '[]',
+    "confirmedAt" TIMESTAMP(3),
+    "assignedAt" TIMESTAMP(3),
+    "enRouteAt" TIMESTAMP(3),
+    "arrivedAt" TIMESTAMP(3),
+    "attemptedAt" TIMESTAMP(3),
+    "failedAt" TIMESTAMP(3),
+    "returnedAt" TIMESTAMP(3),
+    "promisedAt" TIMESTAMP(3),
+    "quotedMinutes" INTEGER,
+    "serviceRecoveryReason" TEXT,
+    "exceptionId" TEXT,
+    "addressSnapshotJson" JSONB,
+    "proofMode" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "DeliveryOrder_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -5349,6 +5697,9 @@ CREATE INDEX "Order_locationId_status_businessDayDate_idx" ON "Order"("locationI
 
 -- CreateIndex
 CREATE INDEX "Order_claimedByEmployeeId_claimedAt_idx" ON "Order"("claimedByEmployeeId", "claimedAt");
+
+-- CreateIndex
+CREATE INDEX "Order_id_version_idx" ON "Order"("id", "version");
 
 -- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
@@ -7232,6 +7583,15 @@ CREATE UNIQUE INDEX "EmployeePermissionOverride_employeeId_permissionKey_key" ON
 CREATE UNIQUE INDEX "SyncWatermark_locationId_key" ON "SyncWatermark"("locationId");
 
 -- CreateIndex
+CREATE INDEX "SyncConflict_resolvedAt_idx" ON "SyncConflict"("resolvedAt");
+
+-- CreateIndex
+CREATE INDEX "SyncConflict_detectedAt_idx" ON "SyncConflict"("detectedAt");
+
+-- CreateIndex
+CREATE INDEX "SyncConflict_model_recordId_idx" ON "SyncConflict"("model", "recordId");
+
+-- CreateIndex
 CREATE INDEX "SocketEventLog_locationId_id_idx" ON "SocketEventLog"("locationId", "id");
 
 -- CreateIndex
@@ -7263,6 +7623,72 @@ CREATE INDEX "LoyaltyTransaction_createdAt_idx" ON "LoyaltyTransaction"("created
 
 -- CreateIndex
 CREATE INDEX "LoyaltyTransaction_customerId_createdAt_idx" ON "LoyaltyTransaction"("customerId", "createdAt" DESC);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CardDetection_detectionId_key" ON "CardDetection"("detectionId");
+
+-- CreateIndex
+CREATE INDEX "CardDetection_readerId_createdAt_idx" ON "CardDetection"("readerId", "createdAt" DESC);
+
+-- CreateIndex
+CREATE INDEX "CardDetection_terminalId_createdAt_idx" ON "CardDetection"("terminalId", "createdAt" DESC);
+
+-- CreateIndex
+CREATE INDEX "CardDetection_status_decisionExpiresAt_idx" ON "CardDetection"("status", "decisionExpiresAt");
+
+-- CreateIndex
+CREATE INDEX "CardDetection_matchedOrderId_createdAt_idx" ON "CardDetection"("matchedOrderId", "createdAt" DESC);
+
+-- CreateIndex
+CREATE INDEX "CardDetection_locationId_detectionId_idx" ON "CardDetection"("locationId", "detectionId");
+
+-- CreateIndex
+CREATE INDEX "NotificationJob_correlationId_idx" ON "NotificationJob"("correlationId");
+
+-- CreateIndex
+CREATE INDEX "NotificationJob_subjectType_subjectId_idx" ON "NotificationJob"("subjectType", "subjectId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "NotificationJob_locationId_sourceSystem_sourceEventId_sourc_key" ON "NotificationJob"("locationId", "sourceSystem", "sourceEventId", "sourceEventVersion");
+
+-- CreateIndex
+CREATE INDEX "NotificationAttempt_jobId_idx" ON "NotificationAttempt"("jobId");
+
+-- CreateIndex
+CREATE INDEX "NotificationAttempt_providerId_startedAt_idx" ON "NotificationAttempt"("providerId", "startedAt");
+
+-- CreateIndex
+CREATE INDEX "NotificationProvider_locationId_isActive_idx" ON "NotificationProvider"("locationId", "isActive");
+
+-- CreateIndex
+CREATE INDEX "NotificationDeviceEvent_deviceId_createdAt_idx" ON "NotificationDeviceEvent"("deviceId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "NotificationTargetAssignment_subjectType_subjectId_status_idx" ON "NotificationTargetAssignment"("subjectType", "subjectId", "status");
+
+-- CreateIndex
+CREATE INDEX "NotificationRoutingRule_locationId_eventType_enabled_idx" ON "NotificationRoutingRule"("locationId", "eventType", "enabled");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DeliveryOrder_trackingToken_key" ON "DeliveryOrder"("trackingToken");
+
+-- CreateIndex
+CREATE INDEX "DeliveryOrder_locationId_status_idx" ON "DeliveryOrder"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "DeliveryOrder_driverId_idx" ON "DeliveryOrder"("driverId");
+
+-- CreateIndex
+CREATE INDEX "DeliveryOrder_orderId_idx" ON "DeliveryOrder"("orderId");
+
+-- CreateIndex
+CREATE INDEX "DeliveryOrder_locationId_createdAt_idx" ON "DeliveryOrder"("locationId", "createdAt" DESC);
+
+-- CreateIndex
+CREATE INDEX "DeliveryOrder_zoneId_idx" ON "DeliveryOrder"("zoneId");
+
+-- CreateIndex
+CREATE INDEX "DeliveryOrder_runId_idx" ON "DeliveryOrder"("runId");
 
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
