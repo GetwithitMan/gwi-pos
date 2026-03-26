@@ -297,9 +297,39 @@ export function FloorPlanEditor({
     [useDatabase, selectedRoomId, locationId, fetchElements]
   );
 
+  // Debounced fixture save — batches rapid updates (drag/resize) into a single API call
+  const pendingSaveRef = useRef<Record<string, { timer: ReturnType<typeof setTimeout>; elementData: Record<string, unknown>; originalElements: FloorPlanElement[] }>>({});
+
+  const flushFixtureSave = useCallback(async (fixtureId: string, elementData: Record<string, unknown>, originalElements: FloorPlanElement[]) => {
+    try {
+      const response = await fetch(`/api/floor-plan-elements/${fixtureId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: locationId || '',
+          ...elementData,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Failed to update fixture (HTTP ${response.status})`);
+      }
+
+      setRefreshKey((prev) => prev + 1);
+    } catch (error) {
+      // Rollback on failure
+      setDbElements(originalElements);
+      toast.error(`Failed to save fixture: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      logger.error('Fixture update failed:', { fixtureId, error });
+    } finally {
+      delete pendingSaveRef.current[fixtureId];
+    }
+  }, [locationId]);
+
   // Handle fixture update
   const handleFixtureUpdate = useCallback(
-    async (fixtureId: string, updates: Partial<Fixture>) => {
+    (fixtureId: string, updates: Partial<Fixture>) => {
       if (useDatabase) {
         // Capture original state for rollback
         let originalElements: FloorPlanElement[] = [];
@@ -313,57 +343,47 @@ export function FloorPlanEditor({
 
         if (!currentElement) return;
 
-        try {
-          // Convert current element to fixture, apply updates, then convert back
-          const currentFixture = elementToFixture(currentElement, selectedRoomId);
-          const updatedFixture = { ...currentFixture, ...updates };
+        // Convert current element to fixture, apply updates, then convert back
+        const currentFixture = elementToFixture(currentElement, selectedRoomId);
+        const updatedFixture = { ...currentFixture, ...updates };
 
-          // If geometry is being updated, merge it properly
-          if (updates.geometry) {
-            updatedFixture.geometry = updates.geometry;
-          }
-
-          const elementData = fixtureToElement(updatedFixture);
-
-          // Optimistic update - update UI immediately
-          setDbElements(prev => prev.map(el =>
-            el.id === fixtureId
-              ? { ...el, ...elementData } as FloorPlanElement
-              : el
-          ));
-
-          const response = await fetch(`/api/floor-plan-elements/${fixtureId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              locationId: locationId || '',
-              ...elementData,
-            }),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || `Failed to update fixture (HTTP ${response.status})`);
-          }
-
-          setRefreshKey((prev) => prev + 1);
-          // Note: No success toast for drag operations to avoid spam
-        } catch (error) {
-          // Rollback on failure
-          setDbElements(originalElements);
-
-          // Show error to user
-          toast.error(`Failed to save fixture: ${error instanceof Error ? error.message : 'Unknown error'}`);
-
-          // Log for debugging
-          logger.error('Fixture update failed:', { fixtureId, updates, error });
+        // If geometry is being updated, merge it properly
+        if (updates.geometry) {
+          updatedFixture.geometry = updates.geometry;
         }
+
+        const elementData = fixtureToElement(updatedFixture);
+
+        // Optimistic update - update UI immediately (no delay)
+        setDbElements(prev => prev.map(el =>
+          el.id === fixtureId
+            ? { ...el, ...elementData } as FloorPlanElement
+            : el
+        ));
+
+        // Debounce the API call — cancel any pending save for this fixture
+        // and schedule a new one 500ms from now. This batches rapid drag/resize
+        // events into a single API call instead of one per pixel.
+        const pending = pendingSaveRef.current[fixtureId];
+        if (pending) {
+          clearTimeout(pending.timer);
+        }
+
+        pendingSaveRef.current[fixtureId] = {
+          elementData: elementData as unknown as Record<string, unknown>,
+          originalElements,
+          timer: setTimeout(() => {
+            void flushFixtureSave(fixtureId, elementData as unknown as Record<string, unknown>, originalElements);
+          }, 500),
+        };
+
+        // Note: No success toast for drag operations to avoid spam
       } else {
         FloorCanvasAPI.updateFixture(fixtureId, updates);
         setRefreshKey((prev) => prev + 1);
       }
     },
-    [useDatabase, selectedRoomId, locationId]
+    [useDatabase, selectedRoomId, locationId, flushFixtureSave]
   );
 
   // Handle fixture deletion
