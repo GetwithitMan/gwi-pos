@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'

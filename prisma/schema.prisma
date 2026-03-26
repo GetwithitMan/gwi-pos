@@ -6261,7 +6261,7 @@ model KDSScreen {
 
   name       String // "Kitchen Main", "Grill Station", "Bar Display"
   slug       String? // URL-friendly identifier: "kitchen-main", "grill-station"
-  screenType String  @default("kds") // "kds" | "entertainment"
+  screenType String  @default("kds") // "kds" | "entertainment" | "delivery"
 
   // Display Settings
   columns     Int    @default(4)
