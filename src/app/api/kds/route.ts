@@ -134,8 +134,20 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         items: { some: {} },
         // KDS Overhaul: Server-side order-type filter
         ...(orderTypeFilter ? { orderType: { notIn: orderTypeFilter } } : {}),
-        // Auto-expiry: exclude orders older than autoExpireMinutes to prevent stale tickets
-        ...(autoExpireCutoff ? { createdAt: { gte: autoExpireCutoff } } : {}),
+        // Auto-expiry: exclude orders older than autoExpireMinutes to prevent stale tickets.
+        // Uses sentAt (when order was sent to kitchen), NOT createdAt. An order created 6 hours
+        // ago but sent 30 minutes ago must still appear. Falls back to createdAt for safety.
+        // Wrapped in AND[] to avoid colliding with the top-level OR (Prisma constraint).
+        ...(autoExpireCutoff ? {
+          AND: [
+            {
+              OR: [
+                { sentAt: { gte: autoExpireCutoff } },
+                { sentAt: null, createdAt: { gte: autoExpireCutoff } },
+              ],
+            },
+          ],
+        } : {}),
       },
       take: 50,
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),

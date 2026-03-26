@@ -1412,6 +1412,7 @@ export function BartenderView({
   const {
     handleCreateTab,
     handleQuickTab,
+    handleAutoCreateTab,
     isCreatingTab,
     showNewTabModal,
     newTabName,
@@ -1452,15 +1453,18 @@ export function BartenderView({
     const unsavedItems = freshItems.filter(i => !i.sentToKitchen)
     if (unsavedItems.length === 0) return
 
-    // If no tab selected, prompt for tab name first
+    // If no tab selected, auto-create one (1-tap speed) and send items
     if (!selectedTabId) {
-      openNewTabModal(true)
+      const tab = await handleAutoCreateTab()
+      if (tab?.id) {
+        await sendItemsToTab(tab.id)
+      }
       return
     }
 
     // sendItemsToTab clears UI instantly and sends in background
     await sendItemsToTab(selectedTabId)
-  }, [selectedTabId, sendItemsToTab, openNewTabModal])
+  }, [selectedTabId, sendItemsToTab, handleAutoCreateTab])
 
   const handlePay = useCallback(() => {
     if (selectedTabId && onOpenPayment) {

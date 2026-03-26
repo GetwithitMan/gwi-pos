@@ -69,9 +69,12 @@ export function useTabCreation({
   /**
    * Create tab from modal (with optional name).
    * Called by the "Start Tab" button in NewTabModal.
+   * @param overrideName - If provided, uses this name instead of the modal input state.
+   *   Used by quick-name buttons that set & submit in one tap.
    */
-  const handleCreateTab = useCallback(async () => {
-    if (requireNameWithoutCard && !newTabName.trim()) {
+  const handleCreateTab = useCallback(async (overrideName?: string) => {
+    const effectiveName = overrideName !== undefined ? overrideName : newTabName
+    if (requireNameWithoutCard && !effectiveName.trim()) {
       toast.error('Tab name is required')
       return
     }
@@ -79,7 +82,7 @@ export function useTabCreation({
     setIsCreatingTab(true)
     const shouldSendAfter = pendingSendAfterTabRef.current
     try {
-      const data = await postTab(newTabName.trim() || null)
+      const data = await postTab(effectiveName.trim() || null)
       setShowNewTabModal(false)
       setNewTabName('')
       pendingSendAfterTabRef.current = false
@@ -112,6 +115,29 @@ export function useTabCreation({
     }
   }, [requireNameWithoutCard, postTab, finishCreate])
 
+  /**
+   * Auto-create a tab (no modal, no name prompt) and send pending items to it.
+   * Used for 1-tap bar tab creation: bartender taps "Send" with no tab selected,
+   * or taps "Start Tab" in quick mode. Creates tab with server-generated name
+   * (e.g. "Tab #5") and immediately sends items.
+   */
+  const handleAutoCreateTab = useCallback(async (): Promise<TabData | null> => {
+    if (isCreatingTab) return null
+    setIsCreatingTab(true)
+    try {
+      const data = await postTab(null)
+      onTabCreated(data)
+      onRefresh()
+      return data
+    } catch (error) {
+      console.error('[useTabCreation] Failed to auto-create tab:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to create tab')
+      return null
+    } finally {
+      setIsCreatingTab(false)
+    }
+  }, [isCreatingTab, postTab, onTabCreated, onRefresh])
+
   /** Open the new-tab modal, optionally marking a pending send-after-create. */
   const openNewTabModal = useCallback((pendingSend = false) => {
     pendingSendAfterTabRef.current = pendingSend
@@ -127,6 +153,7 @@ export function useTabCreation({
   return {
     handleCreateTab,
     handleQuickTab,
+    handleAutoCreateTab,
     isCreatingTab,
     showNewTabModal,
     newTabName,

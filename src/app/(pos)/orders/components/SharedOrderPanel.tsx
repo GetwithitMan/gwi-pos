@@ -557,6 +557,93 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
                 })()
               }
             } else {
+              // ── Bartender speed path: skip name prompt, auto-create tab ──
+              // In bartender view, create the tab immediately with no name
+              // (server auto-generates "Tab #N") and send items in background.
+              if (viewMode === 'bartender') {
+                const capturedOrder = useOrderStore.getState().currentOrder
+                if (!capturedOrder || capturedOrder.items.length === 0) return
+                const capturedItems = [...capturedOrder.items]
+                const capturedEmployeeId = employeeId
+                const capturedLocationId = capturedOrder.locationId || locationId
+
+                // Clear UI instantly — bartender can start next order immediately
+                clearOrder()
+                setSavedOrderId(null)
+                setOrderSent(false)
+                setSelectedOrderType(null)
+                setOrderCustomFields({})
+                toast.success('Starting tab...')
+
+                void (async () => {
+                  try {
+                    const res = await fetch('/api/orders', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        employeeId: capturedEmployeeId,
+                        locationId: capturedLocationId,
+                        orderType: 'bar_tab',
+                        tabName: null,
+                        guestCount: capturedOrder.guestCount || 1,
+                        items: capturedItems.map(item => ({
+                          menuItemId: item.menuItemId,
+                          name: item.name,
+                          price: item.price,
+                          quantity: item.quantity,
+                          modifiers: item.modifiers?.map(m => ({
+                            modifierId: m.modifierId || m.id,
+                            name: m.name,
+                            price: m.price,
+                            preModifier: m.preModifier,
+                            depth: m.depth,
+                            isCustomEntry: m.isCustomEntry ?? false,
+                            isNoneSelection: m.isNoneSelection ?? false,
+                            customEntryName: m.customEntryName ?? null,
+                            customEntryPrice: m.customEntryPrice ?? null,
+                            swapTargetName: m.swapTargetName ?? null,
+                            swapTargetItemId: m.swapTargetItemId ?? null,
+                            swapPricingMode: m.swapPricingMode ?? null,
+                            swapEffectivePrice: m.swapEffectivePrice ?? null,
+                            spiritTier: m.spiritTier ?? null,
+                            linkedBottleProductId: m.linkedBottleProductId ?? null,
+                          })) || [],
+                        })),
+                        idempotencyKey: uuid(),
+                      }),
+                    })
+
+                    if (!res.ok) {
+                      console.error('[onStartTab] Background create failed')
+                      toast.error('Failed to send — check open orders')
+                      return
+                    }
+
+                    const created = await res.json()
+
+                    const sendRes = await fetch(`/api/orders/${created.id}/send`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                    })
+                    if (!sendRes.ok) {
+                      console.error('[onStartTab] Background send failed')
+                      toast.error('Failed to send — check open orders')
+                    } else {
+                      toast.success('Order sent to kitchen')
+                    }
+                  } catch (err) {
+                    console.error('[onStartTab] Background tab creation failed:', err)
+                    toast.error('Failed to send — check open orders')
+                  } finally {
+                    setTabsRefreshTrigger(prev => prev + 1)
+                  }
+                })()
+
+                return
+              }
+
+              // ── Non-bartender: show name prompt modal ──
               setTabNameCallback(() => async () => {
                 const store = useOrderStore.getState()
                 const tabName = store.currentOrder?.tabName
