@@ -3,6 +3,8 @@ import { verifyCronSecret } from '@/lib/cron-auth'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
 import { parseSettings } from '@/lib/settings'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-reservation-thank-you')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -84,7 +86,7 @@ export async function GET(request: NextRequest) {
         // Rollback so it can be retried
         void venueDb.$executeRaw`
           UPDATE "Reservation" SET "thankYouSentAt" = NULL WHERE id = ${row.id}
-        `.catch(console.error)
+        `.catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 

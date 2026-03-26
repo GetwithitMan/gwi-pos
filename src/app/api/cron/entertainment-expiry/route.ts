@@ -15,6 +15,8 @@ import { notifyNuc } from '@/lib/cron-nuc-notify'
 
 import { expireSession } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-entertainment-expiry')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -147,7 +149,7 @@ export async function GET(request: NextRequest) {
                   discountTotal: 0,
                   total: totals.total,
                   commissionTotal: totals.commissionTotal,
-                }).catch(console.error)
+                }).catch(err => log.warn({ err }, 'Background task failed'))
               } else {
                 void dispatchOrderTotalsUpdate(item.order.locationId, item.order.id, {
                   subtotal: totals.subtotal,
@@ -156,7 +158,7 @@ export async function GET(request: NextRequest) {
                   discountTotal: 0,
                   total: totals.total,
                   commissionTotal: totals.commissionTotal,
-                }, { async: true }).catch(console.error)
+                }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
               }
             } catch (err) {
               console.error('[cron:entertainment-expiry] Failed to recalculate order totals:', err)
@@ -172,17 +174,17 @@ export async function GET(request: NextRequest) {
             entertainmentStatus: 'available',
             currentOrderId: null,
             expiresAt: null,
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         } else {
           void dispatchEntertainmentStatusChanged(item.order.locationId, {
             itemId: item.menuItem.id,
             entertainmentStatus: 'available',
             currentOrderId: null,
             expiresAt: null,
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         }
 
-        void notifyNextWaitlistEntry(item.order.locationId, item.menuItem.id, item.menuItem.name).catch(console.error)
+        void notifyNextWaitlistEntry(item.order.locationId, item.menuItem.id, item.menuItem.name).catch(err => log.warn({ err }, 'Background task failed'))
 
         if (!result.closedOrder) {
           if (process.env.VERCEL) {
@@ -194,7 +196,7 @@ export async function GET(request: NextRequest) {
               action: 'stopped',
               expiresAt: null,
               startedAt: null,
-            }).catch(console.error)
+            }).catch(err => log.warn({ err }, 'Background task failed'))
           } else {
             void dispatchEntertainmentUpdate(item.order.locationId, {
               sessionId: item.id,
@@ -203,7 +205,7 @@ export async function GET(request: NextRequest) {
               action: 'stopped',
               expiresAt: null,
               startedAt: null,
-            }).catch(console.error)
+            }).catch(err => log.warn({ err }, 'Background task failed'))
           }
 
           void emitOrderEvent(
@@ -216,7 +218,7 @@ export async function GET(request: NextRequest) {
               reason: 'block_time_expired',
             },
             { deviceId: 'cron-entertainment-expiry' }
-          ).catch(console.error)
+          ).catch(err => log.warn({ err }, 'Background task failed'))
 
           expiredSessionCount++
         }
@@ -231,9 +233,9 @@ export async function GET(request: NextRequest) {
     // Dispatch floor plan updates grouped by location
     for (const locationId of locationIdsToRefresh) {
       if (process.env.VERCEL) {
-        void notifyNuc(slug, 'FLOOR_PLAN_UPDATE', { locationId }).catch(console.error)
+        void notifyNuc(slug, 'FLOOR_PLAN_UPDATE', { locationId }).catch(err => log.warn({ err }, 'Background task failed'))
       } else {
-        void dispatchFloorPlanUpdate(locationId).catch(console.error)
+        void dispatchFloorPlanUpdate(locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 
@@ -321,7 +323,7 @@ export async function GET(request: NextRequest) {
             entry.locationId,
             entry.element.linkedMenuItemId,
             entry.element.name || undefined
-          ).catch(console.error)
+          ).catch(err => log.warn({ err }, 'Background task failed'))
         }
       } catch (notifiedErr) {
         console.error(

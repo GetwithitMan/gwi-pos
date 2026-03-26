@@ -22,6 +22,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('public.gift-card-balance')
 
 // ─── In-memory rate limiter ───────────────────────────────────────────────────
 
@@ -154,7 +157,7 @@ export async function GET(request: NextRequest) {
       void venueDb.giftCard.updateMany({
         where: { cardNumber: sanitized, status: 'active', deletedAt: null },
         data: { status: 'expired' },
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in public.gift-card-balance'))
     }
 
     const lastRedemption = giftCard.transactions[0]

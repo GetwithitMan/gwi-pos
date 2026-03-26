@@ -17,6 +17,8 @@ import { roundToCents } from '@/lib/pricing'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-discount')
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -645,7 +647,7 @@ export const POST = withVenue(async function POST(
             employeeId: info.employeeId ?? undefined,
             orderId,
             groupId: `discount-${info.locationId}-${orderId}`,
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         } catch (err) {
           console.error('[discount] Alert dispatch failed:', err)
         }

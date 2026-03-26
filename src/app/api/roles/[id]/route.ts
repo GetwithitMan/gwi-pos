@@ -7,6 +7,8 @@ import { PERMISSIONS } from '@/lib/auth'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('roles')
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -167,12 +169,12 @@ export const PUT = withVenue(async function PUT(
             entityId: role.id,
             details: { roleName: role.name, added, removed },
           },
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 
     // Emit employees:changed so all terminals refresh employee/permission data
-    void emitToLocation(existing.locationId, 'employees:changed', { action: 'role_updated', roleId: id }).catch(console.error)
+    void emitToLocation(existing.locationId, 'employees:changed', { action: 'role_updated', roleId: id }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'roles', action: 'updated', entityId: id })
     void pushUpstream()

@@ -140,7 +140,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             discountTotal: 0,
             total: totals.total,
             commissionTotal: totals.commissionTotal,
-          }, { async: true }).catch(console.error)
+          }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
         } catch (err) {
           console.error(`[stop-all] Failed to recalculate order totals for order ${orderId}:`, err)
         }

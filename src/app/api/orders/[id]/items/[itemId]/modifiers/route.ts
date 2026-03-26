@@ -6,6 +6,8 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderSummaryUpdated, buildOrderSummary } from '@/lib/socket-dispatch'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-modifiers')
 
 // PUT - Update modifiers on an existing order item
 export const PUT = withVenue(withAuth({ allowCellular: true }, async function PUT(
@@ -86,13 +88,13 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     void emitOrderEvent(locationId, orderId, 'ITEM_UPDATED', {
       lineItemId: itemId,
       modifiersJson: JSON.stringify(modifiers || []),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Fire-and-forget socket dispatches so other terminals see updated modifiers/totals
     void dispatchOpenOrdersChanged(locationId, {
       trigger: 'item_updated',
       orderId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Re-fetch order with totals for Android cross-terminal summary
     void (async () => {

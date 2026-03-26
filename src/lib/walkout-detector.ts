@@ -154,7 +154,7 @@ export async function detectPotentialWalkouts(locationId: string): Promise<{
   // Dispatch open orders changed so terminals refresh their order lists
   void dispatchOpenOrdersChanged(locationId, {
     trigger: 'item_updated' as any,
-  }, { async: true }).catch(() => {})
+  }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in walkout-detector'))
 
   log.info({ flaggedCount: flaggedOrders.length, locationId }, 'Flagged potential walkout(s)')
 

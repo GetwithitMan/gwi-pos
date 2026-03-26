@@ -20,6 +20,8 @@ import { getUpdateAgentStatus } from '@/lib/update-agent'
 import { getSchemaVerificationResult, isSchemaVerified } from '@/lib/schema-verify'
 import { getReadinessState, type ReadinessLevel } from '@/lib/readiness'
 import { APP_VERSION } from '@/lib/version-contract'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('health')
 
 export const dynamic = 'force-dynamic'
 
@@ -233,12 +235,12 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: 
       void dispatchFailoverActive(locationId, {
         message: 'Backup server active',
         since: failoverSince,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
       console.warn('[Health] Failover detected — backup promoted to primary. Emitting server:failover-active.')
     } else if (!isPromotedBackup && lastKnownPromotedBackup) {
       // Transition: promoted backup -> back to normal (primary restored)
       failoverSince = null
-      void dispatchFailoverResolved(locationId).catch(console.error)
+      void dispatchFailoverResolved(locationId).catch(err => log.warn({ err }, 'Background task failed'))
       console.info('[Health] Failover resolved — original primary restored. Emitting server:failover-resolved.')
     }
   }

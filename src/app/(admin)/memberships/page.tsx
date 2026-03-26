@@ -502,7 +502,7 @@ function MembershipDetailPanel({ member, charges, events, plans, locationId, emp
     fetch(`/api/customers/${member.customerId}/saved-cards?locationId=${locationId}&requestingEmployeeId=${employeeId}`)
       .then(r => r.json())
       .then(j => setSavedCards(j.data?.cards || j.data || []))
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in memberships:', err))
   }, [member.customerId, locationId, employeeId])
 
   const doAction = async (url: string, body: Record<string, any>, successMsg: string) => {

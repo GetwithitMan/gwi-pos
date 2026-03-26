@@ -8,6 +8,8 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-bulk-action')
 
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
   try {
@@ -176,7 +178,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
       // Dispatch table:status-changed for each reset table (outside transaction)
       for (const tableId of cancelledTableIds) {
-        void dispatchTableStatusChanged(locationId, { tableId, status: 'available' }).catch(console.error)
+        void dispatchTableStatusChanged(locationId, { tableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
     } else if (action === 'transfer') {
@@ -238,8 +240,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     pushUpstream()
 
     // Dispatch socket update
-    dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
-    dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+    dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
+    dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
 
     return NextResponse.json({
       data: {

@@ -15,6 +15,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { isOpen } from '@/lib/domain/order-status'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-transfer')
 
 interface TransferPayload {
   toEmployeeId: string
@@ -190,11 +192,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'transferred',
       orderId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void dispatchTabUpdated(order.locationId, {
       orderId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

@@ -11,6 +11,9 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
 import { getLocationTaxRate, calculateSplitTax, isItemTaxInclusive, type TaxInclusiveSettings } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.replay-cart-events')
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -323,9 +326,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                     entityId: order.id,
                     details: { orderNumber, orderType: payload.orderType, source: isCellularOrigin ? 'cellular' : 'offline' },
                   },
-                }).catch(() => {})
-
-                // Emit event (fire-and-forget)
+                }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.replay-cart-events'))
                 void emitOrderEvent(locationId, order.id, 'ORDER_CREATED', {
                   locationId,
                   employeeId: trustedEmployeeId,
@@ -337,9 +338,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 })
 
                 // Socket: notify terminals of new order + floor plan update
-                void dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(() => {})
+                void dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
                 if (payload.tableId) {
-                  void dispatchFloorPlanUpdate(locationId).catch(() => {})
+                  void dispatchFloorPlanUpdate(locationId).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
                 }
 
                 processed++
@@ -428,7 +429,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 }
 
                 // Socket: notify terminals that order items/totals changed
-                void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId: targetOrderId }, { async: true }).catch(() => {})
+                void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId: targetOrderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
 
                 processed++
                 markProcessedLocal(evt.eventId)
@@ -493,7 +494,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 }
 
                 // Socket: notify terminals that order items/totals changed
-                void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId: targetOrderId }, { async: true }).catch(() => {})
+                void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId: targetOrderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
 
                 processed++
                 markProcessedLocal(evt.eventId)
@@ -584,8 +585,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 })
 
                 // Dispatch open orders update + floor plan (fire-and-forget)
-                void dispatchOpenOrdersChanged(locationId, { trigger: 'sent', orderId: targetOrderId }, { async: true }).catch(() => {})
-                void dispatchFloorPlanUpdate(locationId).catch(() => {})
+                void dispatchOpenOrdersChanged(locationId, { trigger: 'sent', orderId: targetOrderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
+                void dispatchFloorPlanUpdate(locationId).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
 
                 processed++
                 markProcessedLocal(evt.eventId)

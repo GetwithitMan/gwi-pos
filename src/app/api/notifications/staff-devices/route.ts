@@ -17,6 +17,8 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-staff-devices')
 
 export const dynamic = 'force-dynamic'
 
@@ -299,7 +301,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           assignmentId: txResult.assignmentId,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {
@@ -425,7 +427,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
           action: 'staff_pager_unbind',
           deviceNumber: unboundDeviceNumber,
         })
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // W16: AuditLog for staff device unbind
@@ -442,7 +444,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
           assignmentId: assignment.id,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

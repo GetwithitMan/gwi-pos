@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('tables-save-default-layout')
 
 /**
  * POST /api/tables/save-default-layout
@@ -69,7 +71,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     )
 
     // Notify POS terminals of default layout save
-    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

@@ -17,6 +17,8 @@ import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cover-charges')
 
 interface CoverChargeRow {
   id: string
@@ -249,7 +251,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isComped: record.isComped,
       employeeId: record.employeeId,
       createdAt: record.createdAt instanceof Date ? record.createdAt.toISOString() : record.createdAt,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

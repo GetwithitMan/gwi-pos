@@ -4,6 +4,9 @@ import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor.categories.reorder')
 
 /**
  * PUT /api/liquor/categories/reorder
@@ -60,7 +63,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void dispatchMenuUpdate(locationId, {
       action: 'updated',
       name: 'categories-reorder',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.categories.reorder'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

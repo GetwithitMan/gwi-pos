@@ -20,7 +20,7 @@ function dispatchFloorPlanUpdate(locationId: string, _options?: { async?: boolea
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type: 'FLOOR_PLAN_UPDATE', locationId }),
-  }).catch(() => { /* fire-and-forget */ })
+  }).catch(err => console.warn('floor plan broadcast failed:', err))
 }
 import { toast } from '@/stores/toast-store';
 import { logger } from '@/lib/logger';

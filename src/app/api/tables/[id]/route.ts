@@ -9,6 +9,9 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('tables.id')
 
 // GET - Get a single table
 export const GET = withVenue(async function GET(
@@ -215,7 +218,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     // Dispatch table:status-changed when status is updated (fire-and-forget)
     if (status !== undefined) {
-      void dispatchTableStatusChanged(table.locationId, { tableId: id, status }).catch(() => {})
+      void dispatchTableStatusChanged(table.locationId, { tableId: id, status }).catch(err => log.warn({ err }, 'table status dispatch failed'))
     }
 
     // Notify POS terminals of floor plan update

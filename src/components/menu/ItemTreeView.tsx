@@ -156,7 +156,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
         setItemOwnedGroups(ownedData.data || [])
         setIngredients(ingData.data || [])
       })
-      .catch(console.error)
+      .catch(err => console.warn('Operation failed:', err))
       .finally(() => setLoading(false))
   }, [item?.id, refreshKey])
 

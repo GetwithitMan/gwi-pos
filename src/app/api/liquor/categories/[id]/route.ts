@@ -9,6 +9,9 @@ import { emitToLocation } from '@/lib/socket-server'
 import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor.categories.id')
 
 /**
  * GET /api/liquor/categories/[id]
@@ -167,7 +170,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       },
     })
 
-    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(err => log.warn({ err }, 'socket emit failed'))
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'updated', entityId: id })
     void pushUpstream()
 
@@ -256,7 +259,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     await db.spiritCategory.update({ where: { id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
 
-    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(err => log.warn({ err }, 'socket emit failed'))
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'deleted', entityId: id })
     void pushUpstream()
 

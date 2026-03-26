@@ -157,7 +157,7 @@ export default function UpsellRulesPage() {
         }))
         setMenuItems(items)
       })
-      .catch(() => {/* silent */})
+      .catch(err => console.warn('upsell rules data fetch failed:', err))
 
     // Load categories
     fetch(`/api/menu/categories?locationId=${locationId}`)
@@ -170,7 +170,7 @@ export default function UpsellRulesPage() {
         }))
         setCategories(cats)
       })
-      .catch(() => {/* silent */})
+      .catch(err => console.warn('upsell rules data fetch failed:', err))
   }, [locationId])
 
   // ── Settings save ────────────────────────────────────────────────────────
@@ -334,7 +334,7 @@ export default function UpsellRulesPage() {
         }
         setAnalytics(byRule)
       })
-      .catch(() => {/* silent */})
+      .catch(err => console.warn('upsell rules data fetch failed:', err))
   }, [locationId, rules])
 
   // ── Render ───────────────────────────────────────────────────────────────

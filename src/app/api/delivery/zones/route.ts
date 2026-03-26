@@ -6,6 +6,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-zones')
 
 export const dynamic = 'force-dynamic'
 
@@ -209,7 +211,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action: 'zone_created',
       employeeId: actor.employeeId ?? 'unknown',
       newValue: { id: zone.id, name: sanitizedName, zoneType },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       zone: {

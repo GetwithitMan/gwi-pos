@@ -8,9 +8,12 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { OrderItemForCalculation } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { roundToCents } from '@/lib/pricing'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-transfer-items')
 
 interface TransferItemsRequest {
   toOrderId: string
@@ -220,9 +223,15 @@ export const POST = withVenue(async function POST(
       }))
       const destTotals = calculateOrderTotals(
         destCalcItems, fromOrder.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        Number(toOrder.discountTotal), 0, undefined, 'card', toOrder.isTaxExempt,
+        Number(toOrder.discountTotal), Number(toOrder.tipTotal || 0), undefined, 'card', toOrder.isTaxExempt,
         Number(toOrder.inclusiveTaxRate) || undefined
       )
+
+      const destDonation = Number(toOrder.donationAmount || 0)
+      const destConvFee = Number(toOrder.convenienceFee || 0)
+      const destFinalTotal = destDonation > 0 || destConvFee > 0
+        ? roundToCents(destTotals.total + destDonation + destConvFee)
+        : destTotals.total
 
       await OrderRepository.updateOrder(toOrderId, fromOrder.locationId, {
         subtotal: destTotals.subtotal,
@@ -230,7 +239,7 @@ export const POST = withVenue(async function POST(
         taxFromInclusive: destTotals.taxFromInclusive,
         taxFromExclusive: destTotals.taxFromExclusive,
         discountTotal: destTotals.discountTotal,
-        total: destTotals.total,
+        total: destFinalTotal,
         itemCount: destItems.reduce((sum, i) => sum + i.quantity, 0),
         version: { increment: 1 },
       }, tx)
@@ -255,9 +264,15 @@ export const POST = withVenue(async function POST(
       }))
       const sourceTotals = calculateOrderTotals(
         sourceCalcItems, fromOrder.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        Number(fromOrder.discountTotal), 0, undefined, 'card', fromOrder.isTaxExempt,
+        Number(fromOrder.discountTotal), Number(fromOrder.tipTotal || 0), undefined, 'card', fromOrder.isTaxExempt,
         Number(fromOrder.inclusiveTaxRate) || undefined
       )
+
+      const srcDonation = Number(fromOrder.donationAmount || 0)
+      const srcConvFee = Number(fromOrder.convenienceFee || 0)
+      const srcFinalTotal = srcDonation > 0 || srcConvFee > 0
+        ? roundToCents(sourceTotals.total + srcDonation + srcConvFee)
+        : sourceTotals.total
 
       await OrderRepository.updateOrder(fromOrderId, fromOrder.locationId, {
         subtotal: sourceTotals.subtotal,
@@ -265,7 +280,7 @@ export const POST = withVenue(async function POST(
         taxFromInclusive: sourceTotals.taxFromInclusive,
         taxFromExclusive: sourceTotals.taxFromExclusive,
         discountTotal: sourceTotals.discountTotal,
-        total: sourceTotals.total,
+        total: srcFinalTotal,
         itemCount: sourceItems.reduce((sum, i) => sum + i.quantity, 0),
         version: { increment: 1 },
       }, tx)
@@ -296,24 +311,24 @@ export const POST = withVenue(async function POST(
     })
 
     // Dispatch socket events for both orders (fire-and-forget)
-    void dispatchOrderUpdated(fromOrder.locationId, { orderId: fromOrderId, changes: ['items'] }).catch(() => {})
-    void dispatchOrderUpdated(fromOrder.locationId, { orderId: toOrderId, changes: ['items'] }).catch(() => {})
+    void dispatchOrderUpdated(fromOrder.locationId, { orderId: fromOrderId, changes: ['items'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
+    void dispatchOrderUpdated(fromOrder.locationId, { orderId: toOrderId, changes: ['items'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
     void dispatchOpenOrdersChanged(fromOrder.locationId, {
       trigger: 'transferred',
       orderId: fromOrderId,
       tableId: fromOrder.tableId || undefined,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.transfer-items'))
 
     if (sourceWasCancelled) {
       void emitOrderEvent(fromOrder.locationId, fromOrderId, 'ORDER_CLOSED', {
         closedStatus: 'cancelled',
         reason: 'All items transferred out',
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
       void dispatchOpenOrdersChanged(fromOrder.locationId, {
         trigger: 'voided',
         orderId: fromOrderId,
         tableId: fromOrder.tableId || undefined,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.transfer-items'))
     }
 
     // Event emission: items removed from source order
@@ -321,12 +336,10 @@ export const POST = withVenue(async function POST(
       type: 'ITEM_REMOVED' as const,
       payload: { lineItemId, reason: `Transferred to order ${toOrderId}` },
     }))
-    void emitOrderEvents(fromOrder.locationId, fromOrderId, sourceItemEvents).catch(console.error)
-
-    // Event emission: items added to target order (metadata-level — individual item payloads not available from updateMany)
+    void emitOrderEvents(fromOrder.locationId, fromOrderId, sourceItemEvents).catch(err => log.warn({ err }, 'Background task failed'))
     void emitOrderEvent(fromOrder.locationId, toOrderId, 'ORDER_METADATA_UPDATED', {
       reason: `Received ${itemIds.length} items transferred from order ${fromOrderId}`,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: {
       success: true,

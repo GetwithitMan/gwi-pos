@@ -7,6 +7,8 @@ import { emitToLocation } from '@/lib/socket-server'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('drawers-safe-drop')
 
 /**
  * POST /api/drawers/[id]/safe-drop
@@ -154,7 +156,7 @@ export const POST = withVenue(async function POST(
           drawerName: drawer.name,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // ── Socket event (fire-and-forget) ───────────────────────────────
     const empName = record.employee.displayName
@@ -169,7 +171,7 @@ export const POST = withVenue(async function POST(
       drawerName: record.drawer.name,
       reason: dropReason,
       createdAt: record.createdAt.toISOString(),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

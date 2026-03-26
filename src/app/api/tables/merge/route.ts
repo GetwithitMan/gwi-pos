@@ -123,7 +123,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     // --- Socket events (fire-and-forget) ---
-    void dispatchTableStatusChanged(locationId, { tableId: sourceTableId, status: 'available' }).catch(console.error)
+    void dispatchTableStatusChanged(locationId, { tableId: sourceTableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Socket dispatch failed'))
 
     for (const order of openOrders) {

@@ -33,6 +33,8 @@ import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { upsertOnlineCustomer, accrueOnlineLoyaltyPoints } from '@/lib/customer-upsert'
 import { generateOrderViewToken } from '@/app/api/public/order-status/[id]/route'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('online-checkout')
 
 // ─── Zod Validation Schema ────────────────────────────────────────────────────
 
@@ -711,7 +713,7 @@ export async function POST(request: NextRequest) {
         await venueDb.order.update({
           where: { id: order.id },
           data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
         return NextResponse.json(
           { error: 'Payment token is required for the remaining balance' },
           { status: 400 }
@@ -728,7 +730,7 @@ export async function POST(request: NextRequest) {
         await venueDb.order.update({
           where: { id: order.id },
           data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
         console.error('[checkout] PayAPI error:', payErr)
         return NextResponse.json(
           { error: 'Payment processing failed. Please try again.' },
@@ -743,7 +745,7 @@ export async function POST(request: NextRequest) {
         await venueDb.order.update({
           where: { id: order.id },
           data: { status: 'cancelled', deletedAt: new Date(), lastMutatedBy: 'cloud' },
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in online.checkout'))
         return NextResponse.json(
           {
             error: 'Payment declined. Please try a different card.',
@@ -833,7 +835,7 @@ export async function POST(request: NextRequest) {
       })
 
       // Accrue loyalty points (fire-and-forget)
-      void accrueOnlineLoyaltyPoints(venueDb, customer.id, totalPlusTip).catch(console.error)
+      void accrueOnlineLoyaltyPoints(venueDb, customer.id, totalPlusTip).catch(err => log.warn({ err }, 'Background task failed'))
     } catch (custErr) {
       // Customer upsert failure should not block order success
       console.error('[checkout] Customer upsert error:', custErr)
@@ -1049,9 +1051,7 @@ export async function POST(request: NextRequest) {
           payload: { closedStatus: 'paid' },
         },
       ])
-    })().catch(console.error)
-
-    // ── 12. Return success ─────────────────────────────────────────────────────
+    })().catch(err => log.warn({ err }, 'Background task failed'))
 
     const prepTimeMinutes =
       (onlineSettings?.prepTime as number | undefined) ?? 20

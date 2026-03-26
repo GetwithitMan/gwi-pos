@@ -166,14 +166,14 @@ export class SocketEventProvider implements EventProvider {
       if (dataObj && typeof dataObj === 'object' && '_eid' in dataObj) {
         import('@/lib/shared-socket').then(({ updateLastEventId }) => {
           updateLastEventId(dataObj._eid as number)
-        }).catch(() => { /* shared-socket unavailable */ })
+        }).catch(err => { console.warn('shared-socket updateLastEventId unavailable:', err) })
       }
 
       // QoS 1: auto-acknowledge critical events (payment:processed, order:closed)
       if (dataObj && typeof dataObj === 'object' && '_ackId' in dataObj) {
         import('@/lib/shared-socket').then(({ acknowledgeEvent }) => {
           acknowledgeEvent(dataObj._ackId as string)
-        }).catch(() => { /* shared-socket unavailable */ })
+        }).catch(err => { console.warn('shared-socket acknowledgeEvent unavailable:', err) })
       }
 
       const listeners = this.eventListeners.get(eventName)

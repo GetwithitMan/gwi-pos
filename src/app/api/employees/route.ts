@@ -8,6 +8,9 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('employees')
 
 // GET - List employees for a location with pagination
 // No auth required — POS terminals need employee list for login/selection
@@ -172,9 +175,8 @@ export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST
     void pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(locationId, 'employees:changed', { action: 'created', employeeId: employee.id }).catch(() => {})
-    // Also emit employee:updated for Android/PAX devices
-    void emitToLocation(locationId, 'employee:updated', { action: 'created', employeeId: employee.id }).catch(() => {})
+    void emitToLocation(locationId, 'employees:changed', { action: 'created', employeeId: employee.id }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(locationId, 'employee:updated', { action: 'created', employeeId: employee.id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: {
       id: employeeWithRole.id,

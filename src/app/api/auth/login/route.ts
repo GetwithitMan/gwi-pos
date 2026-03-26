@@ -4,6 +4,8 @@ import { compare } from 'bcryptjs'
 import { withVenue } from '@/lib/with-venue'
 import { checkLoginRateLimit, recordLoginFailure, recordLoginSuccess } from '@/lib/auth-rate-limiter'
 import { setSessionCookie } from '@/lib/auth-session'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('auth-login')
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -73,7 +75,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             details: { reason: 'invalid_pin', ip },
             ipAddress: ip,
           },
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       return NextResponse.json(

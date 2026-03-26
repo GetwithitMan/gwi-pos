@@ -6,6 +6,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-addresses')
 
 export const dynamic = 'force-dynamic'
 
@@ -221,7 +223,7 @@ export const PUT = withVenue(async function PUT(
           flagReason: flagReason ?? current.flagReason,
         },
         reason: flagReason || undefined,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     const saved = updated[0]

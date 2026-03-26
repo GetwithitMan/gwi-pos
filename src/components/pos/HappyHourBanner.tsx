@@ -33,7 +33,7 @@ export function HappyHourBanner() {
         setPricingRules(rules)
         rulesRef.current = rules
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in pos.HappyHourBanner:', err))
     return () => { cancelled = true }
   }, [])
 

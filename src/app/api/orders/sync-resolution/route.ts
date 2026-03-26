@@ -8,6 +8,9 @@ import { getActorFromRequest, requireAnyPermission, requirePermission } from '@/
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.sync-resolution')
 
 /**
  * Transaction payload from offline queue
@@ -393,7 +396,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (successfulSyncs > 0) {
       void dispatchOpenOrdersChanged(locationId, {
         trigger: 'paid',
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.sync-resolution'))
     }
 
     // Sync upstream

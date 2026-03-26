@@ -59,7 +59,7 @@ async function recalculateOrderAfterPriceChange(
       discountTotal: Number(order.discountTotal) || 0,
       total: totals.total,
       commissionTotal: totals.commissionTotal,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
   } catch (err) {
     console.error('[block-time] Failed to recalculate order totals after price change:', err)
   }

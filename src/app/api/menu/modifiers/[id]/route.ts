@@ -9,6 +9,9 @@ import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { getRequestLocationId } from '@/lib/request-context'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.modifiers.id')
 
 // GET single modifier group with modifiers
 export const GET = withVenue(async function GET(
@@ -292,7 +295,7 @@ export const PUT = withVenue(async function PUT(
       action: 'modifier-group-updated',
       entityId: id,
       entityType: 'modifier-group',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.modifiers.id'))
 
     return NextResponse.json({ data: {
       id: updated!.id,
@@ -387,7 +390,7 @@ export const DELETE = withVenue(async function DELETE(
         action: 'modifier-group-updated',
         entityId: id,
         entityType: 'modifier-group',
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.modifiers.id'))
     }
 
     return NextResponse.json({ data: { success: true } })

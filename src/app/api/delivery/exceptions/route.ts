@@ -7,6 +7,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { dispatchExceptionEvent } from '@/lib/delivery/dispatch-events'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-exceptions')
 
 export const dynamic = 'force-dynamic'
 
@@ -277,10 +279,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       driverId: driverId || undefined,
       employeeId: auth.employee.id,
       newValue: { type, severity, description: sanitizeHtml(description) },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Fire socket event
-    void dispatchExceptionEvent(locationId, 'delivery:exception_created', exception).catch(console.error)
+    void dispatchExceptionEvent(locationId, 'delivery:exception_created', exception).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ exception }, { status: 201 })
   } catch (error) {

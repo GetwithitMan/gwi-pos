@@ -8,6 +8,9 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.recipe')
 
 // Shared include shape for recipe queries
 const recipeInclude = {
@@ -294,7 +297,7 @@ export const POST = withVenue(async function POST(
       itemId: id,
       action: 'updated',
       changes: { recipe: true },
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.recipe'))
     void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
     void pushUpstream()
 
@@ -408,7 +411,7 @@ export const PATCH = withVenue(async function PATCH(
       itemId: id,
       action: 'updated',
       changes: { recipe: true },
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.recipe'))
     void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
     void pushUpstream()
 
@@ -457,7 +460,7 @@ export const DELETE = withVenue(async function DELETE(
         itemId: id,
         action: 'updated',
         changes: { recipe: true },
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.recipe'))
     }
 
     return NextResponse.json({ data: { success: true } })

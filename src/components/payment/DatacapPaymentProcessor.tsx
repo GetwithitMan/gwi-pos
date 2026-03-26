@@ -176,7 +176,7 @@ export function DatacapPaymentProcessor({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event, locationId, payload: { orderId, ...payload } }),
-      }).catch(() => {})
+      }).catch(err => console.warn('fire-and-forget failed in payment.DatacapPaymentProcessor:', err))
     }
 
     switch (processingStatus) {
@@ -278,7 +278,7 @@ export function DatacapPaymentProcessor({
           paymentMethod: 'credit',
         },
       }),
-    }).catch(() => {})
+    }).catch(err => console.warn('fire-and-forget failed in payment.DatacapPaymentProcessor:', err))
 
     const result = await processPayment({
       orderId,

@@ -10,6 +10,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { executeUpdate, getUpdateAgentStatus, reportDeployHealth } from '@/lib/update-agent'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('system-update')
 
 export const dynamic = 'force-dynamic'
 
@@ -60,7 +62,7 @@ export async function POST(req: NextRequest) {
     try {
       await reportDeployHealth(result)
     } catch {}
-  }).catch(console.error)
+  }).catch(err => log.warn({ err }, 'Background task failed'))
 
   return NextResponse.json({
     success: true,

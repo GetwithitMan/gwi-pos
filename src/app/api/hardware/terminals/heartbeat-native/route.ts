@@ -5,6 +5,8 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('hardware-terminals-heartbeat-native')
 // POST terminal heartbeat for native apps (Android/iOS) - Bearer token auth
 // NO withAuth — this route does its own token validation against the Terminal table.
 // Terminals authenticate via Bearer token (not session cookie or cellular JWT).
@@ -153,7 +155,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           entityId: terminal.id,
           details: { source: 'heartbeat_native', appVersion: appVersion ?? null },
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: {

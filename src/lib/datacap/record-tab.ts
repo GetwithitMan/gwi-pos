@@ -15,6 +15,9 @@
 import { db } from '@/lib/db'
 import { dispatchTabUpdated, dispatchTabStatusUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('datacap.record-tab')
 
 export interface RecordTabParams {
   locationId: string
@@ -183,13 +186,13 @@ export async function recordTab(params: RecordTabParams): Promise<RecordTabResul
   void dispatchTabUpdated(locationId, {
     orderId,
     status: 'open',
-  }).catch(() => {})
+  }).catch(err => log.warn({ err }, 'fire-and-forget failed in datacap.record-tab'))
   dispatchTabStatusUpdate(locationId, { orderId, status: 'open' })
   void dispatchOpenOrdersChanged(locationId, {
     trigger: 'created',
     orderId,
     tableId: tableId || undefined,
-  }).catch(() => {})
+  }).catch(err => log.warn({ err }, 'fire-and-forget failed in datacap.record-tab'))
 
   return {
     orderCardId: orderCard.id,

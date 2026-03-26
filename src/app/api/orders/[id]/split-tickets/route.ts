@@ -16,6 +16,8 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-split-tickets')
 
 // ============================================
 // Validation Schemas
@@ -682,9 +684,7 @@ export const POST = withVenue(withAuth(async function POST(
       orderId: id,
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
-    }).catch(() => {})
-
-    // Dispatch order:split-created so all devices instantly render the split
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split-tickets'))
     void dispatchSplitCreated(parentOrder.locationId, {
       parentOrderId: parentOrder.id,
       parentStatus: 'split',
@@ -698,9 +698,7 @@ export const POST = withVenue(withAuth(async function POST(
         isPaid: false,
       })),
       sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
-    }).catch(() => {})
-
-    // Event emission: ORDER_CREATED for each new split child
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split-tickets'))
     for (const split of createdSplits) {
       void emitOrderEvent(parentOrder.locationId, split.id, 'ORDER_CREATED', {
         locationId: parentOrder.locationId,
@@ -712,14 +710,14 @@ export const POST = withVenue(withAuth(async function POST(
         displayNumber: split.displayNumber,
         parentOrderId: parentOrder.id,
         splitIndex: split.splitIndex,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Event emission: parent order status changed to 'split'
     void emitOrderEvent(parentOrder.locationId, id, 'ORDER_CLOSED', {
       closedStatus: 'split',
       reason: `Split into ${createdSplits.length} tickets`,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: {
       message: 'Split tickets created successfully',
@@ -896,13 +894,11 @@ export const PATCH = withVenue(withAuth(async function PATCH(
         orderId: id,
         trigger: 'split',
         tableId: parentOrder.tableId || undefined,
-      }).catch(() => {})
-
-      // Event emission: item updated (split into fractions)
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split-tickets'))
       void emitOrderEvent(parentOrder.locationId, fromSplitId, 'ITEM_UPDATED', {
         lineItemId: itemId,
         specialNotes: `Split ${ways} ways`,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({ data: { message: `Item split ${ways} ways` } })
     }
@@ -1013,16 +1009,14 @@ export const PATCH = withVenue(withAuth(async function PATCH(
       orderId: id,
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
-    }).catch(() => {})
-
-    // Event emission: item moved between splits
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split-tickets'))
     void emitOrderEvent(parentOrder.locationId, fromSplitId, 'ITEM_REMOVED', {
       lineItemId: itemId,
       reason: `Moved to split ${toSplitId}`,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void emitOrderEvent(parentOrder.locationId, toSplitId, 'ORDER_METADATA_UPDATED', {
       reason: `Received item ${itemId} from split ${fromSplitId}`,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { message: 'Item moved successfully' } })
   } catch (error) {
@@ -1186,12 +1180,12 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       orderId: id,
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split-tickets'))
 
     invalidateSnapshotCache(parentOrder.locationId)
 
     if (parentOrder.tableId) {
-      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
+      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     // Event emission: split children closed, parent reopened
@@ -1199,11 +1193,11 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       void emitOrderEvent(parentOrder.locationId, split.id, 'ORDER_CLOSED', {
         closedStatus: 'cancelled',
         reason: 'Splits merged back to parent',
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
     void emitOrderEvent(parentOrder.locationId, id, 'ORDER_REOPENED', {
       reason: 'Splits merged back to parent',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: {
       message: 'Split tickets merged successfully',

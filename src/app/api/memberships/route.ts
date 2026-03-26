@@ -7,6 +7,8 @@ import { buildIdempotencyKey } from '@/lib/membership/idempotency'
 import { calculateSignupProration } from '@/lib/membership/proration'
 import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('memberships')
 
 // GET — list memberships with filters + pagination
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -204,7 +206,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     void dispatchMembershipUpdate(locationId, {
       action: 'enrolled', membershipId: membership.id, customerId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: membership }, { status: 201 })
   } catch (err) {

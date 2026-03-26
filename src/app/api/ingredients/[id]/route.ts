@@ -5,6 +5,9 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('ingredients.id')
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -392,7 +395,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     void pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(existing.locationId, 'inventory:changed', { ingredientId: id }).catch(() => {})
+    void emitToLocation(existing.locationId, 'inventory:changed', { ingredientId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({
       data: {

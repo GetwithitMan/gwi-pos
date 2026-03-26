@@ -92,7 +92,7 @@ export const SeatNode = memo(function SeatNode({
           relativeX: seat.relativeX,
           relativeY: seat.relativeY,
         }),
-      }).catch(console.error)
+      }).catch(err => console.warn('Operation failed:', err))
     }
   }, [isEditable, tableId, seat.id, seat.relativeX, seat.relativeY])
 

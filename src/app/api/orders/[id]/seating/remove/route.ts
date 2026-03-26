@@ -7,6 +7,8 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { recalculateOrderTotals } from '@/lib/domain/order-items/order-totals'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-seating-remove')
 
 export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { removeAtSeatNumber } = await req.json()
@@ -99,12 +101,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       // 6. Event emission
       void emitOrderEvent(locationId, orderId, 'GUEST_COUNT_CHANGED', {
         count: lockedOrder.baseSeatCount + lockedOrder.extraSeatCount - 1,
-      }).catch(console.error)
-
-      // Socket dispatch (fire-and-forget)
-      void dispatchOrderUpdated(locationId, { orderId, changes: ['seats', 'totals'] }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'Background task failed'))
+      void dispatchOrderUpdated(locationId, { orderId, changes: ['seats', 'totals'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
       if (lockedOrder.tableId) {
-        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       }
 
       return NextResponse.json({ data: { success: true } })

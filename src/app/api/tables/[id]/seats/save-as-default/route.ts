@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('tables.id.seats.save-as-default')
 
 /**
  * POST /api/tables/[id]/seats/save-as-default
@@ -89,7 +92,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     // Fire-and-forget socket dispatch for real-time floor plan updates
-    void dispatchFloorPlanUpdate(locationId).catch(() => {})
+    void dispatchFloorPlanUpdate(locationId).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
 
     return NextResponse.json({
       data: {

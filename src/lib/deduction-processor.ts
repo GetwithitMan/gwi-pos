@@ -131,7 +131,7 @@ export async function processNextDeduction(): Promise<{
         void emitCriticalToLocation(job.locationId, 'inventory:deduction-failed', {
           orderId: job.orderId,
           reason: errorMessage,
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in deduction-processor'))
       }
 
       log.error(`[deduction-processor] Order ${job.orderId} deduction failed (attempt ${job.attempts}):`, errorMessage)
@@ -210,7 +210,7 @@ export async function processNextDeduction(): Promise<{
       void emitCriticalToLocation(job.locationId, 'inventory:deduction-failed', {
         orderId: job.orderId,
         reason: errorMessage,
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in deduction-processor'))
     }
 
     log.error(`[deduction-processor] Order ${job.orderId} failed (attempt ${job.attempts}):`, errorMessage)

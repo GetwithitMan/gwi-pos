@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import type { ShiftRequestType } from '@/generated/prisma/client'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('schedules-swap-requests')
 
 // GET - List swap/cover/drop requests for a specific shift
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -171,7 +173,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       requestedByEmployeeId,
       requestedToEmployeeId: requestedToEmployeeId || null,
       shiftId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { request: swapRequest } }, { status: 201 })
   } catch (error) {

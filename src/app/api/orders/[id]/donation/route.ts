@@ -7,6 +7,8 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-donation')
 
 // POST - Set donation amount on order
 export const POST = withVenue(async function POST(
@@ -108,13 +110,13 @@ export const POST = withVenue(async function POST(
     void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
       donationAmount: roundedAmount,
       total: Number(updated.total),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Socket dispatch for cross-terminal awareness
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'updated',
       orderId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderTotalsUpdate(order.locationId, orderId, {
       subtotal: Number(order.subtotal),
       taxTotal: Number(order.taxTotal),
@@ -122,7 +124,7 @@ export const POST = withVenue(async function POST(
       discountTotal: Number(order.discountTotal),
       total: Number(updated.total),
       commissionTotal: 0,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderSummaryUpdated(order.locationId, {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -140,7 +142,7 @@ export const POST = withVenue(async function POST(
       itemCount: order.itemCount ?? 0,
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Sync
     pushUpstream()
@@ -260,13 +262,13 @@ export const DELETE = withVenue(async function DELETE(
     void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
       donationAmount: null,
       total: Number(updated.total),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Socket dispatch for cross-terminal awareness
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'updated',
       orderId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderTotalsUpdate(order.locationId, orderId, {
       subtotal: Number(order.subtotal),
       taxTotal: Number(order.taxTotal),
@@ -274,7 +276,7 @@ export const DELETE = withVenue(async function DELETE(
       discountTotal: Number(order.discountTotal),
       total: Number(updated.total),
       commissionTotal: 0,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderSummaryUpdated(order.locationId, {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -292,7 +294,7 @@ export const DELETE = withVenue(async function DELETE(
       itemCount: order.itemCount ?? 0,
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Sync
     pushUpstream()

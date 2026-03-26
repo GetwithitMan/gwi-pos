@@ -6,6 +6,8 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('payments-sync')
 
 /**
  * POST /api/payments/sync
@@ -189,7 +191,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       cardBrand: payment.cardBrand ?? null,
       cardLast4: payment.cardLast4 ?? null,
       status: 'approved',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Check if this payment closed the order, emit ORDER_CLOSED if so (fire-and-forget)
     void OrderRepository.getOrderByIdWithSelect(resolvedOrderId, order.locationId, { status: true })
@@ -200,7 +202,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
           })
         }
       })
-      .catch(console.error)
+      .catch(err => log.warn({ err }, 'Background task failed'))
 
     pushUpstream()
 

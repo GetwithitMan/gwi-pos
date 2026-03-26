@@ -59,7 +59,7 @@ export async function notifyNextWaitlistEntry(
       elementId: floorPlanElement.id,
       elementName: floorPlanElement.name || floorPlanElement.linkedMenuItem?.name || floorPlanElement.visualType,
       message: `${nextWaiting.customerName || 'Next customer'} — your ${resolvedName} is now available!`,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in entertainment-waitlist-notify'))
   } catch (err) {
     log.error({ err: err }, '[waitlist-notify] Failed to auto-notify:')
   }

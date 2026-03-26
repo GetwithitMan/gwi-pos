@@ -291,7 +291,7 @@ export function OpenOrdersPanel({
     fetch(`/api/orders/open?locationId=${locationId}&count=true&previousDay=true`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setPreviousDayCount(data.data?.count ?? 0) })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in orders.OpenOrdersPanel:', err))
   }, [locationId, ageFilter])
 
   // Ref to avoid stale closure when reading orders inside socket handler
@@ -480,7 +480,7 @@ export function OpenOrdersPanel({
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ employeeId, terminalId: getTerminalId(), locationId }),
-    }).catch(console.error)
+    }).catch(err => console.warn('Operation failed:', err))
   }, [employeeId, locationId])
 
   // Track the currently-selected order for heartbeat + auto-release
@@ -500,7 +500,7 @@ export function OpenOrdersPanel({
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = setInterval(() => {
         if (claimedOrderIdRef.current) {
-          void claimOrder(claimedOrderIdRef.current).catch(console.error)
+          void claimOrder(claimedOrderIdRef.current).catch(err => console.warn('Operation failed:', err))
         }
       }, 30_000)
     } else {

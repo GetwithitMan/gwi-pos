@@ -6,6 +6,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-zones')
 
 export const dynamic = 'force-dynamic'
 
@@ -260,7 +262,7 @@ export const PUT = withVenue(async function PUT(
       employeeId: actor.employeeId ?? 'unknown',
       previousValue: { name: current.name, zoneType: current.zoneType },
       newValue: { id: zone.id, name: zone.name, zoneType: zone.zoneType },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       zone: {
@@ -320,7 +322,7 @@ export const DELETE = withVenue(async function DELETE(
       action: 'zone_deleted',
       employeeId: actor.employeeId ?? 'unknown',
       previousValue: { id: zone.id, name: zone.name, zoneType: zone.zoneType },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ success: true })
   } catch (error) {

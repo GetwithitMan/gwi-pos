@@ -7,6 +7,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-add-ha-payment')
 
 // POST - Add a house account balance payment as an order line item
 export const POST = withVenue(async function POST(
@@ -206,14 +208,14 @@ export const POST = withVenue(async function POST(
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'item_updated',
       orderId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderTotalsUpdate(order.locationId, orderId, {
       subtotal: newSubtotal,
       taxTotal,
       tipTotal: Number(order.tipTotal ?? 0),
       discountTotal,
       total: newTotal,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       success: true,

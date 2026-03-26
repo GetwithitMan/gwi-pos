@@ -85,7 +85,7 @@ export async function emitOrderEvent(
       payload,
       deviceId,
       deviceCounter,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in order-events.emitter'))
 
     return { eventId, serverSequence }
   } catch (err) {

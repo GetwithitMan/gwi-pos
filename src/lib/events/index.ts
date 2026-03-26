@@ -108,8 +108,8 @@ export function createProvider(
  */
 export function resetProvider(): void {
   if (providerInstance) {
-    providerInstance.disconnect().catch(() => {
-      // Ignore disconnect errors
+    providerInstance.disconnect().catch(err => {
+      console.warn('event provider disconnect failed:', err)
     })
     providerInstance = null
   }

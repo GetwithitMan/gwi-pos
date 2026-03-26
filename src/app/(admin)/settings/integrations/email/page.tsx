@@ -23,7 +23,8 @@ export default function EmailIntegrationPage() {
         setStatus(data.resend)
         setLoading(false)
       })
-      .catch(() => {
+      .catch(err => {
+        console.warn('email settings fetch failed:', err)
         setLoading(false)
       })
   }, [])

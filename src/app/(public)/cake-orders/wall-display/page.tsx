@@ -128,9 +128,9 @@ export default function CakeWallDisplayPage() {
   // Fullscreen toggle
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {})
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => console.warn('fullscreen request failed:', err))
     } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {})
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(err => console.warn('exit fullscreen failed:', err))
     }
   }, [])
 

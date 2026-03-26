@@ -11,6 +11,8 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import type { OperatingHours } from '@/lib/reservations/availability'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('reservations')
 
 // GET - Single reservation with full details
 export const GET = withVenue(async function GET(
@@ -108,7 +110,7 @@ export const PUT = withVenue(async function PUT(
         // Post-commit: socket dispatch
         void dispatchReservationChanged(current.locationId, {
           reservationId: id, action: body.status, reservation: updated,
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
 
         void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
         void pushUpstream()
@@ -232,7 +234,7 @@ export const PUT = withVenue(async function PUT(
       reservationId: id,
       action: 'modified',
       reservation: updated,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
     void pushUpstream()
@@ -312,7 +314,7 @@ export const DELETE = withVenue(async function DELETE(
               baseUrl,
             },
           })
-        })().catch(console.error)
+        })().catch(err => log.warn({ err }, 'Background task failed'))
 
         void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
         void pushUpstream()

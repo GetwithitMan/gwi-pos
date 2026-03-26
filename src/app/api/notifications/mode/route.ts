@@ -15,6 +15,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-mode')
 
 export const dynamic = 'force-dynamic'
 
@@ -95,7 +97,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         entityId: locationId,
         details: { mode },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { mode } })
   } catch (error) {

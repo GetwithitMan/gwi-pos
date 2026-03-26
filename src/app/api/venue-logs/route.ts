@@ -14,6 +14,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { logVenueEventsBatch, cleanupExpiredLogs } from '@/lib/venue-logger'
 import type { VenueLogEntry } from '@/lib/venue-logger'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('venue-logs')
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -191,7 +193,7 @@ export const POST = withVenue(withAuth(async function POST(req: NextRequest) {
 
     // Opportunistic cleanup: ~1% of requests trigger expired log cleanup
     if (Math.random() < 0.01) {
-      void cleanupExpiredLogs().catch(console.error)
+      void cleanupExpiredLogs().catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({

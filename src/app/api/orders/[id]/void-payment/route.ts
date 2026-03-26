@@ -21,6 +21,8 @@ import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/s
 import { getRequestLocationId } from '@/lib/request-context'
 import { validateManagerReauthFromHeaders, validateCellularOrderAccess, CellularAuthError } from '@/lib/cellular-validation'
 import { isClosed } from '@/lib/domain/order-status'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-void-payment')
 
 class VoidValidationError extends Error {
   statusCode: number
@@ -345,7 +347,7 @@ export const POST = withVenue(async function POST(
       // Flag void processed during outage for reconciliation
       void PaymentRepository.updatePayment(paymentId, order.locationId, {
         needsReconciliation: true,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       try {
         const fullPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId)
@@ -375,19 +377,15 @@ export const POST = withVenue(async function POST(
       orderId,
       paymentId,
       status: 'voided',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.void-payment'))
     void dispatchOrderTotalsUpdate(order.locationId, orderId, {
       subtotal: Number(order.subtotal),
       taxTotal: Number(order.taxTotal),
       tipTotal: recalculatedTipTotal,
       discountTotal: Number(order.discountTotal),
       total: Number(order.total),
-    }, { async: true }).catch(() => {})
-
-    // Dispatch open orders changed for cross-terminal awareness (fire-and-forget)
-    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }, { async: true }).catch(console.error)
-
-    // Dispatch order:closed when all payments are voided (Android cross-terminal sync)
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.void-payment'))
+    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     if (newOrderStatus === 'voided') {
       void dispatchOrderClosed(order.locationId, {
         orderId,
@@ -395,7 +393,7 @@ export const POST = withVenue(async function POST(
         closedAt: new Date().toISOString(),
         closedByEmployeeId: managerId,
         locationId: order.locationId,
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Reverse tip allocations for this voided payment (fire-and-forget)
@@ -416,7 +414,7 @@ export const POST = withVenue(async function POST(
     // Release the table when the full order is voided (C12: prevent zombie tables)
     if (newOrderStatus === 'voided' && order.tableId) {
       await db.table.update({ where: { id: order.tableId }, data: { status: 'available' } })
-      void dispatchFloorPlanUpdate(order.locationId).catch(console.error)
+      void dispatchFloorPlanUpdate(order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Restore inventory deductions when ALL payments on the order are voided.
@@ -452,11 +450,11 @@ export const POST = withVenue(async function POST(
               closedAt: new Date().toISOString(),
               closedByEmployeeId: managerId,
               locationId: order.locationId,
-            }, { async: true }).catch(console.error)
+            }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
             void dispatchOpenOrdersChanged(order.locationId, {
               trigger: 'voided',
               orderId: order.parentOrderId!,
-            }, { async: true }).catch(console.error)
+            }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
           }
         } catch (err) {
           console.error('[void-payment] Failed to resolve parent order after all children voided:', err)
@@ -608,7 +606,7 @@ export const POST = withVenue(async function POST(
           orderId,
           paymentId,
           groupId: `void-${order.locationId}-${orderId}`,
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
       } catch (err) {
         console.error('[void-payment] Alert dispatch failed:', err)
       }

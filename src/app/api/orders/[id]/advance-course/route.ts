@@ -12,6 +12,8 @@ import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-advance-course')
 
 // POST - Advance to next course
 // Marks current course as served and fires the next course
@@ -149,7 +151,7 @@ export const POST = withVenue(async function POST(
             status: 'delivered',
             stationId: '',
             updatedBy: 'system',
-          }, { async: true }).catch(console.error)
+          }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
         }
       }
 
@@ -235,7 +237,7 @@ export const POST = withVenue(async function POST(
           status: 'delivered',
           stationId: '',
           updatedBy: 'system',
-        }, { async: true }).catch(console.error)
+        }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 

@@ -91,7 +91,7 @@ function NewInvoicePage() {
     fetch(`/api/inventory/vendors?locationId=${locationId}`)
       .then(r => r.json())
       .then(data => setVendors(data.data?.vendors || []))
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in invoices.new:', err))
 
     fetch(`/api/ingredients?locationId=${locationId}&requestingEmployeeId=${employee?.id}&baseOnly=true`)
       .then(r => r.json())
@@ -109,7 +109,7 @@ function NewInvoicePage() {
           }))
         setInventoryItems(items)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in invoices.new:', err))
   }, [locationId, employee?.id])
 
   // Load existing invoice if editing

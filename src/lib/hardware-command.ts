@@ -1,4 +1,7 @@
 import { db } from '@/lib/db'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('hardware-command')
 
 /**
  * Execute a hardware command remotely via the NUC.
@@ -44,7 +47,7 @@ export async function executeHardwareCommand(opts: {
 
     if (updated.status === 'COMPLETED') {
       // Clean up the command record
-      void db.hardwareCommand.delete({ where: { id: command.id } }).catch(() => {})
+      void db.hardwareCommand.delete({ where: { id: command.id } }).catch(err => log.warn({ err }, 'hardware command cleanup failed'))
       const result = updated.resultPayload as Record<string, any> | null
       return {
         success: result?.success ?? true,
@@ -53,7 +56,7 @@ export async function executeHardwareCommand(opts: {
     }
 
     if (updated.status === 'FAILED') {
-      void db.hardwareCommand.delete({ where: { id: command.id } }).catch(() => {})
+      void db.hardwareCommand.delete({ where: { id: command.id } }).catch(err => log.warn({ err }, 'hardware command cleanup failed'))
       const result = updated.resultPayload as Record<string, any> | null
       return {
         success: false,
@@ -64,6 +67,6 @@ export async function executeHardwareCommand(opts: {
   }
 
   // Timeout — clean up
-  void db.hardwareCommand.delete({ where: { id: command.id } }).catch(() => {})
+  void db.hardwareCommand.delete({ where: { id: command.id } }).catch(err => log.warn({ err }, 'hardware command cleanup failed'))
   return { success: false, error: 'Command timed out — NUC may be offline' }
 }

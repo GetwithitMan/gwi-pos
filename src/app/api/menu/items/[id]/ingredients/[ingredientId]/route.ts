@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.ingredients.ingredientId')
 
 interface RouteParams {
   params: Promise<{ id: string; ingredientId: string }>
@@ -89,7 +92,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
       itemId: menuItemId,
       action: 'updated',
       changes: { ingredients: true },
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.ingredients.ingredientId'))
 
     return NextResponse.json({
       data: {

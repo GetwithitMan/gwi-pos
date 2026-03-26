@@ -6,6 +6,8 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchItemStatus } from '@/lib/socket-dispatch'
 import { OrderItemRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-note')
 
 // POST — update an order item's special notes
 export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(
@@ -47,10 +49,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     void emitOrderEvent(locationId, orderId, 'ITEM_UPDATED', {
       lineItemId: itemId,
       specialNotes: note || null,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Notify other terminals so order lists, KDS, and prints reflect the updated note
-    void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId }).catch(console.error)
+    void dispatchOpenOrdersChanged(locationId, { trigger: 'item_updated', orderId }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // If item has already been sent to kitchen, notify KDS so it refetches
     if (updated && updated.kitchenStatus && updated.kitchenStatus !== 'pending') {
@@ -60,7 +62,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         status: updated.kitchenStatus,
         stationId: '',
         updatedBy: 'system',
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: { item: updated } })

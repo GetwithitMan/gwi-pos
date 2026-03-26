@@ -13,6 +13,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-rules')
 
 export const dynamic = 'force-dynamic'
 
@@ -251,7 +253,7 @@ export const PUT = withVenue(async function PUT(
           previousCriticalityClass: existing[0].criticalityClass,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Clear cached routing rules so updates take effect immediately
     clearRoutingRulesCache()
@@ -317,7 +319,7 @@ export const DELETE = withVenue(async function DELETE(
           priority: existing[0].priority,
         } : {},
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Clear cached routing rules so deletion takes effect immediately
     clearRoutingRulesCache()

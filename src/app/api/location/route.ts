@@ -5,6 +5,9 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('location')
 
 export const GET = withVenue(async function GET() {
   try {
@@ -59,7 +62,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     void notifyDataChanged({ locationId: location.id, domain: 'location', action: 'updated' })
     void pushUpstream()
-    void emitToLocation(location.id, 'settings:updated', { trigger: 'location-metadata-changed' }).catch(() => {})
+    void emitToLocation(location.id, 'settings:updated', { trigger: 'location-metadata-changed' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: updated })
   } catch (error) {

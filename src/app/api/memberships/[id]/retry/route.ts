@@ -8,6 +8,8 @@ import { classifyDecline } from '@/lib/membership/decline-rules'
 import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
 import { randomUUID } from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('memberships-retry')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -99,7 +101,7 @@ export const POST = withVenue(async function POST(
 
       void dispatchMembershipUpdate(locationId, {
         action: 'charged', membershipId: id, customerId: mbr.customerId,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({ data: { success: true, refNo: resp.refNo } })
     } catch (err) {
@@ -131,7 +133,7 @@ export const POST = withVenue(async function POST(
 
         void dispatchMembershipUpdate(locationId, {
           action: 'declined', membershipId: id, customerId: mbr.customerId,
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
 
         return NextResponse.json({ error: `Charge declined: ${decline.message}` }, { status: 402 })
       }

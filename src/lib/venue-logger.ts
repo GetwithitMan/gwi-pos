@@ -78,7 +78,7 @@ export async function logVenueEvent(entry: VenueLogEntry): Promise<void> {
         source: entry.source,
         category: entry.category,
       })
-    ).catch(() => {}) // Swallow — socket failure must never block logging
+    ).catch(err => log.warn({ err }, 'fire-and-forget failed in venue-logger'))
   } catch (err) {
     // Never throw from the logger — log to console as last resort
     log.error({ err: err }, '[venue-logger] Failed to write log entry:')

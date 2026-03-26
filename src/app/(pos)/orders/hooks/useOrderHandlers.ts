@@ -467,7 +467,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
           }
         }
 
-        printKitchenTicket(orderId).catch(() => {})
+        printKitchenTicket(orderId).catch(err => console.warn('kitchen ticket print failed:', err))
       }
     } finally {
       sendLockRef.current = false
@@ -488,7 +488,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       }
     } catch (err) {
       console.error('Failed to print kitchen ticket:', err)
-      void OfflineManager.queuePrintJob(orderId, '', 0, []).catch(() => {})
+      void OfflineManager.queuePrintJob(orderId, '', 0, []).catch(err => console.warn('offline print queue failed:', err))
       toast.info('Print queued — will retry when printer available')
     }
   }
@@ -791,7 +791,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
       void fetch(`/api/orders/${orderId}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => { if (data) loadOrder(data.data || data) })
-        .catch(console.error)
+        .catch(err => console.warn('Operation failed:', err))
       setTabsRefreshTrigger(prev => prev + 1)
       toast.success('Discount removed')
     } catch {
@@ -821,14 +821,14 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         .then(data => {
           setAppliedDiscounts(data.data?.discounts || [])
         })
-        .catch(console.error)
+        .catch(err => console.warn('Operation failed:', err))
     }
     setTabsRefreshTrigger(prev => prev + 1)
     if (savedOrderId) {
       void fetch(`/api/orders/${savedOrderId}`)
         .then(r => r.ok ? r.json() : null)
         .then(data => { if (data) loadOrder(data.data || data) })
-        .catch(console.error)
+        .catch(err => console.warn('Operation failed:', err))
     }
   }, [orderToPayId, savedOrderId])
 
@@ -1359,7 +1359,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
     if (!btRes.ok) {
       const btData = await btRes.json().catch(() => ({ error: 'Unknown error' }))
       // Remove the orphaned order item since timer didn't start
-      void fetch(`/api/orders/${orderId}/items/${orderItemId}`, { method: 'DELETE' }).catch(() => {})
+      void fetch(`/api/orders/${orderId}/items/${orderItemId}`, { method: 'DELETE' }).catch(err => console.warn('fetch request failed:', err))
       if (btRes.status === 409) {
         toast.error(`${entertainmentItem?.name || selectedTimedItem?.name || 'Item'} is already in use`)
       } else {
@@ -1716,7 +1716,7 @@ export function useOrderHandlers(options: UseOrderHandlersOptions) {
         const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
         setPaymentTabCards(authorized)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in pos.orders.hooks.useOrderHandlers:', err))
   }, [orderToPayId, savedOrderId])
 
   // Item control handlers (wrappers around activeOrderFull)

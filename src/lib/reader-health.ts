@@ -8,7 +8,7 @@ import { db } from '@/lib/db'
 
 /**
  * Log a completed Datacap transaction and update the reader's rolling metrics.
- * ALWAYS call fire-and-forget: void logReaderTransaction(...).catch(() => {})
+ * ALWAYS call fire-and-forget: void logReaderTransaction(...).catch(err => log.warn({ err }, 'reader health log failed'))
  */
 export async function logReaderTransaction(opts: {
   locationId: string

@@ -211,7 +211,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         }
       }
       if (cancelUrl) {
-        fetch(cancelUrl, { method: 'POST' }).catch(() => {})
+        fetch(cancelUrl, { method: 'POST' }).catch(err => console.warn('fetch request failed:', err))
       }
     }
   }, [])

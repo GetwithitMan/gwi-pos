@@ -302,6 +302,12 @@ export async function evaluateAutoDiscounts(
         Number(order.inclusiveTaxRate) || undefined
       )
 
+      const autoDonation = Number(order.donationAmount || 0)
+      const autoConvFee = Number(order.convenienceFee || 0)
+      const autoFinalTotal = autoDonation > 0 || autoConvFee > 0
+        ? roundToCents(totals.total + autoDonation + autoConvFee)
+        : totals.total
+
       await tx.order.update({
         where: { id: orderId },
         data: {
@@ -309,7 +315,7 @@ export async function evaluateAutoDiscounts(
           taxTotal: totals.taxTotal,
           taxFromInclusive: totals.taxFromInclusive,
           taxFromExclusive: totals.taxFromExclusive,
-          total: totals.total,
+          total: autoFinalTotal,
           version: { increment: 1 },
         },
       })
@@ -346,12 +352,12 @@ export async function evaluateAutoDiscounts(
           discountTotal: Number(updatedOrder.discountTotal),
           total: Number(updatedOrder.total),
           commissionTotal: Number(updatedOrder.commissionTotal || 0),
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in auto-discount-engine'))
 
         void dispatchOpenOrdersChanged(locationId, {
           trigger: 'item_updated',
           orderId,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in auto-discount-engine'))
 
         void dispatchOrderSummaryUpdated(locationId, {
           orderId: updatedOrder.id,
@@ -370,7 +376,7 @@ export async function evaluateAutoDiscounts(
           itemCount: updatedOrder.itemCount ?? 0,
           updatedAt: new Date().toISOString(),
           locationId: updatedOrder.locationId,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in auto-discount-engine'))
       }
     }
 

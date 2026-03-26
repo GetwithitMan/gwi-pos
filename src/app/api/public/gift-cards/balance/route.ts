@@ -13,6 +13,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDbForVenue } from '@/lib/db'
 import { GiftCardBalanceSchema } from '@/lib/site-api-schemas'
 import { checkOnlineRateLimit } from '@/lib/online-rate-limiter'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('public.gift-cards.balance')
 
 export async function POST(request: NextRequest) {
   const ip =
@@ -103,7 +106,7 @@ export async function POST(request: NextRequest) {
       void venueDb.giftCard.updateMany({
         where: { cardNumber: sanitized, status: 'active', deletedAt: null },
         data: { status: 'expired' },
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in public.gift-cards.balance'))
       return NextResponse.json({ valid: false, reason: 'This gift card has expired' })
     }
 

@@ -13,6 +13,9 @@ import {
   calculateMinutesElapsed,
   isExpiringSoon,
 } from '@/lib/domain/entertainment'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('entertainment.status')
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -428,7 +431,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
 
     // When returning to available, auto-notify next waitlist entry if any remain
     if (status === 'available' && element.linkedMenuItemId) {
-      void notifyNextWaitlistEntry(locationId, element.linkedMenuItemId, updatedElement.name || undefined).catch(() => {})
+      void notifyNextWaitlistEntry(locationId, element.linkedMenuItemId, updatedElement.name || undefined).catch(err => log.warn({ err }, 'waitlist notify failed'))
     }
 
     // Dispatch real-time update to all connected clients (fire-and-forget)
@@ -441,7 +444,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         entertainmentStatus: status as 'available' | 'in_use' | 'reserved' | 'maintenance',
         currentOrderId: updatedElement.currentOrderId,
         expiresAt: updatedElement.sessionExpiresAt?.toISOString() || null,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in entertainment.status'))
     }
 
     // Audit trail: status changed

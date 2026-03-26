@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('feedback')
 
 /** Build parameterized WHERE clause from optional filters */
 function buildWhereClause(
@@ -204,7 +206,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           employeeId: employeeId || undefined,
           groupId: `feedback-low-${locationId}`,
         })
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: { id: result[0]?.id, success: true } })

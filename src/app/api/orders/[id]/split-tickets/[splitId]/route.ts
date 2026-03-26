@@ -10,6 +10,8 @@ import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository, PaymentRepository } from '@/lib/repositories'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-split-tickets')
 
 // ============================================
 // DELETE - Delete an empty split check
@@ -174,25 +176,21 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       orderId: id,
       trigger: 'split',
       tableId: parentOrder.tableId || undefined,
-    }).catch(() => {})
-
-    // Invalidate snapshot cache so open-orders summary reflects the change
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split-tickets.splitId'))
     invalidateSnapshotCache(parentOrder.locationId)
     if (parentOrder.tableId) {
-      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
+      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     // Event emission: split check deleted/cancelled
     void emitOrderEvent(parentOrder.locationId, splitId, 'ORDER_CLOSED', {
       closedStatus: 'cancelled',
       reason: merged ? 'Last split — auto-merged back to parent' : 'Empty check deleted',
-    }).catch(console.error)
-
-    // If auto-merged, parent was reopened
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     if (merged) {
       void emitOrderEvent(parentOrder.locationId, id, 'ORDER_REOPENED', {
         reason: 'Last split auto-merged back to parent',
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     if (merged) {

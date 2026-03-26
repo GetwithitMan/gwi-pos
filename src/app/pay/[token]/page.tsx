@@ -82,7 +82,8 @@ export default function PayPage() {
         setOrderData(json.data)
         setPageState('ready')
       })
-      .catch(() => {
+      .catch(err => {
+        console.warn('payment page order load failed:', err)
         setErrorMessage('Unable to load payment details. Please check your connection.')
         setPageState('error')
       })

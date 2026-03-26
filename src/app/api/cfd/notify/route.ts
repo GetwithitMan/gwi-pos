@@ -6,7 +6,7 @@
  * via emitToTerminal() (if cfdTerminalId provided) or emitToLocation() (fallback),
  * which properly broadcasts to the CFD screen.
  *
- * Fire-and-forget from client: `void fetch('/api/cfd/notify', ...).catch(() => {})`
+ * Fire-and-forget from client: `void fetch('/api/cfd/notify', ...).catch(err => console.warn('cfd notify failed:', err))`
  */
 
 import { NextResponse } from 'next/server'

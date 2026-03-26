@@ -14,6 +14,9 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.open-tab')
 
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
@@ -203,7 +206,7 @@ export const POST = withVenue(async function POST(
           void client.voidSale(resolvedReaderId, { recordNo: finalRecordNo }).catch(voidErr =>
             console.error('[Tab Open] Failed to void duplicate hold (detection path):', voidErr)
           )
-          void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(() => {})
+          void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(err => log.warn({ err }, 'order repository update failed'))
           return NextResponse.json({
             data: {
               tabStatus: 'existing_tab_found',
@@ -293,7 +296,7 @@ export const POST = withVenue(async function POST(
           })
           if (existing) {
             // Reset order status (don't leave it as pending_auth)
-            void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(() => {})
+            void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(err => log.warn({ err }, 'order repository update failed'))
             return NextResponse.json({
               data: {
                 tabStatus: 'existing_tab_found',
@@ -426,7 +429,7 @@ export const POST = withVenue(async function POST(
         void client.voidSale(resolvedReaderId, { recordNo }).catch(voidErr =>
           console.error('[Tab Open] Failed to void duplicate hold:', voidErr)
         )
-        void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(() => {})
+        void OrderRepository.updateOrder(orderId, locationId, { tabStatus: 'open' }).catch(err => log.warn({ err }, 'order repository update failed'))
         return NextResponse.json({
           data: {
             tabStatus: 'existing_tab_found',

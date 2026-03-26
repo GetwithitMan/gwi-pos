@@ -31,6 +31,8 @@ import { normalizeUberEatsItems } from '@/lib/delivery/order-mapper'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('webhooks-ubereats')
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -186,7 +188,7 @@ export async function POST(request: NextRequest) {
 
           // Fix 2: Confirm with UberEats after auto-accept creates POS order
           if (posOrderId) {
-            void confirmWithPlatform('ubereats', orderId, locationId).catch(console.error)
+            void confirmWithPlatform('ubereats', orderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
           }
         }
 
@@ -209,7 +211,7 @@ export async function POST(request: NextRequest) {
 
         // Fix 3: Void linked POS order when platform cancels
         if (statusResult) {
-          void voidLinkedPosOrder(statusResult.id, locationId, 'ubereats').catch(console.error)
+          void voidLinkedPosOrder(statusResult.id, locationId, 'ubereats').catch(err => log.warn({ err }, 'Background task failed'))
         }
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {

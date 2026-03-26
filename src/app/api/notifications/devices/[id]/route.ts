@@ -18,6 +18,8 @@ import {
   statusChangeToEventType,
   type DeviceStatus,
 } from '@/lib/notifications/device-state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-devices')
 
 export const dynamic = 'force-dynamic'
 
@@ -175,7 +177,7 @@ export const PATCH = withVenue(async function PATCH(
           newStatus,
           force: force || false,
         })
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
 
       // Audit log: notification_device_override
       void db.auditLog.create({
@@ -194,7 +196,7 @@ export const PATCH = withVenue(async function PATCH(
             assignedToSubjectId: device.assignedToSubjectId,
           },
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       // If releasing or disabling a device that was assigned, also release the corresponding target assignment
       // and clear pagerNumber cache on the subject
@@ -217,7 +219,7 @@ export const PATCH = withVenue(async function PATCH(
           device.assignedToSubjectId,
           device.deviceNumber,
           releaseReason
-        ).catch(console.error)
+        ).catch(err => log.warn({ err }, 'Background task failed'))
 
         // Clear pagerNumber cache on the subject
         if (device.assignedToSubjectType === 'order') {
@@ -225,13 +227,13 @@ export const PATCH = withVenue(async function PATCH(
             `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
             device.assignedToSubjectId,
             locationId
-          ).catch(console.error)
+          ).catch(err => log.warn({ err }, 'Background task failed'))
         } else if (device.assignedToSubjectType === 'waitlist_entry') {
           void db.$executeRawUnsafe(
             `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
             device.assignedToSubjectId,
             locationId
-          ).catch(console.error)
+          ).catch(err => log.warn({ err }, 'Background task failed'))
         }
       }
     }
@@ -297,7 +299,7 @@ export const DELETE = withVenue(async function DELETE(
       locationId,
       auth.employee.id,
       JSON.stringify({ action: 'soft_delete', deviceNumber: existing[0].deviceNumber })
-    ).catch(console.error)
+    ).catch(err => log.warn({ err }, 'Background task failed'))
 
     // W14: AuditLog for device deletion
     void db.auditLog.create({
@@ -312,7 +314,7 @@ export const DELETE = withVenue(async function DELETE(
           previousStatus: existing[0].status,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ success: true })
   } catch (error) {

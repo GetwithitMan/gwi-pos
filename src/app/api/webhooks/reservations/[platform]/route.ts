@@ -27,6 +27,8 @@ import type { SourceType } from '@/lib/reservations/state-machine'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('webhooks-reservations')
 
 // ─── Rate Limiting ───────────────────────────────────────────────────────────
 
@@ -555,7 +557,7 @@ export async function POST(
     void dispatchReservationChanged(locationId, {
       reservationId,
       action: normalized.action,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void notifyDataChanged({ locationId, domain: 'reservations', action: normalized.action === 'cancel' ? 'deleted' : normalized.action === 'create' ? 'created' : 'updated', entityId: reservationId })
     void pushUpstream()
 

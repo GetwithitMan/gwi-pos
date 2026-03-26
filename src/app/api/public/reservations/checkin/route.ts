@@ -7,6 +7,8 @@ import { formatPhoneE164 } from '@/lib/twilio'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import crypto from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('public-reservations-checkin')
 
 export const dynamic = 'force-dynamic'
 
@@ -88,7 +90,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             matchCount: matches.length,
           },
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json(
         { error: 'Multiple reservations found', code: 'AMBIGUOUS' },
@@ -111,7 +113,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Post-commit: socket dispatch
     void dispatchReservationChanged(locationId, {
       reservationId: reservation.id, action: 'checked_in',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       id: updated.id,

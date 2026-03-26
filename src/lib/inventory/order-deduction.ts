@@ -714,7 +714,7 @@ export async function deductInventoryForOrder(
             locationId: order.locationId,
             orderId,
             groupId: `inv-link-missing-${linkInvId}`,
-          }).catch(() => {})
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in inventory.order-deduction'))
         }
 
         // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
@@ -777,7 +777,7 @@ export async function deductInventoryForOrder(
             locationId: order.locationId,
             orderId,
             groupId: `inv-ingredient-missing-${expectedInvId}`,
-          }).catch(() => {})
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in inventory.order-deduction'))
         }
       }
 

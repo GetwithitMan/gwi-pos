@@ -11,6 +11,8 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-providers')
 
 export const dynamic = 'force-dynamic'
 
@@ -352,7 +354,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           configKeys: Object.keys(config),
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Return with masked config
     return NextResponse.json({

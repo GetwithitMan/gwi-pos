@@ -6,6 +6,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-bottle-service-re-auth')
 
 // POST - Re-authorize (IncrementalAuth) when bottle service tab exceeds deposit
 // Called when bartender acknowledges re-auth alert, or manually from tab management
@@ -80,13 +82,11 @@ export const POST = withVenue(withAuth(async function POST(
         preAuthId: defaultCard.recordNo,
         preAuthLast4: defaultCard.cardLast4,
         preAuthCardBrand: defaultCard.cardType || null,
-      }).catch(console.error)
-
-      // Fire-and-forget socket dispatch for cross-terminal sync
+      }).catch(err => log.warn({ err }, 'Background task failed'))
       void dispatchOrderUpdated(order.locationId, {
         orderId,
         changes: ['bottle-service-reauth', 'preAuthAmount'],
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.bottle-service.re-auth'))
     }
 
     return NextResponse.json({

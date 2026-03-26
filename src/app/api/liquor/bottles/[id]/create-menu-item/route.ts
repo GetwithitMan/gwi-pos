@@ -6,6 +6,9 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor.bottles.id.create-menu-item')
 
 /**
  * POST /api/liquor/bottles/[id]/create-menu-item
@@ -169,11 +172,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       menuItemId: menuItem.id,
       bottleId: bottleId,
       name: menuItem.name,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.bottles.id.create-menu-item'))
     void dispatchMenuItemChanged(bottle.locationId, {
       itemId: menuItem.id,
       action: 'created',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.bottles.id.create-menu-item'))
 
     return NextResponse.json({ data: {
       success: true,

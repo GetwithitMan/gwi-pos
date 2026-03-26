@@ -9,6 +9,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery')
 
 export const dynamic = 'force-dynamic'
 
@@ -246,7 +248,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // If there's an orderId, update the order type to delivery
     if (orderId) {
-      void OrderRepository.updateOrder(orderId, locationId, { orderType: 'delivery' }).catch(console.error)
+      void OrderRepository.updateOrder(orderId, locationId, { orderType: 'delivery' }).catch(err => log.warn({ err }, 'Background task failed'))
 
       // Emit ORDER_METADATA_UPDATED for the order type change
       void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -261,7 +263,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     void emitToLocation(locationId, 'delivery:updated', {
       action: 'created',
       deliveryId: delivery.id,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

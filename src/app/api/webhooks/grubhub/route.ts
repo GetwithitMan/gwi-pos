@@ -21,6 +21,8 @@ import {
   voidLinkedPosOrder,
 } from '@/lib/delivery/webhook-helpers'
 import { normalizeGrubhubItems } from '@/lib/delivery/order-mapper'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('webhooks-grubhub')
 
 // ── Fix 10: Comprehensive delivery status mapping ──
 const GRUBHUB_DELIVERY_STATUS_MAP: Record<string, string> = {
@@ -145,7 +147,7 @@ export async function POST(request: NextRequest) {
 
           // Fix 6: Confirm with Grubhub after auto-accept creates POS order
           if (posOrderId) {
-            void confirmWithPlatform('grubhub', externalOrderId, locationId).catch(console.error)
+            void confirmWithPlatform('grubhub', externalOrderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
           }
         }
 
@@ -168,7 +170,7 @@ export async function POST(request: NextRequest) {
 
         // Fix 7: Void linked POS order when platform cancels
         if (statusResult) {
-          void voidLinkedPosOrder(statusResult.id, locationId, 'grubhub').catch(console.error)
+          void voidLinkedPosOrder(statusResult.id, locationId, 'grubhub').catch(err => log.warn({ err }, 'Background task failed'))
         }
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {

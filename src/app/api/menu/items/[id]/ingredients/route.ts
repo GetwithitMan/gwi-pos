@@ -4,6 +4,9 @@ import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.ingredients')
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -209,7 +212,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       itemId: menuItemId,
       action: 'updated',
       changes: { ingredients: true },
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.ingredients'))
 
     return NextResponse.json({
       data: activeUpdated.map(mi => ({

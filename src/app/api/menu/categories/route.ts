@@ -8,6 +8,9 @@ import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.categories')
 
 // GET - List all categories for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -101,9 +104,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     invalidateMenuCache(locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void dispatchMenuUpdate(locationId, { action: 'created' }).catch(() => {})
-
-    // Dispatch socket event for real-time menu structure update
+    void dispatchMenuUpdate(locationId, { action: 'created' }).catch(err => log.warn({ err }, 'menu update dispatch failed'))
     dispatchMenuStructureChanged(locationId, {
       action: 'category-created',
       entityId: category.id,

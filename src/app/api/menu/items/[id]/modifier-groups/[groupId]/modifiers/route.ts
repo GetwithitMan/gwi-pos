@@ -5,6 +5,9 @@ import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.modifier-groups.groupId.modifiers')
 
 interface RouteParams {
   params: Promise<{ id: string; groupId: string }>
@@ -218,7 +221,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       action: 'modifier-group-updated',
       entityId: groupId,
       entityType: 'modifier-group',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups.groupId.modifiers'))
 
     return NextResponse.json({
       data: {
@@ -511,7 +514,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       action: 'modifier-group-updated',
       entityId: groupId,
       entityType: 'modifier-group',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups.groupId.modifiers'))
 
     return NextResponse.json({
       data: {
@@ -608,7 +611,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       action: 'modifier-group-updated',
       entityId: groupId,
       entityType: 'modifier-group',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups.groupId.modifiers'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

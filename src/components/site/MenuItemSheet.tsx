@@ -467,8 +467,8 @@ export function MenuItemSheet({ itemId, slug, onClose, onAdd, inline = false }: 
     if (item?.itemType === 'pizza') {
       import('@/components/site/pizza/PizzaBuilder')
         .then((mod) => setPizzaBuilderComponent(() => mod.PizzaBuilder))
-        .catch(() => {
-          // Pizza builder not yet available — show standard modifiers instead
+        .catch(err => {
+          console.warn('pizza builder lazy load failed:', err)
         })
     }
   }, [item?.itemType])

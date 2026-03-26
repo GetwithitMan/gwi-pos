@@ -8,6 +8,8 @@ import { calculateRefund } from '@/lib/reservations/deposit-rules'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('public-reservations-cancel')
 
 export const dynamic = 'force-dynamic'
 
@@ -154,12 +156,12 @@ export const POST = withVenue(async function POST(
           baseUrl,
         },
       })
-    })().catch(console.error)
+    })().catch(err => log.warn({ err }, 'Background task failed'))
 
     // Post-commit: socket dispatch
     void dispatchReservationChanged(locationId, {
       reservationId: reservation.id, action: 'cancelled',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       id: updated.id,

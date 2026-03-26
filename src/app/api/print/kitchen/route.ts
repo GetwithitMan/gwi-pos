@@ -17,6 +17,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('print-kitchen')
 
 interface PrintKitchenRequest {
   orderId: string
@@ -331,7 +333,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         void db.printer.update({
           where: { id: printer.id },
           data: { lastPingAt: new Date(), lastPingOk: result.success }
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
 
         if (!result.success) {
           // W1-PR2: Try backup printer — PrintRoute first, then item-level backupPrinterIds
@@ -358,7 +360,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
               void db.printer.update({
                 where: { id: backupPrinter.id },
                 data: { lastPingAt: new Date(), lastPingOk: backupResult.success }
-              }).catch(console.error)
+              }).catch(err => log.warn({ err }, 'Background task failed'))
 
               // BUG 24: Fire-and-forget audit log for printer failover
               void db.auditLog.create({
@@ -375,7 +377,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
                     reason: 'primary_print_failed'
                   }
                 }
-              }).catch(console.error)
+              }).catch(err => log.warn({ err }, 'Background task failed'))
 
               if (backupResult.success) {
                 // Log the failover print job
@@ -388,7 +390,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
                     status: 'sent',
                     sentAt: new Date(),
                   },
-                }).catch(console.error)
+                }).catch(err => log.warn({ err }, 'Background task failed'))
                 // Treat the overall result as success via backup
                 result = backupResult
               } else {

@@ -4,6 +4,8 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { listShifts } from '@/lib/7shifts-client'
 import { getBusinessDate, updateSyncStatus } from '../../integrations/7shifts/_helpers'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('webhooks-7shifts')
 
 // Max age for webhook timestamp replay protection (5 minutes)
 const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000
@@ -129,7 +131,7 @@ export async function POST(request: NextRequest) {
   // persistent NUC Node.js process — NOT a serverless function. The process continues
   // executing the void promise after the response is sent. If ever deployed serverless,
   // switch to a DB job table + cron drain instead.
-  void processWebhookEvent(event, payload, matchedLocationId, matchedTimezone).catch(console.error)
+  void processWebhookEvent(event, payload, matchedLocationId, matchedTimezone).catch(err => log.warn({ err }, 'Background task failed'))
 
   return NextResponse.json({ received: true })
 }

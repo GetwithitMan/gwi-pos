@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import crypto from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('webhooks-pour-control')
 
 // Validate webhook signature based on provider
 function validateSignature(
@@ -142,7 +144,7 @@ export async function POST(request: NextRequest) {
           employeeId: employeeId || undefined,
           groupId: `over-pour-hw-${locationId}-${tapId || 'unknown'}`,
         })
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: { success: true, stored: true, isOverPour } })

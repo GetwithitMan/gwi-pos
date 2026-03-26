@@ -13,6 +13,8 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-unassign')
 
 export const dynamic = 'force-dynamic'
 
@@ -148,7 +150,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         subjectId,
         auth.employee.id,
         JSON.stringify({ reason: 'manual_unassign', deviceNumber: device.deviceNumber })
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Audit log (fire-and-forget, outside tx)
@@ -165,7 +167,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           assignmentCount: result.assignmentCount,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

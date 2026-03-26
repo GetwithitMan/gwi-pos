@@ -3,6 +3,8 @@ import { sendEmail } from '@/lib/email-service'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-invoice-overdue')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -169,7 +171,7 @@ export async function GET(request: NextRequest) {
                     </p>
                   </div>
                 `,
-              }).catch(console.error)
+              }).catch(err => log.warn({ err }, 'Background task failed'))
 
               // Mark reminder sent
               await venueDb.invoice.update({

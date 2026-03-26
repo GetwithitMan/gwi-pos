@@ -5,6 +5,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('public-waitlist')
 
 export const dynamic = 'force-dynamic'
 
@@ -188,7 +190,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       entryId: entry.id,
       customerName: entry.customerName,
       partySize: entry.partySize,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

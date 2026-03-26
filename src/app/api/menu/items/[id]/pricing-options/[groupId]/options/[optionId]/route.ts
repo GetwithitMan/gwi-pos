@@ -7,6 +7,9 @@ import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.pricing-options.groupId.options.optionId')
 
 // PUT update an option
 export const PUT = withVenue(withAuth('ADMIN', async function PUT(
@@ -79,7 +82,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void dispatchMenuUpdate(locationId, {
       action: 'updated',
       menuItemId,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId'))
 
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'updated', entityId: optionId })
     void pushUpstream()
@@ -154,7 +157,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void dispatchMenuUpdate(locationId, {
       action: 'updated',
       menuItemId,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId'))
 
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'deleted', entityId: optionId })
     void pushUpstream()

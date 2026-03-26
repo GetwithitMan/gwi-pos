@@ -1407,7 +1407,7 @@ export async function triggerImmediateDownstreamSync(_domain?: string, modelName
       const buffered = pendingImmediateModels
       pendingImmediateModels = null
       // Fire-and-forget: don't await (prevents recursion depth issues)
-      void triggerImmediateDownstreamSync(undefined, buffered.length > 0 ? buffered : undefined).catch(console.error)
+      void triggerImmediateDownstreamSync(undefined, buffered.length > 0 ? buffered : undefined).catch(err => log.warn({ err }, 'Sync task failed'))
     }
   }
 }

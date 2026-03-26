@@ -16,6 +16,8 @@ import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { roundToCents } from '@/lib/pricing'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-batch-adjust-tips')
 
 interface TipAdjustment {
   orderId: string
@@ -304,7 +306,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       void emitOrderEvent(info.locationId, info.orderId, 'ORDER_METADATA_UPDATED', {
         tipTotalCents: Math.round(info.tipTotal * 100),
         totalCents: Math.round(info.total * 100),
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Fire-and-forget tip allocations (BUG #412 fix — mirror single adjust-tip)
@@ -334,15 +336,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         discountTotal: info.discountTotal,
         total: info.total,
         commissionTotal: info.commissionTotal,
-      }, { async: true }).catch(() => {})
-
-      // Dispatch orders:list-changed for cross-terminal awareness (fire-and-forget)
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.batch-adjust-tips'))
       void dispatchOpenOrdersChanged(info.locationId, {
         trigger: 'payment_updated',
         orderId: info.orderId,
-      }, { async: true }).catch(console.error)
-
-      // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       void dispatchOrderSummaryUpdated(info.locationId, {
         orderId: info.orderId,
         orderNumber: 0,
@@ -360,7 +358,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         itemCount: 0,
         updatedAt: new Date().toISOString(),
         locationId: info.locationId,
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Trigger upstream sync (fire-and-forget, debounced)

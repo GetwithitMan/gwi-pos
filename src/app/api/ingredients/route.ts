@@ -7,6 +7,9 @@ import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('ingredients')
 
 // GET /api/ingredients - List ingredients with filtering and grouping
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -526,7 +529,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         parentIngredientId: ingredient.parentIngredientId,
         isBaseIngredient: ingredient.isBaseIngredient,
       },
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in ingredients'))
 
     return NextResponse.json({
       data: {

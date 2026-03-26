@@ -313,7 +313,7 @@ export function PaymentModal({
                 taxFromExclusive: Number(data.taxFromExclusive ?? 0),
               },
             }),
-          }).catch(() => {})
+          }).catch(err => console.warn('fire-and-forget failed in payment.PaymentModal:', err))
         }
       })
       .catch(err => {

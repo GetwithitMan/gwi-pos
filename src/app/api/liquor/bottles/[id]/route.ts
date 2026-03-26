@@ -10,6 +10,9 @@ import { emitToLocation } from '@/lib/socket-server'
 import { getDerivedBottleStock } from '@/lib/liquor-inventory'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor.bottles.id')
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -324,8 +327,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       action: 'updated',
       bottleId: id,
       name: bottle.name,
-    }).catch(() => {})
-    void emitToLocation(existing.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.bottles.id'))
+    void emitToLocation(existing.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(err => log.warn({ err }, 'socket emit failed'))
     void notifyDataChanged({ locationId: existing.locationId, domain: 'liquor', action: 'updated', entityId: id })
     void pushUpstream()
 
@@ -439,7 +442,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       }
     })
 
-    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(err => log.warn({ err }, 'socket emit failed'))
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'deleted', entityId: id })
     void pushUpstream()
 

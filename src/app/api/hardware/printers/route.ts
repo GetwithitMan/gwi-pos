@@ -9,6 +9,8 @@ import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('hardware-printers')
 
 // GET all printers for a location
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
@@ -133,7 +135,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     // Notify all terminals that hardware config changed
-    void emitToLocation(locationId, 'settings:updated', { source: 'printer', action: 'created', printerId: printer.id }).catch(console.error)
+    void emitToLocation(locationId, 'settings:updated', { source: 'printer', action: 'created', printerId: printer.id }).catch(err => log.warn({ err }, 'Background task failed'))
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: printer.id })
     void pushUpstream()
 

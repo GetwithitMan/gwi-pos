@@ -107,7 +107,7 @@ export function CardDetectedPrompt({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ event: 'shown' }),
-    }).catch(() => {})
+    }).catch(err => console.warn('fire-and-forget failed in pos.CardDetectedPrompt:', err))
   }, [detection])
 
   return (

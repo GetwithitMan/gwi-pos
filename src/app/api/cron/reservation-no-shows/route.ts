@@ -5,6 +5,8 @@ import { parseSettings, DEFAULT_RESERVATION_SETTINGS } from '@/lib/settings'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-reservation-no-shows')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -122,11 +124,11 @@ export async function GET(request: NextRequest) {
               locationId: location.id,
               reservationId: candidate.id,
               action: 'no_show',
-            }).catch(console.error)
+            }).catch(err => log.warn({ err }, 'Background task failed'))
           } else {
             void dispatchReservationChanged(location.id, {
               reservationId: candidate.id, action: 'no_show',
-            }).catch(console.error)
+            }).catch(err => log.warn({ err }, 'Background task failed'))
           }
         } catch (err) {
           console.error(`[cron:reservation-no-shows] Venue ${slug}: Failed for ${candidate.id}:`, err)

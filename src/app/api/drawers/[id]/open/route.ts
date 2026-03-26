@@ -10,6 +10,8 @@ import { dispatchAlert } from '@/lib/alert-service'
 import { emitToLocation } from '@/lib/socket-server'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('drawers-open')
 
 /**
  * POST /api/drawers/[id]/open
@@ -153,7 +155,7 @@ export const POST = withVenue(async function POST(
     }).then((entry) => {
       queueIfOutage('AuditLog', drawer.locationId, entry.id, 'INSERT')
       pushUpstream()
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // ── Manager drawer access audit (fire-and-forget) ──────────────
     // If the employee opening this drawer is different from the shift owner, log it
@@ -177,7 +179,7 @@ export const POST = withVenue(async function POST(
                 reason: 'No-sale drawer open by different employee',
               },
             },
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         }
       } catch (err) {
         console.error('[drawer/open] Manager drawer access audit failed:', err)
@@ -191,7 +193,7 @@ export const POST = withVenue(async function POST(
       employeeId: body.employeeId,
       reason: reasonLabel,
       timestamp: new Date().toISOString(),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // ── Alert dispatch (fire-and-forget) ─────────────────────────────
     const empId = body.employeeId
@@ -216,7 +218,7 @@ export const POST = withVenue(async function POST(
           locationId: drawer.locationId,
           employeeId: empId,
           groupId: `drawer-${drawer.locationId}-${empId}-${Date.now()}`,
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
       } catch (err) {
         console.error('[drawer/open] Alert dispatch failed:', err)
       }

@@ -28,7 +28,7 @@ export function CFDPricingCountdown() {
           setRules(r)
           rulesRef.current = r
         })
-        .catch(() => {})
+        .catch(err => console.warn('fire-and-forget failed in cfd.CFDPricingCountdown:', err))
     }
     load()
     // Re-fetch every 5 minutes in case settings changed

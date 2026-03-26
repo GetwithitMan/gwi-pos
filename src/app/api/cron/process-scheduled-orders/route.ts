@@ -4,6 +4,9 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('cron.process-scheduled-orders')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -81,12 +84,12 @@ export async function GET(request: NextRequest) {
             locationId: order.locationId,
             trigger: 'updated',
             orderId: order.id,
-          }).catch(() => {})
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in cron.process-scheduled-orders'))
         } else {
           void dispatchOpenOrdersChanged(order.locationId, {
             trigger: 'updated',
             orderId: order.id,
-          }, { async: true }).catch(() => {})
+          }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in cron.process-scheduled-orders'))
         }
 
         // Audit log (fire-and-forget)
@@ -103,7 +106,7 @@ export async function GET(request: NextRequest) {
               firedAt: now.toISOString(),
             },
           },
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in cron.process-scheduled-orders'))
 
         processed++
       } catch (err) {

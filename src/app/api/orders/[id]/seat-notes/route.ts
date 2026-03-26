@@ -7,6 +7,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-seat-notes')
 
 interface SeatAllergies {
   [seat: string]: string
@@ -132,8 +134,8 @@ export const PUT = withVenue(async function PUT(
     })
 
     // Socket events for cross-terminal awareness
-    void emitToLocation(order.locationId, 'orders:list-changed', { orderId }).catch(console.error)
-    void emitToLocation(order.locationId, 'order:updated', { orderId, changes: ['notes'] }).catch(console.error)
+    void emitToLocation(order.locationId, 'orders:list-changed', { orderId }).catch(err => log.warn({ err }, 'Background task failed'))
+    void emitToLocation(order.locationId, 'order:updated', { orderId, changes: ['notes'] }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Sync
     pushUpstream()

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('internal-reload-terminal')
 
 /**
  * POST /api/internal/reload-terminal
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
 
     // Emit to the entire location — terminal-specific rooms are not yet implemented.
     // The terminalId is included in the payload so clients can filter if needed.
-    void emitToLocation(locationId, 'system:reload', { terminalId }).catch(console.error)
+    void emitToLocation(locationId, 'system:reload', { terminalId }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { ok: true } })
   } catch (err) {

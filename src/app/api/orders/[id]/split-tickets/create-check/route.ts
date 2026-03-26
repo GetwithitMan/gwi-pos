@@ -6,6 +6,8 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchSplitCreated } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-split-tickets-create-check')
 
 // ============================================
 // POST - Create a new empty check on a split order
@@ -107,7 +109,7 @@ export const POST = withVenue(withAuth(async function POST(
       trigger: 'created',
       orderId: newOrder.id,
       tableId: parentOrder.tableId || undefined,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Dispatch order:split-created so all devices instantly render the new check
     void dispatchSplitCreated(parentOrder.locationId, {
@@ -123,7 +125,7 @@ export const POST = withVenue(withAuth(async function POST(
         isPaid: false,
       }],
       sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Event emission: new empty split check created
     void emitOrderEvent(parentOrder.locationId, newOrder.id, 'ORDER_CREATED', {
@@ -136,7 +138,7 @@ export const POST = withVenue(withAuth(async function POST(
       displayNumber: newOrder.displayNumber,
       parentOrderId: id,
       splitIndex: newOrder.splitIndex,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     pushUpstream()
 

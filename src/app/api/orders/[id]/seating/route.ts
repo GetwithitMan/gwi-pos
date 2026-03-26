@@ -13,6 +13,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-seating')
 
 /**
  * Atomic Seat Management API (Skill 121)
@@ -279,7 +281,7 @@ export const POST = withVenue(async function POST(
         where: { tableId: resetTableId, locationId: table.locationId, status: { in: ['open', 'draft'] }, extraSeatCount: { gt: 0 } },
         data: { extraSeatCount: 0 },
       })
-      void dispatchFloorPlanUpdate(table.locationId, { async: true }).catch(console.error)
+      void dispatchFloorPlanUpdate(table.locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       // Event sourcing: emit GUEST_COUNT_CHANGED for any orders that had extraSeats reset
       // (orderId in this path is the current order context — emit for it)
       void emitOrderEvent(table.locationId, orderId, 'ORDER_METADATA_UPDATED', {
@@ -302,7 +304,7 @@ export const POST = withVenue(async function POST(
       ).catch(() => null) // order may already be deleted
       // Dispatch floor plan update so all terminals see temp seats removed
       if (cleaned?.tableId) {
-        void dispatchFloorPlanUpdate(cleaned.locationId, { async: true }).catch(console.error)
+        void dispatchFloorPlanUpdate(cleaned.locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       }
       // Event sourcing: emit GUEST_COUNT_CHANGED for cleanup (extra seats zeroed)
       if (cleaned) {
@@ -583,14 +585,14 @@ export const POST = withVenue(async function POST(
     // cache before the seat record was committed — causing stale data to be cached.
     // Floor plan updates are non-critical UI events — fire-and-forget is appropriate.
     if (locationIdForDispatch) {
-      void dispatchFloorPlanUpdate(locationIdForDispatch, { async: true }).catch(console.error)
+      void dispatchFloorPlanUpdate(locationIdForDispatch, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Event emission: seat count changed
     if (locationIdForDispatch) {
       void emitOrderEvent(locationIdForDispatch, orderId, 'GUEST_COUNT_CHANGED', {
         count: result.newTotalSeats,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     pushUpstream()

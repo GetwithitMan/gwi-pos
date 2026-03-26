@@ -6,6 +6,8 @@ import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('shift-swap-requests-approve')
 
 // POST - Manager approves a shift request (swap, cover, or drop)
 // For swaps: reassigns shift to target employee
@@ -132,7 +134,7 @@ export const POST = withVenue(withAuth(async function POST(
         type: 'drop',
         requestedByEmployeeId: swapRequest.requestedByEmployeeId,
         shiftId: swapRequest.shiftId,
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({ data: { request: updatedRequest, shift: updatedShift } })
     }
@@ -188,7 +190,7 @@ export const POST = withVenue(withAuth(async function POST(
       requestedByEmployeeId: swapRequest.requestedByEmployeeId,
       requestedToEmployeeId: swapRequest.requestedToEmployeeId,
       shiftId: swapRequest.shiftId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { request: updatedRequest, shift: updatedShift } })
   } catch (error) {

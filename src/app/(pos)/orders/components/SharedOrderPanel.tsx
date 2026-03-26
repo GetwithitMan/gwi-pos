@@ -256,7 +256,7 @@ export function SharedOrderPanel(props: SharedOrderPanelProps) {
         })
         toast.success('Check sent to printer')
       } catch {
-        void OfflineManager.queuePrintJob(printOrderId, '', 0, []).catch(() => {})
+        void OfflineManager.queuePrintJob(printOrderId, '', 0, []).catch(err => console.warn('offline print queue failed:', err))
         toast.info('Print queued — will retry when printer available')
       }
     }

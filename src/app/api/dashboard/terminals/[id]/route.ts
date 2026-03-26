@@ -11,6 +11,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('dashboard-terminals')
 
 export const dynamic = 'force-dynamic'
 
@@ -106,7 +108,7 @@ export const PATCH = withVenue(withAuth('ADMIN', async function PATCH(
           source: 'dashboard',
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
     void pushUpstream()

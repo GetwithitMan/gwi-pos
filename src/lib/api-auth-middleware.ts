@@ -188,7 +188,7 @@ export function withAuth(
         }
 
         // Refresh session activity (fire-and-forget, <=1 cookie write per minute)
-        void refreshSessionCookie(session).catch(() => {})
+        void refreshSessionCookie(session).catch(err => log.warn({ err }, 'session cookie refresh failed'))
 
         const authCtx: AuthContext = {
           employeeId: session.employeeId,

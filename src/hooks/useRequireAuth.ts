@@ -73,8 +73,8 @@ export function useRequireAuth() {
           router.push('/login')
         }
       })
-      .catch(() => {
-        // Network error — don't force logout, let user retry
+      .catch(err => {
+        console.warn('auth verification network error:', err)
       })
   }, [isAuthenticated, employee, locationId, logout, login, clearOrder, router])
 

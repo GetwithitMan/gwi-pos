@@ -181,7 +181,7 @@ export async function allocateTipsForPayment(params: {
       })),
       ccFeeCents: ccFeeAmountCents,
       netTipCents: netTipAmountCents,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Domain operation failed'))
   }
 
   return result

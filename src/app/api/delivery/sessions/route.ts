@@ -7,6 +7,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-sessions')
 
 export const dynamic = 'force-dynamic'
 
@@ -189,7 +191,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sessionId: result.session.id,
         startingBankCents: result.session.startingBankCents,
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ session: result.session }, { status: 201 })
   } catch (error) {

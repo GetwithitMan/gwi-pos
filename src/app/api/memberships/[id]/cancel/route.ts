@@ -5,6 +5,8 @@ import { withVenue } from '@/lib/with-venue'
 import { assertStatusTransition } from '@/lib/membership/state-machine'
 import { MembershipStatus, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('memberships-cancel')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -65,7 +67,7 @@ export const POST = withVenue(async function POST(
 
     void dispatchMembershipUpdate(locationId, {
       action: 'cancelled', membershipId: id, customerId: mbr.customerId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { success: true, immediate: !!immediate } })
   } catch (err) {

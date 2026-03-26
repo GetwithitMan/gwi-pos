@@ -42,7 +42,8 @@ function OwnerAuthContent() {
         // Navigate to settings (admin home for venue owners)
         router.replace('/settings')
       })
-      .catch(() => {
+      .catch(err => {
+        console.warn('owner auth login failed:', err)
         setStatus('error')
         setErrorMsg('Connection error. Please try again.')
       })

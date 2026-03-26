@@ -12,6 +12,9 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { roundToCents } from '@/lib/pricing'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-merge')
 
 // POST - Merge another order into this one
 export const POST = withVenue(async function POST(
@@ -204,9 +207,15 @@ export const POST = withVenue(async function POST(
       }))
       const totals = calculateOrderTotals(
         mergeCalcItems, locationSettings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        discountTotal, 0, undefined, 'card', targetOrder.isTaxExempt,
+        discountTotal, Number(targetOrder.tipTotal || 0), undefined, 'card', targetOrder.isTaxExempt,
         Number(targetOrder.inclusiveTaxRate) || undefined
       )
+
+      const mergeDonation = Number(targetOrder.donationAmount || 0)
+      const mergeConvFee = Number(targetOrder.convenienceFee || 0)
+      const mergeFinalTotal = mergeDonation > 0 || mergeConvFee > 0
+        ? roundToCents(totals.total + mergeDonation + mergeConvFee)
+        : totals.total
 
       // Update target order totals and guest count
       const newGuestCount = (targetOrder.guestCount || 1) + (sourceOrder.guestCount || 1)
@@ -217,7 +226,7 @@ export const POST = withVenue(async function POST(
         taxFromInclusive: totals.taxFromInclusive,
         taxFromExclusive: totals.taxFromExclusive,
         discountTotal: totals.discountTotal,
-        total: totals.total,
+        total: mergeFinalTotal,
         commissionTotal,
         itemCount: allItems.reduce((sum, i) => sum + i.quantity, 0),
         guestCount: newGuestCount,
@@ -268,8 +277,8 @@ export const POST = withVenue(async function POST(
     // C12: Release the source order's table after merge (prevent zombie tables)
     if (sourceOrder.tableId && sourceOrder.tableId !== targetOrder.tableId) {
       await db.table.update({ where: { id: sourceOrder.tableId }, data: { status: 'available' } })
-      void dispatchTableStatusChanged(locationId, { tableId: sourceOrder.tableId, status: 'available' }).catch(console.error)
-      void dispatchFloorPlanUpdate(locationId).catch(console.error)
+      void dispatchTableStatusChanged(locationId, { tableId: sourceOrder.tableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
+      void dispatchFloorPlanUpdate(locationId).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Dispatch socket events for both orders (fire-and-forget)
@@ -277,25 +286,19 @@ export const POST = withVenue(async function POST(
       trigger: 'voided',
       orderId: sourceOrderId,
       tableId: sourceOrder.tableId || undefined,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.merge'))
     void dispatchOpenOrdersChanged(targetOrder.locationId, {
       trigger: 'transferred' as any,
       orderId: targetOrderId,
       tableId: targetOrder.tableId || undefined,
-    }, { async: true }).catch(() => {})
-
-    // Event emission: target order received merged items
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.merge'))
     void emitOrderEvent(targetOrder.locationId, targetOrderId, 'ORDER_METADATA_UPDATED', {
       reason: `Merged ${movedItems.count} items from order #${sourceOrder.orderNumber}`,
-    }).catch(console.error)
-
-    // Event emission: source order voided after merge
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void emitOrderEvent(targetOrder.locationId, sourceOrderId, 'ORDER_CLOSED', {
       closedStatus: 'voided',
       reason: `Merged into order #${targetOrder.orderNumber}`,
-    }).catch(console.error)
-
-    // Fetch updated target order for response and totals dispatch
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     const updatedOrder = await OrderRepository.getOrderByIdWithInclude(
       targetOrderId, locationId,
       {
@@ -313,14 +316,10 @@ export const POST = withVenue(async function POST(
       tipTotal: Number(updatedOrder!.tipTotal),
       discountTotal: Number(updatedOrder!.discountTotal),
       total: Number(updatedOrder!.total),
-    }, { async: true }).catch(() => {})
-
-    // BUG: Merge was missing dispatchTabUpdated — Transfer had it, Merge didn't
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.merge'))
     void dispatchTabUpdated(targetOrder.locationId, {
       orderId: targetOrderId,
-    }).catch(console.error)
-
-    // CFD: update customer display with merged order (fire-and-forget)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     dispatchCFDOrderUpdated(targetOrder.locationId, {
       orderId: targetOrderId,
       orderNumber: targetOrder.orderNumber,

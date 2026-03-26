@@ -16,6 +16,8 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
 import { validateCellularRefundFromHeaders, validateManagerReauthFromHeaders, CellularAuthError } from '@/lib/cellular-validation'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-refund-payment')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -324,7 +326,7 @@ export const POST = withVenue(async function POST(
       trigger: 'payment_updated',
       orderId: id,
       tableId: order.tableId || undefined,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void dispatchOrderTotalsUpdate(order.locationId, id, {
       subtotal: Number(order.subtotal),
@@ -332,7 +334,7 @@ export const POST = withVenue(async function POST(
       tipTotal: Number(order.tipTotal),
       discountTotal: Number(order.discountTotal),
       total: Number(order.total),
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void dispatchOrderSummaryUpdated(order.locationId, {
       orderId: id,
@@ -351,14 +353,14 @@ export const POST = withVenue(async function POST(
       itemCount: order.itemCount ?? 0,
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Dispatch payment:processed with refunded status (fire-and-forget)
     void dispatchPaymentProcessed(order.locationId, {
       orderId: id,
       paymentId,
       status: 'refunded',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Queue outage write if Neon is unreachable — read back full row to
     // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
@@ -366,11 +368,11 @@ export const POST = withVenue(async function POST(
       // Flag refund processed during outage for reconciliation
       void PaymentRepository.updatePayment(paymentId, order.locationId, {
         needsReconciliation: true,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       const fullPayment = await PaymentRepository.getPaymentById(paymentId, order.locationId)
       if (fullPayment) {
-        void queueOutageWrite('Payment', fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+        void queueOutageWrite('Payment', fullPayment.id, 'UPDATE', fullPayment as unknown as Record<string, unknown>, order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 
@@ -426,7 +428,7 @@ export const POST = withVenue(async function POST(
           // Fire-and-forget event emission for tip update
           void emitOrderEvent(order.locationId, id, 'ORDER_METADATA_UPDATED', {
             tipTotalCents: Math.round(tipReductionResult.newOrderTipTotal * 100),
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
 
           // Trigger tip chargeback for the proportional amount only.
           // Pass tipReductionCents so chargeback creates proportional DEBITs
@@ -618,7 +620,7 @@ export const POST = withVenue(async function POST(
     })
     } finally {
       // PAY-P2-1: Release advisory lock after all 3 phases complete (success or failure)
-      await db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(console.error)
+      await db.$queryRawUnsafe('SELECT pg_advisory_unlock($1::bigint)', lockKey).catch(err => log.warn({ err }, 'Background task failed'))
     }
   } catch (error) {
     console.error('Failed to refund payment:', error)

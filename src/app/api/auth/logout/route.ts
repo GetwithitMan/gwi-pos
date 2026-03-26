@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { clearSessionCookie, getSessionFromCookie } from '@/lib/auth-session'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('auth-logout')
 
 /**
  * POST /api/auth/logout
@@ -23,7 +25,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           entityId: session.employeeId,
           details: { reason: 'user_initiated' },
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     await clearSessionCookie()

@@ -6,6 +6,8 @@ import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { parseSettings } from '@/lib/settings'
 import { generateDepositToken } from '@/lib/reservations/deposit-rules'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('reservations-deposit-text-to-pay')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -88,7 +90,7 @@ export const POST = withVenue(async function POST(
         baseUrl: process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3005}`,
       },
       channels: ['sms'],
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: { sent: true, expiresAt, token },

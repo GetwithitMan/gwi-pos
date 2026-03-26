@@ -8,6 +8,8 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchTabUpdated, dispatchTabStatusUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-auto-increment')
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
 // Called after adding items to a tab. Fires silently in the background.
@@ -147,13 +149,11 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         // Fire-and-forget event emission
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
           preAuthAmount: Math.round(newAuthAmount * 100),
-        }).catch(console.error)
-
-        // Fire-and-forget socket dispatch for cross-terminal sync
+        }).catch(err => log.warn({ err }, 'Background task failed'))
         void dispatchTabUpdated(locationId, {
           orderId,
           status: 'incremented',
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.auto-increment'))
         dispatchTabStatusUpdate(locationId, { orderId, status: 'incremented' })
 
         return NextResponse.json({
@@ -178,7 +178,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         void dispatchTabUpdated(locationId, {
           orderId,
           status: 'increment_failed',
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.auto-increment'))
         dispatchTabStatusUpdate(locationId, { orderId, status: 'increment_failed' })
 
         return NextResponse.json({

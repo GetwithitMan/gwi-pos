@@ -8,6 +8,8 @@ import { generateDailySalesJournal } from '@/lib/accounting/daily-journal'
 import { exportToCSV } from '@/lib/accounting/csv-exporter'
 import { exportToIIF } from '@/lib/accounting/quickbooks-exporter'
 import { exportToXeroCSV } from '@/lib/accounting/xero-exporter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('accounting-export')
 
 /**
  * GET /api/accounting/export?date=2026-03-10
@@ -172,7 +174,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           isBalanced: journal.isBalanced,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Return file download response
     return new Response(exportData, {

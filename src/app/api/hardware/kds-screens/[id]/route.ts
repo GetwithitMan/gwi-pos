@@ -6,6 +6,8 @@ import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema,
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('hardware-kds-screens')
 
 // GET single KDS screen
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -167,7 +169,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     // Notify all terminals that KDS screen config changed
-    void emitToLocation(existingScreen.locationId, 'settings:updated', { source: 'kds-screen', action: 'updated', screenId: id }).catch(console.error)
+    void emitToLocation(existingScreen.locationId, 'settings:updated', { source: 'kds-screen', action: 'updated', screenId: id }).catch(err => log.warn({ err }, 'Background task failed'))
     void notifyDataChanged({ locationId: existingScreen.locationId, domain: 'hardware', action: 'updated', entityId: id })
     void pushUpstream()
 

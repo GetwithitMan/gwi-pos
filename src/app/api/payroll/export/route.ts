@@ -5,6 +5,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { generatePayrollData } from '@/lib/payroll/payroll-export'
 import { formatPayrollExport } from '@/lib/payroll/csv-exporter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('payroll-export')
 
 // GET /api/payroll/export — preview payroll data for a date range
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -137,7 +139,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           employeeCount: records.length,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

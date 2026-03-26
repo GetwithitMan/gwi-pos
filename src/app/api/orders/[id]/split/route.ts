@@ -18,6 +18,9 @@ import {
   createTableSplit,
   calculateCustomSplit,
 } from '@/lib/domain/split-order'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.split')
 
 // POST - Split an order into multiple trackable sub-orders
 export const POST = withVenue(async function POST(
@@ -201,7 +204,7 @@ export const POST = withVenue(async function POST(
           trigger: 'created',
           orderId: s.id,
           tableId: order.tableId || undefined,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       }
 
       // Dispatch order:split-created so all devices instantly render the split
@@ -219,9 +222,7 @@ export const POST = withVenue(async function POST(
           isPaid: false,
         })),
         sourceTerminalId: terminalId || undefined,
-      }).catch(() => {})
-
-      // Emit order events for each new split order (fire-and-forget)
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       for (const s of splitOrders) {
         void emitOrderEvent(order.locationId, s.id, 'ORDER_CREATED', {
           locationId: order.locationId,
@@ -301,9 +302,7 @@ export const POST = withVenue(async function POST(
         trigger: 'created',
         orderId: newOrder.id,
         tableId: order.tableId || undefined,
-      }, { async: true }).catch(() => {})
-
-      // Dispatch order:split-created so all devices instantly render the split
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       void dispatchSplitCreated(order.locationId, {
         parentOrderId: order.parentOrderId || order.id,
         parentStatus: 'split',
@@ -317,9 +316,7 @@ export const POST = withVenue(async function POST(
           isPaid: false,
         }],
         sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
-      }).catch(() => {})
-
-      // Emit order events for new split order (fire-and-forget)
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       void emitOrderEvents(order.locationId, newOrder.id, [
         {
           type: 'ORDER_CREATED',
@@ -429,7 +426,7 @@ export const POST = withVenue(async function POST(
           trigger: 'created',
           orderId: s.id,
           tableId: order.tableId || undefined,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       }
 
       // Dispatch order:split-created so all devices instantly render the split
@@ -446,9 +443,7 @@ export const POST = withVenue(async function POST(
           isPaid: false,
         })),
         sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
-      }).catch(() => {})
-
-      // Emit order events for each seat split order (fire-and-forget)
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       for (const seatNumber of sortedSeats) {
         const seatItems = itemsBySeat.get(seatNumber) || []
         const matchingSplit = splitOrders.find(s => s.seatNumber === seatNumber)
@@ -554,7 +549,7 @@ export const POST = withVenue(async function POST(
           trigger: 'created',
           orderId: s.id,
           tableId: s.tableId || undefined,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       }
 
       // Dispatch order:split-created so all devices instantly render the split
@@ -571,9 +566,7 @@ export const POST = withVenue(async function POST(
           isPaid: false,
         })),
         sourceTerminalId: request.headers.get('x-terminal-id') || undefined,
-      }).catch(() => {})
-
-      // Emit order events for each table split order (fire-and-forget)
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.split'))
       for (const tableId of tablesWithItems) {
         const tableItems = itemsByTable.get(tableId) || []
         const matchingSplit = splitOrders.find(s => s.tableId === tableId)

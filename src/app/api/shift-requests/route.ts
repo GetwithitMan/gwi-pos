@@ -5,6 +5,8 @@ import { getActorFromRequest } from '@/lib/api-auth'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { Prisma } from '@/generated/prisma/client'
 import type { ShiftRequestType, ShiftSwapRequestStatus } from '@/generated/prisma/client'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('shift-requests')
 
 // GET - List shift requests for a location
 // Unified endpoint for managers and employees.
@@ -224,7 +226,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       requestedByEmployeeId,
       requestedToEmployeeId: requestedToEmployeeId || null,
       shiftId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { request: created } }, { status: 201 })
   } catch (error) {

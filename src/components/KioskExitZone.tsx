@@ -23,9 +23,8 @@ export function KioskExitZone() {
     if (tapCount.current >= 5) {
       tapCount.current = 0
       // Server station: POS API handles it
-      fetch('/api/system/exit-kiosk', { method: 'POST' }).catch(() => {})
-      // Terminal station: local micro-service handles it
-      fetch('http://localhost:3006/exit', { method: 'POST', mode: 'no-cors' }).catch(() => {})
+      fetch('/api/system/exit-kiosk', { method: 'POST' }).catch(err => console.warn('kiosk exit request failed:', err))
+      fetch('http://localhost:3006/exit', { method: 'POST', mode: 'no-cors' }).catch(err => console.warn('fetch request failed:', err))
       return
     }
 

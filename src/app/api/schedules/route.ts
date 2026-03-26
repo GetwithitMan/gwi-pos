@@ -7,6 +7,9 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('schedules')
 
 // GET - List schedules
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
@@ -132,7 +135,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     void notifyDataChanged({ locationId, domain: 'scheduling', action: 'created', entityId: schedule.id })
     void pushUpstream()
-    void emitToLocation(locationId, 'schedules:changed', { trigger: 'schedule-created' }).catch(() => {})
+    void emitToLocation(locationId, 'schedules:changed', { trigger: 'schedule-created' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: {
       schedule: {

@@ -16,6 +16,9 @@
 
 import type { PrismaClient } from '@/generated/prisma/client'
 import { CONNECTION_BUDGET } from './db-connection-budget'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('db-venue-cache')
 
 // ---------------------------------------------------------------------------
 // Types + globalThis cache
@@ -55,7 +58,7 @@ if (typeof setInterval !== 'undefined') {
     const now = Date.now()
     for (const [slug, entry] of clients) {
       if (now - entry.lastAccessed > VENUE_CLIENT_TTL_MS) {
-        entry.client.$disconnect().catch(() => {})
+        entry.client.$disconnect().catch(err => log.warn({ err }, 'prisma disconnect failed'))
         clients.delete(slug)
       }
     }
@@ -264,7 +267,7 @@ export async function getDbForVenue(
     if (oldestSlug) {
       const evicted = clients.get(oldestSlug)
       clients.delete(oldestSlug)
-      void evicted?.client.$disconnect().catch(() => {})
+      void evicted?.client.$disconnect().catch(err => log.warn({ err }, 'prisma disconnect failed'))
     }
   }
 
@@ -278,7 +281,7 @@ export async function getDbForVenue(
     await client.$queryRawUnsafe('SELECT 1')
   } catch (connErr: any) {
     // Disconnect the failed client immediately
-    void client.$disconnect().catch(() => {})
+    void client.$disconnect().catch(err => log.warn({ err }, 'prisma disconnect failed'))
     const msg = connErr?.message || ''
     const isDbNotFound = msg.includes('does not exist') || msg.includes('FATAL') || msg.includes('3D000')
 
@@ -298,7 +301,7 @@ export async function getDbForVenue(
           try {
             await client.$queryRawUnsafe('SELECT 1')
           } catch (retryErr: any) {
-            void client.$disconnect().catch(() => {})
+            void client.$disconnect().catch(err => log.warn({ err }, 'prisma disconnect failed'))
             throw new Error(`Venue database not found for slug "${slug}" (MC resolved: ${mcDbName}): ${retryErr?.message || ''}`)
           }
           // Success with MC-resolved name — fall through to cache below

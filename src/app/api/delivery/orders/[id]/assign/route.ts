@@ -9,6 +9,8 @@ import { advanceDeliveryStatus, writeDeliveryAuditLog } from '@/lib/delivery/sta
 import { dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
 import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-orders-assign')
 
 export const dynamic = 'force-dynamic'
 
@@ -142,7 +144,7 @@ export const PATCH = withVenue(async function PATCH(
       employeeId: auth.employee.id,
       previousValue: { driverId: order.driverId },
       newValue: { driverId },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Fire delivery:driver_assigned socket event
     const driverName = driver.driverFirstName
@@ -153,7 +155,7 @@ export const PATCH = withVenue(async function PATCH(
       orderId: deliveryOrder.orderId,
       driverId,
       driverName,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

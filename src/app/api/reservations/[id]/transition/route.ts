@@ -9,6 +9,8 @@ import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('reservations-transition')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -74,11 +76,11 @@ export const POST = withVenue(async function POST(
     // Post-commit: socket dispatch (fire-and-forget)
     void dispatchReservationChanged(reservation.locationId, {
       reservationId: id, action: to, reservation: updated,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Post-commit: if cancelled, offer slot to waitlist (fire-and-forget)
     if (to === 'cancelled') {
-      void triggerWaitlistBridge(reservation, id).catch(console.error)
+      void triggerWaitlistBridge(reservation, id).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'updated', entityId: id })

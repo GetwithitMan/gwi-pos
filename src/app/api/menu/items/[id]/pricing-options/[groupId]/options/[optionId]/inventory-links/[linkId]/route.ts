@@ -5,6 +5,9 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.pricing-options.groupId.options.optionId.inventory-links.linkId')
 
 // PUT update an inventory link
 export const PUT = withVenue(withAuth('ADMIN', async function PUT(
@@ -126,7 +129,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     void dispatchMenuUpdate(locationId, {
       action: 'updated',
       menuItemId,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId.inventory-links.linkId'))
 
     return NextResponse.json({
       data: {
@@ -216,7 +219,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     void dispatchMenuUpdate(locationId, {
       action: 'updated',
       menuItemId,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId.inventory-links.linkId'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

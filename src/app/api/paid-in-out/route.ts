@@ -9,6 +9,8 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { compare } from 'bcryptjs'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('paid-in-out')
 
 // Parse category from stored reason format: "[Category] Reason text"
 function parseCategoryFromReason(reason: string): { category: string | null; reason: string } {
@@ -277,7 +279,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       drawerId: record.drawerId,
       drawerName: record.drawer.name,
       createdAt: record.createdAt.toISOString(),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     const parsedRecord = parseCategoryFromReason(record.reason)
     return NextResponse.json({

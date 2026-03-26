@@ -6,6 +6,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { getLocationSettings } from '@/lib/location-cache'
 import { mergeWithDefaults, DEFAULT_WAITLIST_SETTINGS } from '@/lib/settings'
 import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('waitlist')
 
 export const dynamic = 'force-dynamic'
 
@@ -175,20 +177,20 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
               CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )`,
             locationId, entry.id, pagerNumber, assignResult[0].providerId
-          ).catch(console.error)
+          ).catch(err => log.warn({ err }, 'Background task failed'))
 
           // Sync pagerNumber cache
           void db.$executeRawUnsafe(
             `UPDATE "WaitlistEntry" SET "pagerNumber" = $2 WHERE id = $1`,
             entry.id, pagerNumber
-          ).catch(console.error)
+          ).catch(err => log.warn({ err }, 'Background task failed'))
 
           // Log device event
           void db.$executeRawUnsafe(
             `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
              VALUES (gen_random_uuid()::text, $1, $2, 'assigned', 'waitlist_entry', $3, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)`,
             assignResult[0].id, locationId, entry.id
-          ).catch(console.error)
+          ).catch(err => log.warn({ err }, 'Background task failed'))
         }
       } catch (pagerErr) {
         // Non-fatal: pager assignment is best-effort
@@ -202,7 +204,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       entryId: entry.id,
       customerName: entry.customerName,
       partySize: entry.partySize,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: { ...entry, pagerNumber },

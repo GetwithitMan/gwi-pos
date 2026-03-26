@@ -12,6 +12,8 @@ import { withVenue } from '@/lib/with-venue'
 import { findLastMemberGroup } from '@/lib/domain/tips/tip-groups'
 import { dispatchAlert } from '@/lib/alert-service'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('time-clock')
 
 // GET - List time clock entries
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -175,17 +177,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     pushUpstream()
 
     // Fire-and-forget socket dispatch for real-time clock updates
-    void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})
-
-    // Emit cloud event for clock-in (fire-and-forget)
+    void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
     void emitCloudEvent("time_clock", {
       employeeId,
       entryId: entry.id,
       action: "clock_in",
       clockTime: entry.clockIn.toISOString(),
-    }).catch(console.error)
-
-    // W5-10: Device/IP logging for buddy-punch prevention (fire-and-forget)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     const clockInIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
     const clockInUa = request.headers.get('user-agent') || 'unknown'
     void db.auditLog.create({
@@ -201,9 +199,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           deviceFingerprint: `${clockInIp}|${clockInUa}`,
         },
       },
-    }).catch(console.error)
-
-    // W5-10: Buddy-punch detection — check for recent clock events from different IP
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void (async () => {
       try {
         const settings = parseSettings(await getLocationSettings(locationId))
@@ -253,7 +249,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
                 employeeName: empName,
               },
             },
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         }
       } catch (err) {
         console.error('[time-clock] Buddy-punch detection failed:', err)
@@ -377,7 +373,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
               entityId: entryId,
               details: { reason: 'Manager forced clock-out while last active tip group member' },
             },
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         }
         // ── End last-member guard ─────────────────────────────────────────────
 
@@ -423,7 +419,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
                 targetEmployeeId: entry.employeeId,
               },
             },
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         }
         // ── End retroactive clock-out override ──────────────────────────────
 
@@ -567,9 +563,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     pushUpstream()
 
     // Fire-and-forget socket dispatch for real-time clock updates
-    void emitToLocation(entry.locationId, 'employee:clock-changed', { employeeId: entry.employeeId }).catch(() => {})
-
-    // W5-10: Device/IP logging for clock-out (fire-and-forget)
+    void emitToLocation(entry.locationId, 'employee:clock-changed', { employeeId: entry.employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
     if (action === 'clockOut') {
       const clockOutIp = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown'
       const clockOutUa = request.headers.get('user-agent') || 'unknown'
@@ -586,7 +580,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             deviceFingerprint: `${clockOutIp}|${clockOutUa}`,
           },
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Emit cloud event for clock-out (fire-and-forget)
@@ -598,7 +592,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         clockTime: updated.clockOut.toISOString(),
         regularHours: updated.regularHours ? Number(updated.regularHours) : 0,
         overtimeHours: updated.overtimeHours ? Number(updated.overtimeHours) : 0,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Break audit trail: create/close Break records
@@ -647,7 +641,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
             locationId: entry.locationId,
             employeeId: entry.employeeId,
             groupId: `overtime-${entry.locationId}-${entry.employeeId}-${entry.id}`,
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         } catch (err) {
           console.error('[time-clock] Overtime alert dispatch failed:', err)
         }
@@ -776,7 +770,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     // Notify real-time
     void emitToLocation(original.locationId, 'employee:clock-changed', {
       employeeId: original.employeeId,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in time-clock'))
 
     return NextResponse.json({ data: {
       id: updated.id,

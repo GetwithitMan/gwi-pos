@@ -864,7 +864,7 @@ export function FloorPlanHome({
         setPricingRules(rules)
         setActivePricingRules(getActivePricingRules(rules))
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
     return () => { cancelled = true }
   }, [])
 
@@ -1358,9 +1358,7 @@ export function FloorPlanHome({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'RESET_TABLE', tableId }),
-    }).catch(() => {})
-
-    // Clear local state
+    }).catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
     setExtraSeats(prev => {
       if (!prev.has(tableId)) return prev
       const next = new Map(prev)
@@ -1396,7 +1394,7 @@ export function FloorPlanHome({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'CLEANUP' }),
-        }).catch(() => {})
+        }).catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
       }
       // Clear extra seats for previous table
       setExtraSeats(prev => {
@@ -1913,7 +1911,7 @@ export function FloorPlanHome({
       clearOrderPanel()
 
       // Refresh floor plan data in background (fire-and-forget — UI already cleared)
-      loadFloorPlanData(false).catch(() => {})
+      loadFloorPlanData(false).catch(err => console.warn('floor plan data load failed:', err))
     } catch (error) {
       console.error('[FloorPlanHome] Failed to send order:', error)
     } finally {
@@ -1964,8 +1962,9 @@ export function FloorPlanHome({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'CLEANUP' }),
       })
-      void cleanup().catch(() => {
-        setTimeout(() => void cleanup().catch(console.error), 1000)
+      void cleanup().catch(err => {
+        console.warn('floor plan cleanup failed, retrying:', err)
+        setTimeout(() => void cleanup().catch(err2 => console.warn('floor plan cleanup retry failed:', err2)), 1000)
       })
     }
 
@@ -2068,7 +2067,7 @@ export function FloorPlanHome({
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ relativeX: newRelativeX, relativeY: newRelativeY }),
-    }).catch(console.error)
+    }).catch(err => console.warn('Operation failed:', err))
   }, [])
 
   // Stable TableNode callbacks — avoid inline closures that break React.memo
@@ -2942,7 +2941,7 @@ export function FloorPlanHome({
                 void fetch(`/api/orders/${activeOrderId}`)
                   .then(r => r.ok ? r.json() : null)
                   .then(d => { if (d) useOrderStore.getState().loadOrder(d.data || d) })
-                  .catch(() => {})
+                  .catch(err => console.warn('fire-and-forget failed in floor-plan.FloorPlanHome:', err))
               }
             }}
           />

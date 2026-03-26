@@ -102,7 +102,7 @@ export function UpsellPromptBanner({
         action,
         addedAmount: addedAmount ?? null,
       }),
-    }).catch(console.error)
+    }).catch(err => console.warn('Operation failed:', err))
   }, [locationId, orderId, employeeId])
 
   // Track 'shown' events once per suggestion

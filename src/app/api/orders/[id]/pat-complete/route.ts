@@ -15,6 +15,8 @@ import {
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository } from '@/lib/repositories'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-pat-complete')
 
 // POST /api/orders/[id]/pat-complete
 // Called by pay-at-table after all datacap payments complete.
@@ -145,13 +147,13 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       locationId,
       { trigger: 'paid', orderId, tableId: order.tableId || undefined },
       { async: true }
-    ).catch(() => {})
+    ).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pat-complete'))
 
-    dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(() => {})
+    dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(err => log.warn({ err }, 'tab updated dispatch failed'))
     dispatchTabStatusUpdate(locationId, { orderId, status: 'closed' })
 
     if (order.tableId) {
-      dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+      dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     // Dispatch payment:processed for cross-terminal sync (fire-and-forget)
@@ -163,18 +165,14 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       tipAmount: effectiveTip,
       totalAmount: totalPaid,
       isClosed: true,
-    }).catch(console.error)
-
-    // Dispatch order:closed for Android cross-terminal sync (fire-and-forget)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderClosed(locationId, {
       orderId,
       status: 'paid',
       closedAt: new Date().toISOString(),
       closedByEmployeeId: employeeId || null,
       locationId,
-    }, { async: true }).catch(console.error)
-
-    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderSummaryUpdated(locationId, {
       orderId,
       orderNumber: 0, // Not available in this select
@@ -192,9 +190,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       itemCount: 0,
       updatedAt: new Date().toISOString(),
       locationId,
-    }, { async: true }).catch(console.error)
-
-    // Event emission: pay-at-table completed — payment(s) applied + order closed
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     const patEvents: Array<{ type: 'PAYMENT_APPLIED' | 'ORDER_CLOSED'; payload: Record<string, unknown> }> = []
     if (splits && splits.length > 0) {
       for (const split of splits) {
@@ -228,7 +224,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       type: 'ORDER_CLOSED',
       payload: { closedStatus: 'paid', reason: 'Pay-at-table completed' },
     })
-    void emitOrderEvents(locationId, orderId, patEvents).catch(console.error)
+    void emitOrderEvents(locationId, orderId, patEvents).catch(err => log.warn({ err }, 'Background task failed'))
 
     pushUpstream()
 

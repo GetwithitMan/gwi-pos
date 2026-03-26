@@ -15,6 +15,8 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { OPEN_ORDER_STATUSES } from '@/lib/domain/order-status'
 import type { OrderStatus } from '@/generated/prisma/client'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('shifts-transfer-orders')
 
 interface BulkTransferPayload {
   toEmployeeId: string
@@ -193,19 +195,19 @@ export const POST = withVenue(async function POST(
             bulkTransfer: true,
           })
         )
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
 
       // Single batch socket dispatch for all orders
       void dispatchOpenOrdersChanged(shift.locationId, {
         trigger: 'transferred',
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
       // Dispatch tab updated for each transferred order
       void Promise.all(
         result.orders.map((o) =>
           dispatchTabUpdated(shift.locationId, { orderId: o.id })
         )
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
 
       // Notify shift change
       void emitToLocation(shift.locationId, 'shifts:changed', {
@@ -214,7 +216,7 @@ export const POST = withVenue(async function POST(
         fromEmployeeId: shift.employeeId,
         toEmployeeId,
         count: result.transferred,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     const fromName = shift.employee.displayName ||

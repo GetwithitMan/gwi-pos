@@ -215,7 +215,7 @@ export default function AuditLogBrowserPage() {
           )
         }
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in audit:', err))
   }, [locationId, currentEmployee?.id])
 
   // ------------------------------------------

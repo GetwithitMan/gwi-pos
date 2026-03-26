@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('catering')
 
 const VALID_STATUSES = ['inquiry', 'quoted', 'confirmed', 'in_preparation', 'delivered', 'completed', 'cancelled'] as const
 type CateringStatus = typeof VALID_STATUSES[number]
@@ -278,7 +280,7 @@ export const PUT = withVenue(async function PUT(
           newStatus: status || currentStatus,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Fetch updated order
     const updatedOrders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -365,7 +367,7 @@ export const DELETE = withVenue(async function DELETE(
           refundNote,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

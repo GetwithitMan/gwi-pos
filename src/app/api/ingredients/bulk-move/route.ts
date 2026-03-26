@@ -4,6 +4,9 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('ingredients.bulk-move')
 
 /**
  * PUT /api/ingredients/bulk-move
@@ -67,7 +70,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
         bulkMoveLocationId = sample?.locationId
       }
       if (bulkMoveLocationId) {
-        void emitToLocation(bulkMoveLocationId, 'inventory:changed', { action: 'bulk-move' }).catch(() => {})
+        void emitToLocation(bulkMoveLocationId, 'inventory:changed', { action: 'bulk-move' }).catch(err => log.warn({ err }, 'socket emit failed'))
       }
     }
 

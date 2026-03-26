@@ -40,7 +40,7 @@ export default function BottleServiceBanner({
       .then(json => {
         if (json.data) setStatus(json.data)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in tabs.BottleServiceBanner:', err))
   }, [orderId])
 
   // Load on mount

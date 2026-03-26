@@ -6,6 +6,8 @@ import { emitToLocation } from '@/lib/socket-server'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('inventory-86-status')
 
 /**
  * GET /api/inventory/86-status
@@ -337,7 +339,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         itemId: item.id,
         stockStatus: is86d ? 'out_of_stock' : 'in_stock',
         isOrderableOnline: !is86d,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Emit inventory:86-status-changed for admin UI refresh
@@ -346,7 +348,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       name: updated.name,
       is86d: updated.is86d,
       affectedMenuItemIds: affectedMenuItems.map(m => m.id),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

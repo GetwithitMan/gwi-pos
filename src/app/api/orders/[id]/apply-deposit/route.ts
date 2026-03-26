@@ -13,6 +13,8 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-apply-deposit')
 
 interface ApplyDepositRequest {
   reservationId: string
@@ -187,10 +189,17 @@ export const POST = withVenue(async function POST(
         itemsForCalc,
         { tax: { defaultRate: settings.tax?.defaultRate ?? 0 } },
         Number(order.discountTotal),
+        Number(order.tipTotal || 0),
       )
 
+      const depDonation = Number(order.donationAmount || 0)
+      const depConvFee = Number(order.convenienceFee || 0)
+      const currentFinalTotal = depDonation > 0 || depConvFee > 0
+        ? roundToCents(currentTotals.total + depDonation + depConvFee)
+        : currentTotals.total
+
       // Cap the deposit amount at the order's remaining balance (total - existing discounts)
-      const orderBalance = Math.max(0, currentTotals.total)
+      const orderBalance = Math.max(0, currentFinalTotal)
       const depositToApply = roundToCents(Math.min(totalDepositPaid, orderBalance))
 
       if (depositToApply <= 0) {
@@ -225,14 +234,19 @@ export const POST = withVenue(async function POST(
         itemsForCalc,
         { tax: { defaultRate: settings.tax?.defaultRate ?? 0 } },
         newDiscountTotal,
+        Number(order.tipTotal || 0),
       )
+
+      const newFinalTotal = depDonation > 0 || depConvFee > 0
+        ? roundToCents(newTotals.total + depDonation + depConvFee)
+        : newTotals.total
 
       // Update order totals
       await tx.order.update({
         where: { id: orderId },
         data: {
           discountTotal: newDiscountTotal,
-          total: newTotals.total,
+          total: newFinalTotal,
           taxTotal: newTotals.taxTotal,
           version: { increment: 1 },
           lastMutatedBy: mutationOrigin,
@@ -313,7 +327,7 @@ export const POST = withVenue(async function POST(
         remainingCredit: result.remainingCredit,
         discountId: result.discountId,
       },
-    ).catch(console.error)
+    ).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Notify cloud for upstream sync (fire-and-forget)
     if (outboxLocationId) {

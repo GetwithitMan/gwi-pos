@@ -6,6 +6,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { dispatchDriverLocationUpdate } from '@/lib/delivery/dispatch-events'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-driver-location')
 
 export const dynamic = 'force-dynamic'
 
@@ -172,7 +174,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       accuracy: latest.accuracy ?? undefined,
       speed: latest.speed ?? undefined,
       recordedAt: latest.recordedAt.toISOString(),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ accepted: validPoints.length })
   } catch (error) {

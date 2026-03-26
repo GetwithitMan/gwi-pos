@@ -895,7 +895,7 @@ function ReservationModal({
           minimumSpend: Number(t.minimumSpend),
         })))
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in reservations:', err))
    
   }, [])
 

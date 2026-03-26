@@ -98,7 +98,7 @@ export default function TimeClockPage() {
         const mins = s.alerts?.overtimeWarningMinutes
         if (typeof mins === 'number' && mins > 0) setOvertimeWarningMinutes(mins)
       })
-      .catch(console.error)
+      .catch(err => console.warn('Operation failed:', err))
   }, [employee?.location?.id])
 
   /**

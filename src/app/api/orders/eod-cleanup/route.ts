@@ -7,6 +7,8 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-eod-cleanup')
 
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
@@ -116,7 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
       // Dispatch table:status-changed for each reset table
       for (const tableId of toResetTableIds) {
-        void dispatchTableStatusChanged(locationId, { tableId, status: 'available' }).catch(console.error)
+        void dispatchTableStatusChanged(locationId, { tableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 
@@ -140,12 +142,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (toCancelIds.length > 0 || abandonedIds.length > 0) {
       void dispatchOpenOrdersChanged(locationId, {
         trigger: 'voided',
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Refresh floor plan so table statuses update on other terminals
     if (toResetTableIds.length > 0) {
-      void dispatchFloorPlanUpdate(locationId).catch(console.error)
+      void dispatchFloorPlanUpdate(locationId).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     if (toCancelIds.length > 0 || abandonedIds.length > 0 || toResetTableIds.length > 0) {

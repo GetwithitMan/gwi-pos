@@ -221,7 +221,7 @@ export function useOrderBootstrap(options: UseOrderBootstrapOptions) {
         const terminal = data?.data?.terminal
         if (terminal?.scaleId) setTerminalScaleId(terminal.scaleId)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in pos.orders.hooks.useOrderBootstrap:', err))
   }, [])
 
   // Throttled loadMenu

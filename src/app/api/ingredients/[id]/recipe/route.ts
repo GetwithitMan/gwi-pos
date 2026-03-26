@@ -3,6 +3,9 @@ import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('ingredients.id.recipe')
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -122,7 +125,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     // Real-time cross-terminal update
-    void emitToLocation(ingredient.locationId, 'inventory:changed', { ingredientId: id }).catch(() => {})
+    void emitToLocation(ingredient.locationId, 'inventory:changed', { ingredientId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({
       data: {

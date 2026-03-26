@@ -15,6 +15,8 @@ import * as OrderRepository from '@/lib/repositories/order-repository'
 import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-pay-all-splits')
 
 const PayAllSplitsSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit']),
@@ -364,11 +366,11 @@ export const POST = withVenue(withAuth(async function POST(
       orderId: parentOrderId,
       tableId: parentOrder.tableId || undefined,
       sourceTerminalId: terminalId || undefined,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay-all-splits'))
 
     if (parentOrder.tableId) {
-      void dispatchTableStatusChanged(parentOrder.locationId, { tableId: parentOrder.tableId, status: 'available' }).catch(console.error)
-      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
+      void dispatchTableStatusChanged(parentOrder.locationId, { tableId: parentOrder.tableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
+      void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     // Dispatch payment:processed for each split payment (fire-and-forget)
@@ -391,7 +393,7 @@ export const POST = withVenue(withAuth(async function POST(
         parentOrderId: parentOrderId,
         allSiblingsPaid: true,
         sourceTerminalId: terminalId || undefined,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Dispatch order:closed for the parent order (Android cross-terminal sync)
@@ -401,9 +403,7 @@ export const POST = withVenue(withAuth(async function POST(
       closedAt: now.toISOString(),
       closedByEmployeeId: employeeId || null,
       locationId: parentOrder.locationId,
-    }, { async: true }).catch(console.error)
-
-    // Event emission: PAYMENT_APPLIED + ORDER_CLOSED per split, then parent ORDER_CLOSED
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     for (const split of unpaidSplits) {
       const cashSplitTotal = roundToCents(Number(split.total))
       const splitTotal = dualPricingApplies
@@ -428,14 +428,12 @@ export const POST = withVenue(withAuth(async function POST(
           type: 'ORDER_CLOSED',
           payload: { closedStatus: 'paid' },
         },
-      ]).catch(console.error)
+      ]).catch(err => log.warn({ err }, 'Background task failed'))
     }
     void emitOrderEvent(parentOrder.locationId, parentOrderId, 'ORDER_CLOSED', {
       closedStatus: 'paid',
       reason: `All ${unpaidSplits.length} splits paid`,
-    }).catch(console.error)
-
-    // ── Inventory Deduction Outbox ──────────────────────────────────────────
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     // Create PendingDeduction rows for each split child, then trigger best-effort processing.
     // This mirrors the pattern in pay/route.ts — durable outbox instead of fire-and-forget.
     for (const split of unpaidSplits) {

@@ -138,7 +138,7 @@ export default function ClosedOrdersPage() {
         const list = data.data?.employees || data.employees || []
         setEmployees(list)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in settings.orders.closed:', err))
   }, [locationId])
 
   // ─── Fetch closed orders ─────────────────────────────────────────────────

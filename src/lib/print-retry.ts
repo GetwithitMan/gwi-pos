@@ -64,7 +64,7 @@ export async function dispatchPrintWithRetry(
           entityId: context.orderId,
           details: { url, error: String(retryError) },
         },
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in print-retry'))
     }
   }
 }

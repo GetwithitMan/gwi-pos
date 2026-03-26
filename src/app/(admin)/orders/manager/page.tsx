@@ -183,7 +183,7 @@ export default function OpenOrdersManagerPage() {
         }))
         setTables(list)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in orders.manager:', err))
   }, [locationId])
 
   // ─── Socket listener ───────────────────────────────────────────────────────

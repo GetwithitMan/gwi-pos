@@ -6,6 +6,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('training')
 
 // GET: Return current training settings
 export const GET = withVenue(async function GET() {
@@ -97,7 +99,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         entityId: employeeId,
         details: { trainingEmployeeIds: updatedIds },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { training: updatedTraining } })
   } catch (error) {

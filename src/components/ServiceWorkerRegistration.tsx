@@ -27,7 +27,7 @@ export function ServiceWorkerRegistration() {
       }
 
       // Normal path: register (or re-register) current sw.js
-      await navigator.serviceWorker.register('/sw.js').catch(console.error)
+      await navigator.serviceWorker.register('/sw.js').catch(err => console.warn('Operation failed:', err))
     }
 
     void init()

@@ -30,7 +30,7 @@ function LoginMessages() {
         })
         setMessages(active)
       })
-      .catch(() => {/* silently ignore */})
+      .catch(err => console.warn('login page messages fetch failed:', err))
   }, [])
 
   if (messages.length === 0) return null

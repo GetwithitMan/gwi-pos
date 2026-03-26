@@ -195,8 +195,8 @@ export function useEvents(options: UseEventsOptions = {}): UseEventsReturn {
     // Disconnect on unmount
     return () => {
       if (autoConnect && locationId) {
-        disconnect().catch(() => {
-          // Ignore disconnect errors on unmount
+        disconnect().catch(err => {
+          console.warn('event disconnect on unmount failed:', err)
         })
       }
     }

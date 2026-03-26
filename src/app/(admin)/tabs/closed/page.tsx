@@ -157,7 +157,7 @@ export default function ClosedTabsPage() {
         const list = data.data?.employees || data.employees || []
         setEmployees(list)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in tabs.closed:', err))
   }, [locationId, employee?.id])
 
   // ─── Fetch closed tabs ────────────────────────────────────────────────────

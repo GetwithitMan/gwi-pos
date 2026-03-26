@@ -9,6 +9,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchAlert } from '@/lib/alert-service'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('print-cash-drawer')
 
 /**
  * POST /api/print/cash-drawer
@@ -139,7 +141,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             locationId: resolvedLocationId,
             employeeId: empId,
             groupId: `drawer-${resolvedLocationId}-${empId}-${Date.now()}`,
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         } catch (err) {
           console.error('[cash-drawer] Alert dispatch failed:', err)
         }

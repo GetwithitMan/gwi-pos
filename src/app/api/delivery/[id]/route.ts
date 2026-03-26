@@ -10,6 +10,8 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDeliveryStatus, writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery')
 
 export const dynamic = 'force-dynamic'
 
@@ -180,7 +182,7 @@ export const PUT = withVenue(async function PUT(
             ...(estimatedMinutes !== undefined ? { estimatedMinutes } : {}),
             ...(notes !== undefined ? { notes } : {}),
           },
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       return NextResponse.json({
@@ -308,7 +310,7 @@ export const PUT = withVenue(async function PUT(
       employeeId: auth.employee.id,
       previousValue: previousValues,
       newValue: changes,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Fire-and-forget socket dispatch
     void emitToLocation(locationId, 'delivery:updated', {
@@ -316,16 +318,16 @@ export const PUT = withVenue(async function PUT(
       deliveryId: delivery.id,
       status: delivery.status,
       driverId: delivery.driverId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Emit driver_assigned event when driver changes
     if (driverId && driverId !== previousValues.driverId) {
-      void dispatchDeliveryStatusChanged(locationId, delivery).catch(console.error)
+      void dispatchDeliveryStatusChanged(locationId, delivery).catch(err => log.warn({ err }, 'Background task failed'))
       void dispatchDriverAssigned(locationId, {
         deliveryOrderId: id,
         orderId: delivery.orderId,
         driverId: delivery.driverId,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({

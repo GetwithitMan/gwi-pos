@@ -7,6 +7,9 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.courses')
 
 // Default course names for display
 const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
@@ -205,7 +208,7 @@ export const POST = withVenue(async function POST(
 
       await OrderRepository.updateOrder(orderId, postLocationId, { courseMode, lastMutatedBy: mutationOrigin })
 
-      void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(() => {})
+      void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { courseMode })
 
       return NextResponse.json({ data: {
@@ -218,7 +221,7 @@ export const POST = withVenue(async function POST(
     if (action === 'set_current' && courseNumber !== undefined) {
       await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin })
 
-      void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(() => {})
+      void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
       void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', { currentCourse: courseNumber })
 
       return NextResponse.json({ data: {
@@ -264,9 +267,7 @@ export const POST = withVenue(async function POST(
             await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin }, tx)
           }
 
-          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
-
-          // Emit event-sourced events for fired items
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (fireItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, fireItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,
@@ -304,9 +305,7 @@ export const POST = withVenue(async function POST(
             await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin }, tx)
           }
 
-          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})
-
-          // Emit event-sourced events for fired items
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (fireAllItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, fireAllItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,
@@ -337,9 +336,7 @@ export const POST = withVenue(async function POST(
             isHeld: true,
           }, tx)
 
-          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-held'] }).catch(() => {})
-
-          // Emit event-sourced events for held items
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-held'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (holdItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, holdItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,
@@ -370,9 +367,7 @@ export const POST = withVenue(async function POST(
             isHeld: false,
           }, tx)
 
-          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-released'] }).catch(() => {})
-
-          // Emit event-sourced events for released items
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-released'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (releaseItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, releaseItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,
@@ -404,9 +399,7 @@ export const POST = withVenue(async function POST(
             kitchenStatus: 'ready',
           }, tx)
 
-          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-ready'] }).catch(() => {})
-
-          // Emit event-sourced events for ready items
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-ready'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (readyItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, readyItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,
@@ -438,9 +431,7 @@ export const POST = withVenue(async function POST(
             kitchenStatus: 'delivered',
           }, tx)
 
-          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-served'] }).catch(() => {})
-
-          // Emit event-sourced events for served items
+          void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-served'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (servedItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, servedItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,

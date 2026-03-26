@@ -7,6 +7,8 @@ import { calculateProration } from '@/lib/membership/proration'
 import { buildIdempotencyKey } from '@/lib/membership/idempotency'
 import { ChargeType, MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('memberships-change-plan')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -130,7 +132,7 @@ export const POST = withVenue(async function POST(
     void dispatchMembershipUpdate(locationId, {
       action: 'enrolled', membershipId: id, customerId: mbr.customerId,
       details: { planChanged: true },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { success: true, effective: effectiveMode } })
   } catch (err) {

@@ -315,7 +315,7 @@ export function useCardListener({
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ terminalId, sessionId: sid, reason: 'unmount' }),
-        }).catch(() => {})
+        }).catch(err => console.warn('fire-and-forget failed in useCardListener:', err))
       }
     }
   }, [terminalId])

@@ -6,6 +6,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-drivers')
 
 export const dynamic = 'force-dynamic'
 
@@ -250,7 +252,7 @@ export const PUT = withVenue(async function PUT(
         previousValue: { isSuspended: current.isSuspended, suspendedReason: current.suspendedReason },
         newValue: { isSuspended: !!isSuspended, suspendedReason: suspendedReason || null },
         reason: suspendedReason || undefined,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({

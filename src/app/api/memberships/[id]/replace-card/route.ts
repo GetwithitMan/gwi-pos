@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { MembershipEventType } from '@/lib/membership/types'
 import { dispatchMembershipUpdate } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('memberships-replace-card')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -66,7 +68,7 @@ export const POST = withVenue(async function POST(
 
     void dispatchMembershipUpdate(locationId, {
       action: 'card_updated', membershipId: id, customerId: mbr.customerId,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (err) {

@@ -8,6 +8,8 @@ import { dispatchOrderTotalsUpdate, dispatchOrderUpdated, dispatchOpenOrdersChan
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { roundToCents } from '@/lib/pricing'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-tax-exempt')
 
 /**
  * POST — Mark an order as tax-exempt with reason and optional tax ID.
@@ -58,6 +60,8 @@ export const POST = withVenue(async function POST(
           tipTotal: true,
           total: true,
           inclusiveTaxRate: true,
+          donationAmount: true,
+          convenienceFee: true,
           status: true,
           items: {
             where: { deletedAt: null, status: 'active' },
@@ -116,6 +120,12 @@ export const POST = withVenue(async function POST(
         Number(order.inclusiveTaxRate) || undefined
       )
 
+      const exemptDonation = Number(order.donationAmount || 0)
+      const exemptConvFee = Number(order.convenienceFee || 0)
+      const exemptFinalTotal = exemptDonation > 0 || exemptConvFee > 0
+        ? roundToCents(orderTotals.total + exemptDonation + exemptConvFee)
+        : orderTotals.total
+
       // Update order
       const result = await tx.order.update({
         where: { id: orderId },
@@ -128,7 +138,7 @@ export const POST = withVenue(async function POST(
           taxTotal: orderTotals.taxTotal,
           taxFromInclusive: orderTotals.taxFromInclusive,
           taxFromExclusive: orderTotals.taxFromExclusive,
-          total: orderTotals.total,
+          total: exemptFinalTotal,
           lastMutatedBy: mutationOrigin,
         },
         select: {
@@ -171,7 +181,7 @@ export const POST = withVenue(async function POST(
     // Emit order event
     void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
       changes: ['isTaxExempt', 'taxExemptReason', 'taxExemptId', 'taxTotal', 'total'],
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Socket dispatch for cross-terminal sync
     void dispatchOrderTotalsUpdate(locationId, orderId, {
@@ -181,10 +191,10 @@ export const POST = withVenue(async function POST(
       discountTotal: Number(updatedOrder.discountTotal),
       total: Number(updatedOrder.total),
       commissionTotal: 0,
-    }, { async: true }).catch(console.error)
-    void dispatchOrderUpdated(locationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
-    void dispatchOpenOrdersChanged(locationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
-    void dispatchOrderSummaryUpdated(locationId, buildOrderSummary(updatedOrder), { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchOrderUpdated(locationId, { orderId, changes: ['isTaxExempt'] }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchOpenOrdersChanged(locationId, { trigger: 'updated', orderId }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchOrderSummaryUpdated(locationId, buildOrderSummary(updatedOrder), { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Upstream sync
     pushUpstream()
@@ -241,6 +251,8 @@ export const DELETE = withVenue(async function DELETE(
           tipTotal: true,
           total: true,
           inclusiveTaxRate: true,
+          donationAmount: true,
+          convenienceFee: true,
           status: true,
           items: {
             where: { deletedAt: null, status: 'active' },
@@ -296,6 +308,12 @@ export const DELETE = withVenue(async function DELETE(
         Number(order.inclusiveTaxRate) || undefined
       )
 
+      const reapplyDonation = Number(order.donationAmount || 0)
+      const reapplyConvFee = Number(order.convenienceFee || 0)
+      const reapplyFinalTotal = reapplyDonation > 0 || reapplyConvFee > 0
+        ? roundToCents(orderTotals.total + reapplyDonation + reapplyConvFee)
+        : orderTotals.total
+
       // Update order — clear all exempt fields
       const result = await tx.order.update({
         where: { id: orderId },
@@ -308,7 +326,7 @@ export const DELETE = withVenue(async function DELETE(
           taxTotal: orderTotals.taxTotal,
           taxFromInclusive: orderTotals.taxFromInclusive,
           taxFromExclusive: orderTotals.taxFromExclusive,
-          total: orderTotals.total,
+          total: reapplyFinalTotal,
           lastMutatedBy: deleteMutationOrigin,
         },
         select: {
@@ -347,7 +365,7 @@ export const DELETE = withVenue(async function DELETE(
     // Emit order event
     void emitOrderEvent(delLocationId, orderId, 'ORDER_METADATA_UPDATED', {
       changes: ['isTaxExempt', 'taxExemptReason', 'taxExemptId', 'taxTotal', 'total'],
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Socket dispatch
     void dispatchOrderTotalsUpdate(delLocationId, orderId, {
@@ -357,10 +375,10 @@ export const DELETE = withVenue(async function DELETE(
       discountTotal: Number(updated.discountTotal),
       total: Number(updated.total),
       commissionTotal: 0,
-    }, { async: true }).catch(console.error)
-    void dispatchOrderUpdated(delLocationId, { orderId, changes: ['isTaxExempt'] }).catch(console.error)
-    void dispatchOpenOrdersChanged(delLocationId, { trigger: 'updated', orderId }, { async: true }).catch(console.error)
-    void dispatchOrderSummaryUpdated(delLocationId, buildOrderSummary(updated), { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchOrderUpdated(delLocationId, { orderId, changes: ['isTaxExempt'] }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchOpenOrdersChanged(delLocationId, { trigger: 'updated', orderId }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchOrderSummaryUpdated(delLocationId, buildOrderSummary(updated), { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Upstream sync
     pushUpstream()

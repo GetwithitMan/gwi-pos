@@ -336,7 +336,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
         }
 
         // Socket dispatches for tab close
-        void dispatchTabUpdated(locationId, { orderId: tab.id, status: 'closed' }).catch(() => {})
+        void dispatchTabUpdated(locationId, { orderId: tab.id, status: 'closed' }).catch(err => log.warn({ err }, 'tab updated dispatch failed'))
         dispatchTabStatusUpdate(locationId, { orderId: tab.id, status: 'closed' })
         dispatchTabClosed(locationId, { orderId: tab.id, total: totalCaptured, tipAmount: gratuityAmount })
         void dispatchOrderClosed(locationId, {
@@ -345,7 +345,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
           closedAt: now.toISOString(),
           closedByEmployeeId: employeeId || null,
           locationId,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in eod'))
 
       } catch (tabErr) {
         tabsRolledOver++
@@ -355,7 +355,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
     // Notify terminals if any tabs were processed
     if (tabsCaptured > 0 || tabsDeclined > 0) {
-      void dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any }, { async: true }).catch(() => {})
+      void dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
     }
   }
 
@@ -421,7 +421,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
       )
     ).catch(err => log.error({ err }, 'Failed to emit ORDER_METADATA_UPDATED for rolled-over orders'))
 
-    void dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
+    void dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
   }
 
   if (staleOpenOrders.length > 0) {
@@ -565,15 +565,15 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
 
     // Dispatch entertainment socket events + waitlist notifications
     if (cleanedEntertainmentIds.length > 0) {
-      void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+      void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       for (const itemId of cleanedEntertainmentIds) {
         void dispatchEntertainmentStatusChanged(locationId, {
           itemId,
           entertainmentStatus: 'available',
           currentOrderId: null,
           expiresAt: null,
-        }, { async: true }).catch(() => {})
-        void notifyNextWaitlistEntry(locationId, itemId).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in eod'))
+        void notifyNextWaitlistEntry(locationId, itemId).catch(err => log.warn({ err }, 'waitlist notify failed'))
       }
     }
 
@@ -621,7 +621,7 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
             batchStatus: 'closed',
             batchItemCount: result.batchItemCount ?? null,
             batchNo: result.batchNo ?? null,
-          })).catch(() => {}) // Not on NUC — skip silently
+          })).catch(err => log.warn({ err }, 'fire-and-forget failed in eod'))
         } catch (readerErr) {
           allSucceeded = false
           await db.auditLog.create({

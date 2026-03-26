@@ -6,6 +6,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-drivers-documents')
 
 export const dynamic = 'force-dynamic'
 
@@ -142,7 +144,7 @@ export const POST = withVenue(async function POST(
       driverId,
       employeeId: auth.authorized ? auth.employee.id : '',
       newValue: { documentType, documentNumber, storageKey },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ document: inserted[0] }, { status: 201 })
   } catch (error) {

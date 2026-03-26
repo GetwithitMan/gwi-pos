@@ -313,7 +313,7 @@ export function useModifierSelections(
           setIngredients(data.data)
         }
       })
-      .catch(console.error)
+      .catch(err => console.warn('Operation failed:', err))
       .finally(() => setLoadingIngredients(false))
   }, [item.id])
 

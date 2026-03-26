@@ -821,7 +821,7 @@ export default function OrdersPage() {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ status: 'cancelled' }),
-                }).catch(() => {})
+                }).catch(err => console.warn('fire-and-forget failed in pos.orders:', err))
               }
               clearOrder()
               setSavedOrderId(null)
@@ -973,7 +973,7 @@ export default function OrdersPage() {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'cancelled' }),
-                  }).catch(() => {})
+                  }).catch(err => console.warn('fire-and-forget failed in pos.orders:', err))
                 }
               }
               fn()
@@ -1282,7 +1282,7 @@ export default function OrdersPage() {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: 'cancelled' }),
-              }).catch(() => {})
+              }).catch(err => console.warn('fire-and-forget failed in pos.orders:', err))
             }
             useOrderStore.getState().clearOrder()
             setSavedOrderId(null)
@@ -1376,7 +1376,7 @@ export default function OrdersPage() {
                   if (d?.action === 'increment_failed') {
                     toast.error('Card limit reached — take a new card or cash.', 10000)
                   }
-                }).catch(() => {})
+                }).catch(err => console.warn('fire-and-forget failed in pos.orders:', err))
               } catch (err) {
                 console.error('[CardTab] Background send failed:', err)
                 toast.error('Tab may not have saved \u2014 check open orders')
@@ -1395,7 +1395,7 @@ export default function OrdersPage() {
                   method: 'PATCH',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ status: 'cancelled' }),
-                }).catch(() => {})
+                }).catch(err => console.warn('fire-and-forget failed in pos.orders:', err))
               }
               if (store.currentOrder?.id === cardTabOrderId) {
                 store.updateOrderId(`temp_${Date.now()}`, undefined)
@@ -1418,7 +1418,7 @@ export default function OrdersPage() {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: 'cancelled' }),
-              }).catch(() => {})
+              }).catch(err => console.warn('fire-and-forget failed in pos.orders:', err))
             }
             // Reset the order's DB link but keep items in local state
             if (store.currentOrder?.id === cardTabOrderId) {

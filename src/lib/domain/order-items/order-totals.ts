@@ -63,10 +63,11 @@ export async function recalculateOrderTotals(
   // Fetch the order's stored inclusive tax rate and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true, donationAmount: true },
+    select: { inclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
   const donationAmount = Number(orderRow?.donationAmount ?? 0)
+  const convenienceFee = Number(orderRow?.convenienceFee ?? 0)
 
   // Fetch all active items with modifiers and ingredient modifications
   const allItems = await tx.orderItem.findMany({
@@ -97,8 +98,10 @@ export async function recalculateOrderTotals(
     orderInclRate
   )
 
-  // Add donation back to total — calculateOrderTotals doesn't know about donations
-  const finalTotal = donationAmount > 0 ? roundToCents(totals.total + donationAmount) : totals.total
+  // Add donation and convenienceFee back to total — calculateOrderTotals doesn't know about them
+  const finalTotal = donationAmount > 0 || convenienceFee > 0
+    ? roundToCents(totals.total + donationAmount + convenienceFee)
+    : totals.total
 
   return {
     subtotal: totals.subtotal,
@@ -127,10 +130,11 @@ export async function recalculateOrderTotalsForAdd(
   // Fetch the order's stored inclusive tax rate and donation amount (survives setting changes)
   const orderRow = await tx.order.findUnique({
     where: { id: orderId },
-    select: { inclusiveTaxRate: true, donationAmount: true },
+    select: { inclusiveTaxRate: true, donationAmount: true, convenienceFee: true },
   })
   const orderInclRate = orderRow?.inclusiveTaxRate ? Number(orderRow.inclusiveTaxRate) : undefined
   const donationAmount = Number(orderRow?.donationAmount ?? 0)
+  const convenienceFee = Number(orderRow?.convenienceFee ?? 0)
 
   // For add-item, we query all non-deleted items (the original route used deletedAt: null without status filter)
   const allItems = await tx.orderItem.findMany({
@@ -159,8 +163,10 @@ export async function recalculateOrderTotalsForAdd(
     orderInclRate
   )
 
-  // Add donation back to total — calculateOrderTotals doesn't know about donations
-  const finalTotal = donationAmount > 0 ? roundToCents(totals.total + donationAmount) : totals.total
+  // Add donation and convenienceFee back to total — calculateOrderTotals doesn't know about them
+  const finalTotal = donationAmount > 0 || convenienceFee > 0
+    ? roundToCents(totals.total + donationAmount + convenienceFee)
+    : totals.total
 
   return {
     subtotal: totals.subtotal,

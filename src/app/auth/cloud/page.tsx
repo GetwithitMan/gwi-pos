@@ -42,7 +42,8 @@ function CloudAuthContent() {
         // Navigate to settings (admin home for cloud users)
         router.replace('/settings')
       })
-      .catch(() => {
+      .catch(err => {
+        console.warn('cloud auth login failed:', err)
         setStatus('error')
         setErrorMsg('Connection error. Please try again.')
       })

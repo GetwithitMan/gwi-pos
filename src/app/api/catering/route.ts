@@ -4,6 +4,8 @@ import { getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, DEFAULT_CATERING } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('catering')
 
 // Volume discount tiers: quantity threshold -> discount percent
 function getVolumeDiscountPercent(quantity: number): number {
@@ -289,7 +291,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           itemCount: items.length,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

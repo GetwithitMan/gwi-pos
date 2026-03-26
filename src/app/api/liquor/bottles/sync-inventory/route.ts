@@ -4,6 +4,9 @@ import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor.bottles.sync-inventory')
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -171,7 +174,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
 
     // Real-time cross-terminal update
     if (synced > 0 && locationId) {
-      void emitToLocation(locationId, 'inventory:changed', { action: 'liquor-sync' }).catch(() => {})
+      void emitToLocation(locationId, 'inventory:changed', { action: 'liquor-sync' }).catch(err => log.warn({ err }, 'socket emit failed'))
     }
 
     return NextResponse.json({ data: {

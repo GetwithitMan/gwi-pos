@@ -23,6 +23,8 @@ import { isModifiable } from '@/lib/domain/order-status'
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrdersListChangedPayload, OrderSummaryUpdatedPayload, OrderCreatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-send')
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export const POST = withVenue(withTiming(async function POST(
@@ -329,7 +331,7 @@ export const POST = withVenue(withTiming(async function POST(
     if (isInOutageMode()) {
       const fullOrder = await OrderRepository.getOrderById(order.id, order.locationId)
       if (fullOrder) {
-        void queueOutageWrite('Order', fullOrder.id, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+        void queueOutageWrite('Order', fullOrder.id, 'UPDATE', fullOrder as unknown as Record<string, unknown>, order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 
@@ -502,7 +504,7 @@ export const POST = withVenue(withTiming(async function POST(
           entertainmentStatus: 'in_use',
           currentOrderId: order.id,
           expiresAt: sessionExpiresAt,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.send'))
       }
     }
 
@@ -542,9 +544,7 @@ export const POST = withVenue(withTiming(async function POST(
     })
 
     // Evaluate auto-discount rules after items are sent (fire-and-forget)
-    void evaluateAutoDiscounts(order.id, order.locationId).catch(console.error)
-
-    // Build response BEFORE firing kitchen print — print can hang 7s on TCP timeout
+    void evaluateAutoDiscounts(order.id, order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     // if printer is offline. DB writes + socket events are already done above.
     const response = NextResponse.json({ data: {
       success: true,

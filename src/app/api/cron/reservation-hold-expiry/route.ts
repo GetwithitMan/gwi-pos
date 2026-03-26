@@ -4,6 +4,8 @@ import { transition } from '@/lib/reservations/state-machine'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-reservation-hold-expiry')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -58,11 +60,11 @@ export async function GET(request: NextRequest) {
             locationId: row.locationId,
             reservationId: row.id,
             action: 'cancelled',
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         } else {
           void dispatchReservationChanged(row.locationId, {
             reservationId: row.id, action: 'cancelled',
-          }).catch(console.error)
+          }).catch(err => log.warn({ err }, 'Background task failed'))
         }
       } catch (err) {
         console.error(`[cron:reservation-hold-expiry] Venue ${slug}: Failed to cancel ${row.id}:`, err)

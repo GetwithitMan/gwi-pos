@@ -9,6 +9,9 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.items.itemId.discount')
 
 interface ApplyItemDiscountRequest {
   type: 'percent' | 'fixed'
@@ -137,18 +140,14 @@ export const POST = withVenue(async function POST(
           await OrderRepository.updateOrder(orderId, order.locationId, { discountTotal: totals.discountTotal, taxTotal: totals.taxTotal, taxFromInclusive: totals.taxFromInclusive, taxFromExclusive: totals.taxFromExclusive, total: toggleFinalTotal }, tx)
           const updatedOrder = await OrderRepository.getOrderByIdWithSelect(orderId, order.locationId, { subtotal: true, discountTotal: true, taxTotal: true, tipTotal: true, total: true }, tx)
           if (!updatedOrder) throw new Error(`Order ${orderId} not found after update`)
-          void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(() => {})
-
-          // P1-10: Dispatch totals + summary on toggle-off too
+          void dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
           void dispatchOrderTotalsUpdate(order.locationId, orderId, {
             subtotal: Number(updatedOrder.subtotal),
             taxTotal: Number(updatedOrder.taxTotal),
             tipTotal: Number(updatedOrder.tipTotal),
             discountTotal: Number(updatedOrder.discountTotal),
             total: Number(updatedOrder.total),
-          }, { async: true }).catch(() => {})
-
-          // Emit order event for item discount removed via toggle (fire-and-forget)
+          }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
           void emitOrderEvent(order.locationId, orderId, 'DISCOUNT_REMOVED', {
             discountId: alreadyApplied.id,
             lineItemId: itemId,
@@ -252,18 +251,14 @@ export const POST = withVenue(async function POST(
       void dispatchOpenOrdersChanged(order.locationId, {
         trigger: 'created',
         orderId,
-      }, { async: true }).catch(() => {})
-
-      // P1-10: Dispatch totals + summary updates so other terminals see updated discount totals
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
       void dispatchOrderTotalsUpdate(order.locationId, orderId, {
         subtotal: Number(updatedOrder.subtotal),
         taxTotal: Number(updatedOrder.taxTotal),
         tipTotal: Number(updatedOrder.tipTotal),
         discountTotal: Number(updatedOrder.discountTotal),
         total: Number(updatedOrder.total),
-      }, { async: true }).catch(() => {})
-
-      // P1-11: AuditLog when a manager approval was required for the item discount
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
       if (body.approvedById) {
         await tx.auditLog.create({
           data: {
@@ -429,16 +424,14 @@ export const DELETE = withVenue(async function DELETE(
       void dispatchOpenOrdersChanged(order.locationId, {
         trigger: 'created',
         orderId,
-      }, { async: true }).catch(() => {})
-
-      // P1-10: Dispatch totals + summary on DELETE too
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
       void dispatchOrderTotalsUpdate(order.locationId, orderId, {
         subtotal: Number(updatedOrder.subtotal),
         taxTotal: Number(updatedOrder.taxTotal),
         tipTotal: Number(updatedOrder.tipTotal),
         discountTotal: Number(updatedOrder.discountTotal),
         total: Number(updatedOrder.total),
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId.discount'))
 
       return NextResponse.json({
         data: {

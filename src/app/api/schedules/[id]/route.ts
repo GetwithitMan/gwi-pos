@@ -5,6 +5,9 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('schedules.id')
 
 // GET - Get schedule details
 export const GET = withVenue(withAuth('ADMIN', async function GET(
@@ -155,7 +158,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'updated', entityId: id })
     void pushUpstream()
-    void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'schedule-updated' }).catch(() => {})
+    void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'schedule-updated' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: {
       schedule: {
@@ -198,7 +201,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'deleted', entityId: id })
     void pushUpstream()
-    void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'schedule-deleted' }).catch(() => {})
+    void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'schedule-deleted' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: { message: 'Schedule deleted' } })
   } catch (error) {

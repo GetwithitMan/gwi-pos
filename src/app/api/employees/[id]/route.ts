@@ -9,6 +9,8 @@ import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { removeMemberFromGroup } from '@/lib/domain/tips/tip-groups'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('employees')
 
 // GET - Get employee details
 export const GET = withVenue(async function GET(
@@ -306,14 +308,10 @@ export const PUT = withVenue(async function PUT(
     void pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})
-    // Also emit employee:updated for Android/PAX devices
-    void emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id }).catch(() => {})
-    // Force logout if employee was deactivated via PUT
+    void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
     if (isActive === false) {
-      void emitToLocation(existing.locationId, 'employee:deactivated', { employeeId: id }).catch(console.error)
-
-      // Remove deactivated employee from any active tip groups so tips stop allocating to them
+      void emitToLocation(existing.locationId, 'employee:deactivated', { employeeId: id }).catch(err => log.warn({ err }, 'Background task failed'))
       try {
         const activeMemberships = await db.tipGroupMembership.findMany({
           where: { employeeId: id, status: 'active', group: { status: 'active' } },
@@ -411,13 +409,9 @@ export const DELETE = withVenue(async function DELETE(
     void pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(() => {})
-    // Also emit employee:updated for Android/PAX devices
-    void emitToLocation(employee.locationId, 'employee:updated', { action: 'deleted', employeeId: id }).catch(() => {})
-    // Force logout deactivated employee on all terminals
-    void emitToLocation(employee.locationId, 'employee:deactivated', { employeeId: id }).catch(console.error)
-
-    // Remove deactivated employee from any active tip groups so tips stop allocating to them
+    void emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(employee.locationId, 'employee:updated', { action: 'deleted', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(employee.locationId, 'employee:deactivated', { employeeId: id }).catch(err => log.warn({ err }, 'Background task failed'))
     try {
       const activeMemberships = await db.tipGroupMembership.findMany({
         where: { employeeId: id, status: 'active', group: { status: 'active' } },

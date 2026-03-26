@@ -13,6 +13,8 @@ import { processScreenLinks, screenHasForwardTargets } from '@/lib/kds/screen-li
 import { sendSMS, isTwilioConfigured, formatPhoneE164 } from '@/lib/twilio'
 import { getReadinessState } from '@/lib/readiness'
 import { mergeOrderBehavior } from '@/lib/kds/defaults'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('kds')
 
 // Circuit breaker: suppress repeated DeliveryOrder queries when table is missing.
 // Resets on process restart (when migration 108 creates the table).
@@ -678,7 +680,7 @@ const putHandler = async function PUT(request: NextRequest) {
                   locationId,
                   orderId,
                   groupId: `sos-slow-${locationId}`,
-                }).catch(console.error)
+                }).catch(err => log.warn({ err }, 'Background task failed'))
               }
             }
           } catch (err) {
@@ -742,7 +744,7 @@ const putHandler = async function PUT(request: NextRequest) {
 
       // Delivery auto-advance: preparing → ready_for_pickup when all items bumped
       if (action === 'complete' || action === 'bump_order') {
-        void checkKdsBumpDeliveryAdvance(orderId, locationId).catch(console.error)
+        void checkKdsBumpDeliveryAdvance(orderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Phase 9: Print on bump — fire-and-forget print when configured and this is a final bump

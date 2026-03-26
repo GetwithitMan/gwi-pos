@@ -13,6 +13,8 @@ import { OrderRepository } from '@/lib/repositories'
 import { getRequestLocationId } from '@/lib/request-context'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-auto-discounts')
 
 /**
  * POST /api/orders/[id]/auto-discounts
@@ -89,17 +91,17 @@ export const POST = withVenue(async function POST(
           discountTotal: Number(updatedOrder.discountTotal),
           total: Number(updatedOrder.total),
           commissionTotal: Number(updatedOrder.commissionTotal || 0),
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
 
         void dispatchOpenOrdersChanged(order.locationId, {
           trigger: 'item_updated',
           orderId,
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
 
         void dispatchOrderSummaryUpdated(
           order.locationId,
           buildOrderSummary(updatedOrder),
-        ).catch(console.error)
+        ).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 

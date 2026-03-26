@@ -3,6 +3,8 @@ import { verifyCronSecret } from '@/lib/cron-auth'
 import { sendReservationNotification } from '@/lib/reservations/notifications'
 import { parseSettings } from '@/lib/settings'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-reservation-reminders')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -90,7 +92,7 @@ export async function GET(request: NextRequest) {
         // Rollback the sentAt so it can be retried
         void venueDb.$executeRaw`
           UPDATE "Reservation" SET "reminder24hSentAt" = NULL WHERE id = ${row.id}
-        `.catch(console.error)
+        `.catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 
@@ -155,7 +157,7 @@ export async function GET(request: NextRequest) {
         console.error(`[cron:reservation-reminders] Venue ${slug}: 2h failed for ${row.id}:`, err)
         void venueDb.$executeRaw`
           UPDATE "Reservation" SET "reminder2hSentAt" = NULL WHERE id = ${row.id}
-        `.catch(console.error)
+        `.catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 

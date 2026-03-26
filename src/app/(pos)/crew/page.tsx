@@ -75,7 +75,7 @@ function DrawerCountModal({
           setExpectedCash(Math.round(expected * 100) / 100)
         }
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in pos.crew:', err))
       .finally(() => setLoading(false))
   }, [isOpen, shiftId, startingCash])
 
@@ -293,7 +293,7 @@ export default function CrewHubPage() {
         const mins = s.alerts?.overtimeWarningMinutes
         if (typeof mins === 'number' && mins > 0) setOvertimeWarningMinutes(mins)
       })
-      .catch(console.error)
+      .catch(err => console.warn('Operation failed:', err))
   }, [employee?.location?.id])
 
   useEffect(() => {
@@ -314,7 +314,7 @@ export default function CrewHubPage() {
           })
           .catch(() => setTableSummary({ occupied: tableIds.size, total: 0, openOrders }))
       })
-      .catch(console.error)
+      .catch(err => console.warn('Operation failed:', err))
   }, [employee])
 
   const fetchActiveShift = useCallback(async () => {

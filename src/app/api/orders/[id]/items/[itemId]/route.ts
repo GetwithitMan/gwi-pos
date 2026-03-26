@@ -17,6 +17,8 @@ import {
   softDeleteOrderItem,
   recalculateOrderTotals,
 } from '@/lib/domain/order-items'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-items')
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
 export const PUT = withVenue(async function PUT(
@@ -244,9 +246,7 @@ export const PUT = withVenue(async function PUT(
       void dispatchOpenOrdersChanged(order.locationId, {
         trigger: 'item_updated',
         orderId: order.id,
-      }).catch(() => {})
-
-      // If item has already been sent to kitchen, notify KDS so it refetches
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId'))
       if (item.kitchenStatus && item.kitchenStatus !== 'pending') {
         void dispatchItemStatus(order.locationId, {
           orderId,
@@ -254,7 +254,7 @@ export const PUT = withVenue(async function PUT(
           status: item.kitchenStatus,
           stationId: '',
           updatedBy: 'system',
-        }, { async: true }).catch(console.error)
+        }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Emit ITEM_UPDATED event for quantity change (fire-and-forget)
@@ -303,7 +303,7 @@ export const PUT = withVenue(async function PUT(
         status: updated.kitchenStatus,
         stationId: '',
         updatedBy: 'system',
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: {
@@ -454,7 +454,7 @@ export const DELETE = withVenue(async function DELETE(
       void dispatchOpenOrdersChanged(order.locationId, {
         trigger: 'voided',
         orderId: order.id,
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.items.itemId'))
 
       return NextResponse.json({ data: mapOrderForResponse(updatedOrder) })
     })

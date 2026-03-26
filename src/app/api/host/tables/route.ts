@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { getLocationId } from '@/lib/location-cache'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('host-tables')
 
 export const dynamic = 'force-dynamic'
 
@@ -298,8 +300,8 @@ export const PUT = withVenue(withAuth(async function PUT(request: NextRequest) {
     })
 
     // Fire-and-forget socket dispatches
-    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
-    void dispatchTableStatusChanged(locationId, { tableId, status }).catch(console.error)
+    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchTableStatusChanged(locationId, { tableId, status }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: { tableId, status },

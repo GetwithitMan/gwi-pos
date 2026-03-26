@@ -15,6 +15,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import crypto from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-page')
 
 export const dynamic = 'force-dynamic'
 
@@ -191,7 +193,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         dispatched,
         context,
       })
-    ).catch(console.error)
+    ).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Audit log: notification_manual_page
     void db.auditLog.create({
@@ -209,7 +211,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           customMessage: message || null,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

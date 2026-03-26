@@ -20,6 +20,9 @@ import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('tips.groups.id.members')
 
 // ─── POST: Add member OR request to join ─────────────────────────────────────
 
@@ -126,7 +129,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       action: 'member-joined',
       groupId,
       employeeId,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in tips.groups.id.members'))
 
     return NextResponse.json({ group })
   } catch (error) {
@@ -233,7 +236,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
       action: 'member-joined',
       groupId,
       employeeId,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in tips.groups.id.members'))
 
     return NextResponse.json({ group })
   } catch (error) {
@@ -386,14 +389,12 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
         action: 'member-left',
         groupId,
         employeeId,
-      }, { async: true }).catch(() => {})
-
-      // If group was closed (last member left), also dispatch closed
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in tips.groups.id.members'))
       if (groupClosed) {
         dispatchTipGroupUpdate(locationId, {
           action: 'closed',
           groupId,
-        }, { async: true }).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in tips.groups.id.members'))
       }
     }
 

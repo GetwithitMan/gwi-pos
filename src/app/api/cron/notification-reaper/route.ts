@@ -12,6 +12,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyCronSecret } from '@/lib/cron-auth'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-notification-reaper')
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -118,13 +120,13 @@ export async function GET(request: NextRequest) {
                 `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
                 device.assignedToSubjectId,
                 locationId
-              ).catch(console.error)
+              ).catch(err => log.warn({ err }, 'Background task failed'))
             } else if (device.assignedToSubjectType === 'waitlist_entry' && device.assignedToSubjectId) {
               void db.$executeRawUnsafe(
                 `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
                 device.assignedToSubjectId,
                 locationId
-              ).catch(console.error)
+              ).catch(err => log.warn({ err }, 'Background task failed'))
             }
 
             markedMissing++

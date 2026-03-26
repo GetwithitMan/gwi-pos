@@ -108,7 +108,7 @@ export function startHardwareCommandWorker() {
         where: {
           createdAt: { lt: new Date(Date.now() - CLEANUP_AGE) },
         },
-      }).catch(() => {}) // Ignore cleanup errors
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in hardware-command-worker'))
 
     } catch (err) {
       // Don't crash the worker on transient errors

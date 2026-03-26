@@ -234,15 +234,16 @@ export async function applyCompVoid(
     discountTotal, splitTax,
   )
 
-  // Add donation back to total — buildOrderTotals doesn't know about donations
+  // Add donation and convenienceFee back to total — buildOrderTotals doesn't know about them
   // (matches pattern in order-totals.ts recalculateOrderTotals)
   const orderForDonation = await (tx as any).order.findUnique({
     where: { id: orderId },
-    select: { donationAmount: true },
+    select: { donationAmount: true, convenienceFee: true },
   })
   const donationAmount = Number(orderForDonation?.donationAmount ?? 0)
-  if (donationAmount > 0) {
-    totals.total = roundToCents(totals.total + donationAmount)
+  const compVoidConvFee = Number(orderForDonation?.convenienceFee ?? 0)
+  if (donationAmount > 0 || compVoidConvFee > 0) {
+    totals.total = roundToCents(totals.total + donationAmount + compVoidConvFee)
   }
 
   const shouldAutoClose = activeItems.length === 0

@@ -10,6 +10,9 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.bottle-service')
 
 // POST - Open a bottle service tab (with tier selection + deposit pre-auth)
 export const POST = withVenue(async function POST(
@@ -203,7 +206,7 @@ export const POST = withVenue(async function POST(
     void dispatchOrderUpdated(order.locationId, {
       orderId,
       changes: ['bottle-service', 'tabStatus'],
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.bottle-service'))
 
     return NextResponse.json({
       data: {

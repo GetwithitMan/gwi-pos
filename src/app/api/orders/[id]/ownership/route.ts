@@ -21,6 +21,9 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.ownership')
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -262,7 +265,7 @@ export const PUT = withVenue(withAuth({ allowCellular: true }, async function PU
     void dispatchOrderUpdated(locationId, {
       orderId,
       changes: ['ownership'],
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.ownership'))
 
     return NextResponse.json({ data: { ownership } })
   } catch (error) {

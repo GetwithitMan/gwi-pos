@@ -7,6 +7,8 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-mark-walkout')
 
 // POST - Mark an open tab as a walkout and create retry records
 export const POST = withVenue(async function POST(
@@ -72,16 +74,12 @@ export const POST = withVenue(async function POST(
       isWalkout: true,
       walkoutAt: now.toISOString(),
       walkoutMarkedBy: employeeId,
-    }).catch(console.error)
-
-    // Fire-and-forget socket dispatch for cross-terminal sync
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'voided',
       orderId,
       tableId: order.tableId || undefined,
-    }, { async: true }).catch(() => {})
-
-    // Create walkout retry records for each authorized card
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.mark-walkout'))
     const retries = []
     if (walkoutRetryEnabled) {
       const nextRetry = new Date(now)

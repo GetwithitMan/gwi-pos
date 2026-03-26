@@ -8,6 +8,9 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor.categories')
 
 /**
  * GET /api/liquor/categories
@@ -140,7 +143,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       },
     })
 
-    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
+    void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(err => log.warn({ err }, 'socket emit failed'))
     void notifyDataChanged({ locationId, domain: 'liquor', action: 'created', entityId: category.id })
     void pushUpstream()
 

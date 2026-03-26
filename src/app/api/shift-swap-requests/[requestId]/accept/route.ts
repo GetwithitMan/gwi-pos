@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('shift-swap-requests-accept')
 
 // POST - Employee accepts a shift request (moves to 'accepted' status)
 // For swaps: target employee accepts the swap offer
@@ -80,7 +82,7 @@ export const POST = withVenue(withAuth(async function POST(
       requestedByEmployeeId: swapRequest.requestedByEmployeeId,
       requestedToEmployeeId: (updated.requestedToEmployeeId as string) || null,
       shiftId: swapRequest.shiftId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { request: updated } })
   } catch (error) {

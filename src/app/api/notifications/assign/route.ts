@@ -14,6 +14,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getTargetFamily } from '@/lib/notifications/device-state-machine'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-assign')
 
 export const dynamic = 'force-dynamic'
 
@@ -359,7 +361,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           replacedDeviceNumber: result.replacedDeviceNumber ?? null,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: result }, { status: 201 })
   } catch (error: any) {

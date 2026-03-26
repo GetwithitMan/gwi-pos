@@ -8,6 +8,8 @@ import { checkKdsBumpDeliveryAdvance } from '@/lib/delivery/state-machine'
 import { processScreenLinks, processExpoFinalBump } from '@/lib/kds/screen-links'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('kds-expo')
 
 /**
  * Expo KDS API - Returns all items from all stations for expeditor view
@@ -418,7 +420,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       // Delivery auto-advance: preparing → ready_for_pickup when all items bumped
       if (action === 'serve' || status === 'served' || action === 'bump_order') {
         const targetOrderId = action === 'bump_order' ? (body.orderId || orderId) : orderId
-        void checkKdsBumpDeliveryAdvance(targetOrderId, locationId).catch(console.error)
+        void checkKdsBumpDeliveryAdvance(targetOrderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // KDS Overhaul: Process expo final bump — marks items as kdsFinalCompleted

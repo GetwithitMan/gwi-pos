@@ -8,6 +8,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { advanceDriverSessionStatus, writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { shouldForceCashDrop } from '@/lib/delivery/dispatch-policy'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-sessions')
 
 export const dynamic = 'force-dynamic'
 
@@ -98,7 +100,7 @@ export const PUT = withVenue(async function PUT(
         driverId: session.driverId,
         employeeId: auth.authorized ? auth.employee.id : '',
         newValue: { cashDropCents, totalDroppedCents: updatedSession.cashDroppedCents },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Handle cashCollectedCents update (e.g., after a cash delivery)

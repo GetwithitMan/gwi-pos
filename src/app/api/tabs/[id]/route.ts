@@ -11,6 +11,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import * as OrderRepository from '@/lib/repositories/order-repository'
 import { getLocationId } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('tabs')
 
 // GET - Get tab details
 export const GET = withVenue(async function GET(
@@ -272,7 +274,7 @@ export const PUT = withVenue(async function PUT(
         preAuthLast4: updated.preAuthLast4,
         preAuthCardBrand: updated.preAuthCardBrand,
       } : {}),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: {
       id: updated.id,
@@ -384,7 +386,7 @@ export const DELETE = withVenue(async function DELETE(
     void emitOrderEvent(tab.locationId, id, 'ORDER_CLOSED', {
       closedStatus: 'cancelled',
       reason: 'Empty tab deleted',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

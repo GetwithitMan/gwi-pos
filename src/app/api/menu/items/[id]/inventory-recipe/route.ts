@@ -11,6 +11,9 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.inventory-recipe')
 
 // GET - Get inventory recipe for menu item (food costing)
 export const GET = withVenue(async function GET(
@@ -236,7 +239,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       itemId: id,
       action: 'updated',
       changes: { recipe: true },
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.inventory-recipe'))
     void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
     void pushUpstream()
 
@@ -291,7 +294,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       itemId: id,
       action: 'updated',
       changes: { recipe: true },
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.inventory-recipe'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

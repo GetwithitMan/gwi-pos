@@ -575,9 +575,10 @@ function SplitUnifiedView({
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ orderId: split.id, type: 'check' }),
-                    }).catch(() => {
+                    }).catch(err => {
+                      console.warn('split check print failed:', err)
                       // B10: Queue print job for offline retry
-                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(() => {})
+                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(err2 => console.warn('offline print queue failed:', err2))
                     })
                   }
                   toast.success(`Printing ${splits.length} checks`)
@@ -724,9 +725,10 @@ function SplitUnifiedView({
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ orderId: split.id, type: 'check' }),
-                    }).catch(() => {
+                    }).catch(err => {
+                      console.warn('split check print failed:', err)
                       // B10: Queue print job for offline retry
-                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(() => {})
+                      void OfflineManager.queuePrintJob(split.id, '', 0, []).catch(err2 => console.warn('offline print queue failed:', err2))
                       toast.info('Print queued — will retry when printer available')
                     })
                     toast.success(`Printing ${split.displayNumber || `Check ${(split.splitIndex ?? idx + 1)}`}`)

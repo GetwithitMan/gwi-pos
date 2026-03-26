@@ -5,6 +5,8 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('chargebacks')
 
 const VALID_STATUSES = ['open', 'responded', 'won', 'lost'] as const
 
@@ -88,7 +90,7 @@ export const PUT = withVenue(async function PUT(
     void emitToLocation(existing.locationId, 'chargeback:updated', {
       id: updated.id,
       status: updated.status,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

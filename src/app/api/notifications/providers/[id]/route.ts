@@ -14,6 +14,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { clearRoutingRulesCache } from '@/lib/notifications/dispatcher'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-providers')
 
 export const dynamic = 'force-dynamic'
 
@@ -316,7 +318,7 @@ export const PUT = withVenue(async function PUT(
           newConfigVersion: config !== undefined ? newConfigVersion : undefined,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {
@@ -410,7 +412,7 @@ export const DELETE = withVenue(async function DELETE(
           name: provider.name,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ success: true, message: 'Provider deleted' })
   } catch (error) {

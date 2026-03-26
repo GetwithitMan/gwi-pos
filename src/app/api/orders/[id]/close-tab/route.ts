@@ -31,6 +31,8 @@ import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/s
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-close-tab')
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -356,7 +358,7 @@ export const POST = withVenue(async function POST(
       })
 
       // Notify all terminals
-      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
+      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
 
       return NextResponse.json({
         data: {
@@ -384,7 +386,7 @@ export const POST = withVenue(async function POST(
       })
 
       // Notify all terminals
-      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
+      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
 
       return NextResponse.json({
         data: {
@@ -459,7 +461,7 @@ export const POST = withVenue(async function POST(
     // Queue outage writes if in outage mode (fail-hard — payment data loss is unacceptable)
     if (isInOutageMode()) {
       // Flag payment processed during outage for reconciliation
-      void PaymentRepository.updatePayment(createdPaymentId, locationId, { needsReconciliation: true }).catch(console.error)
+      void PaymentRepository.updatePayment(createdPaymentId, locationId, { needsReconciliation: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
       try {
         const fullPayment = await PaymentRepository.getPaymentById(createdPaymentId, locationId)
@@ -485,9 +487,7 @@ export const POST = withVenue(async function POST(
     void db.$executeRawUnsafe(
       `UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = $1`,
       orderId
-    ).catch(() => {})
-
-    // Emit order events for tab close (fire-and-forget)
+    ).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
     void emitOrderEvent(locationId, orderId, 'TAB_CLOSED', {
       employeeId,
       tipCents: Math.round(finalTipAmount * 100),
@@ -543,15 +543,15 @@ export const POST = withVenue(async function POST(
           })
         }
 
-        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
         for (const item of entertainmentItems) {
           void dispatchEntertainmentStatusChanged(locationId, {
             itemId: item.id,
             entertainmentStatus: 'available',
             currentOrderId: null,
             expiresAt: null,
-          }, { async: true }).catch(() => {})
-          void notifyNextWaitlistEntry(locationId, item.id).catch(() => {})
+          }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
+          void notifyNextWaitlistEntry(locationId, item.id).catch(err => log.warn({ err }, 'waitlist notify failed'))
         }
       }
     } catch (cleanupErr) {
@@ -570,9 +570,7 @@ export const POST = withVenue(async function POST(
       },
       update: {}
     })
-    void processNextDeduction().catch(console.error)
-
-    // Allocate tips via the tip bank pipeline — fire-and-forget
+    void processNextDeduction().catch(err => log.warn({ err }, 'Background task failed'))
     if (finalTipAmount > 0 && order.employeeId) {
       void allocateTipsForPayment({
         locationId,
@@ -594,9 +592,7 @@ export const POST = withVenue(async function POST(
     // Clean up temporary seats then dispatch floor plan update (chained so snapshot sees cleanup)
     void cleanupTemporarySeats(orderId)
       .then(() => dispatchFloorPlanUpdate(locationId, { async: true }))
-      .catch(console.error)
-
-    // Dispatch payment:processed for cross-terminal sync (fire-and-forget)
+      .catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchPaymentProcessed(locationId, {
       orderId,
       paymentId: createdPaymentId,
@@ -609,12 +605,8 @@ export const POST = withVenue(async function POST(
       isClosed: true,
       cardBrand: capturedCard.cardType || null,
       cardLast4: capturedCard.cardLast4 || null,
-    }).catch(console.error)
-
-    // Dispatch tab:updated for tab close (fire-and-forget)
-    void dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(() => {})
-
-    // Dispatch mobile tab:status-update for phone sync (fire-and-forget)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(err => log.warn({ err }, 'tab updated dispatch failed'))
     dispatchTabStatusUpdate(locationId, { orderId, status: 'closed' })
 
     // Dispatch mobile tab:closed for phone sync (fire-and-forget)
@@ -625,18 +617,14 @@ export const POST = withVenue(async function POST(
     })
 
     // Dispatch open orders changed so all terminals refresh (fire-and-forget)
-    dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
-
-    // Dispatch order:closed for Android cross-terminal sync (fire-and-forget)
+    dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId, tableId: order.tableId || undefined }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
     void dispatchOrderClosed(locationId, {
       orderId,
       status: 'paid',
       closedAt: now.toISOString(),
       closedByEmployeeId: employeeId,
       locationId,
-    }, { async: true }).catch(() => {})
-
-    // Loyalty points earning after successful tab close (fire-and-forget)
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
     void (async () => {
       try {
         // Fetch the order's customer for loyalty check

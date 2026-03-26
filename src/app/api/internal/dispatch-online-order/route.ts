@@ -23,6 +23,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminDb } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('internal-dispatch-online-order')
 
 const PORT = process.env.PORT || '3005'
 
@@ -76,9 +78,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         status: 'open',
         source: 'online',
         dispatchedAt: new Date().toISOString(),
-      }).catch(console.error)
-
-      // ── Call the existing send pipeline ──────────────────────────────────
+      }).catch(err => log.warn({ err }, 'Background task failed'))
       // /api/orders/[id]/send handles:
       //   • item kitchenStatus: pending → sent
       //   • OrderRouter tag-based routing
@@ -103,7 +103,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         // Revert so the next worker cycle retries
         await adminDb.order
           .update({ where: { id: order.id }, data: { status: 'received', lastMutatedBy: 'local' } })
-          .catch(() => {})
+          .catch(err => log.warn({ err }, 'fire-and-forget failed in internal.dispatch-online-order'))
 
         console.error(
           `[DispatchOnlineOrder] Order #${order.orderNumber} send failed: ${msg}`
@@ -116,7 +116,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Revert on exception so it gets retried
       await adminDb.order
         .update({ where: { id: order.id }, data: { status: 'received', lastMutatedBy: 'local' } })
-        .catch(() => {})
+        .catch(err => log.warn({ err }, 'fire-and-forget failed in internal.dispatch-online-order'))
 
       console.error(
         `[DispatchOnlineOrder] Order #${order.orderNumber} exception:`,

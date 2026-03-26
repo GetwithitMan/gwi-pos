@@ -5,6 +5,9 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.pricing-options.groupId.options.optionId.inventory-links')
 
 // GET list all inventory links for a pricing option
 export const GET = withVenue(async function GET(
@@ -279,7 +282,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     void dispatchMenuUpdate(locationId, {
       action: 'updated',
       menuItemId,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.pricing-options.groupId.options.optionId.inventory-links'))
 
     return NextResponse.json({
       data: {

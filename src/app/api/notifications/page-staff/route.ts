@@ -19,6 +19,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import crypto from 'crypto'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-page-staff')
 
 export const dynamic = 'force-dynamic'
 
@@ -153,7 +155,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           jobsEnqueued: dispatchResult?.jobsEnqueued ?? 0,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Log device event if we have a pager
     if (hasPager) {
@@ -186,7 +188,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             message: message || null,
             dispatched,
           })
-        ).catch(console.error)
+        ).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 

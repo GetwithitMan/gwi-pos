@@ -7,6 +7,9 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { resolveDetection, ListenerError } from '@/lib/domain/payment-readers/listener-service'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.cards')
 
 // GET - List all cards on a tab
 export const GET = withVenue(async function GET(
@@ -156,7 +159,7 @@ export const POST = withVenue(withAuth(async function POST(
         orderId,
         paymentId: orderCard.id,
         status: 'authorized',
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
 
       return NextResponse.json({
         data: {
@@ -233,7 +236,7 @@ export const POST = withVenue(withAuth(async function POST(
       orderId,
       paymentId: orderCard.id,
       status: 'authorized',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.cards'))
 
     return NextResponse.json({
       data: {

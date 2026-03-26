@@ -10,6 +10,8 @@ import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-customer')
 
 // PUT - Link or unlink customer to/from order
 export const PUT = withVenue(async function PUT(
@@ -103,7 +105,7 @@ export const PUT = withVenue(async function PUT(
     // Fire-and-forget event emission
     void emitOrderEvent(order.locationId, orderId, 'ORDER_METADATA_UPDATED', {
       customerId: customerId || null,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Get loyalty settings
     const settings = parseSettings(order.location.settings)

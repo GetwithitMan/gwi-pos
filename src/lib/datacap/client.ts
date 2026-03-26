@@ -38,8 +38,10 @@ import {
   PARAM_DOWNLOAD_TIMEOUT_MS,
   TRAN_CODES,
 } from './constants'
-import { logger } from '@/lib/logger'
+import { logger, createChildLogger } from '@/lib/logger'
 import { logReaderTransaction } from '@/lib/reader-health'
+
+const log = createChildLogger('datacap.client')
 
 // ─── Feature Flags ──────────────────────────────────────────────────────────
 
@@ -404,9 +406,7 @@ export class DatacapClient {
       success: txSuccess,
       errorCode: txException instanceof Error ? txException.message.slice(0, 100) : txErrorCode,
       tranType,
-    }).catch(() => {})
-
-    // Re-throw original exception if fn() failed
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in datacap.client'))
     if (txException !== undefined) throw txException
 
     return result!

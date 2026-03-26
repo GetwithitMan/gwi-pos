@@ -28,7 +28,7 @@ export function IdleTimerProvider() {
           setTimeoutMinutes(minutes)
         }
       })
-      .catch(() => {/* fail silently — don't break POS */})
+      .catch(err => console.warn('idle timeout config fetch failed:', err))
 
     return () => controller.abort()
   }, [isAuthenticated])

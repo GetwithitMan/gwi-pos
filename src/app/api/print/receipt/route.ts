@@ -7,6 +7,8 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
 import { calculateCardPrice } from '@/lib/pricing'
 import type { PrintTemplateSettings } from '@/types/print'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('print-receipt')
 
 /**
  * POST /api/print/receipt
@@ -282,7 +284,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             sentAt: new Date(),
           },
         })
-        .catch(console.error)
+        .catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json(
         { error: result.error || 'Failed to send to printer' },
@@ -302,7 +304,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
           sentAt: new Date(),
         },
       })
-      .catch(console.error)
+      .catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

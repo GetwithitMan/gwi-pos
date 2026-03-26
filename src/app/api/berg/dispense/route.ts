@@ -8,6 +8,8 @@ import { getBusinessDateForTimestamp } from '@/lib/business-day'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { createHash } from 'crypto'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('berg-dispense')
 
 // Default 500ms — tight enough that real double-pours (>500ms apart) aren't deduplicated,
 // but wide enough to absorb ECU retries on no-response. Tunable via env var.
@@ -351,7 +353,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
             await db.bergDispenseEvent.update({
               where: { id: event.id },
               data: { postProcessStatus: 'FAILED', postProcessError: err instanceof Error ? err.message : String(err) },
-            }).catch(console.error)
+            }).catch(err => log.warn({ err }, 'Background task failed'))
           }
         }
       }
@@ -467,7 +469,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     },
   })
 
-  void db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } }).catch(console.error)
+  void db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } }).catch(err => log.warn({ err }, 'Background task failed'))
 
   return NextResponse.json({ action, reason: errorReason || undefined, orderItemId: orderItemId || undefined })
 }))

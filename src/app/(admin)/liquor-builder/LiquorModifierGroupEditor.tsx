@@ -102,7 +102,7 @@ export function LiquorModifierGroupEditor({ group, onSaved, onDelete }: LiquorMo
       .then(data => {
         if (data) setIngredients(data.data || data || [])
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in liquor-builder.LiquorModifierGroupEditor:', err))
   }, [employee?.id, employee?.location?.id])
 
   const addMod = () => {

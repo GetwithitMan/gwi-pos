@@ -15,6 +15,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { validateTransition, isModifiable } from '@/lib/domain/order-status'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders')
 
 // GET - Get order details
 export const GET = withVenue(async function GET(
@@ -443,6 +445,8 @@ export const PUT = withVenue(async function PUT(
         total: true,
         isTaxExempt: true,
         inclusiveTaxRate: true,
+        donationAmount: true,
+        convenienceFee: true,
         version: true,
         employeeId: true,
         tableId: true,
@@ -530,9 +534,14 @@ export const PUT = withVenue(async function PUT(
         isTaxExempt,
         Number(existingOrder.inclusiveTaxRate) || undefined
       )
+      const patchDonation = Number(existingOrder.donationAmount || 0)
+      const patchConvFee = Number(existingOrder.convenienceFee || 0)
+      const patchFinalTotal = patchDonation > 0 || patchConvFee > 0
+        ? roundToCents(orderTotals.total + patchDonation + patchConvFee)
+        : orderTotals.total
       taxExemptTotals = {
         taxTotal: orderTotals.taxTotal,
-        total: orderTotals.total,
+        total: patchFinalTotal,
         taxFromInclusive: orderTotals.taxFromInclusive,
         taxFromExclusive: orderTotals.taxFromExclusive,
       }
@@ -563,7 +572,7 @@ export const PUT = withVenue(async function PUT(
       void db.$executeRawUnsafe(
         `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2 AND "locationId" = $3`,
         putFulfillmentMode, id, existingOrder.locationId
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
     }
     if (status !== undefined) {
       // Status transition validation — single source of truth in domain module
@@ -639,18 +648,15 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Dispatch order:updated for metadata changes (fire-and-forget)
-    void dispatchOrderUpdated(updatedOrder.locationId, { orderId: id, changes: Object.keys(updateData) }).catch(() => {})
-
-    // P1-9: Dispatch floor plan update when table changes so floor plan UI refreshes in real time
+    void dispatchOrderUpdated(updatedOrder.locationId, { orderId: id, changes: Object.keys(updateData) }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
     if (tableId !== undefined && tableId !== existingOrder.tableId) {
-      void dispatchFloorPlanUpdate(updatedOrder.locationId).catch(console.error)
-      // Mark old table as available (if there was one)
+      void dispatchFloorPlanUpdate(updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
       if (existingOrder.tableId) {
-        void dispatchTableStatusChanged(updatedOrder.locationId, { tableId: existingOrder.tableId, status: 'available' }).catch(console.error)
+        void dispatchTableStatusChanged(updatedOrder.locationId, { tableId: existingOrder.tableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
       }
       // Mark new table as occupied (if there is one)
       if (tableId) {
-        void dispatchTableStatusChanged(updatedOrder.locationId, { tableId, status: 'occupied' }).catch(console.error)
+        void dispatchTableStatusChanged(updatedOrder.locationId, { tableId, status: 'occupied' }).catch(err => log.warn({ err }, 'Background task failed'))
       }
     }
 
@@ -716,15 +722,15 @@ export const PUT = withVenue(async function PUT(
               })
             }
 
-            void dispatchFloorPlanUpdate(updatedOrder.locationId, { async: true }).catch(() => {})
+            void dispatchFloorPlanUpdate(updatedOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
             for (const item of entertainmentItems) {
               void dispatchEntertainmentStatusChanged(updatedOrder.locationId, {
                 itemId: item.id,
                 entertainmentStatus: 'available',
                 currentOrderId: null,
                 expiresAt: null,
-              }, { async: true }).catch(() => {})
-              void notifyNextWaitlistEntry(updatedOrder.locationId, item.id, item.name).catch(() => {})
+              }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id'))
+              void notifyNextWaitlistEntry(updatedOrder.locationId, item.id, item.name).catch(err => log.warn({ err }, 'waitlist notify failed'))
             }
           }
         } catch (cleanupErr) {
@@ -758,7 +764,7 @@ export const PUT = withVenue(async function PUT(
         discountTotal: Number(updatedOrder.discountTotal),
         total: Number(updatedOrder.total),
         commissionTotal: Number(updatedOrder.commissionTotal || 0),
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: response })
@@ -862,6 +868,8 @@ export const PATCH = withVenue(async function PATCH(
         tipTotal: true,
         isTaxExempt: true,
         inclusiveTaxRate: true,
+        donationAmount: true,
+        convenienceFee: true,
         items: {
           where: { deletedAt: null, status: 'active' },
           select: {
@@ -938,9 +946,14 @@ export const PATCH = withVenue(async function PATCH(
         isTaxExempt,
         Number(existing.inclusiveTaxRate) || undefined
       )
+      const patch2Donation = Number(existing.donationAmount || 0)
+      const patch2ConvFee = Number(existing.convenienceFee || 0)
+      const patch2FinalTotal = patch2Donation > 0 || patch2ConvFee > 0
+        ? roundToCents(orderTotals.total + patch2Donation + patch2ConvFee)
+        : orderTotals.total
       taxExemptTotals = {
         taxTotal: orderTotals.taxTotal,
-        total: orderTotals.total,
+        total: patch2FinalTotal,
         taxFromInclusive: orderTotals.taxFromInclusive,
         taxFromExclusive: orderTotals.taxFromExclusive,
       }
@@ -962,7 +975,7 @@ export const PATCH = withVenue(async function PATCH(
       void db.$executeRawUnsafe(
         `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2 AND "locationId" = $3`,
         fulfillmentMode, id, existing.locationId
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
     }
     if (isTaxExempt !== undefined) {
       updateData.isTaxExempt = isTaxExempt
@@ -1027,13 +1040,13 @@ export const PATCH = withVenue(async function PATCH(
         discountTotal: Number(updatedOrder.discountTotal),
         total: Number(updatedOrder.total),
         commissionTotal: Number(updatedOrder.commissionTotal || 0),
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Dispatch order:updated for metadata changes (tabName, guestCount, notes, tableId, etc.)
     // This notifies other terminals (especially Android) of the metadata change
     if (Object.keys(updateData).length > 0) {
-      void dispatchOrderUpdated(updatedOrder.locationId, { orderId: updatedOrder.id }).catch(() => {})
+      void dispatchOrderUpdated(updatedOrder.locationId, { orderId: updatedOrder.id }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
     }
 
     // Auto-stop entertainment sessions when order is voided/cancelled/closed via PATCH
@@ -1075,15 +1088,15 @@ export const PATCH = withVenue(async function PATCH(
               })
             }
 
-            void dispatchFloorPlanUpdate(updatedOrder.locationId, { async: true }).catch(() => {})
+            void dispatchFloorPlanUpdate(updatedOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
             for (const item of entertainmentItems) {
               void dispatchEntertainmentStatusChanged(updatedOrder.locationId, {
                 itemId: item.id,
                 entertainmentStatus: 'available',
                 currentOrderId: null,
                 expiresAt: null,
-              }, { async: true }).catch(() => {})
-              void notifyNextWaitlistEntry(updatedOrder.locationId, item.id, item.name).catch(() => {})
+              }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id'))
+              void notifyNextWaitlistEntry(updatedOrder.locationId, item.id, item.name).catch(err => log.warn({ err }, 'waitlist notify failed'))
             }
           }
         } catch (cleanupErr) {

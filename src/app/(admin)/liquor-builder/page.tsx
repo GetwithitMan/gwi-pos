@@ -402,7 +402,8 @@ function LiquorBuilderContent() {
             setSpiritEntries([])
           }
         })
-        .catch(() => {
+        .catch(err => {
+          console.warn('liquor builder spirit fetch failed:', err)
           setSpiritGroupId(null)
           setSpiritEntries([])
         })

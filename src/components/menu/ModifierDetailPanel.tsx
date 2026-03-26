@@ -419,8 +419,8 @@ export function ModifierDetailPanel({
             setStalePriceWarning(false)
             setPendingSwitch(null)
           })
-          .catch(() => {
-            // Save failed — show switch dialog so user can discard or fix
+          .catch(err => {
+            console.warn('modifier auto-save on switch failed:', err)
             setPendingSwitch(modifier)
             setShowSwitchDialog(true)
           })
@@ -459,7 +459,7 @@ export function ModifierDetailPanel({
         })
         setStalePriceWarning(stale)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in menu.ModifierDetailPanel:', err))
   }, [modifier.id])  
 
   // ── Patch helper ──────────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('shift-requests')
 
 // PUT - Update a shift request
 // Actions: approve, reject (manager), accept, decline (employee)
@@ -75,7 +77,7 @@ export const PUT = withVenue(async function PUT(
         requestedByEmployeeId: swapRequest.requestedByEmployeeId,
         requestedToEmployeeId: (updated.requestedToEmployeeId as string) || null,
         shiftId: swapRequest.shiftId,
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       return NextResponse.json({ data: { request: updated } })
     }
 
@@ -103,7 +105,7 @@ export const PUT = withVenue(async function PUT(
         requestedByEmployeeId: swapRequest.requestedByEmployeeId,
         requestedToEmployeeId: swapRequest.requestedToEmployeeId,
         shiftId: swapRequest.shiftId,
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       return NextResponse.json({ data: { request: updated } })
     }
 
@@ -134,7 +136,7 @@ export const PUT = withVenue(async function PUT(
           action: 'approved', requestId, type: 'drop',
           requestedByEmployeeId: swapRequest.requestedByEmployeeId,
           shiftId: swapRequest.shiftId,
-        }, { async: true }).catch(console.error)
+        }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
         return NextResponse.json({ data: { request: updatedReq, shift: updatedShift } })
       }
 
@@ -175,7 +177,7 @@ export const PUT = withVenue(async function PUT(
         requestedByEmployeeId: swapRequest.requestedByEmployeeId,
         requestedToEmployeeId: swapRequest.requestedToEmployeeId,
         shiftId: swapRequest.shiftId,
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
       return NextResponse.json({ data: { request: updatedReq, shift: updatedShift } })
     }
 
@@ -200,7 +202,7 @@ export const PUT = withVenue(async function PUT(
       requestedByEmployeeId: swapRequest.requestedByEmployeeId,
       requestedToEmployeeId: swapRequest.requestedToEmployeeId,
       shiftId: swapRequest.shiftId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
     return NextResponse.json({ data: { request: updated } })
   } catch (error) {
     console.error('Failed to update shift request:', error)
@@ -251,7 +253,7 @@ export const DELETE = withVenue(async function DELETE(
       requestedByEmployeeId: swapRequest.requestedByEmployeeId,
       requestedToEmployeeId: swapRequest.requestedToEmployeeId,
       shiftId: swapRequest.shiftId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { message: 'Request cancelled' } })
   } catch (error) {

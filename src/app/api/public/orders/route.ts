@@ -13,6 +13,8 @@ import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { emitToLocation } from '@/lib/socket-server'
 import { isItemTaxInclusive, calculateSplitTax } from '@/lib/order-calculations'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('public-orders')
 
 // ── Simple in-memory rate limiter ───────────────────────────────────────────
 const orderRateLimitMap = new Map<string, { count: number; resetAt: number }>()
@@ -343,7 +345,7 @@ export async function POST(request: NextRequest) {
       tableId: table.id,
       orderNumber,
       status: 'sent',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void emitToLocation(locationId, 'kds:order-received', {
       orderId: order.id,
@@ -351,9 +353,9 @@ export async function POST(request: NextRequest) {
       orderType: 'dine_in',
       tableName: table.name,
       source: 'qr_order',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    void emitToLocation(locationId, 'floor-plan:updated', { locationId }).catch(console.error)
+    void emitToLocation(locationId, 'floor-plan:updated', { locationId }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Estimated wait time (rough: 15 minutes base + 2 min per item beyond 3)
     const estimatedWaitMinutes = Math.max(10, 15 + Math.max(0, totalItems - 3) * 2)

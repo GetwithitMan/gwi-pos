@@ -14,6 +14,8 @@ import {
   closeShift,
 } from '@/lib/domain/shift-close'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('shifts')
 
 // GET - Get shift details with sales summary
 export const GET = withVenue(async function GET(
@@ -257,13 +259,11 @@ export const PUT = withVenue(async function PUT(
               employeeId: requestingEmployeeId,
             })
           )
-        ).catch(console.error)
+        ).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Real-time cross-terminal update
-      void emitToLocation(shift.locationId, 'shifts:changed', { action: 'closed', shiftId: id, employeeId: shift.employeeId }).catch(() => {})
-
-      // Emit cloud event for shift closed (fire-and-forget)
+      void emitToLocation(shift.locationId, 'shifts:changed', { action: 'closed', shiftId: id, employeeId: shift.employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
       void emitCloudEvent("shift_closed", {
         employeeId: shift.employeeId,
         shiftId: updatedShift.id,
@@ -273,7 +273,7 @@ export const PUT = withVenue(async function PUT(
         totalTips: summary.totalTips,
         variance: Number(updatedShift.variance),
         closedAt: updatedShift.endedAt?.toISOString() || new Date().toISOString(),
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({ data: {
         shift: {
@@ -318,7 +318,7 @@ export const PUT = withVenue(async function PUT(
     pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(shift.locationId, 'shifts:changed', { action: 'updated', shiftId: id }).catch(() => {})
+    void emitToLocation(shift.locationId, 'shifts:changed', { action: 'updated', shiftId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: {
       shift: updatedShift,

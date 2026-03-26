@@ -26,6 +26,8 @@ import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache
 import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { OrderTotalsUpdatedPayload, OrdersListChangedPayload, OrderSummaryUpdatedPayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders')
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -234,7 +236,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         void db.$executeRawUnsafe(
           `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2`,
           fulfillmentMode, order.id
-        ).catch(console.error)
+        ).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Auto-assign pager if requested (fire-and-forget)
@@ -291,7 +293,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
                 `INSERT INTO "NotificationDeviceEvent" (id, "deviceId", "locationId", "eventType", "subjectType", "subjectId", metadata, "createdAt")
                  VALUES (gen_random_uuid()::text, $1, $2, 'assigned', 'order', $3, '{"autoAssign":true}'::jsonb, CURRENT_TIMESTAMP)`,
                 assignResult[0].id, locationId, order.id
-              ).catch(console.error)
+              ).catch(err => log.warn({ err }, 'Background task failed'))
             }
           } catch (pagerErr) {
             console.warn('[Orders] Auto-assign pager failed:', pagerErr)
@@ -304,7 +306,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         void db.$executeRawUnsafe(
           `UPDATE "Order" SET "scheduledFor" = $1 WHERE id = $2`,
           scheduledForDate, order.id
-        ).catch(console.error)
+        ).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Fire-and-forget audit log
@@ -320,9 +322,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
             ...(scheduledForDate ? { scheduledFor: scheduledForDate.toISOString() } : {}),
           },
         },
-      }).catch(() => {})
-
-      // Emit ORDER_CREATED event for draft (fire-and-forget)
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders'))
       void emitOrderEvent(locationId, order.id, 'ORDER_CREATED', {
         locationId,
         employeeId,
@@ -755,7 +755,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       void db.$executeRawUnsafe(
         `UPDATE "Order" SET "scheduledFor" = $1 WHERE id = $2`,
         scheduledForDate, order.id
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Link reservation to this order (fire-and-forget)
@@ -804,14 +804,12 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           ...(scheduledForDate ? { scheduledFor: scheduledForDate.toISOString() } : {}),
         },
       },
-    }).catch(console.error)
-
-    // Notification Platform: stamp fulfillmentMode on full order (fire-and-forget)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     if (fulfillmentMode) {
       void db.$executeRawUnsafe(
         `UPDATE "Order" SET "fulfillmentMode" = $1 WHERE id = $2`,
         fulfillmentMode, order.id
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Notification Platform: auto-assign pager for full order (fire-and-forget)
@@ -870,7 +868,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // Queue for Neon replay if in outage mode (fire-and-forget)
     if (isInOutageMode()) {
-      void queueOutageWrite('Order', order.id, 'INSERT', order, locationId).catch(console.error)
+      void queueOutageWrite('Order', order.id, 'INSERT', order, locationId).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
@@ -936,7 +934,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
 
     // Floor plan update remains fire-and-forget (non-critical UI event)
     if (tableId) {
-      dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+      dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     // Trigger upstream sync (fire-and-forget, debounced)
@@ -956,8 +954,8 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       locationId: reqBody?.locationId,
       employeeId: reqBody?.employeeId,
       tableId: reqBody?.tableId,
-    }).catch(() => {
-      // Silently fail error logging
+    }).catch(err => {
+      log.warn({ err }, 'error event logging failed during order creation')
     })
 
     return apiError.internalError('Failed to create order', ERROR_CODES.INTERNAL_ERROR)
@@ -1082,8 +1080,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeId: searchParams.get('employeeId') || '',
       },
       locationId: searchParams.get('locationId') || undefined,
-    }).catch(() => {
-      // Silently fail error logging
+    }).catch(err => {
+      log.warn({ err }, 'error event logging failed during order fetch')
     })
 
     return NextResponse.json(

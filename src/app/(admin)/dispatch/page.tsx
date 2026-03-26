@@ -212,7 +212,7 @@ export default function DispatchPage() {
       // Optional sound alert
       try {
         const audio = new Audio('/sounds/alert.mp3')
-        void audio.play().catch(() => {}) // Ignore if autoplay blocked
+        void audio.play().catch(err => console.warn('audio playback failed:', err))
       } catch {}
     }
 

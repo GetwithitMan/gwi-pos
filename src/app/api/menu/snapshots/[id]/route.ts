@@ -5,6 +5,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('menu-snapshots')
 
 export const dynamic = 'force-dynamic'
 
@@ -336,7 +338,7 @@ export const POST = withVenue(async function POST(
     } catch { /* non-critical */ }
 
     // Fire-and-forget socket dispatch
-    void dispatchMenuUpdate(locationId, { action: 'updated' }, { async: true }).catch(console.error)
+    void dispatchMenuUpdate(locationId, { action: 'updated' }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     const employeeName = authResult.employee.displayName || `${authResult.employee.firstName} ${authResult.employee.lastName}`
 

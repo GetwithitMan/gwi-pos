@@ -23,7 +23,7 @@ export function TrainingModeBanner() {
           setIsTraining(false)
         }
       })
-      .catch(() => {/* silently ignore */})
+      .catch(err => console.warn('training mode check failed:', err))
   }, [employeeId])
 
   if (!isTraining) return null

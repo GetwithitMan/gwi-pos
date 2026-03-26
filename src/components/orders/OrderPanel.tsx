@@ -506,7 +506,7 @@ export const OrderPanel = memo(function OrderPanel({
             setIsTaxExempt(!!d?.isTaxExempt)
             customerFetchedForRef.current = orderId
           })
-          .catch(() => {})
+          .catch(err => console.warn('fire-and-forget failed in orders.OrderPanel:', err))
       }
     }
     socket.on('order:updated', handler)
@@ -553,7 +553,7 @@ export const OrderPanel = memo(function OrderPanel({
           })
         }
       })
-      .catch(console.error)
+      .catch(err => console.warn('Operation failed:', err))
   }, [])
 
   // Tax exempt toggle handler — opens dialog when enabling, removes via DELETE when disabling
@@ -684,7 +684,7 @@ export const OrderPanel = memo(function OrderPanel({
         }
         setSeatAllergyNotes(loaded)
       })
-      .catch(console.error)
+      .catch(err => console.warn('Operation failed:', err))
     return () => { cancelled = true }
   }, [orderId])
 
@@ -2515,7 +2515,7 @@ export const OrderPanel = memo(function OrderPanel({
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ seatNumber, allergyNotes: notes }),
-              }).catch(console.error)
+              }).catch(err => console.warn('Operation failed:', err))
             }
           }}
           onClose={() => setAllergyModalSeat(null)}

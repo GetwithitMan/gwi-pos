@@ -35,6 +35,8 @@ import {
   recalculateOrderTotalsForAdd,
   recalculateParentOrderTotals,
 } from '@/lib/domain/order-items'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-items')
 
 /**
  * Calculate cost-at-sale for a single order item (fire-and-forget).
@@ -493,9 +495,9 @@ export const POST = withVenue(async function POST(
     // Queue outage writes if Neon is unreachable
     if (isInOutageMode()) {
       for (const item of result.createdItems) {
-        void queueOutageWrite('OrderItem', item.id, 'INSERT', { ...item } as Record<string, unknown>, result.updatedOrder.locationId).catch(console.error)
+        void queueOutageWrite('OrderItem', item.id, 'INSERT', { ...item } as Record<string, unknown>, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
-      void queueOutageWrite('Order', orderId, 'UPDATE', result.updatedOrder as unknown as Record<string, unknown>, result.updatedOrder.locationId).catch(console.error)
+      void queueOutageWrite('Order', orderId, 'UPDATE', result.updatedOrder as unknown as Record<string, unknown>, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Fire-and-forget: calculate and store costAtSale for all new items in parallel (N+1 fix)
@@ -595,7 +597,7 @@ export const POST = withVenue(async function POST(
 
     // Dispatch order:item-added for each newly created item (fire-and-forget)
     for (const item of result.createdItems) {
-      void dispatchOrderItemAdded(result.updatedOrder.locationId, { orderId: result.updatedOrder.id, itemId: item.id }).catch(() => {})
+      void dispatchOrderItemAdded(result.updatedOrder.locationId, { orderId: result.updatedOrder.id, itemId: item.id }).catch(err => log.warn({ err }, 'order item added dispatch failed'))
     }
 
     // FIX-011: Dispatch real-time totals update (fire-and-forget)
@@ -606,18 +608,14 @@ export const POST = withVenue(async function POST(
       discountTotal: Number(result.updatedOrder.discountTotal),
       total: Number(result.updatedOrder.total),
       commissionTotal: Number(result.updatedOrder.commissionTotal || 0),
-    }, { async: true }).catch(console.error)
-
-    // Dispatch open orders + floor plan update for cross-terminal table status
-    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'item_updated', orderId: result.updatedOrder.id, tableId: result.updatedOrder.tableId || undefined }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'item_updated', orderId: result.updatedOrder.id, tableId: result.updatedOrder.tableId || undefined }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
     if (result.updatedOrder.tableId) {
-      dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(() => {})
+      dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
-    void dispatchOrderSummaryUpdated(result.updatedOrder.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(() => {})
-
-    // If this is a bar tab, notify phone that items updated (tenant-safe)
+    void dispatchOrderSummaryUpdated(result.updatedOrder.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(err => log.warn({ err }, 'order summary dispatch failed'))
     if (result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.status === 'open') {
       const updatedItemCount = await OrderItemRepository.countItemsForOrder(orderId, locationId)
       dispatchTabItemsUpdated(result.updatedOrder.locationId, { orderId, itemCount: updatedItemCount })
@@ -631,13 +629,11 @@ export const POST = withVenue(async function POST(
         orderId: result.updatedOrder.id,
         count: result.createdItems.length,
         itemNames: result.createdItems.map((i: any) => i.name).slice(0, 5),
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Evaluate auto-discount rules after items are added (fire-and-forget)
-    void evaluateAutoDiscounts(result.updatedOrder.id, result.updatedOrder.locationId).catch(console.error)
-
-    // Trigger upstream sync (fire-and-forget, debounced)
+    void evaluateAutoDiscounts(result.updatedOrder.id, result.updatedOrder.locationId).catch(err => log.warn({ err }, 'Background task failed'))
     pushUpstream()
 
     return NextResponse.json({ data: {

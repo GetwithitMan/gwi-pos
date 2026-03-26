@@ -10,6 +10,8 @@ import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canAssignDriver, getMaxOrdersPerDriver } from '@/lib/delivery/dispatch-policy'
 import { evaluateEffectiveProofMode } from '@/lib/delivery/proof-resolver'
 import { dispatchRunEvent, dispatchDeliveryStatusChanged, dispatchDriverAssigned } from '@/lib/delivery/dispatch-events'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-runs')
 
 export const dynamic = 'force-dynamic'
 
@@ -451,14 +453,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Fire socket events (fire-and-forget, outside transaction)
-    void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(console.error)
+    void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(err => log.warn({ err }, 'Background task failed'))
     for (const order of result.orders) {
-      void dispatchDeliveryStatusChanged(locationId, order).catch(console.error)
+      void dispatchDeliveryStatusChanged(locationId, order).catch(err => log.warn({ err }, 'Background task failed'))
       void dispatchDriverAssigned(locationId, {
         deliveryOrderId: order.id,
         orderId: order.orderId,
         driverId: driverId,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json(

@@ -5,6 +5,8 @@ import { withVenue } from '@/lib/with-venue'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('entertainment-waitlist-deposit')
 
 // POST - Collect a deposit for a waitlist entry
 export const POST = withVenue(withAuth(async function POST(
@@ -94,9 +96,9 @@ export const POST = withVenue(withAuth(async function POST(
         partySize: entry.partySize,
         action: 'deposit-collected',
         message: `Cash deposit of $${amount.toFixed(2)} collected for ${entry.customerName || 'customer'}`,
-      }, { async: true }).catch(console.error)
+      }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-      void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+      void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({
         data: {
@@ -152,9 +154,9 @@ export const POST = withVenue(withAuth(async function POST(
       partySize: entry.partySize,
       action: 'deposit-collected',
       message: `Card deposit of $${amount.toFixed(2)} collected for ${entry.customerName || 'customer'}`,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {
@@ -273,9 +275,9 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       partySize: entry.partySize,
       action: 'deposit-refunded',
       message: `${entry.depositMethod === 'card' ? 'Card' : 'Cash'} deposit of $${refundAmount.toFixed(2)} refunded for ${entry.customerName || 'customer'}`,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

@@ -37,6 +37,8 @@ import {
   applyCompVoid,
   applyRestore,
 } from '@/lib/domain/comp-void'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-comp-void')
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -448,9 +450,9 @@ export const POST = withVenue(async function POST(
         entertainmentStatus: 'available',
         currentOrderId: null,
         expiresAt: null,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.comp-void'))
 
-      void notifyNextWaitlistEntry(order.locationId, item!.menuItem.id, item!.menuItem.name).catch(() => {})
+      void notifyNextWaitlistEntry(order.locationId, item!.menuItem.id, item!.menuItem.name).catch(err => log.warn({ err }, 'waitlist notify failed'))
     }
 
     // Deduct inventory for voids where food was made
@@ -476,8 +478,8 @@ export const POST = withVenue(async function POST(
       // TODO: Add TableRepository once that repository exists
       if (order.tableId) {
         await db.table.update({ where: { id: order.tableId }, data: { status: 'available' } })
-        void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId, status: 'available' }).catch(console.error)
-        void dispatchFloorPlanUpdate(order.locationId).catch(console.error)
+        void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
+        void dispatchFloorPlanUpdate(order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       void cleanupTemporarySeats(orderId)
@@ -486,7 +488,7 @@ export const POST = withVenue(async function POST(
             return dispatchFloorPlanUpdate(order.locationId, { async: true })
           }
         })
-        .catch(console.error)
+        .catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Emit cloud event for void/comp (fire-and-forget)
@@ -503,9 +505,7 @@ export const POST = withVenue(async function POST(
         quantity: item!.quantity,
         price: Number(item!.price),
       }],
-    }).catch(console.error)
-
-    // Dispatch real-time updates (fire-and-forget)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'item_updated',
       orderId,
@@ -576,9 +576,7 @@ export const POST = withVenue(async function POST(
       itemCount: activeItemCount,
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
-    }, { async: true }).catch(() => {})
-
-    // Dispatch order:closed when all items voided/comped (auto-close)
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.comp-void'))
     if (shouldAutoClose) {
       void dispatchOrderClosed(order.locationId, {
         orderId: order.id,
@@ -586,7 +584,7 @@ export const POST = withVenue(async function POST(
         closedAt: new Date().toISOString(),
         closedByEmployeeId: employeeId,
         locationId: order.locationId,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.comp-void'))
     }
 
     // BUG 1: If this split child was auto-closed, check if ALL siblings are in terminal states.
@@ -610,11 +608,11 @@ export const POST = withVenue(async function POST(
               closedAt: new Date().toISOString(),
               closedByEmployeeId: employeeId,
               locationId: order.locationId,
-            }, { async: true }).catch(() => {})
+            }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.comp-void'))
             void dispatchOpenOrdersChanged(order.locationId, {
               trigger: 'voided',
               orderId: order.parentOrderId!,
-            }, { async: true }).catch(() => {})
+            }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.comp-void'))
           }
         } catch (err) {
           console.error('[CompVoid] Failed to resolve parent order after all children cancelled:', err)
@@ -630,14 +628,12 @@ export const POST = withVenue(async function POST(
         tipTotal: parentTotals.tipTotal,
         discountTotal: parentTotals.discountTotal,
         total: parentTotals.total,
-      }, { async: true }).catch(() => {})
-
-      // Queue outage write for parent order totals if Neon is unreachable —
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.comp-void'))
       // read back full row to avoid NOT NULL constraint violations on replay
       if (isInOutageMode()) {
         const fullParentOrder = await OrderRepository.getOrderById(order.parentOrderId!, order.locationId)
         if (fullParentOrder) {
-          void queueOutageWrite('Order', fullParentOrder.id, 'UPDATE', fullParentOrder as unknown as Record<string, unknown>, order.locationId).catch(console.error)
+          void queueOutageWrite('Order', fullParentOrder.id, 'UPDATE', fullParentOrder as unknown as Record<string, unknown>, order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
         }
       }
     }

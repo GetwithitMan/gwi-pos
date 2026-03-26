@@ -7,6 +7,9 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id.modifier-groups')
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -565,9 +568,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         action: 'modifier-group-updated',
         entityId: newGroup.id,
         entityType: 'modifier-group',
-      }).catch(() => {})
-
-      // Return same format as existing POST response
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups'))
       return NextResponse.json({
         data: formatGroup(newGroup),
       })
@@ -722,7 +723,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       action: 'modifier-group-updated',
       entityId: group.id,
       entityType: 'modifier-group',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.items.id.modifier-groups'))
 
     return NextResponse.json({
       data: {

@@ -8,6 +8,8 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canEndDriverShift, requiresCashShortageApproval } from '@/lib/delivery/dispatch-policy'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-sessions-checkout')
 
 export const dynamic = 'force-dynamic'
 
@@ -207,7 +209,7 @@ export const POST = withVenue(async function POST(
       driverId: result.session.driverId,
       employeeId: auth.authorized ? auth.employee.id : '',
       newValue: result.checkout,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ checkout: result.checkout, session: result.session })
   } catch (error) {

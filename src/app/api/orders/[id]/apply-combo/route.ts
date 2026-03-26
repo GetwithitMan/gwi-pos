@@ -21,7 +21,7 @@ import {
   recalculatePercentDiscounts,
   type LocationTaxSettings,
 } from '@/lib/order-calculations'
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import {
   dispatchOpenOrdersChanged,
@@ -30,6 +30,8 @@ import {
   buildOrderSummary,
 } from '@/lib/socket-dispatch'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-apply-combo')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -283,12 +285,18 @@ export const POST = withVenue(async function POST(
         Number(order.inclusiveTaxRate) || undefined
       )
 
+      const comboDonation = Number(order.donationAmount || 0)
+      const comboConvFee = Number(order.convenienceFee || 0)
+      const comboFinalTotal = comboDonation > 0 || comboConvFee > 0
+        ? roundToCents(totals.total + comboDonation + comboConvFee)
+        : totals.total
+
       await OrderRepository.updateOrder(orderId, order.locationId, {
         subtotal: totals.subtotal,
         taxTotal: totals.taxTotal,
         taxFromInclusive: totals.taxFromInclusive,
         taxFromExclusive: totals.taxFromExclusive,
-        total: totals.total,
+        total: comboFinalTotal,
         commissionTotal: totals.commissionTotal,
         itemCount: allActiveItems.reduce((sum, i) => sum + i.quantity, 0),
         version: { increment: 1 },
@@ -350,7 +358,7 @@ export const POST = withVenue(async function POST(
           soldByWeight: false,
         },
       },
-    ]).catch(console.error)
+    ]).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Socket dispatches (fire-and-forget)
     void dispatchOrderTotalsUpdate(result.locationId, orderId, {
@@ -360,14 +368,14 @@ export const POST = withVenue(async function POST(
       discountTotal: Number(result.updatedOrder.discountTotal),
       total: Number(result.updatedOrder.total),
       commissionTotal: Number(result.updatedOrder.commissionTotal || 0),
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void dispatchOpenOrdersChanged(result.locationId, {
       trigger: 'voided',
       orderId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
-    void dispatchOrderSummaryUpdated(result.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(console.error)
+    void dispatchOrderSummaryUpdated(result.locationId, buildOrderSummary(result.updatedOrder), { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

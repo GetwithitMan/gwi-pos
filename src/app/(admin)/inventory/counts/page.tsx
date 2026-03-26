@@ -118,7 +118,7 @@ export default function CountsPage() {
       fetch(`/api/inventory/storage-locations?locationId=${employee.location.id}`)
         .then(res => res.ok ? res.json() : null)
         .then(data => { if (data) setStorageLocations(data.storageLocations || []) })
-        .catch(() => {})
+        .catch(err => console.warn('fire-and-forget failed in inventory.counts:', err))
     }
   }, [employee?.location?.id, loadItems])
 

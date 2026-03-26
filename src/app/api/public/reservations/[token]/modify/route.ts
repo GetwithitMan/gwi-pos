@@ -7,6 +7,8 @@ import { repriceAndRevalidate } from '@/lib/reservations/revalidate'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('public-reservations-modify')
 
 export const dynamic = 'force-dynamic'
 
@@ -145,7 +147,7 @@ export const POST = withVenue(async function POST(
           depositDelta: validation.depositDelta,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       id: updated.id,

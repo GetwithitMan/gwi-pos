@@ -20,6 +20,8 @@ import { emitCloudEvent } from '@/lib/cloud-events'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('tips-payouts')
 
 // ─── POST: Cash out tips for a single employee ──────────────────────────────
 
@@ -127,7 +129,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       previousBalanceCents: result.previousBalanceCents,
       newBalanceCents: result.newBalanceCents,
       settledAt: new Date().toISOString(),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // ── Return success ────────────────────────────────────────────────────
     return NextResponse.json({

@@ -9,6 +9,8 @@ import { getNextServer, buildServerInfoList } from '@/lib/host/server-rotation'
 import { dispatchFloorPlanUpdate, dispatchWaitlistChanged, dispatchTableStatusChanged, dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { transition } from '@/lib/reservations/state-machine'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('host-seat')
 
 export const dynamic = 'force-dynamic'
 
@@ -126,7 +128,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         entryId: waitlistEntryId,
         customerName: guestName || 'Guest',
         partySize: size,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Update reservation via state machine if provided
@@ -220,12 +222,12 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     // Fire-and-forget socket dispatches
-    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
-    void dispatchTableStatusChanged(locationId, { tableId, status: 'occupied' }).catch(console.error)
+    void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchTableStatusChanged(locationId, { tableId, status: 'occupied' }).catch(err => log.warn({ err }, 'Background task failed'))
     if (reservationId) {
       void dispatchReservationChanged(locationId, {
         reservationId, action: 'seated',
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Fetch assigned server name for response

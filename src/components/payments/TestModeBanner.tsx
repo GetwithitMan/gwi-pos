@@ -14,7 +14,7 @@ export function TestModeBanner() {
     fetch('/api/payment-config')
       .then(r => r.json())
       .then(({ data }) => setIsTestMode(data?.isTestMode === true))
-      .catch(() => {/* silently ignore — don't break POS */})
+      .catch(err => console.warn('payment config fetch failed:', err))
   }, [])
 
   if (!isTestMode) return null

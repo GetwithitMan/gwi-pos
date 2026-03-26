@@ -387,7 +387,7 @@ export default function SchedulingPage() {
       .then(d => {
         if (d.data) setLastPullAt(d.data.lastSchedulePullAt)
       })
-      .catch(() => {}) // non-fatal
+      .catch(err => console.warn('fire-and-forget failed in scheduling:', err))
   }, [])
 
   const handlePullFromSevenShifts = async () => {

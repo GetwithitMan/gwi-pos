@@ -11,6 +11,9 @@ import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.items.id')
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -395,9 +398,7 @@ export const PUT = withVenue(async function PUT(
     invalidateMenuCache(item.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void dispatchMenuUpdate(item.locationId, { action: 'updated' }).catch(() => {})
-
-    // Dispatch socket events for real-time updates
+    void dispatchMenuUpdate(item.locationId, { action: 'updated' }).catch(err => log.warn({ err }, 'menu update dispatch failed'))
     const action = deletedAt ? 'deleted' : (item.deletedAt === null && deletedAt === undefined) ? 'updated' : 'restored'
 
     // Dispatch item changed event
@@ -502,9 +503,7 @@ export const DELETE = withVenue(async function DELETE(
     invalidateMenuCache(item.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void dispatchMenuUpdate(item.locationId, { action: 'deleted' }).catch(() => {})
-
-    // Dispatch socket event for real-time update
+    void dispatchMenuUpdate(item.locationId, { action: 'deleted' }).catch(err => log.warn({ err }, 'menu update dispatch failed'))
     if (item) {
       dispatchMenuItemChanged(item.locationId, {
         itemId: id,

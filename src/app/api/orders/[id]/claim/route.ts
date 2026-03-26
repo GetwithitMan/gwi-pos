@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchOrderClaimed, dispatchOrderReleased } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-claim')
 
 /** Claim expiry window in seconds — stale claims are treated as unclaimed */
 const CLAIM_EXPIRY_SECONDS = 60
@@ -122,7 +124,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       employeeName,
       terminalId: result.terminalId,
       claimedAt: now.toISOString(),
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ claimed: true })
   } catch (error) {
@@ -214,7 +216,7 @@ export const DELETE = withVenue(withAuth({ allowCellular: true }, async function
     // Fire-and-forget socket dispatch
     void dispatchOrderReleased(result.locationId, {
       orderId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ released: true })
   } catch (error) {

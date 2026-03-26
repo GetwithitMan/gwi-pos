@@ -82,7 +82,7 @@ export const useAuthStore = create<AuthState>()(
 
         // Fire-and-forget: clear the httpOnly session cookie on the server.
         // Local state clears immediately for instant UX; cookie cleanup is async.
-        void fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+        void fetch('/api/auth/logout', { method: 'POST' }).catch(err => console.warn('logout request failed:', err))
         set({
           employee: null,
           isAuthenticated: false,

@@ -8,6 +8,8 @@ import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { OrderRepository } from '@/lib/repositories'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-void-tab')
 
 // POST - Void an unclosed tab (releases all card holds)
 // Fires VoidSaleByRecordNo for each authorized OrderCard
@@ -154,7 +156,7 @@ export const POST = withVenue(async function POST(
         where: { id: order.tableId },
         data: { status: 'available' },
       })
-      void dispatchTableStatusChanged(locationId, { tableId: order.tableId, status: 'available' }).catch(console.error)
+      void dispatchTableStatusChanged(locationId, { tableId: order.tableId, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Clean up entertainment items tied to this order
@@ -216,7 +218,7 @@ export const POST = withVenue(async function POST(
       void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
         closedStatus: 'voided',
         reason: reason || 'Tab voided',
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Dispatch socket events for voided tab (fire-and-forget)
@@ -225,11 +227,11 @@ export const POST = withVenue(async function POST(
         trigger: 'voided',
         orderId,
         tableId: order.tableId || undefined,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.void-tab'))
       void dispatchTabUpdated(locationId, {
         orderId,
         status: 'voided',
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.void-tab'))
       dispatchTabStatusUpdate(locationId, { orderId, status: 'voided' })
       // BUG 3: Dispatch order:closed so Android clients listening for the event learn about voided tabs
       void dispatchOrderClosed(locationId, {
@@ -238,9 +240,9 @@ export const POST = withVenue(async function POST(
         closedAt: new Date().toISOString(),
         closedByEmployeeId: employeeId,
         locationId,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.void-tab'))
       if (order.tableId) {
-        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       }
       // Notify entertainment status changes for cleaned-up items
       for (const itemId of cleanedEntertainmentIds) {
@@ -249,11 +251,11 @@ export const POST = withVenue(async function POST(
           entertainmentStatus: 'available',
           currentOrderId: null,
           expiresAt: null,
-        }, { async: true }).catch(() => {})
-        void notifyNextWaitlistEntry(locationId, itemId).catch(() => {})
+        }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.void-tab'))
+        void notifyNextWaitlistEntry(locationId, itemId).catch(err => log.warn({ err }, 'waitlist notify failed'))
       }
       if (cleanedEntertainmentIds.length > 0) {
-        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       }
     }
 

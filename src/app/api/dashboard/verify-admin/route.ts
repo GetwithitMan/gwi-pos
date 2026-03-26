@@ -10,6 +10,8 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('dashboard-verify-admin')
 
 export const dynamic = 'force-dynamic'
 
@@ -97,7 +99,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Req
           entityId: 'admin-unlock',
           details: { pin: '****', success: false },
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       // Generic failure (no employee enumeration)
       return NextResponse.json({ authorized: false })
@@ -156,7 +158,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Req
           permissions: { toolsAdmin: hasToolsAdmin, deviceManagement: hasDeviceMgmt },
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       authorized: true,

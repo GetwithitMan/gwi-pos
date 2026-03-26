@@ -52,7 +52,7 @@ function useCloudSessionGuard() {
             login(data.employee)
           }
         })
-        .catch(() => {})
+        .catch(err => console.warn('fire-and-forget failed in settings.layout:', err))
         .finally(() => setReady(true))
       return
     }
@@ -71,7 +71,7 @@ function useCloudSessionGuard() {
           }
         }
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in settings.layout:', err))
       .finally(() => setReady(true))
   }, [isAuthenticated, employee, locationId, login])
 

@@ -9,6 +9,8 @@ import {
 } from '@/lib/cellular-auth'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cellular-devices')
 
 /**
  * GET /api/cellular-devices?locationId=xxx
@@ -145,14 +147,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           revokedBy: `${auth.employee.firstName} ${auth.employee.lastName}`,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Emit socket event so the device gets kicked in real-time
     void emitToLocation(locationId, 'cellular:device-revoked', {
       terminalId,
       deviceFingerprint: deviceFingerprint || undefined,
       reason: reason || 'Access revoked by venue administrator',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: { success: true, terminalId, revokedAt: new Date().toISOString() },

@@ -156,7 +156,7 @@ function MobileTabsContent() {
     fetch(`/api/orders/open?${params}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(data => { if (data) setPreviousDayCount((data.data?.orders || []).length) })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in mobile.mobile.tabs:', err))
   }, [authChecked, locationId, ageFilter])
 
   // ── Socket updates (debounced) ──

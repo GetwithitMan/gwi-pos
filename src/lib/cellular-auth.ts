@@ -592,7 +592,7 @@ export function recordActivity(terminalId: string): void {
     }
   }
 
-  void Promise.resolve().then(persistActivityToFile).catch(() => {})
+  void Promise.resolve().then(persistActivityToFile).catch(err => log.warn({ err }, 'activity persistence failed'))
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -751,9 +751,7 @@ export async function loadDenyListFromDb(): Promise<void> {
 }
 
 // Load deny list from DB on module init (non-blocking — don't delay imports)
-void loadDenyListFromDb().catch(() => {})
-
-// ═══════════════════════════════════════════════════════════
+void loadDenyListFromDb().catch(err => log.warn({ err }, 'deny list load failed'))
 // Rate limiting (in-memory, 1-second sliding window)
 // ═══════════════════════════════════════════════════════════
 

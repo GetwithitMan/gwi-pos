@@ -71,7 +71,7 @@ function PayAtTableContent() {
       .then(data => {
         if (data?.locationId) setLocationId(data.locationId)
       })
-      .catch(() => {})
+      .catch(err => console.warn('fire-and-forget failed in pos.pay-at-table:', err))
   }, [locationId, readerId])
 
   // Wire socket for real-time payment sync with POS terminal
@@ -103,7 +103,7 @@ function PayAtTableContent() {
                 totalPaid: (orderRef.current?.total ?? 0) + finalTip,
                 tipAmount: finalTip,
               }),
-            }).catch(console.error)
+            }).catch(err => console.warn('Operation failed:', err))
           }
           setState('done')
         }
@@ -162,7 +162,8 @@ function PayAtTableContent() {
         })
         setState('summary')
       })
-      .catch(() => {
+      .catch(err => {
+        console.warn('pay-at-table order load failed:', err)
         setError('Failed to load order')
         setState('error')
       })
@@ -244,7 +245,7 @@ function PayAtTableContent() {
             totalPaid: order.total + accumulatedTipRef.current,
             tipAmount: accumulatedTipRef.current,
           }),
-        }).catch(console.error)
+        }).catch(err => console.warn('Operation failed:', err))
 
         setState('done')
       }

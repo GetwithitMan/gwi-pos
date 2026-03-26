@@ -9,6 +9,9 @@ import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.categories.id')
 
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
@@ -57,9 +60,7 @@ export const PUT = withVenue(async function PUT(
     invalidateMenuCache(category.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void dispatchMenuUpdate(category.locationId, { action: 'updated' }).catch(() => {})
-
-    // Dispatch socket event for real-time menu structure update
+    void dispatchMenuUpdate(category.locationId, { action: 'updated' }).catch(err => log.warn({ err }, 'menu update dispatch failed'))
     dispatchMenuStructureChanged(category.locationId, {
       action: 'category-updated',
       entityId: category.id,
@@ -132,9 +133,7 @@ export const DELETE = withVenue(async function DELETE(
     invalidateMenuCache(category.locationId)
 
     // Fire-and-forget socket dispatch for real-time menu updates
-    void dispatchMenuUpdate(category.locationId, { action: 'deleted' }).catch(() => {})
-
-    // Dispatch socket event for real-time menu structure update
+    void dispatchMenuUpdate(category.locationId, { action: 'deleted' }).catch(err => log.warn({ err }, 'menu update dispatch failed'))
     if (category) {
       dispatchMenuStructureChanged(category.locationId, {
         action: 'category-deleted',

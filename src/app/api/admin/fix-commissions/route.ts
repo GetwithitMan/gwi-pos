@@ -5,6 +5,8 @@ import { PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('admin-fix-commissions')
 
 // Helper to calculate commission for an item
 function calculateItemCommission(
@@ -187,7 +189,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           ...itemEvents,
           { type: 'ORDER_METADATA_UPDATED' as const, payload: { commissionTotal: data.totalCommission } },
         ]
-      ).catch(console.error)
+      ).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: {

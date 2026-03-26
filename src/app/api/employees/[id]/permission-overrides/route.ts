@@ -6,6 +6,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('employees-permission-overrides')
 
 // GET - List all permission overrides for an employee
 export const GET = withVenue(async function GET(
@@ -115,14 +117,12 @@ export const POST = withVenue(async function POST(
         entityId: employeeId,
         details: { permissionKey, allowed, reason: reason || null },
       },
-    }).catch(console.error)
-
-    // Clear permission cache for this employee so override takes effect immediately
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     clearPermissionCache(employeeId)
 
     // Notify cross-terminal
-    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId }).catch(() => {})
-    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId }).catch(() => {})
+    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: override })
   } catch (error) {
@@ -177,14 +177,12 @@ export const DELETE = withVenue(async function DELETE(
         entityId: employeeId,
         details: { permissionKey },
       },
-    }).catch(console.error)
-
-    // Clear permission cache for this employee
+    }).catch(err => log.warn({ err }, 'Background task failed'))
     clearPermissionCache(employeeId)
 
     // Notify cross-terminal
-    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId }).catch(() => {})
-    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId }).catch(() => {})
+    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

@@ -9,6 +9,9 @@ import { OrderRepository } from '@/lib/repositories'
 import { roundToCents } from '@/lib/pricing'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.apply-coupon')
 
 interface ApplyCouponRequest {
   code: string
@@ -309,20 +312,26 @@ export const POST = withVenue(async function POST(
       }))
       const totals = calculateOrderTotals(
         couponCalcItems, order.location.settings as { tax?: { defaultRate?: number; inclusiveTaxRate?: number } },
-        newDiscountTotal, 0, undefined, 'card', order.isTaxExempt,
+        newDiscountTotal, Number(order.tipTotal || 0), undefined, 'card', order.isTaxExempt,
         Number(order.inclusiveTaxRate) || undefined
       )
+
+      const couponDonation = Number(order.donationAmount || 0)
+      const couponConvFee = Number(order.convenienceFee || 0)
+      const couponFinalTotal = couponDonation > 0 || couponConvFee > 0
+        ? roundToCents(totals.total + couponDonation + couponConvFee)
+        : totals.total
 
       await OrderRepository.updateOrder(orderId, order.locationId, {
         discountTotal: totals.discountTotal,
         taxTotal: totals.taxTotal,
         taxFromInclusive: totals.taxFromInclusive,
         taxFromExclusive: totals.taxFromExclusive,
-        total: totals.total,
+        total: couponFinalTotal,
         version: { increment: 1 },
       }, tx)
 
-      return { order, coupon, discount, totals, customerId, discountAmount, discountPercent }
+      return { order, coupon, discount, totals, couponFinalTotal, customerId, discountAmount, discountPercent }
     })
 
     const { order, coupon, discountPercent, discountAmount } = result
@@ -344,15 +353,13 @@ export const POST = withVenue(async function POST(
       taxTotal: result.totals.taxTotal,
       tipTotal: Number(order.tipTotal),
       discountTotal: result.totals.discountTotal,
-      total: result.totals.total,
+      total: result.couponFinalTotal,
       commissionTotal: Number((order as any).commissionTotal || 0),
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.apply-coupon'))
     void dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'item_updated',
       orderId,
-    }, { async: true }).catch(() => {})
-
-    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.apply-coupon'))
     void dispatchOrderSummaryUpdated(order.locationId, {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -366,11 +373,11 @@ export const POST = withVenue(async function POST(
       taxTotalCents: Math.round(result.totals.taxTotal * 100),
       discountTotalCents: Math.round(result.totals.discountTotal * 100),
       tipTotalCents: Math.round(Number(order.tipTotal) * 100),
-      totalCents: Math.round(result.totals.total * 100),
+      totalCents: Math.round(result.couponFinalTotal * 100),
       itemCount: order.itemCount ?? 0,
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
-    }, { async: true }).catch(() => {})
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.apply-coupon'))
 
     return NextResponse.json({ data: {
       discount: {
@@ -384,7 +391,7 @@ export const POST = withVenue(async function POST(
         subtotal: result.totals.subtotal,
         discountTotal: result.totals.discountTotal,
         taxTotal: result.totals.taxTotal,
-        total: result.totals.total,
+        total: result.couponFinalTotal,
       },
     } })
   } catch (error: any) {

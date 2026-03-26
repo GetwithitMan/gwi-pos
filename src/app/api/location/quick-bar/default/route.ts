@@ -6,6 +6,8 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchQuickBarChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('location-quick-bar-default')
 
 // GET — returns location-level default quick bar items
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -60,7 +62,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     // Notify all terminals to refresh quick bar
-    void dispatchQuickBarChanged(locationId).catch(console.error)
+    void dispatchQuickBarChanged(locationId).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId, domain: 'quick-bar', action: 'updated' })
     void pushUpstream()

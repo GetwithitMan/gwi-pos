@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('internal-reload-terminals')
 
 /**
  * POST /api/internal/reload-terminals
@@ -22,7 +24,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No locationId configured' }, { status: 500 })
     }
 
-    void emitToLocation(locationId, 'system:reload', {}).catch(console.error)
+    void emitToLocation(locationId, 'system:reload', {}).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { ok: true } })
   } catch (err) {

@@ -8,6 +8,9 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 import { getDerivedBottleStock } from '@/lib/liquor-inventory'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('liquor.bottles')
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -395,8 +398,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       action: 'created',
       bottleId: result.bottle.id,
       name: result.bottle.name,
-    }).catch(() => {})
-    void emitToLocation(spiritCategory.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in liquor.bottles'))
+    void emitToLocation(spiritCategory.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: {
       id: result.bottle.id,

@@ -19,6 +19,8 @@ import type {
 } from '@/lib/socket-events'
 import { queueSocketEvent, flushOutboxSafe } from '@/lib/socket-outbox'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-retry-capture')
 
 export const POST = withVenue(withAuth(async function POST(
   request: NextRequest,
@@ -117,7 +119,7 @@ export const POST = withVenue(withAuth(async function POST(
         void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
           captureRetryCount: updated?.captureRetryCount || 0,
           lastCaptureError: 'Retry failed - all cards declined',
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
 
         return NextResponse.json({
           data: { success: false, error: 'All cards declined on retry', retryCount: updated?.captureRetryCount || 0 },
@@ -197,9 +199,7 @@ export const POST = withVenue(withAuth(async function POST(
       flushOutboxSafe(locationId)
 
       // Floor plan update is non-critical UI — fire-and-forget
-      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
-
-      // Event emission: retry capture succeeded — payment applied + order closed
+      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       void emitOrderEvents(locationId, orderId, [
         {
           type: 'PAYMENT_APPLIED',
@@ -218,7 +218,7 @@ export const POST = withVenue(withAuth(async function POST(
           type: 'ORDER_CLOSED',
           payload: { closedStatus: 'paid', reason: 'Retry capture succeeded' },
         },
-      ]).catch(console.error)
+      ]).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({
         data: {
@@ -303,9 +303,7 @@ export const POST = withVenue(withAuth(async function POST(
       flushOutboxSafe(locationId)
 
       // Floor plan update is non-critical UI — fire-and-forget
-      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
-
-      // Event emission: cash retry payment applied + order closed
+      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       void emitOrderEvents(locationId, orderId, [
         {
           type: 'PAYMENT_APPLIED',
@@ -322,7 +320,7 @@ export const POST = withVenue(withAuth(async function POST(
           type: 'ORDER_CLOSED',
           payload: { closedStatus: 'paid', reason: 'Retry capture — cash fallback' },
         },
-      ]).catch(console.error)
+      ]).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({ data: { success: true, paymentMethod: 'cash', amount: paymentAmount } })
 
@@ -391,13 +389,11 @@ export const POST = withVenue(withAuth(async function POST(
       flushOutboxSafe(locationId)
 
       // Floor plan update is non-critical UI — fire-and-forget
-      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
-
-      // Event emission: manager voided the declined tab
+      if (order.tableId) void dispatchFloorPlanUpdate(locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       void emitOrderEvent(locationId, orderId, 'ORDER_CLOSED', {
         closedStatus: PAYMENT_STATES.VOIDED,
         reason: 'Manager voided declined capture tab',
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({ data: { success: true, action: PAYMENT_STATES.VOIDED } })
     }

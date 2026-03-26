@@ -5,6 +5,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { emitToLocation } from '@/lib/socket-server'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('inventory-86-status-bulk')
 
 /**
  * POST /api/inventory/86-status/bulk
@@ -82,7 +84,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         itemId,
         stockStatus: is86d ? 'out_of_stock' : 'in_stock',
         isOrderableOnline: !is86d,
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Emit inventory:86-status-changed for admin UI refresh
@@ -91,7 +93,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
       is86d,
       affectedMenuItemIds,
       bulk: true,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

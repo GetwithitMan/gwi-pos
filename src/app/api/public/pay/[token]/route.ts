@@ -19,6 +19,9 @@ import { parseSettings, DEFAULT_TEXT_TO_PAY } from '@/lib/settings'
 import { getDatacapClient } from '@/lib/datacap/helpers'
 import { dispatchPaymentProcessed, dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('public.pay.token')
 
 // ── Rate Limiting ───────────────────────────────────────────────────────────
 
@@ -460,7 +463,7 @@ export async function POST(
       orderId: link.orderId,
       paymentId,
       status: 'completed',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in public.pay.token'))
 
     void dispatchOrderTotalsUpdate(link.locationId, link.orderId, {
       subtotal: Number(order.subtotal ?? 0),
@@ -468,13 +471,13 @@ export async function POST(
       tipTotal: Number(order.tipTotal ?? 0) + tip,
       discountTotal: Number(order.discountTotal ?? 0),
       total: effectiveTotal,
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in public.pay.token'))
 
     if (orderIsPaid) {
       void dispatchOpenOrdersChanged(link.locationId, {
         trigger: 'paid',
         orderId: link.orderId,
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in public.pay.token'))
     }
 
     return NextResponse.json({

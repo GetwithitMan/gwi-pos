@@ -4,6 +4,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchShiftRequestUpdate } from '@/lib/socket-dispatch'
 import { queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('shift-swap-requests')
 
 // DELETE - Employee cancels their own pending request (soft delete)
 export const DELETE = withVenue(withAuth(async function DELETE(
@@ -68,7 +70,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       requestedByEmployeeId: swapRequest.requestedByEmployeeId,
       requestedToEmployeeId: swapRequest.requestedToEmployeeId,
       shiftId: swapRequest.shiftId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: { message: 'Request cancelled' } })
   } catch (error) {

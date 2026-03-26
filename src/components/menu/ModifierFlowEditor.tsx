@@ -40,7 +40,7 @@ export function ModifierFlowEditor({
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(pending),
-        }).catch(() => {})
+        }).catch(err => console.warn('fire-and-forget failed in menu.ModifierFlowEditor:', err))
       }
     }
 

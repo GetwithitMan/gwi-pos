@@ -6,6 +6,9 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { queueIfOutage, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('shifts')
 
 // GET - List shifts with optional filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -216,7 +219,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(locationId, 'shifts:changed', { action: 'started', shiftId: shift.id, employeeId }).catch(() => {})
+    void emitToLocation(locationId, 'shifts:changed', { action: 'started', shiftId: shift.id, employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: {
       shift: {

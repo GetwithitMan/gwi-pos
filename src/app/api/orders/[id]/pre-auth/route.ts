@@ -8,6 +8,9 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.pre-auth')
 
 /**
  * POST /api/orders/[id]/pre-auth
@@ -124,7 +127,7 @@ export const POST = withVenue(withAuth(async function POST(
       orderId,
       paymentId: orderCard.id,
       status: 'authorized',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pre-auth'))
 
     pushUpstream()
 

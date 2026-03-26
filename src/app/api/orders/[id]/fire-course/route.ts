@@ -9,6 +9,9 @@ import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('orders.id.fire-course')
 
 // POST /api/orders/[id]/fire-course - Fire items for a specific course
 // Used by coursing system to send delayed courses to kitchen
@@ -193,9 +196,7 @@ export const POST = withVenue(async function POST(
     void dispatchOrderUpdated(order.locationId, {
       orderId: order.id,
       changes: ['course-fired', `course-${courseNumber}`],
-    }).catch(() => {})
-
-    // Emit event-sourced domain events (fire-and-forget)
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.fire-course'))
     void emitOrderEvents(order.locationId, id, [
       ...order.items.map(item => ({
         type: 'ITEM_UPDATED' as const,

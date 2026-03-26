@@ -9,6 +9,8 @@ import { requireDeliveryFeature } from '@/lib/delivery/require-delivery-feature'
 import { writeDeliveryAuditLog } from '@/lib/delivery/state-machine'
 import { canAssignDriver } from '@/lib/delivery/dispatch-policy'
 import { dispatchRunEvent, dispatchDriverStatusChanged, dispatchOrderReassigned } from '@/lib/delivery/dispatch-events'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('delivery-runs-reassign')
 
 export const dynamic = 'force-dynamic'
 
@@ -148,7 +150,7 @@ export const POST = withVenue(async function POST(
           locationId,
         )
         if (oldSessions.length > 0) {
-          void dispatchDriverStatusChanged(locationId, oldSessions[0]).catch(console.error)
+          void dispatchDriverStatusChanged(locationId, oldSessions[0]).catch(err => log.warn({ err }, 'Background task failed'))
         }
       }
 
@@ -163,7 +165,7 @@ export const POST = withVenue(async function POST(
         locationId,
       )
       if (newSessions.length > 0) {
-        void dispatchDriverStatusChanged(locationId, newSessions[0]).catch(console.error)
+        void dispatchDriverStatusChanged(locationId, newSessions[0]).catch(err => log.warn({ err }, 'Background task failed'))
       }
 
       // Get old driver name for audit
@@ -199,10 +201,10 @@ export const POST = withVenue(async function POST(
       previousValue: { driverId: result.oldDriverId, driverName: result.oldDriverName },
       newValue: { driverId: newDriverId, driverName: result.newDriverName },
       reason: reason.trim(),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // Fire socket events
-    void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(console.error)
+    void dispatchRunEvent(locationId, 'delivery:run_created', result.run).catch(err => log.warn({ err }, 'Background task failed'))
     void dispatchOrderReassigned(locationId, {
       runId: id,
       oldDriverId: result.oldDriverId,
@@ -210,7 +212,7 @@ export const POST = withVenue(async function POST(
       oldDriverName: result.oldDriverName,
       newDriverName: result.newDriverName,
       reason: reason.trim(),
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       run: result.run,

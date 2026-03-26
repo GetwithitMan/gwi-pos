@@ -5,6 +5,8 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { emitToLocation } from '@/lib/socket-server'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { authenticateTerminal } from '@/lib/terminal-auth'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('sync-outbox')
 
 export const POST = withVenue(withAuth({ allowCellular: true }, async function POST(request: NextRequest) {
   const auth = await authenticateTerminal(request)
@@ -122,10 +124,10 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             })),
           ])
         }
-      })().catch(console.error)
+      })().catch(err => log.warn({ err }, 'Background task failed'))
 
       // Fire-and-forget socket notification
-      void emitToLocation(locationId, 'orders:list-changed', { orderId: created.id }).catch(console.error)
+      void emitToLocation(locationId, 'orders:list-changed', { orderId: created.id }).catch(err => log.warn({ err }, 'Background task failed'))
     } catch (err) {
       errors.push({ offlineId: orderData.offlineId, error: String(err) })
     }

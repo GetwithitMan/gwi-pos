@@ -6,6 +6,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository, EmployeeRepository } from '@/lib/repositories'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-sync')
 
 // POST sync an offline order
 // This handles orders that were created while the terminal was offline
@@ -226,7 +228,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
         trigger: 'created',
         orderId: completeOrder.id,
         tableId: completeOrder.tableId || undefined,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.sync'))
     }
 
     // Emit ORDER_CREATED + ITEM_ADDED events (fire-and-forget)
@@ -277,7 +279,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
             pourMultiplier: item.pourMultiplier ? Number(item.pourMultiplier) : null,
           },
         })),
-      ]).catch(console.error)
+      ]).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     return NextResponse.json({ data: {

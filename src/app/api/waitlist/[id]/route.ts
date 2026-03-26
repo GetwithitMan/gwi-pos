@@ -8,6 +8,8 @@ import { dispatchWaitlistChanged } from '@/lib/socket-dispatch'
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('waitlist')
 
 export const dynamic = 'force-dynamic'
 
@@ -172,7 +174,7 @@ export const PUT = withVenue(async function PUT(
       entryId: updatedEntry.id,
       customerName: updatedEntry.customerName,
       partySize: updatedEntry.partySize,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: updatedEntry })
   } catch (error) {
@@ -239,7 +241,7 @@ export const DELETE = withVenue(async function DELETE(
       entryId: entry.id,
       customerName: entry.customerName,
       partySize: entry.partySize,
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ success: true })
   } catch (error) {

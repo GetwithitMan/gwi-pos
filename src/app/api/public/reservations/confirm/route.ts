@@ -5,6 +5,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { transition } from '@/lib/reservations/state-machine'
 import { createRateLimiter } from '@/lib/rate-limiter'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('public-reservations-confirm')
 
 export const dynamic = 'force-dynamic'
 
@@ -75,7 +77,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Post-commit: socket dispatch
     void dispatchReservationChanged(locationId, {
       reservationId: reservation.id, action: 'confirmed',
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       id: updated.id,

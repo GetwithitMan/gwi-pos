@@ -226,7 +226,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        }).catch(() => {})
+        }).catch(err => console.warn('fire-and-forget failed in useActiveOrder:', err))
       }
     }
 
@@ -779,7 +779,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'cancelled' }),
-          }).catch(() => {})
+          }).catch(err => console.warn('fire-and-forget failed in useActiveOrder:', err))
         }
         store.clearOrder()
       }

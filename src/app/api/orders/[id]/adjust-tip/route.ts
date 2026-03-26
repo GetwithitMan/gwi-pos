@@ -14,6 +14,8 @@ import { roundToCents } from '@/lib/pricing'
 import { isInOutageMode } from '@/lib/sync/upstream-sync-worker'
 import { pushUpstream, queueIfOutageOrFail, OutageQueueFullError } from '@/lib/sync/outage-safe-write'
 import { getRequestLocationId } from '@/lib/request-context'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-adjust-tip')
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -213,9 +215,7 @@ export const PATCH = withVenue(async function PATCH(
       discountTotal: Number(order.discountTotal),
       total: newOrderTotal,
       commissionTotal: Number(order.commissionTotal || 0),
-    }, { async: true }).catch(() => {})
-
-    // Dispatch order:summary-updated for Android cross-terminal sync (fire-and-forget)
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.adjust-tip'))
     void dispatchOrderSummaryUpdated(order.locationId, {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -233,12 +233,8 @@ export const PATCH = withVenue(async function PATCH(
       itemCount: order.itemCount ?? 0,
       updatedAt: new Date().toISOString(),
       locationId: order.locationId,
-    }, { async: true }).catch(() => {})
-
-    // Dispatch open orders changed for cross-terminal awareness (fire-and-forget)
-    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }).catch(console.error)
-
-    // Queue outage writes if Neon is unreachable (fail-hard — tip data loss is unacceptable)
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.adjust-tip'))
+    void dispatchOpenOrdersChanged(order.locationId, { trigger: 'payment_updated', orderId }).catch(err => log.warn({ err }, 'Background task failed'))
     // Read back full rows to avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
     if (isInOutageMode()) {
       try {

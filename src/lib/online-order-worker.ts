@@ -280,7 +280,7 @@ async function pullOnlineOrdersFromNeon(locationId: string): Promise<void> {
             `UPDATE "Order" SET status = 'received', "updatedAt" = NOW(), "lastMutatedBy" = 'cloud' WHERE id = $1 AND status = 'processing'`,
             orderId
           )
-          .catch(() => {})
+          .catch(err => log.warn({ err }, 'fire-and-forget failed in online-order-worker'))
       }
     }
   } catch (err) {

@@ -24,6 +24,8 @@ import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('tips-groups-transfer')
 
 interface TransferPayload {
   toEmployeeId: string
@@ -209,7 +211,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
       action: 'ownership-transferred',
       groupId,
       newOwnerId: toEmployeeId,
-    }, { async: true }).catch(console.error)
+    }, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
 
     // ── Return updated group info ───────────────────────────────────────
     const updatedGroup = await getGroupInfo(groupId)

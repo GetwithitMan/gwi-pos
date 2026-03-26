@@ -5,6 +5,9 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requireAnyPermission, getActorFromRequest } from '@/lib/api-auth'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('employees.id.payment')
 
 // GET - Get employee payment preferences
 export const GET = withVenue(async function GET(
@@ -187,7 +190,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Real-time cross-terminal update
-    void emitToLocation(employee.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})
+    void emitToLocation(employee.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: {
       message: 'Payment preferences updated',

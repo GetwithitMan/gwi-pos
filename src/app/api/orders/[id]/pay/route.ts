@@ -58,6 +58,8 @@ import {
   type PaymentRecord,
   type PreChargeResult,
 } from '@/lib/domain/payment'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-pay')
 
 // POST - Process payment for order
 export const POST = withVenue(withTiming(async function POST(
@@ -322,7 +324,7 @@ export const POST = withVenue(withTiming(async function POST(
       await tx.$executeRawUnsafe(`RELEASE SAVEPOINT orphan_check`)
     } catch {
       // Table may not exist on this NUC — roll back savepoint to keep transaction alive
-      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT orphan_check`).catch(() => {})
+      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT orphan_check`).catch(err => log.warn({ err }, 'savepoint rollback failed'))
     }
 
     if (orphanedSales.length > 0) {
@@ -535,7 +537,7 @@ export const POST = withVenue(withTiming(async function POST(
       await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pending_capture_check`)
     } catch (pcError) {
       // Table may not exist on pre-migration NUCs — roll back savepoint and proceed without protection
-      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pending_capture_check`).catch(() => {})
+      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pending_capture_check`).catch(err => log.warn({ err }, 'savepoint rollback failed'))
       console.warn('[PAY] _pending_captures check failed (table may not exist), proceeding without lock', {
         orderId, error: pcError instanceof Error ? pcError.message : String(pcError),
       })
@@ -980,7 +982,7 @@ export const POST = withVenue(withTiming(async function POST(
                   delta: Math.round((payment.amount - expectedCardAmount) * 100) / 100,
                 }),
               },
-            }).catch(() => {})
+            }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
           }
         }
       }
@@ -1300,7 +1302,7 @@ export const POST = withVenue(withTiming(async function POST(
         )
         await tx.$executeRawUnsafe(`RELEASE SAVEPOINT pc_complete`)
       } catch {
-        await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pc_complete`).catch(() => {})
+        await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT pc_complete`).catch(err => log.warn({ err }, 'savepoint rollback failed'))
       }
     }
 
@@ -1441,9 +1443,9 @@ export const POST = withVenue(withTiming(async function POST(
             const now = new Date()
             await batchUpdateOrderItemStatus(autoSendIds, 'sent', now)
             const routingResult = await OrderRouter.resolveRouting(orderId, autoSendIds)
-            void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch(console.error)
-            void printKitchenTicketsForManifests(routingResult, order.locationId).catch(console.error)
-            void deductPrepStockForOrder(orderId, autoSendIds).catch(console.error)
+            void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch(err => log.warn({ err }, 'Background task failed'))
+            void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err => log.warn({ err }, 'Background task failed'))
+            void deductPrepStockForOrder(orderId, autoSendIds).catch(err => log.warn({ err }, 'Background task failed'))
             void emitOrderEvent(order.locationId, orderId, 'ORDER_SENT', { sentItemIds: autoSendIds })
           } catch (err) {
             console.error('[pay] Auto-send to kitchen failed:', err)
@@ -1572,7 +1574,7 @@ export const POST = withVenue(withTiming(async function POST(
             orderNumber: order.orderNumber,
           },
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     if (orderIsPaid) {
@@ -1590,7 +1592,7 @@ export const POST = withVenue(withTiming(async function POST(
             paymentMethods: [...new Set(ingestResult.bridgedPayments.map((p: any) => p.paymentMethod))],
           } as any,
         },
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Post-ingestion: update fields not in event state
@@ -1628,7 +1630,7 @@ export const POST = withVenue(withTiming(async function POST(
           action: 'Updating order fields after payment',
           orderId,
           error: retryErr instanceof Error ? retryErr : undefined,
-        }).catch(() => {})
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
       }
     }
 
@@ -1639,8 +1641,8 @@ export const POST = withVenue(withTiming(async function POST(
         orderId: order.parentOrderId!,
         tableId: parentTableId || undefined,
         sourceTerminalId: terminalId || undefined,
-      }).catch(() => {})
-      void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
+      void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
       invalidateSnapshotCache(order.locationId)
 
       // Emit explicit parent closure event so ALL devices close the parent immediately
@@ -1650,9 +1652,7 @@ export const POST = withVenue(withTiming(async function POST(
         isClosed: true,
         parentAutoClose: true,
         sourceTerminalId: terminalId || undefined,
-      }).catch(() => {})
-
-      // Free the parent order's table (child split orders have no tableId)
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
       // TODO: Add TableRepository once that repository exists
       if (parentTableId) {
         void db.table.update({
@@ -1661,7 +1661,7 @@ export const POST = withVenue(withTiming(async function POST(
         }).then(() => {
           invalidateSnapshotCache(order.locationId)
           // M5: Emit table:status-changed for parent table too
-          void dispatchTableStatusChanged(order.locationId, { tableId: parentTableId!, status: 'available' }).catch(console.error)
+          void dispatchTableStatusChanged(order.locationId, { tableId: parentTableId!, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
         }).catch(err => {
           console.error('[Pay] Parent table status reset failed:', err)
         })
@@ -1710,15 +1710,15 @@ export const POST = withVenue(withTiming(async function POST(
           }
 
           // Dispatch socket events + notify waitlist
-          void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+          void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
           for (const item of entertainmentItems) {
             void dispatchEntertainmentStatusChanged(order.locationId, {
               itemId: item.id,
               entertainmentStatus: 'available',
               currentOrderId: null,
               expiresAt: null,
-            }, { async: true }).catch(() => {})
-            void notifyNextWaitlistEntry(order.locationId, item.id).catch(() => {})
+            }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
+            void notifyNextWaitlistEntry(order.locationId, item.id).catch(err => log.warn({ err }, 'waitlist notify failed'))
           }
         }
       } catch (entertainmentErr) {
@@ -1830,9 +1830,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Failure must never fail the payment response
       // Pass terminalId so the drawer kicks on THIS terminal's printer, not the location default
       if (hasCash) {
-        void triggerCashDrawer(order.locationId, terminalId || undefined).catch(() => {})
-
-        // Part 3: Audit log when a manager processes a payment on another employee's drawer
+        void triggerCashDrawer(order.locationId, terminalId || undefined).catch(err => log.warn({ err }, 'cash drawer trigger failed'))
         const localDrawer = await resolveDrawerForPayment('cash', employeeId || null, terminalId)
         if (localDrawer.drawerId && employeeId) {
           void (async () => {
@@ -1860,7 +1858,7 @@ export const POST = withVenue(withTiming(async function POST(
                       reason: 'Payment processed by different employee',
                     },
                   },
-                }).catch(console.error)
+                }).catch(err => log.warn({ err }, 'Background task failed'))
               }
             } catch (err) {
               console.error('[Pay] Manager drawer access audit failed:', err)
@@ -1979,7 +1977,7 @@ export const POST = withVenue(withTiming(async function POST(
                 data: { status: 'available' },
               })
               invalidateSnapshotCache(order.locationId)
-              void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId!, status: 'available' }).catch(console.error)
+              void dispatchTableStatusChanged(order.locationId, { tableId: order.tableId!, status: 'available' }).catch(err => log.warn({ err }, 'Background task failed'))
             }
           } catch (err) {
             console.error('[Pay] Table status reset failed:', err)
@@ -1995,7 +1993,7 @@ export const POST = withVenue(withTiming(async function POST(
             return dispatchFloorPlanUpdate(order.locationId, { async: true })
           }
         })
-        .catch(console.error)
+        .catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Dispatch real-time order totals update (tip changed) — fire-and-forget
@@ -2030,7 +2028,7 @@ export const POST = withVenue(withTiming(async function POST(
         // Split context: let clients know this is a split child and whether all siblings are done
         parentOrderId: order.parentOrderId || null,
         allSiblingsPaid: parentWasMarkedPaid,
-      }).catch(() => {})
+      }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
     }
 
     // Release order claim after successful payment (fire-and-forget)
@@ -2038,22 +2036,20 @@ export const POST = withVenue(withTiming(async function POST(
       void db.$executeRawUnsafe(
         `UPDATE "Order" SET "claimedByEmployeeId" = NULL, "claimedByTerminalId" = NULL, "claimedAt" = NULL WHERE id = $1`,
         orderId
-      ).catch(() => {})
+      ).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
     }
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     // Include sourceTerminalId so receiving clients can suppress "closed on another terminal" banners
     if (orderIsPaid) {
-      void dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined, sourceTerminalId: terminalId || undefined }, { async: true }).catch(() => {})
-
-      // Dispatch order:closed for Android cross-terminal sync (fire-and-forget)
+      void dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined, sourceTerminalId: terminalId || undefined }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
       void dispatchOrderClosed(order.locationId, {
         orderId: order.id,
         status: 'paid',
         closedAt: new Date().toISOString(),
         closedByEmployeeId: employeeId || null,
         locationId: order.locationId,
-      }, { async: true }).catch(() => {})
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
     }
 
     // Notification Platform: auto-release pager assignments when order is paid
@@ -2099,7 +2095,7 @@ export const POST = withVenue(withTiming(async function POST(
           totalAmount: p.totalAmount,
           cardLast4: p.cardLast4 ?? null,
         })),
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Auto-send email receipt for online orders (fire-and-forget)
@@ -2314,9 +2310,7 @@ export const POST = withVenue(withTiming(async function POST(
       error: error instanceof Error ? error : undefined,
       path: `/api/orders/${orderId}/pay`,
       requestBody: body,
-    }).catch(() => {})
-
-    // Write to venue diagnostic log
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
     void import('@/lib/venue-logger').then(({ logVenueEvent }) =>
       logVenueEvent({
         level: 'error',
@@ -2326,7 +2320,7 @@ export const POST = withVenue(withTiming(async function POST(
         details: { orderId, method: body?.method },
         stackTrace: error instanceof Error ? error.stack : undefined,
       })
-    ).catch(console.error)
+    ).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json(
       { error: 'Failed to process payment', detail: error instanceof Error ? error.message : String(error) },

@@ -11,6 +11,9 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { OrderRepository } from '@/lib/repositories'
+import { roundToCents } from '@/lib/pricing'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('orders-reopen')
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -209,12 +212,18 @@ export const POST = withVenue(async function POST(
         calcItems,
         locSettings as { tax?: { defaultRate?: number } },
         Number(order.discountTotal) || 0,
-        0,
+        0, // tipTotal intentionally 0 — reopened orders clear tips
         undefined,
         'card',
         order.isTaxExempt,
         Number(order.inclusiveTaxRate) || undefined
       )
+
+      const reopenDonation = Number(order.donationAmount || 0)
+      const reopenConvFee = Number(order.convenienceFee || 0)
+      const reopenFinalTotal = reopenDonation > 0 || reopenConvFee > 0
+        ? roundToCents(recalcTotals.total + reopenDonation + reopenConvFee)
+        : recalcTotals.total
 
       // Update order to open status
       // Bug 9: Clear paidAt and closedAt so the pay route's alreadyPaid calculation isn't confused
@@ -229,7 +238,7 @@ export const POST = withVenue(async function POST(
           taxTotal: recalcTotals.taxTotal,
           taxFromInclusive: recalcTotals.taxFromInclusive,
           taxFromExclusive: recalcTotals.taxFromExclusive,
-          total: recalcTotals.total,
+          total: reopenFinalTotal,
           tipTotal: 0,
           reopenedAt: new Date(),
           reopenedBy: managerId,
@@ -350,7 +359,7 @@ export const POST = withVenue(async function POST(
             )
           }
         }
-      })().catch(console.error)
+      })().catch(err => log.warn({ err }, 'Background task failed'))
     }
 
     // Emit ORDER_REOPENED event (fire-and-forget)
@@ -363,11 +372,9 @@ export const POST = withVenue(async function POST(
       trigger: 'reopened',
       orderId,
       tableId: order.tableId || undefined,
-    }, { async: true }).catch(() => {})
-
-    // Update floor plan if order had a table (fire-and-forget)
+    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.reopen'))
     if (order.tableId) {
-      void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+      void dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(err => log.warn({ err }, 'floor plan dispatch failed'))
     }
 
     return NextResponse.json({

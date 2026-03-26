@@ -11,6 +11,8 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('notifications-devices')
 
 export const dynamic = 'force-dynamic'
 
@@ -262,7 +264,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       locationId,
       auth.employee.id,
       JSON.stringify({ deviceNumber: device.deviceNumber, deviceType, providerId })
-    ).catch(console.error)
+    ).catch(err => log.warn({ err }, 'Background task failed'))
 
     // W13: AuditLog for device creation
     void db.auditLog.create({
@@ -279,7 +281,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           humanLabel: humanLabel?.trim() || null,
         },
       },
-    }).catch(console.error)
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({ data: device }, { status: 201 })
   } catch (error) {

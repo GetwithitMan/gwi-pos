@@ -8,6 +8,8 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { dispatchAlert } from '@/lib/alert-service'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('time-clock-toggle')
 
 // POST /api/time-clock/toggle - Single-call clock in/out toggle
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
@@ -88,13 +90,13 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       pushUpstream()
 
       // Fire-and-forget side effects
-      void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})
+      void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
       void emitCloudEvent('time_clock', {
         employeeId,
         entryId: entry.id,
         action: 'clock_in',
         clockTime: entry.clockIn.toISOString(),
-      }).catch(console.error)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
 
       return NextResponse.json({
         data: {
@@ -214,7 +216,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       pushUpstream()
 
       // Fire-and-forget side effects
-      void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})
+      void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
       void emitCloudEvent('time_clock', {
         employeeId,
         entryId: activeEntry.id,
@@ -222,9 +224,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         clockTime: now.toISOString(),
         regularHours: updated.regularHours ? Number(updated.regularHours) : 0,
         overtimeHours: updated.overtimeHours ? Number(updated.overtimeHours) : 0,
-      }).catch(console.error)
-
-      // Close any open Break records (fire-and-forget)
+      }).catch(err => log.warn({ err }, 'Background task failed'))
       if (activeEntry.breakStart) {
         const breakDuration = Math.round((now.getTime() - activeEntry.breakStart.getTime()) / (1000 * 60))
         void db.break.updateMany({
@@ -254,7 +254,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
               locationId,
               employeeId,
               groupId: `overtime-${locationId}-${employeeId}-${activeEntry.id}`,
-            }).catch(console.error)
+            }).catch(err => log.warn({ err }, 'Background task failed'))
           } catch (err) {
             console.error('[time-clock-toggle] Overtime alert dispatch failed:', err)
           }

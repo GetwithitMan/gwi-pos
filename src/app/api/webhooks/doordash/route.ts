@@ -21,6 +21,8 @@ import {
   voidLinkedPosOrder,
 } from '@/lib/delivery/webhook-helpers'
 import { normalizeDoorDashItems } from '@/lib/delivery/order-mapper'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('webhooks-doordash')
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
@@ -153,7 +155,7 @@ export async function POST(request: NextRequest) {
 
           // Confirm with DoorDash after POS order is created
           if (posOrderId) {
-            void confirmWithPlatform('doordash', externalOrderId, locationId).catch(console.error)
+            void confirmWithPlatform('doordash', externalOrderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
           }
         }
 
@@ -179,7 +181,7 @@ export async function POST(request: NextRequest) {
 
         // Void linked POS order if exists
         if (updateResult?.id) {
-          void voidLinkedPosOrder(updateResult.id, locationId, 'doordash').catch(console.error)
+          void voidLinkedPosOrder(updateResult.id, locationId, 'doordash').catch(err => log.warn({ err }, 'Background task failed'))
         }
 
         dispatchDeliveryEvent(locationId, 'delivery:status-update', {

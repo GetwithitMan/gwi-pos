@@ -5,6 +5,8 @@ import { resolvePlu } from '@/lib/berg/plu-resolver'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('cron-berg-reprocess')
 
 // TODO: Migrate adminDb.bergDispenseEvent, db.terminal, and adminDb.orderItem.create calls
 // to repositories once BergDevice/Terminal repositories exist.
@@ -201,7 +203,7 @@ export async function GET(request: NextRequest) {
             postProcessStatus: 'FAILED',
             postProcessError: err instanceof Error ? err.message : String(err),
           },
-        }).catch(console.error)
+        }).catch(err => log.warn({ err }, 'Background task failed'))
         failed++
       }
     }

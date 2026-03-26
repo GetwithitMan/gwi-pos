@@ -9,6 +9,9 @@ import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { createChildLogger } from '@/lib/logger'
+
+const log = createChildLogger('menu.modifiers')
 
 // GET all modifier groups with their modifiers
 // Optional query params:
@@ -213,7 +216,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       action: 'modifier-group-updated',
       entityId: modifierGroup.id,
       entityType: 'modifier-group',
-    }).catch(() => {})
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in menu.modifiers'))
 
     return NextResponse.json({ data: {
       id: modifierGroup.id,
