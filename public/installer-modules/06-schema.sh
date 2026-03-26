@@ -15,10 +15,11 @@ run_schema() {
   # Load error codes library
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
 
-  # Stop POS service if running — prevents database lock conflicts with prisma db push
-  if systemctl is-active --quiet thepasspos 2>/dev/null; then
+  # Stop AND disable POS service — prevents Restart=always from bringing it back
+  # during schema operations. Re-enabled in 07-services.sh.
+  if systemctl is-active --quiet thepasspos 2>/dev/null || systemctl is-enabled --quiet thepasspos 2>/dev/null; then
     log "Stopping POS service for schema operations..."
-    systemctl stop thepasspos 2>/dev/null || true
+    systemctl disable --now thepasspos 2>/dev/null || true
     sleep 2
   fi
 
@@ -58,7 +59,7 @@ run_schema() {
     PRE_PUSH_TABLES=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename" 2>/dev/null || echo "")
 
     log "Applying schema to local PostgreSQL..."
-    if ! timeout --kill-after=10 120 setsid sudo -u "$POSUSER" bash -c "cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5; then
+    if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "trap 'kill 0' EXIT; cd '$APP_DIR' && npx prisma db push" 2>&1 | tail -5; then
       warn "prisma db push timed out or had warnings — schema may already be in sync. Continuing..."
     else
       log "Schema applied successfully"
