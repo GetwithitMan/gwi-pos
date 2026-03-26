@@ -349,6 +349,12 @@ SVCEOF
     else
       systemctl enable thepasspos
 
+      # Ensure POSUSER owns the entire app directory — root-created dirs/files
+      # from installer stages (mkdir, cp) cause "Permission denied" at runtime
+      chown -R "$POSUSER":"$POSUSER" "$APP_BASE" 2>/dev/null || true
+      # Keys stay root-owned (secrets)
+      [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
+
       log "Starting POS server..."
       systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; warn "POS service failed to start — will retry on reboot"; track_warn "POS service restart failed — will retry on reboot"; }
 
