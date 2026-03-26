@@ -297,7 +297,11 @@ XSRC
       # KDE settings (KDE Power Devil overrides xset — must be fully disabled)
       if command -v kwriteconfig5 &>/dev/null; then
         sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Autolock false 2>/dev/null || true
+        sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key LockOnResume false 2>/dev/null || true
         sudo -u "$POSUSER" kwriteconfig5 --file kscreenlockerrc --group Daemon --key Timeout 0 2>/dev/null || true
+        # Kill the running lock screen — config only takes effect on next session start
+        loginctl unlock-sessions 2>/dev/null || true
+        pkill -9 kscreenlocker_greet 2>/dev/null || true
         # Disable ALL KDE power management (DPMS, suspend, dim)
         sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DPMSControl --key idleTime 0 2>/dev/null || true
         sudo -u "$POSUSER" kwriteconfig5 --file powermanagementprofilesrc --group AC --group DPMSControl --key lockBeforeTurnOff 0 2>/dev/null || true
