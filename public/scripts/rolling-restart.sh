@@ -93,6 +93,14 @@ main() {
     exit 1
   }
 
+  # Sync installer + modules from fresh build to top-level (always fresh, never stale)
+  if [[ -f "$STAGING_DIR/public/installer.run" ]]; then
+    cp "$STAGING_DIR/public/installer.run" /opt/gwi-pos/installer.run 2>/dev/null || true
+    rm -rf /opt/gwi-pos/installer-modules 2>/dev/null || true
+    cp -r "$STAGING_DIR/public/installer-modules" /opt/gwi-pos/installer-modules 2>/dev/null || true
+    log "Synced installer + modules from build"
+  fi
+
   log "Phase 3: Swapping to new version..."
 
   # Atomic swap: rename current → .old, staging → current
