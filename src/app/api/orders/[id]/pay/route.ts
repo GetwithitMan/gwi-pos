@@ -1927,33 +1927,56 @@ export const POST = withVenue(withTiming(async function POST(
         })().catch(err => {
           console.error('Background delivery tip allocation failed:', err)
         })
-      } else if (totalTips > 0 && tipOwnerEmployeeId && !isTrainingPayment && (order as any).orderTypeRef?.allowTips !== false) {
-        // Allocate tips per-payment to ensure each payment gets its own
-        // TipTransaction with a per-payment idempotency key. This prevents
-        // a void of one split payment from charging back tips belonging to
-        // a different payment.
-        void (async () => {
-          for (const bp of ingestResult.bridgedPayments) {
-            const paymentTip = Number(bp.tipAmount) || 0
-            if (paymentTip <= 0) continue
+      } else if (totalTips > 0 && !isTrainingPayment && (order as any).orderTypeRef?.allowTips !== false) {
+        if (tipOwnerEmployeeId) {
+          // Allocate tips per-payment to ensure each payment gets its own
+          // TipTransaction with a per-payment idempotency key. This prevents
+          // a void of one split payment from charging back tips belonging to
+          // a different payment.
+          void (async () => {
+            for (const bp of ingestResult.bridgedPayments) {
+              const paymentTip = Number(bp.tipAmount) || 0
+              if (paymentTip <= 0) continue
 
-            await allocateTipsForPayment({
+              await allocateTipsForPayment({
+                locationId: order.locationId,
+                orderId,
+                primaryEmployeeId: tipOwnerEmployeeId,
+                createdPayments: [{
+                  id: bp.id,
+                  paymentMethod: bp.paymentMethod,
+                  tipAmount: bp.tipAmount,
+                }],
+                totalTipsDollars: paymentTip,
+                tipBankSettings: settings.tipBank,
+                kind: autoGratApplied ? 'auto_gratuity' : 'tip',
+              })
+            }
+          })().catch(err => {
+            console.error('Background tip allocation failed:', err)
+          })
+        } else {
+          // No employee to allocate tips to — the tip is still recorded in
+          // Payment.tipAmount so the money is tracked, but no TipTransaction
+          // is created. Log a warning so management can manually assign later
+          // via the tip management UI.
+          console.warn(`[pay] Tip of $${totalTips.toFixed(2)} on order ${orderId} has no employee to allocate to`)
+          void db.auditLog.create({
+            data: {
               locationId: order.locationId,
-              orderId,
-              primaryEmployeeId: tipOwnerEmployeeId,
-              createdPayments: [{
-                id: bp.id,
-                paymentMethod: bp.paymentMethod,
-                tipAmount: bp.tipAmount,
-              }],
-              totalTipsDollars: paymentTip,
-              tipBankSettings: settings.tipBank,
-              kind: autoGratApplied ? 'auto_gratuity' : 'tip',
-            })
-          }
-        })().catch(err => {
-          console.error('Background tip allocation failed:', err)
-        })
+              action: 'unallocated_tip',
+              entityType: 'order',
+              entityId: orderId,
+              details: {
+                totalTips,
+                paymentIds: ingestResult.bridgedPayments.map((bp: { id: string }) => bp.id),
+                reason: 'No employeeId on order or payment request',
+              },
+            },
+          }).catch(err => {
+            console.error('[pay] Failed to create audit log for unallocated tip:', err)
+          })
+        }
       }
 
       // Release table only if no OTHER open orders remain on it (fire-and-forget)

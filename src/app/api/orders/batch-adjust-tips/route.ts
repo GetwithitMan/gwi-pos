@@ -105,10 +105,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         continue
       }
 
-      // Tip cap: newTipAmount must not exceed 100% of base amount
-      const baseAmount = Number(payment.amount) - Number(payment.tipAmount)
-      if (baseAmount > 0 && adj.tipAmount > baseAmount) {
-        results.push({ orderId: adj.orderId, success: false, error: `Tip $${adj.tipAmount.toFixed(2)} exceeds 100% of base amount $${baseAmount.toFixed(2)}` })
+      // Tip cap: 500% of base amount (matches validation.ts and adjust-tip route).
+      // payment.amount IS the base amount (food + tax, excluding tip) — tipAmount
+      // is stored separately, so we must NOT subtract it.
+      const baseAmount = Number(payment.amount)
+      const maxTip = baseAmount > 0 ? baseAmount * 5 : 0
+      if (adj.tipAmount > maxTip) {
+        results.push({ orderId: adj.orderId, success: false, error: `Tip $${adj.tipAmount.toFixed(2)} exceeds the maximum allowed (500% of $${baseAmount.toFixed(2)})` })
         continue
       }
 

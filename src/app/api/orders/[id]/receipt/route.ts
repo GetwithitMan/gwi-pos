@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, calculateDebitPrice, roundToCents } from '@/lib/pricing'
+
+const DEFAULT_CASH_DISCOUNT_DISCLOSURE =
+  'Posted prices reflect a non-cash adjustment. Cash payments receive a discount.'
 
 // GET - Get receipt data for an order
 export const GET = withVenue(async function GET(
@@ -77,16 +80,101 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    // Determine dual pricing state before formatting
     const settings = parseSettings(order.location.settings)
-    const dualPricing = settings.dualPricing
-    const dualPricingEnabled = dualPricing.enabled
-    const cashDiscountPercent = dualPricing.cashDiscountPercent
-    const hasCardPayment = dualPricingEnabled && order.payments.some(
-      p => (p.paymentMethod === 'credit' && dualPricing.applyToCredit) ||
-           (p.paymentMethod === 'debit' && dualPricing.applyToDebit)
+    const pp = getPricingProgram(settings)
+
+    // Dual pricing detection — works with both legacy dualPricing and new pricingProgram models
+    const isDualPricing = pp.enabled && (
+      pp.model === 'dual_price' || pp.model === 'dual_price_pan_debit' || pp.model === 'cash_discount'
     )
-    const isDualCard = dualPricingEnabled && hasCardPayment
+
+    // Determine the applied tier from the first card payment
+    const cardPayment = isDualPricing ? order.payments.find(p =>
+      (p as any).pricingMode === 'card' ||
+      (p as any).appliedPricingTier === 'credit' ||
+      (p as any).appliedPricingTier === 'debit'
+    ) : null
+
+    const appliedTier = (
+      (cardPayment as any)?.appliedPricingTier ||
+      ((cardPayment as any)?.pricingMode === 'card' ? 'credit' : null)
+    ) as 'credit' | 'debit' | null
+
+    // Resolve markup percent based on which pricing tier was applied
+    const markupPercent = (() => {
+      if (!isDualPricing || !appliedTier) return 0
+      if (appliedTier === 'debit') {
+        return pp.debitMarkupPercent ?? 0
+      }
+      return pp.creditMarkupPercent ?? pp.cashDiscountPercent ?? 0
+    })()
+
+    // ─── Use STORED order values (never recalculate from items) ────────────────
+    const cashSubtotal = Number(order.subtotal ?? 0)
+    const discountTotal = Number(order.discountTotal ?? 0)
+    const tipTotal = Number(order.tipTotal ?? 0)
+    const convenienceFee = Number((order as any).convenienceFee ?? 0)
+    const donationAmount = (order as any).donationAmount != null
+      ? Number((order as any).donationAmount) : null
+
+    // Tax: use stored values, respect tax-exempt status
+    const isTaxExempt = (order as any).isTaxExempt ?? false
+    const storedTaxTotal = Number(order.taxTotal ?? 0)
+    const storedTaxFromInclusive = Number((order as any).taxFromInclusive ?? 0)
+    const storedTaxFromExclusive = Number((order as any).taxFromExclusive ?? 0)
+
+    const cashTax = isTaxExempt ? 0 : storedTaxTotal
+    const taxFromInclusive = isTaxExempt ? 0 : storedTaxFromInclusive
+    const taxFromExclusive = isTaxExempt ? 0 : storedTaxFromExclusive
+
+    // Total: use stored value (already includes tax, discounts, etc.)
+    const cashTotal = Number(order.total ?? 0)
+
+    // Dual pricing breakdown — apply markup to stored values, same pattern as receipt-builder
+    const isDualCard = isDualPricing && cardPayment && markupPercent > 0
+
+    const applyMarkup = (amount: number): number =>
+      appliedTier === 'debit'
+        ? calculateDebitPrice(amount, markupPercent)
+        : calculateCardPrice(amount, markupPercent)
+
+    const dualPricingBreakdown = (() => {
+      if (!isDualCard) return {}
+
+      const cardSubtotal = applyMarkup(cashSubtotal)
+      const cardTax = applyMarkup(cashTax)
+      const cardTotal = applyMarkup(cashTotal)
+
+      return {
+        cardSubtotal,
+        cardTax,
+        cardTotal,
+        cashSubtotal,
+        cashTax,
+        cashTotal: roundToCents(cashSubtotal + cashTax - discountTotal + tipTotal),
+      }
+    })()
+
+    // Effective totals: use card-adjusted values when dual pricing applies
+    const effectiveSubtotal = isDualCard ? applyMarkup(cashSubtotal) : cashSubtotal
+    const effectiveTax = isDualCard ? applyMarkup(cashTax) : cashTax
+    const effectiveTotal = isDualCard ? applyMarkup(cashTotal) : cashTotal
+
+    // Surcharge disclosure
+    const surchargeDisclosure = pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
+      ? pp.surchargeDisclosure
+      : null
+
+    // Cash discount / dual pricing disclosure
+    const cashDiscountDisclosure = isDualPricing
+      ? (pp.cashDiscountDisclosure || DEFAULT_CASH_DISCOUNT_DISCLOSURE)
+      : null
+
+    // Convenience fee disclosure
+    const convenienceFeeDisclosure = (() => {
+      const cf = (settings as any).convenienceFees
+      return cf?.enabled && cf.disclosureText ? cf.disclosureText : null
+    })()
 
     // Format receipt data
     const receiptData = {
@@ -110,8 +198,8 @@ export const GET = withVenue(async function GET(
         id: item.id,
         name: item.name,
         quantity: item.quantity,
-        price: isDualCard ? calculateCardPrice(Number(item.price), cashDiscountPercent) : Number(item.price),
-        itemTotal: isDualCard ? calculateCardPrice(Number(item.itemTotal), cashDiscountPercent) : Number(item.itemTotal),
+        price: Number(item.price),
+        itemTotal: Number(item.itemTotal),
         specialNotes: item.specialNotes,
         status: item.status,
         modifiers: item.modifiers.map(mod => ({
@@ -134,47 +222,14 @@ export const GET = withVenue(async function GET(
         amountTendered: payment.amountTendered ? Number(payment.amountTendered) : null,
         changeGiven: payment.changeGiven ? Number(payment.changeGiven) : null,
       })),
-      ...(() => {
-        const taxRateDecimal = (settings.tax?.defaultRate ?? 0) / 100
-        const calcAfterDiscount = settings.tax?.calculateAfterDiscount ?? true
-        const activeItems = order.items.filter(i => !i.status || i.status === 'active')
-        // Compute cash subtotal from items (not stored value which may be stale)
-        const cashSubtotal = Math.round(
-          activeItems.reduce((sum, i) => sum + Number(i.itemTotal), 0) * 100
-        ) / 100
-        const disc = Math.round(Number(order.discountTotal) * 100) / 100
-        const tipTotal = Number(order.tipTotal)
-        const cashTaxable = calcAfterDiscount ? Math.max(0, cashSubtotal - disc) : cashSubtotal
-        const cashTax = Math.round(cashTaxable * taxRateDecimal * 100) / 100
-        const cashTotal = Math.round((cashSubtotal - disc + cashTax) * 100) / 100
-
-        if (isDualCard) {
-          const cardSubtotal = calculateCardPrice(cashSubtotal, cashDiscountPercent)
-          const cardTaxable = calcAfterDiscount ? Math.max(0, cardSubtotal - disc) : cardSubtotal
-          const cardTax = Math.round(cardTaxable * taxRateDecimal * 100) / 100
-          const cardTotal = Math.round((cardSubtotal - disc + cardTax) * 100) / 100
-          return {
-            subtotal: cardSubtotal,
-            discountTotal: disc,
-            taxTotal: cardTax,
-            tipTotal,
-            total: cardTotal,
-            cardSubtotal,
-            cardTax,
-            cardTotal,
-            cashSubtotal,
-            cashTax,
-            cashTotal,
-          }
-        }
-        return {
-          subtotal: cashSubtotal,
-          discountTotal: disc,
-          taxTotal: cashTax,
-          tipTotal,
-          total: cashTotal,
-        }
-      })(),
+      subtotal: effectiveSubtotal,
+      discountTotal,
+      taxTotal: effectiveTax,
+      taxFromInclusive: taxFromInclusive || undefined,
+      taxFromExclusive: taxFromExclusive || undefined,
+      tipTotal,
+      total: effectiveTotal,
+      ...dualPricingBreakdown,
       createdAt: order.createdAt.toISOString(),
       paidAt: order.paidAt?.toISOString() || null,
       // Loyalty data
@@ -182,25 +237,26 @@ export const GET = withVenue(async function GET(
         name: order.customer.displayName || `${order.customer.firstName} ${order.customer.lastName}`,
         loyaltyPoints: order.customer.loyaltyPoints,
       } : null,
-      // Points earned/redeemed are calculated from payments
       // Points redeemed from loyalty_points payments
       loyaltyPointsRedeemed: order.payments
         .filter(p => p.paymentMethod === 'loyalty_points')
         .reduce((sum, p) => {
-          // Extract points from transactionId like "LOYALTY:100pts"
           const match = p.transactionId?.match(/LOYALTY:(\d+)pts/)
           return sum + (match ? parseInt(match[1]) : 0)
         }, 0) || null,
-      // Loyalty points earned requires Customer loyalty system implementation
-      // Would calculate based on order total and loyalty program rules
       loyaltyPointsEarned: order.customer?.loyaltyPoints ? Math.floor(Number(order.total)) : null,
-      // Surcharge disclosure — include when pricing program is 'surcharge' and disclosure text is set
-      surchargeDisclosure: (() => {
-        const pp = getPricingProgram(settings)
-        return pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
-          ? pp.surchargeDisclosure
-          : null
-      })(),
+      // Pricing disclosures
+      surchargeDisclosure,
+      cashDiscountDisclosure,
+      // Convenience fee
+      convenienceFee: convenienceFee > 0 ? convenienceFee : null,
+      convenienceFeeDisclosure: convenienceFee > 0 ? convenienceFeeDisclosure : null,
+      // Donations
+      donationAmount,
+      // Tax exemption
+      isTaxExempt,
+      taxExemptReason: (order as any).taxExemptReason ?? null,
+      taxExemptId: (order as any).taxExemptId ?? null,
     }
 
     return NextResponse.json({ data: receiptData })

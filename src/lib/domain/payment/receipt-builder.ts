@@ -169,6 +169,14 @@ export function buildReceiptData(
     ? pp.surchargeDisclosure
     : null
 
+  // Cash discount / dual pricing disclosure — include for cash_discount, dual_price, dual_price_pan_debit models
+  const DEFAULT_CASH_DISCOUNT_DISCLOSURE =
+    'Posted prices reflect a non-cash adjustment. Cash payments receive a discount.'
+  const cashDiscountDisclosure = (() => {
+    if (!isDualPricing) return null
+    return pp.cashDiscountDisclosure || DEFAULT_CASH_DISCOUNT_DISCLOSURE
+  })()
+
   // Convenience fee — include when order has a non-zero fee
   const convenienceFeeAmount = Number(order.convenienceFee ?? 0)
   const convenienceFeeDisclosure = (() => {
@@ -234,6 +242,7 @@ export function buildReceiptData(
     loyaltyPointsRedeemed: null,
     loyaltyPointsEarned: pointsEarned || null,
     surchargeDisclosure,
+    cashDiscountDisclosure,
     convenienceFee: convenienceFeeAmount > 0 ? convenienceFeeAmount : null,
     convenienceFeeDisclosure: convenienceFeeAmount > 0 ? convenienceFeeDisclosure : null,
     // Notification pager info

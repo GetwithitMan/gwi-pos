@@ -27,6 +27,7 @@ export interface PricingProgram {
   applyToCredit?: boolean
   applyToDebit?: boolean
   showSavingsMessage?: boolean
+  cashDiscountDisclosure?: string    // Receipt disclosure for cash_discount/dual_price models
 
   // Surcharge fields (model === 'surcharge')
   surchargePercent?: number          // 0-3% (Visa/MC cap)

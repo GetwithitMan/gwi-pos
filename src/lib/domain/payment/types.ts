@@ -217,6 +217,7 @@ export interface ReceiptData {
   loyaltyPointsRedeemed: number | null
   loyaltyPointsEarned: number | null
   surchargeDisclosure: string | null
+  cashDiscountDisclosure: string | null
   convenienceFee: number | null
   convenienceFeeDisclosure: string | null
   // Notification pager info

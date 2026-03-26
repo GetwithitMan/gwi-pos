@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
+import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { withVenue } from '@/lib/with-venue'
 import { emitOrderEvents } from '@/lib/order-events/emitter'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
@@ -174,6 +175,11 @@ export const POST = withVenue(async function POST(
     // Dispatch real-time socket events to KDS screens (fire and forget)
     dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {
       console.error('[API /fire-course] Socket dispatch failed:', err)
+    })
+
+    // Print kitchen tickets for fired course items (fire-and-forget)
+    void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err => {
+      console.error('[API /fire-course] Kitchen print failed:', err)
     })
 
     // For entertainment items, dispatch session updates

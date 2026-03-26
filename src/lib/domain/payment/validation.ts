@@ -149,15 +149,18 @@ export function checkIdempotencyByRecordNo(
 }
 
 /**
- * Validate that tip amounts are not unreasonably large (> 200% of payment).
- * 200% is generous enough for exceptional service while catching data entry errors.
+ * Validate that tip amounts are not unreasonably large (> 500% of payment).
+ * 500% cap: high-end restaurants and bars can see generous tips (especially on
+ * small tabs like a single drink). 500% catches true data-entry errors while
+ * allowing legitimate large tips. This cap is the single source of truth —
+ * adjust-tip and batch-adjust-tips routes must use the same 500% ceiling.
  */
 export function validateTipBounds(
   payments: Array<{ amount: number; tipAmount?: number }>,
 ): string | null {
   for (const payment of payments) {
-    if (payment.tipAmount && payment.tipAmount > payment.amount * 2) {
-      return 'Tip amount cannot exceed 200% of payment amount'
+    if (payment.tipAmount && payment.tipAmount > payment.amount * 5) {
+      return 'Tip amount cannot exceed 500% of payment amount'
     }
   }
   return null

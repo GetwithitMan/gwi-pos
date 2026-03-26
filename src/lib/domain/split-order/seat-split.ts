@@ -12,6 +12,12 @@ import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
 import type { TxClient, SplitSourceOrder, SplitOrderItem, SeatSplitResult } from './types'
 
+/** Track per-child item discount totals accumulated during seat split */
+interface SeatChildDiscountAccum {
+  childId: string
+  itemDiscountTotal: number
+}
+
 const log = createChildLogger('split-order')
 
 /**
@@ -66,6 +72,7 @@ export async function createSeatSplit(
     isPaid: boolean
   }> = []
   let splitIndex = existingSplits
+  const childItemDiscountAccum: SeatChildDiscountAccum[] = []
 
   for (const seatNumber of sortedSeats) {
     const seatItems = itemsBySeat.get(seatNumber) || []
@@ -237,6 +244,44 @@ export async function createSeatSplit(
         })
       }
     }
+
+    // --- Move item-level discounts to this seat's child order ---
+    const oldToNewItemMap = new Map<string, string>()
+    for (let i = 0; i < seatItems.length; i++) {
+      const oldItem = seatItems[i]
+      const newItem = (splitOrder.items as any[])[i]
+      if (newItem) oldToNewItemMap.set(oldItem.id, newItem.id)
+    }
+
+    let seatItemDiscountTotal = 0
+    for (const movedItem of seatItems) {
+      const discounts = (movedItem as any).itemDiscounts || []
+      for (const disc of discounts) {
+        if (disc.deletedAt) continue
+        const newItemId = oldToNewItemMap.get(movedItem.id)
+        if (!newItemId) continue
+
+        await tx.orderItemDiscount.create({
+          data: {
+            locationId: order.locationId,
+            orderId: splitOrder.id,
+            orderItemId: newItemId,
+            discountRuleId: disc.discountRuleId,
+            amount: disc.amount,
+            percent: disc.percent,
+            appliedById: disc.appliedById,
+            reason: disc.reason,
+          },
+        })
+        seatItemDiscountTotal += Number(disc.amount)
+
+        await tx.orderItemDiscount.update({
+          where: { id: disc.id },
+          data: { deletedAt: new Date() },
+        })
+      }
+    }
+    childItemDiscountAccum.push({ childId: splitOrder.id, itemDiscountTotal: seatItemDiscountTotal })
   }
 
   // Delete items from original order (they've been copied to split orders)
@@ -260,6 +305,13 @@ export async function createSeatSplit(
     where: { orderId: order.id, deletedAt: null },
   })
 
+  // Build a lookup for item-level discount totals per child
+  const childItemDiscMap = new Map<string, number>()
+  for (const accum of childItemDiscountAccum) {
+    childItemDiscMap.set(accum.childId, accum.itemDiscountTotal)
+  }
+  const hasAnyItemDiscounts = childItemDiscountAccum.some(a => a.itemDiscountTotal > 0)
+
   // Calculate subtotals for each child
   const childSubtotals = new Map<string, number>()
   let totalChildSubtotal = 0
@@ -274,8 +326,9 @@ export async function createSeatSplit(
     totalChildSubtotal += sub
   }
 
+  let childOrderDiscAccum = new Map<string, number>()
   if (parentDiscounts.length > 0 && totalChildSubtotal > 0) {
-    const childDiscAccum = await distributeDiscountsProportionally(
+    childOrderDiscAccum = await distributeDiscountsProportionally(
       tx,
       parentDiscounts,
       childSubtotals,
@@ -283,10 +336,14 @@ export async function createSeatSplit(
       order.locationId,
       'move',
     )
+  }
 
-    // Update each child's discountTotal and total with accumulated discount
+  // Update each child's discountTotal and total with combined item + order discounts
+  if (parentDiscounts.length > 0 || hasAnyItemDiscounts) {
     for (const child of splitOrders) {
-      const totalChildDisc = childDiscAccum.get(child.id) || 0
+      const orderDisc = childOrderDiscAccum.get(child.id) || 0
+      const itemDisc = childItemDiscMap.get(child.id) || 0
+      const totalChildDisc = orderDisc + itemDisc
       if (totalChildDisc > 0) {
         const childSub = childSubtotals.get(child.id) || 0
         // For discounted children, we need the original seat items to classify
@@ -331,9 +388,24 @@ export async function createSeatSplit(
     if (item.isTaxInclusive) remInclSub += t; else remExclSub += t
   })
 
+  // Recalculate remaining parent discount totals (item-level discounts still on parent)
+  const remainingItemDiscounts = await tx.orderItemDiscount.findMany({
+    where: { orderId: order.id, deletedAt: null },
+  })
+  const remainingItemDiscountTotal = remainingItemDiscounts.reduce(
+    (sum, d) => sum + Number(d.amount), 0
+  )
+  const remainingOrderDiscounts = await tx.orderDiscount.findMany({
+    where: { orderId: order.id, deletedAt: null },
+  })
+  const remainingOrderDiscountTotal = remainingOrderDiscounts.reduce(
+    (sum, d) => sum + Number(d.amount), 0
+  )
+  const totalParentDiscount = remainingItemDiscountTotal + remainingOrderDiscountTotal
+
   const remTaxResult = calculateSplitTax(remInclSub, remExclSub, taxRate, inclusiveTaxRate)
   const remainingTax = remTaxResult.totalTax
-  const remainingTotal = Math.round((remainingSubtotal + remTaxResult.taxFromExclusive) * 100) / 100
+  const remainingTotal = Math.round((remainingSubtotal + remTaxResult.taxFromExclusive - totalParentDiscount) * 100) / 100
 
   // Update original order totals and mark as 'split'
   await tx.order.update({
@@ -341,11 +413,11 @@ export async function createSeatSplit(
     data: {
       status: 'split',
       subtotal: remainingSubtotal,
-      discountTotal: 0,
+      discountTotal: totalParentDiscount,
       taxTotal: remainingTax,
       taxFromInclusive: remTaxResult.taxFromInclusive,
       taxFromExclusive: remTaxResult.taxFromExclusive,
-      total: remainingTotal,
+      total: Math.max(0, remainingTotal),
       itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
       // Zero out parent donation — assigned to first child
       ...(parentDonation > 0 ? { donationAmount: 0 } : {}),

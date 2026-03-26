@@ -87,6 +87,7 @@ export interface ReceiptTotals {
   convenienceFeeDisclosure?: string | null
   isTaxExempt?: boolean
   taxExemptReason?: string | null
+  cashDiscountDisclosure?: string | null
   // Dual pricing fields — populated when location uses card/cash pricing
   cardSubtotal?: number | null
   cardTax?: number | null
@@ -399,6 +400,14 @@ export function buildCustomerReceipt(
     content.push(line(''))
     content.push(ESCPOS.ALIGN_CENTER)
     content.push(line(totals.surchargeDisclosure || '*Credit card surcharge applied per Visa/MC guidelines'))
+    content.push(ESCPOS.ALIGN_LEFT)
+  }
+
+  // ── Cash discount / dual pricing disclosure ──
+  if (totals.cashDiscountDisclosure) {
+    content.push(line(''))
+    content.push(ESCPOS.ALIGN_CENTER)
+    content.push(line(totals.cashDiscountDisclosure))
     content.push(ESCPOS.ALIGN_LEFT)
   }
 

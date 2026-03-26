@@ -127,41 +127,27 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     )
     const isDualCard = dualPricingEnabled && hasCardPayment
 
-    // Tax: use stored split values (authoritative), fall back to recompute for legacy orders
+    // ─── Use STORED order values (never recalculate from items) ────────────
     const activeItems = order.items.filter(
       (i) => !i.status || i.status === 'active'
     )
-    const cashSubtotal =
-      Math.round(activeItems.reduce((sum, i) => sum + Number(i.itemTotal), 0) * 100) / 100
-    const discountTotal = Math.round(Number(order.discountTotal) * 100) / 100
-
-    const storedTaxFromInclusive = Number(order.taxFromInclusive ?? 0)
-    const storedTaxFromExclusive = Number(order.taxFromExclusive ?? 0)
-
-    let subtotal: number
-    let taxTotal: number
-    let taxFromInclusive: number
-    let taxFromExclusive: number
-
-    if (isDualCard) {
-      subtotal = calculateCardPrice(cashSubtotal, cashDiscountPercent)
-      // For dual pricing card receipts, use stored order tax (already computed correctly)
-      taxTotal = Math.round(Number(order.taxTotal) * 100) / 100
-      taxFromInclusive = storedTaxFromInclusive
-      taxFromExclusive = storedTaxFromExclusive
-    } else {
-      subtotal = cashSubtotal
-      taxTotal = Math.round(Number(order.taxTotal) * 100) / 100
-      taxFromInclusive = storedTaxFromInclusive
-      taxFromExclusive = storedTaxFromExclusive
-    }
-
-    // For inclusive orders: total = subtotal - discount + exclusive tax only
-    // For legacy/all-exclusive: taxFromExclusive = taxTotal, so same result
-    const hasStoredSplit = taxFromInclusive > 0 || taxFromExclusive > 0
-    const addedTax = hasStoredSplit ? taxFromExclusive : taxTotal
-    const total = Math.round((subtotal - discountTotal + addedTax) * 100) / 100
+    const cashSubtotal = Number(order.subtotal ?? 0)
+    const discountTotal = Number(order.discountTotal ?? 0)
     const tipTotal = Number(order.tipTotal)
+
+    // Tax: use stored values, respect tax-exempt status
+    const isTaxExemptOrder = order.isTaxExempt ?? false
+    const taxTotal = isTaxExemptOrder ? 0 : Number(order.taxTotal ?? 0)
+    const taxFromInclusive = isTaxExemptOrder ? 0 : Number(order.taxFromInclusive ?? 0)
+    const taxFromExclusive = isTaxExemptOrder ? 0 : Number(order.taxFromExclusive ?? 0)
+
+    // Total: use stored value
+    const total = Number(order.total ?? 0)
+
+    // Subtotal for display — apply card markup if dual pricing
+    const subtotal = isDualCard
+      ? calculateCardPrice(cashSubtotal, cashDiscountPercent)
+      : cashSubtotal
 
     // Surcharge info
     const pp = getPricingProgram(locationSettings)
@@ -169,6 +155,14 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       pp.enabled && pp.model === 'surcharge' && pp.surchargeDisclosure
         ? pp.surchargeDisclosure
         : null
+
+    // Cash discount / dual pricing disclosure
+    const isDualPricingModel = pp.enabled && (
+      pp.model === 'dual_price' || pp.model === 'dual_price_pan_debit' || pp.model === 'cash_discount'
+    )
+    const cashDiscountDisclosure = isDualPricingModel
+      ? (pp.cashDiscountDisclosure || 'Posted prices reflect a non-cash adjustment. Cash payments receive a discount.')
+      : null
 
     // ── Build employee display name ──
     const employeeName =
@@ -238,22 +232,18 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         donationAmount: Number(order.donationAmount ?? 0),
         total,
         surchargeDisclosure,
+        cashDiscountDisclosure,
         convenienceFee: Number(order.convenienceFee ?? 0),
-        isTaxExempt: order.isTaxExempt ?? false,
+        isTaxExempt: isTaxExemptOrder,
         taxExemptReason: order.taxExemptReason ?? null,
         // Dual pricing breakdown — only populated when location has dual pricing enabled
         ...(dualPricingEnabled ? {
           cardSubtotal: calculateCardPrice(cashSubtotal, cashDiscountPercent),
-          cardTax: Math.round(Number(order.taxTotal) * 100) / 100,
-          cardTotal: Math.round(
-            (calculateCardPrice(cashSubtotal, cashDiscountPercent) - discountTotal +
-              (hasStoredSplit ? taxFromExclusive : taxTotal)) * 100
-          ) / 100,
-          cashSubtotal: cashSubtotal,
-          cashTax: Math.round(Number(order.taxTotal) * 100) / 100,
-          cashTotal: Math.round(
-            (cashSubtotal - discountTotal + (hasStoredSplit ? taxFromExclusive : taxTotal)) * 100
-          ) / 100,
+          cardTax: calculateCardPrice(taxTotal, cashDiscountPercent),
+          cardTotal: calculateCardPrice(total, cashDiscountPercent),
+          cashSubtotal,
+          cashTax: taxTotal,
+          cashTotal: total,
         } : {}),
       },
     }

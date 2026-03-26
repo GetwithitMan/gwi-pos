@@ -14,6 +14,12 @@ import { createChildLogger } from '@/lib/logger'
 
 const log = createChildLogger('table-split')
 
+/** Track per-child item discount totals accumulated during table split */
+interface TableChildDiscountAccum {
+  childId: string
+  itemDiscountTotal: number
+}
+
 /**
  * Create a by-table split inside an existing transaction.
  * Creates one child order per source table, soft-deletes moved items from parent.
@@ -69,6 +75,7 @@ export async function createTableSplit(
     isPaid: boolean
   }> = []
   let splitIndex = existingSplits
+  const childItemDiscountAccum: TableChildDiscountAccum[] = []
 
   for (const tableId of tablesWithItems) {
     const tableItems = itemsByTable.get(tableId) || []
@@ -243,6 +250,44 @@ export async function createTableSplit(
         })
       }
     }
+
+    // --- Move item-level discounts to this table's child order ---
+    const oldToNewItemMap = new Map<string, string>()
+    for (let i = 0; i < tableItems.length; i++) {
+      const oldItem = tableItems[i]
+      const newItem = (splitOrder.items as any[])[i]
+      if (newItem) oldToNewItemMap.set(oldItem.id, newItem.id)
+    }
+
+    let tableItemDiscountTotal = 0
+    for (const movedItem of tableItems) {
+      const discounts = (movedItem as any).itemDiscounts || []
+      for (const disc of discounts) {
+        if (disc.deletedAt) continue
+        const newItemId = oldToNewItemMap.get(movedItem.id)
+        if (!newItemId) continue
+
+        await tx.orderItemDiscount.create({
+          data: {
+            locationId: order.locationId,
+            orderId: splitOrder.id,
+            orderItemId: newItemId,
+            discountRuleId: disc.discountRuleId,
+            amount: disc.amount,
+            percent: disc.percent,
+            appliedById: disc.appliedById,
+            reason: disc.reason,
+          },
+        })
+        tableItemDiscountTotal += Number(disc.amount)
+
+        await tx.orderItemDiscount.update({
+          where: { id: disc.id },
+          data: { deletedAt: new Date() },
+        })
+      }
+    }
+    childItemDiscountAccum.push({ childId: splitOrder.id, itemDiscountTotal: tableItemDiscountTotal })
   }
 
   // Delete items from original order (they've been copied to split orders)
@@ -266,6 +311,13 @@ export async function createTableSplit(
     where: { orderId: order.id, deletedAt: null },
   })
 
+  // Build a lookup for item-level discount totals per child
+  const childItemDiscMap = new Map<string, number>()
+  for (const accum of childItemDiscountAccum) {
+    childItemDiscMap.set(accum.childId, accum.itemDiscountTotal)
+  }
+  const hasAnyItemDiscounts = childItemDiscountAccum.some(a => a.itemDiscountTotal > 0)
+
   // Calculate subtotals for each child
   const childSubtotals = new Map<string, number>()
   let totalChildSubtotal = 0
@@ -280,8 +332,9 @@ export async function createTableSplit(
     totalChildSubtotal += sub
   }
 
+  let childOrderDiscAccum = new Map<string, number>()
   if (parentDiscounts.length > 0 && totalChildSubtotal > 0) {
-    const childDiscAccum = await distributeDiscountsProportionally(
+    childOrderDiscAccum = await distributeDiscountsProportionally(
       tx,
       parentDiscounts,
       childSubtotals,
@@ -289,10 +342,14 @@ export async function createTableSplit(
       order.locationId,
       'move',
     )
+  }
 
-    // Update each child's discountTotal and total with accumulated discount
+  // Update each child's discountTotal and total with combined item + order discounts
+  if (parentDiscounts.length > 0 || hasAnyItemDiscounts) {
     for (const child of splitOrders) {
-      const totalChildDisc = childDiscAccum.get(child.id) || 0
+      const orderDisc = childOrderDiscAccum.get(child.id) || 0
+      const itemDisc = childItemDiscMap.get(child.id) || 0
+      const totalChildDisc = orderDisc + itemDisc
       if (totalChildDisc > 0) {
         const childSub = childSubtotals.get(child.id) || 0
         const childTableItems = itemsByTable.get(child.tableId) || []
@@ -335,9 +392,24 @@ export async function createTableSplit(
     if (item.isTaxInclusive) remInclSub += t; else remExclSub += t
   })
 
+  // Recalculate remaining parent discount totals (item-level discounts still on parent)
+  const remainingItemDiscounts = await tx.orderItemDiscount.findMany({
+    where: { orderId: order.id, deletedAt: null },
+  })
+  const remainingItemDiscountTotal = remainingItemDiscounts.reduce(
+    (sum, d) => sum + Number(d.amount), 0
+  )
+  const remainingOrderDiscounts = await tx.orderDiscount.findMany({
+    where: { orderId: order.id, deletedAt: null },
+  })
+  const remainingOrderDiscountTotal = remainingOrderDiscounts.reduce(
+    (sum, d) => sum + Number(d.amount), 0
+  )
+  const totalParentDiscount = remainingItemDiscountTotal + remainingOrderDiscountTotal
+
   const remTaxResult = calculateSplitTax(remInclSub, remExclSub, taxRate, inclusiveTaxRate)
   const remainingTax = remTaxResult.totalTax
-  const remainingTotal = Math.round((remainingSubtotal + remTaxResult.taxFromExclusive) * 100) / 100
+  const remainingTotal = Math.round((remainingSubtotal + remTaxResult.taxFromExclusive - totalParentDiscount) * 100) / 100
 
   // Update original order totals and mark as 'split'
   await tx.order.update({
@@ -345,11 +417,11 @@ export async function createTableSplit(
     data: {
       status: 'split',
       subtotal: remainingSubtotal,
-      discountTotal: 0,
+      discountTotal: totalParentDiscount,
       taxTotal: remainingTax,
       taxFromInclusive: remTaxResult.taxFromInclusive,
       taxFromExclusive: remTaxResult.taxFromExclusive,
-      total: remainingTotal,
+      total: Math.max(0, remainingTotal),
       itemCount: remainingItems.reduce((sum, i) => sum + i.quantity, 0),
       // Zero out parent donation — assigned to first child
       ...(parentDonation > 0 ? { donationAmount: 0 } : {}),

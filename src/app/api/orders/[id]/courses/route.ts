@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
+import { OrderRouter } from '@/lib/order-router'
+import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
@@ -251,6 +253,7 @@ export const POST = withVenue(async function POST(
           }, tx)).map(i => i.id)
 
           // Fire all items in this course (excluding held items unless explicitly including them)
+          // Also set kitchenStatus to 'sent' so items route to KDS/kitchen printers
           const firedItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
             courseNumber,
             status: 'active',
@@ -259,7 +262,9 @@ export const POST = withVenue(async function POST(
             isHeld: false,
           }, {
             courseStatus: 'fired',
+            kitchenStatus: 'sent',
             firedAt: new Date(),
+            kitchenSentAt: new Date(),
           }, tx)
 
           // Update current course if this course is higher
@@ -267,11 +272,26 @@ export const POST = withVenue(async function POST(
             await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin }, tx)
           }
 
+          // Route fired items to KDS stations and print kitchen tickets (fire-and-forget)
+          if (fireItemIds.length > 0) {
+            void (async () => {
+              try {
+                const routingResult = await OrderRouter.resolveRouting(orderId, fireItemIds)
+                void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch(err =>
+                  log.warn({ err }, 'KDS dispatch failed for course fire'))
+                void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err =>
+                  log.warn({ err }, 'Kitchen print failed for course fire'))
+              } catch (err) {
+                log.warn({ err }, 'Routing failed for course fire')
+              }
+            })()
+          }
+
           void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (fireItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, fireItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,
-              payload: { lineItemId: id, courseStatus: 'fired' },
+              payload: { lineItemId: id, courseStatus: 'fired', kitchenStatus: 'sent' },
             })))
           }
 
@@ -289,6 +309,7 @@ export const POST = withVenue(async function POST(
           }, tx)).map(i => i.id)
 
           // Fire all items in this course including held items
+          // Also set kitchenStatus to 'sent' so items route to KDS/kitchen printers
           const allFiredItems = await OrderItemRepository.updateItemsWhere(orderId, postLocationId, {
             courseNumber,
             status: 'active',
@@ -296,7 +317,9 @@ export const POST = withVenue(async function POST(
             courseStatus: { in: ['pending'] },
           }, {
             courseStatus: 'fired',
+            kitchenStatus: 'sent',
             firedAt: new Date(),
+            kitchenSentAt: new Date(),
             isHeld: false,
           }, tx)
 
@@ -305,11 +328,26 @@ export const POST = withVenue(async function POST(
             await OrderRepository.updateOrder(orderId, postLocationId, { currentCourse: courseNumber, lastMutatedBy: mutationOrigin }, tx)
           }
 
+          // Route fired items to KDS stations and print kitchen tickets (fire-and-forget)
+          if (fireAllItemIds.length > 0) {
+            void (async () => {
+              try {
+                const routingResult = await OrderRouter.resolveRouting(orderId, fireAllItemIds)
+                void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch(err =>
+                  log.warn({ err }, 'KDS dispatch failed for course fire_all'))
+                void printKitchenTicketsForManifests(routingResult, order.locationId).catch(err =>
+                  log.warn({ err }, 'Kitchen print failed for course fire_all'))
+              } catch (err) {
+                log.warn({ err }, 'Routing failed for course fire_all')
+              }
+            })()
+          }
+
           void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(err => log.warn({ err }, 'order updated dispatch failed'))
           if (fireAllItemIds.length > 0) {
             void emitOrderEvents(order.locationId, orderId, fireAllItemIds.map(id => ({
               type: 'ITEM_UPDATED' as const,
-              payload: { lineItemId: id, courseStatus: 'fired', isHeld: false },
+              payload: { lineItemId: id, courseStatus: 'fired', kitchenStatus: 'sent', isHeld: false },
             })))
           }
 

@@ -97,25 +97,21 @@ export const POST = withVenue(async function POST(
       ? courseNumbers[currentIndex + 1]
       : null
 
-    // Mark current course items as served (if requested)
-    if (markServed && currentCourseItems.length > 0) {
-      await db.orderItem.updateMany({
-        where: {
-          orderId,
-          courseNumber: currentCourse,
-          status: 'active',
-        },
-        data: {
-          courseStatus: 'served',
-          kitchenStatus: 'delivered',
-        },
-      })
-    }
-
     // If there's a next course, fire it
     if (nextCourse) {
-      // Fire next course items + update order + queue socket events atomically
+      // Fire next course items + mark current served + update order + queue socket events atomically
       const firedItems = await db.$transaction(async (tx) => {
+        // Mark current course items as served inside transaction (tenant-safe)
+        if (markServed && currentCourseItems.length > 0) {
+          await OrderItemRepository.updateItemsWhere(orderId, order.locationId, {
+            courseNumber: currentCourse,
+            status: 'active',
+          }, {
+            courseStatus: 'served',
+            kitchenStatus: 'delivered',
+          }, tx)
+        }
+
         const fired = await OrderItemRepository.updateItemsWhere(orderId, order.locationId, {
           courseNumber: nextCourse,
           status: 'active',
@@ -216,8 +212,18 @@ export const POST = withVenue(async function POST(
       } })
     }
 
-    // Queue order:updated inside transaction for crash safety
+    // Mark current course items as served + queue order:updated inside transaction (tenant-safe)
     await db.$transaction(async (tx) => {
+      if (markServed && currentCourseItems.length > 0) {
+        await OrderItemRepository.updateItemsWhere(orderId, order.locationId, {
+          courseNumber: currentCourse,
+          status: 'active',
+        }, {
+          courseStatus: 'served',
+          kitchenStatus: 'delivered',
+        }, tx)
+      }
+
       const completedPayload: OrderUpdatedPayload = {
         orderId,
         changes: ['courses-complete'],

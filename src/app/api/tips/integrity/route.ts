@@ -152,11 +152,14 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         _sum: { amountCents: true },
       })
 
-      // Sum all tip amounts from Payments
+      // Sum all tip amounts from completed Payments only.
+      // Voided payments must be excluded — their tips were reversed and should
+      // not count toward the reconciliation total (prevents false-positive mismatches).
       const paymentTips = await db.payment.aggregate({
         where: {
           order: { locationId },
           deletedAt: null,
+          status: 'completed',
           tipAmount: { gt: 0 },
         },
         _sum: { tipAmount: true },
@@ -191,6 +194,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
         where: {
           order: { locationId },
           deletedAt: null,
+          status: 'completed',
           tipAmount: { gt: 0 },
         },
       })

@@ -92,6 +92,8 @@ export interface ReceiptData {
   taxFromExclusive?: number
   // Surcharge disclosure (present when pricing program is 'surcharge')
   surchargeDisclosure?: string | null
+  // Cash discount disclosure (present when pricing program is 'cash_discount' or 'dual_price')
+  cashDiscountDisclosure?: string | null
   // Convenience fee (present when order has a per-channel fee)
   convenienceFee?: number | null
   convenienceFeeDisclosure?: string | null
@@ -405,6 +407,13 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
       {data.surchargeDisclosure && (
         <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs text-center text-gray-600 italic">
           {data.surchargeDisclosure}
+        </div>
+      )}
+
+      {/* Cash Discount / Dual Pricing Disclosure — prints when present (compliance) */}
+      {data.cashDiscountDisclosure && (
+        <div className="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs text-center text-gray-600 italic">
+          {data.cashDiscountDisclosure}
         </div>
       )}
 

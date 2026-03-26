@@ -314,12 +314,16 @@ export function withAuth(
 
     // ── 3. Try Bearer token (Android LAN devices + cellular terminals) ──
     // Always check Bearer tokens — PAX, Register, and KDS all authenticate this way.
+    // Two token types: (a) cellular JWT (HMAC-signed), (b) WiFi device token (opaque,
+    // stored in Terminal.deviceToken). Both are sent as "Bearer <token>".
     // The allowCellular flag only controls whether permission-gated routes accept
-    // cellular terminals; Bearer auth itself is always attempted.
+    // terminals; Bearer auth itself is always attempted.
     {
       const authHeader = request.headers.get('authorization')
       if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7)
+
+        // 3a. Try cellular JWT first (HMAC-signed token for LTE terminals)
         const payload = await verifyCellularToken(token)
         if (payload) {
           if (resolvedPermission && !allowCellular) {
@@ -345,6 +349,37 @@ export function withAuth(
             terminalId: payload.terminalId,
             cellularEmployeeId: payload.employeeId || null,
             canRefund: payload.canRefund ?? false,
+          }
+
+          return handler(request, { auth: authCtx, params: context?.params ?? {} })
+        }
+
+        // 3b. Try WiFi device token (opaque token stored in Terminal.deviceToken)
+        // WiFi-paired Android terminals (Register, PAX, KDS) authenticate with a
+        // stored device token, not a cellular JWT. Without this fallback, withAuth
+        // rejects valid WiFi terminals with 401 — breaking order entry, payments,
+        // and every other route that uses withAuth({ allowCellular: true }).
+        const terminal = await db.terminal.findFirst({
+          where: { deviceToken: token, deletedAt: null },
+          select: { id: true, locationId: true, name: true },
+        })
+        if (terminal) {
+          if (resolvedPermission && !allowCellular) {
+            log.warn({ terminalId: terminal.id, permission: resolvedPermission }, `[withAuth] WiFi terminal ${terminal.id} DENIED on permission-gated route (${resolvedPermission}). Use allowCellular: true if this route needs terminal access.`)
+            return NextResponse.json(
+              { error: 'Terminals cannot access this permission-gated route.' },
+              { status: 403 }
+            )
+          }
+
+          const authCtx: AuthContext = {
+            employeeId: null,
+            locationId: terminal.locationId,
+            permissions: [],
+            roleId: null,
+            roleName: null,
+            source: 'cellular',  // Reuse 'cellular' source — downstream code treats all terminals the same
+            terminalId: terminal.id,
           }
 
           return handler(request, { auth: authCtx, params: context?.params ?? {} })
