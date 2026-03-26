@@ -163,10 +163,10 @@ run_schema() {
     local validation_failed=false
     for tbl in "${critical_tables[@]}"; do
       local exists
-      exists=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='$tbl' AND table_schema='public')" 2>/dev/null || echo "f")
+      exists=$(PGPASSWORD="$DB_PASSWORD" psql -U "$DB_USER" -h localhost -d "$DB_NAME" -tAc "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='$tbl' AND table_schema='public')" 2>/dev/null || echo "f")
       if [[ "$exists" == "t" ]]; then
         local count
-        count=$(sudo -u "$POSUSER" psql -U "$DB_USER" -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM \"$tbl\"" 2>/dev/null || echo "0")
+        count=$(PGPASSWORD="$DB_PASSWORD" psql -U "$DB_USER" -h localhost -d "$DB_NAME" -tAc "SELECT COUNT(*) FROM \"$tbl\"" 2>/dev/null || echo "0")
         if [[ "$count" -eq 0 ]]; then
           warn "$tbl exists but is empty (seed may be pending)"
         else
