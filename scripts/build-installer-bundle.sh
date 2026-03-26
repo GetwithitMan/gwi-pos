@@ -66,3 +66,17 @@ COPYFILE_DISABLE=1 tar czf - -C "$PUBLIC_DIR" installer-modules | base64 >> "$IN
 MODULE_COUNT=$(ls "$MODULES_DIR"/*.sh | wc -l)
 INSTALLER_SIZE=$(du -h "$INSTALLER" | cut -f1)
 echo "Built $INSTALLER ($INSTALLER_SIZE, $MODULE_COUNT embedded modules)"
+
+# ── Auto-sync to Mission Control ─────────────────────────────────────────────
+# MC serves the installer to NUCs. ONE installer, ONE source.
+# This copies the built bundle + modules to MC on every build — automatic, permanent.
+MC_DIR="$(dirname "$REPO_DIR")/gwi-mission-control"
+if [[ -d "$MC_DIR/public" ]]; then
+  cp "$INSTALLER" "$MC_DIR/public/installer.run"
+  rm -rf "$MC_DIR/public/installer-modules"
+  cp -r "$MODULES_DIR" "$MC_DIR/public/installer-modules"
+  echo "Synced installer to Mission Control ($MC_DIR/public/)"
+else
+  # CI/Vercel — MC repo not adjacent, skip sync (MC gets it via dual-repo push)
+  echo "MC repo not found at $MC_DIR — skipping auto-sync (CI/Vercel build)"
+fi
