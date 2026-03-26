@@ -267,7 +267,7 @@ export default function NotificationsSettingsPage() {
     try {
       const [providersRes, rulesRes, devicesRes, modeRes] = await Promise.all([
         fetch('/api/notifications/providers').then(r => r.ok ? r.json() : null),
-        fetch('/api/notifications/routing-rules').then(r => r.ok ? r.json() : null),
+        fetch('/api/notifications/rules').then(r => r.ok ? r.json() : null),
         fetch('/api/notifications/devices').then(r => r.ok ? r.json() : null),
         fetch('/api/notifications/mode').then(r => r.ok ? r.json() : null),
       ])
@@ -335,14 +335,34 @@ export default function NotificationsSettingsPage() {
 
   // ── Provider CRUD ─────────────────────────────────────────────────────
 
+  const handleEditProvider = (provider: NotificationProvider) => {
+    setEditingProvider(provider)
+    setNewProviderType(provider.providerType)
+    setNewProviderName(provider.name)
+    setNewProviderConfig(provider.config)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingProvider(null)
+    setNewProviderType(null)
+    setNewProviderName('')
+    setNewProviderConfig({})
+  }
+
   const handleSaveProvider = async () => {
     if (!newProviderType || !newProviderName.trim()) {
       toast.error('Provider name and type are required')
       return
     }
     try {
-      const res = await fetch('/api/notifications/providers', {
-        method: 'POST',
+      const isEditing = editingProvider !== null
+      const url = isEditing
+        ? `/api/notifications/providers/${editingProvider.id}`
+        : '/api/notifications/providers'
+      const method = isEditing ? 'PUT' : 'POST'
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           providerType: newProviderType,
@@ -352,10 +372,11 @@ export default function NotificationsSettingsPage() {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        toast.error(err.error || 'Failed to save provider')
+        toast.error(err.error || `Failed to ${isEditing ? 'update' : 'save'} provider`)
         return
       }
-      toast.success('Provider saved')
+      toast.success(isEditing ? 'Provider updated' : 'Provider saved')
+      setEditingProvider(null)
       setNewProviderType(null)
       setNewProviderName('')
       setNewProviderConfig({})
@@ -402,7 +423,7 @@ export default function NotificationsSettingsPage() {
 
   const handleApplyTemplate = async (templateKey: string) => {
     try {
-      const res = await fetch('/api/notifications/routing-rules/template', {
+      const res = await fetch('/api/notifications/rules/template', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ template: templateKey }),
@@ -420,8 +441,8 @@ export default function NotificationsSettingsPage() {
 
   const handleToggleRule = async (ruleId: string, enabled: boolean) => {
     try {
-      await fetch(`/api/notifications/routing-rules/${ruleId}`, {
-        method: 'PATCH',
+      await fetch(`/api/notifications/rules/${ruleId}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
       })
@@ -592,6 +613,12 @@ export default function NotificationsSettingsPage() {
                         </span>
                       )}
                       <button
+                        onClick={() => handleEditProvider(provider)}
+                        className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md"
+                      >
+                        Edit
+                      </button>
+                      <button
                         onClick={() => handleTestProvider(provider.id)}
                         disabled={testingProvider === provider.id}
                         className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md disabled:opacity-50"
@@ -610,9 +637,21 @@ export default function NotificationsSettingsPage() {
               </div>
             )}
 
-            {/* Add Provider Form */}
+            {/* Add / Edit Provider Form */}
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Add Provider</h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-gray-900">
+                  {editingProvider ? `Edit Provider: ${editingProvider.name}` : 'Add Provider'}
+                </h4>
+                {editingProvider && (
+                  <button
+                    onClick={handleCancelEdit}
+                    className="px-3 py-1 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-md"
+                  >
+                    Cancel Edit
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Provider Type</label>
@@ -658,13 +697,21 @@ export default function NotificationsSettingsPage() {
               )}
 
               {newProviderType && (
-                <div className="mt-4">
+                <div className="mt-4 flex gap-3">
                   <button
                     onClick={handleSaveProvider}
                     className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
                   >
-                    Add Provider
+                    {editingProvider ? 'Update Provider' : 'Add Provider'}
                   </button>
+                  {editingProvider && (
+                    <button
+                      onClick={handleCancelEdit}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
               )}
             </div>

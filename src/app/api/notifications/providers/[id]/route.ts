@@ -86,9 +86,10 @@ const VALID_EXECUTION_ZONES = ['any', 'local_nuc', 'cloud']
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
@@ -107,7 +108,7 @@ export const GET = withVenue(async function GET(
               "createdAt", "updatedAt"
        FROM "NotificationProvider"
        WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      params.id,
+      id,
       locationId
     )
 
@@ -133,9 +134,10 @@ export const GET = withVenue(async function GET(
 
 export const PUT = withVenue(async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
@@ -151,7 +153,7 @@ export const PUT = withVenue(async function PUT(
               priority, "executionZone", "configVersion"
        FROM "NotificationProvider"
        WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      params.id,
+      id,
       locationId
     )
 
@@ -217,7 +219,7 @@ export const PUT = withVenue(async function PUT(
          SET "isDefault" = false, "updatedAt" = CURRENT_TIMESTAMP
          WHERE "locationId" = $1 AND "isDefault" = true AND id != $2 AND "deletedAt" IS NULL`,
         locationId,
-        params.id
+        id
       )
     }
 
@@ -285,7 +287,7 @@ export const PUT = withVenue(async function PUT(
                  priority, "executionZone", config, "configVersion",
                  capabilities, "healthStatus", "createdAt", "updatedAt"`,
       ...values,
-      params.id,
+      id,
       locationId
     )
 
@@ -306,7 +308,7 @@ export const PUT = withVenue(async function PUT(
         employeeId: auth.employee.id,
         action: 'notification_provider_updated',
         entityType: 'notification_provider',
-        entityId: params.id,
+        entityId: id,
         details: {
           providerType: provider.providerType,
           changedFields,
@@ -332,9 +334,10 @@ export const PUT = withVenue(async function PUT(
 
 export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const locationId = await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
@@ -349,7 +352,7 @@ export const DELETE = withVenue(async function DELETE(
       `SELECT id, "providerType", name
        FROM "NotificationProvider"
        WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      params.id,
+      id,
       locationId
     )
 
@@ -361,19 +364,19 @@ export const DELETE = withVenue(async function DELETE(
 
     // Check for active routing rules referencing this provider
     const activeRules: any[] = await db.$queryRawUnsafe(
-      `SELECT id, name
+      `SELECT id, "eventType"
        FROM "NotificationRoutingRule"
        WHERE ("providerId" = $1 OR "fallbackProviderId" = $1)
          AND "locationId" = $2
          AND "enabled" = true
          AND "deletedAt" IS NULL
        LIMIT 5`,
-      params.id,
+      id,
       locationId
     )
 
     if (activeRules.length > 0) {
-      const ruleNames = activeRules.map((r: any) => r.name || r.id).join(', ')
+      const ruleNames = activeRules.map((r: any) => r.eventType || r.id).join(', ')
       return NextResponse.json(
         {
           error: `Cannot delete provider: ${activeRules.length} active routing rule(s) reference it: ${ruleNames}. Deactivate or reassign those rules first.`,
@@ -387,7 +390,7 @@ export const DELETE = withVenue(async function DELETE(
       `UPDATE "NotificationProvider"
        SET "deletedAt" = CURRENT_TIMESTAMP, "isActive" = false, "updatedAt" = CURRENT_TIMESTAMP
        WHERE id = $1 AND "locationId" = $2 AND "deletedAt" IS NULL`,
-      params.id,
+      id,
       locationId
     )
 
@@ -401,7 +404,7 @@ export const DELETE = withVenue(async function DELETE(
         employeeId: auth.employee.id,
         action: 'notification_provider_deleted',
         entityType: 'notification_provider',
-        entityId: params.id,
+        entityId: id,
         details: {
           providerType: provider.providerType,
           name: provider.name,

@@ -156,12 +156,12 @@ const DEFAULT_CAPABILITIES: Record<string, Record<string, boolean>> = {
  * Required config fields per provider type.
  */
 const REQUIRED_CONFIG_FIELDS: Record<string, string[]> = {
-  jtech: ['transmitterId'], // CloudAlert: apiKey+baseUrl, Local HTTP: hostIp+port, Direct SMS: twilioSid+twilioToken
+  jtech: ['siteCode', 'apiToken', 'deliveryMethod'],
   sms: ['twilioAccountSid', 'twilioAuthToken', 'twilioFromNumber'],
-  lrs: ['apiKey', 'baseUrl'],
-  retekess: ['transmitterId', 'frequency'],
-  display: ['displayUrl'],
-  voice: ['twilioAccountSid', 'twilioAuthToken', 'twilioFromNumber'],
+  lrs: ['apiKey', 'systemId'],
+  retekess: ['localIp'],
+  display: [],   // all fields have defaults or are optional
+  voice: [],     // all fields have defaults
   shelf: ['controllerIp', 'controllerPort'],
   kiosk: ['kioskId'],
 }

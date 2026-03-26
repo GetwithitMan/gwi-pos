@@ -50,76 +50,90 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'subjectId is required' }, { status: 400 })
     }
 
-    // Find all active pager assignments for this subject
-    const activeAssignments: any[] = await db.$queryRawUnsafe(
-      `SELECT id, "targetValue", "targetType"
-       FROM "NotificationTargetAssignment"
-       WHERE "locationId" = $1
-         AND "subjectType" = $2
-         AND "subjectId" = $3
-         AND status = 'active'
-         AND "targetType" IN ('guest_pager', 'staff_pager')`,
-      locationId,
-      subjectType,
-      subjectId
-    )
+    // Wrap all DB operations in a transaction to prevent orphaned state
+    const result = await db.$transaction(async (tx) => {
+      // Find all active pager assignments for this subject
+      const activeAssignments: any[] = await tx.$queryRawUnsafe(
+        `SELECT id, "targetValue", "targetType"
+         FROM "NotificationTargetAssignment"
+         WHERE "locationId" = $1
+           AND "subjectType" = $2
+           AND "subjectId" = $3
+           AND status = 'active'
+           AND "targetType" IN ('guest_pager', 'staff_pager')`,
+        locationId,
+        subjectType,
+        subjectId
+      )
 
-    if (activeAssignments.length === 0) {
+      if (activeAssignments.length === 0) {
+        return { released: 0, deviceNumbers: [] as string[], releasedDevices: [] as any[], assignmentCount: 0 }
+      }
+
+      // Release all active target assignments
+      await tx.$executeRawUnsafe(
+        `UPDATE "NotificationTargetAssignment"
+         SET status = 'released',
+             "releasedAt" = CURRENT_TIMESTAMP,
+             "releaseReason" = 'manual_unassign',
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "locationId" = $1
+           AND "subjectType" = $2
+           AND "subjectId" = $3
+           AND status = 'active'
+           AND "targetType" IN ('guest_pager', 'staff_pager')`,
+        locationId,
+        subjectType,
+        subjectId
+      )
+
+      // Release all devices assigned to this subject
+      const deviceNumbers = activeAssignments.map((a: any) => a.targetValue)
+      const releasedDevices: any[] = await tx.$queryRawUnsafe(
+        `UPDATE "NotificationDevice"
+         SET status = 'released',
+             "releasedAt" = CURRENT_TIMESTAMP,
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "locationId" = $1
+           AND "assignedToSubjectType" = $2
+           AND "assignedToSubjectId" = $3
+           AND status = 'assigned'
+           AND "deletedAt" IS NULL
+         RETURNING id, "deviceNumber"`,
+        locationId,
+        subjectType,
+        subjectId
+      )
+
+      // Clear pagerNumber cache on the subject
+      if (subjectType === 'order') {
+        await tx.$executeRawUnsafe(
+          `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
+          subjectId,
+          locationId
+        )
+      } else if (subjectType === 'waitlist_entry') {
+        await tx.$executeRawUnsafe(
+          `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
+          subjectId,
+          locationId
+        )
+      }
+
+      return {
+        released: releasedDevices.length,
+        deviceNumbers,
+        releasedDevices,
+        assignmentCount: activeAssignments.length,
+      }
+    })
+
+    if (result.released === 0) {
       return NextResponse.json({ data: { released: 0 }, message: 'No active pager assignments found' })
     }
 
-    // Release all active target assignments
-    await db.$executeRawUnsafe(
-      `UPDATE "NotificationTargetAssignment"
-       SET status = 'released',
-           "releasedAt" = CURRENT_TIMESTAMP,
-           "releaseReason" = 'manual_unassign',
-           "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "locationId" = $1
-         AND "subjectType" = $2
-         AND "subjectId" = $3
-         AND status = 'active'
-         AND "targetType" IN ('guest_pager', 'staff_pager')`,
-      locationId,
-      subjectType,
-      subjectId
-    )
-
-    // Release all devices assigned to this subject
-    const deviceNumbers = activeAssignments.map((a: any) => a.targetValue)
-    const releasedDevices: any[] = await db.$queryRawUnsafe(
-      `UPDATE "NotificationDevice"
-       SET status = 'released',
-           "releasedAt" = CURRENT_TIMESTAMP,
-           "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "locationId" = $1
-         AND "assignedToSubjectType" = $2
-         AND "assignedToSubjectId" = $3
-         AND status = 'assigned'
-         AND "deletedAt" IS NULL
-       RETURNING id, "deviceNumber"`,
-      locationId,
-      subjectType,
-      subjectId
-    )
-
-    // Clear pagerNumber cache on the subject
-    if (subjectType === 'order') {
-      void db.$executeRawUnsafe(
-        `UPDATE "Order" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-        subjectId,
-        locationId
-      ).catch(console.error)
-    } else if (subjectType === 'waitlist_entry') {
-      void db.$executeRawUnsafe(
-        `UPDATE "WaitlistEntry" SET "pagerNumber" = NULL WHERE id = $1 AND "locationId" = $2`,
-        subjectId,
-        locationId
-      ).catch(console.error)
-    }
-
-    // Log device events for each released device
-    for (const device of releasedDevices) {
+    // Log device events for each released device (fire-and-forget, outside tx)
+    for (const device of result.releasedDevices) {
       void db.$executeRawUnsafe(
         `INSERT INTO "NotificationDeviceEvent" (
           id, "deviceId", "locationId", "eventType",
@@ -137,7 +151,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       ).catch(console.error)
     }
 
-    // Audit log
+    // Audit log (fire-and-forget, outside tx)
     void db.auditLog.create({
       data: {
         locationId,
@@ -146,21 +160,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         entityType: subjectType,
         entityId: subjectId,
         details: {
-          deviceNumbers,
-          releasedCount: releasedDevices.length,
-          assignmentCount: activeAssignments.length,
+          deviceNumbers: result.deviceNumbers,
+          releasedCount: result.released,
+          assignmentCount: result.assignmentCount,
         },
       },
     }).catch(console.error)
 
     return NextResponse.json({
       data: {
-        released: releasedDevices.length,
-        deviceNumbers,
+        released: result.released,
+        deviceNumbers: result.deviceNumbers,
         subjectType,
         subjectId,
       },
-      message: `Released ${releasedDevices.length} pager(s)`,
+      message: `Released ${result.released} pager(s)`,
     })
   } catch (error) {
     console.error('[Notification Unassign] POST error:', error)

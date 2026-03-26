@@ -188,6 +188,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         locationPhone: order.location.phone,
         createdAt: order.createdAt.toISOString(),
         paidAt: order.paidAt?.toISOString() || null,
+        pagerNumber: order.pagerNumber || null,
+        fulfillmentMode: order.fulfillmentMode || null,
         reservation: linkedReservation ? {
           guestName: linkedReservation.guestName,
           partySize: linkedReservation.partySize,

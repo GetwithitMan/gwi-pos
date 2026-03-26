@@ -389,12 +389,16 @@ export const OrderPanel = memo(function OrderPanel({
   }, [orderId, unassigningPager, onPagerAssigned])
 
   // W18: Default page-now handler — calls /api/notifications/page with current orderId
+  // D1+D2: isPagingNow prevents spam-clicking the Page Now button
+  const [isPagingNow, setIsPagingNow] = useState(false)
   const handlePageNow = useCallback(async () => {
+    if (isPagingNow) return
     if (onPageNowProp) {
       onPageNowProp()
       return
     }
     if (!orderId) return
+    setIsPagingNow(true)
     try {
       const res = await fetch('/api/notifications/page', {
         method: 'POST',
@@ -409,8 +413,10 @@ export const OrderPanel = memo(function OrderPanel({
       }
     } catch {
       toast.error('Failed to send page')
+    } finally {
+      setIsPagingNow(false)
     }
-  }, [orderId, onPageNowProp])
+  }, [orderId, onPageNowProp, isPagingNow])
 
   // Customer modal + linked customer state
   const [showCustomerModal, setShowCustomerModal] = useState(false)
@@ -2283,6 +2289,7 @@ export const OrderPanel = memo(function OrderPanel({
           pagerNumber={pagerNumber}
           notificationProvidersActive={notificationProvidersActive}
           onPageNow={handlePageNow}
+          isPagingNow={isPagingNow}
         />
       </div>
 

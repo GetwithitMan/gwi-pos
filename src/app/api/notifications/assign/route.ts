@@ -326,6 +326,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         targetType,
         subjectType,
         subjectId,
+        replacedDeviceNumber: existingAssignment.length > 0 ? existingAssignment[0].targetValue : undefined,
       }
     })
 
@@ -340,6 +341,25 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         warning: `Subject already has pager ${result.deviceNumber} assigned`,
       })
     }
+
+    // Audit log: notification_device_assigned
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: auth.employee.id,
+        action: 'notification_device_assigned',
+        entityType: result.subjectType,
+        entityId: result.subjectId,
+        details: {
+          assignmentId: result.assignmentId,
+          deviceId: result.deviceId,
+          deviceNumber: result.deviceNumber,
+          targetType: result.targetType,
+          replaceExisting: !!replaceExisting,
+          replacedDeviceNumber: result.replacedDeviceNumber ?? null,
+        },
+      },
+    }).catch(console.error)
 
     return NextResponse.json({ data: result }, { status: 201 })
   } catch (error: any) {
