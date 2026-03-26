@@ -128,6 +128,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         taxId,
         customerId,
         status: 'pending',
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
       include: {
         customer: {

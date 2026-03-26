@@ -14,6 +14,8 @@ import {
 } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import * as OrderRepository from '@/lib/repositories/order-repository'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /**
  * GET /api/tabs/last-call
@@ -327,6 +329,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // ── Dispatch bulk refresh ──
     void dispatchOpenOrdersChanged(locationId, { trigger: 'paid' as any }, { async: true }).catch(() => {})
+
+    // ── Sync upstream ──
+    void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

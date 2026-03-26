@@ -6,6 +6,8 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // Shared include shape for recipe queries
 const recipeInclude = {
@@ -269,6 +271,7 @@ export const POST = withVenue(async function POST(
             isSubstitutable: ing.isSubstitutable !== false,
             sortOrder: ing.sortOrder ?? index,
             notes: ing.notes || null,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           })),
         })
       }
@@ -292,6 +295,8 @@ export const POST = withVenue(async function POST(
       action: 'updated',
       changes: { recipe: true },
     }).catch(() => {})
+    void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       menuItemId: menuItem.id,
@@ -384,6 +389,7 @@ export const PATCH = withVenue(async function PATCH(
           pourCount: pourCount ?? 1,
           isSubstitutable: isSubstitutable !== false,
           sortOrder: 0,
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
       }),
     ])
@@ -403,6 +409,8 @@ export const PATCH = withVenue(async function PATCH(
       action: 'updated',
       changes: { recipe: true },
     }).catch(() => {})
+    void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { ingredients: resultIngredients } })
   } catch (error) {

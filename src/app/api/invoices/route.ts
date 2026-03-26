@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET /api/invoices — list invoices with filters
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -194,6 +196,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    // Sync upstream
+    void notifyDataChanged({ locationId, domain: 'invoices', action: 'created' })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

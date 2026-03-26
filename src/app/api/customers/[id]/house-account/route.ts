@@ -52,6 +52,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         contactName: `${customer.firstName} ${customer.lastName}`,
         creditLimit: creditLimit || 0,
         status: 'pending',
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 

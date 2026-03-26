@@ -6,6 +6,8 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { OrderRepository, PaymentRepository } from '@/lib/repositories'
 import { getActorFromRequest, requireAnyPermission, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /**
  * Transaction payload from offline queue
@@ -392,6 +394,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       void dispatchOpenOrdersChanged(locationId, {
         trigger: 'paid',
       }, { async: true }).catch(() => {})
+    }
+
+    // Sync upstream
+    if (successfulSyncs > 0 || voidedCount > 0) {
+      void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })
+      void pushUpstream()
     }
 
     return NextResponse.json({ data: {

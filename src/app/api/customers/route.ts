@@ -203,6 +203,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         marketingOptIn: marketingOptIn || false,
         birthday: birthday ? new Date(birthday) : null,
         ...(welcomeBonus > 0 ? { loyaltyPoints: welcomeBonus } : {}),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 

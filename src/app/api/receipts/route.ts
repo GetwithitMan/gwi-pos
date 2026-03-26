@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // POST - Create a digital receipt (called after payment)
 export const POST = withVenue(withAuth(async function POST(request: NextRequest) {
@@ -23,6 +25,10 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         signatureSource,
       },
     })
+
+    // Sync upstream
+    void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })
+    void pushUpstream()
 
     return NextResponse.json({ data: { id: receipt.id } })
   } catch (error) {

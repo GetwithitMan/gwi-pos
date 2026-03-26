@@ -455,7 +455,7 @@ export const POST = withVenue(async function POST(
       // Best-effort reset — locationId may not be available, use raw db as fallback
       await db.order.update({
         where: { id: failedOrderId },
-        data: { tabStatus: 'open' },
+        data: { tabStatus: 'open', lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
     } catch {
       // Best-effort reset — don't mask the original error

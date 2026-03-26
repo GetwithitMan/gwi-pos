@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import crypto from 'crypto'
 
 /**
@@ -99,10 +101,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Set customer marketingOptIn = false
-    await db.customer.update({
+    const updatedCustomer = await db.customer.update({
       where: { id: parsed.customerId },
-      data: { marketingOptIn: false },
+      data: {
+        marketingOptIn: false,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
+      },
+      select: { id: true, locationId: true },
     })
+
+    void notifyDataChanged({ locationId: updatedCustomer.locationId, domain: 'customers', action: 'updated', entityId: updatedCustomer.id })
+    void pushUpstream()
 
     // Update any pending MarketingRecipient records to 'unsubscribed'
     await db.$executeRawUnsafe(`

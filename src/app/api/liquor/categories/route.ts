@@ -6,6 +6,8 @@ import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * GET /api/liquor/categories
@@ -134,10 +136,13 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
         displayName: displayName?.trim() || null,
         description: description?.trim() || null,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 
     void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
+    void notifyDataChanged({ locationId, domain: 'liquor', action: 'created', entityId: category.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: category.id,

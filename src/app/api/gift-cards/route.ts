@@ -140,6 +140,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
         purchasedById,
         orderId,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         transactions: {
           create: {
             locationId,

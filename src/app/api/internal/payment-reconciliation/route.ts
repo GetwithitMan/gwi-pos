@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db, adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 /**
  * GET /api/internal/payment-reconciliation?locationId=xxx
@@ -158,6 +160,10 @@ export async function POST(request: NextRequest) {
     })
 
     console.warn(`[RECONCILIATION] Manual payment recorded: order=${orderId}, amount=${amount}, recordNo=${datacapRecordNo || 'none'}`)
+
+    // Sync upstream
+    void notifyDataChanged({ locationId, domain: 'orders', action: 'updated' })
+    void pushUpstream()
 
     return NextResponse.json({ success: true, paymentId: payment.id })
   } catch (error) {

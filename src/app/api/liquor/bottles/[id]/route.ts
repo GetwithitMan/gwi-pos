@@ -8,6 +8,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 import { getDerivedBottleStock } from '@/lib/liquor-inventory'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -261,6 +263,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           ...(verifiedAt !== undefined && { verifiedAt: verifiedAt ? new Date(verifiedAt) : null }),
           ...(verifiedBy !== undefined && { verifiedBy: verifiedBy || null }),
           ...metricsUpdate,
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
         include: {
           spiritCategory: {
@@ -323,6 +326,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       name: bottle.name,
     }).catch(() => {})
     void emitToLocation(existing.locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'liquor', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: bottle.id,
@@ -422,7 +427,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       // Soft-delete the bottle
       await tx.bottleProduct.update({
         where: { id },
-        data: { deletedAt: new Date() },
+        data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
 
       // Soft-delete linked inventory item
@@ -435,6 +440,8 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-bottle' }).catch(() => {})
+    void notifyDataChanged({ locationId, domain: 'liquor', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

@@ -7,6 +7,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { emitToLocation } from '@/lib/socket-server'
 import { getDerivedBottleStock } from '@/lib/liquor-inventory'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 /**
  * GET /api/liquor/categories/[id]
@@ -153,6 +155,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         ...(description !== undefined && { description: description?.trim() || null }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isActive !== undefined && { isActive }),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
       include: {
         _count: {
@@ -165,6 +168,8 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
+    void notifyDataChanged({ locationId, domain: 'liquor', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: category.id,
@@ -249,9 +254,11 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       )
     }
 
-    await db.spiritCategory.update({ where: { id }, data: { deletedAt: new Date() } })
+    await db.spiritCategory.update({ where: { id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
 
     void emitToLocation(locationId, 'menu:updated', { trigger: 'liquor-category' }).catch(() => {})
+    void notifyDataChanged({ locationId, domain: 'liquor', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

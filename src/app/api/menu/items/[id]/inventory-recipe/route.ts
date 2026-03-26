@@ -9,6 +9,8 @@ import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { createMenuItemRecipeSchema, validateRequest } from '@/lib/validations'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get inventory recipe for menu item (food costing)
 export const GET = withVenue(async function GET(
@@ -128,6 +130,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
           data: {
             totalCost: null, // Will be recalculated
             foodCostPct: null,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
             ingredients: ingredients ? {
               create: ingredients.map((ing, index) => ({
                 locationId: menuItem.locationId,
@@ -136,6 +139,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
                 quantity: ing.quantity,
                 unit: ing.unit,
                 sortOrder: index,
+                lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
               })),
             } : undefined,
           },
@@ -169,6 +173,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
           data: {
             locationId: menuItem.locationId,
             menuItemId: id,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
             ingredients: ingredients ? {
               create: ingredients.map((ing, index) => ({
                 locationId: menuItem.locationId,
@@ -177,6 +182,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
                 quantity: ing.quantity,
                 unit: ing.unit,
                 sortOrder: index,
+                lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
               })),
             } : undefined,
           },
@@ -219,6 +225,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       data: {
         totalCost,
         foodCostPct,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 
@@ -230,6 +237,8 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       action: 'updated',
       changes: { recipe: true },
     }).catch(() => {})
+    void notifyDataChanged({ locationId: menuItem.locationId, domain: 'menu', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       recipe: {
