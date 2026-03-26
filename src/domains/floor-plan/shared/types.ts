@@ -58,7 +58,18 @@ export type FixtureType =
   | 'fire_exit'
   | 'ada_path'
   | 'planter_builtin'
-  | 'custom_fixture';
+  | 'custom_fixture'
+  // Entertainment
+  | 'pool_table'
+  | 'dart_board'
+  | 'arcade'
+  | 'foosball'
+  | 'shuffleboard'
+  | 'ping_pong'
+  | 'bowling_lane'
+  | 'karaoke_stage'
+  | 'cornhole'
+  | 'game_table';
 
 export type FixtureCategory =
   | 'barrier' // Blocks placement AND movement (walls, pillars)
@@ -66,7 +77,8 @@ export type FixtureCategory =
   | 'zone' // Defines area, doesn't block (dance floor)
   | 'passage' // Allows movement (doors, stairs)
   | 'clearance' // Must stay clear (fire exit, ADA path)
-  | 'decorative'; // Visual only
+  | 'decorative' // Visual only
+  | 'entertainment'; // Timed rentals (pool tables, darts, etc.)
 
 export type FixtureGeometry =
   | { type: 'line'; start: Point; end: Point }
