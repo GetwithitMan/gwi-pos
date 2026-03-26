@@ -14,6 +14,12 @@ const log = createChildLogger('socket-ack')
  * - If no ack received, retry up to 3 times (2s, 4s, 8s intervals)
  * - After max retries, log a warning (event was best-effort delivered)
  * - Queue auto-cleans expired entries every 30 seconds
+ *
+ * Per-client tracking (F-04):
+ * - When targetSocketIds are provided, each socket must ack independently
+ * - Retries only target sockets that haven't acked yet
+ * - When a socket disconnects, it's removed from pending acks
+ *   (it will receive the event via catch-up on reconnect)
  */
 
 interface PendingAck {
@@ -22,6 +28,8 @@ interface PendingAck {
   room: string
   event: string
   data: unknown
+  /** Sockets that haven't acked yet. Empty set = legacy room-level ack. */
+  unackedSocketIds: Set<string>
   attempts: number
   maxAttempts: number
   nextRetryAt: number
@@ -38,12 +46,17 @@ let ackCounter = 0
 /**
  * Enqueue a critical event for acknowledged delivery.
  * Returns the ackId that the client must send back.
+ *
+ * @param targetSocketIds  If provided, tracks ack per-socket. Each socket in
+ *                         the set must independently ack. If omitted, any single
+ *                         ack removes the entry (legacy room-level behavior).
  */
 export function enqueueAck(
   locationId: string,
   room: string,
   event: string,
   data: unknown,
+  targetSocketIds?: Set<string>,
 ): string {
   const ackId = `ack_${locationId}_${++ackCounter}_${Date.now()}`
   pendingAcks.set(ackId, {
@@ -52,6 +65,7 @@ export function enqueueAck(
     room,
     event,
     data,
+    unackedSocketIds: targetSocketIds ? new Set(targetSocketIds) : new Set(),
     attempts: 1, // First attempt already sent
     maxAttempts: MAX_ATTEMPTS,
     nextRetryAt: Date.now() + BASE_RETRY_MS,
@@ -61,19 +75,59 @@ export function enqueueAck(
 }
 
 /**
- * Mark an event as acknowledged. Called when client sends `ack` event.
+ * Mark an event as acknowledged by a specific socket.
+ * When all tracked sockets have acked, the entry is removed.
+ *
+ * @param ackId    The acknowledgment ID
+ * @param socketId The socket that sent the ack (optional for backward compat)
  */
-export function acknowledgeEvent(ackId: string): boolean {
-  return pendingAcks.delete(ackId)
+export function acknowledgeEvent(ackId: string, socketId?: string): boolean {
+  const pending = pendingAcks.get(ackId)
+  if (!pending) return false
+
+  // Per-socket tracking: remove this socket from unacked set
+  if (socketId && pending.unackedSocketIds.size > 0) {
+    pending.unackedSocketIds.delete(socketId)
+    if (pending.unackedSocketIds.size === 0) {
+      pendingAcks.delete(ackId) // All sockets acked — fully delivered
+    }
+    return true
+  }
+
+  // Legacy: no per-socket tracking or no socketId provided — single ack clears
+  pendingAcks.delete(ackId)
+  return true
+}
+
+/**
+ * Remove a socket from all pending ack tracking.
+ * Called when a socket disconnects — it can't ack after disconnecting.
+ * The event will be delivered via catch-up when it reconnects.
+ */
+export function removeSocketFromAcks(socketId: string): void {
+  for (const [ackId, pending] of pendingAcks) {
+    // Only auto-delete if this socket was actually being tracked per-client.
+    // Set.delete() returns true if the element existed — false for legacy entries
+    // (empty set, room-level ack) which must NOT be prematurely deleted.
+    const wasTracked = pending.unackedSocketIds.delete(socketId)
+    if (wasTracked && pending.unackedSocketIds.size === 0) {
+      // All tracked sockets have now acked or disconnected.
+      // Catch-up handles reconnecting clients.
+      pendingAcks.delete(ackId)
+    }
+  }
 }
 
 /**
  * Get events that need retrying (past their retry deadline).
  * Called by the retry interval.
+ *
+ * Returns unacked socket IDs so the caller can target retries per-socket
+ * instead of broadcasting to the whole room.
  */
-export function getRetryableEvents(): PendingAck[] {
+export function getRetryableEvents(): Array<PendingAck & { retrySocketIds: string[] }> {
   const now = Date.now()
-  const retryable: PendingAck[] = []
+  const retryable: Array<PendingAck & { retrySocketIds: string[] }> = []
 
   for (const [ackId, pending] of pendingAcks) {
     // Expired — remove and warn
@@ -83,6 +137,7 @@ export function getRetryableEvents(): PendingAck[] {
         event: pending.event,
         locationId: pending.locationId,
         attempts: pending.attempts,
+        unackedCount: pending.unackedSocketIds.size,
       })
       pendingAcks.delete(ackId)
       continue
@@ -90,7 +145,12 @@ export function getRetryableEvents(): PendingAck[] {
 
     // Ready for retry
     if (now >= pending.nextRetryAt && pending.attempts < pending.maxAttempts) {
-      retryable.push(pending)
+      retryable.push({
+        ...pending,
+        retrySocketIds: pending.unackedSocketIds.size > 0
+          ? Array.from(pending.unackedSocketIds)
+          : [], // Empty = legacy room-level retry
+      })
     }
   }
 

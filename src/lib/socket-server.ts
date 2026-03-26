@@ -27,6 +27,7 @@ import {
   acknowledgeEvent as ackQueueAcknowledge,
   getRetryableEvents,
   markRetryAttempt,
+  removeSocketFromAcks,
 } from './socket-ack-queue'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { createChildLogger } from '@/lib/logger'
@@ -123,24 +124,22 @@ const socketMetrics: SocketMetrics = {
   reconnections60s: [],
 }
 
-/** Record an event emission for throughput tracking */
+/** Record an event emission for throughput tracking.
+ * Defers pruning to getSocketHealthMetrics() (called once/min) instead of
+ * pruning on every event — avoids O(n²) from repeated Array.shift(). */
 function recordMetricEvent(): void {
-  const now = Date.now()
-  socketMetrics.eventsEmitted60s.push(now)
-  // Prune entries older than 60s
-  const cutoff = now - 60_000
-  while (socketMetrics.eventsEmitted60s.length > 0 && socketMetrics.eventsEmitted60s[0] < cutoff) {
-    socketMetrics.eventsEmitted60s.shift()
+  socketMetrics.eventsEmitted60s.push(Date.now())
+  // Safety cap: prevent unbounded growth between metrics reads (~15k = 250/sec * 60s)
+  if (socketMetrics.eventsEmitted60s.length > 15_000) {
+    socketMetrics.eventsEmitted60s.splice(0, 5_000)
   }
 }
 
 /** Record a reconnection */
 function recordReconnection(): void {
-  const now = Date.now()
-  socketMetrics.reconnections60s.push(now)
-  const cutoff = now - 60_000
-  while (socketMetrics.reconnections60s.length > 0 && socketMetrics.reconnections60s[0] < cutoff) {
-    socketMetrics.reconnections60s.shift()
+  socketMetrics.reconnections60s.push(Date.now())
+  if (socketMetrics.reconnections60s.length > 1_000) {
+    socketMetrics.reconnections60s.splice(0, 500)
   }
 }
 
@@ -493,9 +492,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     })
 
     // QoS 1: client sends ack with ackId after receiving critical events
+    // Per-socket tracking: pass socket.id so each client acks independently
     socket.on('ack', (ackPayload: { ackId: string }) => {
-      if (ackPayload?.ackId) {
-        ackQueueAcknowledge(ackPayload.ackId)
+      try {
+        if (ackPayload?.ackId) {
+          ackQueueAcknowledge(ackPayload.ackId, socket.id)
+        }
+      } catch (err) {
+        log.error({ err, socketId: socket.id }, 'ack handler error')
       }
     })
 
@@ -554,8 +558,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
         // Subscribe to specific prep tags (pizza, bar, kitchen, expo)
         // Location-scoped: tag:{locationId}:{tagName} for multi-venue isolation
-        tags.forEach((tag: string) => {
-          socket.join(`tag:${locationId}:${tag}`)
+        // Cap at 20 tags to prevent a client from exhausting the room limit
+        const safeTags = Array.isArray(tags) ? tags.slice(0, 20) : []
+        safeTags.forEach((tag: string) => {
+          if (typeof tag === 'string' && tag.length > 0 && tag.length <= 50) {
+            socket.join(`tag:${locationId}:${tag}`)
+          }
         })
 
         // If station-specific, join that room too
@@ -625,13 +633,17 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
      * Enables the server to track stale clients needing refresh.
      */
     socket.on('client:version', (data: { clientVersion?: string }) => {
-      if (data?.clientVersion && typeof data.clientVersion === 'string') {
-        // O(1) via reverse index
-        const tid = socketToTerminal.get(socket.id)
-        if (tid) {
-          const info = connectedTerminals.get(tid)
-          if (info) info.clientVersion = data.clientVersion
+      try {
+        if (data?.clientVersion && typeof data.clientVersion === 'string') {
+          // O(1) via reverse index
+          const tid = socketToTerminal.get(socket.id)
+          if (tid) {
+            const info = connectedTerminals.get(tid)
+            if (info) info.clientVersion = data.clientVersion
+          }
         }
+      } catch (err) {
+        log.error({ err, socketId: socket.id }, 'client:version handler error')
       }
     })
 
@@ -666,10 +678,12 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
         if (missedEvents.length > 0) {
           // Deduplicate: for list-changed events, only send the latest of each type.
-          // For item-specific events (payment, order-specific), send all.
+          // For item-specific events (payment, order-specific, kds orders), send ALL.
+          // IMPORTANT: kds:order-received MUST NOT be deduplicated — each order is unique
+          // and must reach the kitchen. Deduping would silently drop orders during reconnect.
           const DEDUP_EVENT_TYPES = new Set([
             'orders:list-changed', 'tab:updated', 'floor-plan:updated',
-            'terminal:status_changed', 'kds:order-received',
+            'terminal:status_changed',
           ])
           const latestByType = new Map<string, typeof missedEvents[0]>()
           const directEvents: typeof missedEvents = []
@@ -789,30 +803,36 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       })
     })
 
-    // Phone → server processes tab transfer via direct DB update
-    socket.on(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, (data: { orderId: string; employeeId: string }) => {
+    // Phone → server processes tab transfer
+    // DB update + event emission must both succeed before confirming to client.
+    // emitOrderEvent is awaited (not fire-and-forget) to satisfy the event-sourced
+    // order invariant: NEVER write to db.order without emitting events.
+    socket.on(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, async (data: { orderId: string; employeeId: string }) => {
       const locationId = socket.data.locationId
       if (!locationId) return
       const { orderId, employeeId } = data
       if (!orderId || !employeeId) return
-      void db.order.update({
-        where: { id: orderId },
-        data: { employeeId },
-      }).then(() => {
+
+      try {
+        await db.order.update({
+          where: { id: orderId },
+          data: { employeeId },
+        })
+
+        // Emit order event BEFORE confirming success (must succeed for event consistency)
+        await emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', { employeeId })
+
         socket.emit('tab:transfer-complete', { orderId })
-        // Notify all terminals to refresh order list
+
+        // Notify all terminals to refresh order list (fire-and-forget, non-critical)
         void emitToLocation(locationId, 'orders:list-changed', {
           trigger: 'transferred',
           orderId,
         })
-        // Fire-and-forget: emit ORDER_METADATA_UPDATED for event-sourced sync
-        void emitOrderEvent(locationId, orderId, 'ORDER_METADATA_UPDATED', {
-          employeeId,
-        }).catch((err) => log.error({ err }, 'Failed to emit ORDER_METADATA_UPDATED for tab transfer'))
-      }).catch((err: unknown) => {
-        log.error({ err }, 'tab:transfer-request DB update failed')
+      } catch (err) {
+        log.error({ err }, 'tab:transfer-request failed')
         socket.emit('tab:error', { orderId, message: 'Failed to transfer tab' })
-      })
+      }
     })
 
     // Phone → relay manager alert to all terminals in location (fire-and-forget)
@@ -1082,6 +1102,9 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         if (socket.data.cfdTerminalId) {
           cfdToRegisterMap.delete(socket.data.cfdTerminalId)
         }
+        // Remove from QoS 1 per-client ack tracking — this socket can't ack after
+        // disconnecting. It will receive missed events via catch-up on reconnect.
+        removeSocketFromAcks(socket.id)
       } catch (err) {
         log.error({ err, socketId: socket.id }, 'disconnect handler error')
       }
@@ -1131,15 +1154,29 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   // the authoritative socket disconnect handler.
 
   // Retry unacknowledged critical events every 2 seconds (QoS 1)
+  // Per-client tracking: retries target only sockets that haven't acked,
+  // not the entire room. This prevents fast Terminal A from masking
+  // missed delivery to Terminal B.
   setInterval(() => {
     const retryable = getRetryableEvents()
     for (const pending of retryable) {
       try {
-        socketServer.to(pending.room).emit(pending.event, {
+        const payload = {
           ...(typeof pending.data === 'object' && pending.data !== null ? pending.data : {}),
           _ackId: pending.ackId,
           _retry: pending.attempts,
-        })
+        }
+
+        if (pending.retrySocketIds.length > 0) {
+          // Per-socket retry: only send to sockets that haven't acked
+          for (const socketId of pending.retrySocketIds) {
+            socketServer.to(socketId).emit(pending.event, payload)
+          }
+        } else {
+          // Legacy fallback: retry to whole room
+          socketServer.to(pending.room).emit(pending.event, payload)
+        }
+
         markRetryAttempt(pending.ackId)
       } catch (err) {
         log.error({ err }, 'socket-ack retry emit failed')
@@ -1270,14 +1307,24 @@ export async function emitCriticalToLocation(
 ): Promise<void> {
   recordMetricEvent()
   const room = `location:${locationId}`
-  const ackId = enqueueAck(locationId, room, event, data)
+
+  // Get socket IDs in the room for per-client ack tracking.
+  // Each socket must independently ack; retries target only un-acked sockets.
+  let targetSocketIds: Set<string> | undefined
+  if (globalForSocket.socketServer) {
+    const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
+    if (roomSockets && roomSockets.size > 0) {
+      targetSocketIds = new Set(roomSockets)
+    }
+  }
+
+  const ackId = enqueueAck(locationId, room, event, data, targetSocketIds)
   const payload = {
     ...(typeof data === 'object' && data !== null ? data : {}),
     _ackId: ackId,
   }
   if (globalForSocket.socketServer) {
-    const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
-    if (process.env.DEBUG_SOCKETS) log.debug(`emitCriticalToLocation: ${event} -> ${room} (${roomSockets?.size ?? 0} clients) ackId=${ackId}`)
+    if (process.env.DEBUG_SOCKETS) log.debug(`emitCriticalToLocation: ${event} -> ${room} (${targetSocketIds?.size ?? 0} clients) ackId=${ackId}`)
     // Also record in event buffer for catch-up
     const eid = recordEvent(locationId, event, payload, room)
     const enriched = { ...payload, _eid: eid }
@@ -1356,15 +1403,21 @@ export function getSocketHealthMetrics(): {
   cfdPairings: number
   staleClients: number
 } {
-  // Prune stale entries
+  // Prune stale entries — single splice instead of repeated shift() for O(n) vs O(n²)
   const now = Date.now()
   const cutoff = now - 60_000
-  while (socketMetrics.eventsEmitted60s.length > 0 && socketMetrics.eventsEmitted60s[0] < cutoff) {
-    socketMetrics.eventsEmitted60s.shift()
+
+  let pruneIdx = 0
+  while (pruneIdx < socketMetrics.eventsEmitted60s.length && socketMetrics.eventsEmitted60s[pruneIdx] < cutoff) {
+    pruneIdx++
   }
-  while (socketMetrics.reconnections60s.length > 0 && socketMetrics.reconnections60s[0] < cutoff) {
-    socketMetrics.reconnections60s.shift()
+  if (pruneIdx > 0) socketMetrics.eventsEmitted60s.splice(0, pruneIdx)
+
+  pruneIdx = 0
+  while (pruneIdx < socketMetrics.reconnections60s.length && socketMetrics.reconnections60s[pruneIdx] < cutoff) {
+    pruneIdx++
   }
+  if (pruneIdx > 0) socketMetrics.reconnections60s.splice(0, pruneIdx)
 
   // Categorize connected terminals
   const byCategory: Record<string, number> = {}

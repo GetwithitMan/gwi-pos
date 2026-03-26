@@ -102,11 +102,51 @@ function readBody(req: IncomingMessage): Promise<string> {
 const ALLOWED_ROOM_PREFIXES = ['location:', 'tag:', 'terminal:', 'station:', 'scale:']
 const MAX_ROOMS_PER_SOCKET = 50
 
+// ── Per-socket rate limiting (mirrors socket-server.ts) ──────────────────────
+const socketRateLimits = new Map<string, { count: number; resetAt: number }>()
+const MAX_EVENTS_PER_SECOND = 200
+
+function checkSocketRateLimit(socketId: string): boolean {
+  const now = Date.now()
+  let state = socketRateLimits.get(socketId)
+  if (!state || now > state.resetAt) {
+    state = { count: 0, resetAt: now + 1000 }
+    socketRateLimits.set(socketId, state)
+  }
+  state.count++
+  return state.count <= MAX_EVENTS_PER_SECOND
+}
+
+// Clean stale rate limit entries every 30s
+setInterval(() => {
+  const now = Date.now()
+  for (const [socketId, state] of socketRateLimits) {
+    if (now > state.resetAt + 5000) {
+      socketRateLimits.delete(socketId)
+    }
+  }
+}, 30_000)
+
+// ── Event allow-list for terminal_message relay (mirrors socket-server.ts) ───
+const TERMINAL_MESSAGE_ALLOWED_EVENTS = new Set([
+  'sync:completed',
+  'order:editing',
+  'order:editing-released',
+  'print:job',
+  'print:status',
+  'kds:bump',
+  'kds:recall',
+  'terminal:ping',
+  'terminal:config-update',
+  'terminal:payment_request',
+  'terminal:payment_complete',
+])
+
 function setupConnectionHandler(socketServer: SocketServer): void {
   // ==================== Authentication Middleware ====================
   socketServer.use((socket, next) => {
     try {
-      const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization
+      const token = socket.handshake.auth?.token || socket.handshake.auth?.deviceToken || socket.handshake.headers?.authorization
       const locationId = socket.handshake.auth?.locationId || socket.handshake.query?.locationId
 
       if (!locationId) {
@@ -119,8 +159,25 @@ function setupConnectionHandler(socketServer: SocketServer): void {
         return next(new Error('locationId required'))
       }
 
+      // In production, validate token against WS_AUTH_SECRET
+      const authSecret = process.env.WS_AUTH_SECRET
+      if (process.env.NODE_ENV === 'production') {
+        if (!token) {
+          console.warn(`[WS] Rejected connection — no auth token (${socket.handshake.address})`)
+          return next(new Error('Authentication required'))
+        }
+        if (authSecret && token !== authSecret) {
+          console.warn(`[WS] Rejected connection — invalid token (${socket.handshake.address})`)
+          return next(new Error('Invalid authentication token'))
+        }
+      }
+
       socket.data.locationId = locationId
-      socket.data.authenticated = !!token
+      socket.data.authenticated = true
+      // Track terminalId from handshake for cross-location validation
+      if (socket.handshake.auth?.terminalId) {
+        socket.data.terminalId = socket.handshake.auth.terminalId
+      }
       return next()
     } catch (err) {
       console.error('[WS] Auth middleware error:', err)
@@ -145,6 +202,10 @@ function setupConnectionHandler(socketServer: SocketServer): void {
 
     // Handle channel subscribe/unsubscribe from SocketEventProvider
     socket.on('subscribe', (channelName: string) => {
+      if (!checkSocketRateLimit(socket.id)) {
+        socket.emit('rate_limited', { message: 'Too many events per second', event: 'subscribe' })
+        return
+      }
       if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
         console.warn(`[WS] Rejected subscribe to invalid room: ${channelName}`)
         return
@@ -153,6 +214,14 @@ function setupConnectionHandler(socketServer: SocketServer): void {
       if (!joinedRooms.has(channelName) && joinedRooms.size >= MAX_ROOMS_PER_SOCKET) {
         console.warn(`[WS] Rejected subscribe — socket ${socket.id} at max rooms (${MAX_ROOMS_PER_SOCKET}): ${channelName}`)
         return
+      }
+      // Validate location rooms against authenticated context
+      if (channelName.startsWith('location:')) {
+        const roomLocationId = channelName.slice('location:'.length)
+        if (socket.data.locationId && roomLocationId !== socket.data.locationId) {
+          console.warn(`[WS] Rejected cross-location subscribe: socket bound to ${socket.data.locationId}, tried ${roomLocationId}`)
+          return
+        }
       }
       socket.join(channelName)
       joinedRooms.add(channelName)
@@ -275,6 +344,32 @@ function setupConnectionHandler(socketServer: SocketServer): void {
     socket.on(
       'terminal_message',
       ({ terminalId, event, data }: { terminalId: string; event: string; data: unknown }) => {
+        // Rate limit check
+        if (!checkSocketRateLimit(socket.id)) {
+          socket.emit('rate_limited', { message: 'Too many events per second', event: 'terminal_message' })
+          return
+        }
+
+        // Require authenticated locationId on sender
+        const senderLocationId = socket.data.locationId
+        if (!senderLocationId) {
+          console.warn(`[WS] terminal_message rejected — no authenticated locationId on socket ${socket.id}`)
+          return
+        }
+
+        // Validate event name against allow-list
+        if (!TERMINAL_MESSAGE_ALLOWED_EVENTS.has(event)) {
+          console.warn(`[WS] terminal_message rejected — event "${event}" not in allow-list (socket ${socket.id})`)
+          return
+        }
+
+        // Validate target terminal belongs to the same location
+        const targetInfo = connectedTerminals.get(terminalId)
+        if (targetInfo && targetInfo.locationId !== senderLocationId) {
+          console.warn(`[WS] terminal_message rejected — cross-location: sender ${senderLocationId}, target ${targetInfo.locationId}`)
+          return
+        }
+
         socketServer.to(`terminal:${terminalId}`).emit(event, data)
       }
     )

@@ -8,11 +8,25 @@ const log = createChildLogger('socket-event-buffer')
  * L2: PG SocketEventLog table (persistent, survives restarts)
  *
  * Design constraints:
- * - Max 1000 events per location in-memory, max 5 minutes TTL
+ * - Max 10,000 events per location in-memory, max 1 hour TTL
  * - Events are location-scoped (multi-tenant isolation)
  * - PG writes are fire-and-forget (never block the hot path)
  * - If PG is down, in-memory buffer still works exactly as before
  * - Cleanup runs every 5 minutes (in-memory + PG pruning)
+ *
+ * ID space (single-tenant assumption):
+ * NUCs are single-tenant (one locationId per server), so the in-memory
+ * per-location nextId counter and PG's auto-increment sequence naturally
+ * align — no cross-location contention on the PG sequence. On startup,
+ * getLatestEventId() seeds the in-memory counter from PG max(id) to
+ * maintain continuity across restarts. If a PG write fails (fire-and-forget),
+ * the in-memory counter may advance past PG, but getLatestEventId()
+ * handles this by always using max(in-memory, PG) as the baseline.
+ *
+ * For multi-tenant deployments (shared PG across locations), the PG
+ * auto-increment would be shared across locations and diverge from
+ * per-location in-memory counters. This would require using a dedicated
+ * per-location sequence column instead of the global auto-increment id.
  */
 
 export interface BufferedEvent {

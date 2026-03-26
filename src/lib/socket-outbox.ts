@@ -135,18 +135,27 @@ export async function flushSocketOutbox(
   let failed = 0
 
   try {
-    // Read unflushed events — ORDER BY id guarantees causal order
+    // Claim rows atomically: UPDATE ... RETURNING inside a single statement.
+    // This replaces SELECT ... FOR UPDATE SKIP LOCKED which required a
+    // transaction wrapper to hold the lock. The UPDATE + RETURNING pattern
+    // atomically marks rows as 'flushing' and returns them in one operation,
+    // preventing double-flush without needing an explicit transaction.
     const rows: Array<{
       id: bigint
       event: string
       data: unknown
       room: string
     }> = await db.$queryRawUnsafe(
-      `SELECT id, event, data, room
-       FROM "SocketEventLog"
-       WHERE "locationId" = $1 AND flushed = false
-       ORDER BY id ASC
-       LIMIT $2`,
+      `UPDATE "SocketEventLog"
+       SET status = 'flushing'
+       WHERE id IN (
+         SELECT id FROM "SocketEventLog"
+         WHERE "locationId" = $1 AND flushed = false AND status != 'flushing'
+         ORDER BY id ASC
+         LIMIT $2
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING id, event, data, room`,
       locationId,
       maxBatch,
     )
@@ -154,6 +163,7 @@ export async function flushSocketOutbox(
     if (rows.length === 0) return { flushed: 0, failed: 0 }
 
     const flushedIds: bigint[] = []
+    const failedIds: bigint[] = []
 
     for (const row of rows) {
       try {
@@ -174,20 +184,30 @@ export async function flushSocketOutbox(
         flushedIds.push(row.id)
         flushed++
       } catch (emitErr) {
-        // Emit failed (socket server down, IPC unreachable, etc.)
-        // Leave flushed=false — catch-up will deliver on reconnect
+        // Emit failed — revert to pending so catch-up or next flush picks it up
+        failedIds.push(row.id)
         failed++
         log.warn({ eventId: Number(row.id), event: row.event, error: emitErr instanceof Error ? emitErr.message : String(emitErr) }, 'Emit failed for outbox event')
       }
     }
 
-    // Batch-mark all successfully emitted events as flushed
+    // Batch-mark successfully emitted events as flushed
     if (flushedIds.length > 0) {
       await db.$executeRawUnsafe(
         `UPDATE "SocketEventLog"
          SET flushed = true, status = 'sent'
          WHERE id = ANY($1::bigint[])`,
         flushedIds.map(Number),
+      )
+    }
+
+    // Revert failed events back to pending for retry
+    if (failedIds.length > 0) {
+      await db.$executeRawUnsafe(
+        `UPDATE "SocketEventLog"
+         SET status = 'pending'
+         WHERE id = ANY($1::bigint[])`,
+        failedIds.map(Number),
       )
     }
   } catch (err) {
@@ -213,6 +233,16 @@ export async function flushAllPendingOutbox(): Promise<{ total: number }> {
   let total = 0
 
   try {
+    // Reset stale 'flushing' rows from prior crashes. If the process died while
+    // rows were claimed (status='flushing'), they're orphaned — no one will retry
+    // them because flushSocketOutbox excludes status='flushing'. Reset any that
+    // are older than 5 minutes back to 'pending' so they get picked up below.
+    await db.$executeRawUnsafe(
+      `UPDATE "SocketEventLog"
+       SET status = 'pending'
+       WHERE status = 'flushing' AND "createdAt" < NOW() - INTERVAL '5 minutes'`,
+    )
+
     // Find distinct locations with unflushed events
     const locations: Array<{ locationId: string }> = await db.$queryRawUnsafe(
       `SELECT DISTINCT "locationId" FROM "SocketEventLog" WHERE flushed = false LIMIT 50`,
