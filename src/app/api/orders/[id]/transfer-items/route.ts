@@ -82,8 +82,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Server-side permission check
-    const auth = await requirePermission(employeeId, fromOrder.locationId, PERMISSIONS.MGR_TRANSFER_CHECKS)
+    // Server-side permission check — transfer items between orders requires pos.transfer_order
+    // (manager.transfer_checks is for transferring check ownership between employees, not item moves)
+    const auth = await requirePermission(employeeId, fromOrder.locationId, PERMISSIONS.POS_TRANSFER_ORDER)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

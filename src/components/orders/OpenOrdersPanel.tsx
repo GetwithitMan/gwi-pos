@@ -13,7 +13,7 @@ import { TabTransferModal } from './TabTransferModal'
 import { AuthStatusBadge } from '@/components/tabs/AuthStatusBadge'
 import { LastCallDialog } from '@/components/tabs/LastCallDialog'
 import { toast } from '@/stores/toast-store'
-import { hasPermission } from '@/lib/auth-utils'
+import { hasPermission, isAdmin } from '@/lib/auth-utils'
 
 interface OpenOrder {
   id: string
@@ -230,7 +230,12 @@ export function OpenOrdersPanel({
   const [orders, setOrders] = useState<OpenOrder[]>([])
   const [closedOrders, setClosedOrders] = useState<OpenOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'mine'>('all')
+  // Determine if user can see others' orders before setting default filter
+  const canViewOthersOrders = isAdmin(employeePermissions) ||
+    hasPermission(employeePermissions, 'manage_orders') ||
+    hasPermission(employeePermissions, 'manager') ||
+    hasPermission(employeePermissions, 'pos.view_others_orders')
+  const [filter, setFilter] = useState<'all' | 'mine'>(() => canViewOthersOrders ? 'all' : 'mine')
   const [typeFilter, setTypeFilter] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<'open' | 'closed'>('open')
   const [searchQuery, setSearchQuery] = useState('')
@@ -252,7 +257,7 @@ export function OpenOrdersPanel({
   const [showLastCall, setShowLastCall] = useState(false)
 
   const dark = isExpanded || forceDark
-  const isManagerUser = hasPermission(employeePermissions, 'manage_orders') || hasPermission(employeePermissions, 'admin') || hasPermission(employeePermissions, 'all')
+  const isManagerUser = canViewOthersOrders
 
   const loadOrders = useCallback(async (forPreviousDay = false) => {
     if (!locationId) return
@@ -618,7 +623,9 @@ export function OpenOrdersPanel({
       : closedOrders
     let result = [...displayOrders]
 
-    if (filter === 'mine' && employeeId) {
+    // Non-managers always see only their own orders (enforce even if filter state is 'all')
+    const effectiveFilter = canViewOthersOrders ? filter : 'mine'
+    if (effectiveFilter === 'mine' && employeeId) {
       result = result.filter(o => o.employee.id === employeeId)
     }
     if (typeFilter) {
@@ -1201,17 +1208,19 @@ export function OpenOrdersPanel({
 
         <div className={`w-px h-6 mx-1 ${dark ? 'bg-white/10' : 'bg-gray-200'}`} />
 
-        {/* Mine/All */}
-        <button
-          onClick={() => setFilter('all')}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-            filter === 'all'
-              ? (dark ? 'bg-white/15 text-white' : 'bg-gray-800 text-white')
-              : (dark ? 'bg-white/5 text-slate-400 hover:bg-white/10' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
-          }`}
-        >
-          All
-        </button>
+        {/* Mine/All — "All" only visible to managers/admins with pos.view_others_orders */}
+        {canViewOthersOrders && (
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              filter === 'all'
+                ? (dark ? 'bg-white/15 text-white' : 'bg-gray-800 text-white')
+                : (dark ? 'bg-white/5 text-slate-400 hover:bg-white/10' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+            }`}
+          >
+            All
+          </button>
+        )}
         <button
           onClick={() => setFilter('mine')}
           className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${

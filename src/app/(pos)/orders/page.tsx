@@ -785,8 +785,8 @@ export default function OrdersPage() {
       setTabCardInfo={setTabCardInfo as any}
       setIsSendingOrder={handlers.setIsSendingOrder}
       setTabsRefreshTrigger={setTabsRefreshTrigger}
-      onTransferItems={savedOrderId ? () => setShowItemTransferModal(true) : undefined}
-      onTransferOrder={savedOrderId ? () => setShowTabTransferModal(true) : undefined}
+      onTransferItems={savedOrderId && hasPermission(permissionsArray, PERMISSIONS.POS_TRANSFER_ORDER) ? () => setShowItemTransferModal(true) : undefined}
+      onTransferOrder={savedOrderId && hasPermission(permissionsArray, PERMISSIONS.POS_TRANSFER_ORDER) ? () => setShowTabTransferModal(true) : undefined}
       lastSentItemIds={handlers.lastSentItemIds}
       onRepeatRound={handleRepeatRound}
       bartenderDeselectTabRef={bartenderDeselectTabRef}
@@ -869,6 +869,7 @@ export default function OrdersPage() {
         onScanComplete={handleScanComplete}
         cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
         scaleId={bootstrap.terminalScaleId}
+        employeePermissions={permissionsArray}
         onQuickServiceOrder={() => {
           const takeout = bootstrap.orderTypes.find(ot => ot.slug === 'takeout' && ot.isActive)
           const fallback = bootstrap.orderTypes.find(ot => ot.slug !== 'dine_in' && ot.slug !== 'bar_tab' && ot.isActive)

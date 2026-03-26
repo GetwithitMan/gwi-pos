@@ -274,6 +274,8 @@ export const SYNC_MODELS: Readonly<Record<string, SyncModelConfig>> = {
   FulfillmentEvent:       { direction: 'none', owner: 'nuc', priority: 80, batchSize: 100 },
   BridgeCheckpoint:       { direction: 'none', owner: 'nuc', priority: 81, batchSize: 10 },
   OutageQueueEntry:       { direction: 'none', owner: 'nuc', priority: 82, batchSize: 100 },
+  SocketEventLog:         { direction: 'none', owner: 'nuc', priority: 0, batchSize: 0 },
+  CellularEvent:          { direction: 'none', owner: 'none', priority: 999, batchSize: 0, conflictStrategy: 'neon-wins' },
 } as const
 
 /**
@@ -349,7 +351,7 @@ export const DOWNSTREAM_INTERVAL_MS = parseInt(
 /** Tables that must NEVER sync — operational/ephemeral NUC-local data */
 export const LOCAL_ONLY_TABLES = new Set([
   'HardwareCommand', 'CloudEventQueue', 'SyncAuditEntry', 'HealthCheck',
-  'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog',
+  'FulfillmentEvent', 'BridgeCheckpoint', 'OutageQueueEntry', 'SocketEventLog', 'CellularEvent',
   'RegisteredDevice', 'MobileSession', 'ServerRegistrationToken',
   'SyncConflict', 'SyncWatermark', // quarantine infrastructure
   'LocalSchemaState', 'LocalInstallState', // NUC-owned infrastructure (never synced)

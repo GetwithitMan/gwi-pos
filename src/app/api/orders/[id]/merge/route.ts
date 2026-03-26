@@ -71,8 +71,9 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Server-side permission check
-    const auth = await requirePermission(employeeId, targetOrder.locationId, PERMISSIONS.MGR_BULK_OPERATIONS)
+    // Server-side permission check — merging orders requires pos.transfer_order
+    // (manager.bulk_operations is for batch void/close, not order merging)
+    const auth = await requirePermission(employeeId, targetOrder.locationId, PERMISSIONS.POS_TRANSFER_ORDER)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

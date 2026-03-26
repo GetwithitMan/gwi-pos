@@ -477,7 +477,8 @@ export const PUT = withVenue(async function PUT(
       const auth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_ACCESS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
       // Elevated checks for sensitive field changes
-      if (tableId !== undefined) {
+      // Only require pos.change_table when the table is actually changing (not just present in body)
+      if (tableId !== undefined && tableId !== existingOrder.tableId) {
         const tAuth = await requirePermission(requestingEmployeeId, existingOrder.locationId, PERMISSIONS.POS_CHANGE_TABLE)
         if (!tAuth.authorized) return NextResponse.json({ error: tAuth.error }, { status: tAuth.status })
       }
@@ -870,6 +871,7 @@ export const PATCH = withVenue(async function PATCH(
         inclusiveTaxRate: true,
         donationAmount: true,
         convenienceFee: true,
+        tableId: true,
         items: {
           where: { deletedAt: null, status: 'active' },
           select: {
@@ -897,7 +899,8 @@ export const PATCH = withVenue(async function PATCH(
       const auth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_ACCESS)
       if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
       // Elevated checks for sensitive field changes
-      if (tableId !== undefined) {
+      // Only require pos.change_table when the table is actually changing (not just present in body)
+      if (tableId !== undefined && tableId !== existing.tableId) {
         const tAuth = await requirePermission(requestingEmployeeId, existing.locationId, PERMISSIONS.POS_CHANGE_TABLE)
         if (!tAuth.authorized) return NextResponse.json({ error: tAuth.error }, { status: tAuth.status })
       }

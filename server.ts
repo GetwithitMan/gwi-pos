@@ -28,6 +28,7 @@ import { startOutageReplayWorker, stopOutageReplayWorker } from './src/lib/sync/
 import { startFulfillmentBridge, stopFulfillmentBridge } from './src/lib/fulfillment-bridge-worker'
 import { startBridgeCheckpoint, stopBridgeCheckpoint } from './src/lib/bridge-checkpoint'
 import { startCloudRelayClient, stopCloudRelayClient } from './src/lib/cloud-relay-client'
+import { startCellularRelayCleanup, stopCellularRelayCleanup } from './src/lib/cellular-event-relay'
 import { disconnectNeon } from './src/lib/neon-client'
 import { cleanupStaleOrders } from './src/lib/domain/cleanup/stale-order-cleanup'
 import { listPendingRetries, processWalkoutRetry } from './src/lib/domain/datacap/walkout-retry-service'
@@ -442,6 +443,10 @@ async function main() {
       registerWorker('cloudRelay', 'optional',
         () => startCloudRelayClient(),
         () => stopCloudRelayClient()
+      )
+      registerWorker('cellularRelay', 'optional',
+        () => startCellularRelayCleanup(),
+        () => stopCellularRelayCleanup()
       )
     }
 

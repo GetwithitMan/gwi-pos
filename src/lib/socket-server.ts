@@ -16,6 +16,7 @@
  * - For standalone: run this file directly with ts-node
  */
 
+import { relayCellularEvent } from './cellular-event-relay'
 import type { Server as HTTPServer } from 'http'
 import type { Server as SocketServer, Socket } from 'socket.io'
 import { MOBILE_EVENTS, PAT_EVENTS } from '@/types/multi-surface'
@@ -1287,6 +1288,8 @@ export async function emitToLocation(locationId: string, event: string, data: un
     const eid = recordEvent(locationId, event, data, room)
     const enriched = data && typeof data === 'object' && !Array.isArray(data) ? { ...data as Record<string, unknown>, _eid: eid } : data
     globalForSocket.socketServer.to(room).emit(event, enriched)
+    // Relay to Neon for cellular terminals (fire-and-forget)
+    relayCellularEvent(locationId, event, enriched)
     return true
   }
   return emitViaIPC({ type: 'location', target: locationId, event, data })
@@ -1330,6 +1333,8 @@ export async function emitCriticalToLocation(
     const enriched = { ...payload, _eid: eid }
     try {
       globalForSocket.socketServer.to(room).emit(event, enriched)
+      // Relay to Neon for cellular terminals (fire-and-forget)
+      relayCellularEvent(locationId, event, enriched)
     } catch (err) {
       log.error({ err, event, room }, 'Critical emit failed — leaving in ack queue for retry')
       return  // Don't mark as sent — ack queue will retry

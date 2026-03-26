@@ -13,6 +13,7 @@ import { isTempId } from '@/lib/order-utils'
 import type { EngineMenuItem, EnginePricingOption } from '@/hooks/useOrderingEngine'
 import { PricingOptionPicker } from '@/components/orders/PricingOptionPicker'
 import { useLongPress } from '@/hooks/useLongPress'
+import { hasPermission, isAdmin } from '@/lib/auth-utils'
 import { useOrderEditing } from '@/hooks/useOrderEditing'
 import { useTabCreation } from '@/hooks/useTabCreation'
 import ModeSelector from '@/components/orders/ModeSelector'
@@ -506,6 +507,12 @@ export function BartenderView({
   // ---------------------------------------------------------------------------
   // STATE
   // ---------------------------------------------------------------------------
+
+  // Permission: only managers/admins can edit category bar layout, reorder items, etc.
+  const canEditLayout = isAdmin(employeePermissions) ||
+    hasPermission(employeePermissions, 'manager') ||
+    hasPermission(employeePermissions, 'settings.edit') ||
+    hasPermission(employeePermissions, 'settings.menu')
 
   // Tabs
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
@@ -1473,8 +1480,9 @@ export function BartenderView({
   }, [selectedTabId, onOpenPayment])
 
   // --- Long press hooks ---
+  // Only allow category/item layout editing for managers/admins
   const categoryLongPress = useLongPress(
-    useCallback(() => setIsEditingCategories(true), []),
+    useCallback(() => { if (canEditLayout) setIsEditingCategories(true) }, [canEditLayout]),
     { onTap: useCallback(() => categoryScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' }), []) },
   )
 
@@ -1486,7 +1494,7 @@ export function BartenderView({
   )
 
   const itemsLongPress = useLongPress(
-    useCallback(() => setIsEditingItems(prev => !prev), []),
+    useCallback(() => { if (canEditLayout) setIsEditingItems(prev => !prev) }, [canEditLayout]),
   )
 
   // Reset category order

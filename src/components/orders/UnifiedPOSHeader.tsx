@@ -7,6 +7,7 @@ import { PendingSyncBadge } from '@/components/PendingSyncBadge'
 import { ScaleStatusBadge } from '@/components/scale/ScaleStatusBadge'
 import { PrinterStatusIndicator } from '@/components/pos/PrinterStatusIndicator'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { hasPermission, isAdmin } from '@/lib/auth-utils'
 import type { OrderTypeConfig } from '@/types/order-types'
 
 interface SearchMenuItem {
@@ -80,6 +81,8 @@ export interface UnifiedPOSHeaderProps {
   isCardListening?: boolean
   onToggleCardListener?: () => void
   cardListenerEnabled?: boolean
+  // Permissions for gating menu items
+  employeePermissions?: string[]
 }
 
 export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
@@ -126,7 +129,13 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   isCardListening,
   onToggleCardListener,
   cardListenerEnabled,
+  employeePermissions = [],
 }: UnifiedPOSHeaderProps) {
+  // Manager/admin check for gating sensitive menu items
+  const isManagerOrAdmin = isAdmin(employeePermissions) ||
+    hasPermission(employeePermissions, 'manager') ||
+    hasPermission(employeePermissions, 'staff.view')
+
   const [showEmployeeMenu, setShowEmployeeMenu] = useState(false)
   const [showGearMenu, setShowGearMenu] = useState(false)
   const employeeRef = useRef<HTMLDivElement>(null)
@@ -324,7 +333,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
               <div style={{ padding: '2px 0' }}>
                 {onSwitchUser && <DropItem label="Switch User" onClick={() => { setShowEmployeeMenu(false); onSwitchUser() }} />}
                 <Sep />
-                <DropLink href="/crew" label="Crew Hub" onClick={() => setShowEmployeeMenu(false)} />
+                {isManagerOrAdmin && <DropLink href="/crew" label="Crew Hub" onClick={() => setShowEmployeeMenu(false)} />}
                 <DropLink href="/crew/shift" label="My Shift" onClick={() => setShowEmployeeMenu(false)} />
                 <DropLink href="/crew/tip-bank" label="Tip Bank" onClick={() => setShowEmployeeMenu(false)} />
                 <DropLink href="/crew/tip-group" label="Tip Group" onClick={() => setShowEmployeeMenu(false)} />

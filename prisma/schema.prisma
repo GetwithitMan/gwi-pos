@@ -9331,6 +9331,17 @@ model SocketEventLog {
   @@index([locationId, id])
 }
 
+model CellularEvent {
+  id         BigInt   @id @default(autoincrement())
+  locationId String
+  event      String
+  data       Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  @@index([locationId, id])
+  @@index([createdAt])
+}
+
 // ============================================
 // LOYALTY SYSTEM (Migration 098)
 // ============================================
