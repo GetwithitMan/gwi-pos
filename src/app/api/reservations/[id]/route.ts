@@ -8,6 +8,7 @@ import { repriceAndRevalidate } from '@/lib/reservations/revalidate'
 import { transition, TransitionError } from '@/lib/reservations/state-machine'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import type { OperatingHours } from '@/lib/reservations/availability'
 
@@ -110,6 +111,7 @@ export const PUT = withVenue(async function PUT(
         }).catch(console.error)
 
         void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
+        void pushUpstream()
 
         return NextResponse.json({ data: { reservation: updated } })
       } catch (err) {
@@ -201,6 +203,7 @@ export const PUT = withVenue(async function PUT(
     if (body.tags !== undefined) updateData.tags = body.tags
     if (body.customerId !== undefined) updateData.customerId = body.customerId || null
     if (body.bottleServiceTierId !== undefined) updateData.bottleServiceTierId = body.bottleServiceTierId || null
+    updateData.lastMutatedBy = process.env.VERCEL ? 'cloud' : 'local'
 
     const updated = await db.reservation.update({
       where: { id },
@@ -232,6 +235,7 @@ export const PUT = withVenue(async function PUT(
     }).catch(console.error)
 
     void notifyDataChanged({ locationId: current.locationId, domain: 'reservations', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { reservation: updated } })
   } catch (error) {
@@ -311,6 +315,7 @@ export const DELETE = withVenue(async function DELETE(
         })().catch(console.error)
 
         void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
+        void pushUpstream()
 
         return NextResponse.json({ data: { success: true, message: 'Reservation cancelled' } })
       } catch (err) {
@@ -321,9 +326,10 @@ export const DELETE = withVenue(async function DELETE(
       }
     }
 
-    await db.reservation.update({ where: { id }, data: { deletedAt: new Date() } })
+    await db.reservation.update({ where: { id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
 
     void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

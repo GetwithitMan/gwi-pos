@@ -7,6 +7,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET all printers for a location
@@ -134,6 +135,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     // Notify all terminals that hardware config changed
     void emitToLocation(locationId, 'settings:updated', { source: 'printer', action: 'created', printerId: printer.id }).catch(console.error)
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: printer.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { printer } })
   } catch (error) {

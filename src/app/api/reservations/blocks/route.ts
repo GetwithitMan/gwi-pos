@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List reservation blocks
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -78,6 +79,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'reservations', action: 'created', entityId: block.id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: block,
@@ -133,6 +135,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'reservations', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: block })
   } catch (error) {
@@ -173,6 +176,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'reservations', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ success: true })
   } catch (error) {

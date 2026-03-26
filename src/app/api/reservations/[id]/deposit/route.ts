@@ -229,7 +229,7 @@ export const POST = withVenue(async function POST(
     if (fullyPaid) {
       await db.reservation.update({
         where: { id },
-        data: { depositStatus: 'paid', updatedAt: new Date() },
+        data: { depositStatus: 'paid', updatedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
 
       // Auto-confirm pending reservations when deposit is fully paid

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get gift card details (by ID or card number)
@@ -57,7 +58,7 @@ export const GET = withVenue(async function GET(
     if (giftCard.expiresAt && new Date() > giftCard.expiresAt && giftCard.status === 'active') {
       await db.giftCard.update({
         where: { id: giftCard.id },
-        data: { status: 'expired' }
+        data: { status: 'expired', lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' }
       })
       giftCard.status = 'expired'
     }
@@ -118,9 +119,11 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
             status: 'frozen',
             frozenAt: new Date(),
             frozenReason: reason || 'Manual freeze',
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           }
         })
         void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
+        void pushUpstream()
         return NextResponse.json({ data: {
           ...frozen,
           initialBalance: Number(frozen.initialBalance),
@@ -141,9 +144,11 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
             status: 'active',
             frozenAt: null,
             frozenReason: null,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           }
         })
         void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
+        void pushUpstream()
         return NextResponse.json({ data: {
           ...unfrozen,
           initialBalance: Number(unfrozen.initialBalance),
@@ -172,6 +177,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           where: { id },
           data: {
             currentBalance: newBalance,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
             transactions: {
               create: {
                 locationId: giftCard.locationId,
@@ -189,6 +195,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         })
 
         void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
+        void pushUpstream()
 
         return NextResponse.json({ data: {
           ...reloaded,
@@ -227,6 +234,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           data: {
             currentBalance: newBalance,
             status: newStatus,
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
             transactions: {
               create: {
                 locationId: giftCard.locationId,
@@ -244,6 +252,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         })
 
         void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
+        void pushUpstream()
 
         return NextResponse.json({ data: {
           ...redeemed,
@@ -270,6 +279,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
           data: {
             currentBalance: newBalance,
             status: 'active', // Reactivate if depleted
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
             transactions: {
               create: {
                 locationId: giftCard.locationId,
@@ -287,6 +297,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         })
 
         void notifyDataChanged({ locationId: giftCard.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
+        void pushUpstream()
 
         return NextResponse.json({ data: {
           ...refunded,

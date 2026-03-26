@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single order type
@@ -83,6 +84,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
       })
 
       void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
+      void pushUpstream()
 
       return NextResponse.json({ data: { orderType } })
     }
@@ -122,6 +124,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { orderType: updatedOrderType } })
   } catch (error) {
@@ -159,6 +162,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
         data: { isActive: false },
       })
       void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
+      void pushUpstream()
       return NextResponse.json({ data: {
         message: 'System order type deactivated',
         orderType,
@@ -177,6 +181,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
         data: { isActive: false },
       })
       void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'updated', entityId: id })
+      void pushUpstream()
       return NextResponse.json({ data: {
         message: 'Order type deactivated (orders exist using this type)',
         orderType,
@@ -190,6 +195,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'order-types', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       message: 'Order type deleted',

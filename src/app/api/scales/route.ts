@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all scales for a location
@@ -116,6 +117,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: scale.id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a specific coupon
@@ -81,6 +82,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
             data: { isActive: true },
           })
           void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
+          void pushUpstream()
           return NextResponse.json({ data: {
             ...activated,
             discountValue: Number(activated.discountValue),
@@ -92,6 +94,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
             data: { isActive: false },
           })
           void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
+          void pushUpstream()
           return NextResponse.json({ data: {
             ...deactivated,
             discountValue: Number(deactivated.discountValue),
@@ -227,6 +230,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     void notifyDataChanged({ locationId: coupon.locationId, domain: 'coupons', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       ...updated,
@@ -263,6 +267,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
         data: { isActive: false },
       })
       void notifyDataChanged({ locationId: deactivated.locationId, domain: 'coupons', action: 'deleted', entityId: id })
+      void pushUpstream()
       return NextResponse.json({ data: {
         success: true,
         message: 'Coupon has redemptions and was deactivated instead of deleted',
@@ -275,6 +280,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: deleted.locationId, domain: 'coupons', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

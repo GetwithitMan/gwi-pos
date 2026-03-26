@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // Helper to parse HH:MM time to minutes from midnight
@@ -254,6 +255,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     void notifyDataChanged({ locationId, domain: 'events', action: 'created', entityId: event.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       event: {

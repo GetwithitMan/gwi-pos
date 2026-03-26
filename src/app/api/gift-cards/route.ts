@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { sendGiftCardEmail } from '@/lib/gift-card-email'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // Generate a unique gift card number
 function generateCardNumber(): string {
@@ -161,6 +162,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
     console.log(`[AUDIT] GIFT_CARD_CREATED: card=${giftCard.cardNumber}, balance=$${Number(giftCard.initialBalance)}, by employee ${purchasedById}, orderId=${orderId || 'NONE'}`)
 
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created', entityId: giftCard.id })
+    void pushUpstream()
 
     // Fire-and-forget: Send gift card email to recipient if email provided
     if (recipientEmail) {

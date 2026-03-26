@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchTableStatusChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
@@ -222,6 +223,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: table.locationId, domain: 'floorplan', action: 'updated', entityId: table.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       table: {
@@ -312,6 +314,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: table.locationId, domain: 'floorplan', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

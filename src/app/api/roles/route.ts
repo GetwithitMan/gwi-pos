@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { requirePermission } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -144,6 +145,7 @@ export const POST = withVenue(withAuth('STAFF_MANAGE_ROLES', async function POST
     })
 
     void notifyDataChanged({ locationId, domain: 'roles', action: 'created', entityId: role.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: role.id,

@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single scale by ID
@@ -138,6 +139,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     void notifyDataChanged({ locationId: locationId!, domain: 'hardware', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {
@@ -191,6 +193,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: locationId!, domain: 'hardware', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

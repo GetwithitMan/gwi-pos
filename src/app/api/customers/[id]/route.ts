@@ -369,6 +369,7 @@ export const PUT = withVenue(async function PUT(
         ...(marketingOptIn !== undefined && { marketingOptIn }),
         ...(birthday !== undefined && { birthday: birthday ? new Date(birthday) : null }),
         ...(loyaltyPoints !== undefined && { loyaltyPoints }),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 
@@ -431,7 +432,7 @@ export const DELETE = withVenue(async function DELETE(
     // Soft delete (tenant-scoped)
     await db.customer.update({
       where: { id, locationId },
-      data: { isActive: false, deletedAt: new Date() },
+      data: { isActive: false, deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
     })
 
     void notifyDataChanged({ locationId, domain: 'customers', action: 'deleted', entityId: id })

@@ -46,7 +46,7 @@ export function NewTabModal({
   const [preAuthAmount, setPreAuthAmount] = useState(defaultPreAuthAmount)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [focusedField, setFocusedField] = useState<string | null>('tabName')
+  const [focusedField, setFocusedField] = useState<string | null>(null)
 
   const resetForm = () => {
     setTabName('')
@@ -55,6 +55,7 @@ export function NewTabModal({
     setCardBrand('visa')
     setPreAuthAmount(defaultPreAuthAmount)
     setError(null)
+    setFocusedField(null)
   }
 
   const handleClose = () => {

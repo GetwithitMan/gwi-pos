@@ -4,6 +4,7 @@ import * as EmployeeRepository from '@/lib/repositories/employee-repository'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission, getActorFromRequest, clearPermissionCache } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
@@ -302,6 +303,7 @@ export const PUT = withVenue(async function PUT(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: existing.locationId, domain: 'employees', action: 'updated', entityId: id })
+    void pushUpstream()
 
     // Real-time cross-terminal update
     void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})
@@ -406,6 +408,7 @@ export const DELETE = withVenue(async function DELETE(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: employee.locationId, domain: 'employees', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     // Real-time cross-terminal update
     void emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(() => {})

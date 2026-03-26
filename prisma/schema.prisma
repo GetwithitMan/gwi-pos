@@ -886,6 +886,9 @@ model Location {
   loyaltyPrograms      LoyaltyProgram[]
   loyaltyTransactions  LoyaltyTransaction[]
 
+  // Sync Infrastructure
+  syncWatermark SyncWatermark?
+
   @@index([organizationId])
 }
 
@@ -2857,7 +2860,7 @@ model Payment {
   locationId String
   location   Location  @relation(fields: [locationId], references: [id])
   orderId    String
-  order      Order     @relation(fields: [orderId], references: [id])
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   employeeId String? // Who processed the payment
   employee   Employee? @relation("PaymentEmployee", fields: [employeeId], references: [id])
 
@@ -9074,7 +9077,7 @@ model OutageQueueEntry {
   metadata       Json?
   createdAt      DateTime          @default(now())
   replayedAt     DateTime?
-  location       Location          @relation(fields: [locationId], references: [id])
+  location       Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@index([locationId, status])
   @@index([outageId])
@@ -9233,6 +9236,7 @@ model GwiMigrations {
 model SyncWatermark {
   id                           String   @id @default(cuid())
   locationId                   String   @unique
+  location                     Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
   lastAcknowledgedDownstreamAt DateTime @default(now())
   lastAcknowledgedUpstreamAt   DateTime @default(now())
   createdAt                    DateTime @default(now())

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single storage location
@@ -77,6 +78,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { storageLocation } })
   } catch (error) {
@@ -121,6 +123,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

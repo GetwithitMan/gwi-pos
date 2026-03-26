@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { DEFAULT_VENUE_PORTAL } from '@/lib/settings/defaults'
 
@@ -90,6 +91,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     invalidateLocationCache(locationId)
     void notifyDataChanged({ locationId, domain: 'settings', action: 'updated', entityId: locationId })
+    void pushUpstream()
 
     return NextResponse.json({ data: mergedVP })
   } catch (error) {

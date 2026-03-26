@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 /** Validate IPv4 address — each octet must be 0-255 with no leading zeros */
@@ -346,6 +347,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     }
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: terminal.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { terminal } })
   } catch (error: any) {

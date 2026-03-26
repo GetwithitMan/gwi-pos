@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { KDSScreenLinkCreateSchema, KDSScreenLinkUpdateSchema } from '@/lib/kds/types'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET — list screen links for a location or specific screen
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -141,6 +142,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: link.id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {
@@ -203,6 +205,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {
@@ -253,6 +256,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

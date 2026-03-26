@@ -3,6 +3,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST /api/hardware/kds-screens/[id]/unpair - Remove device pairing
@@ -35,6 +36,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,

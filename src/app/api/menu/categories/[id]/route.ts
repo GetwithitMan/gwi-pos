@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getRequestLocationId } from '@/lib/request-context'
@@ -69,6 +70,7 @@ export const PUT = withVenue(async function PUT(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'updated', entityId: category.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: category.id,
@@ -144,6 +146,7 @@ export const DELETE = withVenue(async function DELETE(
 
       // Notify cloud → NUC sync
       void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'deleted', entityId: id })
+      void pushUpstream()
     }
 
     return NextResponse.json({ data: { success: true } })

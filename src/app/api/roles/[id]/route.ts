@@ -6,6 +6,7 @@ import { requirePermission, clearPermissionCache } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // roleType/accessLevel: UX display metadata only — never used for authorization
 
@@ -174,6 +175,7 @@ export const PUT = withVenue(async function PUT(
     void emitToLocation(existing.locationId, 'employees:changed', { action: 'role_updated', roleId: id }).catch(console.error)
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'roles', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       role: {
@@ -243,6 +245,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     void notifyDataChanged({ locationId: role.locationId, domain: 'roles', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

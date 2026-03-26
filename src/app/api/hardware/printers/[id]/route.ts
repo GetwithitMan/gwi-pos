@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET single printer
@@ -94,6 +95,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     // Notify all terminals that hardware config changed
     void emitToLocation(existingPrinter.locationId, 'settings:updated', { source: 'printer', action: 'updated', printerId: id }).catch(console.error)
     void notifyDataChanged({ locationId: existingPrinter.locationId, domain: 'hardware', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { printer } })
   } catch (error) {
@@ -128,6 +130,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     // Notify all terminals that hardware config changed
     void emitToLocation(printer.locationId, 'settings:updated', { source: 'printer', action: 'deleted', printerId: id }).catch(console.error)
     void notifyDataChanged({ locationId: printer.locationId, domain: 'hardware', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { SYSTEM_ORDER_TYPES } from '@/types/order-types'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all order types for a location
@@ -100,6 +101,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     void notifyDataChanged({ locationId, domain: 'order-types', action: 'created', entityId: orderType.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { orderType } }, { status: 201 })
   } catch (error) {
@@ -165,6 +167,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
 
     for (const ot of createdTypes) {
       void notifyDataChanged({ locationId, domain: 'order-types', action: 'created', entityId: ot.id })
+      void pushUpstream()
     }
 
     return NextResponse.json({ data: {

@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchIngredientLibraryUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 
@@ -514,6 +515,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     void notifyDataChanged({ locationId, domain: 'inventory', action: 'created', entityId: ingredient.id })
+    void pushUpstream()
 
     // Real-time cross-terminal update
     void dispatchIngredientLibraryUpdate(locationId, {

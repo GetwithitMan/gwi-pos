@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single print route by ID
@@ -140,6 +141,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     void notifyDataChanged({ locationId: existingRoute.locationId, domain: 'hardware', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { route } })
   } catch (error) {
@@ -172,6 +174,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: route.locationId, domain: 'hardware', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

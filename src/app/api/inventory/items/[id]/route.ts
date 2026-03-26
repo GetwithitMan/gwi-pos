@@ -5,6 +5,7 @@ import { SOCKET_EVENTS } from '@/lib/socket-events'
 import type { InventoryStockChangePayload } from '@/lib/socket-events'
 import { queueSocketEvent, flushSocketOutbox } from '@/lib/socket-outbox'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get single inventory item
@@ -180,6 +181,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     }
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       item: {
@@ -243,6 +245,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

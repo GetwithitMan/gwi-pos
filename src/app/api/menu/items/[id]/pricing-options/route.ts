@@ -5,6 +5,7 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET all pricing option groups + nested options for a menu item
@@ -219,6 +220,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     }).catch(() => {})
 
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'created', entityId: group.id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

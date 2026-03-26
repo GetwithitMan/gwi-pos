@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const GET = withVenue(async function GET(
   request: NextRequest,
@@ -238,6 +239,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'combos', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       combo: {
@@ -310,6 +312,7 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     void notifyDataChanged({ locationId: menuItemCheck.locationId, domain: 'combos', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

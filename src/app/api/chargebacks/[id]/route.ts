@@ -40,7 +40,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     // Build update data
-    const data: Record<string, unknown> = { updatedAt: new Date() }
+    const data: Record<string, unknown> = { updatedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' }
     if (status) data.status = status
     if (notes !== undefined) data.notes = notes
     if (resolution !== undefined) data.responseNotes = resolution

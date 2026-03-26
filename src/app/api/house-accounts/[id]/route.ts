@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single house account
@@ -72,10 +73,12 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
         ...(body.status !== undefined && { status: body.status }),
         ...(body.taxExempt !== undefined && { taxExempt: body.taxExempt }),
         ...(body.notes !== undefined && { notes: body.notes }),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       account: { ...account, creditLimit: Number(account.creditLimit), currentBalance: Number(account.currentBalance) },
@@ -116,14 +119,16 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     if (account._count.transactions > 0) {
       await db.houseAccount.update({
         where: { id },
-        data: { status: 'closed' },
+        data: { status: 'closed', lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
       })
       void notifyDataChanged({ locationId: account.locationId, domain: 'house-accounts', action: 'deleted', entityId: id })
+      void pushUpstream()
       return NextResponse.json({ data: { success: true, message: 'Account closed (has transaction history)' } })
     }
 
-    await db.houseAccount.update({ where: { id }, data: { deletedAt: new Date() } })
+    await db.houseAccount.update({ where: { id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
     void notifyDataChanged({ locationId: account.locationId, domain: 'house-accounts', action: 'deleted', entityId: id })
+    void pushUpstream()
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete account:', error)

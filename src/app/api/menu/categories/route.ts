@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged, dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { requirePermission } from '@/lib/api-auth'
@@ -113,6 +114,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: category.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: category.id,

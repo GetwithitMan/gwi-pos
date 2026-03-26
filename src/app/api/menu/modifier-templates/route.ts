@@ -5,6 +5,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 function formatTemplate(t: any) {
   return {
@@ -180,6 +181,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: template.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: formatTemplate(template) }, { status: 201 })
   } catch (error) {

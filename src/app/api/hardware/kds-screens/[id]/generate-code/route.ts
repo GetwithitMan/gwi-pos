@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // POST /api/hardware/kds-screens/[id]/generate-code - Generate a pairing code
 export const POST = withVenue(withAuth('ADMIN', async function POST(
@@ -37,6 +38,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     })
 
     void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       pairingCode,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - List all print routes for a location
@@ -140,6 +141,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'created', entityId: route.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { route } })
   } catch (error) {

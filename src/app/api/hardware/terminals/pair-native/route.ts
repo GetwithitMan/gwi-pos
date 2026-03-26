@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 const VALID_PLATFORMS = ['BROWSER', 'ANDROID', 'IOS'] as const
 
 // POST complete terminal pairing for native apps (Android/iOS)
@@ -120,6 +121,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
+    void pushUpstream()
 
     console.log(
       `[pair-native] Terminal ${updated.id} (${updated.name}) paired successfully — fingerprint: ${deviceFingerprint || 'none'}, platform: ${platform}, ip: ${clientIp}`

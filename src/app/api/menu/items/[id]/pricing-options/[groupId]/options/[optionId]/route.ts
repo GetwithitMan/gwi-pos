@@ -5,6 +5,7 @@ import { invalidateMenuCache } from '@/lib/menu-cache'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // PUT update an option
@@ -81,6 +82,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     }).catch(() => {})
 
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'updated', entityId: optionId })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {
@@ -155,6 +157,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     }).catch(() => {})
 
     void notifyDataChanged({ locationId, domain: 'pricing', action: 'deleted', entityId: optionId })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

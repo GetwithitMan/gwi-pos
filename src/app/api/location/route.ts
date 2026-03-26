@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { withAuth } from '@/lib/api-auth-middleware'
 
@@ -57,6 +58,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     })
 
     void notifyDataChanged({ locationId: location.id, domain: 'location', action: 'updated' })
+    void pushUpstream()
     void emitToLocation(location.id, 'settings:updated', { trigger: 'location-metadata-changed' }).catch(() => {})
 
     return NextResponse.json({ data: updated })

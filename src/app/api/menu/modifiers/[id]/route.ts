@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { getRequestLocationId } from '@/lib/request-context'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
@@ -284,6 +285,7 @@ export const PUT = withVenue(async function PUT(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: modifierGroup.locationId, domain: 'menu', action: 'updated', entityId: id })
+    void pushUpstream()
 
     // Fire-and-forget socket dispatch for real-time menu structure updates
     void dispatchMenuStructureChanged(modifierGroup.locationId, {
@@ -379,6 +381,7 @@ export const DELETE = withVenue(async function DELETE(
       invalidateMenuCache(group.locationId)
       // Notify cloud → NUC sync
       void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'deleted', entityId: id })
+      void pushUpstream()
       // Fire-and-forget socket dispatch for real-time menu structure updates
       void dispatchMenuStructureChanged(group.locationId, {
         action: 'modifier-group-updated',

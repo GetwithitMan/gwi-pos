@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List all prep stations for a location
 export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextRequest) {
@@ -112,6 +113,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     void notifyDataChanged({ locationId, domain: 'prep', action: 'created', entityId: station.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: station.id,

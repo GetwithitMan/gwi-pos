@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 
@@ -388,6 +389,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+    void pushUpstream()
 
     // Real-time cross-terminal update
     void emitToLocation(existing.locationId, 'inventory:changed', { ingredientId: id }).catch(() => {})
@@ -537,6 +539,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(request:
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { message: 'Ingredient deleted' } })
   } catch (error) {

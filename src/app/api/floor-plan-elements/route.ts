@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List all floor plan elements for a location (optionally filtered by section)
 export const GET = withVenue(async function GET(req: NextRequest) {
@@ -250,6 +251,7 @@ export const POST = withVenue(async function POST(req: Request) {
     dispatchFloorPlanUpdate(locationId, { async: true })
 
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: element.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { element } })
   } catch (error) {

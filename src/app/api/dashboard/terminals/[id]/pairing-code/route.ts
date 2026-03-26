@@ -10,6 +10,8 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import crypto from 'crypto'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,7 +87,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
       data: {
         pairingCode,
         pairingCodeExpiresAt,
-        lastMutatedBy: 'local',
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 
@@ -109,6 +111,9 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
         },
       },
     }).catch(console.error)
+
+    void notifyDataChanged({ locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
+    void pushUpstream()
 
     return NextResponse.json({
       pairingCode,

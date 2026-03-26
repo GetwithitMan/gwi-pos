@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Activate a pending house account
@@ -80,10 +81,11 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     // All checks passed — activate
     const updated = await db.houseAccount.update({
       where: { id },
-      data: { status: 'active' },
+      data: { status: 'active', lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' },
     })
 
     void notifyDataChanged({ locationId: account.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

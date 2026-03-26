@@ -5,6 +5,7 @@ import { getRequestLocationId } from '@/lib/request-context'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET — returns employee's quick bar items and location defaults
 export const GET = withVenue(async function GET(
@@ -93,6 +94,7 @@ export const PUT = withVenue(async function PUT(
     })
 
     void notifyDataChanged({ locationId: putLocationId, domain: 'quick-bar', action: 'updated', entityId: employeeId })
+    void pushUpstream()
 
     return NextResponse.json({ data: { itemIds } })
   } catch (error) {

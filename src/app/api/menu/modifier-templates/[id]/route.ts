@@ -5,6 +5,7 @@ import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -151,6 +152,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     })
 
     void notifyDataChanged({ locationId, domain: 'menu', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: formatTemplate(template) })
   } catch (error) {
@@ -187,6 +189,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     })
 
     void notifyDataChanged({ locationId, domain: 'menu', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

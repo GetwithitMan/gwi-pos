@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 
 // GET - List schedules
@@ -130,6 +131,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(request: Nex
     })
 
     void notifyDataChanged({ locationId, domain: 'scheduling', action: 'created', entityId: schedule.id })
+    void pushUpstream()
     void emitToLocation(locationId, 'schedules:changed', { trigger: 'schedule-created' }).catch(() => {})
 
     return NextResponse.json({ data: {

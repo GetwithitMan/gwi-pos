@@ -1504,6 +1504,7 @@ export const POST = withVenue(withTiming(async function POST(
           totalOrders: { increment: 1 },
           lastVisit: new Date(),
           averageTicket: newAverageTicket!,
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
       }).catch(err => console.error('Post-ingestion customer/loyalty update failed:', err))
 

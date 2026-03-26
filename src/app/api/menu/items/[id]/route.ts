@@ -6,6 +6,7 @@ import { dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuUpdate }
 import { computeIsOrderableOnline } from '@/lib/online-availability'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
@@ -436,6 +437,7 @@ export const PUT = withVenue(async function PUT(
 
     // Notify cloud → NUC sync for real-time updates
     void notifyDataChanged({ locationId: item.locationId, domain: 'menu', action: 'updated', entityId: item.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: item.id,
@@ -513,6 +515,7 @@ export const DELETE = withVenue(async function DELETE(
 
       // Notify cloud → NUC sync for real-time updates
       void notifyDataChanged({ locationId: item.locationId, domain: 'menu', action: 'deleted', entityId: id })
+      void pushUpstream()
     }
 
     return NextResponse.json({ data: { success: true } })

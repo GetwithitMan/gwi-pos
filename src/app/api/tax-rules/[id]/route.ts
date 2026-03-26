@@ -7,6 +7,7 @@ import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 import { invalidateTaxCache } from '@/lib/tax-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get a single tax rule
 export const GET = withVenue(async function GET(
@@ -85,6 +86,7 @@ export const PUT = withVenue(async function PUT(
     void emitToLocation(existing.locationId, 'settings:updated', { trigger: 'tax-rule-updated', taxRuleId: taxRule.id }).catch(console.error)
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'tax', action: 'updated', entityId: taxRule.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       taxRule: {
@@ -129,6 +131,7 @@ export const DELETE = withVenue(async function DELETE(
     void emitToLocation(taxRule.locationId, 'settings:updated', { trigger: 'tax-rule-deleted', taxRuleId: id }).catch(console.error)
 
     void notifyDataChanged({ locationId: taxRule.locationId, domain: 'tax', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

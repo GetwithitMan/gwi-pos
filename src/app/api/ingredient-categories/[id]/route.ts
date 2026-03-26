@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 
@@ -129,6 +130,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'updated', entityId: id })
+    void pushUpstream()
 
     try {
       const { emitToLocation } = await import('@/lib/socket-server')
@@ -240,6 +242,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     })
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'inventory', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     try {
       const { emitToLocation } = await import('@/lib/socket-server')

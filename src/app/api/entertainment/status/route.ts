@@ -399,6 +399,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
           data: {
             status: EntertainmentWaitlistStatus.cancelled,
             notes: 'Item under maintenance',
+            lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
           },
         })
 

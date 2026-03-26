@@ -80,6 +80,7 @@ export const POST = withVenue(withAuth(async function POST(
           depositMethod: 'cash',
           depositStatus: 'collected',
           depositCollectedBy: employeeId,
+          lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
         },
       })
 
@@ -137,6 +138,7 @@ export const POST = withVenue(withAuth(async function POST(
         depositCardBrand: response.cardType || null,
         depositStatus: 'collected',
         depositCollectedBy: employeeId,
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 
@@ -256,6 +258,7 @@ export const DELETE = withVenue(withAuth(async function DELETE(
       data: {
         depositStatus: 'refunded',
         depositRefundedAt: new Date(),
+        lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local',
       },
     })
 

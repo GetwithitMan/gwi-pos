@@ -5,6 +5,7 @@ import { hashPin } from '@/lib/auth'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { createEmployeeSchema, validateRequest } from '@/lib/validations'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
@@ -168,6 +169,7 @@ export const POST = withVenue(withAuth('STAFF_EDIT_PROFILE', async function POST
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'employees', action: 'created', entityId: employee.id })
+    void pushUpstream()
 
     // Real-time cross-terminal update
     void emitToLocation(locationId, 'employees:changed', { action: 'created', employeeId: employee.id }).catch(() => {})

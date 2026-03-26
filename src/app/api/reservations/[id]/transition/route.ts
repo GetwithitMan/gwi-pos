@@ -8,6 +8,7 @@ import { transition, TransitionError, type ReservationStatus, type OverrideType 
 import { offerSlotToWaitlist } from '@/lib/reservations/waitlist-bridge'
 import { dispatchReservationChanged } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -81,6 +82,7 @@ export const POST = withVenue(async function POST(
     }
 
     void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: updated })
   } catch (error) {

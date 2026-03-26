@@ -4,6 +4,7 @@ import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settin
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
@@ -363,6 +364,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // Notify cloud → NUC sync (cache-invalidate emits minimal payload)
     void notifyDataChanged({ locationId: location.id, domain: 'settings', action: 'updated' })
+    void pushUpstream()
 
     // Emit full settings to terminals so Android can pick up changes (e.g. idleLockMinutes)
     void emitToLocation(location.id, 'settings:updated', { settings: finalSettings })

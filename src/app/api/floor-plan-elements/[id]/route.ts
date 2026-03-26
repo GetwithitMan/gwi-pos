@@ -5,6 +5,7 @@ import { withVenue } from '@/lib/with-venue'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - Get a single floor plan element
 export const GET = withVenue(async function GET(
@@ -176,6 +177,7 @@ export const PUT = withVenue(async function PUT(
     dispatchFloorPlanUpdate(element.locationId, { async: true })
 
     void notifyDataChanged({ locationId: element.locationId, domain: 'floorplan', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { element } })
   } catch (error) {
@@ -219,6 +221,7 @@ export const DELETE = withVenue(async function DELETE(
     dispatchFloorPlanUpdate(element.locationId, { async: true })
 
     void notifyDataChanged({ locationId: element.locationId, domain: 'floorplan', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

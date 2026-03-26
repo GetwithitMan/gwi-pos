@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
 import { KDSDisplayModeSchema, KDSTransitionTimesSchema, KDSOrderBehaviorSchema, KDSOrderTypeFiltersSchema } from '@/lib/kds/types'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET single KDS screen
@@ -168,6 +169,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     // Notify all terminals that KDS screen config changed
     void emitToLocation(existingScreen.locationId, 'settings:updated', { source: 'kds-screen', action: 'updated', screenId: id }).catch(console.error)
     void notifyDataChanged({ locationId: existingScreen.locationId, domain: 'hardware', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { screen: completeScreen } })
   } catch (error) {
@@ -210,6 +212,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: screen.locationId, domain: 'hardware', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

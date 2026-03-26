@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
@@ -93,6 +94,7 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     }
 
     void notifyDataChanged({ locationId, domain: 'hardware', action: existing ? 'updated' : 'created', entityId: reader.id })
+    void pushUpstream()
 
     // Assign to this terminal (only if no conflict, or overriding)
     if (!conflict) {

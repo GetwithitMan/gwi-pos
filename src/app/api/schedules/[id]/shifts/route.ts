@@ -5,6 +5,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 
 /**
@@ -153,6 +154,7 @@ export const POST = withVenue(withAuth('ADMIN', async function POST(
     }
 
     void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'created', entityId: shift.id })
+    void pushUpstream()
     void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'shift-created' }).catch(() => {})
 
     return NextResponse.json({ data: response })
@@ -266,6 +268,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     }
 
     void notifyDataChanged({ locationId: schedule.locationId, domain: 'scheduling', action: 'updated', entityId: scheduleId })
+    void pushUpstream()
     void emitToLocation(schedule.locationId, 'schedules:changed', { trigger: 'shifts-bulk-updated' }).catch(() => {})
 
     return NextResponse.json({ data: response })

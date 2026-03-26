@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 
 /**
@@ -157,6 +158,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     }
 
     void notifyDataChanged({ locationId: shift.locationId, domain: 'scheduling', action: 'updated', entityId: shiftId })
+    void pushUpstream()
     void emitToLocation(shift.locationId, 'schedules:changed', { trigger: 'shift-updated' }).catch(() => {})
 
     return NextResponse.json({ data: response })
@@ -196,6 +198,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
     })
 
     void notifyDataChanged({ locationId: shift.locationId, domain: 'scheduling', action: 'deleted', entityId: shiftId })
+    void pushUpstream()
     void emitToLocation(shift.locationId, 'schedules:changed', { trigger: 'shift-deleted' }).catch(() => {})
 
     return NextResponse.json({ data: { message: 'Shift deleted' } })

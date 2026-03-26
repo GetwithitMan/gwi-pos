@@ -4,6 +4,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List all discount rules for a location
 // No auth required — POS terminals need discount list for order screen
@@ -151,6 +152,7 @@ export const POST = withVenue(withAuth('SETTINGS_MENU', async function POST(
     })
 
     void notifyDataChanged({ locationId, domain: 'discounts', action: 'created', entityId: discount.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       id: discount.id,

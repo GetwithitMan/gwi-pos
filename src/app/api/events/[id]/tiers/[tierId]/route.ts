@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET - Get a single pricing tier
@@ -175,6 +176,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
     })
 
     void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'updated', entityId: tierId })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       success: true,
@@ -259,6 +261,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       ])
 
       void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'deleted', entityId: tierId })
+      void pushUpstream()
 
       return NextResponse.json({ data: {
         success: true,
@@ -275,6 +278,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
       })
 
       void notifyDataChanged({ locationId: tier.locationId, domain: 'events', action: 'deleted', entityId: tierId })
+      void pushUpstream()
 
       return NextResponse.json({ data: {
         success: true,

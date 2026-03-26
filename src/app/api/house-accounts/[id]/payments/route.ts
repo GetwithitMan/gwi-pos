@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // POST - Record a payment against a house account balance
@@ -105,6 +106,7 @@ export const POST = withVenue(withAuth(async function POST(
     const { transaction, newBalance } = result
 
     void notifyDataChanged({ locationId: transaction.locationId, domain: 'house-accounts', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({
       data: {

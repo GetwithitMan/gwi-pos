@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
@@ -205,6 +206,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: modifierGroup.id })
+    void pushUpstream()
 
     // Fire-and-forget socket dispatch for real-time menu structure updates
     void dispatchMenuStructureChanged(locationId, {

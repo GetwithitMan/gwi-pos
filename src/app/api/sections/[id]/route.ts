@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
 
@@ -108,6 +109,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { section } })
   } catch (error) {
@@ -163,6 +165,7 @@ export const DELETE = withVenue(withAuth('ADMIN', async function DELETE(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'deleted', entityId: id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { success: true, tablesMovedToNoSection: tablesInSection } })
   } catch (error) {

@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 // GET - List all coupons for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -184,6 +185,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     void notifyDataChanged({ locationId, domain: 'coupons', action: 'created', entityId: coupon.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: {
       ...coupon,

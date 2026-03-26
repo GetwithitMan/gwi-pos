@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 // GET CFD settings for a location
@@ -159,6 +160,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(request: NextR
     })
 
     void notifyDataChanged({ locationId, domain: 'cfd', action: 'updated', entityId: settings.id })
+    void pushUpstream()
 
     return NextResponse.json({ data: { settings } })
   } catch (error) {

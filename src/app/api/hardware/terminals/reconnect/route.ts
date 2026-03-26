@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { withAuth } from '@/lib/api-auth-middleware'
 
 /**
@@ -111,6 +112,7 @@ export const POST = withVenue(withAuth({ allowCellular: true }, async function P
     })
 
     void notifyDataChanged({ locationId: terminal.locationId, domain: 'hardware', action: 'updated', entityId: terminal.id })
+    void pushUpstream()
 
     console.log(
       `[reconnect] Terminal ${updated.id} (${updated.name}) auto-reconnected via fingerprint — ip: ${clientIp}`
