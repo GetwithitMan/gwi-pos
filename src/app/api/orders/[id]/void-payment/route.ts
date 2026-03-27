@@ -149,6 +149,7 @@ export const POST = withVenue(async function POST(
     // Step 1: If card payment, void at Datacap first (outside DB transaction)
     const isCardPayment = payment.paymentMethod === 'card' || payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit'
     let voidActionId: string | null = null
+    let safVoidAttempted = false
     if (isCardPayment) {
       const recordNo = payment.datacapRecordNo
 
@@ -168,38 +169,83 @@ export const POST = withVenue(async function POST(
         )
       }
 
-      // Structured processor action tracking — log intent before calling Datacap
-      voidActionId = `void-${paymentId}-${Date.now()}`
-      console.log(
-        `[PROCESSOR-ACTION] PENDING: action=${voidActionId}, type=void, ` +
-        `orderId=${orderId}, paymentId=${paymentId}, recordNo=${recordNo}, ` +
-        `amount=${Number(payment.totalAmount)}, readerId=${effectiveReaderId}`
-      )
+      // SAF1: If the payment is still in the SAF queue (not yet forwarded to processor),
+      // void it on the reader to remove from the SAF queue. The regular voidSale call
+      // handles this — Datacap's VoidSaleByRecordNo works for both SAF-queued and
+      // online-settled transactions.
+      const isSafPending = (payment as any).safStatus === 'APPROVED_SAF_PENDING_UPLOAD'
+      if (isSafPending) {
+        safVoidAttempted = true
+        voidActionId = `saf-void-${paymentId}-${Date.now()}`
+        console.log(
+          `[PROCESSOR-ACTION] PENDING: action=${voidActionId}, type=saf-void, ` +
+          `orderId=${orderId}, paymentId=${paymentId}, recordNo=${recordNo}, ` +
+          `amount=${Number(payment.totalAmount)}, readerId=${effectiveReaderId}, ` +
+          `safStatus=APPROVED_SAF_PENDING_UPLOAD`
+        )
 
-      try {
-        const client = await requireDatacapClient(order.locationId)
-        const datacapResponse = await client.voidSale(effectiveReaderId, { recordNo })
-        const datacapError = parseError(datacapResponse)
+        try {
+          const client = await requireDatacapClient(order.locationId)
+          const datacapResponse = await client.voidSale(effectiveReaderId, { recordNo })
+          const datacapError = parseError(datacapResponse)
 
-        if (datacapResponse.cmdStatus !== 'Approved' || datacapError) {
-          console.log(
-            `[PROCESSOR-ACTION] DECLINED: action=${voidActionId}, ` +
-            `response=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}`
+          if (datacapResponse.cmdStatus === 'Approved' && !datacapError) {
+            console.log(`[PROCESSOR-ACTION] APPROVED: action=${voidActionId}, type=saf-void — removed from SAF queue`)
+          } else {
+            // SAF void failed at the reader (reader offline, or transaction already forwarded).
+            // Log warning but proceed with DB void — better to mark as voided in DB than leave
+            // it in a pending state. If the SAF forward runs later, it will encounter a mismatch
+            // (voided in DB but present on reader) which is safer than keeping the charge active.
+            console.warn(
+              `[PROCESSOR-ACTION] SAF-VOID-FAILED: action=${voidActionId}, ` +
+              `response=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}. ` +
+              `Proceeding with DB void — SAF forward may need manual reconciliation.`
+            )
+          }
+        } catch (datacapErr) {
+          // Reader is unreachable — log error but still proceed with DB void.
+          // The SAF transaction stays on the reader; when SAF forward runs,
+          // reconciliation will flag the mismatch.
+          const msg = datacapErr instanceof Error ? datacapErr.message : 'SAF void request failed'
+          console.error(
+            `[PROCESSOR-ACTION] SAF-VOID-ERROR: action=${voidActionId}, error=${msg}. ` +
+            `Proceeding with DB void — SAF forward may need manual reconciliation.`
           )
+        }
+      } else {
+        // Regular (non-SAF) card void — must succeed at Datacap before DB update
+        voidActionId = `void-${paymentId}-${Date.now()}`
+        console.log(
+          `[PROCESSOR-ACTION] PENDING: action=${voidActionId}, type=void, ` +
+          `orderId=${orderId}, paymentId=${paymentId}, recordNo=${recordNo}, ` +
+          `amount=${Number(payment.totalAmount)}, readerId=${effectiveReaderId}`
+        )
+
+        try {
+          const client = await requireDatacapClient(order.locationId)
+          const datacapResponse = await client.voidSale(effectiveReaderId, { recordNo })
+          const datacapError = parseError(datacapResponse)
+
+          if (datacapResponse.cmdStatus !== 'Approved' || datacapError) {
+            console.log(
+              `[PROCESSOR-ACTION] DECLINED: action=${voidActionId}, ` +
+              `response=${datacapError?.text || datacapResponse.textResponse || 'Unknown'}`
+            )
+            return NextResponse.json(
+              { error: `Datacap void failed: ${datacapError?.text || datacapResponse.textResponse || 'Unknown error'}. DB not modified.` },
+              { status: 502 }
+            )
+          }
+
+          console.log(`[PROCESSOR-ACTION] APPROVED: action=${voidActionId}, type=void`)
+        } catch (datacapErr) {
+          const msg = datacapErr instanceof Error ? datacapErr.message : 'Datacap void request failed'
+          console.error(`[PROCESSOR-ACTION] ERROR: action=${voidActionId}, error=${msg}`)
           return NextResponse.json(
-            { error: `Datacap void failed: ${datacapError?.text || datacapResponse.textResponse || 'Unknown error'}. DB not modified.` },
+            { error: `Datacap void failed: ${msg}. DB not modified.` },
             { status: 502 }
           )
         }
-
-        console.log(`[PROCESSOR-ACTION] APPROVED: action=${voidActionId}, type=void`)
-      } catch (datacapErr) {
-        const msg = datacapErr instanceof Error ? datacapErr.message : 'Datacap void request failed'
-        console.error(`[PROCESSOR-ACTION] ERROR: action=${voidActionId}, error=${msg}`)
-        return NextResponse.json(
-          { error: `Datacap void failed: ${msg}. DB not modified.` },
-          { status: 502 }
-        )
       }
     }
 
@@ -229,13 +275,18 @@ export const POST = withVenue(async function POST(
         }
 
         // 1. Update payment to voided
-        await PaymentRepository.updatePayment(paymentId, order.locationId, {
+        // SAF1: If this was an SAF-queued payment, also update safStatus to reflect the void
+        const voidUpdateData: Record<string, unknown> = {
           status: 'voided',
           voidedAt: new Date(),
           voidedBy: managerId,
           voidReason: reason,
           lastMutatedBy: mutationOrigin,
-        }, tx)
+        }
+        if (safVoidAttempted) {
+          voidUpdateData.safStatus = 'VOIDED'
+        }
+        await PaymentRepository.updatePayment(paymentId, order.locationId, voidUpdateData, tx)
         // Read back for return value (updatePayment returns count, not record)
         const updated = await PaymentRepository.getPaymentByIdOrThrow(paymentId, order.locationId, tx)
 

@@ -1,5 +1,5 @@
 /**
- * Generate version contract from migration state.
+ * Generate version contract from migration state + live DB schema introspection.
  * Runs at build time alongside generate-schema-sql.mjs.
  * Output is git-committed and consumed by both POS and MC.
  *
@@ -8,9 +8,17 @@
  *
  * Component versions track ALL deployable artifacts so the update agent,
  * installer, and dashboard can detect when any component needs updating.
+ *
+ * Phase 1A additions (schema drift elimination):
+ *  - Full schema contract via DB introspection (tables, columns, indexes, enums, FKs)
+ *  - Canonical structure with deterministic hashing (schemaContractHash)
+ *  - Risk classification by diffing against previous contract
+ *  - Compatibility analysis (forward_compatible, requires_schema_first, etc.)
+ *  - Optional HMAC-SHA256 signing via SCHEMA_CONTRACT_SECRET env var
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'fs'
 import { execSync } from 'child_process'
+import { createHash, createHmac } from 'crypto'
 import path from 'path'
 
 const root = process.cwd()
@@ -68,33 +76,589 @@ const ansibleBaselineVersion = (() => {
   } catch { return '2026.03.20.1' }
 })()
 
-const contract = {
-  schemaVersion,
-  seedVersion: 'v1',
-  provisionerVersion: '1',
-  migrationCount: files.length,
-  schemaSha256,
-  // Installer version fields — consumed by installer.run self-update check
-  installerVersion: appVersion,
-  version: appVersion,
-  // Component versions — consumed by update agent, heartbeat, dashboard
-  dashboardVersion,
-  syncAgentVersion: appVersion,
-  monitoringVersion: appVersion,
-  ansibleBaselineVersion,
-  buildDate: new Date().toISOString(),
-  gitSha,
-  generatedAt: new Date().toISOString(),
-  // Structured component manifest — all deployable artifacts
-  components: {
-    pos: { version: appVersion, artifact: 'app' },
-    dashboard: { version: dashboardVersion, artifact: 'gwi-nuc-dashboard.deb', url: '/gwi-nuc-dashboard.deb' },
-    installer: { version: appVersion, artifact: 'installer.run' },
-    syncAgent: { version: appVersion, artifact: 'sync-agent.js' },
-    monitoring: { version: appVersion, artifact: 'scripts/' },
-    ansibleBaseline: { version: ansibleBaselineVersion, artifact: 'installer/' },
-  },
+// ── Type normalization map ────────────────────────────────────────────────
+const TYPE_MAP = {
+  'int4': 'INTEGER',
+  'int8': 'BIGINT',
+  'int2': 'SMALLINT',
+  'bool': 'BOOLEAN',
+  'float4': 'REAL',
+  'float8': 'DOUBLE PRECISION',
+  'numeric': 'DECIMAL',
+  'text': 'TEXT',
+  'varchar': 'VARCHAR',
+  'timestamp': 'TIMESTAMP',
+  'timestamptz': 'TIMESTAMPTZ',
+  'jsonb': 'JSONB',
+  'json': 'JSON',
+  'uuid': 'UUID',
+  'bytea': 'BYTEA',
+  'serial': 'SERIAL',
+  'bigserial': 'BIGSERIAL',
+  'smallserial': 'SMALLSERIAL',
+  'date': 'DATE',
+  'time': 'TIME',
+  'timetz': 'TIMETZ',
+  'interval': 'INTERVAL',
+  'cidr': 'CIDR',
+  'inet': 'INET',
+  'macaddr': 'MACADDR',
+  'xml': 'XML',
+  'money': 'MONEY',
+  'oid': 'OID',
 }
 
-writeFileSync(outPath, JSON.stringify(contract, null, 2) + '\n', 'utf-8')
-console.log(`[generate-version-contract] Schema: ${schemaVersion}, ${files.length} migrations, POS: v${appVersion}, dashboard: v${dashboardVersion}, sha: ${gitSha}, hash: ${schemaSha256?.substring(0, 16) ?? 'N/A'}...`)
+/** Normalize a Postgres udt_name to a canonical type string */
+function normalizeType(udtName) {
+  if (!udtName) return 'UNKNOWN'
+  const lower = udtName.toLowerCase().replace(/^_/, '') // strip array prefix for base type lookup
+  const isArray = udtName.startsWith('_')
+  const base = TYPE_MAP[lower] || udtName.toUpperCase()
+  return isArray ? `${base}[]` : base
+}
+
+/**
+ * Strip implicit DEFAULT NULL for nullable columns.
+ * Postgres reports column_default=null for columns without explicit defaults,
+ * but some tools set it to 'NULL::type'. Normalize both to null.
+ */
+function normalizeDefault(columnDefault, isNullable) {
+  if (columnDefault === null || columnDefault === undefined) return null
+  const trimmed = columnDefault.trim()
+  // Strip implicit DEFAULT NULL on nullable columns
+  if (isNullable === 'YES' && /^NULL(::.+)?$/i.test(trimmed)) return null
+  return trimmed
+}
+
+// ── Schema introspection queries ──────────────────────────────────────────
+const TABLES_QUERY = `
+  SELECT table_name
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+    AND table_type = 'BASE TABLE'
+  ORDER BY table_name
+`
+
+const COLUMNS_QUERY = `
+  SELECT table_name, column_name, udt_name, is_nullable, column_default, ordinal_position
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+  ORDER BY table_name, ordinal_position
+`
+
+const INDEXES_QUERY = `
+  SELECT indexname, tablename, indexdef
+  FROM pg_indexes
+  WHERE schemaname = 'public'
+  ORDER BY indexname
+`
+
+const ENUMS_QUERY = `
+  SELECT t.typname, e.enumlabel, e.enumsortorder
+  FROM pg_type t
+  JOIN pg_enum e ON t.oid = e.enumtypid
+  JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+  WHERE n.nspname = 'public'
+  ORDER BY t.typname, e.enumsortorder
+`
+
+const FK_QUERY = `
+  SELECT
+    tc.constraint_name,
+    tc.table_name,
+    kcu.column_name,
+    ccu.table_name AS foreign_table_name,
+    ccu.column_name AS foreign_column_name
+  FROM information_schema.table_constraints AS tc
+  JOIN information_schema.key_column_usage AS kcu
+    ON tc.constraint_name = kcu.constraint_name
+    AND tc.table_schema = kcu.table_schema
+  JOIN information_schema.constraint_column_usage AS ccu
+    ON ccu.constraint_name = tc.constraint_name
+    AND ccu.table_schema = tc.table_schema
+  WHERE tc.constraint_type = 'FOREIGN KEY'
+    AND tc.table_schema = 'public'
+  ORDER BY tc.constraint_name
+`
+
+/**
+ * Parse index definition to extract column names and uniqueness.
+ * Example: "CREATE UNIQUE INDEX idx_name ON public.table USING btree (col1, col2)"
+ */
+function parseIndexDef(indexdef) {
+  const unique = /\bUNIQUE\b/i.test(indexdef)
+  // Extract columns from parentheses at the end
+  const colMatch = indexdef.match(/\(([^)]+)\)\s*$/)
+  const columns = colMatch
+    ? colMatch[1].split(',').map(c => c.trim().replace(/\s+(ASC|DESC|NULLS\s+(FIRST|LAST))$/i, ''))
+    : []
+  return { unique, columns }
+}
+
+/**
+ * Introspect the master Neon DB and return a canonical schema contract object.
+ * Returns null if DB is unreachable.
+ */
+async function introspectSchema() {
+  const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL
+  if (!connectionString) {
+    console.warn('[generate-version-contract] No DIRECT_URL or DATABASE_URL — skipping schema introspection')
+    return null
+  }
+
+  let pg
+  try {
+    pg = await import('pg')
+  } catch (err) {
+    console.warn('[generate-version-contract] pg package not available — skipping schema introspection:', err.message)
+    return null
+  }
+
+  const Pool = pg.default?.Pool || pg.Pool
+  const pool = new Pool({
+    connectionString,
+    // Short timeouts — this is a build-time tool, fail fast
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 5000,
+    max: 1,
+  })
+
+  let client
+  try {
+    client = await pool.connect()
+
+    // Run all introspection queries in parallel
+    const [tablesRes, columnsRes, indexesRes, enumsRes, fkRes] = await Promise.all([
+      client.query(TABLES_QUERY),
+      client.query(COLUMNS_QUERY),
+      client.query(INDEXES_QUERY),
+      client.query(ENUMS_QUERY),
+      client.query(FK_QUERY),
+    ])
+
+    // ── Build tables map (sorted alphabetically, columns by ordinal_position) ──
+    const tables = {}
+    const tableNames = tablesRes.rows.map(r => r.table_name).sort()
+    for (const name of tableNames) {
+      tables[name] = []
+    }
+    for (const col of columnsRes.rows) {
+      if (!tables[col.table_name]) continue // skip if table not in public schema list
+      tables[col.table_name].push({
+        name: col.column_name,
+        type: normalizeType(col.udt_name),
+        nullable: col.is_nullable === 'YES',
+        default: normalizeDefault(col.column_default, col.is_nullable),
+      })
+    }
+    // Columns are already ordered by ordinal_position from the query
+
+    // ── Build indexes array (sorted by name) ──
+    const indexes = indexesRes.rows.map(row => {
+      const { unique, columns } = parseIndexDef(row.indexdef)
+      return {
+        name: row.indexname,
+        table: row.tablename,
+        columns,
+        unique,
+      }
+    }).sort((a, b) => a.name.localeCompare(b.name))
+
+    // ── Build enums map (sorted by name, values by sort order) ──
+    const enums = {}
+    for (const row of enumsRes.rows) {
+      if (!enums[row.typname]) enums[row.typname] = []
+      enums[row.typname].push(row.enumlabel)
+    }
+    // Values are already sorted by enumsortorder from the query
+    // Sort enum names alphabetically
+    const sortedEnums = {}
+    for (const name of Object.keys(enums).sort()) {
+      sortedEnums[name] = enums[name]
+    }
+
+    // ── Build foreign keys array (sorted by constraint name) ──
+    const foreignKeys = fkRes.rows.map(row => ({
+      constraint: row.constraint_name,
+      table: row.table_name,
+      column: row.column_name,
+      foreignTable: row.foreign_table_name,
+      foreignColumn: row.foreign_column_name,
+    })).sort((a, b) => a.constraint.localeCompare(b.constraint))
+
+    return { tables, indexes, enums: sortedEnums, foreignKeys }
+  } catch (err) {
+    console.warn('[generate-version-contract] DB introspection failed — generating contract without schema:', err.message)
+    return null
+  } finally {
+    if (client) client.release()
+    await pool.end()
+  }
+}
+
+/**
+ * Compute SHA-256 of a canonical JSON string for deterministic hashing.
+ */
+function computeHash(data) {
+  const canonical = JSON.stringify(data, null, 0) // compact, deterministic
+  return createHash('sha256').update(canonical, 'utf8').digest('hex')
+}
+
+/**
+ * Compute HMAC-SHA256 signature of the contract using a secret key.
+ * Returns null if no secret is configured.
+ */
+function signContract(contractJson, secret) {
+  if (!secret) return null
+  return createHmac('sha256', secret).update(contractJson, 'utf8').digest('hex')
+}
+
+// ── Risk classification ───────────────────────────────────────────────────
+
+/**
+ * Compare current schema contract against previous and classify risk.
+ * Returns { riskScore, riskClassification, compatibleWith, compatibilityClass, migrationHints, changes }
+ */
+function classifyRisk(current, previous) {
+  // No previous contract — first build, everything is safe
+  if (!previous || !previous.schemaContract) {
+    return {
+      riskScore: 0,
+      riskClassification: 'low',
+      compatibleWith: [],
+      compatibilityClass: 'forward_compatible',
+      migrationHints: {
+        requiresBackfill: false,
+        addedTables: Object.keys(current?.tables || {}),
+        droppedTables: [],
+        addedColumns: [],
+        droppedColumns: [],
+        changedTypes: [],
+        addedIndexes: [],
+        droppedIndexes: [],
+        addedForeignKeys: [],
+        droppedForeignKeys: [],
+        addedEnumValues: [],
+        droppedEnumValues: [],
+      },
+      changes: [],
+    }
+  }
+
+  const prev = previous.schemaContract
+  const changes = []
+  let maxSeverity = 0 // 0=none, 1=low, 2=medium, 3=high, 4=critical
+
+  const severityWeight = { low: 1, medium: 2, high: 3, critical: 4 }
+
+  function addChange(type, severity, detail) {
+    changes.push({ type, severity, detail })
+    const w = severityWeight[severity] || 0
+    if (w > maxSeverity) maxSeverity = w
+  }
+
+  // Hints for migration planning
+  const hints = {
+    requiresBackfill: false,
+    addedTables: [],
+    droppedTables: [],
+    addedColumns: [],
+    droppedColumns: [],
+    changedTypes: [],
+    addedIndexes: [],
+    droppedIndexes: [],
+    addedForeignKeys: [],
+    droppedForeignKeys: [],
+    addedEnumValues: [],
+    droppedEnumValues: [],
+  }
+
+  // ── Compare tables ──
+  const prevTableNames = new Set(Object.keys(prev.tables || {}))
+  const currTableNames = new Set(Object.keys(current.tables || {}))
+
+  for (const name of currTableNames) {
+    if (!prevTableNames.has(name)) {
+      addChange('table_added', 'low', `New table: ${name}`)
+      hints.addedTables.push(name)
+    }
+  }
+  for (const name of prevTableNames) {
+    if (!currTableNames.has(name)) {
+      addChange('table_dropped', 'critical', `Dropped table: ${name}`)
+      hints.droppedTables.push(name)
+    }
+  }
+
+  // ── Compare columns per table ──
+  for (const tableName of currTableNames) {
+    if (!prevTableNames.has(tableName)) continue // new table — already classified
+
+    const prevCols = new Map((prev.tables[tableName] || []).map(c => [c.name, c]))
+    const currCols = new Map((current.tables[tableName] || []).map(c => [c.name, c]))
+
+    // New columns
+    for (const [colName, col] of currCols) {
+      if (!prevCols.has(colName)) {
+        if (col.nullable) {
+          addChange('column_added_nullable', 'low', `${tableName}.${colName} (nullable)`)
+        } else if (col.default !== null) {
+          addChange('column_added_with_default', 'medium', `${tableName}.${colName} (NOT NULL, default: ${col.default})`)
+          hints.requiresBackfill = true
+        } else {
+          addChange('column_added_not_null', 'high', `${tableName}.${colName} (NOT NULL, no default)`)
+          hints.requiresBackfill = true
+        }
+        hints.addedColumns.push(`${tableName}.${colName}`)
+      }
+    }
+
+    // Dropped columns
+    for (const [colName] of prevCols) {
+      if (!currCols.has(colName)) {
+        addChange('column_dropped', 'critical', `${tableName}.${colName}`)
+        hints.droppedColumns.push(`${tableName}.${colName}`)
+      }
+    }
+
+    // Changed types
+    for (const [colName, col] of currCols) {
+      const prevCol = prevCols.get(colName)
+      if (!prevCol) continue
+      if (col.type !== prevCol.type) {
+        addChange('type_changed', 'high', `${tableName}.${colName}: ${prevCol.type} -> ${col.type}`)
+        hints.changedTypes.push({ column: `${tableName}.${colName}`, from: prevCol.type, to: col.type })
+      }
+    }
+  }
+
+  // ── Compare indexes ──
+  const prevIndexNames = new Set((prev.indexes || []).map(i => i.name))
+  const currIndexNames = new Set((current.indexes || []).map(i => i.name))
+
+  for (const idx of current.indexes || []) {
+    if (!prevIndexNames.has(idx.name)) {
+      const severity = idx.unique ? 'medium' : 'low'
+      addChange('index_added', severity, `${idx.name} on ${idx.table}${idx.unique ? ' (UNIQUE)' : ''}`)
+      hints.addedIndexes.push(idx.name)
+    }
+  }
+  for (const idx of prev.indexes || []) {
+    if (!currIndexNames.has(idx.name)) {
+      addChange('index_dropped', 'medium', `${idx.name} on ${idx.table}`)
+      hints.droppedIndexes.push(idx.name)
+    }
+  }
+
+  // ── Compare foreign keys ──
+  const prevFKNames = new Set((prev.foreignKeys || []).map(f => f.constraint))
+  const currFKNames = new Set((current.foreignKeys || []).map(f => f.constraint))
+
+  for (const fk of current.foreignKeys || []) {
+    if (!prevFKNames.has(fk.constraint)) {
+      addChange('fk_added', 'medium', `${fk.constraint}: ${fk.table}.${fk.column} -> ${fk.foreignTable}.${fk.foreignColumn}`)
+      hints.addedForeignKeys.push(fk.constraint)
+    }
+  }
+  for (const fk of prev.foreignKeys || []) {
+    if (!currFKNames.has(fk.constraint)) {
+      addChange('fk_dropped', 'medium', `${fk.constraint}`)
+      hints.droppedForeignKeys.push(fk.constraint)
+    }
+  }
+
+  // ── Compare enums ──
+  const prevEnumNames = new Set(Object.keys(prev.enums || {}))
+  const currEnumNames = new Set(Object.keys(current.enums || {}))
+
+  for (const name of currEnumNames) {
+    if (!prevEnumNames.has(name)) {
+      addChange('enum_added', 'low', `New enum: ${name}`)
+      continue
+    }
+    // Compare values
+    const prevValues = new Set(prev.enums[name] || [])
+    const currValues = new Set(current.enums[name] || [])
+    for (const val of currValues) {
+      if (!prevValues.has(val)) {
+        addChange('enum_value_added', 'low', `${name}.${val}`)
+        hints.addedEnumValues.push(`${name}.${val}`)
+      }
+    }
+    for (const val of prevValues) {
+      if (!currValues.has(val)) {
+        addChange('enum_value_dropped', 'high', `${name}.${val}`)
+        hints.droppedEnumValues.push(`${name}.${val}`)
+      }
+    }
+  }
+  for (const name of prevEnumNames) {
+    if (!currEnumNames.has(name)) {
+      addChange('enum_dropped', 'critical', `Dropped enum: ${name}`)
+    }
+  }
+
+  // ── Compute risk score (0-100) ──
+  // Weight: low=2, medium=8, high=20, critical=40, cap at 100
+  let riskScore = 0
+  for (const c of changes) {
+    switch (c.severity) {
+      case 'low': riskScore += 2; break
+      case 'medium': riskScore += 8; break
+      case 'high': riskScore += 20; break
+      case 'critical': riskScore += 40; break
+    }
+  }
+  riskScore = Math.min(100, riskScore)
+
+  // ── Risk classification ──
+  const riskClassification =
+    maxSeverity >= 4 ? 'critical' :
+    maxSeverity >= 3 ? 'high' :
+    maxSeverity >= 2 ? 'medium' : 'low'
+
+  // ── Compatibility ──
+  const previousHash = previous.schemaContractHash || null
+  const isFullyAdditive = maxSeverity <= 1 // only low-risk changes
+  const compatibleWith = isFullyAdditive && previousHash ? [previousHash] : []
+
+  // ── Compatibility class ──
+  let compatibilityClass = 'forward_compatible'
+  if (maxSeverity >= 4) {
+    compatibilityClass = 'manual_migration_required'
+  } else if (maxSeverity >= 3) {
+    // High risk: type changes, dropped enum values — schema must be updated before new code
+    compatibilityClass = 'requires_schema_first'
+  } else if (maxSeverity >= 2) {
+    // Medium risk: new NOT NULL columns with defaults, new constraints — code should deploy first
+    compatibilityClass = 'requires_code_first'
+  }
+
+  return {
+    riskScore,
+    riskClassification,
+    compatibleWith,
+    compatibilityClass,
+    migrationHints: hints,
+    changes,
+  }
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
+async function main() {
+  // Read previous contract before overwriting (for risk diffing)
+  let previousContract = null
+  if (existsSync(outPath)) {
+    try {
+      previousContract = JSON.parse(readFileSync(outPath, 'utf-8'))
+    } catch {
+      console.warn('[generate-version-contract] Could not parse previous contract — treating as first build')
+    }
+  }
+
+  // Introspect DB schema
+  const schemaContract = await introspectSchema()
+
+  // Compute schema contract hash (deterministic)
+  const schemaContractHash = schemaContract ? computeHash(schemaContract) : null
+
+  // Compute risk classification
+  const previousContractHash = previousContract?.schemaContractHash || null
+  const {
+    riskScore,
+    riskClassification,
+    compatibleWith,
+    compatibilityClass,
+    migrationHints,
+    changes,
+  } = schemaContract
+    ? classifyRisk(schemaContract, previousContract)
+    : {
+        riskScore: 0,
+        riskClassification: 'low',
+        compatibleWith: previousContractHash ? [previousContractHash] : [],
+        compatibilityClass: 'forward_compatible',
+        migrationHints: { requiresBackfill: false },
+        changes: [],
+      }
+
+  // Build contract object
+  const contract = {
+    // ── Existing fields ──
+    schemaVersion,
+    seedVersion: 'v1',
+    provisionerVersion: '1',
+    migrationCount: files.length,
+    schemaSha256,
+    // Installer version fields — consumed by installer.run self-update check
+    installerVersion: appVersion,
+    version: appVersion,
+    // Component versions — consumed by update agent, heartbeat, dashboard
+    dashboardVersion,
+    syncAgentVersion: appVersion,
+    monitoringVersion: appVersion,
+    ansibleBaselineVersion,
+    buildDate: new Date().toISOString(),
+    gitSha,
+    generatedAt: new Date().toISOString(),
+    // Structured component manifest — all deployable artifacts
+    components: {
+      pos: { version: appVersion, artifact: 'app' },
+      dashboard: { version: dashboardVersion, artifact: 'gwi-nuc-dashboard.deb', url: '/gwi-nuc-dashboard.deb' },
+      installer: { version: appVersion, artifact: 'installer.run' },
+      syncAgent: { version: appVersion, artifact: 'sync-agent.js' },
+      monitoring: { version: appVersion, artifact: 'scripts/' },
+      ansibleBaseline: { version: ansibleBaselineVersion, artifact: 'installer/' },
+    },
+    // ── Phase 1A: Schema contract fields ──
+    contractVersion: 2,
+    ...(schemaContract ? { schemaContract } : {}),
+    schemaContractHash,
+    previousContractHash,
+    compatibleWith,
+    riskScore,
+    riskClassification,
+    compatibilityClass,
+    migrationHints,
+    // Only include detailed changes in non-production or when there are actual changes
+    ...(changes.length > 0 ? { schemaChanges: changes } : {}),
+    // Signature — added below after serialization
+    contractSignature: null,
+  }
+
+  // Serialize and sign
+  const contractJson = JSON.stringify(contract, null, 2)
+  const signingSecret = process.env.SCHEMA_CONTRACT_SECRET
+  if (signingSecret) {
+    contract.contractSignature = signContract(contractJson, signingSecret)
+  }
+
+  // Write output
+  const finalJson = JSON.stringify(contract, null, 2) + '\n'
+  writeFileSync(outPath, finalJson, 'utf-8')
+
+  // Summary logging
+  const tableCount = schemaContract ? Object.keys(schemaContract.tables).length : 0
+  const indexCount = schemaContract ? schemaContract.indexes.length : 0
+  const enumCount = schemaContract ? Object.keys(schemaContract.enums).length : 0
+  const fkCount = schemaContract ? schemaContract.foreignKeys.length : 0
+  const changeCount = changes.length
+
+  console.log(
+    `[generate-version-contract] Schema: ${schemaVersion}, ${files.length} migrations, POS: v${appVersion}, dashboard: v${dashboardVersion}, sha: ${gitSha}, hash: ${schemaSha256?.substring(0, 16) ?? 'N/A'}...`
+  )
+  if (schemaContract) {
+    console.log(
+      `[generate-version-contract] Contract v2: ${tableCount} tables, ${indexCount} indexes, ${enumCount} enums, ${fkCount} FKs | ` +
+      `risk: ${riskClassification} (${riskScore}/100) | compat: ${compatibilityClass} | ` +
+      `changes: ${changeCount} | signed: ${contract.contractSignature ? 'yes' : 'no'}`
+    )
+  } else {
+    console.log('[generate-version-contract] Contract v2: schema introspection skipped (no DB connection)')
+  }
+}
+
+main().catch(err => {
+  console.error('[generate-version-contract] Fatal error:', err)
+  process.exit(1)
+})

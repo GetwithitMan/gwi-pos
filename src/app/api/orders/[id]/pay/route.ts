@@ -497,6 +497,47 @@ export const POST = withVenue(withTiming(async function POST(
       } }) }
     }
 
+    // SAF2: SAF DUPLICATE PREVENTION — if client retries payment while offline (SAF captures
+    // with UUID-X on the reader), then network returns and client retries with UUID-Y, BOTH
+    // charges succeed. Detect existing SAF payments for this order to prevent double-charge.
+    // This check runs BEFORE Datacap is called so we never send a second authorization.
+    const hasCardPayment = payments.some(p => p.method === 'credit' || p.method === 'debit')
+    if (hasCardPayment) {
+      const safDuplicate = await tx.payment.findFirst({
+        where: {
+          orderId,
+          deletedAt: null,
+          status: 'completed',
+          OR: [
+            { isOfflineCapture: true },
+            { safStatus: { in: ['APPROVED_SAF_PENDING_UPLOAD', 'UPLOAD_PENDING', 'UPLOAD_SUCCESS'] } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, amount: true, tipAmount: true, totalAmount: true, paymentMethod: true, safStatus: true },
+      })
+      if (safDuplicate) {
+        log.warn(
+          { orderId, existingPaymentId: safDuplicate.id, safStatus: safDuplicate.safStatus, amount: toNumber(safDuplicate.amount) },
+          'SAF2: Blocked duplicate payment — SAF payment already exists for this order'
+        )
+        return { earlyReturn: NextResponse.json({ data: {
+          success: true,
+          duplicate: true,
+          orderId,
+          paymentId: safDuplicate.id,
+          amount: toNumber(safDuplicate.amount),
+          tipAmount: toNumber(safDuplicate.tipAmount),
+          totalAmount: toNumber(safDuplicate.totalAmount),
+          paymentMethod: safDuplicate.paymentMethod,
+          safStatus: safDuplicate.safStatus,
+          newOrderBalance: 0,
+          remainingBalance: 0,
+          message: 'Duplicate payment detected — SAF (offline) payment already captured for this order',
+        } }) }
+      }
+    }
+
     // C18: Permission checks moved OUTSIDE the FOR UPDATE transaction (above)
     // to reduce lock contention. No duplicate check needed here.
 
@@ -1962,7 +2003,8 @@ export const POST = withVenue(withTiming(async function POST(
 
       // Allocate tips via the tip bank pipeline (Skill 269)
       // Handles: CC fee deduction, tip group detection, ownership splits, ledger posting
-      // Fire-and-forget to not block payment response
+      // TIP DURABILITY: Awaited with try/catch + durable recovery record on failure.
+      // Tips captured on the card MUST reach the tip ledger — fire-and-forget is not acceptable.
       // Skill 277: kind defaults to 'tip' (voluntary gratuity). Future callers
       // (e.g. bottle service auto-gratuity) should pass 'auto_gratuity' or 'service_charge'.
       // Resolve tip owner: order's assigned employee, or the processing employee as fallback.
@@ -1972,82 +2014,144 @@ export const POST = withVenue(withTiming(async function POST(
       // resolveDeliveryTipRecipient checks DeliveryOrder and returns the correct recipientId.
       let tipOwnerEmployeeId = order.employeeId || employeeId
       if (totalTips > 0 && order.orderType === 'delivery' && !isTrainingPayment) {
-        void (async () => {
-          try {
-            // Look up the delivery order linked to this POS order
-            const deliveryOrders = await db.$queryRawUnsafe<{ id: string }[]>(
-              `SELECT "id" FROM "DeliveryOrder"
-               WHERE "orderId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
-               LIMIT 1`,
-              orderId,
+        try {
+          // Look up the delivery order linked to this POS order
+          const deliveryOrders = await db.$queryRawUnsafe<{ id: string }[]>(
+            `SELECT "id" FROM "DeliveryOrder"
+             WHERE "orderId" = $1 AND "locationId" = $2 AND "deletedAt" IS NULL
+             LIMIT 1`,
+            orderId,
+            order.locationId,
+          )
+          if (deliveryOrders.length) {
+            const resolved = await resolveDeliveryTipRecipient(
               order.locationId,
+              deliveryOrders[0].id,
             )
-            if (deliveryOrders.length) {
-              const resolved = await resolveDeliveryTipRecipient(
-                order.locationId,
-                deliveryOrders[0].id,
-              )
-              tipOwnerEmployeeId = resolved.recipientId
-            }
-          } catch (err) {
-            // Delivery tip resolution failure falls back to standard tip owner
-            console.error('[Pay] Delivery tip recipient resolution failed, using default:', err)
+            tipOwnerEmployeeId = resolved.recipientId
           }
+        } catch (err) {
+          // Delivery tip resolution failure falls back to standard tip owner
+          console.error('[Pay] Delivery tip recipient resolution failed, using default:', err)
+        }
 
-          if (tipOwnerEmployeeId) {
-            // Allocate tips per-payment to ensure each payment gets its own
-            // TipTransaction. This prevents a void of one split payment from
-            // charging back tips that belong to a different payment.
-            for (const bp of ingestResult.bridgedPayments) {
-              const paymentTip = Number(bp.tipAmount) || 0
-              if (paymentTip <= 0) continue
+        if (tipOwnerEmployeeId) {
+          // Allocate tips per-payment to ensure each payment gets its own
+          // TipTransaction. This prevents a void of one split payment from
+          // charging back tips that belong to a different payment.
+          for (const bp of ingestResult.bridgedPayments) {
+            const paymentTip = Number(bp.tipAmount) || 0
+            if (paymentTip <= 0) continue
 
-              await allocateTipsForPayment({
-                locationId: order.locationId,
-                orderId,
-                primaryEmployeeId: tipOwnerEmployeeId,
-                createdPayments: [{
-                  id: bp.id,
-                  paymentMethod: bp.paymentMethod,
-                  tipAmount: bp.tipAmount,
-                }],
-                totalTipsDollars: paymentTip,
-                tipBankSettings: settings.tipBank,
-                kind: autoGratApplied ? 'auto_gratuity' : 'tip',
+            const tipAllocParams = {
+              locationId: order.locationId,
+              orderId,
+              primaryEmployeeId: tipOwnerEmployeeId,
+              createdPayments: [{
+                id: bp.id,
+                paymentMethod: bp.paymentMethod,
+                tipAmount: bp.tipAmount,
+              }],
+              totalTipsDollars: paymentTip,
+              tipBankSettings: settings.tipBank,
+              kind: autoGratApplied ? 'auto_gratuity' : 'tip',
+            }
+            try {
+              await allocateTipsForPayment(tipAllocParams)
+            } catch (tipErr) {
+              console.error('[PAYMENT-SAFETY] Delivery tip allocation failed — creating recovery record', {
+                orderId, paymentId: bp.id, tipAmount: paymentTip,
+                error: tipErr instanceof Error ? tipErr.message : String(tipErr),
               })
+              try {
+                await db.auditLog.create({
+                  data: {
+                    locationId: order.locationId,
+                    action: 'tip_allocation_failed',
+                    entityType: 'order',
+                    entityId: orderId,
+                    details: {
+                      flow: 'pay-delivery',
+                      tipAmount: paymentTip,
+                      primaryEmployeeId: tipOwnerEmployeeId,
+                      paymentId: bp.id,
+                      paymentMethod: bp.paymentMethod,
+                      kind: autoGratApplied ? 'auto_gratuity' : 'tip',
+                      error: tipErr instanceof Error ? tipErr.message : String(tipErr),
+                      retryParams: tipAllocParams,
+                    },
+                  },
+                })
+              } catch (auditErr) {
+                console.error('[PAYMENT-SAFETY] CRITICAL: Both tip allocation AND recovery record failed (pay-delivery)', {
+                  orderId, locationId: order.locationId, tipAmount: paymentTip,
+                  employeeId: tipOwnerEmployeeId, paymentId: bp.id,
+                  tipError: tipErr instanceof Error ? tipErr.message : String(tipErr),
+                  auditError: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                })
+              }
             }
           }
-        })().catch(err => {
-          console.error('Background delivery tip allocation failed:', err)
-        })
+        }
       } else if (totalTips > 0 && !isTrainingPayment && (order as any).orderTypeRef?.allowTips !== false) {
         if (tipOwnerEmployeeId) {
           // Allocate tips per-payment to ensure each payment gets its own
           // TipTransaction with a per-payment idempotency key. This prevents
           // a void of one split payment from charging back tips belonging to
           // a different payment.
-          void (async () => {
-            for (const bp of ingestResult.bridgedPayments) {
-              const paymentTip = Number(bp.tipAmount) || 0
-              if (paymentTip <= 0) continue
+          for (const bp of ingestResult.bridgedPayments) {
+            const paymentTip = Number(bp.tipAmount) || 0
+            if (paymentTip <= 0) continue
 
-              await allocateTipsForPayment({
-                locationId: order.locationId,
-                orderId,
-                primaryEmployeeId: tipOwnerEmployeeId,
-                createdPayments: [{
-                  id: bp.id,
-                  paymentMethod: bp.paymentMethod,
-                  tipAmount: bp.tipAmount,
-                }],
-                totalTipsDollars: paymentTip,
-                tipBankSettings: settings.tipBank,
-                kind: autoGratApplied ? 'auto_gratuity' : 'tip',
-              })
+            const tipAllocParams = {
+              locationId: order.locationId,
+              orderId,
+              primaryEmployeeId: tipOwnerEmployeeId,
+              createdPayments: [{
+                id: bp.id,
+                paymentMethod: bp.paymentMethod,
+                tipAmount: bp.tipAmount,
+              }],
+              totalTipsDollars: paymentTip,
+              tipBankSettings: settings.tipBank,
+              kind: autoGratApplied ? 'auto_gratuity' : 'tip',
             }
-          })().catch(err => {
-            console.error('Background tip allocation failed:', err)
-          })
+            try {
+              await allocateTipsForPayment(tipAllocParams)
+            } catch (tipErr) {
+              console.error('[PAYMENT-SAFETY] Tip allocation failed (pay) — creating recovery record', {
+                orderId, paymentId: bp.id, tipAmount: paymentTip,
+                error: tipErr instanceof Error ? tipErr.message : String(tipErr),
+              })
+              try {
+                await db.auditLog.create({
+                  data: {
+                    locationId: order.locationId,
+                    action: 'tip_allocation_failed',
+                    entityType: 'order',
+                    entityId: orderId,
+                    details: {
+                      flow: 'pay',
+                      tipAmount: paymentTip,
+                      primaryEmployeeId: tipOwnerEmployeeId,
+                      paymentId: bp.id,
+                      paymentMethod: bp.paymentMethod,
+                      kind: autoGratApplied ? 'auto_gratuity' : 'tip',
+                      error: tipErr instanceof Error ? tipErr.message : String(tipErr),
+                      retryParams: tipAllocParams,
+                    },
+                  },
+                })
+              } catch (auditErr) {
+                console.error('[PAYMENT-SAFETY] CRITICAL: Both tip allocation AND recovery record failed (pay)', {
+                  orderId, locationId: order.locationId, tipAmount: paymentTip,
+                  employeeId: tipOwnerEmployeeId, paymentId: bp.id,
+                  tipError: tipErr instanceof Error ? tipErr.message : String(tipErr),
+                  auditError: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                })
+              }
+            }
+          }
         } else {
           // No employee to allocate tips to — the tip is still recorded in
           // Payment.tipAmount so the money is tracked, but no TipTransaction

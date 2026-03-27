@@ -243,6 +243,7 @@ export const PUT = withVenue(async function PUT(
           expectedCash,
           variance,
           endTime,
+          shiftStartedAt: shift.startedAt,
         })
       })
       const { updatedShift, transferredOrderIds } = closeResult
@@ -409,6 +410,20 @@ export const PUT = withVenue(async function PUT(
         { status: 409 }
       )
     }
+
+    // Handle pending $0-tip card payments (SHIFT-1 invariant)
+    if (error instanceof Error && error.message.startsWith('PENDING_TIPS:')) {
+      const pendingTipCount = parseInt(error.message.split(':')[1], 10)
+      return NextResponse.json(
+        {
+          error: `${pendingTipCount} card payment${pendingTipCount === 1 ? '' : 's'} have $0 tips. Adjust tips before closing shift.`,
+          code: 'PENDING_TIPS',
+          pendingTipCount,
+        },
+        { status: 409 }
+      )
+    }
+
     console.error('Failed to update shift:', error)
     return NextResponse.json(
       { error: 'Failed to update shift' },

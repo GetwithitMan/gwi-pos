@@ -96,6 +96,8 @@ export interface ShiftCloseInput {
   expectedCash: number
   variance: number
   endTime: Date
+  /** Shift start time — used to scope pending-tip check to this shift period */
+  shiftStartedAt: Date
 }
 
 export interface ShiftCloseResult {

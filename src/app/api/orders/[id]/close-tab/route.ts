@@ -572,7 +572,7 @@ export const POST = withVenue(async function POST(
     })
     void processNextDeduction().catch(err => log.warn({ err }, 'Background task failed'))
     if (finalTipAmount > 0 && order.employeeId) {
-      void allocateTipsForPayment({
+      const tipAllocParams = {
         locationId,
         orderId,
         primaryEmployeeId: order.employeeId,
@@ -584,9 +584,45 @@ export const POST = withVenue(async function POST(
         totalTipsDollars: finalTipAmount,
         tipBankSettings: locSettings.tipBank,
         kind: isAutoGratuity ? 'auto_gratuity' : 'tip',
-      }).catch(err => {
-        console.error('Background tip allocation failed (close-tab):', err)
-      })
+      }
+      try {
+        await allocateTipsForPayment(tipAllocParams)
+      } catch (tipErr) {
+        // TIP DURABILITY: Tip was captured on the card but allocation to the ledger failed.
+        // Create a durable recovery record so a retry job or manager can re-run allocation.
+        console.error('[PAYMENT-SAFETY] Tip allocation failed (close-tab) — creating recovery record', {
+          orderId, tipAmount: finalTipAmount, error: tipErr instanceof Error ? tipErr.message : String(tipErr),
+        })
+        try {
+          await db.auditLog.create({
+            data: {
+              locationId,
+              action: 'tip_allocation_failed',
+              entityType: 'order',
+              entityId: orderId,
+              details: {
+                flow: 'close-tab',
+                tipAmount: finalTipAmount,
+                primaryEmployeeId: order.employeeId,
+                paymentId: capturedCard.id,
+                paymentMethod: capturedCard.cardType || 'credit',
+                kind: isAutoGratuity ? 'auto_gratuity' : 'tip',
+                error: tipErr instanceof Error ? tipErr.message : String(tipErr),
+                retryParams: tipAllocParams,
+              },
+            },
+          })
+        } catch (auditErr) {
+          // Last resort: if even the audit log fails, log everything needed for manual recovery
+          console.error('[PAYMENT-SAFETY] CRITICAL: Both tip allocation AND recovery record failed (close-tab)', {
+            orderId, locationId, tipAmount: finalTipAmount, employeeId: order.employeeId,
+            paymentId: capturedCard.id, paymentMethod: capturedCard.cardType || 'credit',
+            kind: isAutoGratuity ? 'auto_gratuity' : 'tip',
+            tipError: tipErr instanceof Error ? tipErr.message : String(tipErr),
+            auditError: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          })
+        }
+      }
     }
 
     // Clean up temporary seats then dispatch floor plan update (chained so snapshot sees cleanup)

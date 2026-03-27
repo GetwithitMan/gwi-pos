@@ -36,6 +36,7 @@ export async function closeShift(
     expectedCash,
     variance,
     endTime,
+    shiftStartedAt,
   } = input
 
   let transferredOrderIds: string[] = []
@@ -90,6 +91,24 @@ export async function closeShift(
       } else {
         throw new Error(`OPEN_ORDERS:${openOrderCount}`)
       }
+    }
+  }
+
+  // SHIFT-1 invariant: NEVER close a shift with pending $0-tip card payments.
+  // This check runs INSIDE the transaction to prevent TOCTOU races where tips
+  // are modified between a pre-transaction check and the actual close.
+  if (!forceClose) {
+    const pendingTipCount = await tx.payment.count({
+      where: {
+        order: { employeeId, locationId },
+        status: 'completed',
+        tipAmount: { equals: 0 },
+        paymentMethod: 'card',
+        createdAt: { gte: shiftStartedAt },
+      },
+    })
+    if (pendingTipCount > 0) {
+      throw new Error(`PENDING_TIPS:${pendingTipCount}`)
     }
   }
 

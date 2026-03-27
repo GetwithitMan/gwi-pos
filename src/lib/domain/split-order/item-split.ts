@@ -8,6 +8,7 @@
 import { OrderItemStatus } from '@/generated/prisma/client'
 import { calculateSplitTax } from '@/lib/order-calculations'
 import { roundToCents } from '@/lib/pricing'
+import { ValidationError } from '@/lib/api-errors'
 import { createChildLogger } from '@/lib/logger'
 import { emitOrderEvent, emitOrderEvents } from '@/lib/order-events/emitter'
 import { distributeDiscountsProportionally } from './discount-distribution'
@@ -124,6 +125,12 @@ export async function createItemSplit(
   inclusiveTaxRate?: number,
 ): Promise<ItemSplitResult> {
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', order.id)
+
+  // Re-check status inside FOR UPDATE lock to prevent race with concurrent payment/close
+  const lockedOrder = await tx.order.findUnique({ where: { id: order.id }, select: { status: true } })
+  if (!lockedOrder || !['open', 'sent', 'in_progress'].includes(lockedOrder.status)) {
+    throw new ValidationError('Order status changed — cannot split')
+  }
 
   // Tax-exempt + donation fields from parent (available on the Prisma object even if not in SplitSourceOrder type)
   const parentAny = order as any

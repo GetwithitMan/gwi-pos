@@ -865,8 +865,46 @@ export async function POST(request: NextRequest) {
           new Date()
         )
       } catch (deliveryErr) {
-        // DeliveryOrder creation failure should NOT block the order
-        console.error('[checkout] DeliveryOrder creation error:', deliveryErr)
+        // CRITICAL: DeliveryOrder creation failed AFTER payment was processed.
+        // The order exists and is paid, but delivery will never be dispatched.
+        // Flag for manual review so staff can handle it.
+        log.error(
+          { err: deliveryErr, orderId: order.id, locationId },
+          'DeliveryOrder creation failed after payment — order needs manual review'
+        )
+
+        // Flag the order for manual attention
+        void venueDb.order.update({
+          where: { id: order.id },
+          data: {
+            metadata: {
+              needsManualReview: true,
+              deliveryCreationFailed: true,
+              deliveryError: deliveryErr instanceof Error ? deliveryErr.message : 'Unknown error',
+              failedAt: new Date().toISOString(),
+            },
+          },
+        }).catch(flagErr => log.error({ err: flagErr }, 'Failed to flag order for manual review'))
+
+        // Create audit trail for the failure
+        void venueDb.auditLog.create({
+          data: {
+            locationId,
+            action: 'delivery_order_creation_failed',
+            entityType: 'order',
+            entityId: order.id,
+            details: {
+              orderNumber: order.orderNumber,
+              error: deliveryErr instanceof Error ? deliveryErr.message : 'Unknown error',
+              customerName: body.customerName,
+              deliveryAddress: body.deliveryAddress,
+              paymentProcessed: true,
+              severity: 'critical',
+              resolution: 'Manual delivery dispatch required — payment already processed',
+            },
+          },
+        }).catch(auditErr => log.error({ err: auditErr }, 'Failed to create delivery failure audit log'))
+
         deliveryTrackingToken = undefined
       }
     }
