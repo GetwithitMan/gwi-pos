@@ -312,7 +312,7 @@ async function syncTables(masterPool: Pool, venuePool: Pool): Promise<string[]> 
   }
 
   for (const stmt of statements) {
-    const idxMatch = stmt.match(/CREATE (?:UNIQUE )?INDEX[^"]*ON "([^"]+)"/)
+    const idxMatch = stmt.match(/CREATE (?:UNIQUE )?INDEX.*ON "([^"]+)"/)
     if (idxMatch && missingSet.has(idxMatch[1])) {
       try {
         await venuePool.query(stmt)
@@ -503,12 +503,25 @@ function buildPgType(col: Row): string {
   }
 }
 
-/** Split schema.sql into individual statements */
+/** Split schema.sql into individual statements.
+ *  Prisma schema.sql inserts `-- CreateTable`, `-- CreateIndex`, etc. comments
+ *  between statements. We strip leading comment lines from each chunk so that
+ *  the actual DDL (CREATE TABLE …) is what remains for regex matching.
+ */
 function splitStatements(sql: string): string[] {
   return sql
     .split(/;\s*\n/)
-    .map(s => s.trim())
-    .filter(s => s.length > 0 && !s.startsWith('--'))
+    .map(s => {
+      // Remove leading comment lines (e.g. "-- CreateTable") so the
+      // trimmed result starts with the actual DDL keyword.
+      const lines = s.split('\n')
+      const firstNonComment = lines.findIndex(
+        l => l.trim().length > 0 && !l.trim().startsWith('--')
+      )
+      if (firstNonComment === -1) return '' // entire chunk is comments
+      return lines.slice(firstNonComment).join('\n').trim()
+    })
+    .filter(s => s.length > 0)
 }
 
 /** Group rows by a key field, collecting values of another field */
