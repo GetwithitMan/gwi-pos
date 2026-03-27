@@ -347,7 +347,7 @@ export const POST = withVenue(withTiming(async function POST(
       where: { id: orderId },
       include: {
         payments: true,
-        location: { select: { id: true, settings: true, name: true, address: true, phone: true } },
+        location: { select: { id: true, settings: true, name: true, address: true, phone: true, timezone: true } },
         customer: true,
         items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } }, menuItem: { select: { id: true, itemType: true } } } },
         employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
@@ -703,7 +703,9 @@ export const POST = withVenue(withTiming(async function POST(
     // Compute current business day start for promotion on pay
     const locSettingsRaw = order.location.settings as Record<string, unknown> | null
     const dayStartTime = (locSettingsRaw?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+    const payTz = (order.location as { timezone?: string }).timezone || 'America/New_York'
+    const businessDayStart = getCurrentBusinessDay(dayStartTime, payTz).start
 
     // BUG #380: Settle per-minute entertainment pricing before calculating totals.
     // For timed_rental items with per-minute pricing, the order item's price was set to

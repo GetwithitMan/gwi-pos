@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/reports/server-banking — Per-server cash bank report
@@ -45,8 +45,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         lte: new Date(new Date(dateFrom).setHours(23, 59, 59, 999)),
       }
     } else {
+      // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+      const timezone = await getLocationTimezone(locationId)
       const today = new Date().toISOString().split('T')[0]
-      const range = getBusinessDayRange(today, dayStartTime)
+      const range = getBusinessDayRange(today, dayStartTime, timezone)
       dateFilter = { gte: range.start, lte: range.end }
     }
 

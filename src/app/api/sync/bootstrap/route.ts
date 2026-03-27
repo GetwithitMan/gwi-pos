@@ -7,9 +7,11 @@ import { authenticateTerminal } from '@/lib/terminal-auth'
 
 // ─── Sync bootstrap cache ─────────────────────────────────────────────────
 // Same pattern as session/bootstrap's menu cache. Caches the heavy menu+categories
-// query for 15s to prevent redundant DB hits when multiple Android devices boot simultaneously.
+// query for 5s to prevent redundant DB hits when multiple Android devices boot simultaneously.
 const syncBootstrapCache = new Map<string, { data: any; expiry: number }>()
-const SYNC_BOOTSTRAP_TTL = 15_000 // 15 seconds
+// 5s TTL balances freshness with DB load — reduced from 15s to ensure
+// deleted/updated menu items propagate within one business-meaningful window
+const SYNC_BOOTSTRAP_TTL = 5_000
 
 // Inflight promise coalescing: prevents bootstrap stampede where 10 concurrent
 // requests before cache populates would fire 160 queries on a 25-connection pool.
@@ -37,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     select: { id: true, connectionType: true, networkHost: true, networkPort: true, name: true },
   }) : null
 
-  // Check sync bootstrap cache (15s TTL — prevents stampede when multiple devices boot)
+  // Check sync bootstrap cache (5s TTL — prevents stampede when multiple devices boot)
   const syncCacheKey = `sync-bootstrap-${locationId}`
   const cachedBootstrap = syncBootstrapCache.get(syncCacheKey)
   if (cachedBootstrap && Date.now() < cachedBootstrap.expiry) {
@@ -687,7 +689,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })),
     }
 
-  // Cache the response for 15s (terminal-specific config re-injected on hit)
+  // Cache the response for 5s (terminal-specific config re-injected on hit)
   syncBootstrapCache.set(syncCacheKey, { data: responseData, expiry: Date.now() + SYNC_BOOTSTRAP_TTL })
   // Evict stale entries
   if (syncBootstrapCache.size > 20) {

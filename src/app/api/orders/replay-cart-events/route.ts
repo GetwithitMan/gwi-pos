@@ -5,7 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay } from '@/lib/business-day'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { routeOrderFulfillment, type FulfillmentItem, type FulfillmentStationConfig, type OriginDevice } from '@/lib/fulfillment-router'
@@ -159,7 +159,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Business day
     const locSettings = await getLocationSettings(locationId) as Record<string, unknown> | null
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const businessDay = getCurrentBusinessDay(dayStartTime)
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+    const replayTz = await getLocationTimezone(locationId)
+    const businessDay = getCurrentBusinessDay(dayStartTime, replayTz)
     const businessDayStart = businessDay.start
 
     // ── Sort + group events by orderId, then by sequence ────────────────

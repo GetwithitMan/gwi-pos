@@ -139,11 +139,13 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
   // Get business day start so the open orders count matches what the panel shows
   const locationSettings = await db.location.findFirst({
     where: { id: locationId },
-    select: { settings: true },
+    select: { settings: true, timezone: true },
   })
   const locSettings = locationSettings?.settings as Record<string, unknown> | null
   const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-  const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+  // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+  const venueTimezone = locationSettings?.timezone || 'America/New_York'
+  const businessDayStart = getCurrentBusinessDay(dayStartTime, venueTimezone).start
 
   // Build time window for "upcoming reservations" — now through +2 hours
   const now = new Date()

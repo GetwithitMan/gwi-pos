@@ -15,7 +15,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 
 function toNum(val: unknown): number {
   if (typeof val === 'object' && val && 'toNumber' in val) {
@@ -58,10 +58,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
-    const startRange = getBusinessDayRange(startDate, dayStartTime)
+    const startRange = getBusinessDayRange(startDate, dayStartTime, timezone)
     const endRange = endDate
-      ? getBusinessDayRange(endDate, dayStartTime)
+      ? getBusinessDayRange(endDate, dayStartTime, timezone)
       : startRange
 
     // Fetch all third-party orders in range

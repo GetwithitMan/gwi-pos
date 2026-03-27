@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   const summary = await forAllVenues(async (venueDb, slug) => {
     const locations = await venueDb.location.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true, settings: true },
+      select: { id: true, name: true, settings: true, timezone: true },
     })
 
     for (const loc of locations) {
@@ -40,11 +40,17 @@ export async function GET(request: NextRequest) {
         continue
       }
 
+      // TZ-FIX: Convert current UTC time to venue's local timezone before comparing
+      // with exportTime (which is stored as local time, e.g. "04:00").
+      const venueTimezone = (loc as { timezone?: string }).timezone || 'America/New_York'
+      const localNowStr = now.toLocaleString('en-US', { timeZone: venueTimezone })
+      const localNow = new Date(localNowStr)
+
       // Check if we're within the 15-minute window after export time
       const exportTime = accounting.exportTime || '04:00'
       const [exportHour, exportMinute] = exportTime.split(':').map(Number)
-      const currentHour = now.getHours()
-      const currentMinute = now.getMinutes()
+      const currentHour = localNow.getHours()
+      const currentMinute = localNow.getMinutes()
 
       const exportMinuteOfDay = exportHour * 60 + exportMinute
       const currentMinuteOfDay = currentHour * 60 + currentMinute
@@ -57,7 +63,7 @@ export async function GET(request: NextRequest) {
 
       // Calculate yesterday's business date
       const dayStartTime = parsed.businessDay?.dayStartTime || '04:00'
-      const currentBusinessDay = getCurrentBusinessDay(dayStartTime)
+      const currentBusinessDay = getCurrentBusinessDay(dayStartTime, venueTimezone)
       const yesterday = new Date(currentBusinessDay.start)
       yesterday.setDate(yesterday.getDate() - 1)
       const businessDate = yesterday.toISOString().split('T')[0]

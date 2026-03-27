@@ -239,4 +239,39 @@ export async function getDbForVenue(slug: string): Promise<PrismaClient> {
 // Re-export venue utilities so the public API of '@/lib/db' is unchanged
 export { disconnectVenue, getVenueClientCount, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName, checkSlugCollisions }
 
+// ============================================================================
+// Transaction retry helper — retries on deadlock (P2034) or timeout (P2028)
+// ============================================================================
+
+/**
+ * Retry a function that may fail due to transient database errors.
+ * Handles Prisma P2034 (deadlock) and P2028 (transaction timeout) with
+ * exponential backoff. Usable by any route wrapping `db.$transaction()`.
+ *
+ * @example
+ *   const result = await withRetry(() =>
+ *     db.$transaction(async (tx) => { ... })
+ *   )
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  delayMs = 100
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err: any) {
+      const isDeadlock = err?.code === 'P2034' || err?.message?.includes('deadlock')
+      const isTimeout = err?.code === 'P2028'
+      if ((isDeadlock || isTimeout) && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, delayMs * Math.pow(2, attempt - 1)))
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error('withRetry exhausted')
+}
+
 export default db

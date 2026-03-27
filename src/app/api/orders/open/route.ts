@@ -55,11 +55,13 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // TODO: Add LocationRepository once that repository exists
     const location = await db.location.findFirst({
       where: { id: locationId },
-      select: { settings: true },
+      select: { settings: true, timezone: true },
     })
     const settings = location?.settings as Record<string, unknown> | null
     const dayStartTime = (settings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+    const venueTimezone = location?.timezone || 'America/New_York'
+    const businessDayStart = getCurrentBusinessDay(dayStartTime, venueTimezone).start
 
     // Business day filter: split OR into parallel indexed queries for ~30% speedup
     // Instead of OR: [{businessDayDate: {gte}}, {businessDayDate: null, createdAt: {gte}}]

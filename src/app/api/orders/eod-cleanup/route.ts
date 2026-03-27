@@ -27,11 +27,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Resolve the current business day boundary using location settings (same as /api/eod/reset)
     const location = await db.location.findFirst({
       where: { id: locationId },
-      select: { settings: true },
+      select: { settings: true, timezone: true },
     })
     const locSettings = location?.settings as Record<string, unknown> | null
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+    const venueTimezone = location?.timezone || 'America/New_York'
+    const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime, venueTimezone).start
 
     // Find stale orders: draft/open/in_progress, whose businessDayDate is before the current business day, not deleted
     // Read from OrderSnapshot (event-sourced projection) — cents-based fields

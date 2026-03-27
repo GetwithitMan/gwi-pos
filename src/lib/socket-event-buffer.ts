@@ -8,7 +8,8 @@ const log = createChildLogger('socket-event-buffer')
  * L2: PG SocketEventLog table (persistent, survives restarts)
  *
  * Design constraints:
- * - Max 10,000 events per location in-memory, max 1 hour TTL
+ * - Max 10,000 events per location in-memory, max 1 hour L1 TTL
+ * - L2 PG retention: 4 hours (extended from 1h for offline terminal recovery)
  * - Events are location-scoped (multi-tenant isolation)
  * - PG writes are fire-and-forget (never block the hot path)
  * - If PG is down, in-memory buffer still works exactly as before
@@ -38,8 +39,8 @@ export interface BufferedEvent {
 }
 
 const MAX_BUFFER_SIZE = 10_000
-const MAX_BUFFER_AGE_MS = 60 * 60 * 1000 // 1 hour
-const SOCKET_EVENT_TTL_MINUTES = 60
+const MAX_BUFFER_AGE_MS = 60 * 60 * 1000 // 1 hour (L1 in-memory — memory-bounded)
+const SOCKET_EVENT_TTL_MINUTES = 240 // L2 PG retention — 4 hours (extended from 1h for offline terminal recovery)
 const SOCKET_EVENT_CLEANUP_INTERVAL_MS = 300_000 // 5 minutes
 
 /** Lazy DB reference to avoid circular imports */

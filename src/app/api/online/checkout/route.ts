@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
 
     const locationRec = await venueDb.location.findFirst({
       where: { id: locationId },
-      select: { settings: true },
+      select: { settings: true, timezone: true },
     })
     const locSettings = locationRec?.settings as Record<string, unknown> | null
     const onlineSettings = locSettings?.onlineOrdering as Record<string, unknown> | null
@@ -752,7 +752,9 @@ export async function POST(request: NextRequest) {
 
     const dayStartTime =
       (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+    const checkoutTz = locationRec?.timezone || 'America/New_York'
+    const businessDayStart = getCurrentBusinessDay(dayStartTime, checkoutTz).start
 
     // ── 7. Create the Order (atomic: order number lock + create in one tx) ────
 

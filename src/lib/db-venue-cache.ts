@@ -26,11 +26,15 @@ const log = createChildLogger('db-venue-cache')
 
 const globalForPrisma = globalThis as unknown as {
   venueClients: Map<string, { client: PrismaClient; lastAccessed: number }> | undefined
+  venueInflight: Map<string, Promise<PrismaClient>> | undefined
   _venueDbCollisionChecked?: boolean
 }
 
 if (!globalForPrisma.venueClients) {
   globalForPrisma.venueClients = new Map()
+}
+if (!globalForPrisma.venueInflight) {
+  globalForPrisma.venueInflight = new Map()
 }
 
 // ---------------------------------------------------------------------------
@@ -247,12 +251,56 @@ export async function getDbForVenue(
   }
 
   const clients = globalForPrisma.venueClients!
+  const inflight = globalForPrisma.venueInflight!
 
+  // 1. Check cache first (fast path — no async, no dedup needed)
   const entry = clients.get(slug)
   if (entry) {
     entry.lastAccessed = Date.now()
     return entry.client
   }
+
+  // 2. Check if another request is already creating this client (cold-start dedup).
+  //    On Vercel, 2+ requests for the same venue can arrive during a cold start.
+  //    Without dedup, each creates a separate PrismaClient (wasting Neon connections).
+  const existing = inflight.get(slug)
+  if (existing) {
+    return existing
+  }
+
+  // 3. Create the client with inflight dedup — only one promise per slug at a time
+  const promise = createVenueClientWithRetry(slug, createPrismaClient)
+    .then(client => {
+      clients.set(slug, { client, lastAccessed: Date.now() })
+      inflight.delete(slug)
+
+      // Run collision check once after the cache grows beyond 1 entry (multi-tenant only).
+      // This is a lightweight in-memory check, not a DB query.
+      if (!globalForPrisma._venueDbCollisionChecked && clients.size > 1) {
+        globalForPrisma._venueDbCollisionChecked = true
+        checkSlugCollisions()
+      }
+
+      return client
+    })
+    .catch(err => {
+      inflight.delete(slug)
+      throw err
+    })
+
+  inflight.set(slug, promise)
+  return promise
+}
+
+/**
+ * Internal: create a PrismaClient for a venue, with LRU eviction and MC fallback.
+ * Separated from getDbForVenue() so the inflight dedup wrapper stays clean.
+ */
+async function createVenueClientWithRetry(
+  slug: string,
+  createPrismaClient: (url?: string) => PrismaClient
+): Promise<PrismaClient> {
+  const clients = globalForPrisma.venueClients!
 
   // Evict least-recently-used client if at capacity
   if (clients.size >= MAX_VENUE_CLIENTS) {
@@ -304,7 +352,7 @@ export async function getDbForVenue(
             void client.$disconnect().catch(err => log.warn({ err }, 'prisma disconnect failed'))
             throw new Error(`Venue database not found for slug "${slug}" (MC resolved: ${mcDbName}): ${retryErr?.message || ''}`)
           }
-          // Success with MC-resolved name — fall through to cache below
+          // Success with MC-resolved name — fall through to return below
         } else {
           throw new Error(`Venue database not found for slug "${slug}" and DATABASE_URL not set`)
         }
@@ -314,15 +362,6 @@ export async function getDbForVenue(
     } else {
       throw new Error(`Venue database connection failed for slug "${slug}": ${msg}`)
     }
-  }
-
-  clients.set(slug, { client, lastAccessed: Date.now() })
-
-  // Run collision check once after the cache grows beyond 1 entry (multi-tenant only).
-  // This is a lightweight in-memory check, not a DB query.
-  if (!globalForPrisma._venueDbCollisionChecked && clients.size > 1) {
-    globalForPrisma._venueDbCollisionChecked = true
-    checkSlugCollisions()
   }
 
   return client

@@ -2883,7 +2883,7 @@ model Payment {
   locationId String
   location   Location  @relation(fields: [locationId], references: [id])
   orderId    String
-  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Restrict)
   employeeId String? // Who processed the payment
   employee   Employee? @relation("PaymentEmployee", fields: [employeeId], references: [id])
 

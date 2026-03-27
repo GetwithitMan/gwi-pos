@@ -15,7 +15,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('cover-charges')
@@ -57,21 +57,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
     const coverSettings = locationSettings.coverCharge
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     let rangeStart: Date
     let rangeEnd: Date
 
     if (startDate && endDate) {
-      const startRange = getBusinessDayRange(startDate, dayStartTime)
-      const endRange = getBusinessDayRange(endDate, dayStartTime)
+      const startRange = getBusinessDayRange(startDate, dayStartTime, timezone)
+      const endRange = getBusinessDayRange(endDate, dayStartTime, timezone)
       rangeStart = startRange.start
       rangeEnd = endRange.end
     } else if (startDate) {
-      const range = getBusinessDayRange(startDate, dayStartTime)
+      const range = getBusinessDayRange(startDate, dayStartTime, timezone)
       rangeStart = range.start
       rangeEnd = range.end
     } else {
-      const current = getCurrentBusinessDay(dayStartTime)
+      const current = getCurrentBusinessDay(dayStartTime, timezone)
       rangeStart = current.start
       rangeEnd = current.end
     }
@@ -199,7 +201,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Capacity check
     if (coverSettings?.maxCapacity && coverSettings.maxCapacity > 0 && coverSettings.trackDoorCount) {
       const dayStartTime = locationSettings.businessDay.dayStartTime
-      const current = getCurrentBusinessDay(dayStartTime)
+      // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+      const capTz = await getLocationTimezone(locationId)
+      const current = getCurrentBusinessDay(dayStartTime, capTz)
 
       const countRows = await db.$queryRawUnsafe<[{ count: bigint }]>(
         `SELECT COALESCE(SUM("guestCount"), 0) AS count FROM "CoverCharge"

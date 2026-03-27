@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
@@ -68,6 +68,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Fetch location settings for business day boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     // Resolve primary date range
     let dayStart: Date
@@ -75,12 +77,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let resolvedDate: string
 
     if (dateStr) {
-      const range = getBusinessDayRange(dateStr, dayStartTime)
+      const range = getBusinessDayRange(dateStr, dayStartTime, timezone)
       dayStart = range.start
       dayEnd = range.end
       resolvedDate = dateStr
     } else {
-      const current = getCurrentBusinessDay(dayStartTime)
+      const current = getCurrentBusinessDay(dayStartTime, timezone)
       dayStart = current.start
       dayEnd = current.end
       resolvedDate = current.date
@@ -139,7 +141,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let compareHours: typeof hours | undefined
 
     if (compareDateStr) {
-      const compareRange = getBusinessDayRange(compareDateStr, dayStartTime)
+      const compareRange = getBusinessDayRange(compareDateStr, dayStartTime, timezone)
       const compareOrders = await db.order.findMany({
         where: {
           locationId,

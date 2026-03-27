@@ -3,7 +3,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import {
   getTipOutEntries,
@@ -45,15 +45,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get business day settings from cache for proper date boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay?.dayStartTime || '04:00'
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     // Build date filter using business day boundaries
     const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}
     if (startDate) {
-      const startRange = getBusinessDayRange(startDate, dayStartTime)
+      const startRange = getBusinessDayRange(startDate, dayStartTime, timezone)
       dateFilter.createdAt = { gte: startRange.start }
     }
     if (endDate) {
-      const endRange = getBusinessDayRange(endDate, dayStartTime)
+      const endRange = getBusinessDayRange(endDate, dayStartTime, timezone)
       dateFilter.createdAt = { ...dateFilter.createdAt, lte: endRange.end }
     }
 
@@ -62,11 +64,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (startDate || endDate) {
       const endedAtFilter: { gte?: Date; lte?: Date } = {}
       if (startDate) {
-        const startRange = getBusinessDayRange(startDate, dayStartTime)
+        const startRange = getBusinessDayRange(startDate, dayStartTime, timezone)
         endedAtFilter.gte = startRange.start
       }
       if (endDate) {
-        const endRange = getBusinessDayRange(endDate, dayStartTime)
+        const endRange = getBusinessDayRange(endDate, dayStartTime, timezone)
         endedAtFilter.lte = endRange.end
       }
       shiftDateFilter.endedAt = endedAtFilter

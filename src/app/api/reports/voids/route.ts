@@ -4,7 +4,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { getVoidLogsDetailed, getOrderItemNames } from '@/lib/query-services'
 
 // GET - Get void/comp report
@@ -33,15 +33,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Build date range using business day boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay?.dayStartTime || '04:00'
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     let start: Date
     let end: Date
     if (startDate) {
-      const range = getBusinessDayRange(startDate, dayStartTime)
+      const range = getBusinessDayRange(startDate, dayStartTime, timezone)
       start = range.start
-      end = endDate ? getBusinessDayRange(endDate, dayStartTime).end : range.end
+      end = endDate ? getBusinessDayRange(endDate, dayStartTime, timezone).end : range.end
     } else {
-      const current = getCurrentBusinessDay(dayStartTime)
+      const current = getCurrentBusinessDay(dayStartTime, timezone)
       start = current.start
       end = current.end
     }

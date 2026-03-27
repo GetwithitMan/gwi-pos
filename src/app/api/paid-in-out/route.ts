@@ -5,7 +5,7 @@ import { PERMISSIONS, hasPermission } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { emitToLocation } from '@/lib/socket-server'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { compare } from 'bcryptjs'
@@ -46,6 +46,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Build date range using business day boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     const where: Record<string, unknown> = {
       locationId,
@@ -62,15 +64,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Date filtering
     if (startDate && endDate) {
-      const startRange = getBusinessDayRange(startDate, dayStartTime)
-      const endRange = getBusinessDayRange(endDate, dayStartTime)
+      const startRange = getBusinessDayRange(startDate, dayStartTime, timezone)
+      const endRange = getBusinessDayRange(endDate, dayStartTime, timezone)
       where.createdAt = { gte: startRange.start, lte: endRange.end }
     } else if (startDate) {
-      const range = getBusinessDayRange(startDate, dayStartTime)
+      const range = getBusinessDayRange(startDate, dayStartTime, timezone)
       where.createdAt = { gte: range.start, lte: range.end }
     } else {
       // Default: current business day
-      const current = getCurrentBusinessDay(dayStartTime)
+      const current = getCurrentBusinessDay(dayStartTime, timezone)
       where.createdAt = { gte: current.start, lte: current.end }
     }
 

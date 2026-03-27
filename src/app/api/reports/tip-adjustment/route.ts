@@ -5,7 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Return today's paid card transactions for tip adjustment
@@ -34,21 +34,23 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Resolve business-day boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     let startOfDay: Date
     let endOfDay: Date
 
     if (startDateStr && endDateStr) {
-      const startRange = getBusinessDayRange(startDateStr, dayStartTime)
-      const endRange = getBusinessDayRange(endDateStr, dayStartTime)
+      const startRange = getBusinessDayRange(startDateStr, dayStartTime, timezone)
+      const endRange = getBusinessDayRange(endDateStr, dayStartTime, timezone)
       startOfDay = startRange.start
       endOfDay = endRange.end
     } else if (startDateStr) {
-      const range = getBusinessDayRange(startDateStr, dayStartTime)
+      const range = getBusinessDayRange(startDateStr, dayStartTime, timezone)
       startOfDay = range.start
       endOfDay = range.end
     } else {
-      const current = getCurrentBusinessDay(dayStartTime)
+      const current = getCurrentBusinessDay(dayStartTime, timezone)
       startOfDay = current.start
       endOfDay = current.end
     }

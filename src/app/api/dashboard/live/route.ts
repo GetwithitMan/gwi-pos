@@ -3,7 +3,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getCurrentBusinessDay, getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { roundMoney } from '@/lib/domain/reports'
@@ -40,9 +40,11 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
 
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     // Current business day range
-    const current = getCurrentBusinessDay(dayStartTime)
+    const current = getCurrentBusinessDay(dayStartTime, timezone)
     const startOfDay = current.start
     const endOfDay = current.end
 
@@ -50,7 +52,7 @@ export const GET = withVenue(withAuth('ADMIN', async function GET(request: NextR
     const lastWeekDate = new Date(current.date + 'T12:00:00')
     lastWeekDate.setDate(lastWeekDate.getDate() - 7)
     const lastWeekStr = `${lastWeekDate.getFullYear()}-${String(lastWeekDate.getMonth() + 1).padStart(2, '0')}-${String(lastWeekDate.getDate()).padStart(2, '0')}`
-    const lastWeekRange = getBusinessDayRange(lastWeekStr, dayStartTime)
+    const lastWeekRange = getBusinessDayRange(lastWeekStr, dayStartTime, timezone)
 
     // How far into the business day are we? Used for pacing projection.
     const now = new Date()

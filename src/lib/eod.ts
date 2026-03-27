@@ -73,12 +73,14 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
   // ── 1. Load location settings ──────────────────────────────────────────────
   const location = await db.location.findFirst({
     where: { id: locationId },
-    select: { settings: true },
+    select: { settings: true, timezone: true },
   })
   const locSettings = parseSettings(location?.settings as Record<string, unknown> | null)
   const eodSettings = locSettings.eod ?? DEFAULT_EOD_SETTINGS
   const dayStartTime = locSettings.businessDay.dayStartTime ?? '04:00'
-  const businessDay = getCurrentBusinessDay(dayStartTime)
+  // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+  const venueTimezone = location?.timezone || 'America/New_York'
+  const businessDay = getCurrentBusinessDay(dayStartTime, venueTimezone)
   const businessDayDate = businessDay.date
 
   // ── 2. Idempotency check ──────────────────────────────────────────────────
@@ -124,12 +126,15 @@ export async function executeEodReset(options: EodResetOptions): Promise<EodRese
   if (eodSettings.autoCaptureTabs && !dryRun) {
     const autoGratuityPct = eodSettings.autoGratuityPercent ?? 20
 
-    // Find all open bar tabs with authorized cards
+    // Find all open bar tabs with authorized cards.
+    // Exclude tabs that are mid-close (closing) or mid-auth (pending_auth)
+    // to prevent double-capture races with another terminal.
     const openTabs = await db.order.findMany({
       where: {
         locationId,
         orderType: 'bar_tab',
         status: 'open',
+        tabStatus: { notIn: ['closing', 'pending_auth'] },
         deletedAt: null,
         cards: {
           some: {

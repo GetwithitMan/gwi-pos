@@ -9,7 +9,7 @@ import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isIt
 import { calculateCardPrice, roundToCents } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES } from '@/lib/api/error-responses'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { dispatchFloorPlanUpdate, buildOrderSummary } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
@@ -99,9 +99,11 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Compute business day for this order (uses cached location settings — FIX-005)
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
     const locSettings = await getLocationSettings(locationId) as Record<string, unknown> | null
     const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-    const businessDay = getCurrentBusinessDay(dayStartTime)
+    const venueTimezone = await getLocationTimezone(locationId)
+    const businessDay = getCurrentBusinessDay(dayStartTime, venueTimezone)
     const businessDayStart = businessDay.start
 
     // Training mode: stamp isTraining on orders created by training employees

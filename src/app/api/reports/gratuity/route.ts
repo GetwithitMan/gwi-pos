@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Generate gratuity / auto-gratuity report
@@ -32,8 +32,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Resolve business day boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
-    const startRange = getBusinessDayRange(startDateStr, dayStartTime)
-    const endRange = getBusinessDayRange(endDateStr, dayStartTime)
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
+    const startRange = getBusinessDayRange(startDateStr, dayStartTime, timezone)
+    const endRange = getBusinessDayRange(endDateStr, dayStartTime, timezone)
 
     // Query TipTransactions with kind = 'auto_gratuity' in the date range
     // Exclude training orders from gratuity report

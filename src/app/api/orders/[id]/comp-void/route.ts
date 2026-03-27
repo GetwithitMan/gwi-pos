@@ -201,6 +201,14 @@ export const POST = withVenue(async function POST(
     const settings = parseSettings(order.location.settings)
 
     const item = order.items[0]
+
+    // C1: Double-void/comp idempotency — if item is already voided or comped, return 200
+    // (idempotent success) instead of 400 error. This prevents double tip allocation reversal
+    // and other side effects from re-processing an already-completed action.
+    if (item && (item.status === 'voided' || item.status === 'comped')) {
+      return NextResponse.json({ data: { alreadyProcessed: true, message: `Item already ${item.status}` } })
+    }
+
     const itemError = validateItemForCompVoid(item)
     if (itemError) {
       return NextResponse.json({ error: itemError.error }, { status: itemError.status })

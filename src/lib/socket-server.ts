@@ -78,8 +78,13 @@ const connectedTerminals = new Map<string, {
 // Reverse index: socketId -> terminalId for O(1) disconnect lookup
 const socketToTerminal = new Map<string, string>()
 
+// Reconnection storm protection: limit concurrent catch-up queries to prevent
+// connection pool exhaustion when many terminals reconnect simultaneously
+let activeCatchUpCount = 0
+const MAX_CONCURRENT_CATCHUP = 10
+
 // Periodic cleanup of stale terminal entries (every 5 minutes)
-setInterval(() => {
+const staleTerminalTimer = setInterval(() => {
   for (const [terminalId, info] of connectedTerminals.entries()) {
     const socket = globalForSocket.socketServer?.sockets.sockets.get(info.socketId)
     if (!socket || !socket.connected) {
@@ -88,6 +93,7 @@ setInterval(() => {
     }
   }
 }, 5 * 60 * 1000)
+staleTerminalTimer.unref()
 
 // ── Per-socket rate limiting ──────────────────────────────────────────────────
 const socketRateLimits = new Map<string, { count: number; resetAt: number }>()
@@ -670,44 +676,56 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
           return
         }
 
-        // Get the rooms this socket is currently subscribed to
-        const subscribedRooms = Array.from(socket.rooms).filter(
-          r => r !== socket.id // Exclude the socket's own room
-        )
+        // Reconnection storm protection: limit concurrent catch-up queries
+        // to prevent connection pool exhaustion when many terminals reconnect at once
+        if (activeCatchUpCount >= MAX_CONCURRENT_CATCHUP) {
+          socket.emit('catch-up-delayed', { retryAfterMs: 2000 })
+          return
+        }
+        activeCatchUpCount++
 
-        const missedEvents = await getEventsSince(catchUpLocationId, lastEventId, subscribedRooms)
+        try {
+          // Get the rooms this socket is currently subscribed to
+          const subscribedRooms = Array.from(socket.rooms).filter(
+            r => r !== socket.id // Exclude the socket's own room
+          )
 
-        if (missedEvents.length > 0) {
-          // Deduplicate: for list-changed events, only send the latest of each type.
-          // For item-specific events (payment, order-specific, kds orders), send ALL.
-          // IMPORTANT: kds:order-received MUST NOT be deduplicated — each order is unique
-          // and must reach the kitchen. Deduping would silently drop orders during reconnect.
-          const DEDUP_EVENT_TYPES = new Set([
-            'orders:list-changed', 'tab:updated', 'floor-plan:updated',
-            'terminal:status_changed',
-          ])
-          const latestByType = new Map<string, typeof missedEvents[0]>()
-          const directEvents: typeof missedEvents = []
+          const missedEvents = await getEventsSince(catchUpLocationId, lastEventId, subscribedRooms)
 
-          for (const evt of missedEvents) {
-            if (DEDUP_EVENT_TYPES.has(evt.event)) {
-              latestByType.set(evt.event, evt)
-            } else {
-              directEvents.push(evt)
+          if (missedEvents.length > 0) {
+            // Deduplicate: for list-changed events, only send the latest of each type.
+            // For item-specific events (payment, order-specific, kds orders), send ALL.
+            // IMPORTANT: kds:order-received MUST NOT be deduplicated — each order is unique
+            // and must reach the kitchen. Deduping would silently drop orders during reconnect.
+            const DEDUP_EVENT_TYPES = new Set([
+              'orders:list-changed', 'tab:updated', 'floor-plan:updated',
+              'terminal:status_changed',
+            ])
+            const latestByType = new Map<string, typeof missedEvents[0]>()
+            const directEvents: typeof missedEvents = []
+
+            for (const evt of missedEvents) {
+              if (DEDUP_EVENT_TYPES.has(evt.event)) {
+                latestByType.set(evt.event, evt)
+              } else {
+                directEvents.push(evt)
+              }
+            }
+
+            const dedupedCount = missedEvents.length - directEvents.length - latestByType.size
+            if (process.env.DEBUG_SOCKETS) log.debug(`Catch-up: replaying ${directEvents.length + latestByType.size} events to ${socket.id} (since eid=${lastEventId}, deduped ${dedupedCount})`)
+
+            // Send non-deduplicatable events first (order-specific, payment, etc.)
+            for (const evt of directEvents) {
+              socket.emit(evt.event, evt.data)
+            }
+            // Send deduplicated events (only latest of each type)
+            for (const evt of latestByType.values()) {
+              socket.emit(evt.event, evt.data)
             }
           }
-
-          const dedupedCount = missedEvents.length - directEvents.length - latestByType.size
-          if (process.env.DEBUG_SOCKETS) log.debug(`Catch-up: replaying ${directEvents.length + latestByType.size} events to ${socket.id} (since eid=${lastEventId}, deduped ${dedupedCount})`)
-
-          // Send non-deduplicatable events first (order-specific, payment, etc.)
-          for (const evt of directEvents) {
-            socket.emit(evt.event, evt.data)
-          }
-          // Send deduplicated events (only latest of each type)
-          for (const evt of latestByType.values()) {
-            socket.emit(evt.event, evt.data)
-          }
+        } finally {
+          activeCatchUpCount--
         }
       } catch (err) {
         log.error({ err, socketId: socket.id }, 'catch-up handler error')
@@ -1081,33 +1099,52 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     // ==================== Connection Lifecycle ====================
 
     socket.on('disconnect', (reason: string) => {
+      const sid = socket.id
+      // Path A: browser/KDS terminals registered via join_station — O(1) via reverse index
+      let handled = false
       try {
-        // Path A: browser/KDS terminals registered via join_station — O(1) via reverse index
-        let handled = false
-        const terminalId = socketToTerminal.get(socket.id)
+        const terminalId = socketToTerminal.get(sid)
         if (terminalId) {
           const info = connectedTerminals.get(terminalId)
           connectedTerminals.delete(terminalId)
-          socketToTerminal.delete(socket.id)
-          if (process.env.DEBUG_SOCKETS) log.debug(`Terminal ${terminalId} disconnected: ${reason}`)
+          socketToTerminal.delete(sid)
+          log.info({ terminalId, reason, socketId: sid }, 'terminal disconnected (station)')
           if (info) {
-            void markTerminalOffline(terminalId, info.locationId, reason, socket.id)
+            void markTerminalOffline(terminalId, info.locationId, reason, sid).catch((err) =>
+              log.warn({ err, terminalId, socketId: sid }, 'markTerminalOffline failed (station path)'))
           }
           handled = true
         }
-        // Path B: Android native — auth middleware sets socket.data.terminalId
+      } catch (err) {
+        log.error({ err, socketId: sid }, 'disconnect cleanup failed (station path)')
+      }
+
+      // Path B: Android native — auth middleware sets socket.data.terminalId
+      try {
         if (!handled && socket.data.terminalId && socket.data.locationId) {
-          void markTerminalOffline(socket.data.terminalId, socket.data.locationId, reason, socket.id)
+          log.info({ terminalId: socket.data.terminalId, reason, socketId: sid }, 'terminal disconnected (android)')
+          void markTerminalOffline(socket.data.terminalId, socket.data.locationId, reason, sid).catch((err) =>
+            log.warn({ err, terminalId: socket.data.terminalId, socketId: sid }, 'markTerminalOffline failed (android path)'))
         }
-        // Clean up CFD→register cache when register disconnects
+      } catch (err) {
+        log.error({ err, socketId: sid }, 'disconnect cleanup failed (android path)')
+      }
+
+      // Clean up CFD→register cache when register disconnects
+      try {
         if (socket.data.cfdTerminalId) {
           cfdToRegisterMap.delete(socket.data.cfdTerminalId)
         }
-        // Remove from QoS 1 per-client ack tracking — this socket can't ack after
-        // disconnecting. It will receive missed events via catch-up on reconnect.
-        removeSocketFromAcks(socket.id)
       } catch (err) {
-        log.error({ err, socketId: socket.id }, 'disconnect handler error')
+        log.error({ err, socketId: sid }, 'disconnect cleanup failed (CFD cache)')
+      }
+
+      // Remove from QoS 1 per-client ack tracking — this socket can't ack after
+      // disconnecting. It will receive missed events via catch-up on reconnect.
+      try {
+        removeSocketFromAcks(sid)
+      } catch (err) {
+        log.error({ err, socketId: sid }, 'disconnect cleanup failed (ack tracking)')
       }
     })
 
@@ -1117,7 +1154,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   })
 
   // Periodic status logging
-  setInterval(() => {
+  const statusLogTimer = setInterval(() => {
     const stats = {
       connections: socketServer.engine.clientsCount,
       terminals: connectedTerminals.size,
@@ -1127,9 +1164,10 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (process.env.DEBUG_SOCKETS) log.debug(stats, 'Socket status')
     }
   }, 60000) // Every minute
+  statusLogTimer.unref()
 
   // Periodic cleanup of stale terminal entries (every 60 seconds)
-  setInterval(() => {
+  const staleCleanupTimer = setInterval(() => {
     let cleaned = 0
     for (const [terminalId, info] of connectedTerminals.entries()) {
       // Check if the socket is still connected
@@ -1144,9 +1182,11 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       if (process.env.DEBUG_SOCKETS) log.debug(`Cleaned ${cleaned} stale terminal entries`)
     }
   }, 60_000) // Every 60 seconds
+  staleCleanupTimer.unref()
 
   // Periodic cleanup of stale rate limit entries (every 30 seconds)
-  setInterval(cleanupRateLimits, 30_000)
+  const rateLimitCleanupTimer = setInterval(cleanupRateLimits, 30_000)
+  rateLimitCleanupTimer.unref()
 
   // NOTE: Redundant 60s stale-terminal sweep removed (2026-03-09).
   // Socket disconnect events (line ~653) already mark terminals offline immediately

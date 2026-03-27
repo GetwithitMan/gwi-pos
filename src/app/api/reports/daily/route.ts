@@ -5,7 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import {
@@ -66,6 +66,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Fetch location settings from cache for business day boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
+    // TZ-FIX: Use venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     // Parse date range using business day boundaries
     let startOfDay: Date
@@ -73,12 +75,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     let date: Date
 
     if (dateStr) {
-      const range = getBusinessDayRange(dateStr, dayStartTime)
+      const range = getBusinessDayRange(dateStr, dayStartTime, timezone)
       startOfDay = range.start
       endOfDay = range.end
       date = new Date(dateStr + 'T12:00:00')
     } else {
-      const current = getCurrentBusinessDay(dayStartTime)
+      const current = getCurrentBusinessDay(dayStartTime, timezone)
       startOfDay = current.start
       endOfDay = current.end
       date = new Date(current.date + 'T12:00:00')

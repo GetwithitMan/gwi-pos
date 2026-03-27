@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     // Get location + settings
     const location = await venueDb.location.findFirst({
       where: { isActive: true },
-      select: { id: true, name: true, settings: true },
+      select: { id: true, name: true, settings: true, timezone: true },
     })
 
     if (!location) {
@@ -179,7 +179,8 @@ export async function POST(request: NextRequest) {
     // Get next order number atomically
     const locationId = location.id
     const dayStartTime = settings.businessDay.dayStartTime
-    const { start: businessDayStart } = getCurrentBusinessDay(dayStartTime)
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+    const { start: businessDayStart } = getCurrentBusinessDay(dayStartTime, location.timezone || 'America/New_York')
 
     const lastOrderRows = await venueDb.$queryRawUnsafe<{ orderNumber: number }[]>(
       `SELECT "orderNumber" FROM "Order" WHERE "locationId" = $1 AND "parentOrderId" IS NULL ORDER BY "orderNumber" DESC LIMIT 1 FOR UPDATE`,

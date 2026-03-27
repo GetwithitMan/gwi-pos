@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { getLocationId } from '@/lib/location-cache'
+import { getLocationId, getLocationTimezone } from '@/lib/location-cache'
 import { getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
@@ -191,7 +191,9 @@ export async function processLiquorInventory(
       // Resolve business date from location settings
       const settings = locationId ? await parseSettings(locationId) : null
       const dayStartTime = settings?.businessDay?.dayStartTime || '04:00'
-      const { date: businessDate } = getCurrentBusinessDay(dayStartTime)
+      // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+      const venueTimezone = locationId ? await getLocationTimezone(locationId) : undefined
+      const { date: businessDate } = getCurrentBusinessDay(dayStartTime, venueTimezone)
 
       // Collect all deductions with linked InventoryItems
       const allDeductions = results.flatMap(r =>

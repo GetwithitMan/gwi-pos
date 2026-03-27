@@ -17,7 +17,7 @@ import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worke
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { getCachedInclusiveTaxRules, getCachedCategories } from '@/lib/tax-cache'
 import { OrderRepository, OrderItemRepository } from '@/lib/repositories'
-import { getLocationId } from '@/lib/location-cache'
+import { getLocationId, getLocationTimezone } from '@/lib/location-cache'
 import {
   type AddItemInput,
   validateAddItemsInput,
@@ -301,7 +301,9 @@ export const POST = withVenue(async function POST(
       try {
         const locSettings = existingOrder.location.settings as Record<string, unknown> | null
         const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
-        const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+        // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+        const itemTz = existingOrder.location.timezone || 'America/New_York'
+        const businessDayStart = getCurrentBusinessDay(dayStartTime, itemTz).start
 
         if (!existingOrder.businessDayDate || existingOrder.businessDayDate < businessDayStart) {
           await OrderRepository.updateOrder(orderId, locationId, { businessDayDate: businessDayStart }, tx)
@@ -317,6 +319,29 @@ export const POST = withVenue(async function POST(
         select: { id: true, price: true, commissionType: true, commissionValue: true, itemType: true, isAvailable: true, isActive: true, deletedAt: true, name: true, categoryId: true, category: { select: { categoryType: true } }, tipExempt: true },
       })
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
+
+      // B6: Guard against deleted/missing MenuItems — populate fallback entries so downstream
+      // code (event emission, response mapping) never crashes on null reference.
+      // Staff sees '[Deleted Item]' which is visually distinct.
+      for (const id of menuItemIds) {
+        if (!menuItemMap.has(id)) {
+          log.warn({ menuItemId: id, orderId }, 'MenuItem not found — using deleted item fallback')
+          menuItemMap.set(id, {
+            id,
+            name: '[Deleted Item]',
+            price: 0,
+            commissionType: null,
+            commissionValue: null,
+            itemType: null,
+            isAvailable: true,   // allow order to proceed — item data is already on the client
+            isActive: true,      // allow order to proceed — price comes from client
+            deletedAt: null,     // don't trigger ITEM_DELETED validation
+            categoryId: null,
+            category: null,
+            tipExempt: false,
+          } as any)
+        }
+      }
 
       // H9: Check if order already has sent items — explicitly set kitchenStatus on new items
       // so they're visible on KDS (default is 'pending' but can be null in edge cases)
@@ -710,6 +735,13 @@ export const POST = withVenue(async function POST(
       const groupName = parts[1]
       return NextResponse.json(
         { error: `Required modifier group "${groupName}" is not satisfied for item "${itemName}"` },
+        { status: 400 }
+      )
+    }
+    if (message.startsWith('MENU_ITEM_NOT_FOUND:')) {
+      const missingIds = message.replace('MENU_ITEM_NOT_FOUND:', '')
+      return NextResponse.json(
+        { error: `Menu items not found: ${missingIds}`, code: 'MENU_ITEM_NOT_FOUND' },
         { status: 400 }
       )
     }

@@ -36,9 +36,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // ── warnBeforeClose: warn if open orders exist during EOD reset ────────
     const location = await db.location.findFirst({
       where: { id: locationId },
-      select: { settings: true },
+      select: { settings: true, timezone: true },
     })
     const locSettings = parseSettings(location?.settings as Record<string, unknown> | null)
+    // TZ-FIX: Resolve venue timezone for business day calculations
+    const venueTimezone = location?.timezone || 'America/New_York'
     const warnBeforeClose = locSettings.businessDay.warnBeforeClose ?? true
     const confirm = body.confirm === true
 
@@ -58,7 +60,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (dryRun) {
       // Return what WOULD be reset without actually doing it
       const dayStartTime = locSettings.businessDay.dayStartTime ?? '04:00'
-      const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime).start
+      const currentBusinessDayStart = getCurrentBusinessDay(dayStartTime, venueTimezone).start
 
       const orphanedOccupiedTables = await db.table.findMany({
         where: {
@@ -206,12 +208,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const getLocation = await db.location.findFirst({
       where: { id: locationId },
-      select: { settings: true },
+      select: { settings: true, timezone: true },
     })
     const getSettings = getLocation?.settings as Record<string, unknown> | null
     const parsedSettings = parseSettings(getSettings)
     const getDayStartTime = parsedSettings.businessDay.dayStartTime ?? '04:00'
-    const getBusinessDayStart = getCurrentBusinessDay(getDayStartTime).start
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct business day
+    const getVenueTimezone = getLocation?.timezone || 'America/New_York'
+    const getBusinessDayStart = getCurrentBusinessDay(getDayStartTime, getVenueTimezone).start
 
     // Read from OrderSnapshot (event-sourced projection)
     const staleOrderCount = await db.orderSnapshot.count({

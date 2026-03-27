@@ -87,7 +87,7 @@ export async function generateDailySalesJournal(
   // Get location settings for business day boundary and GL mapping
   const location = await db.location.findFirst({
     where: { id: locationId },
-    select: { settings: true },
+    select: { settings: true, timezone: true },
   })
 
   const settings = parseSettings(location?.settings as Record<string, unknown> | null)
@@ -95,8 +95,9 @@ export async function generateDailySalesJournal(
   const accounting = settings.accounting ?? DEFAULT_ACCOUNTING_SETTINGS
   const gl: AccountingGLMapping = { ...DEFAULT_GL_MAPPING, ...accounting.glMapping }
 
-  // Calculate business day range
-  const { start, end } = getBusinessDayRange(businessDate, dayStartTime)
+  // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+  const venueTimezone = location?.timezone || 'America/New_York'
+  const { start, end } = getBusinessDayRange(businessDate, dayStartTime, venueTimezone)
 
   // ─── Parallel Data Fetch ──────────────────────────────────────────────
   const [

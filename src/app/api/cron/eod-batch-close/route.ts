@@ -17,6 +17,12 @@ import { forAllVenues } from '@/lib/cron-venue-helper'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
+// Max venues to process per cron invocation. With concurrency=5 and ~12s per
+// venue (DB queries + EOD logic + payment waits), 100 venues completes in ~240s.
+// Vercel maxDuration is 60s, so 50 is a safer default. Catch-up logic handles
+// remaining venues on subsequent cron invocations.
+const MAX_VENUES_PER_RUN = parseInt(process.env.EOD_MAX_VENUES_PER_RUN || '', 10) || 50
+
 // Max time to wait for active tab-close operations to finish before proceeding
 const ACTIVE_PAYMENT_WAIT_MS = 5_000
 const ACTIVE_PAYMENT_POLL_MS = 500
@@ -121,11 +127,21 @@ export async function GET(request: NextRequest) {
 
   const now = new Date()
   const allResults: Record<string, unknown>[] = []
+  let venuesProcessed = 0
 
   const summary = await forAllVenues(async (venueDb, slug) => {
+    // Venue batch sizing: limit how many venues we process per cron invocation.
+    // With 5000 venues and a 60s Vercel timeout, processing all at once is impossible.
+    // Catch-up logic (MAX_CATCHUP_MINUTES window) ensures remaining venues get processed
+    // on subsequent cron invocations.
+    if (venuesProcessed >= MAX_VENUES_PER_RUN) {
+      allResults.push({ slug, skipped: true, reason: 'batch_limit_reached' })
+      return
+    }
+    venuesProcessed++
     const locations = await venueDb.location.findMany({
       where: { deletedAt: null },
-      select: { id: true, settings: true },
+      select: { id: true, settings: true, timezone: true },
     })
 
     for (const loc of locations) {
@@ -135,8 +151,15 @@ export async function GET(request: NextRequest) {
 
       // Parse configured batch time
       const [batchHour, batchMinute] = batchCloseTime.split(':').map(Number)
-      const currentHour = now.getHours()
-      const currentMinute = now.getMinutes()
+
+      // TZ-FIX: Convert current UTC time to venue's local timezone before comparing
+      // with batchCloseTime (which is stored as local time, e.g. "04:00").
+      // On Vercel, now.getHours() returns UTC hours — wrong for non-UTC venues.
+      const venueTimezone = (loc as { timezone?: string }).timezone || 'America/New_York'
+      const localNowStr = now.toLocaleString('en-US', { timeZone: venueTimezone })
+      const localNow = new Date(localNowStr)
+      const currentHour = localNow.getHours()
+      const currentMinute = localNow.getMinutes()
 
       // Check if we're within the 15-minute window after batch close time,
       // or in the catch-up window (15 min to MAX_CATCHUP_MINUTES after).
@@ -265,6 +288,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ...summary,
+    venuesProcessed,
+    maxVenuesPerRun: MAX_VENUES_PER_RUN,
+    batchLimitReached: venuesProcessed >= MAX_VENUES_PER_RUN,
     processed: allResults,
     timestamp: now.toISOString(),
   })

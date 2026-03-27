@@ -479,14 +479,26 @@ const putHandler = async function PUT(request: NextRequest) {
     const bumpedBy = body.employeeId || firstItemForDispatch?.order?.employeeId || 'unknown'
     const screenId = body.screenId as string | undefined
 
-    // Double-bump guard: check if items are already completed (idempotency)
+    // Double-bump guard: filter out already-completed items (idempotency).
+    // Two KDS screens can bump the same item simultaneously — filter out any
+    // items that are already completed so they aren't re-processed and the
+    // "Made" sound doesn't play twice.
     let isDoubleBump = false
     if (action === 'complete' || action === 'bump_order') {
-      const alreadyCompleted = await db.orderItem.count({
-        where: { id: { in: itemIds }, isCompleted: true },
+      const existingItems = await db.orderItem.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true, isCompleted: true },
       })
-      if (alreadyCompleted === itemIds.length) {
+      const itemsToProcess = itemIds.filter(id => {
+        const item = existingItems.find(i => i.id === id)
+        return item && !item.isCompleted
+      })
+      if (itemsToProcess.length === 0) {
         isDoubleBump = true // All items already done — skip side effects but return success
+      } else {
+        // Replace itemIds with only the unprocessed ones for downstream logic
+        itemIds.length = 0
+        itemIds.push(...itemsToProcess)
       }
     }
 

@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { REVENUE_ORDER_STATUSES } from '@/lib/constants'
 
@@ -45,17 +45,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get business day settings from cache for proper date boundaries
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     // Build date filter with businessDayDate OR-fallback
     const dateFilter: Record<string, unknown> = {}
     if (startDate || endDate) {
       const dateRange: { gte?: Date; lte?: Date } = {}
       if (startDate) {
-        const startRange = getBusinessDayRange(startDate, dayStartTime)
+        const startRange = getBusinessDayRange(startDate, dayStartTime, timezone)
         dateRange.gte = startRange.start
       }
       if (endDate) {
-        const endRange = getBusinessDayRange(endDate, dayStartTime)
+        const endRange = getBusinessDayRange(endDate, dayStartTime, timezone)
         dateRange.lte = endRange.end
       }
       dateFilter.OR = [

@@ -214,6 +214,7 @@ export async function getLocationSettings(
  */
 export function invalidateLocationCache(locationId: string): void {
   cache.delete(locationId)
+  timezoneCache.delete(locationId)
 }
 
 /**
@@ -224,6 +225,7 @@ export function invalidateLocationCache(locationId: string): void {
 export function invalidateAllLocationCaches(): void {
   cache.clear()
   locationIdCache.clear()
+  timezoneCache.clear()
 }
 
 /**
@@ -241,6 +243,42 @@ export function getCacheStats() {
       isExpired: (now - entry.timestamp) >= CACHE_TTL,
     })),
   }
+}
+
+// ============================================================================
+// TIMEZONE CACHE
+// ============================================================================
+
+/**
+ * Per-location timezone cache (IANA string, e.g. "America/Denver").
+ * Separate from settings cache because timezone lives on the Location row itself,
+ * not inside the JSONB settings column.
+ */
+const timezoneCache = new Map<string, { timezone: string; timestamp: number }>()
+
+/**
+ * Get the IANA timezone for a location (cached, 5-minute TTL).
+ *
+ * Falls back to 'America/New_York' if the location has no timezone set.
+ * This is critical for Vercel (UTC) environments where server-local time
+ * doesn't match any venue.
+ */
+export async function getLocationTimezone(locationId: string): Promise<string> {
+  const now = Date.now()
+  const cached = timezoneCache.get(locationId)
+  if (cached && (now - cached.timestamp) < CACHE_TTL) {
+    return cached.timezone
+  }
+
+  const prisma = getRequestPrisma() || db
+  const location = await (prisma as any).location.findUnique({
+    where: { id: locationId },
+    select: { timezone: true },
+  })
+
+  const timezone = (location?.timezone as string) || 'America/New_York'
+  timezoneCache.set(locationId, { timezone, timestamp: Date.now() })
+  return timezone
 }
 
 // ============================================================================

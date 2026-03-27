@@ -4,7 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, getPricingProgram } from '@/lib/settings'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, getLocationTimezone } from '@/lib/location-cache'
 import { checkReportRateLimit } from '@/lib/report-rate-limiter'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { getHourInTimezone } from '@/lib/timezone'
@@ -43,6 +43,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Fetch dayStartTime from location settings for business day range calculation
     const reportLocationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = reportLocationSettings.businessDay?.dayStartTime || '04:00'
+    // TZ-FIX: Pass venue timezone so Vercel (UTC) computes correct date boundaries
+    const timezone = await getLocationTimezone(locationId)
 
     const dateFilter: Record<string, unknown> = {}
     if (startDate || endDate) {
@@ -54,10 +56,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // For createdAt fallback (orders without businessDayDate): use business day time ranges
       const createdAtRange: { gte?: Date; lte?: Date } = {}
       if (startDate) {
-        createdAtRange.gte = getBusinessDayRange(startDate, dayStartTime).start
+        createdAtRange.gte = getBusinessDayRange(startDate, dayStartTime, timezone).start
       }
       if (endDate) {
-        createdAtRange.lte = getBusinessDayRange(endDate, dayStartTime).end
+        createdAtRange.lte = getBusinessDayRange(endDate, dayStartTime, timezone).end
       }
 
       dateFilter.OR = [
