@@ -1146,7 +1146,15 @@ async function updateComponents(): Promise<ComponentUpdateResult> {
           const nucReadinessBlock = `
 # ── NUC Readiness (injected by update-agent) ──
 NUC_READINESS_JSON='null'
-NUC_READINESS_RAW=$(curl -sf --max-time 3 http://localhost:3005/api/internal/nuc-readiness 2>/dev/null || echo "")
+# nuc-readiness requires x-api-key auth (PROVISION_API_KEY from .env)
+_PROV_KEY=""
+if grep -q "^PROVISION_API_KEY=" /opt/gwi-pos/.env 2>/dev/null; then
+  _PROV_KEY=$(grep "^PROVISION_API_KEY=" /opt/gwi-pos/.env | head -1 | cut -d= -f2-)
+fi
+NUC_READINESS_RAW=""
+if [ -n "$_PROV_KEY" ]; then
+  NUC_READINESS_RAW=$(curl -sf --max-time 3 -H "x-api-key: $_PROV_KEY" http://localhost:3005/api/internal/nuc-readiness 2>/dev/null || echo "")
+fi
 if [ -n "$NUC_READINESS_RAW" ] && echo "$NUC_READINESS_RAW" | jq empty 2>/dev/null; then
   NUC_READINESS_JSON="$NUC_READINESS_RAW"
 elif [ -f /opt/gwi-pos/state/sync-status.json ] && jq empty /opt/gwi-pos/state/sync-status.json 2>/dev/null; then

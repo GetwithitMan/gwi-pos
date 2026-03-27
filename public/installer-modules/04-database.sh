@@ -107,7 +107,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 # Parse env (line-by-line, handles values with = signs and # in values)
-SERVER_NODE_ID="" SERVER_API_KEY="" HARDWARE_FINGERPRINT="" MISSION_CONTROL_URL="" LOCATION_ID=""
+SERVER_NODE_ID="" SERVER_API_KEY="" HARDWARE_FINGERPRINT="" MISSION_CONTROL_URL="" LOCATION_ID="" PROVISION_API_KEY=""
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
   [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -120,6 +120,7 @@ while IFS= read -r line; do
     HARDWARE_FINGERPRINT) HARDWARE_FINGERPRINT="$val" ;;
     MISSION_CONTROL_URL)  MISSION_CONTROL_URL="$val" ;;
     LOCATION_ID)          LOCATION_ID="$val" ;;
+    PROVISION_API_KEY)    PROVISION_API_KEY="$val" ;;
   esac
 done < "$ENV_FILE"
 
@@ -250,7 +251,11 @@ COMPONENT_VERSIONS_JSON=$(jq -nc \
 # ── NUC Readiness — schema version data for MC schema drift dashboard ──
 NUC_READINESS_JSON='null'
 # Try live endpoint first (most accurate when POS is running)
-NUC_READINESS_RAW=$(curl -sf --max-time 3 http://localhost:3005/api/internal/nuc-readiness 2>/dev/null || echo "")
+# nuc-readiness requires x-api-key auth (PROVISION_API_KEY)
+NUC_READINESS_RAW=""
+if [ -n "$PROVISION_API_KEY" ]; then
+  NUC_READINESS_RAW=$(curl -sf --max-time 3 -H "x-api-key: $PROVISION_API_KEY" http://localhost:3005/api/internal/nuc-readiness 2>/dev/null || echo "")
+fi
 if [ -n "$NUC_READINESS_RAW" ] && echo "$NUC_READINESS_RAW" | jq empty 2>/dev/null; then
   NUC_READINESS_JSON="$NUC_READINESS_RAW"
 # Fallback: read sync-status.json (available even when POS is down)
