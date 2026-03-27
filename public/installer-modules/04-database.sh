@@ -247,6 +247,31 @@ COMPONENT_VERSIONS_JSON=$(jq -nc \
   --arg installer "$INSTALLER_VERSION" \
   '{pos:$pos,dashboard:$dashboard,syncAgent:$syncAgent,watchdog:$watchdog,installer:$installer}')
 
+# ── NUC Readiness — schema version data for MC schema drift dashboard ──
+NUC_READINESS_JSON='null'
+# Try live endpoint first (most accurate when POS is running)
+NUC_READINESS_RAW=$(curl -sf --max-time 3 http://localhost:3005/api/internal/nuc-readiness 2>/dev/null || echo "")
+if [ -n "$NUC_READINESS_RAW" ] && echo "$NUC_READINESS_RAW" | jq empty 2>/dev/null; then
+  NUC_READINESS_JSON="$NUC_READINESS_RAW"
+# Fallback: read sync-status.json (available even when POS is down)
+elif [ -f /opt/gwi-pos/state/sync-status.json ] && jq empty /opt/gwi-pos/state/sync-status.json 2>/dev/null; then
+  # Map sync-status.json fields to nucReadiness shape
+  NUC_READINESS_JSON=$(jq -c '{
+    localDb: true,
+    neonReachable: .neonReachable,
+    neonSchemaVersion: .observedVersion,
+    seedVersion: null,
+    baseSeedPresent: .syncReady,
+    schemaBehind: false,
+    schemaAhead: false,
+    syncWorkers: .syncReady,
+    expectedSchemaVersion: .expectedVersion,
+    observedNeonSchemaVersion: .observedVersion,
+    schemaRecheckCount: .retryCount,
+    readinessLevel: (if .syncReady then "ORDERS" else "BOOT" end)
+  }' /opt/gwi-pos/state/sync-status.json 2>/dev/null || echo 'null')
+fi
+
 BODY=$(jq -nc \
   --arg version "$VERSION" \
   --argjson uptime "${UPTIME:-0}" \
@@ -270,7 +295,8 @@ BODY=$(jq -nc \
   --argjson watchdogEscalation "$WATCHDOG_ESC_JSON" \
   --argjson dashboard "$DASHBOARD_JSON" \
   --argjson componentVersions "$COMPONENT_VERSIONS_JSON" \
-  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard,componentVersions:$componentVersions}')
+  --argjson nucReadiness "${NUC_READINESS_JSON:-null}" \
+  '{version:$version,uptime:$uptime,activeOrders:0,cpuPercent:$cpuPercent,memoryUsedMb:$memoryUsedMb,memoryTotalMb:$memoryTotalMb,diskUsedGb:$diskUsedGb,diskTotalGb:$diskTotalGb,localIp:$localIp,posLocationId:$posLocationId,batchClosedAt:$batchClosedAt,batchStatus:$batchStatus,batchItemCount:$batchItemCount,batchNo:$batchNo,openOrderCount:$openOrderCount,unadjustedTipCount:$unadjustedTipCount,currentBatchTotal:$currentBatchTotal,hardware:$hardware,diskPressure:$diskPressure,watchdog:$watchdog,watchdogEscalation:$watchdogEscalation,dashboard:$dashboard,componentVersions:$componentVersions,nucReadiness:$nucReadiness}')
 
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
 
