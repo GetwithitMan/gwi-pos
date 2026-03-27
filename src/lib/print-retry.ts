@@ -1,8 +1,10 @@
 /**
  * Print retry infrastructure.
  *
- * 1. dispatchPrintWithRetry — fire-and-forget HTTP dispatch with 1 retry + audit log
+ * 1. dispatchPrintWithRetry — durable print dispatch: creates PrintJob BEFORE sending,
+ *    updates status on success/failure. On crash, stale 'queued' jobs are recovered.
  * 2. retryFailedPrintJobs — batch-retry queued PrintJob records (status: 'queued', retryCount < 3)
+ * 3. recoverStalePrintJobs — on NUC restart, retries jobs stuck in 'queued' > 30s
  *
  * When a job hits MAX_RETRY_COUNT, attemptBackupForJob tries:
  *   1. A configured backup printer on the same PrintRoute
@@ -10,8 +12,9 @@
  * If no backup succeeds, marks as 'failed_permanent' and dispatches an alert.
  *
  * Usage:
- *   void dispatchPrintWithRetry(url, body, { locationId, employeeId, orderId })
+ *   void dispatchPrintWithRetry(url, body, { locationId, employeeId, orderId, printerId })
  *   const result = await retryFailedPrintJobs(locationId)
+ *   void recoverStalePrintJobs(locationId)
  */
 
 import { db } from '@/lib/db'
@@ -23,26 +26,86 @@ import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('print-retry')
 
 const MAX_RETRY_COUNT = 3
+const STALE_JOB_THRESHOLD_MS = 30_000 // 30 seconds — jobs older than this are considered crash orphans
 
 /**
- * Fire-and-forget print dispatch with single HTTP retry.
- * On failure, retries once after 3s. If both fail, logs to AuditLog.
+ * Durable print dispatch with single HTTP retry.
+ *
+ * Creates a PrintJob record BEFORE the first send attempt so that a NUC crash
+ * between order-send and print-HTTP never silently drops a kitchen ticket.
+ * On success the job moves to 'sent'. On failure after retry, the job stays
+ * 'queued' for `retryFailedPrintJobs` to pick up, and a socket broadcast
+ * notifies terminals of the offline printer.
  */
 export async function dispatchPrintWithRetry(
   url: string,
   body: Record<string, unknown>,
-  context: { locationId: string; employeeId?: string | null; orderId: string }
+  context: {
+    locationId: string
+    employeeId?: string | null
+    orderId: string
+    printerId?: string | null
+  }
 ): Promise<void> {
+  // ── Step 1: Create durable PrintJob record BEFORE sending ──────────────────
+  // PrintJob requires a valid printerId (FK to Printer). If the caller doesn't
+  // provide one, we fall back to AuditLog-only durability (still better than nothing).
+  let printJobId: string | null = null
+  if (context.printerId) {
+    try {
+      const printJob = await db.printJob.create({
+        data: {
+          locationId: context.locationId,
+          jobType: 'kitchen_ticket',
+          orderId: context.orderId,
+          printerId: context.printerId,
+          status: 'queued',
+          retryCount: 0,
+          errorMessage: null,
+          content: null, // HTTP dispatch path — content is rebuilt by the print route
+        },
+      })
+      printJobId = printJob.id
+    } catch (dbErr) {
+      // If we can't persist the job, fall through to best-effort send anyway.
+      // This matches the old fire-and-forget behavior as a degraded fallback.
+      log.warn({ err: dbErr }, '[PRINT-SAFETY] Could not create PrintJob record — proceeding best-effort')
+    }
+  } else {
+    // No printerId — log to AuditLog as a pre-send breadcrumb so we can detect
+    // crash-orphaned prints even without a PrintJob record.
+    void db.auditLog.create({
+      data: {
+        locationId: context.locationId,
+        employeeId: context.employeeId || null,
+        action: 'print_job_queued',
+        entityType: 'order',
+        entityId: context.orderId,
+        details: { url, note: 'Pre-send breadcrumb (no printerId for PrintJob)' },
+      },
+    }).catch(err => log.warn({ err }, 'fire-and-forget failed in print-retry'))
+  }
+
+  // ── Step 2: First send attempt ─────────────────────────────────────────────
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (res.ok) return
+    if (res.ok) {
+      // Mark job as completed
+      if (printJobId) {
+        void db.printJob.update({
+          where: { id: printJobId },
+          data: { status: 'sent', sentAt: new Date(), errorMessage: null },
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in print-retry'))
+      }
+      return
+    }
     throw new Error(`Print failed: ${res.status}`)
   } catch (firstError) {
-    // Retry once after 3 seconds
+    // ── Step 3: Retry once after 3 seconds ─────────────────────────────────
     await new Promise(resolve => setTimeout(resolve, 3000))
     try {
       const retryRes = await fetch(url, {
@@ -50,11 +113,33 @@ export async function dispatchPrintWithRetry(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      if (retryRes.ok) return
+      if (retryRes.ok) {
+        if (printJobId) {
+          void db.printJob.update({
+            where: { id: printJobId },
+            data: { status: 'sent', sentAt: new Date(), errorMessage: null },
+          }).catch(err => log.warn({ err }, 'fire-and-forget failed in print-retry'))
+        }
+        return
+      }
       throw new Error(`Print retry failed: ${retryRes.status}`)
     } catch (retryError) {
+      const errorMsg = retryError instanceof Error ? retryError.message : String(retryError)
       log.error({ err: retryError }, '[PRINT-SAFETY] Print failed after retry:')
-      // Log to audit trail so managers can see missed tickets
+
+      // ── Step 4: Leave job as 'queued' for retryFailedPrintJobs to pick up ─
+      if (printJobId) {
+        void db.printJob.update({
+          where: { id: printJobId },
+          data: {
+            retryCount: 1,
+            status: 'queued',
+            errorMessage: errorMsg,
+          },
+        }).catch(err => log.warn({ err }, 'fire-and-forget failed in print-retry'))
+      }
+
+      // Also log to audit trail so managers can see missed tickets
       void db.auditLog.create({
         data: {
           locationId: context.locationId,
@@ -62,11 +147,69 @@ export async function dispatchPrintWithRetry(
           action: 'print_job_failed',
           entityType: 'order',
           entityId: context.orderId,
-          details: { url, error: String(retryError) },
+          details: { url, error: errorMsg, printJobId },
         },
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in print-retry'))
+
+      // ── Step 5: Notify terminals that printer may be offline ─────────────
+      void dispatchPrintJobFailed(context.locationId, {
+        orderId: context.orderId,
+        printerName: context.printerId ? 'unknown' : 'unresolved',
+        printerId: context.printerId || undefined,
+        error: `Print dispatch failed after retry: ${errorMsg}`,
+      }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in print-retry'))
     }
   }
+}
+
+/**
+ * Recover print jobs orphaned by a NUC crash.
+ *
+ * Finds PrintJob records with status='queued' that are older than 30 seconds
+ * (indicating the process that created them died before completing the send).
+ * Feeds them back into retryFailedPrintJobs for normal retry processing.
+ *
+ * Call this on NUC startup / app boot.
+ */
+export async function recoverStalePrintJobs(
+  locationId: string
+): Promise<{ recovered: number }> {
+  const staleThreshold = new Date(Date.now() - STALE_JOB_THRESHOLD_MS)
+
+  const staleJobs = await db.printJob.findMany({
+    where: {
+      locationId,
+      status: 'queued',
+      retryCount: { lt: MAX_RETRY_COUNT },
+      createdAt: { lt: staleThreshold },
+      deletedAt: null,
+    },
+    select: { id: true, orderId: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  if (staleJobs.length === 0) return { recovered: 0 }
+
+  log.info(
+    { count: staleJobs.length, locationId },
+    '[PRINT-RECOVERY] Found stale print jobs after restart — feeding into retry pipeline'
+  )
+
+  // Reset retryCount so retryFailedPrintJobs will pick them up fresh
+  await db.printJob.updateMany({
+    where: { id: { in: staleJobs.map(j => j.id) } },
+    data: { retryCount: 0, errorMessage: 'Recovered after NUC restart' },
+  })
+
+  // Run the retry pipeline immediately
+  const result = await retryFailedPrintJobs(locationId)
+
+  log.info(
+    { ...result, locationId },
+    '[PRINT-RECOVERY] Stale print job recovery complete'
+  )
+
+  return { recovered: staleJobs.length }
 }
 
 /**

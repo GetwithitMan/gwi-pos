@@ -19,6 +19,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { batchActionSchema } from '@/lib/domain/gift-cards/schemas'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
 import { freezeGiftCard, unfreezeGiftCard } from '@/lib/domain/gift-cards/freeze-gift-card'
+import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 
 const CHUNK_SIZE = 100
 
@@ -63,6 +64,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
 
     let succeeded = 0
     const failed: FailedCard[] = []
+    const activatedCardIds: string[] = []
 
     // ── Process in chunks of CHUNK_SIZE ──────────────────────────────────
     for (let i = 0; i < cardIds.length; i += CHUNK_SIZE) {
@@ -78,6 +80,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
                   failed.push({ cardId, error: result.error || 'Activation failed' })
                 } else {
                   succeeded++
+                  activatedCardIds.push(cardId)
                 }
                 break
               }
@@ -132,6 +135,13 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'updated' })
+
+    // Dispatch balance changed events for activated cards (fraud prevention)
+    if (action === 'activate' && activatedCardIds.length > 0) {
+      for (const cardId of activatedCardIds) {
+        void dispatchGiftCardBalanceChanged(locationId, { giftCardId: cardId, newBalance: amount! })
+      }
+    }
 
     return NextResponse.json({ succeeded, failed })
   } catch (error) {

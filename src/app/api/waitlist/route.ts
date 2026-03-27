@@ -182,8 +182,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
           // Sync pagerNumber cache
           void db.$executeRawUnsafe(
-            `UPDATE "WaitlistEntry" SET "pagerNumber" = $2 WHERE id = $1`,
-            entry.id, pagerNumber
+            `UPDATE "WaitlistEntry" SET "pagerNumber" = $2 WHERE id = $1 AND "locationId" = $3`,
+            entry.id, pagerNumber, locationId
           ).catch(err => log.warn({ err }, 'Background task failed'))
 
           // Log device event

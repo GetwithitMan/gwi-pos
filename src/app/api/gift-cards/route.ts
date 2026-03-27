@@ -9,6 +9,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { parseSettings } from '@/lib/settings'
 import { allocatePooledGiftCard } from '@/lib/domain/gift-cards/allocate-pooled-gift-card'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
+import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 
 // Generate a unique gift card number
 function generateCardNumber(): string {
@@ -220,6 +221,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
 
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'created', entityId: giftCard.id as string })
     void pushUpstream()
+    void dispatchGiftCardBalanceChanged(locationId, { giftCardId: giftCard.id as string, newBalance: Number(giftCard.currentBalance) })
 
     // Fire-and-forget: Send gift card email to recipient if email provided
     if (recipientEmail) {

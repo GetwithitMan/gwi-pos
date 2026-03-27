@@ -203,53 +203,63 @@ async function triggerSchedulePull(
       return
     }
 
-    for (const shift of shifts) {
-      const employee = await db.employee.findFirst({
-        where: { locationId, sevenShiftsUserId: String(shift.user_id), deletedAt: null },
-        select: { id: true },
-      })
-      if (!employee) { skipped++; continue }
+    // Wrap the entire upsert loop in a transaction with an advisory lock
+    // to serialize concurrent schedule.published webhooks for the same location.
+    // The lock key is derived from a hash of the locationId to avoid collisions.
+    const lockKey = locationId.split('').reduce((acc, ch) => ((acc << 5) - acc + ch.charCodeAt(0)) | 0, 0)
 
-      const shiftDate = new Date(shift.start)
-      const startTime = shift.start.slice(11, 16)
-      const endTime = shift.end.slice(11, 16)
+    await db.$transaction(async (tx) => {
+      // Advisory lock serializes concurrent webhook calls for the same location
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock($1)`, lockKey)
 
-      if (shift.status === 'deleted') {
-        const existing = await db.scheduledShift.findFirst({
-          where: { sevenShiftsShiftId: String(shift.id), deletedAt: null },
+      for (const shift of shifts) {
+        const employee = await tx.employee.findFirst({
+          where: { locationId, sevenShiftsUserId: String(shift.user_id), deletedAt: null },
+          select: { id: true },
+        })
+        if (!employee) { skipped++; continue }
+
+        const shiftDate = new Date(shift.start)
+        const startTime = shift.start.slice(11, 16)
+        const endTime = shift.end.slice(11, 16)
+
+        if (shift.status === 'deleted') {
+          const existing = await tx.scheduledShift.findFirst({
+            where: { sevenShiftsShiftId: String(shift.id), deletedAt: null },
+          })
+          if (existing) {
+            await tx.scheduledShift.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
+            deleted++
+          }
+          continue
+        }
+
+        const existing = await tx.scheduledShift.findFirst({
+          where: { sevenShiftsShiftId: String(shift.id) },
         })
         if (existing) {
-          await db.scheduledShift.update({ where: { id: existing.id }, data: { deletedAt: new Date() } })
-          deleted++
+          await tx.scheduledShift.update({
+            where: { id: existing.id },
+            data: { date: shiftDate, startTime, endTime, breakMinutes: shift.break_minutes ?? 0, deletedAt: null },
+          })
+        } else {
+          await tx.scheduledShift.create({
+            data: {
+              locationId,
+              scheduleId: schedule.id,
+              employeeId: employee.id,
+              date: shiftDate,
+              startTime,
+              endTime,
+              breakMinutes: shift.break_minutes ?? 0,
+              notes: shift.notes ?? null,
+              sevenShiftsShiftId: String(shift.id),
+            },
+          })
         }
-        continue
+        upserted++
       }
-
-      const existing = await db.scheduledShift.findFirst({
-        where: { sevenShiftsShiftId: String(shift.id) },
-      })
-      if (existing) {
-        await db.scheduledShift.update({
-          where: { id: existing.id },
-          data: { date: shiftDate, startTime, endTime, breakMinutes: shift.break_minutes ?? 0, deletedAt: null },
-        })
-      } else {
-        await db.scheduledShift.create({
-          data: {
-            locationId,
-            scheduleId: schedule.id,
-            employeeId: employee.id,
-            date: shiftDate,
-            startTime,
-            endTime,
-            breakMinutes: shift.break_minutes ?? 0,
-            notes: shift.notes ?? null,
-            sevenShiftsShiftId: String(shift.id),
-          },
-        })
-      }
-      upserted++
-    }
+    })
 
     await updateSyncStatus(locationId, {
       lastSchedulePullAt: new Date().toISOString(),

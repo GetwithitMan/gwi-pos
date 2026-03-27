@@ -12,7 +12,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, applyPriceRounding, roundToCents, toNumber } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed, dispatchCFDReceiptSent, dispatchOrderClosed, dispatchNewOrder, dispatchTableStatusChanged, dispatchEntertainmentStatusChanged, dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 import { invalidateSnapshotCache } from '@/lib/snapshot-cache'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { resolveDeliveryTipRecipient } from '@/lib/delivery/tip-reallocation'
@@ -862,6 +862,7 @@ export const POST = withVenue(withTiming(async function POST(
     // inside their own transactions. Default payments (cash, card) are collected
     // and created atomically with the order status update below.
     const allPendingPayments: any[] = []
+    const giftCardBalanceChanges: Array<{ giftCardId: string; newBalance: number }> = []
     let totalTips = 0
     let alreadyPaidInLoop = 0
     let autoGratApplied = false
@@ -1066,6 +1067,9 @@ export const POST = withVenue(withTiming(async function POST(
           ) }
         }
         allPendingPayments.push(gcResult.record)
+        if (gcResult.giftCardId && gcResult.newBalance !== undefined) {
+          giftCardBalanceChanges.push({ giftCardId: gcResult.giftCardId, newBalance: gcResult.newBalance })
+        }
         totalTips += payment.tipAmount || 0
         continue
       } else if (payment.method === 'house_account') {
@@ -2141,6 +2145,11 @@ export const POST = withVenue(withTiming(async function POST(
         parentOrderId: order.parentOrderId || null,
         allSiblingsPaid: parentWasMarkedPaid,
       }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.pay'))
+    }
+
+    // Dispatch gift card balance changes for fraud prevention (fire-and-forget)
+    for (const gc of giftCardBalanceChanges) {
+      void dispatchGiftCardBalanceChanged(order.locationId, gc).catch(err => log.warn({ err }, 'gift card balance dispatch failed'))
     }
 
     // Release order claim after successful payment (fire-and-forget)

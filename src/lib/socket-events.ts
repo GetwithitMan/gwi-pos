@@ -193,6 +193,9 @@ export const SOCKET_EVENTS = {
   CAKE_ORDERS_UPDATED:       'cake-orders:updated',
   CAKE_ORDERS_LIST_CHANGED:  'cake-orders:list-changed',
 
+  // ── Gift Cards ─────────────────────────────────────────────────────────
+  GIFT_CARD_BALANCE_CHANGED:   'gift-card:balance-changed',
+
   // ── Delivery ───────────────────────────────────────────────────────────
   DELIVERY_STATUS_CHANGED:     'delivery:status_changed',
   DELIVERY_UPDATED:            'delivery:updated',
@@ -828,6 +831,14 @@ export interface CakeOrdersListChangedPayload {
   locationId: string
 }
 
+// ── Gift Cards ───────────────────────────────────────────────────────────
+
+export interface GiftCardBalanceChangedPayload {
+  giftCardId: string
+  newBalance: number
+  locationId: string
+}
+
 // ── Delivery ─────────────────────────────────────────────────────────────
 
 export interface DeliveryStatusChangedPayload {
@@ -1006,6 +1017,9 @@ export interface SocketEventPayloadMap {
   [SOCKET_EVENTS.CAKE_ORDERS_NEW]: CakeOrdersNewPayload
   [SOCKET_EVENTS.CAKE_ORDERS_UPDATED]: CakeOrdersUpdatedPayload
   [SOCKET_EVENTS.CAKE_ORDERS_LIST_CHANGED]: CakeOrdersListChangedPayload
+
+  // Gift cards
+  [SOCKET_EVENTS.GIFT_CARD_BALANCE_CHANGED]: GiftCardBalanceChangedPayload
 
   // Delivery
   [SOCKET_EVENTS.DELIVERY_STATUS_CHANGED]: DeliveryStatusChangedPayload

@@ -2379,6 +2379,34 @@ export async function dispatchSettingsUpdated(
 
 // ==================== Card Detection Events ====================
 
+// ==================== Gift Card Events ====================
+
+/**
+ * Dispatch gift-card:balance-changed event to all connected clients.
+ *
+ * CRITICAL for fraud prevention: prevents double-spend when two terminals
+ * see the same stale gift card balance. Emitted after every balance mutation
+ * (activation, redemption, reload, refund, adjustment, void restoration).
+ */
+export async function dispatchGiftCardBalanceChanged(
+  locationId: string,
+  payload: {
+    giftCardId: string
+    newBalance: number
+  },
+): Promise<void> {
+  try {
+    await emitToLocation(locationId, 'gift-card:balance-changed', {
+      ...payload,
+      locationId,
+    })
+  } catch (err) {
+    log.error({ err }, 'Failed to dispatch gift-card:balance-changed')
+  }
+}
+
+// ==================== Card Detection Events ====================
+
 /**
  * Dispatch card:detected event for multi-terminal awareness
  *

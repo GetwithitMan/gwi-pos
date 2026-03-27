@@ -6,7 +6,7 @@ import * as PaymentRepository from '@/lib/repositories/payment-repository'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { requirePermission } from '@/lib/api-auth'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
-import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchOrderClosed } from '@/lib/socket-dispatch'
+import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate, dispatchOpenOrdersChanged, dispatchOrderClosed, dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 import { requireDatacapClient } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
@@ -530,6 +530,7 @@ export const POST = withVenue(async function POST(
         }, { timeout: 10000 })
 
         console.log(`[void-payment] Gift card ${giftCardId} balance restored by $${voidAmount.toFixed(2)} for orderId=${orderId}`)
+        void dispatchGiftCardBalanceChanged(order.locationId, { giftCardId, newBalance })
       } catch (err) {
         console.error('[void-payment] Gift card balance restoration failed:', err)
       }

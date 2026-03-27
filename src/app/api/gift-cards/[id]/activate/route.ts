@@ -17,6 +17,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { sendGiftCardEmail } from '@/lib/gift-card-email'
 import { activateCardSchema } from '@/lib/domain/gift-cards/schemas'
 import { activateGiftCard } from '@/lib/domain/gift-cards/activate-gift-card'
+import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 
 export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function POST(
   request: NextRequest,
@@ -109,6 +110,7 @@ export const POST = withVenue(withAuth('CUSTOMERS_GIFT_CARDS', async function PO
 
     pushUpstream()
     void notifyDataChanged({ locationId, domain: 'gift-cards', action: 'updated', entityId: id })
+    void dispatchGiftCardBalanceChanged(locationId, { giftCardId: id, newBalance: Number(activatedCard.currentBalance) })
 
     // Serialize Decimal fields for JSON response
     const responseCard = {

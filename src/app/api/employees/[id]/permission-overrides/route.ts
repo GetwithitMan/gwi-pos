@@ -120,9 +120,9 @@ export const POST = withVenue(async function POST(
     }).catch(err => log.warn({ err }, 'Background task failed'))
     clearPermissionCache(employeeId)
 
-    // Notify cross-terminal
-    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
-    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
+    // Notify cross-terminal — permission override changed, so terminals must re-evaluate cached permissions
+    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: override })
   } catch (error) {
@@ -180,9 +180,9 @@ export const DELETE = withVenue(async function DELETE(
     }).catch(err => log.warn({ err }, 'Background task failed'))
     clearPermissionCache(employeeId)
 
-    // Notify cross-terminal
-    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
-    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId }).catch(err => log.warn({ err }, 'socket emit failed'))
+    // Notify cross-terminal — permission override removed, so terminals must re-evaluate cached permissions
+    void emitToLocation(locationId, 'employees:changed', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(locationId, 'employee:updated', { action: 'updated', employeeId, permissionsChanged: true }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

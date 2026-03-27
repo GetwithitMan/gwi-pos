@@ -308,8 +308,10 @@ export const PUT = withVenue(async function PUT(
     void pushUpstream()
 
     // Real-time cross-terminal update
-    void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
-    void emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id }).catch(err => log.warn({ err }, 'socket emit failed'))
+    // Flag permissionsChanged when role, additional roles, or active status changed so terminals re-evaluate cached permissions
+    const permissionsChanged = Boolean(roleId || additionalRoleIds !== undefined || isActive !== undefined)
+    void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id, permissionsChanged }).catch(err => log.warn({ err }, 'socket emit failed'))
+    void emitToLocation(existing.locationId, 'employee:updated', { action: 'updated', employeeId: id, permissionsChanged }).catch(err => log.warn({ err }, 'socket emit failed'))
     if (isActive === false) {
       void emitToLocation(existing.locationId, 'employee:deactivated', { employeeId: id }).catch(err => log.warn({ err }, 'Background task failed'))
       try {

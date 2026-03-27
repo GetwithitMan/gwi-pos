@@ -5,9 +5,9 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 import { invalidateTaxCache } from '@/lib/tax-cache'
-import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('tax-rules')
 
@@ -95,7 +95,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     invalidateTaxCache(locationId)
 
     // Emit settings:updated so all terminals refresh tax configuration
-    void emitToLocation(locationId, 'settings:updated', { trigger: 'tax-rule-created', taxRuleId: taxRule.id }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchSettingsUpdated(locationId, { changedKeys: ['tax'] }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId, domain: 'tax', action: 'created', entityId: taxRule.id })
     void pushUpstream()

@@ -5,6 +5,8 @@ import { Prisma } from '@/generated/prisma/client'
 import { processDcVirtualGiftWebhook } from '@/lib/domain/gift-cards/process-datacap-virtual-gift'
 import { createChildLogger } from '@/lib/logger'
 import type { VirtualGiftWebhookPayload } from '@/lib/datacap/virtual-gift-client'
+import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 const log = createChildLogger('datacap-virtual-gift-webhook')
 
@@ -190,7 +192,17 @@ async function processPaymentCompleted(
   })
 
   if (result.success) {
-    log.info({ transactionId, cardId: (result.data?.giftCard as Record<string, unknown>)?.id }, 'Virtual gift card created from webhook')
+    const createdCard = result.data?.giftCard as Record<string, unknown> | undefined
+    log.info({ transactionId, cardId: createdCard?.id }, 'Virtual gift card created from webhook')
+
+    // Dispatch balance changed event for cross-terminal awareness
+    if (createdCard?.id) {
+      void dispatchGiftCardBalanceChanged(locationId, {
+        giftCardId: createdCard.id as string,
+        newBalance: Number(createdCard.currentBalance ?? 0),
+      })
+      pushUpstream()
+    }
 
     // Update webhook event with the created gift card ID
     await db.externalWebhookEvent.updateMany({
@@ -202,7 +214,7 @@ async function processPaymentCompleted(
       data: {
         processingStatus: 'processed',
         processedAt: new Date(),
-        relatedGiftCardId: (result.data?.giftCard as Record<string, unknown>)?.id as string || null,
+        relatedGiftCardId: (createdCard?.id as string) || null,
       },
     })
 

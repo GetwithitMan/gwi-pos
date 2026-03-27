@@ -21,6 +21,7 @@ import {
   voidLinkedPosOrder,
 } from '@/lib/delivery/webhook-helpers'
 import { normalizeGrubhubItems } from '@/lib/delivery/order-mapper'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('webhooks-grubhub')
 
@@ -130,6 +131,9 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ received: true, duplicate: true })
         }
 
+        // Push third-party order upstream immediately so it survives NUC crash
+        pushUpstream()
+
         // Auto-accept if configured
         let posOrderId: string | null = null
         if (location.autoAccept) {
@@ -147,6 +151,8 @@ export async function POST(request: NextRequest) {
 
           // Fix 6: Confirm with Grubhub after auto-accept creates POS order
           if (posOrderId) {
+            // Push POS order upstream before confirming with platform
+            pushUpstream()
             void confirmWithPlatform('grubhub', externalOrderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
           }
         }

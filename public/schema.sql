@@ -68,7 +68,16 @@ CREATE TYPE "PrintJobStatus" AS ENUM ('pending', 'queued', 'sent', 'failed', 'fa
 CREATE TYPE "PrintRuleLevel" AS ENUM ('category', 'item', 'modifier');
 
 -- CreateEnum
-CREATE TYPE "GiftCardStatus" AS ENUM ('active', 'depleted', 'expired', 'frozen');
+CREATE TYPE "GiftCardStatus" AS ENUM ('active', 'unactivated', 'depleted', 'expired', 'frozen');
+
+-- CreateEnum
+CREATE TYPE "PerformedByType" AS ENUM ('employee', 'system', 'cloud', 'webhook');
+
+-- CreateEnum
+CREATE TYPE "DeliveryStatus" AS ENUM ('pending', 'sent', 'delivered', 'failed');
+
+-- CreateEnum
+CREATE TYPE "WebhookProcessingStatus" AS ENUM ('received', 'processed', 'failed', 'ignored');
 
 -- CreateEnum
 CREATE TYPE "HouseAccountStatus" AS ENUM ('pending', 'active', 'suspended', 'closed');
@@ -1810,6 +1819,17 @@ CREATE TABLE "GiftCard" (
     "purchaserName" TEXT,
     "message" TEXT,
     "orderId" TEXT,
+    "source" TEXT,
+    "batchId" TEXT,
+    "activatedAt" TIMESTAMP(3),
+    "activatedById" TEXT,
+    "externalProvider" TEXT,
+    "externalTransactionId" TEXT,
+    "externalPageId" TEXT,
+    "deliveryStatus" "DeliveryStatus",
+    "deliveryAttempts" INTEGER NOT NULL DEFAULT 0,
+    "lastDeliveryAttemptAt" TIMESTAMP(3),
+    "deliveryFailureReason" TEXT,
     "lastMutatedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -1831,6 +1851,9 @@ CREATE TABLE "GiftCardTransaction" (
     "orderId" TEXT,
     "employeeId" TEXT,
     "notes" TEXT,
+    "idempotencyKey" TEXT,
+    "externalReference" TEXT,
+    "performedByType" "PerformedByType",
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -4958,6 +4981,17 @@ CREATE TABLE "SocketEventLog" (
 );
 
 -- CreateTable
+CREATE TABLE "CellularEvent" (
+    "id" BIGSERIAL NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "event" TEXT NOT NULL,
+    "data" JSONB NOT NULL DEFAULT '{}',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CellularEvent_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "LoyaltyProgram" (
     "id" TEXT NOT NULL,
     "locationId" TEXT NOT NULL,
@@ -5330,6 +5364,27 @@ CREATE TABLE "DeliveryOrder" (
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "DeliveryOrder_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ExternalWebhookEvent" (
+    "id" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "externalTransactionId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "signatureValid" BOOLEAN NOT NULL,
+    "payload" JSONB NOT NULL,
+    "processingStatus" "WebhookProcessingStatus" NOT NULL DEFAULT 'received',
+    "ignoredReason" TEXT,
+    "relatedGiftCardId" TEXT,
+    "providerPageId" TEXT,
+    "providerMerchantId" TEXT,
+    "attemptCount" INTEGER NOT NULL DEFAULT 1,
+    "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "processedAt" TIMESTAMP(3),
+    "errorMessage" TEXT,
+
+    CONSTRAINT "ExternalWebhookEvent_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -6143,6 +6198,15 @@ CREATE INDEX "GiftCard_locationId_cardNumber_idx" ON "GiftCard"("locationId", "c
 CREATE INDEX "GiftCard_locationId_status_idx" ON "GiftCard"("locationId", "status");
 
 -- CreateIndex
+CREATE INDEX "GiftCard_locationId_status_source_idx" ON "GiftCard"("locationId", "status", "source");
+
+-- CreateIndex
+CREATE INDEX "GiftCard_batchId_idx" ON "GiftCard"("batchId");
+
+-- CreateIndex
+CREATE INDEX "GiftCard_externalProvider_externalTransactionId_idx" ON "GiftCard"("externalProvider", "externalTransactionId");
+
+-- CreateIndex
 CREATE INDEX "GiftCardTransaction_locationId_idx" ON "GiftCardTransaction"("locationId");
 
 -- CreateIndex
@@ -6153,6 +6217,12 @@ CREATE INDEX "GiftCardTransaction_orderId_idx" ON "GiftCardTransaction"("orderId
 
 -- CreateIndex
 CREATE INDEX "GiftCardTransaction_createdAt_idx" ON "GiftCardTransaction"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "GiftCardTransaction_externalReference_idx" ON "GiftCardTransaction"("externalReference");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "GiftCardTransaction_giftCardId_idempotencyKey_key" ON "GiftCardTransaction"("giftCardId", "idempotencyKey");
 
 -- CreateIndex
 CREATE INDEX "HouseAccount_status_idx" ON "HouseAccount"("status");
@@ -7595,6 +7665,12 @@ CREATE INDEX "SyncConflict_model_recordId_idx" ON "SyncConflict"("model", "recor
 CREATE INDEX "SocketEventLog_locationId_id_idx" ON "SocketEventLog"("locationId", "id");
 
 -- CreateIndex
+CREATE INDEX "CellularEvent_locationId_id_idx" ON "CellularEvent"("locationId", "id");
+
+-- CreateIndex
+CREATE INDEX "CellularEvent_createdAt_idx" ON "CellularEvent"("createdAt");
+
+-- CreateIndex
 CREATE INDEX "LoyaltyProgram_locationId_idx" ON "LoyaltyProgram"("locationId");
 
 -- CreateIndex
@@ -7689,6 +7765,12 @@ CREATE INDEX "DeliveryOrder_zoneId_idx" ON "DeliveryOrder"("zoneId");
 
 -- CreateIndex
 CREATE INDEX "DeliveryOrder_runId_idx" ON "DeliveryOrder"("runId");
+
+-- CreateIndex
+CREATE INDEX "ExternalWebhookEvent_provider_processingStatus_idx" ON "ExternalWebhookEvent"("provider", "processingStatus");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ExternalWebhookEvent_provider_externalTransactionId_eventTy_key" ON "ExternalWebhookEvent"("provider", "externalTransactionId", "eventType");
 
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -7952,7 +8034,7 @@ ALTER TABLE "OrderItemModifier" ADD CONSTRAINT "OrderItemModifier_modifierId_fke
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Payment" ADD CONSTRAINT "Payment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Payment" ADD CONSTRAINT "Payment_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Payment" ADD CONSTRAINT "Payment_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -8223,6 +8305,9 @@ ALTER TABLE "GiftCard" ADD CONSTRAINT "GiftCard_purchasedById_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "GiftCard" ADD CONSTRAINT "GiftCard_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "GiftCard" ADD CONSTRAINT "GiftCard_activatedById_fkey" FOREIGN KEY ("activatedById") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "GiftCardTransaction" ADD CONSTRAINT "GiftCardTransaction_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -9149,7 +9234,7 @@ ALTER TABLE "FulfillmentEvent" ADD CONSTRAINT "FulfillmentEvent_locationId_fkey"
 ALTER TABLE "BridgeCheckpoint" ADD CONSTRAINT "BridgeCheckpoint_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "OutageQueueEntry" ADD CONSTRAINT "OutageQueueEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "OutageQueueEntry" ADD CONSTRAINT "OutageQueueEntry_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ReservationBlock" ADD CONSTRAINT "ReservationBlock_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -9180,6 +9265,9 @@ ALTER TABLE "EmployeePermissionOverride" ADD CONSTRAINT "EmployeePermissionOverr
 
 -- AddForeignKey
 ALTER TABLE "EmployeePermissionOverride" ADD CONSTRAINT "EmployeePermissionOverride_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SyncWatermark" ADD CONSTRAINT "SyncWatermark_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "LoyaltyProgram" ADD CONSTRAINT "LoyaltyProgram_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

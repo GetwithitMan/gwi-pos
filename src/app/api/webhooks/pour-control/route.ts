@@ -101,12 +101,41 @@ export async function POST(request: NextRequest) {
     const varianceOz = actualOz - targetOz
     const isOverPour = actualOz > targetOz * (1 + threshold / 100)
 
-    // Estimate waste cost
-    let wasteCost = 0
-    if (isOverPour && menuItemId) {
-      const items = await db.$queryRawUnsafe<Array<{ cost: number | null }>>(
-        `SELECT "cost" FROM "MenuItem" WHERE "id" = $1 LIMIT 1`,
+    // Validate menuItemId belongs to this location (tenant scoping — prevent cross-venue data leak)
+    let validatedMenuItemId: string | null = menuItemId || null
+    if (menuItemId) {
+      const menuItemCheck = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "MenuItem" WHERE "id" = $1 AND "locationId" = $2 LIMIT 1`,
         menuItemId,
+        locationId,
+      )
+      if (menuItemCheck.length === 0) {
+        log.warn({ menuItemId, locationId }, 'MenuItem does not belong to location — ignoring menuItemId')
+        validatedMenuItemId = null
+      }
+    }
+
+    // Validate employeeId belongs to this location (tenant scoping)
+    let validatedEmployeeId: string | null = employeeId || null
+    if (employeeId) {
+      const empCheck = await db.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "Employee" WHERE "id" = $1 AND "locationId" = $2 LIMIT 1`,
+        employeeId,
+        locationId,
+      )
+      if (empCheck.length === 0) {
+        log.warn({ employeeId, locationId }, 'Employee does not belong to location — ignoring employeeId')
+        validatedEmployeeId = null
+      }
+    }
+
+    // Estimate waste cost (using tenant-scoped menuItemId)
+    let wasteCost = 0
+    if (isOverPour && validatedMenuItemId) {
+      const items = await db.$queryRawUnsafe<Array<{ cost: number | null }>>(
+        `SELECT "cost" FROM "MenuItem" WHERE "id" = $1 AND "locationId" = $2 LIMIT 1`,
+        validatedMenuItemId,
+        locationId,
       )
       const itemCost = Number(items[0]?.cost ?? 0)
       if (itemCost > 0 && targetOz > 0) {
@@ -120,8 +149,8 @@ export async function POST(request: NextRequest) {
       `INSERT INTO "PourLog" ("locationId", "menuItemId", "employeeId", "targetOz", "actualOz", "varianceOz", "isOverPour", "wasteCost", "tapId", "source", "pouredAt")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       locationId,
-      menuItemId || null,
-      employeeId || null,
+      validatedMenuItemId,
+      validatedEmployeeId,
       targetOz,
       actualOz,
       varianceOz,

@@ -380,6 +380,36 @@ export async function POST(
   const timezone = matchedLocation.timezone || 'America/New_York'
 
   try {
+    // ─── Idempotency Check ────────────────────────────────────────────
+    // Use ExternalWebhookEvent to dedup replayed webhooks. The unique
+    // constraint on (provider, externalTransactionId, eventType) prevents
+    // double-processing even under concurrent delivery.
+    const idempotencyProvider = `reservation:${platform}`
+    const idempotencyTxId = normalized.externalId
+    const idempotencyEventType = normalized.action
+
+    const existingWebhookEvent = await db.externalWebhookEvent.findUnique({
+      where: {
+        provider_externalTransactionId_eventType: {
+          provider: idempotencyProvider,
+          externalTransactionId: idempotencyTxId,
+          eventType: idempotencyEventType,
+        },
+      },
+      select: { id: true, processingStatus: true },
+    })
+
+    if (existingWebhookEvent && existingWebhookEvent.processingStatus === 'processed') {
+      // Already processed — return 200 OK without re-processing
+      log.info({ platform, externalId: normalized.externalId, action: normalized.action },
+        'Duplicate webhook received — already processed, skipping')
+      return NextResponse.json({
+        success: true,
+        message: 'Webhook already processed (idempotent)',
+        reservationId: null,
+        deduplicated: true,
+      })
+    }
     // Look up existing reservation by unique index
     const existing = await db.reservation.findFirst({
       where: {
@@ -551,6 +581,40 @@ export async function POST(
       })
 
       reservationId = result.reservation.id
+    }
+
+    // ─── Record Webhook Event for Idempotency ──────────────────────
+    // Upsert so that if a 'received' record exists (from a prior failed attempt),
+    // we mark it 'processed'. The unique constraint handles concurrent races.
+    try {
+      await db.externalWebhookEvent.upsert({
+        where: {
+          provider_externalTransactionId_eventType: {
+            provider: idempotencyProvider,
+            externalTransactionId: idempotencyTxId,
+            eventType: idempotencyEventType,
+          },
+        },
+        create: {
+          provider: idempotencyProvider,
+          externalTransactionId: idempotencyTxId,
+          eventType: idempotencyEventType,
+          signatureValid: !!matchedIntegration.webhookSecret,
+          payload: normalized.rawPayload as any,
+          processingStatus: 'processed',
+          processedAt: new Date(),
+        },
+        update: {
+          processingStatus: 'processed',
+          processedAt: new Date(),
+          attemptCount: { increment: 1 },
+        },
+      })
+    } catch (webhookEventErr) {
+      // Non-fatal — the reservation was already processed successfully.
+      // Log and continue so the caller gets a 200.
+      log.warn({ err: webhookEventErr, platform, externalId: normalized.externalId },
+        'Failed to record ExternalWebhookEvent (non-fatal)')
     }
 
     // Dispatch socket event

@@ -316,6 +316,12 @@ export const DELETE = withVenue(async function DELETE(
           })
         })().catch(err => log.warn({ err }, 'Background task failed'))
 
+        // Notify host terminals of cancellation in real-time
+        void dispatchReservationChanged(reservation.locationId, {
+          reservationId: id,
+          action: 'cancelled',
+        }).catch(err => log.warn({ err }, 'Background task failed'))
+
         void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
         void pushUpstream()
 
@@ -329,6 +335,12 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await db.reservation.update({ where: { id }, data: { deletedAt: new Date(), lastMutatedBy: process.env.VERCEL ? 'cloud' : 'local' } })
+
+    // Notify host terminals of deletion in real-time
+    void dispatchReservationChanged(reservation.locationId, {
+      reservationId: id,
+      action: 'deleted',
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId: reservation.locationId, domain: 'reservations', action: 'deleted', entityId: id })
     void pushUpstream()

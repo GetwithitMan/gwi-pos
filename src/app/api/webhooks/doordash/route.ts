@@ -21,6 +21,7 @@ import {
   voidLinkedPosOrder,
 } from '@/lib/delivery/webhook-helpers'
 import { normalizeDoorDashItems } from '@/lib/delivery/order-mapper'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('webhooks-doordash')
 
@@ -138,6 +139,9 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ received: true, duplicate: true })
         }
 
+        // Push third-party order upstream immediately so it survives NUC crash
+        pushUpstream()
+
         // Auto-accept if configured
         let posOrderId: string | null = null
         if (location.autoAccept) {
@@ -155,6 +159,8 @@ export async function POST(request: NextRequest) {
 
           // Confirm with DoorDash after POS order is created
           if (posOrderId) {
+            // Push POS order upstream before confirming with platform
+            pushUpstream()
             void confirmWithPlatform('doordash', externalOrderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
           }
         }

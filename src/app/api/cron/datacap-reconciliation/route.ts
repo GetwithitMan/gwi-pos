@@ -92,6 +92,18 @@ export async function GET(request: NextRequest) {
       // Attempt void if we have a recordNo from Datacap
       if (orphan.datacapRecordNo) {
         try {
+          // Idempotency check: re-read current status to ensure it hasn't been
+          // voided by a concurrent cron run (prevents double-void if DB update
+          // failed after a successful void on the previous run).
+          const currentStatus = await venueDb.$queryRawUnsafe<Array<{ status: string }>>(
+            `SELECT "status" FROM "_pending_datacap_sales" WHERE id = $1`,
+            orphan.id
+          )
+          if (currentStatus.length === 0 || currentStatus[0].status !== 'pending') {
+            // Already processed (voided/orphaned) by a concurrent run — skip
+            continue
+          }
+
           // Lazy-import Datacap helpers to avoid loading when not needed
           const { getDatacapClient } = await import('@/lib/datacap/helpers')
 
@@ -109,6 +121,18 @@ export async function GET(request: NextRequest) {
             )
             result.markedOrphaned++
             result.errors.push(`${orphan.id}: no active payment reader`)
+            continue
+          }
+
+          // Claim this orphan atomically before sending void to Datacap.
+          // CAS (compare-and-swap): only update if still 'pending'. If another
+          // cron run already claimed it, rowCount will be 0 and we skip.
+          const claimed = await venueDb.$executeRawUnsafe(
+            `UPDATE "_pending_datacap_sales" SET "status" = 'voiding' WHERE id = $1 AND "status" = 'pending'`,
+            orphan.id
+          )
+          if (claimed === 0) {
+            // Another cron run already claimed this orphan — skip
             continue
           }
 
@@ -136,7 +160,9 @@ export async function GET(request: NextRequest) {
             result.errors.push(`${orphan.id}: void declined - ${voidResponse.textResponse || voidResponse.cmdStatus || 'unknown'}`)
           }
         } catch (voidError) {
-          // Void attempt failed -- mark as orphaned so it surfaces in the manual endpoint
+          // Void attempt failed -- mark as orphaned so it surfaces in the manual endpoint.
+          // Do NOT retry the void — the void may have succeeded at Datacap but our DB
+          // update failed. Marking as orphaned prevents double-voiding on next cron run.
           const msg = voidError instanceof Error ? voidError.message : String(voidError)
           console.error(`[DATACAP-RECONCILIATION] Void failed for ${orphan.id}:`, msg)
 

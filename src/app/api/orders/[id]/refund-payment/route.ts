@@ -11,7 +11,7 @@ import { emitOrderEvent } from '@/lib/order-events/emitter'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchOrderSummaryUpdated, dispatchPaymentProcessed, dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 import { isInOutageMode, queueOutageWrite } from '@/lib/sync/upstream-sync-worker'
 import { queueIfOutageOrFail, OutageQueueFullError, pushUpstream } from '@/lib/sync/outage-safe-write'
 import { restoreInventoryForOrder } from '@/lib/inventory/void-waste'
@@ -580,6 +580,7 @@ export const POST = withVenue(async function POST(
         }, { timeout: 10000 })
 
         console.log(`[refund-payment] Gift card ${giftCardId} balance restored by $${refundAmount.toFixed(2)} for orderId=${id}`)
+        void dispatchGiftCardBalanceChanged(order.locationId, { giftCardId, newBalance })
       } catch (err) {
         console.error('[refund-payment] Gift card balance restoration failed:', err)
       }

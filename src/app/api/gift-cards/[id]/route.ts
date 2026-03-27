@@ -8,6 +8,7 @@ import { withAuth } from '@/lib/api-auth-middleware'
 import { freezeGiftCard, unfreezeGiftCard } from '@/lib/domain/gift-cards/freeze-gift-card'
 import { adjustGiftCardBalance } from '@/lib/domain/gift-cards/adjust-gift-card-balance'
 import { freezeCardSchema, adjustBalanceSchema } from '@/lib/domain/gift-cards/schemas'
+import { dispatchGiftCardBalanceChanged } from '@/lib/socket-dispatch'
 
 /** Serialize Decimal fields to numbers for JSON response */
 function serializeCard(card: Record<string, unknown>) {
@@ -156,6 +157,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
         void notifyDataChanged({ locationId: (result.data as Record<string, string>).locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
+        void dispatchGiftCardBalanceChanged((result.data as Record<string, string>).locationId, { giftCardId: id, newBalance: Number((result.data as Record<string, unknown>).currentBalance) })
         return NextResponse.json({ data: serializeCard(result.data!) })
       }
 
@@ -206,6 +208,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
         void notifyDataChanged({ locationId: cardForReload.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
+        void dispatchGiftCardBalanceChanged(cardForReload.locationId, { giftCardId: id, newBalance: Number(reloadBalanceAfter) })
         return NextResponse.json({ data: serializeCard(reloaded as unknown as Record<string, unknown>) })
       }
 
@@ -264,6 +267,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
         void notifyDataChanged({ locationId: cardForRedeem.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
+        void dispatchGiftCardBalanceChanged(cardForRedeem.locationId, { giftCardId: id, newBalance: Number(redeemBalanceAfter) })
         return NextResponse.json({ data: {
           ...serializeCard(redeemed as unknown as Record<string, unknown>),
           amountRedeemed: amount,
@@ -313,6 +317,7 @@ export const PUT = withVenue(withAuth('ADMIN', async function PUT(
 
         void notifyDataChanged({ locationId: cardForRefund.locationId, domain: 'gift-cards', action: 'updated', entityId: id })
         void pushUpstream()
+        void dispatchGiftCardBalanceChanged(cardForRefund.locationId, { giftCardId: id, newBalance: Number(refundBalanceAfter) })
         return NextResponse.json({ data: serializeCard(refunded as unknown as Record<string, unknown>) })
       }
 

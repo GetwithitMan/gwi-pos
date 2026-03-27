@@ -367,7 +367,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     void pushUpstream()
 
     // Emit full settings to terminals so Android can pick up changes (e.g. idleLockMinutes)
-    void emitToLocation(location.id, 'settings:updated', { settings: finalSettings })
+    // Include changedKeys so terminals can selectively refresh (e.g. tax, pricing, tips)
+    const changedKeys = Object.keys(settings)
+    void emitToLocation(location.id, 'settings:updated', { settings: finalSettings, changedKeys })
 
     // Emit CFD display settings to customer-facing displays so they update in real time
     if (finalSettings.cfdDisplay) {

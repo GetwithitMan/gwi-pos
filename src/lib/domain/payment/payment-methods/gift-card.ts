@@ -11,6 +11,10 @@ interface GiftCardPaymentResult {
   error?: string
   errorStatus?: number
   errorExtras?: Record<string, unknown>
+  /** Gift card ID — set on success for socket event dispatch */
+  giftCardId?: string
+  /** New balance after deduction — set on success for socket event dispatch */
+  newBalance?: number
 }
 
 /**
@@ -113,5 +117,5 @@ export async function processGiftCardPayment(
     }
   })
 
-  return { record: updatedRecord }
+  return { record: updatedRecord, giftCardId: giftCard.id, newBalance }
 }

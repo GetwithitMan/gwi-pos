@@ -28,6 +28,7 @@ import {
   voidLinkedPosOrder,
 } from '@/lib/delivery/webhook-helpers'
 import { normalizeUberEatsItems } from '@/lib/delivery/order-mapper'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { getPlatformClient } from '@/lib/delivery/clients/platform-registry'
@@ -171,6 +172,9 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ received: true, duplicate: true })
         }
 
+        // Push third-party order upstream immediately so it survives NUC crash
+        pushUpstream()
+
         // Auto-accept if configured
         let posOrderId: string | null = null
         if (location.autoAccept) {
@@ -188,6 +192,8 @@ export async function POST(request: NextRequest) {
 
           // Fix 2: Confirm with UberEats after auto-accept creates POS order
           if (posOrderId) {
+            // Push POS order upstream before confirming with platform
+            pushUpstream()
             void confirmWithPlatform('ubereats', orderId, locationId).catch(err => log.warn({ err }, 'Background task failed'))
           }
         }

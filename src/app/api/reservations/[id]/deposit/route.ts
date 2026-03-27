@@ -5,6 +5,9 @@ import { parseSettings } from '@/lib/settings'
 import { getLocationId } from '@/lib/location-cache'
 import { getActorFromRequest, requirePermission } from '@/lib/api-auth'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { dispatchReservationChanged } from '@/lib/socket-dispatch'
+import { createChildLogger } from '@/lib/logger'
+const log = createChildLogger('reservation-deposit')
 
 // GET - Get deposit status for a reservation
 export const GET = withVenue(async function GET(
@@ -255,6 +258,12 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Notify host terminals of deposit update in real-time
+    void dispatchReservationChanged(callerLocationId, {
+      reservationId: id,
+      action: 'deposit_updated',
+    }).catch(err => log.warn({ err }, 'Background task failed'))
+
     return NextResponse.json({
       data: {
         depositId,
@@ -395,6 +404,12 @@ export const DELETE = withVenue(async function DELETE(
           : 'No refundable amount available',
       }, { status: 400 })
     }
+
+    // Notify host terminals of deposit refund in real-time
+    void dispatchReservationChanged(callerLocationId, {
+      reservationId: id,
+      action: 'deposit_updated',
+    }).catch(err => log.warn({ err }, 'Background task failed'))
 
     return NextResponse.json({
       data: {

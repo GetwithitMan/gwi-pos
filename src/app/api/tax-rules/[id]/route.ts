@@ -5,9 +5,9 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { syncTaxRateToSettings } from '@/lib/api/tax-utils'
 import { invalidateTaxCache } from '@/lib/tax-cache'
-import { emitToLocation } from '@/lib/socket-server'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('tax-rules')
 
@@ -85,7 +85,7 @@ export const PUT = withVenue(async function PUT(
     invalidateTaxCache(existing.locationId)
 
     // Emit settings:updated so all terminals refresh tax configuration
-    void emitToLocation(existing.locationId, 'settings:updated', { trigger: 'tax-rule-updated', taxRuleId: taxRule.id }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchSettingsUpdated(existing.locationId, { changedKeys: ['tax'] }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId: existing.locationId, domain: 'tax', action: 'updated', entityId: taxRule.id })
     void pushUpstream()
@@ -130,7 +130,7 @@ export const DELETE = withVenue(async function DELETE(
     invalidateTaxCache(taxRule.locationId)
 
     // Emit settings:updated so all terminals refresh tax configuration
-    void emitToLocation(taxRule.locationId, 'settings:updated', { trigger: 'tax-rule-deleted', taxRuleId: id }).catch(err => log.warn({ err }, 'Background task failed'))
+    void dispatchSettingsUpdated(taxRule.locationId, { changedKeys: ['tax'] }).catch(err => log.warn({ err }, 'Background task failed'))
 
     void notifyDataChanged({ locationId: taxRule.locationId, domain: 'tax', action: 'deleted', entityId: id })
     void pushUpstream()
