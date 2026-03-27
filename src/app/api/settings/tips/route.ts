@@ -4,9 +4,11 @@ import { parseSettings } from '@/lib/settings'
 import type { TipBankSettings, TipShareSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { getLocationSettings } from '@/lib/location-cache'
+import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
 
 // GET tip settings for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -120,7 +122,16 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         settings: updatedRawSettings as object,
       },
     })
-    pushUpstream()
+
+    // Invalidate settings cache so subsequent reads see fresh data
+    invalidateLocationCache(locationId)
+
+    // Notify cloud sync + push upstream
+    void notifyDataChanged({ locationId, domain: 'settings', action: 'updated' })
+    void pushUpstream()
+
+    // Emit settings:updated so all terminals refresh tip configuration
+    void dispatchSettingsUpdated(locationId, { changedKeys: ['tipBank', 'tipShares'] }).catch(console.error)
 
     return NextResponse.json({ data: {
       tipBank: mergedTipBank,

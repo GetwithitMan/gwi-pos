@@ -142,20 +142,49 @@ export async function allocateTipsForPayment(params: {
   const paymentWithTip = createdPayments.find(p => Number(p.tipAmount) > 0)
   const paymentId = paymentWithTip?.id || createdPayments[0]?.id || ''
 
-  // Use the payment's actual createdAt for segment lookup (critical for SAF/offline payments
-  // where the payment was created earlier than the current time)
+  // ── Tip attribution timing fix ─────────────────────────────────────────
+  // Use the ORDER's createdAt for tip group/shift segment lookup, NOT the
+  // payment's createdAt. This ensures the original server gets the tip even
+  // if they clocked out before the payment was processed.
+  //
+  // Example: Bartender A opens an order at 9 PM and clocks out at 10 PM.
+  // Payment posts at 10:05 PM. Using payment time would route the tip to
+  // whoever is working at 10:05 PM. Using order time routes it to A's 9 PM
+  // shift segment — which is correct.
+  //
+  // The TipTransaction.collectedAt still records payment time for reporting
+  // accuracy (see paymentCollectedAt below).
   let collectedAt = new Date()
+  let paymentCollectedAt = new Date()
   if (paymentId) {
     const paymentRecord = await db.payment.findUnique({
       where: { id: paymentId },
       select: { createdAt: true },
     })
     if (paymentRecord?.createdAt) {
-      collectedAt = paymentRecord.createdAt
+      paymentCollectedAt = paymentRecord.createdAt
     }
+  }
+  // Look up order creation time for group/shift segment attribution
+  if (orderId) {
+    const orderRecord = await db.order.findUnique({
+      where: { id: orderId },
+      select: { createdAt: true },
+    })
+    if (orderRecord?.createdAt) {
+      collectedAt = orderRecord.createdAt  // Order placement time for segment lookup
+    } else {
+      // Fallback to payment time if order lookup fails
+      collectedAt = paymentCollectedAt
+    }
+  } else {
+    // No orderId (manual tip) — use payment time
+    collectedAt = paymentCollectedAt
   }
 
   // Delegate to the allocation pipeline (handles group detection + splits)
+  // collectedAt = order creation time (for segment/shift lookup)
+  // paymentCollectedAt = payment creation time (for TipTransaction.collectedAt reporting)
   const result = await allocateTipsForOrder({
     locationId,
     orderId,
@@ -164,6 +193,7 @@ export async function allocateTipsForPayment(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    paymentCollectedAt,
     ccFeeAmountCents,
     kind,
   })
@@ -206,7 +236,9 @@ export async function allocateTipsForPayment(params: {
  * @param params.tipAmountCents - Tip amount in cents (must be > 0)
  * @param params.primaryEmployeeId - The server/bartender who earned the tip
  * @param params.sourceType - How the tip was collected ('CARD' | 'CASH')
- * @param params.collectedAt - Timestamp used for segment lookup
+ * @param params.collectedAt - Order creation time — used for tip group/shift segment lookup
+ * @param params.paymentCollectedAt - Payment creation time — stored on TipTransaction for reporting.
+ *        Falls back to collectedAt if not provided (e.g., manual tips with no payment).
  * @returns The TipTransaction ID and an array of ledger allocations
  */
 export async function allocateTipsForOrder(params: {
@@ -217,6 +249,7 @@ export async function allocateTipsForOrder(params: {
   primaryEmployeeId: string
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
+  paymentCollectedAt?: Date  // Payment time for TipTransaction reporting; defaults to collectedAt
   ccFeeAmountCents?: number
   kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
   tipBankSettings?: TipBankSettings  // Optional: pass to avoid re-fetching
@@ -229,6 +262,7 @@ export async function allocateTipsForOrder(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    paymentCollectedAt = collectedAt,  // Default to collectedAt for backward compatibility
     ccFeeAmountCents,
     kind = 'tip',
     tipBankSettings: providedSettings,
@@ -252,7 +286,7 @@ export async function allocateTipsForOrder(params: {
         amountCents: tipAmountCents,
         sourceType,
         kind,
-        collectedAt,
+        collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
         // primaryEmployeeId is nullable in schema, so omit it when employee doesn't exist
         ccFeeAmountCents: ccFeeAmountCents ?? 0,
         idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
@@ -272,7 +306,7 @@ export async function allocateTipsForOrder(params: {
         amountCents: 0,
         sourceType,
         kind,
-        collectedAt,
+        collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
         primaryEmployeeId,
       },
     })
@@ -350,6 +384,7 @@ export async function allocateTipsForOrder(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       ccFeeAmountCents,
       kind,
       ownership,
@@ -393,6 +428,7 @@ export async function allocateTipsForOrder(params: {
       primaryEmployeeId: tipRecipientId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       ccFeeAmountCents,
       kind,
     })
@@ -421,6 +457,7 @@ export async function allocateTipsForOrder(params: {
       locationId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       ccFeeAmountCents,
       kind,
       idempotencyKey: idemKey,
@@ -436,6 +473,7 @@ export async function allocateTipsForOrder(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    paymentCollectedAt,
     groupId: activeGroup.id,
     ccFeeAmountCents,
     kind,
@@ -625,6 +663,7 @@ async function allocateWithOwnership(params: {
   primaryEmployeeId: string
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
+  paymentCollectedAt?: Date
   ccFeeAmountCents?: number
   kind?: string
   ownership: OwnershipInfo
@@ -637,6 +676,7 @@ async function allocateWithOwnership(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    paymentCollectedAt = collectedAt,
     ccFeeAmountCents,
     kind = 'tip',
     ownership,
@@ -658,7 +698,7 @@ async function allocateWithOwnership(params: {
         amountCents: 0,
         sourceType,
         kind,
-        collectedAt,
+        collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
         primaryEmployeeId,
         ccFeeAmountCents: ccFeeAmountCents ?? 0,
         idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
@@ -686,7 +726,7 @@ async function allocateWithOwnership(params: {
         amountCents: tipAmountCents,
         sourceType,
         kind,
-        collectedAt,
+        collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
         primaryEmployeeId,
         ccFeeAmountCents: ccFeeAmountCents ?? 0,
         idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
@@ -784,6 +824,7 @@ async function allocateIndividual(params: {
   primaryEmployeeId: string
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
+  paymentCollectedAt?: Date
   ccFeeAmountCents?: number
   kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
 }): Promise<TipAllocationResult> {
@@ -795,6 +836,7 @@ async function allocateIndividual(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    paymentCollectedAt = collectedAt,
     ccFeeAmountCents,
     kind = 'tip',
   } = params
@@ -811,7 +853,7 @@ async function allocateIndividual(params: {
         amountCents: tipAmountCents,
         sourceType,
         kind,
-        collectedAt,
+        collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
         primaryEmployeeId,
         ccFeeAmountCents: ccFeeAmountCents ?? 0,
         idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
@@ -862,6 +904,7 @@ async function allocateToGroup(params: {
   primaryEmployeeId: string
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
+  paymentCollectedAt?: Date
   groupId: string
   ccFeeAmountCents?: number
   kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
@@ -875,6 +918,7 @@ async function allocateToGroup(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    paymentCollectedAt = collectedAt,
     groupId,
     ccFeeAmountCents,
     kind = 'tip',
@@ -898,6 +942,7 @@ async function allocateToGroup(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       ccFeeAmountCents,
       kind,
     })
@@ -917,6 +962,7 @@ async function allocateToGroup(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       ccFeeAmountCents,
       kind,
     })
@@ -939,7 +985,7 @@ async function allocateToGroup(params: {
         amountCents: tipAmountCents,
         sourceType,
         kind,
-        collectedAt,
+        collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
         primaryEmployeeId,
         tipGroupId: groupId,
         segmentId: segment.id,
@@ -1007,6 +1053,7 @@ async function allocateToGroupProportional(params: {
   locationId: string
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
+  paymentCollectedAt?: Date
   ccFeeAmountCents?: number
   kind?: string
   idempotencyKey: string
@@ -1020,6 +1067,7 @@ async function allocateToGroupProportional(params: {
     locationId,
     sourceType,
     collectedAt,
+    paymentCollectedAt = collectedAt,
     ccFeeAmountCents,
     kind = 'tip',
     idempotencyKey,
@@ -1038,6 +1086,7 @@ async function allocateToGroupProportional(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       groupId,
       ccFeeAmountCents,
       kind,
@@ -1080,6 +1129,7 @@ async function allocateToGroupProportional(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       groupId,
       ccFeeAmountCents,
       kind,
@@ -1097,6 +1147,7 @@ async function allocateToGroupProportional(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      paymentCollectedAt,
       groupId,
       ccFeeAmountCents,
       kind,
@@ -1148,7 +1199,7 @@ async function allocateToGroupProportional(params: {
         amountCents: tipAmountCents,
         sourceType,
         kind,
-        collectedAt,
+        collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
         primaryEmployeeId,
         tipGroupId: groupId,
         ccFeeAmountCents: ccFeeAmountCents ?? 0,
@@ -1227,7 +1278,7 @@ async function allocateToGroupProportional(params: {
             amountCents: proportionalCents,
             sourceType,
             kind,
-            collectedAt,
+            collectedAt: paymentCollectedAt,  // TipTransaction records payment time for reporting
             primaryEmployeeId,
             tipGroupId: groupId,
             segmentId: segment.id,

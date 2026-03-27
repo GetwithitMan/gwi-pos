@@ -16,6 +16,7 @@
  */
 
 import { db } from '@/lib/db'
+import { emitToLocation } from '@/lib/socket-server'
 import type {
   TemplateType,
   RoutedItem,
@@ -323,7 +324,83 @@ export class OrderRouter {
       }
     }
 
-    // 6. Calculate stats
+    // 6. KDS offline fallback routing (post-processing)
+    // When a KDS station has NO online screens, re-route its items to a fallback station
+    // so kitchen orders don't silently vanish. Print jobs still go to original station
+    // since printers may work even if the KDS screen is offline.
+    const kdsManifests = manifests.filter((m) => m.type === 'KDS' && !m.isExpo && m.primaryItems.length > 0)
+    if (kdsManifests.length > 0) {
+      try {
+        // Single batch query — check which KDS screens are online at this location
+        const onlineScreens = await db.kDSScreen.findMany({
+          where: {
+            locationId: orderData.locationId,
+            isActive: true,
+            deletedAt: null,
+            isOnline: true,
+          },
+          select: { id: true },
+        })
+        const hasAnyOnlineScreen = onlineScreens.length > 0
+
+        if (!hasAnyOnlineScreen) {
+          // ALL KDS screens offline — find a fallback for each KDS manifest
+          const expoManifest = manifests.find((m) => m.isExpo)
+          const firstOnlineStation = manifests.find((m) => m.type === 'PRINTER' && m.primaryItems.length > 0)
+
+          for (const kdsManifest of kdsManifests) {
+            const originalStationName = kdsManifest.stationName
+            const itemCount = kdsManifest.primaryItems.length
+
+            // Fallback priority: expo station > first printer station > keep original
+            if (expoManifest) {
+              // Expo already has all items — just tag the manifest for operator visibility
+              kdsManifest.matchedTags.push('kds-offline-fallback')
+              console.warn(
+                `[OrderRouter] KDS station "${originalStationName}" offline — ${itemCount} items visible on expo "${expoManifest.stationName}"`
+              )
+            } else if (firstOnlineStation) {
+              // Move items to the printer station so a ticket prints
+              firstOnlineStation.primaryItems.push(...kdsManifest.primaryItems)
+              firstOnlineStation.items.push(...kdsManifest.primaryItems)
+              firstOnlineStation.matchedTags.push('kds-offline-fallback')
+              // Clear from the offline KDS manifest (items moved to printer)
+              kdsManifest.primaryItems = []
+              kdsManifest.items = []
+              console.warn(
+                `[OrderRouter] KDS station "${originalStationName}" offline — ${itemCount} items re-routed to printer "${firstOnlineStation.stationName}"`
+              )
+            } else {
+              // No fallback available — keep original routing (best effort)
+              kdsManifest.matchedTags.push('kds-offline-no-fallback')
+              console.warn(
+                `[OrderRouter] KDS station "${originalStationName}" offline — no fallback station available, keeping original routing for ${itemCount} items`
+              )
+            }
+
+            // Emit socket alert so staff is aware of the offline KDS
+            void emitToLocation(orderData.locationId, 'kds:station-offline', {
+              stationName: originalStationName,
+              stationId: kdsManifest.stationId,
+              fallbackStation: expoManifest?.stationName || firstOnlineStation?.stationName || 'none',
+              itemCount,
+              orderId: orderData.id,
+              orderNumber: orderData.orderNumber,
+            }).catch(console.error)
+          }
+
+          // Remove empty manifests (items were moved to fallback)
+          const nonEmptyManifests = manifests.filter((m) => m.primaryItems.length > 0 || m.isExpo)
+          manifests.length = 0
+          manifests.push(...nonEmptyManifests)
+        }
+      } catch (err) {
+        // Best effort — don't block the send if fallback check fails
+        console.error('[OrderRouter] KDS offline fallback check failed:', err)
+      }
+    }
+
+    // 7. Calculate stats
     const routingStats = {
       totalItems: routedItems.length,
       routedItems: routedItems.length - unroutedItems.length,

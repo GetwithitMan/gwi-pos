@@ -177,7 +177,12 @@ async function markTerminalOffline(terminalId: string, locationId: string, reaso
   try {
     // KDS screens use a 'kds-' prefixed terminalId — they live in KDSScreen, not Terminal
     if (terminalId.startsWith('kds-')) {
-      // KDS screens don't have an isOnline column — just emit status event
+      const kdsId = terminalId.slice(4) // strip 'kds-' prefix
+      // Persist isOnline=false so order-router can detect offline screens for fallback routing
+      void db.kDSScreen.update({
+        where: { id: kdsId },
+        data: { isOnline: false },
+      }).catch((err) => log.error({ err }, 'KDS screen offline persist failed'))
       void emitToLocation(locationId, 'terminal:status_changed', {
         terminalId,
         isOnline: false,
@@ -216,7 +221,12 @@ async function markTerminalOnline(terminalId: string, locationId: string): Promi
   try {
     // KDS screens use a 'kds-' prefixed terminalId — they live in KDSScreen, not Terminal
     if (terminalId.startsWith('kds-')) {
-      // KDS screens don't have an isOnline column — just emit status event
+      const kdsId = terminalId.slice(4) // strip 'kds-' prefix
+      // Persist isOnline=true so order-router can detect online screens (avoids fallback routing)
+      void db.kDSScreen.update({
+        where: { id: kdsId },
+        data: { isOnline: true, lastSeenAt: new Date() },
+      }).catch((err) => log.error({ err }, 'KDS screen online persist failed'))
       void emitToLocation(locationId, 'terminal:status_changed', {
         terminalId,
         isOnline: true,

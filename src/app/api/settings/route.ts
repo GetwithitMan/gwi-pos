@@ -8,6 +8,7 @@ import { pushUpstream } from '@/lib/sync/outage-safe-write'
 import { emitToLocation } from '@/lib/socket-server'
 import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
+import { invalidateMenuCache } from '@/lib/menu-cache'
 import { withVenue } from '@/lib/with-venue'
 import { getActorFromRequest } from '@/lib/api-auth'
 
@@ -342,6 +343,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Invalidate settings caches after update
     invalidateLocationCache(location.id)
     invalidatePaymentSettings(location.id)
+
+    // When pricing rules change, invalidate the menu cache so terminals
+    // immediately see updated prices (happy hour start/end, etc.)
+    if (settings.pricingRules !== undefined) {
+      invalidateMenuCache(location.id)
+    }
 
     // When cashDiscountPercent changes (or dual pricing is toggled on), recompute priceCC for all
     // menu items so card prices stay in sync without requiring manual item-by-item saves.

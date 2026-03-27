@@ -6,6 +6,8 @@ import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cac
 import { invalidatePaymentSettings } from '@/lib/payment-settings-cache'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { notifyDataChanged } from '@/lib/cloud-notify'
+import { dispatchSettingsUpdated } from '@/lib/socket-dispatch'
 
 /**
  * GET /api/payment-config
@@ -113,10 +115,16 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       where: { id: location.id },
       data: { settings: updated as object },
     })
-    pushUpstream()
 
     invalidateLocationCache(location.id)
     invalidatePaymentSettings(location.id)
+
+    // Notify cloud sync + push upstream (fire-and-forget)
+    void notifyDataChanged({ locationId: location.id, domain: 'settings', action: 'updated' })
+    void pushUpstream()
+
+    // Emit settings:updated so all terminals refresh payment configuration
+    void dispatchSettingsUpdated(location.id, { changedKeys: ['payments'] }).catch(console.error)
 
     return NextResponse.json({ data: { updated: true, processor, environment } })
   } catch (error) {
