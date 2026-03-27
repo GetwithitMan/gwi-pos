@@ -391,24 +391,32 @@ export const DELETE = withVenue(async function DELETE(
         return NextResponse.json({ error: 'Item not found' }, { status: 404 })
       }
 
-      // Validate item is deletable (pending kitchen status, active status) via domain
-      const delCheck = validateItemDeletable(item)
-      if (!delCheck.valid) {
-        return NextResponse.json({ error: delCheck.error }, { status: delCheck.status })
-      }
-
       // Permission check — require POS access to delete items
       const deleteActor = await getActorFromRequest(request)
       const employeeId = request.nextUrl.searchParams.get('employeeId') || deleteActor.employeeId
       const deleteAuth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
       if (!deleteAuth.authorized) return NextResponse.json({ error: deleteAuth.error }, { status: deleteAuth.status })
 
+      // Validate item is deletable (pending kitchen status, active status) via domain
+      const delCheck = validateItemDeletable(item)
+      if (!delCheck.valid) {
+        // Item has been sent to kitchen — require manager void permission to delete
+        const voidAuth = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_VOID_ITEMS)
+        if (!voidAuth.authorized) {
+          return NextResponse.json({
+            error: 'Manager approval required to remove items already sent to kitchen',
+            code: 'REQUIRES_MANAGER_VOID',
+          }, { status: 403 })
+        }
+        // Manager with void permission — allow deletion of sent item
+      }
+
       // W4-3: Audit log for item deletion before send (fire-and-forget)
       void tx.auditLog.create({
         data: {
           locationId: order.locationId,
           employeeId,
-          action: 'item_removed_before_send',
+          action: item.kitchenStatus !== 'pending' ? 'item_removed_after_send' : 'item_removed_before_send',
           entityType: 'order',
           entityId: orderId,
           details: {
@@ -416,7 +424,7 @@ export const DELETE = withVenue(async function DELETE(
             menuItemName: item.menuItem?.name || item.name,
             quantity: item.quantity,
             amount: Number(item.itemTotal),
-            sentToKitchen: false,
+            sentToKitchen: item.kitchenStatus !== 'pending',
           },
         },
       }).catch(err => console.error('[AuditLog] Failed to log item removal:', err))

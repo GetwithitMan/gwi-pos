@@ -359,6 +359,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     const item = order.items.find(i => i.id === tempId)
     if (!item) return
 
+    // Snapshot before API call so we can roll back the optimistic add on failure
+    useOrderStore.getState().saveSnapshot()
+
     const promise = (async () => {
       try {
         const res = await fetch(`/api/orders/${order.id}/items`, {
@@ -390,9 +393,14 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
               version: result.version,
             })
           }
+        } else {
+          // API rejected the item — roll back the optimistic add
+          const errBody = await res.json().catch(() => ({}))
+          useOrderStore.getState().revertLastChange(errBody.error || 'Failed to add item')
         }
       } catch {
-        // Silent — 30s safety net will retry
+        // Network failure — roll back the optimistic add
+        useOrderStore.getState().revertLastChange('Failed to add item — check your connection')
       } finally {
         pendingSavesRef.current.delete(tempId)
       }

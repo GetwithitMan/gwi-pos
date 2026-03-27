@@ -69,44 +69,19 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Build employee filter
     const employeeFilter = employeeId ? { employeeId } : {}
 
-    // Get orders with commission data (include all completed orders, filter by commission later)
-    const orders = await db.order.findMany({
-      where: {
-        locationId,
-        deletedAt: null,
-        isTraining: { not: true },
-        ...dateFilter,
-        ...employeeFilter,
-        status: { in: [...REVENUE_ORDER_STATUSES] },
-        parentOrderId: null,
-      },
-      include: {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
-        },
-        items: {
-          where: { status: 'active', deletedAt: null },
-          select: {
-            quantity: true,
-            itemTotal: true,
-            commissionAmount: true,
-            menuItem: { select: { id: true, name: true, commissionType: true, commissionValue: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+    // Paginated fetch: process orders in batches of 500 to avoid memory blowout on large date ranges.
+    // Cursor-based pagination avoids OFFSET performance degradation.
+    const BATCH_SIZE = 500
+    const baseWhere = {
+      locationId,
+      deletedAt: null,
+      isTraining: { not: true as const },
+      ...dateFilter,
+      ...employeeFilter,
+      status: { in: [...REVENUE_ORDER_STATUSES] },
+      parentOrderId: null,
+    }
 
-    // Filter to orders that have commission (either on order or items)
-    const ordersWithCommission = orders.filter(order => {
-      const orderCommission = Number(order.commissionTotal) || 0
-      const itemCommission = order.items.reduce((sum, item) => {
-        return sum + (Number(item.commissionAmount) || 0)
-      }, 0)
-      return orderCommission > 0 || itemCommission > 0
-    })
-
-    // Aggregate by employee
     const employeeCommissions: Record<string, {
       employeeId: string
       employeeName: string
@@ -121,72 +96,117 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }[]
     }> = {}
 
-    ordersWithCommission.forEach(order => {
-      if (!order.employee) return
+    let cursor: string | undefined = undefined
+    let hasMore = true
 
-      const empId = order.employee.id
-      if (!employeeCommissions[empId]) {
-        employeeCommissions[empId] = {
-          employeeId: empId,
-          employeeName: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
-          orderCount: 0,
-          totalCommission: 0,
-          orders: [],
+    const orderInclude = {
+      employee: {
+        select: { id: true, displayName: true, firstName: true, lastName: true },
+      },
+      items: {
+        where: { status: 'active' as const, deletedAt: null },
+        select: {
+          quantity: true,
+          itemTotal: true,
+          commissionAmount: true,
+          menuItem: { select: { id: true, name: true, commissionType: true, commissionValue: true } },
+        },
+      },
+    }
+    const orderBy = { id: 'asc' as const }
+
+    // Helper to fetch a batch — separate function breaks TS circular inference from cursor reuse
+    const fetchBatch = (cursorId: string | undefined) =>
+      cursorId
+        ? db.order.findMany({ where: baseWhere, include: orderInclude, orderBy, take: BATCH_SIZE, skip: 1, cursor: { id: cursorId } })
+        : db.order.findMany({ where: baseWhere, include: orderInclude, orderBy, take: BATCH_SIZE })
+
+    while (hasMore) {
+      const batch = await fetchBatch(cursor)
+
+      if (batch.length < BATCH_SIZE) {
+        hasMore = false
+      }
+      if (batch.length > 0) {
+        cursor = batch[batch.length - 1].id
+      } else {
+        break
+      }
+
+      // Process each order in the batch — aggregate into employeeCommissions
+      for (const order of batch) {
+        // Filter to orders that have commission (either on order or items)
+        const orderCommissionRaw = Number(order.commissionTotal) || 0
+        const itemCommissionSum = order.items.reduce((sum: number, item: any) => {
+          return sum + (Number(item.commissionAmount) || 0)
+        }, 0)
+        if (orderCommissionRaw <= 0 && itemCommissionSum <= 0) continue
+
+        if (!order.employee) continue
+
+        const empId = order.employee.id
+        if (!employeeCommissions[empId]) {
+          employeeCommissions[empId] = {
+            employeeId: empId,
+            employeeName: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
+            orderCount: 0,
+            totalCommission: 0,
+            orders: [],
+          }
+        }
+
+        // Calculate commission from items if order.commissionTotal is 0
+        let orderCommission = orderCommissionRaw
+
+        // Get commission details per item
+        const items = order.items
+          .filter((item: any) => {
+            const itemCommission = Number(item.commissionAmount) || 0
+            const menuItemHasCommission = item.menuItem.commissionType && item.menuItem.commissionValue
+            return itemCommission > 0 || menuItemHasCommission
+          })
+          .map((item: any) => {
+            let commission = Number(item.commissionAmount) || 0
+            if (commission === 0 && item.menuItem.commissionType && item.menuItem.commissionValue) {
+              const value = Number(item.menuItem.commissionValue)
+              if (item.menuItem.commissionType === 'percent') {
+                commission = (Number(item.itemTotal) * value) / 100
+              } else {
+                commission = value * item.quantity
+              }
+            }
+            return {
+              name: item.menuItem.name,
+              quantity: item.quantity,
+              price: Number(item.itemTotal ?? 0),
+              commissionRate: item.menuItem.commissionType === 'percent'
+                ? Number(item.menuItem.commissionValue)
+                : null,
+              commissionType: item.menuItem.commissionType,
+              commission,
+            }
+          })
+          .filter((item: { commission: number }) => item.commission > 0)
+
+        // If order commission is 0 but items have commission, sum them up
+        if (orderCommission === 0 && items.length > 0) {
+          orderCommission = items.reduce((sum: number, item: { commission: number }) => sum + item.commission, 0)
+        }
+
+        if (orderCommission > 0) {
+          employeeCommissions[empId].orderCount += 1
+          employeeCommissions[empId].totalCommission += orderCommission
+
+          employeeCommissions[empId].orders.push({
+            orderId: order.id,
+            orderNumber: String(order.orderNumber),
+            date: order.createdAt.toISOString(),
+            commission: orderCommission,
+            items,
+          })
         }
       }
-
-      // Calculate commission from items if order.commissionTotal is 0
-      let orderCommission = Number(order.commissionTotal) || 0
-
-      // Get commission details per item
-      const items = order.items
-        .filter(item => {
-          const itemCommission = Number(item.commissionAmount) || 0
-          // Also check if the menu item has commission configured
-          const menuItemHasCommission = item.menuItem.commissionType && item.menuItem.commissionValue
-          return itemCommission > 0 || menuItemHasCommission
-        })
-        .map(item => {
-          let commission = Number(item.commissionAmount) || 0
-          if (commission === 0 && item.menuItem.commissionType && item.menuItem.commissionValue) {
-            const value = Number(item.menuItem.commissionValue)
-            if (item.menuItem.commissionType === 'percent') {
-              commission = (Number(item.itemTotal) * value) / 100
-            } else {
-              commission = value * item.quantity
-            }
-          }
-          return {
-            name: item.menuItem.name,
-            quantity: item.quantity,
-            price: Number(item.itemTotal ?? 0),
-            commissionRate: item.menuItem.commissionType === 'percent'
-              ? Number(item.menuItem.commissionValue)
-              : null,
-            commissionType: item.menuItem.commissionType,
-            commission,
-          }
-        })
-        .filter(item => item.commission > 0)
-
-      // If order commission is 0 but items have commission, sum them up
-      if (orderCommission === 0 && items.length > 0) {
-        orderCommission = items.reduce((sum, item) => sum + item.commission, 0)
-      }
-
-      if (orderCommission > 0) {
-        employeeCommissions[empId].orderCount += 1
-        employeeCommissions[empId].totalCommission += orderCommission
-
-        employeeCommissions[empId].orders.push({
-          orderId: order.id,
-          orderNumber: String(order.orderNumber),
-          date: order.createdAt.toISOString(),
-          commission: orderCommission,
-          items,
-        })
-      }
-    })
+    }
 
     // Convert to array and sort by total commission descending
     const report = Object.values(employeeCommissions)

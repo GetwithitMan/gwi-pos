@@ -248,16 +248,27 @@ export const POST = withVenue(withTiming(async function POST(
       }
 
       // Batch update entertainment items with sessions: firedAt + blockTime timestamps = NOW()
+      // Uses CASE/WHEN to set per-item blockTimeExpiresAt in a SINGLE query (N+1 fix)
       if (entertainmentUpdates.length > 0) {
-        for (const { itemId, sessionEnd } of entertainmentUpdates) {
-          await tx.$executeRawUnsafe(
-            `UPDATE "OrderItem"
-             SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "blockTimeStartedAt" = NOW(),
-                 "blockTimeExpiresAt" = $1, "updatedAt" = NOW()
-             WHERE id = $2 AND "locationId" = $3`,
-            sessionEnd, itemId, order.locationId,
-          )
-        }
+        const entertainmentIds = entertainmentUpdates.map(u => u.itemId)
+        const caseClauses = entertainmentUpdates.map((u, i) =>
+          `WHEN id = $${i + 2} THEN $${i + 2 + entertainmentUpdates.length}::timestamptz`
+        ).join(' ')
+        const params: Array<string | string[] | Date> = [
+          entertainmentIds,
+          ...entertainmentUpdates.map(u => u.itemId),
+          ...entertainmentUpdates.map(u => u.sessionEnd),
+          order.locationId,
+        ]
+
+        await tx.$executeRawUnsafe(
+          `UPDATE "OrderItem"
+           SET "kitchenStatus" = 'sent', "firedAt" = NOW(), "kitchenSentAt" = NOW(), "blockTimeStartedAt" = NOW(),
+               "blockTimeExpiresAt" = CASE ${caseClauses} END,
+               "updatedAt" = NOW()
+           WHERE id = ANY($1::text[]) AND "locationId" = $${params.length}`,
+          ...params,
+        )
       }
 
       // Queue critical socket events in the outbox (atomic with business writes)

@@ -163,17 +163,51 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
 
     const smsBody = buildSmsReceipt(order as any)
 
+    // Fire-and-forget audit breadcrumb before attempting send
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: null,
+        action: 'receipt_sms_attempted',
+        entityType: 'order',
+        entityId: orderId,
+        details: { phone: digits.slice(-4), orderNumber: order.displayNumber || order.orderNumber },
+      },
+    }).catch(err => console.error('[receipt-sms] audit log (attempted) failed:', err))
+
     const result = await sendSMS({
       to: phone,
       body: smsBody,
     })
 
     if (!result.success) {
+      void db.auditLog.create({
+        data: {
+          locationId,
+          employeeId: null,
+          action: 'receipt_sms_failed',
+          entityType: 'order',
+          entityId: orderId,
+          details: { phone: digits.slice(-4), error: result.error || 'Unknown send failure' },
+        },
+      }).catch(err => console.error('[receipt-sms] audit log (failed) failed:', err))
+
       return NextResponse.json(
         { error: result.error || 'Failed to send SMS' },
         { status: 500 }
       )
     }
+
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: null,
+        action: 'receipt_sms_sent',
+        entityType: 'order',
+        entityId: orderId,
+        details: { phone: digits.slice(-4), messageSid: result.messageSid },
+      },
+    }).catch(err => console.error('[receipt-sms] audit log (sent) failed:', err))
 
     return NextResponse.json({
       data: { success: true, messageSid: result.messageSid },

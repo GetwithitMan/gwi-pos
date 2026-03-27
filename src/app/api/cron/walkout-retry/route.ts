@@ -62,6 +62,13 @@ export async function GET(request: NextRequest) {
 
     for (const retry of dueRetries) {
       try {
+        // Acquire row-level lock to prevent double-processing on NUC restart
+        const locked = await venueDb.$queryRawUnsafe<Array<{ id: string }>>(
+          'SELECT id FROM "WalkoutRetry" WHERE id = $1 AND status = $2 FOR UPDATE SKIP LOCKED',
+          retry.id, 'pending'
+        )
+        if (locked.length === 0) continue // Another process has it or status changed
+
         const result = await processWalkoutRetry(retry.id)
 
         if (result.success) {

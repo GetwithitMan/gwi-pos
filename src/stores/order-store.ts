@@ -526,7 +526,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     // Recover any pending items from localStorage before setting state
     const recovered = recoverPendingItems(orderData.id)
-    const allItems = recovered.length > 0 ? [...items, ...recovered] : items
+    let allItems = items
+    if (recovered.length > 0) {
+      // Cross-check: filter out recovered items that already exist on the server
+      // to avoid duplicates when another terminal already sent the same items.
+      // Compare by menuItemId + price as a conservative signature.
+      const serverSignatures = new Set(items.map(i => `${i.menuItemId}:${i.price}`))
+      const unique = recovered.filter(r => !serverSignatures.has(`${r.menuItemId}:${r.price}`))
+      if (unique.length < recovered.length) {
+        console.warn(`[recovery] Filtered ${recovered.length - unique.length} duplicate recovered items (server already has them)`)
+      }
+      allItems = unique.length > 0 ? [...items, ...unique] : items
+    }
 
     const baseOrder: Order = {
       id: orderData.id,

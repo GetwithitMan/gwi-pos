@@ -244,6 +244,18 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       </html>
     `
 
+    // Fire-and-forget audit breadcrumb before attempting send
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: null,
+        action: 'receipt_email_attempted',
+        entityType: 'order',
+        entityId: orderId,
+        details: { email, orderNumber: order.displayNumber || order.orderNumber },
+      },
+    }).catch(err => console.error('[receipt-email] audit log (attempted) failed:', err))
+
     const result = await sendEmail({
       to: email,
       subject: `Receipt from ${order.location.name} - Order #${order.displayNumber || order.orderNumber}`,
@@ -251,11 +263,33 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
     })
 
     if (!result.success) {
+      void db.auditLog.create({
+        data: {
+          locationId,
+          employeeId: null,
+          action: 'receipt_email_failed',
+          entityType: 'order',
+          entityId: orderId,
+          details: { email, error: result.error || 'Unknown send failure' },
+        },
+      }).catch(err => console.error('[receipt-email] audit log (failed) failed:', err))
+
       return NextResponse.json(
         { error: result.error || 'Failed to send email' },
         { status: 500 }
       )
     }
+
+    void db.auditLog.create({
+      data: {
+        locationId,
+        employeeId: null,
+        action: 'receipt_email_sent',
+        entityType: 'order',
+        entityId: orderId,
+        details: { email, messageId: result.messageId },
+      },
+    }).catch(err => console.error('[receipt-email] audit log (sent) failed:', err))
 
     return NextResponse.json({ data: { success: true, messageId: result.messageId } })
   } catch (error) {

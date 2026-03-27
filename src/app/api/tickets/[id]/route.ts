@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withAuth } from '@/lib/api-auth-middleware'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get ticket details
-export const GET = withVenue(async function GET(
+export const GET = withVenue(withAuth(PERMISSIONS.EVENTS_VIEW, async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -152,10 +154,10 @@ export const GET = withVenue(async function GET(
       { status: 500 }
     )
   }
-})
+}))
 
 // PUT - Update ticket (transfer, update customer info)
-export const PUT = withVenue(async function PUT(
+export const PUT = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -218,10 +220,10 @@ export const PUT = withVenue(async function PUT(
       { status: 500 }
     )
   }
-})
+}))
 
 // DELETE - Cancel ticket
-export const DELETE = withVenue(async function DELETE(
+export const DELETE = withVenue(withAuth(PERMISSIONS.EVENTS_MANAGE, async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -289,4 +291,4 @@ export const DELETE = withVenue(async function DELETE(
       { status: 500 }
     )
   }
-})
+}))

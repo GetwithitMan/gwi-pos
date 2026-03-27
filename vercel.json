@@ -25,6 +25,12 @@
     { "path": "/api/cron/delivery-maintenance", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/expire-shared-reports", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/invoice-overdue", "schedule": "0 * * * *" },
-    { "path": "/api/cron/pms-reconciliation", "schedule": "0 * * * *" }
+    { "path": "/api/cron/pms-reconciliation", "schedule": "0 * * * *" },
+    { "path": "/api/cron/datacap-reconciliation", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/walkout-retry", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron/online-order-timeout", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/entertainment-waitlist-expiry", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/notification-reaper", "schedule": "0 * * * *" },
+    { "path": "/api/cron/notification-archive", "schedule": "0 3 * * *" }
   ]
 }
