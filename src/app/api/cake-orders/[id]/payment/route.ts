@@ -19,6 +19,7 @@ import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { recordPaymentSchema } from '@/lib/cake-orders/schemas'
 import { createSettlementOrder, recordCakePayment } from '@/lib/cake-orders/cake-payment-service'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 export const POST = withVenue(async function POST(
   request: NextRequest,
@@ -63,6 +64,10 @@ export const POST = withVenue(async function POST(
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Fetch the cake order ────────────────────────────────────────────
     const orderRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(

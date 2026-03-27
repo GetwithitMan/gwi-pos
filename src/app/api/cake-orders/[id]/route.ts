@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { updateCakeOrderSchema } from '@/lib/cake-orders/schemas'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 // GET /api/cake-orders/[id] — get full cake order detail
 export const GET = withVenue(async function GET(
@@ -33,6 +34,10 @@ export const GET = withVenue(async function GET(
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Fetch CakeOrder + Customer ────────────────────────────────────
     const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -122,6 +127,10 @@ export const PATCH = withVenue(async function PATCH(
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Validate body ─────────────────────────────────────────────────
     const parsed = updateCakeOrderSchema.safeParse(body)

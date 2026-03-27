@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useCakeLicensed } from '@/hooks/useCakeFeature'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ToggleRow, NumberRow, SettingsSaveBar } from '@/components/admin/settings'
@@ -12,6 +13,7 @@ import { DEFAULT_CAKE_ORDERING } from '@/lib/settings'
 
 export default function CakeOrderConfigPage() {
   const { employee } = useRequireAuth()
+  const cakeLicensed = useCakeLicensed()
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -71,6 +73,21 @@ export default function CakeOrderConfigPage() {
   const update = <K extends keyof CakeOrderingSettings>(key: K, value: CakeOrderingSettings[K]) => {
     setConfig(prev => ({ ...prev, [key]: value }))
     setIsDirty(true)
+  }
+
+  if (!cakeLicensed) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="max-w-md text-center">
+          <h2 className="mb-2 text-xl font-semibold text-gray-900">
+            Cake Ordering Not Available
+          </h2>
+          <p className="text-sm text-gray-600">
+            Cake ordering requires a Pro or Enterprise subscription. Contact your administrator.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (isLoading) {

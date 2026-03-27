@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 // PATCH /api/cake-orders/calendar/[blockId] — update a calendar block
 export const PATCH = withVenue(async function PATCH(
@@ -30,6 +31,10 @@ export const PATCH = withVenue(async function PATCH(
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Verify block exists ───────────────────────────────────────────
     const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
@@ -182,6 +187,10 @@ export const DELETE = withVenue(async function DELETE(
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gateDelete = await requireCakeFeature(locationId)
+    if (gateDelete) return gateDelete
 
     // ── Verify block exists ───────────────────────────────────────────
     const existing = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(

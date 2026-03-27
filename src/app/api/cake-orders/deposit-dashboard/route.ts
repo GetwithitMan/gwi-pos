@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
@@ -32,6 +33,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Parse pagination ──────────────────────────────────────────────
     const cursor = searchParams.get('cursor')

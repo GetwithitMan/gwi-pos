@@ -6,6 +6,7 @@ import { withVenue } from '@/lib/with-venue'
 import { sendToPrinter } from '@/lib/printer-connection'
 import { buildCakeBakerSheet, type CakeBakerSheetData, type CakeBakerSheetTier } from '@/lib/escpos/cake-baker-sheet'
 import { parseCakeConfig, parseDesignConfig, parseDietaryConfig } from '@/lib/cake-orders/schemas'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 /**
  * POST /api/cake-orders/[id]/print-baker-sheet
@@ -38,6 +39,10 @@ export const POST = withVenue(async function POST(
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Fetch CakeOrder + Customer ────────────────────────────────────
     const orders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(

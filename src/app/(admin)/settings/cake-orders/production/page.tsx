@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useCakeFeature } from '@/hooks/useCakeFeature'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Button } from '@/components/ui/button'
@@ -71,6 +72,7 @@ function getDefaultDateRange(): { from: string; to: string } {
 
 export default function CakeProductionPage() {
   const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/settings/cake-orders/production' })
+  const cakeEnabled = useCakeFeature()
   const employee = useAuthStore(s => s.employee)
   const locationId = useAuthStore(s => s.locationId)
 
@@ -145,6 +147,21 @@ export default function CakeProductionPage() {
   }
 
   if (!hydrated) return null
+
+  if (!cakeEnabled) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="max-w-md text-center">
+          <h2 className="mb-2 text-xl font-semibold text-gray-900">
+            Cake Ordering Not Enabled
+          </h2>
+          <p className="text-sm text-gray-600">
+            Enable cake ordering from Mission Control to access this page.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

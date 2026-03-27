@@ -23,6 +23,7 @@ import {
 import { parseSettings, DEFAULT_CAKE_ORDERING } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -53,6 +54,10 @@ export const PATCH = withVenue(async function PATCH(
         { status: 400 },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Fetch the cake order ───────────────────────────────────────────
     const orderRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(

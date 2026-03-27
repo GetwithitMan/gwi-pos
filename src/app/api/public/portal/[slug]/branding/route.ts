@@ -61,7 +61,7 @@ export async function GET(
       features: {
         rewards: portal.rewardsPageEnabled ?? false,
         orderHistory: portal.orderHistoryEnabled ?? false,
-        cakeOrdering: portal.cakeOrderingOnPortal ?? false,
+        cakeOrdering: (portal.cakeOrderingOnPortal && settings.cakeOrdering?.enabled) ?? false,
       },
     })
 

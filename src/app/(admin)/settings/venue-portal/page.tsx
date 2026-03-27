@@ -7,12 +7,14 @@ import { ToggleRow } from '@/components/admin/settings'
 import { SettingsSaveBar } from '@/components/admin/settings'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
+import { useCakeFeature } from '@/hooks/useCakeFeature'
 import { loadSettings as loadSettingsApi, saveSettings as saveSettingsApi } from '@/lib/api/settings-client'
 import type { VenuePortalSettings } from '@/lib/settings'
 import { DEFAULT_VENUE_PORTAL } from '@/lib/settings'
 
 export default function VenuePortalSettingsPage() {
   const { employee } = useRequireAuth()
+  const cakeActive = useCakeFeature()
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -245,6 +247,8 @@ export default function VenuePortalSettingsPage() {
             checked={config.cakeOrderingOnPortal}
             onChange={v => update('cakeOrderingOnPortal', v)}
             border
+            disabled={!cakeActive}
+            disabledNote="Enable cake ordering in Settings first"
           />
         </div>
       )}

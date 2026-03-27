@@ -7,6 +7,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchCakeOrderNew } from '@/lib/socket-dispatch'
 import { adminCreateCakeOrderSchema } from '@/lib/cake-orders/schemas'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 // GET /api/cake-orders — list cake orders (cursor-based pagination)
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -29,6 +30,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Parse filters ─────────────────────────────────────────────────
     const cursor = searchParams.get('cursor')
@@ -158,6 +163,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Validate body ─────────────────────────────────────────────────
     const parsed = adminCreateCakeOrderSchema.safeParse(body)

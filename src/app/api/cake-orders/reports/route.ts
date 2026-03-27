@@ -14,6 +14,7 @@ import { db } from '@/lib/db'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Dispatch to report handler ────────────────────────────────────
     let data: unknown

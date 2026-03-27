@@ -5,6 +5,7 @@ import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 // ── Color maps ──────────────────────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
@@ -49,6 +50,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Query 1: CakeOrders as calendar events ────────────────────────
     const orderConditions: string[] = [
@@ -199,6 +204,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gatePost = await requireCakeFeature(locationId)
+    if (gatePost) return gatePost
 
     // ── Validate body ─────────────────────────────────────────────────
     const { title, startDate, endDate, blockType, cakeOrderId, notes } = body

@@ -16,6 +16,7 @@ import { withVenue } from '@/lib/with-venue'
 import { dispatchCakeOrderUpdated } from '@/lib/socket-dispatch'
 import { approveQuoteSchema } from '@/lib/cake-orders/schemas'
 import { pushUpstream } from '@/lib/sync/outage-safe-write'
+import { requireCakeFeature } from '@/lib/cake-orders/require-cake-feature'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -55,6 +56,10 @@ export const PATCH = withVenue(async function PATCH(
         { status: auth.status },
       )
     }
+
+    // ── Feature gate ────────────────────────────────────────────────────
+    const gate = await requireCakeFeature(locationId)
+    if (gate) return gate
 
     // ── Fetch the quote ─────────────────────────────────────────────────
     const quoteRows = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
