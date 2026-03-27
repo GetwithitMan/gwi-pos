@@ -318,7 +318,7 @@ export const POST = withVenue(async function POST(
 
         if (config.type === 'percent') {
           discountPercent = config.value
-          discountAmount = Math.round(Number(order.subtotal) * (config.value / 100) * 100) / 100
+          discountAmount = roundToCents(Number(order.subtotal) * (config.value / 100))
           // Apply max cap if specified
           if (config.maxAmount && discountAmount > config.maxAmount) {
             discountAmount = config.maxAmount
@@ -367,7 +367,7 @@ export const POST = withVenue(async function POST(
             )
           }
           discountPercent = body.value
-          discountAmount = Math.round(Number(order.subtotal) * (body.value / 100) * 100) / 100
+          discountAmount = roundToCents(Number(order.subtotal) * (body.value / 100))
         } else {
           discountAmount = body.value
         }
@@ -421,7 +421,8 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      // Ensure discount doesn't exceed subtotal (considering both order-level AND item-level discounts)
+      // V6: Enforce cumulative discount cap — total discounts must never exceed subtotal (pre-tax).
+      // This prevents any combination of order-level + item-level discounts from making the total negative.
       const currentDiscountTotal = order.discounts.reduce(
         (sum, d) => sum + Number(d.amount),
         0
@@ -433,20 +434,22 @@ export const POST = withVenue(async function POST(
         },
         _sum: { amount: true },
       })
-      const totalExistingDiscounts = currentDiscountTotal + Number(itemLevelDiscounts._sum.amount || 0)
-      const maxAllowedDiscount = Number(order.subtotal) - totalExistingDiscounts
+      const totalExistingDiscounts = roundToCents(currentDiscountTotal + Number(itemLevelDiscounts._sum.amount || 0))
+      const orderSubtotal = Number(order.subtotal)
+      const cumulativeAfterNew = roundToCents(totalExistingDiscounts + discountAmount)
 
-      // Fix 4: Reject fixed discounts that exceed remaining subtotal (don't silently clamp)
-      if (discountPercent == null && discountAmount > Number(order.subtotal)) {
+      // Reject if cumulative discounts (existing + new) would exceed the order subtotal
+      if (cumulativeAfterNew > orderSubtotal) {
         return NextResponse.json(
-          { error: `Discount amount $${discountAmount.toFixed(2)} exceeds order subtotal $${Number(order.subtotal).toFixed(2)}` },
+          { error: `Total discounts ($${cumulativeAfterNew.toFixed(2)}) would exceed order subtotal ($${orderSubtotal.toFixed(2)})` },
           { status: 400 }
         )
       }
 
-      if (discountAmount > maxAllowedDiscount) {
+      // Fix 4: Reject fixed discounts that exceed the full subtotal outright (don't silently clamp)
+      if (discountPercent == null && discountAmount > orderSubtotal) {
         return NextResponse.json(
-          { error: `Discount amount $${discountAmount.toFixed(2)} exceeds remaining discountable balance of $${maxAllowedDiscount.toFixed(2)}. Reduce the discount or remove existing discounts first.` },
+          { error: `Discount amount $${discountAmount.toFixed(2)} exceeds order subtotal $${orderSubtotal.toFixed(2)}` },
           { status: 400 }
         )
       }

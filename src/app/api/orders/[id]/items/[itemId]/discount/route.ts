@@ -177,7 +177,7 @@ export const POST = withVenue(async function POST(
         discountAmount = Math.min(body.value, Number(item.itemTotal))
       } else {
         discountPercent = body.value
-        discountAmount = Math.round(Number(item.itemTotal) * (body.value / 100) * 100) / 100
+        discountAmount = roundToCents(Number(item.itemTotal) * (body.value / 100))
       }
 
       // Cap the new discount so total item-level discounts never exceed the item price

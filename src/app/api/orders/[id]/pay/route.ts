@@ -209,7 +209,9 @@ export const POST = withVenue(withTiming(async function POST(
       if (!isFinite(amountVal) || amountVal < 0 || !isFinite(tipVal) || tipVal < 0) {
         return NextResponse.json({ error: 'Invalid payment amount' }, { status: 400 })
       }
-      const amountCents = Math.round((amountVal + tipVal) * 100)
+      // FIX F10: Only send base amount to OPERA — tip is recorded on the Payment
+      // record but must NOT be added to the PMS folio charge (prevents guest overcharge).
+      const amountCents = Math.round(amountVal * 100)
       const idempotencyKey_pms = `${orderId}:${sel.reservationId}:${amountCents}:${pms.chargeCode}`
 
       // Check existing attempt (outside tx — read-only, safe)
@@ -668,17 +670,20 @@ export const POST = withVenue(withTiming(async function POST(
       }
 
       // TX-KEEP: COMPLEX — cross-order payment aggregate across all split siblings inside FOR UPDATE lock; no repo method
+      // FIX F5: Use base `amount` (excludes tips) instead of `totalAmount` (includes tips).
+      // Comparing tip-inclusive totals against the tip-exclusive order.total would falsely
+      // reject valid split payments or allow overpayment.
       const allSplitPayments = await tx.payment.aggregate({
         where: {
           order: { parentOrderId: order.parentOrderId },
           locationId: order.locationId,
           status: 'completed',
         },
-        _sum: { totalAmount: true },
+        _sum: { amount: true },
       })
-      const existingPaidTotal = toNumber(allSplitPayments._sum.totalAmount ?? 0)
+      const existingPaidTotal = toNumber(allSplitPayments._sum.amount ?? 0)
       const parentTotal = toNumber(parentOrder.total)
-      const thisSplitPaymentTotal = payments.reduce((sum, p) => sum + p.amount + (p.tipAmount || 0), 0)
+      const thisSplitPaymentTotal = payments.reduce((sum, p) => sum + p.amount, 0)
       if (existingPaidTotal + thisSplitPaymentTotal > parentTotal + 0.01) {
         return { earlyReturn: NextResponse.json(
           { error: `Total split payments ($${(existingPaidTotal + thisSplitPaymentTotal).toFixed(2)}) would exceed original order total ($${parentTotal.toFixed(2)})` },

@@ -78,6 +78,48 @@ export function validateItemForCompVoid(
 }
 
 /**
+ * V1 FRAUD FIX: Check if item was already sent to kitchen.
+ * If sent, require manager approval regardless of threshold and default wasMade=true.
+ * Returns { requiresApproval, wasMadeDefault } or a ValidationError if blocked.
+ */
+export function validateSentItemVoid(
+  item: { kitchenStatus?: string; kitchenSentAt?: Date | null },
+  hasApprovedById: boolean,
+  hasRemoteApprovalCode: boolean,
+  wasMadeProvided: boolean | undefined,
+): { requiresApproval: boolean; wasMadeDefault: boolean; error: ValidationError | null } {
+  const wasSentToKitchen =
+    (item.kitchenStatus && item.kitchenStatus !== 'pending') ||
+    item.kitchenSentAt != null
+
+  if (!wasSentToKitchen) {
+    return { requiresApproval: false, wasMadeDefault: false, error: null }
+  }
+
+  // Item was sent to kitchen — food was likely made
+  console.warn('[CompVoid] WARNING: Void on sent item requires manager approval — kitchenStatus=%s, kitchenSentAt=%s',
+    item.kitchenStatus, item.kitchenSentAt)
+
+  // Require manager approval regardless of amount threshold
+  if (!hasApprovedById && !hasRemoteApprovalCode) {
+    return {
+      requiresApproval: true,
+      wasMadeDefault: true,
+      error: {
+        error: 'Manager approval required — item was already sent to kitchen',
+        status: 403,
+        requiresApproval: true,
+      },
+    }
+  }
+
+  // If wasMade was not explicitly provided, default to true (food was made if already sent)
+  const wasMadeDefault = wasMadeProvided === undefined ? true : false
+
+  return { requiresApproval: true, wasMadeDefault, error: null }
+}
+
+/**
  * Validate that the item exists and is in a restorable state (voided/comped).
  */
 export function validateItemForRestore(

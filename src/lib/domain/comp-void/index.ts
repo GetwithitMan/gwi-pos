@@ -45,6 +45,7 @@ export {
   validateOrderForCompVoid,
   validateVersion,
   validateItemForCompVoid,
+  validateSentItemVoid,
   validateItemForRestore,
   validateVoidApproval,
   validateVoid2FA,

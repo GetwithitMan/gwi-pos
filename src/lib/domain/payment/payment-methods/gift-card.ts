@@ -88,6 +88,14 @@ export async function processGiftCardPayment(
 
   const newBalance = cardBalance - gcPaymentAmount
 
+  // F6: Ceiling check — if floating-point drift causes negative balance, reject and rollback.
+  // This is a safety net beyond the pre-check above; the transaction will rollback automatically.
+  if (newBalance < 0) {
+    throw new Error(
+      `Gift card balance integrity violation: deducting $${gcPaymentAmount.toFixed(2)} from $${cardBalance.toFixed(2)} would result in negative balance ($${newBalance.toFixed(2)}). Transaction rolled back.`
+    )
+  }
+
   const updatedRecord: PaymentRecord = {
     ...record,
     transactionId: `GC:${giftCard.cardNumber}`,

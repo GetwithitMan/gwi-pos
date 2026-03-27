@@ -28,6 +28,7 @@ import {
   validateOrderForCompVoid,
   validateVersion,
   validateItemForCompVoid,
+  validateSentItemVoid,
   validateItemForRestore,
   validateVoidApproval,
   validateVoid2FA,
@@ -181,6 +182,13 @@ export const POST = withVenue(async function POST(
           { status: 403 }
         )
       }
+
+      // V3 FRAUD FIX: Prevent self-approval — requester cannot approve their own void/comp.
+      // Exception: managers (who have MGR_VOID_ITEMS) can self-approve items below the approval threshold.
+      // The threshold check is deferred until after item total is calculated (see V3 deferred check below).
+      // Since we reach here only if approvedById passed the MGR_VOID_ITEMS check above,
+      // and approvedById === employeeId means the employee IS a manager — so we only defer.
+      // Non-managers can never self-approve because they'd fail the approverAuth check above.
     }
 
     // Validate reason against allowed presets (backward compatible)
@@ -200,6 +208,37 @@ export const POST = withVenue(async function POST(
 
     // Calculate the item total (price + modifiers) * quantity
     const itemTotal = calculateItemTotal(item!.price, item!.modifiers, item!.quantity)
+
+    // V3 FRAUD FIX (deferred check): Managers self-approving must be below the threshold
+    if (approvedById && approvedById === employeeId && !remoteApprovalCode) {
+      const { exceedsThreshold } = await import('@/lib/domain/comp-void/calculations')
+      const isAboveThreshold = exceedsThreshold(itemTotal, settings.approvals.voidApprovalThreshold)
+      if (isAboveThreshold) {
+        return NextResponse.json(
+          { error: 'Cannot approve your own void/comp for items at or above the approval threshold. A different manager must approve.' },
+          { status: 403 }
+        )
+      }
+    }
+
+    // V1 FRAUD FIX: Enforce manager approval + wasMade=true for items already sent to kitchen
+    let effectiveWasMade = wasMade
+    const sentItemCheck = validateSentItemVoid(
+      item! as any, // OrderItem has kitchenStatus and kitchenSentAt fields
+      !!approvedById,
+      !!remoteApprovalCode,
+      wasMade,
+    )
+    if (sentItemCheck.error) {
+      return NextResponse.json(
+        { error: sentItemCheck.error.error, requiresApproval: sentItemCheck.error.requiresApproval },
+        { status: sentItemCheck.error.status }
+      )
+    }
+    if (sentItemCheck.wasMadeDefault) {
+      // Item was sent to kitchen and wasMade not explicitly provided — default to true for inventory tracking
+      effectiveWasMade = true
+    }
 
     // Approval + 2FA checks apply to BOTH comp and void — never let either bypass manager approval
     const compVoidApprovalError = validateVoidApproval(
@@ -241,7 +280,7 @@ export const POST = withVenue(async function POST(
         action,
         reason,
         employeeId,
-        wasMade,
+        wasMade: effectiveWasMade,
         approvedById: effectiveApprovedById,
         approvedAt: effectiveApprovedAt,
         remoteApprovalId: remoteApproval?.id || null,
@@ -262,6 +301,17 @@ export const POST = withVenue(async function POST(
         return NextResponse.json({ error: 'Service temporarily unavailable — outage queue full' }, { status: 507 })
       }
       throw err
+    }
+
+    // V4 FRAUD FIX: Consume remote approval code AFTER successful void (prevents reuse)
+    if (remoteApproval) {
+      void db.remoteVoidApproval.update({
+        where: { id: remoteApproval.id },
+        data: { status: 'used', usedAt: new Date() },
+      }).catch(err => {
+        // Non-fatal: log but don't fail the void — the void already succeeded
+        console.error('[CompVoid] Failed to mark remote approval as used:', err)
+      })
     }
 
     // W1-P1: Attempt Datacap reversal for card payments (outside transaction)
@@ -459,7 +509,7 @@ export const POST = withVenue(async function POST(
     const normalizedReason = reason.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_')
     const normalizedWasteReasons = WASTE_VOID_REASONS.map(r => r.toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_'))
     const shouldDeductInventory = action === 'comp'
-      || (wasMade !== undefined ? wasMade : normalizedWasteReasons.includes(normalizedReason))
+      || (effectiveWasMade !== undefined ? effectiveWasMade : normalizedWasteReasons.includes(normalizedReason))
 
     if (shouldDeductInventory) {
       const deductionType = action === 'comp' ? 'comp' as const : 'waste' as const

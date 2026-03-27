@@ -276,6 +276,11 @@ export function calculateOrderTotals(
   const commissionTotal = calculateOrderCommission(items)
 
   // 1. Split items into tax-inclusive vs tax-exclusive
+  // F3 INVARIANT: calculateItemTotal() includes modifier and ingredient prices in the
+  // returned total. The ENTIRE amount (base + modifiers + ingredients) is classified as
+  // inclusive or exclusive based on the parent item's isTaxInclusive flag. This is correct:
+  // OrderItemModifier has no isTaxInclusive field, so modifiers MUST inherit the parent's
+  // tax classification. Do NOT split modifier prices into a separate tax bucket.
   let inclusiveSubtotal = 0
   let exclusiveSubtotal = 0
 
@@ -311,7 +316,11 @@ export function calculateOrderTotals(
   // This ensures orders created with inclusive pricing keep the original rate even if
   // the location setting changes mid-service.
   let inclusiveRate: number | undefined
-  if (orderInclusiveTaxRate != null && Number.isFinite(orderInclusiveTaxRate) && orderInclusiveTaxRate > 0) {
+  if (isTaxExempt) {
+    // F2 fix: tax-exempt orders must zero BOTH exclusive and inclusive rates.
+    // Without this, calculateSplitTax still backs out inclusive tax from tax-inclusive items.
+    inclusiveRate = 0
+  } else if (orderInclusiveTaxRate != null && Number.isFinite(orderInclusiveTaxRate) && orderInclusiveTaxRate > 0) {
     inclusiveRate = orderInclusiveTaxRate // Already decimal (e.g. 0.07)
   } else {
     const inclusiveTaxRateRaw = locationSettings?.tax?.inclusiveTaxRate
