@@ -2368,6 +2368,49 @@ export const POST = withVenue(withTiming(async function POST(
     // Build receipt data via domain module (eliminates separate /receipt fetch)
     const receiptData = buildReceiptData(order as any, ingestResult.bridgedPayments, pointsEarned, settings as any)
 
+    // Card recognition: fire-and-forget BEFORE response return.
+    // Sends a separate socket event instead of blocking the HTTP response (-10-50ms).
+    if (!order.customer?.id && settings.tabs.cardRecognitionEnabled) {
+      void (async () => {
+        try {
+          const cardPayment = ingestResult.bridgedPayments.find(
+            (p: any) => (p.paymentMethod === 'credit' || p.paymentMethod === 'debit') && p.cardLast4
+          )
+          if (!cardPayment) return
+          const matchedProfile = await db.cardProfile.findFirst({
+            where: {
+              locationId: order.locationId,
+              cardLast4: cardPayment.cardLast4,
+              customerId: { not: null },
+              deletedAt: null,
+            },
+            include: {
+              customer: {
+                select: { id: true, firstName: true, lastName: true, displayName: true, phone: true },
+              },
+            },
+            orderBy: { lastSeenAt: 'desc' },
+          })
+          if (!matchedProfile?.customer) return
+          // Emit card recognition via socket so POS can show the suggestion asynchronously
+          const { emitToLocation } = await import('@/lib/socket-server')
+          await emitToLocation(order.locationId, 'payment:card-recognized', {
+            orderId,
+            recognizedCustomer: {
+              customerId: matchedProfile.customer.id,
+              name: matchedProfile.customer.displayName || `${matchedProfile.customer.firstName} ${matchedProfile.customer.lastName}`,
+              phone: matchedProfile.customer.phone,
+              visitCount: matchedProfile.visitCount,
+              cardType: matchedProfile.cardType,
+              cardLast4: matchedProfile.cardLast4,
+            },
+          })
+        } catch (err) {
+          log.warn({ err }, 'Card recognition fire-and-forget failed')
+        }
+      })()
+    }
+
     // Return response — includes flat fields for Android's PayOrderData DTO
     const primaryPayment = ingestResult.bridgedPayments[0]
     const finalStatus = orderIsPaid ? 'paid' : 'partial'
@@ -2421,44 +2464,6 @@ export const POST = withVenue(withTiming(async function POST(
               last4: cardPayment.cardLast4,
               cardBrand: cardPayment.cardBrand || 'UNKNOWN',
               token: cardPayment.datacapRecordNo,
-            },
-          }
-        } catch { return {} }
-      })(),
-      // Card recognition: when order has NO customer, check if we recognize this card
-      // via CardProfile and suggest linking to the known customer
-      ...await (async () => {
-        try {
-          if (order.customer?.id) return {} // Already has a customer — no suggestion needed
-          if (!settings.tabs.cardRecognitionEnabled) return {}
-          const cardPayment = ingestResult.bridgedPayments.find(
-            (p: any) => (p.paymentMethod === 'credit' || p.paymentMethod === 'debit') && p.cardLast4
-          )
-          if (!cardPayment) return {}
-          // Look up CardProfile by last4 (fast indexed query) that has a linked customer
-          const matchedProfile = await db.cardProfile.findFirst({
-            where: {
-              locationId: order.locationId,
-              cardLast4: cardPayment.cardLast4,
-              customerId: { not: null },
-              deletedAt: null,
-            },
-            include: {
-              customer: {
-                select: { id: true, firstName: true, lastName: true, displayName: true, phone: true },
-              },
-            },
-            orderBy: { lastSeenAt: 'desc' },
-          })
-          if (!matchedProfile?.customer) return {}
-          return {
-            recognizedCustomer: {
-              customerId: matchedProfile.customer.id,
-              name: matchedProfile.customer.displayName || `${matchedProfile.customer.firstName} ${matchedProfile.customer.lastName}`,
-              phone: matchedProfile.customer.phone,
-              visitCount: matchedProfile.visitCount,
-              cardType: matchedProfile.cardType,
-              cardLast4: matchedProfile.cardLast4,
             },
           }
         } catch { return {} }

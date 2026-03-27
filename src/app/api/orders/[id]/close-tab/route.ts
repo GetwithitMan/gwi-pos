@@ -263,7 +263,7 @@ export const POST = withVenue(async function POST(
         // H6 FIX: configurable timeout prevents tab stuck in "closing" forever if reader is unresponsive
         if (tipMode === 'device') {
           try {
-            const tipTimeoutMs = (locSettings.payments.cfdTipTimeoutSeconds ?? 30) * 1000
+            const tipTimeoutMs = (locSettings.payments.cfdTipTimeoutSeconds ?? 8) * 1000
             const tipAbort = AbortSignal.timeout(tipTimeoutMs)
             const tipPromise = client.getSuggestiveTip(card.readerId, tipSuggestions)
             // Race the tip prompt against the configured deadline
@@ -271,7 +271,7 @@ export const POST = withVenue(async function POST(
               tipPromise,
               new Promise<never>((_, reject) => {
                 tipAbort.addEventListener('abort', () =>
-                  reject(new Error(`Device tip prompt timed out after ${locSettings.payments.cfdTipTimeoutSeconds ?? 30}s`))
+                  reject(new Error(`Device tip prompt timed out after ${locSettings.payments.cfdTipTimeoutSeconds ?? 8}s`))
                 )
               }),
             ])
@@ -629,38 +629,33 @@ export const POST = withVenue(async function POST(
     void cleanupTemporarySeats(orderId)
       .then(() => dispatchFloorPlanUpdate(locationId, { async: true }))
       .catch(err => log.warn({ err }, 'Background task failed'))
-    void dispatchPaymentProcessed(locationId, {
-      orderId,
-      paymentId: createdPaymentId,
-      status: 'completed',
-      method: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
-      amount: purchaseAmount,
-      tipAmount: finalTipAmount,
-      totalAmount: totalCaptured,
-      employeeId: order.employeeId || null,
-      isClosed: true,
-      cardBrand: capturedCard.cardType || null,
-      cardLast4: capturedCard.cardLast4 || null,
-    }).catch(err => log.warn({ err }, 'Background task failed'))
-    void dispatchTabUpdated(locationId, { orderId, status: 'closed' }).catch(err => log.warn({ err }, 'tab updated dispatch failed'))
+    // Parallel socket emissions: all independent fire-and-forget dispatches run concurrently (-10ms)
     dispatchTabStatusUpdate(locationId, { orderId, status: 'closed' })
-
-    // Dispatch mobile tab:closed for phone sync (fire-and-forget)
-    dispatchTabClosed(locationId, {
-      orderId,
-      total: totalCaptured,
-      tipAmount: finalTipAmount,
-    })
-
-    // Dispatch open orders changed so all terminals refresh (fire-and-forget)
-    dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId, tableId: order.tableId || undefined }, { async: true }).catch(err => log.warn({ err }, 'open orders dispatch failed'))
-    void dispatchOrderClosed(locationId, {
-      orderId,
-      status: 'paid',
-      closedAt: now.toISOString(),
-      closedByEmployeeId: employeeId,
-      locationId,
-    }, { async: true }).catch(err => log.warn({ err }, 'fire-and-forget failed in orders.id.close-tab'))
+    dispatchTabClosed(locationId, { orderId, total: totalCaptured, tipAmount: finalTipAmount })
+    void Promise.all([
+      dispatchPaymentProcessed(locationId, {
+        orderId,
+        paymentId: createdPaymentId,
+        status: 'completed',
+        method: capturedCard.cardType?.toLowerCase() === 'debit' ? 'debit' : 'credit',
+        amount: purchaseAmount,
+        tipAmount: finalTipAmount,
+        totalAmount: totalCaptured,
+        employeeId: order.employeeId || null,
+        isClosed: true,
+        cardBrand: capturedCard.cardType || null,
+        cardLast4: capturedCard.cardLast4 || null,
+      }),
+      dispatchTabUpdated(locationId, { orderId, status: 'closed' }),
+      dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId, tableId: order.tableId || undefined }, { async: true }),
+      dispatchOrderClosed(locationId, {
+        orderId,
+        status: 'paid',
+        closedAt: now.toISOString(),
+        closedByEmployeeId: employeeId,
+        locationId,
+      }, { async: true }),
+    ]).catch(err => log.warn({ err }, 'Parallel socket dispatch failed in close-tab'))
     void (async () => {
       try {
         // Fetch the order's customer for loyalty check

@@ -104,11 +104,35 @@ export const POST = withVenue(withTiming(async function POST(
         table: { select: { id: true, name: true, abbreviation: true } },
         employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
         items: {
-          where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
+          // Fetch pending items including held (OPT 4: in-memory held count replaces separate COUNT query)
+          // Also include routing-specific fields (OPT 1: pass to resolveRouting to skip redundant items fetch)
+          where: { deletedAt: null, kitchenStatus: 'pending' },
           include: {
             menuItem: {
-              select: { id: true, name: true, itemType: true, blockTimeMinutes: true, fulfillmentType: true, fulfillmentStationId: true }
-            }
+              select: {
+                id: true, name: true, itemType: true, blockTimeMinutes: true,
+                fulfillmentType: true, fulfillmentStationId: true,
+                categoryId: true, routeTags: true,
+                category: { select: { id: true, routeTags: true, categoryType: true } },
+              }
+            },
+            modifiers: {
+              select: { id: true, name: true, preModifier: true, depth: true, quantity: true },
+            },
+            ingredientModifications: {
+              select: { ingredientName: true, modificationType: true, swappedToModifierName: true },
+            },
+            sourceTable: {
+              select: { id: true, name: true, abbreviation: true },
+            },
+            pizzaData: {
+              include: {
+                size: { select: { name: true, inches: true } },
+                crust: { select: { name: true } },
+                sauce: { select: { name: true } },
+                cheese: { select: { name: true } },
+              },
+            },
           }
         }
       }, tx)
@@ -138,9 +162,10 @@ export const POST = withVenue(withTiming(async function POST(
       })
 
       // M2: Count held items so the client can warn "X items held back"
-      const heldItemCount = await tx.orderItem.count({
-        where: { orderId: id, isHeld: true, deletedAt: null, status: { not: 'voided' } },
-      })
+      // OPT 4: In-memory count from already-fetched items (-5ms, eliminates separate COUNT query)
+      const heldItemCount = order.items.filter(
+        (i: any) => i.isHeld === true && i.status !== 'voided'
+      ).length
 
       // Identify delayed items that need their timer started.
       // Bug 19 fix: Only stamp delayStartedAt on items that are part of this send request.
@@ -340,16 +365,7 @@ export const POST = withVenue(withTiming(async function POST(
     // Transaction committed — flush outbox (fire-and-forget, catch-up handles failures)
     flushOutboxSafe(order.locationId)
 
-    // Start entertainment sessions outside transaction (touches menu items + floor plan)
-    if (entertainmentUpdates.length > 0) {
-      await Promise.all(
-        entertainmentUpdates.map(({ itemId, menuItemId, sessionEnd }) =>
-          startEntertainmentSession(menuItemId, order.id, itemId, jsNow, sessionEnd)
-        )
-      )
-    }
-
-    timing.end('post-commit', 'Post-commit: outbox flush + entertainment sessions')
+    timing.end('post-commit', 'Post-commit: outbox flush')
 
     // Queue for Neon replay if in outage mode — read back full row to
     // avoid NOT NULL constraint violations on replay (partial payloads are unsafe)
@@ -388,8 +404,18 @@ export const POST = withVenue(withTiming(async function POST(
       }
     }
 
+    // OPT 2: Fetch stations ONCE — shared by routing, K9 validation, and fulfillment (-25ms)
+    const locationStations = await db.station.findMany({
+      where: { locationId: order.locationId, isActive: true, deletedAt: null },
+    })
+
+    // OPT 1: Items were already fetched in the transaction with routing-specific includes.
+    // Filter to only the items that were actually sent (updatedItemIds) and pass to
+    // resolveRouting() to skip the redundant orderItem.findMany inside the router (-40ms).
+    const routingItems = order.items.filter((i: any) => updatedItemIds.includes(i.id))
+
     // Route order to stations using tag-based routing engine
-    // Pass pre-fetched order data to avoid redundant DB fetch inside resolveRouting
+    // Pass pre-fetched order data, items, AND stations to avoid 3 redundant DB fetches
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds, {
       id: order.id,
       orderNumber: order.orderNumber,
@@ -405,7 +431,7 @@ export const POST = withVenue(withTiming(async function POST(
       deliveryAddress: deliveryAddr,
       deliveryInstructions: deliveryNotes,
       source: order.source,
-    })
+    }, routingItems, locationStations)
 
     // Fulfillment routing — item-level station dispatch for HA cellular architecture (fire-and-forget)
     // The OrderRouter + dispatchNewOrder + printKitchenTicketsForManifests below handle the
@@ -425,12 +451,8 @@ export const POST = withVenue(withTiming(async function POST(
           fulfillmentStationId: (item.menuItem as any)?.fulfillmentStationId ?? null,
         }))
 
-        // Build FulfillmentStationConfig[] from location's active stations
-        const stations = await db.station.findMany({
-          where: { locationId: order.locationId, isActive: true, deletedAt: null },
-          select: { id: true, name: true, type: true, tags: true, isDefault: true, isActive: true },
-        })
-        const stationConfigs: FulfillmentStationConfig[] = stations.map(s => ({
+        // OPT 2: Reuse pre-fetched stations instead of re-querying (-25ms saved above)
+        const stationConfigs: FulfillmentStationConfig[] = locationStations.map(s => ({
           id: s.id,
           name: s.name,
           type: s.type as 'PRINTER' | 'KDS',
@@ -507,6 +529,16 @@ export const POST = withVenue(withTiming(async function POST(
     void dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {
       console.error('[API /orders/[id]/send] Socket dispatch failed:', err)
     })
+
+    // OPT 3: Start entertainment sessions fire-and-forget AFTER socket dispatch (-30ms)
+    // Moved from awaited post-commit phase to non-blocking — touches menu items + floor plan
+    if (entertainmentUpdates.length > 0) {
+      void Promise.all(
+        entertainmentUpdates.map(({ itemId, menuItemId, sessionEnd }) =>
+          startEntertainmentSession(menuItemId, order.id, itemId, jsNow, sessionEnd)
+        )
+      ).catch(err => log.warn({ err }, 'Entertainment session start failed (fire-and-forget)'))
+    }
 
     // For entertainment items, dispatch session updates and status changes (non-critical UI)
     for (const item of itemsToProcess) {

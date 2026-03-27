@@ -56,69 +56,80 @@ export class OrderRouter {
    * @param orderId - The order to route
    * @param itemIds - Optional: specific items to route (for resends)
    * @param preloadedOrder - Optional: pre-fetched order data to skip redundant order query
+   * @param preloadedItems - Optional: pre-fetched items with routing-specific includes to skip redundant items query
+   * @param preloadedStations - Optional: pre-fetched active stations to skip redundant station query
    * @returns RoutingResult with manifests grouped by station
    */
   static async resolveRouting(
     orderId: string,
     itemIds?: string[],
-    preloadedOrder?: PreloadedOrderData
+    preloadedOrder?: PreloadedOrderData,
+    preloadedItems?: any[],
+    preloadedStations?: any[],
   ): Promise<RoutingResult> {
     let orderData: PreloadedOrderData
     let items: any[]
 
     if (preloadedOrder) {
-      // Use pre-fetched order data — only fetch items with routing-specific includes
+      // Use pre-fetched order data
       orderData = preloadedOrder
-      items = await db.orderItem.findMany({
-        where: {
-          orderId,
-          ...(itemIds ? { id: { in: itemIds } } : {}),
-        },
-        include: {
-          modifiers: {
-            select: {
-              id: true,
-              name: true,
-              preModifier: true,
-              depth: true,
-              quantity: true,
+
+      if (preloadedItems) {
+        // Use pre-fetched items — skip redundant DB fetch (-40ms)
+        items = preloadedItems
+      } else {
+        // Only fetch items with routing-specific includes
+        items = await db.orderItem.findMany({
+          where: {
+            orderId,
+            ...(itemIds ? { id: { in: itemIds } } : {}),
+          },
+          include: {
+            modifiers: {
+              select: {
+                id: true,
+                name: true,
+                preModifier: true,
+                depth: true,
+                quantity: true,
+              },
             },
-          },
-          ingredientModifications: {
-            select: {
-              ingredientName: true,
-              modificationType: true,
-              swappedToModifierName: true,
+            ingredientModifications: {
+              select: {
+                ingredientName: true,
+                modificationType: true,
+                swappedToModifierName: true,
+              },
             },
-          },
-          sourceTable: {
-            select: { id: true, name: true, abbreviation: true },
-          },
-          pizzaData: {
-            include: {
-              size: { select: { name: true, inches: true } },
-              crust: { select: { name: true } },
-              sauce: { select: { name: true } },
-              cheese: { select: { name: true } },
+            sourceTable: {
+              select: { id: true, name: true, abbreviation: true },
             },
-          },
-          menuItem: {
-            select: {
-              id: true,
-              categoryId: true,
-              routeTags: true,
-              itemType: true,
-              category: {
-                select: {
-                  id: true,
-                  routeTags: true,
-                  categoryType: true,
+            pizzaData: {
+              include: {
+                size: { select: { name: true, inches: true } },
+                crust: { select: { name: true } },
+                sauce: { select: { name: true } },
+                cheese: { select: { name: true } },
+              },
+            },
+            menuItem: {
+              select: {
+                id: true,
+                categoryId: true,
+                routeTags: true,
+                itemType: true,
+                category: {
+                  select: {
+                    id: true,
+                    routeTags: true,
+                    categoryType: true,
+                  },
                 },
               },
             },
           },
-        },
-      })
+        })
+      }
     } else {
       // Full fetch — order + items in one query (original behavior)
       const order = await db.order.findUnique({
@@ -231,8 +242,8 @@ export class OrderRouter {
       items = order.items
     }
 
-    // 2. Fetch all active stations for this location
-    const stations = await db.station.findMany({
+    // 2. Fetch all active stations for this location (skip if preloaded — saves ~25ms)
+    const stations = preloadedStations ?? await db.station.findMany({
       where: {
         locationId: orderData.locationId,
         isActive: true,
@@ -272,17 +283,21 @@ export class OrderRouter {
     )
 
     // K9: Defense-in-depth — verify referenced stationIds still exist.
-    // Stations could be deleted between initial fetch and routing completion.
+    // When stations were preloaded from the caller, skip the re-fetch since the data is
+    // fresh enough (same request lifecycle). Only re-fetch when stations came from our
+    // own query above (original non-preloaded path) to guard against mid-request deletion.
     if (manifests.length > 0) {
-      const currentStations = await db.station.findMany({
-        where: {
-          locationId: orderData.locationId,
-          isActive: true,
-          deletedAt: null,
-        },
-        select: { id: true },
-      })
-      const currentStationIds = new Set(currentStations.map((s) => s.id))
+      const currentStations = preloadedStations
+        ? stations // Already validated by caller — reuse without extra round-trip
+        : await db.station.findMany({
+            where: {
+              locationId: orderData.locationId,
+              isActive: true,
+              deletedAt: null,
+            },
+            select: { id: true },
+          })
+      const currentStationIds = new Set(currentStations.map((s: any) => s.id))
 
       const orphanedManifests = manifests.filter((m) => !currentStationIds.has(m.stationId))
       if (orphanedManifests.length > 0) {

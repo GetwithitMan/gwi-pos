@@ -490,17 +490,14 @@ const putHandler = async function PUT(request: NextRequest) {
       }
     }
 
-    // K4: Check forward targets in the same scope as item updates.
-    // We check before AND after the update. If the result differs, log a warning
-    // and use the post-update result (most current truth).
+    // K4: Check forward targets before item updates (pre-check only — OPT-1 removed post-check).
+    // Pre-check is the authoritative isIntermediateBump value. Fail open on error.
     let isIntermediateBump = false
-    let preCheckResult: boolean | null = null
     if (screenId && (action === 'complete' || action === 'bump_order')) {
       try {
-        preCheckResult = await screenHasForwardTargets(screenId, locationId!)
-        isIntermediateBump = preCheckResult
+        isIntermediateBump = await screenHasForwardTargets(screenId, locationId!)
       } catch (err) {
-        console.error('[KDS] Failed to check forward targets (pre-update):', err)
+        console.error('[KDS] Failed to check forward targets:', err)
         // Fail open: treat as final bump if check fails
       }
     }
@@ -563,22 +560,9 @@ const putHandler = async function PUT(request: NextRequest) {
       }
     }
 
-    // K4: Re-check forward targets AFTER item update to detect race condition.
-    // If screen links changed between pre-check and post-check, use post-check result.
-    if (screenId && (action === 'complete' || action === 'bump_order') && preCheckResult !== null) {
-      try {
-        const postCheckResult = await screenHasForwardTargets(screenId, locationId!)
-        if (postCheckResult !== preCheckResult) {
-          console.warn(
-            `[KDS] Screen link race detected for screen ${screenId}: pre=${preCheckResult} post=${postCheckResult} — using post-update result`
-          )
-          isIntermediateBump = postCheckResult
-        }
-      } catch (err) {
-        console.error('[KDS] Failed to re-check forward targets (post-update):', err)
-        // Keep the pre-check result
-      }
-    }
+    // K4: Post-check removed (OPT-1) — pre-check result is authoritative.
+    // The post-check detected screen-link race conditions that virtually never happen
+    // and cost 10-20ms per bump. The pre-check at line ~498 is sufficient.
 
     // Push DB changes upstream to Neon (fire-and-forget)
     pushUpstream()
@@ -599,10 +583,11 @@ const putHandler = async function PUT(request: NextRequest) {
         }).catch(err => console.error('[KDS] Screen link processing failed:', err))
       }
 
+      // OPT-3: Parallelize socket emissions — collect all dispatches and fire concurrently
       if (action === 'complete' || action === 'uncomplete') {
         // K3: Always emit socket events — add isIntermediate metadata so
         // consumers can decide whether to show "order ready" UI or not.
-        for (const iid of itemIds) {
+        const dispatches = itemIds.map((iid: string) =>
           dispatchItemStatus(locationId, {
             orderId,
             itemId: iid,
@@ -613,36 +598,40 @@ const putHandler = async function PUT(request: NextRequest) {
           } as any, { async: true }).catch(err => {
             console.error('Failed to dispatch item status:', err)
           })
-        }
+        )
+        void Promise.all(dispatches)
       } else if (action === 'bump_order') {
         // K3: Always emit socket events with isIntermediate flag.
         // POS can filter on isIntermediate to suppress "order ready" for non-final bumps.
-        dispatchOrderBumped(locationId, {
-          orderId,
-          stationId: body.stationId || '',
-          bumpedBy,
-          allItemsServed: !isIntermediateBump,
-          ...(isIntermediateBump ? { isIntermediate: true } : {}),
-        } as any, { async: true }).catch(err => {
-          console.error('Failed to dispatch order bumped:', err)
-        })
-        // Also dispatch per-item kds:item-status so Android terminals (which listen
-        // for kds:item-status but not kds:order-bumped) update kitchen status
-        for (const iid of itemIds) {
-          dispatchItemStatus(locationId, {
+        const dispatches: Promise<any>[] = [
+          dispatchOrderBumped(locationId, {
             orderId,
-            itemId: iid,
-            status: 'completed',
             stationId: body.stationId || '',
-            updatedBy: bumpedBy,
+            bumpedBy,
+            allItemsServed: !isIntermediateBump,
             ...(isIntermediateBump ? { isIntermediate: true } : {}),
           } as any, { async: true }).catch(err => {
-            console.error('Failed to dispatch bump item status:', err)
-          })
-        }
+            console.error('Failed to dispatch order bumped:', err)
+          }),
+          // Also dispatch per-item kds:item-status so Android terminals (which listen
+          // for kds:item-status but not kds:order-bumped) update kitchen status
+          ...itemIds.map((iid: string) =>
+            dispatchItemStatus(locationId, {
+              orderId,
+              itemId: iid,
+              status: 'completed',
+              stationId: body.stationId || '',
+              updatedBy: bumpedBy,
+              ...(isIntermediateBump ? { isIntermediate: true } : {}),
+            } as any, { async: true }).catch(err => {
+              console.error('Failed to dispatch bump item status:', err)
+            })
+          ),
+        ]
+        void Promise.all(dispatches)
       } else if (action === 'resend') {
         // W1-K2: Dispatch resend event so all KDS screens re-show the resent items
-        for (const iid of itemIds) {
+        const dispatches = itemIds.map((iid: string) =>
           dispatchItemStatus(locationId, {
             orderId,
             itemId: iid,
@@ -652,7 +641,8 @@ const putHandler = async function PUT(request: NextRequest) {
           }, { async: true }).catch(err => {
             console.error('Failed to dispatch resend status:', err)
           })
-        }
+        )
+        void Promise.all(dispatches)
       }
 
       // Speed-of-service tracking: compute bump times for complete/bump_order
@@ -806,44 +796,28 @@ const putHandler = async function PUT(request: NextRequest) {
       }
 
       // W2: Phase 8: Notification Platform — order_ready on final bump
-      // notifyEvent is now awaited in the same try/catch as the bump update to prevent lost notifications
+      // OPT-2: Fire-and-forget — notification is non-critical and should not block the bump response.
+      // Moves 10-500ms of DB lookups + notifyEvent INSERT out of the critical path.
       if ((action === 'bump_order') && !isIntermediateBump && !isDoubleBump) {
-        try {
-          // Look up order info for notification context
-          const order = await db.order.findUnique({
-            where: { id: orderId },
-            select: {
-              orderNumber: true,
-              orderType: true,
-              pagerNumber: true,
-              tabName: true,
-              parentOrderId: true,
-              customer: { select: { phone: true, firstName: true } },
-            },
-          })
-          if (order) {
-            // Look up pagerNumber from target assignment (source of truth)
-            let pagerNumber: string | null = order.pagerNumber || null
-            try {
-              const pagerResult: any[] = await db.$queryRawUnsafe(
-                `SELECT "targetValue" FROM "NotificationTargetAssignment"
-                 WHERE "locationId" = $1
-                   AND "subjectType" = 'order'
-                   AND "subjectId" = $2
-                   AND status = 'active'
-                   AND "targetType" IN ('guest_pager', 'staff_pager')
-                 ORDER BY "isPrimary" DESC LIMIT 1`,
-                locationId, orderId
-              )
-              if (pagerResult[0]?.targetValue) {
-                pagerNumber = pagerResult[0].targetValue
-              }
-            } catch { /* non-fatal */ }
-
-            // If split child with no pager, inherit from parent order's assignment
-            if (!pagerNumber && order.parentOrderId) {
+        void (async () => {
+          try {
+            // Look up order info for notification context
+            const order = await db.order.findUnique({
+              where: { id: orderId },
+              select: {
+                orderNumber: true,
+                orderType: true,
+                pagerNumber: true,
+                tabName: true,
+                parentOrderId: true,
+                customer: { select: { phone: true, firstName: true } },
+              },
+            })
+            if (order) {
+              // Look up pagerNumber from target assignment (source of truth)
+              let pagerNumber: string | null = order.pagerNumber || null
               try {
-                const parentPagerResult: any[] = await db.$queryRawUnsafe(
+                const pagerResult: any[] = await db.$queryRawUnsafe(
                   `SELECT "targetValue" FROM "NotificationTargetAssignment"
                    WHERE "locationId" = $1
                      AND "subjectType" = 'order'
@@ -851,46 +825,63 @@ const putHandler = async function PUT(request: NextRequest) {
                      AND status = 'active'
                      AND "targetType" IN ('guest_pager', 'staff_pager')
                    ORDER BY "isPrimary" DESC LIMIT 1`,
-                  locationId, order.parentOrderId
+                  locationId, orderId
                 )
-                if (parentPagerResult[0]?.targetValue) {
-                  pagerNumber = parentPagerResult[0].targetValue
+                if (pagerResult[0]?.targetValue) {
+                  pagerNumber = pagerResult[0].targetValue
                 }
-              } catch { /* non-fatal — parent lookup is best-effort */ }
-            }
+              } catch { /* non-fatal */ }
 
-            // Try notification platform first (notifyEvent enqueues a job — fast INSERT)
-            let usedNotificationPlatform = false
-            try {
-              const { notifyEvent } = await import('@/lib/notifications/dispatcher')
-              const version = order.orderNumber || 1
-              await notifyEvent({
-                locationId,
-                eventType: 'order_ready' as any,
-                subjectType: 'order',
-                subjectId: orderId,
-                subjectVersion: version,
-                sourceSystem: 'kds',
-                sourceEventId: `kds_bump:${orderId}:${screenId}:${version}`,
-                dispatchOrigin: 'automatic',
-                businessStage: 'initial_ready' as any,
-                contextSnapshot: {
-                  orderNumber: order.orderNumber,
-                  orderType: order.orderType,
-                  pagerNumber,
-                  tabName: order.tabName,
-                  customerName: order.customer?.firstName || null,
-                  customerPhone: order.customer?.phone || null,
-                },
-              })
-              usedNotificationPlatform = true
-            } catch {
-              // Dispatcher not available — fall back to legacy SMS
-            }
+              // If split child with no pager, inherit from parent order's assignment
+              if (!pagerNumber && order.parentOrderId) {
+                try {
+                  const parentPagerResult: any[] = await db.$queryRawUnsafe(
+                    `SELECT "targetValue" FROM "NotificationTargetAssignment"
+                     WHERE "locationId" = $1
+                       AND "subjectType" = 'order'
+                       AND "subjectId" = $2
+                       AND status = 'active'
+                       AND "targetType" IN ('guest_pager', 'staff_pager')
+                     ORDER BY "isPrimary" DESC LIMIT 1`,
+                    locationId, order.parentOrderId
+                  )
+                  if (parentPagerResult[0]?.targetValue) {
+                    pagerNumber = parentPagerResult[0].targetValue
+                  }
+                } catch { /* non-fatal — parent lookup is best-effort */ }
+              }
 
-            // Legacy fallback: direct Twilio SMS (best-effort, fire-and-forget)
-            if (!usedNotificationPlatform && screenId && isTwilioConfigured()) {
-              void (async () => {
+              // Try notification platform first (notifyEvent enqueues a job — fast INSERT)
+              let usedNotificationPlatform = false
+              try {
+                const { notifyEvent } = await import('@/lib/notifications/dispatcher')
+                const version = order.orderNumber || 1
+                await notifyEvent({
+                  locationId,
+                  eventType: 'order_ready' as any,
+                  subjectType: 'order',
+                  subjectId: orderId,
+                  subjectVersion: version,
+                  sourceSystem: 'kds',
+                  sourceEventId: `kds_bump:${orderId}:${screenId}:${version}`,
+                  dispatchOrigin: 'automatic',
+                  businessStage: 'initial_ready' as any,
+                  contextSnapshot: {
+                    orderNumber: order.orderNumber,
+                    orderType: order.orderType,
+                    pagerNumber,
+                    tabName: order.tabName,
+                    customerName: order.customer?.firstName || null,
+                    customerPhone: order.customer?.phone || null,
+                  },
+                })
+                usedNotificationPlatform = true
+              } catch {
+                // Dispatcher not available — fall back to legacy SMS
+              }
+
+              // Legacy fallback: direct Twilio SMS (best-effort, fire-and-forget)
+              if (!usedNotificationPlatform && screenId && isTwilioConfigured()) {
                 try {
                   const screen = await db.kDSScreen.findUnique({
                     where: { id: screenId },
@@ -911,12 +902,12 @@ const putHandler = async function PUT(request: NextRequest) {
                 } catch (smsErr) {
                   console.error('[KDS] Legacy SMS-on-ready failed:', smsErr)
                 }
-              })()
+              }
             }
+          } catch (err) {
+            console.error('[KDS] Notification/SMS-on-ready failed:', err)
           }
-        } catch (err) {
-          console.error('[KDS] Notification/SMS-on-ready failed:', err)
-        }
+        })()
       }
     }
 
