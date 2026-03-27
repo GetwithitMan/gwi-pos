@@ -552,6 +552,10 @@ async function handleForceUpdate(payload, cmdId) {
   // Fix ownership (git operations as root can leave root-owned files)
   run('sudo chown -R $(whoami):$(whoami) ' + APP_DIR, APP_DIR, 30)
 
+  // Stop POS service before build — prevents Prisma/pg concurrent query conflicts
+  // that cause "client.query() when already executing" deprecation → build failure
+  log('  stopping POS for clean build...')
+  run('sudo systemctl stop thepasspos', APP_DIR, 30)
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'build', detail: 'starting npm run build' })
   if (!step('build', 'SKIP_TYPECHECK=1 NODE_OPTIONS="--max-old-space-size=4096" npm run build', false, 600)) {
     var buildFailResult = { ok: false, error: 'build failed', steps: steps }

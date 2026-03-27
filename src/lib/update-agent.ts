@@ -639,6 +639,18 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
       log.warn('[UpdateAgent] .next backup failed (non-fatal):', backupErr instanceof Error ? backupErr.message : backupErr)
     }
 
+    // Stop POS service before build to prevent Prisma/pg concurrent query conflicts.
+    // The build connects to the DB (prisma generate, schema introspection) and the running
+    // POS service also holds connections — concurrent queries trigger pg deprecation warnings
+    // that Next.js treats as build failures. Same pattern as installer schema stage fix.
+    log.info('[UpdateAgent] Stopping POS service for clean build...')
+    try {
+      execSync('sudo systemctl stop thepasspos', { timeout: 30_000 })
+    } catch {
+      // May fail if we ARE the service — that's OK, the build will still work
+      log.warn('[UpdateAgent] Could not stop POS service (may already be stopping)')
+    }
+
     // Skip typecheck on NUC (already verified in CI) + set heap for Next.js build
     log.info('[UpdateAgent] Running npm run build...')
     try {
