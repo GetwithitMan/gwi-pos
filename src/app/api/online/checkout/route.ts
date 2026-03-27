@@ -36,6 +36,52 @@ import { mergeWithDefaults, DEFAULT_DELIVERY } from '@/lib/settings'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('online-checkout')
 
+// ─── Geo Math Utilities (for radius/polygon delivery zone matching) ──────────
+
+const EARTH_RADIUS_MILES = 3959
+
+/** Haversine distance between two lat/lng points in miles. */
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  return 2 * EARTH_RADIUS_MILES * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+/**
+ * Ray casting point-in-polygon test.
+ * `polygon` is an array of [lng, lat] coordinate pairs (GeoJSON convention).
+ */
+function pointInPolygon(lat: number, lng: number, polygon: number[][]): boolean {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][1] // lat
+    const yi = polygon[i][0] // lng
+    const xj = polygon[j][1] // lat
+    const yj = polygon[j][0] // lng
+    const intersect =
+      ((yi > lng) !== (yj > lng)) &&
+      (lat < ((xj - xi) * (lng - yi)) / (yj - yi) + xi)
+    if (intersect) inside = !inside
+  }
+  return inside
+}
+
+/**
+ * Extract the outer ring of coordinates from a GeoJSON polygon.
+ * Supports both Polygon and the first polygon of a MultiPolygon.
+ */
+function getPolygonRing(polygonJson: any): number[][] | null {
+  if (!polygonJson || !polygonJson.type || !polygonJson.coordinates) return null
+  if (polygonJson.type === 'Polygon') return polygonJson.coordinates[0] ?? null
+  if (polygonJson.type === 'MultiPolygon') return polygonJson.coordinates[0]?.[0] ?? null
+  return null
+}
+
 // ─── Zod Validation Schema ────────────────────────────────────────────────────
 
 const CheckoutModifierSchema = z.object({
@@ -77,6 +123,8 @@ const CheckoutBodySchema = z.object({
   deliveryState: z.string().max(2).optional(),
   deliveryZip: z.string().max(10).optional(),
   deliveryInstructions: z.string().max(500).optional(),
+  deliveryLat: z.number().min(-90).max(90).optional(),
+  deliveryLng: z.number().min(-180).max(180).optional(),
   // Deprecated fields (backward compat)
   notes: z.string().max(2000).optional(),
   tip: z.number().min(0).max(9999).optional(),
@@ -175,6 +223,48 @@ export async function POST(request: NextRequest) {
         { error: 'Online ordering is not currently available' },
         { status: 503 }
       )
+    }
+
+    // ── 1c½. Check online ordering hours ──────────────────────────────────────
+    const onlineHours = onlineSettings?.hours as
+      | { day: number; open: string; close: string; closed: boolean }[]
+      | undefined
+
+    if (Array.isArray(onlineHours) && onlineHours.length > 0) {
+      // Use venue timezone if available, otherwise UTC
+      const venueTimezone = (locSettings?.timezone as string | undefined)
+        || (await venueDb.location.findFirst({
+            where: { id: locationId },
+            select: { timezone: true },
+          }))?.timezone
+        || 'UTC'
+
+      const nowInVenue = new Date(
+        new Date().toLocaleString('en-US', { timeZone: venueTimezone })
+      )
+      const currentDay = nowInVenue.getDay() // 0=Sun .. 6=Sat
+      const currentTime =
+        String(nowInVenue.getHours()).padStart(2, '0') + ':' +
+        String(nowInVenue.getMinutes()).padStart(2, '0')
+
+      const todaySchedule = onlineHours.find(h => h.day === currentDay)
+
+      if (todaySchedule?.closed) {
+        return NextResponse.json(
+          { error: 'Online ordering is closed today' },
+          { status: 503 }
+        )
+      }
+
+      if (todaySchedule && todaySchedule.open && todaySchedule.close) {
+        if (currentTime < todaySchedule.open || currentTime > todaySchedule.close) {
+          return NextResponse.json(
+            { error: `Online ordering is currently outside operating hours (open ${todaySchedule.open} - ${todaySchedule.close})` },
+            { status: 503 }
+          )
+        }
+      }
+      // If no schedule entry for today or no open/close times: treat as always open
     }
 
     // ── 1d. Idempotency check ─────────────────────────────────────────────────
@@ -464,19 +554,28 @@ export async function POST(request: NextRequest) {
       }
 
       // Query active delivery zones (raw SQL — DeliveryZone not in Prisma)
+      // Include all zone-type fields so we can fall back to radius/polygon matching
       const zones: any[] = await venueDb.$queryRawUnsafe(
-        `SELECT id, "deliveryFee", "minimumOrder", "estimatedMinutes", zipcodes, "zoneType"
+        `SELECT id, "deliveryFee", "minimumOrder", "estimatedMinutes",
+                "zipCodes", "zoneType", "centerLat", "centerLng",
+                "radiusMiles", "polygonJson"
          FROM "DeliveryZone"
          WHERE "locationId" = $1 AND "deletedAt" IS NULL AND "isActive" = true
          ORDER BY "sortOrder" ASC`,
         locationId
       )
 
-      // Match zip against zones (same logic as quote engine)
+      // Match delivery address against zones.
+      // Priority: iterate in sortOrder; try ZIP first, then radius/polygon fallback.
       const customerZip = body.deliveryZip.trim()
+      const hasDeliveryCoords = body.deliveryLat != null && body.deliveryLng != null
+      const delLat = hasDeliveryCoords ? Number(body.deliveryLat) : null
+      const delLng = hasDeliveryCoords ? Number(body.deliveryLng) : null
+
       for (const zone of zones) {
+        // --- Zipcode match (original logic) ---
         if (zone.zoneType === 'zipcode' && customerZip) {
-          const zoneZips = Array.isArray(zone.zipcodes) ? zone.zipcodes : []
+          const zoneZips = Array.isArray(zone.zipCodes) ? zone.zipCodes : []
           if (zoneZips.includes(customerZip)) {
             matchedZone = {
               id: zone.id,
@@ -487,7 +586,42 @@ export async function POST(request: NextRequest) {
             break
           }
         }
+
+        // --- Radius match (requires lat/lng from client) ---
+        if (zone.zoneType === 'radius' && hasDeliveryCoords
+            && zone.centerLat != null && zone.centerLng != null && zone.radiusMiles != null) {
+          const centerLat = Number(zone.centerLat)
+          const centerLng = Number(zone.centerLng)
+          const radiusMiles = Number(zone.radiusMiles)
+          const distance = haversineDistance(delLat!, delLng!, centerLat, centerLng)
+          if (distance <= radiusMiles) {
+            matchedZone = {
+              id: zone.id,
+              deliveryFee: Number(zone.deliveryFee),
+              minimumOrder: Number(zone.minimumOrder),
+              estimatedMinutes: zone.estimatedMinutes,
+            }
+            break
+          }
+        }
+
+        // --- Polygon match (requires lat/lng from client) ---
+        if (zone.zoneType === 'polygon' && hasDeliveryCoords && zone.polygonJson) {
+          const ring = getPolygonRing(zone.polygonJson)
+          if (ring && pointInPolygon(delLat!, delLng!, ring)) {
+            matchedZone = {
+              id: zone.id,
+              deliveryFee: Number(zone.deliveryFee),
+              minimumOrder: Number(zone.minimumOrder),
+              estimatedMinutes: zone.estimatedMinutes,
+            }
+            break
+          }
+        }
       }
+      // NOTE: If the checkout request doesn't include deliveryLat/deliveryLng,
+      // radius and polygon zones cannot be evaluated — only ZIP matching runs.
+      // The client should geocode the delivery address and send coordinates.
 
       if (!matchedZone) {
         return NextResponse.json({ error: 'Delivery not available for this address' }, { status: 400 })

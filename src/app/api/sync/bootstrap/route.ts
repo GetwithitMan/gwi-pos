@@ -468,6 +468,43 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })),
   }))
 
+  // ─── lastEventSequence for open orders ─────────────────────────────────────
+  // Android needs this to start delta sync from the correct point instead of
+  // seq=0 (which would re-request ALL events and cause duplicates).
+  // Batch-query OrderSnapshot which stores the projected lastEventSequence.
+  const orderIds = openOrders.map((o: any) => o.id)
+  const lastEventSeqMap = new Map<string, number>()
+  if (orderIds.length > 0) {
+    try {
+      // OrderSnapshot.id = orderId, so we can query directly
+      const snapshots = await adminDb.orderSnapshot.findMany({
+        where: { id: { in: orderIds } },
+        select: { id: true, lastEventSequence: true },
+      })
+      for (const snap of snapshots) {
+        lastEventSeqMap.set(snap.id, snap.lastEventSequence)
+      }
+    } catch {
+      // OrderSnapshot table may not exist in all venues yet — fall back to
+      // MAX(serverSequence) from OrderEvent as a safety net
+      try {
+        const rows = await adminDb.$queryRawUnsafe<Array<{ orderId: string; maxSeq: number }>>(
+          `SELECT "orderId", MAX("serverSequence") as "maxSeq"
+           FROM "order_events"
+           WHERE "orderId" = ANY($1::text[])
+           GROUP BY "orderId"`,
+          orderIds
+        )
+        for (const row of rows) {
+          lastEventSeqMap.set(row.orderId, Number(row.maxSeq))
+        }
+      } catch {
+        // Neither source available — Android will fall back to seq=0
+        console.warn(`[bootstrap] Could not resolve lastEventSequence for open orders (locationId=${locationId})`)
+      }
+    }
+  }
+
   const responseData = {
       menu: {
         categories: mappedCategories,
@@ -588,6 +625,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         notes: order.notes || null,
         createdAt: order.createdAt?.toISOString?.() || order.createdAt,
         version: order.version ?? null,
+        // lastEventSequence: allows Android to start delta sync from the correct
+        // point instead of seq=0 (which would re-request ALL events, causing duplicates)
+        lastEventSequence: lastEventSeqMap.get(order.id) ?? 0,
         items: order.items.map((item: any) => ({
           id: item.id,
           menuItemId: item.menuItemId,

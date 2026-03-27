@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { adminDb } from '@/lib/db'
 import { OrderRepository } from '@/lib/repositories'
 import {
   dispatchFloorPlanUpdate,
@@ -12,6 +11,7 @@ import { notifyNextWaitlistEntry } from '@/lib/entertainment-waitlist-notify'
 import { verifyCronSecret } from '@/lib/cron-auth'
 import { forAllVenues } from '@/lib/cron-venue-helper'
 import { notifyNuc } from '@/lib/cron-nuc-notify'
+import { pushUpstream } from '@/lib/sync/outage-safe-write'
 
 import { expireSession } from '@/lib/domain/entertainment'
 import { recalculateOrderTotals } from '@/lib/domain/order-items'
@@ -36,11 +36,12 @@ export async function GET(request: NextRequest) {
     let expiredWaitlistCount = 0
     let staleNotifiedCount = 0
 
-    // TODO: Migrate to OrderItemRepository once it supports cross-tenant cron queries with menuItem+order joins.
     // ── Step 1: Find expired entertainment sessions ──────────────
-    const expiredItems = await adminDb.orderItem.findMany({
+    // Query uses venueDb (not adminDb) so it is correctly scoped to the
+    // current venue's database on both NUC and Vercel multi-tenant mode.
+    const expiredItems = await venueDb.orderItem.findMany({
       where: {
-        blockTimeExpiresAt: { lt: now },
+        blockTimeExpiresAt: { not: null },
         blockTimeStartedAt: { not: null },
         menuItem: {
           itemType: 'timed_rental',
@@ -81,10 +82,21 @@ export async function GET(request: NextRequest) {
       },
     })
 
+    // ── Step 1b: Filter out sessions still within their grace period ──
+    // If a MenuItem has graceMinutes, the session only truly expires at
+    // blockTimeExpiresAt + graceMinutes. This gives customers a buffer
+    // before auto-expiry kicks in.
+    const trulyExpiredItems = expiredItems.filter((item) => {
+      const expiresAt = item.blockTimeExpiresAt!
+      const graceMinutes = item.menuItem.graceMinutes ?? 0
+      const effectiveExpiry = new Date(expiresAt.getTime() + graceMinutes * 60_000)
+      return effectiveExpiry < now
+    })
+
     // ── Step 2: Process each expired session sequentially ─────────
     const locationIdsToRefresh = new Set<string>()
 
-    for (const item of expiredItems) {
+    for (const item of trulyExpiredItems) {
       try {
         const result = await venueDb.$transaction(async (tx: any) => {
           return expireSession(tx, {
@@ -114,6 +126,30 @@ export async function GET(request: NextRequest) {
         if (result.skipped) continue
 
         locationIdsToRefresh.add(item.order.locationId)
+
+        // Sync: push upstream after entertainment session mutations
+        void pushUpstream()
+
+        // Audit trail: auto-expired session
+        void venueDb.auditLog.create({
+          data: {
+            locationId: item.order.locationId,
+            employeeId: null,
+            action: 'entertainment_session_auto_expired',
+            entityType: 'order_item',
+            entityId: item.id,
+            details: {
+              menuItemId: item.menuItem.id,
+              itemName: item.menuItem.name,
+              orderId: item.order.id,
+              graceMinutes: item.menuItem.graceMinutes ?? 0,
+              blockTimeExpiresAt: item.blockTimeExpiresAt?.toISOString() ?? null,
+              finalCharge: result.closedOrder ? 0 : result.newPrice,
+              closedOrder: result.closedOrder,
+              triggeredBy: 'cron:entertainment-expiry',
+            },
+          },
+        }).catch(err => log.warn({ err }, 'Audit log failed for auto-expired session'))
 
         // BUG-L1 FIX: Recalculate order totals after entertainment price change
         if (!result.closedOrder) {

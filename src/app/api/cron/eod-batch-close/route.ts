@@ -8,9 +8,9 @@ import { forAllVenues } from '@/lib/cron-venue-helper'
 // PAY-P3-4: Datacap batch close is already handled by executeEodReset() when
 // location settings have autoBatchClose=true and processor='datacap'.
 // The cron runs within a 15-minute window after the configured batchCloseTime.
-// If a venue misses the window (cron downtime, Vercel cold start), batch close
-// will NOT retry until the next day. Consider adding a fallback check: if
-// batchCloseSuccess was never recorded for today, retry on next cron invocation.
+// If the window is missed (Vercel cold start, outage), catch-up logic runs
+// EOD up to MAX_CATCHUP_MINUTES after the scheduled time, provided EOD hasn't
+// already run today (idempotency via AuditLog in executeEodReset).
 // Also consider calling /api/internal/datacap-reconciliation (PUT) here to
 // auto-orphan stale pending sales before batch settlement.
 
@@ -20,6 +20,10 @@ export const maxDuration = 60
 // Max time to wait for active tab-close operations to finish before proceeding
 const ACTIVE_PAYMENT_WAIT_MS = 5_000
 const ACTIVE_PAYMENT_POLL_MS = 500
+
+// Max catch-up window: if the normal 15-minute window was missed, still execute
+// EOD up to this many minutes after the scheduled batch close time.
+const MAX_CATCHUP_MINUTES = 240 // 4 hours
 
 /**
  * Check if any orders at this location have an active tab close or pending payment
@@ -134,14 +138,34 @@ export async function GET(request: NextRequest) {
       const currentHour = now.getHours()
       const currentMinute = now.getMinutes()
 
-      // Check if we're within the 15-minute window after batch close time
+      // Check if we're within the 15-minute window after batch close time,
+      // or in the catch-up window (15 min to MAX_CATCHUP_MINUTES after).
       const batchMinuteOfDay = batchHour * 60 + batchMinute
       const currentMinuteOfDay = currentHour * 60 + currentMinute
-      const minutesSinceBatch = currentMinuteOfDay - batchMinuteOfDay
+      let minutesSinceBatch = currentMinuteOfDay - batchMinuteOfDay
 
-      if (minutesSinceBatch < 0 || minutesSinceBatch >= 15) {
+      // Handle day wrap (e.g., batch at 23:50, current time 00:10 = 20 min ago)
+      if (minutesSinceBatch < -720) minutesSinceBatch += 1440
+
+      const isInNormalWindow = minutesSinceBatch >= 0 && minutesSinceBatch < 15
+      const isInCatchupWindow = minutesSinceBatch >= 15 && minutesSinceBatch < MAX_CATCHUP_MINUTES
+      let isCatchupRun = false
+
+      if (!isInNormalWindow && !isInCatchupWindow) {
         allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'outside_batch_window' })
         continue
+      }
+
+      if (isInCatchupWindow) {
+        // Catch-up mode: the normal window was missed. executeEodReset() has
+        // its own idempotency check (AuditLog lookup), so if EOD already ran
+        // today this will short-circuit with alreadyRanToday=true. We only
+        // proceed here to cover the case where it genuinely didn't run.
+        isCatchupRun = true
+        console.log(
+          `[cron:eod-batch-close] ${slug} location ${loc.id}: ` +
+          `catch-up mode — ${minutesSinceBatch} min after scheduled batch time ${batchCloseTime}`
+        )
       }
 
       // ── Race protection: wait for active payment flows to finish ─────────
@@ -197,13 +221,20 @@ export async function GET(request: NextRequest) {
         })
 
         if (result.alreadyRanToday) {
-          allResults.push({ slug, locationId: loc.id, skipped: true, reason: 'already_ran_today' })
+          allResults.push({
+            slug,
+            locationId: loc.id,
+            skipped: true,
+            reason: 'already_ran_today',
+            ...(isCatchupRun ? { catchupAttempt: true, minutesSinceBatch } : {}),
+          })
           continue
         }
 
         allResults.push({
           slug,
           locationId: loc.id,
+          ...(isCatchupRun ? { catchupRun: true, minutesSinceBatch } : {}),
           preflightLockable: preflight.lockable,
           preflightTotalOpen: preflight.totalOpen,
           activeClosingsAtStart: totalBlocking,

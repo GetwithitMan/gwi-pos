@@ -152,12 +152,68 @@ export async function POST(request: NextRequest) {
       await Promise.all([masterPool.end(), venuePool.end()])
     }
 
+    // ── 6. Post-sync schema audit ───────────────────────────────────────
+    // Open fresh pools to verify the final state after all DDL steps
+    const auditMasterPool = new Pool({ connectionString: masterUrl })
+    const auditVenuePool = new Pool({ connectionString: venueUrl })
+
+    let schemaAudit: {
+      expectedTables: number
+      actualTables: number
+      missingTables: string[]
+      missingColumns: { table: string; column: string }[]
+      healthy: boolean
+      auditedAt: string
+    }
+
+    try {
+      const tableQuery = `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`
+      const colQuery = `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`
+
+      const [masterTableRows, venueTableRows, masterColRows, venueColRows] = await Promise.all([
+        query(auditMasterPool, tableQuery),
+        query(auditVenuePool, tableQuery),
+        query(auditMasterPool, colQuery),
+        query(auditVenuePool, colQuery),
+      ])
+
+      const masterTableList = masterTableRows.map(r => r.table_name as string)
+      const venueTableList = venueTableRows.map(r => r.table_name as string)
+      const venueTableSet = new Set(venueTableList)
+
+      const missingTables = masterTableList.filter(t => !venueTableSet.has(t))
+
+      const venueColSet = new Set(
+        venueColRows.map(r => `${r.table_name}.${r.column_name}`)
+      )
+      const missingColumnsList = masterColRows
+        .filter(r => venueTableSet.has(r.table_name as string)) // only check tables that exist in venue
+        .filter(r => !venueColSet.has(`${r.table_name}.${r.column_name}`))
+        .map(r => ({ table: r.table_name as string, column: r.column_name as string }))
+
+      schemaAudit = {
+        expectedTables: masterTableList.length,
+        actualTables: venueTableList.length,
+        missingTables,
+        missingColumns: missingColumnsList,
+        healthy: missingTables.length === 0 && missingColumnsList.length === 0,
+        auditedAt: new Date().toISOString(),
+      }
+    } finally {
+      await Promise.all([auditMasterPool.end(), auditVenuePool.end()])
+    }
+
+    const classifiedErrors = errors.length > 0
+      ? errors.map(e => ({ message: e, class: classifyError(e) }))
+      : undefined
+
     return Response.json({
-      success: errors.length === 0,
+      success: errors.length === 0 && schemaAudit.missingTables.length === 0,
       slug,
       databaseName: dbName,
       changes,
-      ...(errors.length > 0 ? { errors } : {}),
+      errors: classifiedErrors,
+      schemaAudit,
     })
   } catch (error: unknown) {
     const err = error as { message?: string }
@@ -464,6 +520,15 @@ function groupByKey(rows: Row[], keyField: string, valueField: string): Map<stri
     map.get(key)!.push(row[valueField])
   }
   return map
+}
+
+/** Classify a sync error for structured reporting */
+function classifyError(msg: string): 'timeout' | 'auth_failure' | 'partial_structure' | 'ddl_apply_failed' {
+  const lower = msg.toLowerCase()
+  if (lower.includes('timeout')) return 'timeout'
+  if (lower.includes('permission denied') || lower.includes('authentication')) return 'auth_failure'
+  if (lower.includes('does not exist') && (lower.includes('table') || lower.includes('relation'))) return 'partial_structure'
+  return 'ddl_apply_failed'
 }
 
 /** Replace the database name in a PostgreSQL connection URL */

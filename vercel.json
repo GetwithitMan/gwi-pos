@@ -24,6 +24,7 @@
     { "path": "/api/cron/accounting-export", "schedule": "0 * * * *" },
     { "path": "/api/cron/delivery-maintenance", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/expire-shared-reports", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/invoice-overdue", "schedule": "0 * * * *" }
+    { "path": "/api/cron/invoice-overdue", "schedule": "0 * * * *" },
+    { "path": "/api/cron/pms-reconciliation", "schedule": "0 * * * *" }
   ]
 }
