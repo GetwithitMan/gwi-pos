@@ -719,8 +719,11 @@ printf '  "contractHash": "%s",\n' "$_contract_hash" >> "$OUT"
 printf '  "contractMatch": "%s",\n' "$_contract_match" >> "$OUT"
 # Overall boot health verdict
 _boot_healthy="false"
-[[ "$_pos_status" == "active" && "$_failed_units_raw" == "," ]] && _boot_healthy="true"
-[[ "$_pos_status" == "active" && "$_failed_units_raw" == "none" ]] && _boot_healthy="true"
+if [[ "$_pos_status" == "active" ]]; then
+  if [[ -z "$_failed_units_raw" || "$_failed_units_raw" == "none" || "$_failed_units_raw" == "," ]]; then
+    _boot_healthy="true"
+  fi
+fi
 printf '  "bootHealthy": %s\n' "$_boot_healthy" >> "$OUT"
 printf '}\n' >> "$OUT"
 
