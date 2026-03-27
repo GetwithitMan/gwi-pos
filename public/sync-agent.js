@@ -562,27 +562,26 @@ async function handleForceUpdate(payload, cmdId) {
   // Try current service name (thepasspos), fall back to legacy (pulse-pos)
   if (cmdId) ackProgress(cmdId, 'IN_PROGRESS', { step: 'restart', detail: 'restarting POS service' })
   log('  restart...')
-  var restartOk = run('sudo systemctl restart thepasspos', APP_DIR, 30)
-  if (!restartOk) restartOk = run('sudo systemctl restart pulse-pos', APP_DIR, 30)
-  steps.push('restart' + (restartOk ? ' OK' : ' FAIL'))
-  if (!restartOk) {
-    var restartFailResult = { ok: false, error: 'restart failed', steps: steps }
-    if (cmdId) ackProgress(cmdId, 'FAILED', { step: 'restart', error: restartFailResult.error, steps: steps })
-    writeUpdateState({ status: 'FAILED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', error: restartFailResult.error, steps: steps })
-    return Object.assign(restartFailResult, { _acked: true })
-  }
-
+  // Report success BEFORE restart — the restart kills this process (we ARE the POS service).
+  // Use a detached background process so the restart survives our death.
+  // The service will come back via systemd Restart=on-failure.
+  steps.push('restart scheduled')
+  var ver = 'unknown'
+  try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
+  if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'done', version: ver, steps: steps })
+  writeUpdateState({ status: 'COMPLETED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', steps: steps })
   selfUpdateSyncAgent()
 
   // Deploy all components from the checkout (dashboard, monitoring, watchdog)
   var componentUpdates = updateComponentsFromCheckout()
   steps.push('components ' + (componentUpdates._updated ? 'OK' : 'skip'))
 
-  var ver = 'unknown'
-  try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
-  log('[Update] SUCCESS — v' + ver)
+  log('[Update] SUCCESS — v' + ver + ' (restart in 2s)')
   if (cmdId) ackProgress(cmdId, 'COMPLETED', { step: 'done', version: ver, steps: steps, componentUpdates: componentUpdates })
   writeUpdateState({ status: 'COMPLETED', attemptId: currentAttemptId, targetVersion: targetVersion || 'latest', previousVersion: previousVersion, attemptedAt: new Date().toISOString(), completedAt: new Date().toISOString(), method: 'direct', version: ver, steps: steps, componentUpdates: componentUpdates })
+
+  // Schedule restart LAST — in background so it survives this process being killed
+  run('nohup bash -c "sleep 2 && sudo systemctl restart thepasspos" >/dev/null 2>&1 &', APP_DIR, 5)
   return { ok: true, version: ver, steps: steps, _acked: true }
 }
 

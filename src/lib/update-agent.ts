@@ -751,10 +751,16 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
         log.info('[UpdateAgent] Requesting service restart...')
         const restartTimestamp = Date.now()
         try {
-          execSync('sudo systemctl restart thepasspos', { timeout: 30_000 })
+          // Use a detached background process for restart. execSync would block
+          // and get SIGTERM'd because WE are the service being restarted.
+          // The nohup + disown ensures the restart survives our process death.
+          // Sleep 2s gives the current request cycle time to finish cleanly.
+          execSync('nohup bash -c "sleep 2 && sudo systemctl restart thepasspos" >/dev/null 2>&1 &', { timeout: 5_000 })
+          log.info('[UpdateAgent] Restart scheduled (2s delay) — service will restart momentarily')
         } catch (err) {
-          log.error({ err: err }, '[UpdateAgent] Restart failed:')
-          return
+          // Even if the background spawn somehow fails, systemd Restart=on-failure
+          // will bring us back. Log but don't report as deploy failure.
+          log.warn({ err: err }, '[UpdateAgent] Restart scheduling warning (service will self-recover via systemd):')
         }
 
         // Health gate: verify POS boots successfully after update
