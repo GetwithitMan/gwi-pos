@@ -1222,11 +1222,22 @@ fi
           } else {
             log.warn('[update-agent] Heartbeat.sh patch regexes did not match — file may have unexpected format')
           }
-        } else {
-          // heartbeat.sh already has nucReadiness (new install or previously patched).
-          // Ensure it can also source the companion for future extensibility.
-          if (!hbContent.includes('heartbeat-readiness.sh')) {
-            log.info('[update-agent] heartbeat.sh already has nucReadiness natively — companion available as upgrade path')
+        } else if (!hbContent.includes('heartbeat-readiness.sh')) {
+          // heartbeat.sh has nucReadiness in payload but doesn't source the companion.
+          // This happens when the old inline patch added the jq field but not the source.
+          // Add the source line so the variable actually gets populated.
+          const patched = hbContent.replace(
+            /^(BODY=\$\(jq -nc)/m,
+            '# ── NUC Readiness (sourced companion — injected by update-agent) ──\n' +
+            'if [ -f /opt/gwi-pos/heartbeat-readiness.sh ]; then\n' +
+            '  . /opt/gwi-pos/heartbeat-readiness.sh\n' +
+            'fi\n\n$1'
+          )
+          if (patched !== hbContent) {
+            writeFileSync(hbPath, patched)
+            execSync(`chmod +x "${hbPath}"`, { timeout: 5_000 })
+            log.info('[update-agent] Added companion source to existing nucReadiness heartbeat.sh')
+            updated = true
           }
         }
       }
