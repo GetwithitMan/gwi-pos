@@ -538,6 +538,7 @@ export const POST = withVenue(async function POST(
         const giftCardId = gcTxns[0].giftCardId
 
         // Lock the gift card row and restore balance
+        let newBalance = 0
         await db.$transaction(async (tx) => {
           await tx.$queryRawUnsafe('SELECT id FROM "GiftCard" WHERE id = $1 FOR UPDATE', giftCardId)
 
@@ -548,7 +549,7 @@ export const POST = withVenue(async function POST(
           if (gcRows.length === 0) return
 
           const currentBalance = Number(gcRows[0].currentBalance)
-          const newBalance = currentBalance + voidAmount
+          newBalance = currentBalance + voidAmount
 
           await tx.$executeRawUnsafe(
             `UPDATE "GiftCard"

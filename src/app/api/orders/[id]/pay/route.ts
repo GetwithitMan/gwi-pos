@@ -1441,6 +1441,7 @@ export const POST = withVenue(withTiming(async function POST(
       autoGratApplied,
       autoGratNote,
       isTrainingPayment,
+      giftCardBalanceChanges,
     }
 
     }, { timeout: 30000 })
@@ -1477,6 +1478,7 @@ export const POST = withVenue(withTiming(async function POST(
       autoGratApplied,
       autoGratNote,
       isTrainingPayment,
+      giftCardBalanceChanges,
     } = txResult as any
 
     // R3: TOTAL DRIFT DETECTION — detect if the order total changed between capture and recording.

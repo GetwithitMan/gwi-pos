@@ -608,7 +608,7 @@ export const POST = withVenue(async function POST(
                 paymentMethod: capturedCard.cardType || 'credit',
                 kind: isAutoGratuity ? 'auto_gratuity' : 'tip',
                 error: tipErr instanceof Error ? tipErr.message : String(tipErr),
-                retryParams: tipAllocParams,
+                retryParams: JSON.parse(JSON.stringify(tipAllocParams)),
               },
             },
           })
