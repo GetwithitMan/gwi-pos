@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
+import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('catering')
 
@@ -282,6 +283,8 @@ export const PUT = withVenue(async function PUT(
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
 
+    void emitToLocation(currentOrder.locationId as string, 'orders:list-changed', { trigger: 'mutation', locationId: currentOrder.locationId as string }).catch(err => log.warn({ err }, 'socket emit failed'))
+
     // Fetch updated order
     const updatedOrders = await db.$queryRawUnsafe<Array<Record<string, unknown>>>(
       `SELECT * FROM "CateringOrder" WHERE "id" = $1 LIMIT 1`,
@@ -368,6 +371,8 @@ export const DELETE = withVenue(async function DELETE(
         },
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    void emitToLocation(currentOrder.locationId as string, 'orders:list-changed', { trigger: 'mutation', locationId: currentOrder.locationId as string }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({
       data: {

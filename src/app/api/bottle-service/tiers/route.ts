@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET - List bottle service tiers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -77,6 +78,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sortOrder: sortOrder ?? 0,
       },
     })
+
+    void emitToLocation(locationId, 'settings:updated', { source: 'bottle-service-tier', action: 'created', tierId: tier.id }).catch(console.error)
 
     return NextResponse.json({
       data: {

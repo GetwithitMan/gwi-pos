@@ -9,7 +9,7 @@ import { useDeliveryFeature } from '@/hooks/useDeliveryFeature'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
-import { getSharedSocket } from '@/lib/shared-socket'
+import { getSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 import type { MapOrder, MapDriver, MapZone } from '@/components/delivery/DeliveryMap'
 
 // Dynamic import for Leaflet map (no SSR)
@@ -235,11 +235,14 @@ export default function DispatchPage() {
     }
   }, [dispatchEnabled, loadDispatchData])
 
-  // ─── Auto-refresh fallback (30s) ─────────────────────────────────────
+  // ─── Auto-refresh fallback (30s, only when socket disconnected) ──────
 
   useEffect(() => {
     if (!dispatchEnabled) return
-    const interval = setInterval(loadDispatchData, 30000)
+    const interval = setInterval(() => {
+      if (isSharedSocketConnected()) return
+      loadDispatchData()
+    }, 30000)
     return () => clearInterval(interval)
   }, [dispatchEnabled, loadDispatchData])
 

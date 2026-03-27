@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
+import { emitToLocation } from '@/lib/socket-server'
 
 const BILLING_SOURCE = 'api' as never
 
@@ -213,6 +214,8 @@ export const PUT = withVenue(withAuth('INVENTORY_MANAGE', async function PUT(
       },
     })
 
+    void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
+
     return NextResponse.json({ data: serializeInvoice(invoice) })
   } catch (error) {
     console.error('Update billing invoice error:', error)
@@ -248,6 +251,8 @@ export const DELETE = withVenue(withAuth('INVENTORY_MANAGE', async function DELE
       where: { id },
       data: { status: 'voided' as never },
     })
+
+    void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

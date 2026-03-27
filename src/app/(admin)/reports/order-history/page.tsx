@@ -16,7 +16,7 @@ import { useDataRetention } from '@/hooks/useDataRetention'
 import { Modal } from '@/components/ui/modal'
 import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
 import { toast } from '@/stores/toast-store'
-import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 
 // ── List-level interfaces (unchanged) ──
 
@@ -1041,8 +1041,11 @@ export default function OrderHistoryPage() {
     socket.on('order:closed', debouncedRefresh)
     socket.on('connect', () => loadOrdersRef.current())
 
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => loadOrdersRef.current(), 30_000)
+    // Fallback polling every 30 seconds (only when socket disconnected)
+    const interval = setInterval(() => {
+      if (isSharedSocketConnected()) return
+      loadOrdersRef.current()
+    }, 30_000)
 
     return () => {
       socket.off('orders:list-changed', debouncedRefresh)

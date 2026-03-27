@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useAuthStore } from '@/stores/auth-store'
-import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 import { toast } from '@/stores/toast-store'
 
 interface CellularDevice {
@@ -94,10 +94,13 @@ export default function CellularDevicesPage() {
     fetchDevices()
   }, [fetchDevices])
 
-  // Auto-refresh every 30 seconds
+  // Fallback polling every 30 seconds (only when socket disconnected)
   useEffect(() => {
     if (!locationId) return
-    const interval = setInterval(fetchDevices, 30_000)
+    const interval = setInterval(() => {
+      if (isSharedSocketConnected()) return
+      fetchDevices()
+    }, 30_000)
     return () => clearInterval(interval)
   }, [locationId, fetchDevices])
 

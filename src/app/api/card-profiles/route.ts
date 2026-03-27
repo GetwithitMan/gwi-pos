@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { emitToLocation } from '@/lib/socket-server'
 
 // POST - Recognize or create a card profile after payment
 // Called automatically when a card is used (if card recognition is enabled)
@@ -77,6 +78,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         },
       })
 
+      void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
+
       return NextResponse.json({
         data: {
           isNewCustomer: false,
@@ -110,6 +113,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
         ...(orderCustomerId ? { customerId: orderCustomerId } : {}),
       },
     })
+
+    void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
     return NextResponse.json({
       data: {

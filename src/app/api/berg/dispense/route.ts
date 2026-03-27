@@ -8,6 +8,7 @@ import { getBusinessDateForTimestamp } from '@/lib/business-day'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { createHash } from 'crypto'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('berg-dispense')
 
@@ -271,6 +272,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       },
     })
 
+    void emitToLocation(device.locationId, 'hardware:changed', { locationId: device.locationId }).catch(err => log.warn({ err }, 'socket emit failed'))
+
     // Fire-and-forget: resolve order linkage and auto-ring (3 attempts, 1s apart)
     void (async () => {
       const MAX_ATTEMPTS = 3
@@ -470,6 +473,11 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
   })
 
   void db.bergDevice.update({ where: { id: deviceId }, data: { lastSeenAt: new Date() } }).catch(err => log.warn({ err }, 'Background task failed'))
+
+  void emitToLocation(device.locationId, 'hardware:changed', { locationId: device.locationId }).catch(err => log.warn({ err }, 'socket emit failed'))
+  if (orderItemId) {
+    void emitToLocation(device.locationId, 'orders:list-changed', { trigger: 'mutation', locationId: device.locationId }).catch(err => log.warn({ err }, 'socket emit failed'))
+  }
 
   return NextResponse.json({ action, reason: errorReason || undefined, orderItemId: orderItemId || undefined })
 }))

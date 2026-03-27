@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission, getActorFromRequest } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET - List saved cards for a customer
 export const GET = withVenue(async function GET(
@@ -175,6 +176,8 @@ export const POST = withVenue(async function POST(
       nickname || null, shouldBeDefault
     )
 
+    void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
+
     return NextResponse.json({
       data: {
         id: cardId,
@@ -244,6 +247,8 @@ export const DELETE = withVenue(async function DELETE(
         customerId, locationId
       )
     }
+
+    void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
     return NextResponse.json({ data: { success: true, cardId } })
   } catch (error) {

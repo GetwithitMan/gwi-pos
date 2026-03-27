@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
+import { emitToLocation } from '@/lib/socket-server'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -366,6 +367,8 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
         },
       },
     })
+
+    void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
     return NextResponse.json({ data: serializeInvoice(invoice) }, { status: 201 })
   } catch (error) {

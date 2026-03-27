@@ -4,6 +4,7 @@ import { getActorFromRequest } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings, DEFAULT_CATERING } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
+import { emitToLocation } from '@/lib/socket-server'
 import { createChildLogger } from '@/lib/logger'
 const log = createChildLogger('catering')
 
@@ -292,6 +293,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     }).catch(err => log.warn({ err }, 'Background task failed'))
+
+    void emitToLocation(locationId, 'orders:list-changed', { trigger: 'mutation', locationId }).catch(err => log.warn({ err }, 'socket emit failed'))
 
     return NextResponse.json({
       data: {

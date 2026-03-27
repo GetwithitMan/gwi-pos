@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 
 interface AllDayCountItem {
   name: string
@@ -41,12 +42,29 @@ export function KDSAllDayCounts({ locationId, resetHour = 4, enabled = true }: K
     }
   }, [locationId, resetHour])
 
-  // Initial fetch + 60s polling
+  // Socket-driven refresh
+  useEffect(() => {
+    if (!enabled) return
+    const socket = getSharedSocket()
+
+    const handleRefresh = () => { fetchCounts() }
+    socket.on('orders:list-changed', handleRefresh)
+
+    return () => {
+      socket.off('orders:list-changed', handleRefresh)
+      releaseSharedSocket()
+    }
+  }, [enabled, fetchCounts])
+
+  // Initial fetch + 60s fallback polling (only when socket disconnected)
   useEffect(() => {
     if (!enabled) return
 
     fetchCounts()
-    intervalRef.current = setInterval(fetchCounts, 60_000)
+    intervalRef.current = setInterval(() => {
+      if (isSharedSocketConnected()) return
+      fetchCounts()
+    }, 60_000)
 
     return () => {
       if (intervalRef.current) {

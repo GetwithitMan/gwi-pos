@@ -4,6 +4,7 @@ import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { emitToLocation } from '@/lib/socket-server'
 
 // GET - Get a single bottle service tier
 export const GET = withVenue(async function GET(
@@ -104,6 +105,8 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
+    void emitToLocation(locationId, 'settings:updated', { source: 'bottle-service-tier', action: 'updated', tierId: id }).catch(console.error)
+
     return NextResponse.json({
       data: {
         id: tier.id,
@@ -168,6 +171,8 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { deletedAt: new Date() },
     })
+
+    void emitToLocation(locationId, 'settings:updated', { source: 'bottle-service-tier', action: 'deleted', tierId: id }).catch(console.error)
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { useReportAutoRefresh } from '@/hooks/useReportAutoRefresh'
+import { getSharedSocket, releaseSharedSocket, isSharedSocketConnected } from '@/lib/shared-socket'
 
 interface Deduction {
   id: string
@@ -77,9 +78,23 @@ export default function DeductionQueuePage() {
     fetchData()
   }, [fetchData])
 
-  // Auto-refresh every 30 seconds (fallback — kept alongside socket-driven refresh)
+  // Socket-driven refresh for inventory changes
   useEffect(() => {
-    const interval = setInterval(fetchData, 30000)
+    const socket = getSharedSocket()
+    const handleRefresh = () => { fetchData() }
+    socket.on('inventory:changed', handleRefresh)
+    return () => {
+      socket.off('inventory:changed', handleRefresh)
+      releaseSharedSocket()
+    }
+  }, [fetchData])
+
+  // Fallback polling every 30 seconds (only when socket disconnected)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (isSharedSocketConnected()) return
+      fetchData()
+    }, 30000)
     return () => clearInterval(interval)
   }, [fetchData])
 

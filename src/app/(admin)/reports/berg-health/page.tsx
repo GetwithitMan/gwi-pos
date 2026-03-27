@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
@@ -44,7 +44,6 @@ export default function BergHealthPage() {
   const [endDate, setEndDate] = useState(today)
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<BergHealthReportResponse | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const runReport = useCallback(async () => {
     if (!locationId || !employee?.id) return
@@ -62,16 +61,6 @@ export default function BergHealthPage() {
   }, [locationId, employee?.id, startDate, endDate])
 
   useReportAutoRefresh({ onRefresh: runReport })
-
-  // Auto-refresh every 60 seconds (fallback — kept alongside socket-driven refresh)
-  useEffect(() => {
-    if (report) {
-      intervalRef.current = setInterval(runReport, 60_000)
-    }
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [report, runReport])
 
   const dateClass = 'border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900'
 

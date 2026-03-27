@@ -16,6 +16,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { withVenue } from '@/lib/with-venue'
 import { createRateLimiter } from '@/lib/rate-limiter'
+import { emitToLocation } from '@/lib/socket-server'
 
 // 5 SMS per manager phone per 15 minutes
 const smsLimiter = createRateLimiter({ maxAttempts: 5, windowMs: 15 * 60 * 1000 })
@@ -205,6 +206,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } else {
       console.warn('[RemoteVoidApproval] Twilio not configured, SMS not sent')
     }
+
+    void emitToLocation(locationId, 'orders:list-changed', { trigger: 'mutation', locationId }).catch(console.error)
 
     const managerName =
       manager.displayName || `${manager.firstName} ${manager.lastName}`

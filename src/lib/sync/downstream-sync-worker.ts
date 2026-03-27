@@ -1347,7 +1347,158 @@ function initDownstreamNotifications(): void {
     errorPolicy: 'skip',
   })
 
-  log.info('Notification pipeline initialized (11 handlers)')
+  // 12. Inventory change dispatch — terminals refresh inventory/stock caches
+  registerDownstreamHandler({
+    name: 'inventory-change-dispatch',
+    models: ['InventoryItem', 'InventoryItemStorage', 'Ingredient', 'IngredientCategory', 'Vendor', 'ModifierInventoryLink', 'PrepStation', 'PrepTrayConfig', 'StorageLocation', 'PrepItem', 'PrepItemIngredient', 'PricingOptionInventoryLink'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'inventory:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 13. Pizza config change dispatch — pizza is part of menu, terminals refresh menu caches
+  registerDownstreamHandler({
+    name: 'pizza-change-dispatch',
+    models: ['PizzaConfig', 'PizzaSize', 'PizzaCrust', 'PizzaSauce', 'PizzaCheese', 'PizzaTopping', 'PizzaSpecialty'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { dispatchMenuUpdate } = await import('../socket-dispatch')
+      await dispatchMenuUpdate(locationId, {
+        action: 'updated',
+        menuItemId: undefined,
+        name: undefined,
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 14. Reservation change dispatch — terminals refresh reservation views
+  registerDownstreamHandler({
+    name: 'reservation-change-dispatch',
+    models: ['Reservation', 'Seat', 'ReservationBlock', 'ReservationDeposit', 'ReservationEvent'],
+    handler: async (_tableName, row, locationId) => {
+      if (!locationId) return
+      const { dispatchReservationChanged } = await import('../socket-dispatch')
+      await dispatchReservationChanged(locationId, {
+        reservationId: (row.id as string) || '',
+        action: 'updated',
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 15. Payments/financial change dispatch — terminals refresh order lists
+  registerDownstreamHandler({
+    name: 'payment-financial-dispatch',
+    models: ['OrderDiscount', 'OrderCard', 'OrderItemModifier', 'Payment'],
+    handler: async (tableName, row, locationId) => {
+      if (!locationId) return
+      const { dispatchOpenOrdersChanged } = await import('../socket-dispatch')
+      await dispatchOpenOrdersChanged(locationId, {
+        trigger: tableName === 'Payment' ? 'payment_updated' : 'item_updated',
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 16. Tips/payroll change dispatch — terminals refresh tip pools and payroll data
+  registerDownstreamHandler({
+    name: 'tips-change-dispatch',
+    models: ['TipOutRule', 'TipPool', 'TipGroupTemplate', 'PayrollPeriod', 'PayStub'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'tips:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 17. Events/ticketing change dispatch — terminals refresh event views
+  registerDownstreamHandler({
+    name: 'events-change-dispatch',
+    models: ['Event', 'EventPricingTier', 'EventTableConfig'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'events:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 18. Liquor/bottle service change dispatch — part of menu, terminals refresh menu caches
+  registerDownstreamHandler({
+    name: 'liquor-change-dispatch',
+    models: ['BottleProduct', 'SpiritCategory', 'SpiritModifierGroup', 'BottleServiceTier'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { dispatchMenuUpdate } = await import('../socket-dispatch')
+      await dispatchMenuUpdate(locationId, {
+        action: 'updated',
+        menuItemId: undefined,
+        name: undefined,
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 19. Entertainment/waitlist/prep change dispatch — terminals refresh entertainment status
+  registerDownstreamHandler({
+    name: 'entertainment-change-dispatch',
+    models: ['EntertainmentWaitlist', 'DailyPrepCount', 'DailyPrepCountItem'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'entertainment:status-changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 20. Recipe change dispatch — part of menu, terminals refresh menu caches
+  registerDownstreamHandler({
+    name: 'recipe-change-dispatch',
+    models: ['MenuItemRecipe', 'RecipeIngredient'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { dispatchMenuUpdate } = await import('../socket-dispatch')
+      await dispatchMenuUpdate(locationId, {
+        action: 'updated',
+        menuItemId: undefined,
+        name: undefined,
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 21. Chargeback/misc change dispatch — terminals refresh order lists
+  registerDownstreamHandler({
+    name: 'chargeback-misc-dispatch',
+    models: ['ChargebackCase', 'ShiftSwapRequest'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { dispatchOpenOrdersChanged } = await import('../socket-dispatch')
+      await dispatchOpenOrdersChanged(locationId, {
+        trigger: 'item_updated',
+      })
+    },
+    errorPolicy: 'skip',
+  })
+
+  // 22. Loyalty program change dispatch — terminals refresh customer/loyalty caches
+  registerDownstreamHandler({
+    name: 'loyalty-change-dispatch',
+    models: ['LoyaltyProgram', 'LoyaltyTier'],
+    handler: async (_tableName, _row, locationId) => {
+      if (!locationId) return
+      const { emitToLocation } = await import('../socket-server')
+      await emitToLocation(locationId, 'customers:changed', { action: 'updated' })
+    },
+    errorPolicy: 'skip',
+  })
+
+  log.info('Notification pipeline initialized (22 handlers)')
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

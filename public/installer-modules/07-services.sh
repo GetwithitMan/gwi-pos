@@ -665,6 +665,13 @@ _disk_pct=$(df -h /opt 2>/dev/null | tail -1 | awk '{print $5}' || echo "unknown
 _journal_raw=$(journalctl -u thepasspos --no-pager -n 5 2>/dev/null || echo "unavailable")
 _journal=$(json_escape "$_journal_raw")
 
+# Contract health
+_contract_hash="unknown"
+_contract_match="unknown"
+if [[ -f /opt/gwi-pos/app/public/version-contract.json ]]; then
+  _contract_hash=$(python3 -c "import json; print(json.load(open('/opt/gwi-pos/app/public/version-contract.json')).get('schemaSha256','unknown'))" 2>/dev/null || echo "unknown")
+fi
+
 # State file checks
 _first_boot_done="false"
 [[ -f /opt/gwi-pos/.first-boot-done ]] && _first_boot_done="true"
@@ -708,6 +715,8 @@ printf '  "journal": "%s",\n' "$_journal" >> "$OUT"
 printf '  "firstBootDone": %s,\n' "$_first_boot_done" >> "$OUT"
 printf '  "envExists": %s,\n' "$_env_exists" >> "$OUT"
 printf '  "envReadable": %s,\n' "$_env_readable" >> "$OUT"
+printf '  "contractHash": "%s",\n' "$_contract_hash" >> "$OUT"
+printf '  "contractMatch": "%s",\n' "$_contract_match" >> "$OUT"
 # Overall boot health verdict
 _boot_healthy="false"
 [[ "$_pos_status" == "active" && "$_failed_units_raw" == "," ]] && _boot_healthy="true"

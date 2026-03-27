@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { withAuth } from '@/lib/api-auth-middleware'
+import { emitToLocation } from '@/lib/socket-server'
 
 // POST - Link a CardProfile to a Customer record
 // Used when staff manually associates a recognized card with a customer profile
@@ -51,6 +52,8 @@ export const POST = withVenue(withAuth(async function POST(request: NextRequest)
       where: { id: cardProfileId },
       data: { customerId },
     })
+
+    void emitToLocation(locationId, 'customers:changed', { locationId }).catch(console.error)
 
     return NextResponse.json({
       data: {

@@ -5,6 +5,7 @@ import { withAuth, type AuthenticatedContext } from '@/lib/api-auth-middleware'
 import { sendEmail } from '@/lib/email-service'
 import { generateInvoiceHTML } from '@/lib/invoice-generator'
 import { mergeWithDefaults, DEFAULT_INVOICING } from '@/lib/settings'
+import { emitToLocation } from '@/lib/socket-server'
 
 const BILLING_SOURCE = 'api' as never
 
@@ -105,6 +106,8 @@ export const POST = withVenue(withAuth('INVENTORY_MANAGE', async function POST(
         deliveryDate: new Date(), // repurposed as sentAt
       },
     })
+
+    void emitToLocation(locationId, 'invoices:changed', { locationId }).catch(console.error)
 
     return NextResponse.json({
       data: {

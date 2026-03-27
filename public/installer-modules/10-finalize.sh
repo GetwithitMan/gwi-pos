@@ -221,6 +221,12 @@ run_finalize() {
     _dashboard_version="\"$(dpkg-query -W -f='${Version}' gwi-nuc-dashboard 2>/dev/null || echo "unknown")\""
   fi
 
+  # Contract hash (from version-contract.json if available)
+  local _contract_hash="unknown"
+  if [[ -f "$APP_DIR/public/version-contract.json" ]]; then
+    _contract_hash=$(python3 -c "import json; print(json.load(open('$APP_DIR/public/version-contract.json')).get('schemaSha256','unknown'))" 2>/dev/null || echo "unknown")
+  fi
+
   # Build stage results from state files if available
   local _stages_json="{}"
   if [[ -f "$APP_BASE/state/stage11-result.json" ]]; then
@@ -248,6 +254,7 @@ run_finalize() {
   "stages": ${_stages_json},
   "warnings": ${_warnings_json},
   "warningsCount": ${#INSTALL_WARNINGS[@]},
+  "contractHash": "${_contract_hash}",
   "schemaVersion": "${SCHEMA_VERSION:-unknown}",
   "posVersion": "${_pos_version}",
   "nodeVersion": "${_node_version}",
