@@ -201,6 +201,7 @@ const settingsSections: SettingsSection[] = [
       { name: 'Sales', href: '/settings/reports/sales' },
       { name: 'Product Mix', href: '/settings/reports/product-mix' },
       { name: 'Order History', href: '/settings/reports/order-history' },
+      { name: 'Closed Orders', href: '/settings/orders/closed' },
       { name: 'Tips', href: '/settings/reports/tips' },
       { name: 'Employee Reports', href: '/settings/reports/employees' },
       { name: 'Voids & Comps', href: '/settings/reports/voids' },
@@ -230,6 +231,13 @@ const settingsSections: SettingsSection[] = [
       { name: 'Schedule Compliance', href: '/reports/schedule-compliance' },
       { name: 'Walkout Retries', href: '/reports/walkout-retries' },
       { name: 'DataCap', href: '/reports/datacap' },
+      { name: 'Berg Variance', href: '/reports/berg-variance' },
+      { name: 'Berg Comparison', href: '/reports/berg-comparison' },
+      { name: 'Berg Dispense', href: '/reports/berg-dispense' },
+      { name: 'Berg Employee', href: '/reports/berg-employee' },
+      { name: 'Berg Health', href: '/reports/berg-health' },
+      { name: 'Berg Mapping', href: '/reports/berg-mapping-coverage' },
+      { name: 'Berg Unmatched', href: '/reports/berg-unmatched' },
     ],
   },
   {
@@ -320,7 +328,7 @@ const deliverySection: SettingsSection = {
 const cakeSection: SettingsSection = {
   title: 'Cake Orders',
   icon: '🎂',
-  permission: 'cake.view',
+  permission: PERMISSIONS.CAKE_VIEW,
   items: [
     { name: 'Orders', href: '/settings/cake-orders' },
     { name: 'Production', href: '/settings/cake-orders/production' },
@@ -333,7 +341,7 @@ const cakeSection: SettingsSection = {
 const cakeConfigOnlySection: SettingsSection = {
   title: 'Cake Orders',
   icon: '🎂',
-  permission: 'cake.settings',
+  permission: PERMISSIONS.CAKE_SETTINGS,
   items: [
     { name: 'Cake Settings', href: '/settings/cake-orders/config' },
   ],

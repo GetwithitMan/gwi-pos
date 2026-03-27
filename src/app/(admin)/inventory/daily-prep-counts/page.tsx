@@ -421,7 +421,7 @@ export default function DailyPrepCountsPage() {
                   <p>
                     No prep items are set up for daily counting.
                     <button
-                      onClick={() => router.push('/settings/daily-counts')}
+                      onClick={() => router.push('/settings/inventory/daily-prep-counts')}
                       className="ml-1 underline font-medium"
                     >
                       Go to Settings
