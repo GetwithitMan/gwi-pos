@@ -93,7 +93,7 @@ run_dashboard() {
 
     # Method 1: Download from POS Vercel deployment (no auth needed)
     log "Downloading NUC Dashboard..."
-    curl -sfL "${POS_BASE_URL:-https://app.thepasspos.com}/gwi-nuc-dashboard.deb" \
+    curl -sfL "${POS_BASE_URL:-https://ordercontrolcenter.com}/gwi-nuc-dashboard.deb" \
       -o "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
 
     # Method 2: If Vercel download failed, try GitHub releases with deploy token

@@ -228,9 +228,31 @@
   register: _gnome_dconf_override
   when: gwi_desktop_env == 'gnome'
 
+- name: "GNOME — Ensure dconf locks directory exists"
+  ansible.builtin.file:
+    path: /etc/dconf/db/gwi-pos.d/locks
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: gwi_desktop_env == 'gnome'
+
+- name: "GNOME — Lock hardening settings (prevent user override)"
+  ansible.builtin.copy:
+    dest: /etc/dconf/db/gwi-pos.d/locks/00-gwi-pos-hardening
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      /org/gnome/desktop/session/idle-delay
+      /org/gnome/desktop/screensaver/lock-enabled
+      /org/gnome/desktop/notifications/show-banners
+  register: _gnome_dconf_locks
+  when: gwi_desktop_env == 'gnome'
+
 - name: "GNOME — Update dconf database"
   ansible.builtin.command: dconf update
-  changed_when: _gnome_dconf_override is changed
+  changed_when: _gnome_dconf_override is changed or _gnome_dconf_locks is changed
   when:
     - gwi_desktop_env == 'gnome'
-    - _gnome_dconf_override is changed
+    - _gnome_dconf_override is changed or _gnome_dconf_locks is changed
