@@ -96,6 +96,9 @@ cp -r "$REPO_DIR/.next/standalone/." "$STAGING/"
 # NUCs don't need docs, tests, configs, IDE files, etc.
 echo "    removing non-runtime files from standalone..."
 rm -rf \
+    "$STAGING/.git" \
+    "$STAGING/.github" \
+    "$STAGING/.gitignore" \
     "$STAGING/docs" \
     "$STAGING/docker" \
     "$STAGING/playwright-report" \
@@ -117,6 +120,12 @@ rm -rf \
     "$STAGING/ecosystem.config.js" \
     "$STAGING/package-lock.json" \
     2>/dev/null || true
+
+# Aggressive cleanup: remove test files, markdown, .git dirs from node_modules
+echo "    pruning node_modules bloat..."
+find "$STAGING/node_modules" -type d \( -name "test" -o -name "tests" -o -name "__tests__" -o -name ".git" \) -exec rm -rf {} + 2>/dev/null || true
+find "$STAGING/node_modules" -type f \( -name "*.test.js" -o -name "*.spec.js" -o -name "*.test.ts" -o -name "CHANGELOG*" \) -delete 2>/dev/null || true
+find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 
 # .next/static/ -> staging/.next/static/ (browser assets)
 echo "    static assets..."
@@ -188,11 +197,8 @@ cat > "$PRISMA_BUNDLE_DIR/package.json" << PKGJSON
 }
 PKGJSON
 
-(cd "$PRISMA_BUNDLE_DIR" && npm install --no-audit --no-fund --ignore-scripts 2>&1 | tail -3)
-
-# Run prisma postinstall to download engines (schema-engine, etc.)
-echo "    Running Prisma postinstall (engine download)..."
-(cd "$PRISMA_BUNDLE_DIR" && node node_modules/prisma/scripts/postinstall.js 2>&1 | tail -3) || true
+# Do NOT use --ignore-scripts — Prisma needs postinstall to download engines
+(cd "$PRISMA_BUNDLE_DIR" && npm install --no-audit --no-fund 2>&1 | tail -5)
 
 # Validate the installed CLI works — two checks:
 # 1. --version: proves the CLI loads and its core deps resolve
@@ -333,6 +339,12 @@ if command -v zstd &>/dev/null; then
 else
     echo "    WARNING: zstd not available, falling back to gzip..."
     COPYFILE_DISABLE=1 tar czf "$ARTIFACT_PATH" -C "$STAGING" .
+fi
+
+# Verify artifact exists and is not empty
+if [ ! -f "$ARTIFACT_PATH" ] || [ ! -s "$ARTIFACT_PATH" ]; then
+    echo "FATAL: Artifact file is missing or empty after compression" >&2
+    exit 1
 fi
 
 ARTIFACT_SIZE=$(wc -c < "$ARTIFACT_PATH" | tr -d ' ')
