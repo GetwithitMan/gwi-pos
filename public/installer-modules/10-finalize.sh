@@ -370,15 +370,16 @@ _run_verification() {
   # ── 4. PostgreSQL ──────────────────────────────────────────────────────────
   if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
     local pg_ver
-    pg_ver=$(psql --version 2>/dev/null | head -1 | grep -oP '\d+(\.\d+)?' || echo "MISSING")
+    pg_ver=$(psql --version 2>/dev/null | head -1 | sed -n 's/.*[[:space:]]\([0-9][0-9]*\.[0-9][0-9.]*\).*/\1/p' || echo "MISSING")
+    if [[ -z "$pg_ver" ]]; then pg_ver="MISSING"; fi
     if [[ "$pg_ver" == "MISSING" ]]; then
       _record "PostgreSQL" "15+" "$pg_ver" "MISSING"
     else
       local pg_connected="no"
       pg_isready -q 2>/dev/null && pg_connected="yes"
       local pg_major
-      pg_major=$(echo "$pg_ver" | cut -d. -f1)
-      if [[ "$pg_connected" == "yes" && "$pg_major" -ge 15 ]]; then
+      pg_major=$(echo "$pg_ver" | cut -d. -f1 | tr -dc '0-9')
+      if [[ -n "$pg_major" ]] && [[ "$pg_connected" == "yes" ]] && [[ "$pg_major" -ge 15 ]]; then
         _record "PostgreSQL" "15+" "$pg_ver" "PASS" "connected"
       elif [[ "$pg_connected" == "yes" ]]; then
         _record "PostgreSQL" "15+" "$pg_ver" "OUTDATED" "connected but old"
@@ -572,22 +573,27 @@ _run_verification() {
     _record "Schema Version" "$expected_schema" "$actual_schema" "OUTDATED"
   fi
 
-  # ── 20. Git Repo ──────────────────────────────────────────────────────────
-  if [[ -d "$APP_DIR/.git" ]]; then
+  # ── 20. App Deployment (artifact or git) ──────────────────────────────────
+  if [[ -L "/opt/gwi-pos/current" ]]; then
+    # Artifact-based deployment — no git repo needed
+    local release_id
+    release_id=$(basename "$(readlink -f /opt/gwi-pos/current 2>/dev/null)" 2>/dev/null || echo "UNKNOWN")
+    _record "App Deploy" "artifact" "$release_id" "PASS" "artifact-based"
+  elif [[ -d "$APP_DIR/.git" ]]; then
     local git_sha
     git_sha=$(cd "$APP_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "UNKNOWN")
     local git_branch
     git_branch=$(cd "$APP_DIR" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "UNKNOWN")
-    _record "Git Repo" "cloned" "${git_branch}@${git_sha}" "PASS"
+    _record "App Deploy" "cloned" "${git_branch}@${git_sha}" "PASS" "legacy git"
   else
-    _record "Git Repo" "cloned" "MISSING" "MISSING"
+    _record "App Deploy" "deployed" "MISSING" "MISSING"
   fi
 
   # ── 21. Prisma Client ─────────────────────────────────────────────────────
-  if [[ -d "$APP_DIR/node_modules/.prisma/client" ]] || [[ -d "$APP_DIR/generated/prisma/client" ]]; then
-    _record "Prisma Client" "generated" "generated" "PASS"
+  if [[ -d "$APP_DIR/src/generated/prisma" ]] || [[ -d "$APP_DIR/node_modules/.prisma/client" ]] || [[ -d "$APP_DIR/generated/prisma/client" ]]; then
+    _record "Prisma Client" "bundled" "bundled" "PASS"
   else
-    _record "Prisma Client" "generated" "MISSING" "MISSING"
+    _record "Prisma Client" "bundled" "MISSING" "MISSING"
   fi
 
   # ── 22. Next.js Build ─────────────────────────────────────────────────────
