@@ -60,6 +60,10 @@ gwi_mc_url: "https://app.thepasspos.com"
 gwi_server_node_id: ""
 gwi_server_api_key: ""
 
+# ── AppArmor mode ("complain" = log only, "enforce" = block violations) ─────
+# Start with complain on initial rollout, switch to enforce after validation
+gwi_apparmor_mode: "complain"
+
 # ── Hardware detection facts (set in pre_tasks) ─────────────────────────────
 gwi_has_touchscreen: false
 gwi_has_printer: false

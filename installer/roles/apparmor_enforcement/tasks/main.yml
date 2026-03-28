@@ -1,0 +1,64 @@
+---
+# =============================================================================
+# apparmor_enforcement — AppArmor MAC profile for GWI POS Node.js process
+# =============================================================================
+# Installs and configures AppArmor with a dedicated profile for the POS
+# application. Starts in complain mode (log-only) and can be promoted to
+# enforce mode after validation.
+# =============================================================================
+
+# -- Ensure AppArmor packages are installed ----------------------------------
+- name: Install AppArmor packages
+  ansible.builtin.apt:
+    name:
+      - apparmor
+      - apparmor-utils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  tags: ['apparmor']
+
+# -- Ensure AppArmor service is enabled and running --------------------------
+- name: Enable and start AppArmor service
+  ansible.builtin.systemd:
+    name: apparmor
+    enabled: true
+    state: started
+  tags: ['apparmor']
+
+# -- Deploy POS AppArmor profile --------------------------------------------
+- name: Deploy GWI POS AppArmor profile
+  ansible.builtin.template:
+    src: opt.gwi-pos.j2
+    dest: /etc/apparmor.d/opt.gwi-pos
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload AppArmor profiles
+  tags: ['apparmor']
+
+# -- Flush handlers so profile is loaded before setting mode -----------------
+- name: Flush handlers before setting profile mode
+  ansible.builtin.meta: flush_handlers
+  tags: ['apparmor']
+
+# -- Set profile mode (complain or enforce) ----------------------------------
+- name: Set AppArmor profile to complain mode
+  ansible.builtin.command: aa-complain /etc/apparmor.d/opt.gwi-pos
+  when: gwi_apparmor_mode == "complain"
+  changed_when: true
+  tags: ['apparmor']
+
+- name: Set AppArmor profile to enforce mode
+  ansible.builtin.command: aa-enforce /etc/apparmor.d/opt.gwi-pos
+  when: gwi_apparmor_mode == "enforce"
+  changed_when: true
+  tags: ['apparmor']
+
+# -- Reload AppArmor to apply final state ------------------------------------
+- name: Reload AppArmor service
+  ansible.builtin.systemd:
+    name: apparmor
+    state: reloaded
+  tags: ['apparmor']

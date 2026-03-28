@@ -61,6 +61,7 @@ SERVER_NODE_ID=""
 SERVER_API_KEY=""
 VIRTUAL_IP=""
 HA_IFACE=""
+REPL_PASSWORD=""
 
 while IFS= read -r line; do
   [[ -z "$line" ]] && continue
@@ -78,6 +79,7 @@ while IFS= read -r line; do
     SERVER_API_KEY)      SERVER_API_KEY="$val" ;;
     VIRTUAL_IP)          VIRTUAL_IP="$val" ;;
     HA_IFACE)            HA_IFACE="$val" ;;
+    REPL_PASSWORD)       REPL_PASSWORD="$val" ;;
   esac
 done < "$ENV_FILE"
 
@@ -209,23 +211,68 @@ if ! timeout "$BASEBACKUP_TIMEOUT" sudo -u postgres pg_basebackup \
   -R \
   --checkpoint=fast \
   --wal-method=stream \
+  --slot=standby_slot \
   2>&1 | tee -a "$LOG_FILE"; then
-  die "pg_basebackup failed — check network, replication user, and pg_hba.conf on primary"
+
+  # ── Diagnose pg_basebackup failure ──
+  log "ERROR: pg_basebackup failed. Running diagnostics..."
+
+  # Check 1: Is the primary reachable at all?
+  if ! ping -c 1 -W 3 "$CURRENT_PRIMARY_IP" >/dev/null 2>&1; then
+    log "  DIAG: Primary $CURRENT_PRIMARY_IP is NOT reachable (ping failed)"
+  else
+    log "  DIAG: Primary $CURRENT_PRIMARY_IP is reachable (ping OK)"
+  fi
+
+  # Check 2: Is PostgreSQL accepting connections on the primary?
+  if ! pg_isready -h "$CURRENT_PRIMARY_IP" -p 5432 -t 5 >/dev/null 2>&1; then
+    log "  DIAG: PostgreSQL on $CURRENT_PRIMARY_IP is NOT accepting connections"
+  else
+    log "  DIAG: PostgreSQL on $CURRENT_PRIMARY_IP is accepting connections"
+  fi
+
+  # Check 3: Can the replication user authenticate?
+  if ! PGPASSWORD="${REPL_PASSWORD:-}" psql -h "$CURRENT_PRIMARY_IP" -U "$PG_REPLICATION_USER" -d postgres -c "SELECT 1" >/dev/null 2>&1; then
+    log "  DIAG: Replication user '$PG_REPLICATION_USER' cannot authenticate on primary"
+    log "  DIAG: Check REPL_PASSWORD in .env matches primary's REPL_PASSWORD"
+  else
+    log "  DIAG: Replication user authentication OK"
+  fi
+
+  # Check 4: Is the replication slot available?
+  SLOT_EXISTS=$(PGPASSWORD="${REPL_PASSWORD:-}" psql -h "$CURRENT_PRIMARY_IP" -U "$PG_REPLICATION_USER" -d postgres -tAc \
+    "SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'standby_slot'" 2>/dev/null || echo "unknown")
+  log "  DIAG: Replication slot 'standby_slot' on primary: ${SLOT_EXISTS} (1=exists, 0=missing)"
+
+  # Check 5: Is wal_level set to replica on primary?
+  WAL_LEVEL=$(PGPASSWORD="${REPL_PASSWORD:-}" psql -h "$CURRENT_PRIMARY_IP" -U "$PG_REPLICATION_USER" -d postgres -tAc \
+    "SHOW wal_level" 2>/dev/null || echo "unknown")
+  log "  DIAG: Primary wal_level = $WAL_LEVEL (must be 'replica' or 'logical')"
+
+  # Write failure state for heartbeat
+  STATE_DIR="/opt/gwi-pos/state"
+  mkdir -p "$STATE_DIR"
+  cat > "$STATE_DIR/replication-status.json" <<EOJSON
+{"role":"backup","inRecovery":false,"rejoinStatus":"failed","rejoinError":"pg_basebackup_failed","primaryIp":"$CURRENT_PRIMARY_IP","checkedAt":"$(date -u +%FT%TZ)"}
+EOJSON
+
+  die "pg_basebackup failed — see diagnostics above"
 fi
 
 log "pg_basebackup completed"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Step F: Create standby.signal
+# Step F: Verify standby.signal
 # ─────────────────────────────────────────────────────────────────────────────
 
 # pg_basebackup -R creates standby.signal + postgresql.auto.conf, but verify
 if [[ ! -f "$PG_DATA/standby.signal" ]]; then
-  log "Creating standby.signal..."
+  log "WARN: standby.signal missing after pg_basebackup -R — creating it manually"
   touch "$PG_DATA/standby.signal"
+  chown postgres:postgres "$PG_DATA/standby.signal"
 fi
 
-log "standby.signal present"
+log "standby.signal present at $PG_DATA/standby.signal"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step G: Verify/configure primary_conninfo
@@ -280,10 +327,15 @@ fi
 
 log "Verifying replication streaming..."
 
-# Check that PG is in recovery mode (standby)
+# Check that PG is in recovery mode (standby) — this is the critical gate
 IN_RECOVERY=$(sudo -u postgres psql -tAc "SELECT pg_is_in_recovery()" 2>/dev/null || echo "unknown")
-if [[ "$IN_RECOVERY" != "t" ]]; then
-  log "WARN: PostgreSQL is NOT in recovery mode (got: $IN_RECOVERY) — standby setup may have failed"
+if [[ "$IN_RECOVERY" == "t" ]]; then
+  log "pg_is_in_recovery() = true — PostgreSQL is in standby mode"
+else
+  log "ERROR: pg_is_in_recovery() = $IN_RECOVERY — PostgreSQL is NOT in recovery mode"
+  log "The standby setup failed. standby.signal may be missing or primary_conninfo wrong."
+  log "Check: ls -la $PG_DATA/standby.signal"
+  log "Check: grep primary_conninfo $PG_DATA/postgresql.auto.conf"
 fi
 
 # Check WAL receiver status (may take a few seconds to connect)
@@ -299,6 +351,22 @@ else
   log "WARN: WAL receiver status is '$WAL_STATUS' — replication may not be established"
   log "Check primary's pg_hba.conf allows replication from this node"
 fi
+
+# Check replication lag
+LAG_BYTES=$(sudo -u postgres psql -tAc "SELECT COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()), -1)" 2>/dev/null || echo "-1")
+if [[ "$LAG_BYTES" != "-1" ]]; then
+  log "Replication lag: ${LAG_BYTES} bytes"
+fi
+
+# Write replication status to heartbeat state file
+STATE_DIR="/opt/gwi-pos/state"
+mkdir -p "$STATE_DIR"
+REPL_OK=$( [[ "$IN_RECOVERY" == "t" ]] && echo "true" || echo "false" )
+LAST_RECEIVE_LSN=$(sudo -u postgres psql -tAc "SELECT COALESCE(pg_last_wal_receive_lsn()::text, 'none')" 2>/dev/null || echo "none")
+cat > "$STATE_DIR/replication-status.json" <<EOJSON
+{"role":"backup","inRecovery":$REPL_OK,"rejoinStatus":"completed","walStatus":"$WAL_STATUS","lagBytes":${LAG_BYTES},"lastReceiveLsn":"$LAST_RECEIVE_LSN","primaryIp":"$CURRENT_PRIMARY_IP","checkedAt":"$(date -u +%FT%TZ)"}
+EOJSON
+log "Replication status written to $STATE_DIR/replication-status.json"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Step K: Update .env to reflect standby role

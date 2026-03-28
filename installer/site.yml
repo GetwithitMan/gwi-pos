@@ -392,6 +392,10 @@
     - role: app_services
       tags: [app, services]
 
+    # Start in complain mode, promote to enforce after 2 weeks of clean logs
+    - role: apparmor_enforcement
+      tags: [app, apparmor]
+
     - role: db_verify
       tags: [app, database, verify]
 
@@ -424,6 +428,7 @@
           - reboot_manager
           - app_deploy
           - app_services
+          - apparmor_enforcement
           - db_verify
 
     # ── Write baseline-applied.json ────────────────────────────────────────

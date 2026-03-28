@@ -2,17 +2,20 @@
  * Internal HA Fence API (STONITH-lite)
  *
  * Called by the NEW primary's promote.sh to tell the OLD primary to step down.
- * Sets STATION_ROLE=fenced so that proxy.ts rejects all write requests,
- * preventing split-brain.
+ * Persists fence state to disk so it survives process restarts.
  *
  * POST /api/internal/ha-fence
- * Body: { action: "step_down", newPrimary: string }
+ * Body: { action: "step_down", newPrimary: string, fenceCommandId?: string, reason?: string }
+ * Body: { action: "unfence" }
+ *
+ * GET /api/internal/ha-fence — returns current fence status
  *
  * Auth: INTERNAL_API_SECRET or HA_SHARED_SECRET (bearer token)
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { err, ok, unauthorized } from '@/lib/api-response'
+import { fence, unfence, isFenced, getFenceState } from '@/lib/ha-fence'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,17 +43,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (body.action === 'step_down') {
       console.error('[HA-FENCE] Received step-down request from new primary:', body.newPrimary)
 
-      // Set a flag that prevents this node from accepting writes.
-      // proxy.ts checks this on every non-GET/HEAD request.
-      process.env.STATION_ROLE = 'fenced'
+      // Persist fence to disk (survives restart) + set in-memory
+      fence({
+        by: body.fenceCommandId || body.newPrimary || 'unknown',
+        reason: body.reason || 'MC-arbitrated failover: standby promoted',
+      })
 
-      console.error('[HA-FENCE] Node is now FENCED. No writes will be accepted.')
-      return ok({ status: 'stepped_down' })
+      console.error('[HA-FENCE] Node is now FENCED (persistent). No writes will be accepted.')
+      return ok({ status: 'stepped_down', persistent: true })
+    }
+
+    if (body.action === 'unfence') {
+      console.error('[HA-FENCE] Received unfence request')
+
+      unfence()
+
+      const restoredRole = process.env.STATION_ROLE || 'backup'
+      console.error('[HA-FENCE] Node is now UNFENCED. Restored role:', restoredRole)
+      return ok({ status: 'unfenced', restoredRole })
     }
 
     return err('Unknown action')
   } catch (caughtErr) {
-    console.error('[HA-FENCE] POST error:', err)
+    console.error('[HA-FENCE] POST error:', caughtErr)
     return err('Internal error', 500)
   }
 }
@@ -60,8 +75,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return unauthorized('Unauthorized')
   }
 
+  const fenced = isFenced()
+  const fenceState = getFenceState()
+
   return ok({
     stationRole: process.env.STATION_ROLE || 'unknown',
-    isFenced: process.env.STATION_ROLE === 'fenced',
+    isFenced: fenced,
+    persistent: true,
+    fenceState: fenceState || undefined,
   })
 }
