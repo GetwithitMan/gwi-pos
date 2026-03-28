@@ -154,7 +154,9 @@ if [ -n "$PRISMA_BIN" ] && [ -f "$PRISMA_BIN" ]; then
     chmod +x "$STAGING/prisma/cli/prisma"
     echo "    Prisma CLI binary copied."
 else
-    echo "    WARNING: Prisma CLI binary not found at node_modules/.bin/prisma"
+    echo "FATAL: Prisma CLI binary not found at node_modules/.bin/prisma" >&2
+    echo "  Run 'npm install' to ensure prisma devDependency is installed." >&2
+    exit 1
 fi
 
 # Copy Prisma engines (query + schema engines for the CLI)
