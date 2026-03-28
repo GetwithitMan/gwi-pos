@@ -63,3 +63,4 @@
 ### Verdict
 
 Phase 1a gate **PASSED**. The deploy-tools migration runner is a drop-in replacement for nuc-pre-migrate.js on production NUC databases using only pg.
+# Deploy-tools Phase 1 validation: 2026-03-28T13:07:41Z
