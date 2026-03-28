@@ -11,6 +11,16 @@ run_ha() {
   local _start=$(date +%s)
   log "Stage: ha -- starting"
 
+  # ── GWI_HA_ENABLED gate ──────────────────────────────────────────────────
+  # HA/keepalived is disabled by default. VIP failover is network-layer only —
+  # it does NOT replicate data. Enabling requires manual PG replication setup.
+  if [[ "${GWI_HA_ENABLED:-false}" != "true" ]]; then
+    log "Network failover scaffolding is DISABLED by default (GWI_HA_ENABLED != true)"
+    warn "VIP/keepalived failover is network-layer only. It does NOT replicate data."
+    warn "To enable: set GWI_HA_ENABLED=true in .env (requires manual PG replication setup)"
+    return 0
+  fi
+
   # Only run if VIRTUAL_IP is set and role is server or backup
   if [[ -z "${VIRTUAL_IP:-}" ]] || [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
     log "Stage: ha -- skipped (no HA configuration needed)"

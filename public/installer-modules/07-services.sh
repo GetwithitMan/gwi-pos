@@ -493,8 +493,8 @@ SVCEOF
       # Generate backup encryption key if it doesn't exist
       if [[ ! -f "$APP_BASE/.backup-key" ]]; then
         openssl rand -hex 32 > "$APP_BASE/.backup-key"
-        chmod 600 "$APP_BASE/.backup-key"
-        chown root:root "$APP_BASE/.backup-key"
+        chmod 640 "$APP_BASE/.backup-key"
+        chown root:$POSUSER "$APP_BASE/.backup-key"
         log "Generated backup encryption key: $APP_BASE/.backup-key"
       fi
 

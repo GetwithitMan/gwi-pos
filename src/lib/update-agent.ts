@@ -77,6 +77,28 @@ function writeUpdateState(state: UpdateState): void {
 let isUpdating = false
 
 /**
+ * Tracks whether the update-agent intentionally stopped the POS service.
+ * While true, external health monitors (watchdog, heartbeat) should treat
+ * "service down" as expected rather than triggering restart/escalation.
+ */
+let serviceWasStopped = false
+
+/**
+ * Set to true only after a post-update health check confirms the service
+ * is fully ready (DB connected + readiness != FAILED). Prevents premature
+ * health reporting to MC before the service has finished booting.
+ */
+let readinessVerified = false
+
+export function isServiceIntentionallyStopped(): boolean {
+  return serviceWasStopped
+}
+
+export function isReadinessVerified(): boolean {
+  return readinessVerified
+}
+
+/**
  * Get the current running app version from package.json
  */
 export function getCurrentVersion(): string {
@@ -211,7 +233,7 @@ export async function runPreflightChecks(): Promise<PreflightResult> {
  * Called when heartbeat returns a targetVersion different from current.
  */
 /** Validate targetVersion is a safe semver-like string (no shell metacharacters) */
-function isValidVersion(version: string): boolean {
+export function isValidVersion(version: string): boolean {
   // Allow: 1.0.50, 1.0.50-beta.1, 1.0.50-rc1+build123
   return /^[a-zA-Z0-9][a-zA-Z0-9._\-+]*$/.test(version) && version.length <= 64
 }
@@ -798,6 +820,8 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
     // POS service also holds connections — concurrent queries trigger pg deprecation warnings
     // that Next.js treats as build failures. Same pattern as installer schema stage fix.
     log.info('[UpdateAgent] Stopping POS service for clean build...')
+    serviceWasStopped = true
+    readinessVerified = false
     try {
       execSync('sudo systemctl stop thepasspos', { timeout: 30_000 })
     } catch {
@@ -947,6 +971,8 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
                     continue
                   }
                   healthy = true
+                  readinessVerified = true
+                  serviceWasStopped = false
                   break
                 }
               }
@@ -1098,6 +1124,7 @@ export async function executeUpdate(targetVersion: string, options?: { rollingRe
     }
   } finally {
     isUpdating = false
+    serviceWasStopped = false
   }
 }
 
