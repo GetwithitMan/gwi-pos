@@ -128,14 +128,21 @@ find "$STAGING/node_modules" -type d \( -name "test" -o -name "tests" -o -name "
 find "$STAGING/node_modules" -type f \( -name "*.test.js" -o -name "*.spec.js" -o -name "*.test.ts" -o -name "CHANGELOG*" \) -delete 2>/dev/null || true
 find "$STAGING" -type d -name ".git" -exec rm -rf {} + 2>/dev/null || true
 
-# Ensure full next package is available for custom server (server.js).
-# Standalone tracing only includes next/* subpaths used by pages, but the custom
-# server imports next/headers, next/server, etc. at runtime. Copy the full next
-# package from repo node_modules to ensure all subpath imports resolve.
-for pkg in next socket.io-client engine.io-client; do
+# Ensure packages needed by the custom server (server.js) are in the artifact.
+# Standalone tracing only includes subpaths used by pages, but the custom server
+# imports from these packages at runtime via esbuild-bundled code.
+# socket.io-client + full transitive tree needed by cloud-relay-client.
+_SERVER_PKGS=(
+    next
+    socket.io-client engine.io-client engine.io-parser socket.io-parser
+    xmlhttprequest-ssl ws debug ms
+    @socket.io/component-emitter
+)
+for pkg in "${_SERVER_PKGS[@]}"; do
     if [ -d "$REPO_DIR/node_modules/$pkg" ]; then
         echo "    ensuring $pkg for custom server..."
         rm -rf "$STAGING/node_modules/$pkg" 2>/dev/null || true
+        mkdir -p "$(dirname "$STAGING/node_modules/$pkg")"
         cp -r "$REPO_DIR/node_modules/$pkg" "$STAGING/node_modules/$pkg"
     fi
 done
