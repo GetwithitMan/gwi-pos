@@ -677,16 +677,65 @@ export async function runBootstrap(): Promise<BootstrapResult> {
             } else if (neonState) {
               // State exists -- check versions
               if (compareSchemaVersion(neonState.schemaVersion, EXPECTED_SCHEMA_VERSION) < 0) {
-                // Neon is behind — this is MC's responsibility to fix.
-                // NUC cannot and should not advance Neon schema.
-                // Report the issue and block sync until MC pushes the update.
-                log.error({
-                  worker: 'venue-bootstrap',
-                  expected: EXPECTED_SCHEMA_VERSION,
-                  actual: neonState.schemaVersion,
-                }, 'Neon schema version behind — sync blocked. MC must push schema update to this venue.')
-                result.neonSchemaReady = await buildReadiness(neonClient, neonState)
-                result.degradedReasons.push('neon-schema-behind')
+                // Neon's _venue_schema_state version is behind the expected version.
+                // Before blocking sync, check if actual migrations match — the version
+                // number may simply be stale (MC didn't update it after migrations ran).
+                let autoReconciled = false
+                try {
+                  const [neonMigRow] = await neonClient.$queryRawUnsafe<[{ cnt: number }]>(
+                    `SELECT COUNT(*)::int as cnt FROM "_gwi_migrations"`
+                  )
+                  const neonMigCount = neonMigRow?.cnt ?? 0
+
+                  // Derive expected migration count from EXPECTED_SCHEMA_VERSION (highest NNN prefix)
+                  const expectedMigPrefix = parseInt(EXPECTED_SCHEMA_VERSION, 10)
+
+                  if (neonMigCount >= expectedMigPrefix) {
+                    // Actual migrations are applied but _venue_schema_state is stale.
+                    // Safe to reconcile — update version to match reality.
+                    log.warn({
+                      worker: 'venue-bootstrap',
+                      staleVersion: neonState.schemaVersion,
+                      expectedVersion: EXPECTED_SCHEMA_VERSION,
+                      actualMigrations: neonMigCount,
+                    }, 'Neon _venue_schema_state stale but migrations are applied — auto-reconciling')
+
+                    await writeSchemaState(neonClient, {
+                      schemaVersion: EXPECTED_SCHEMA_VERSION,
+                      seedVersion: neonState.seedVersion ?? EXPECTED_SEED_VERSION,
+                      provisionerVersion: PROVISIONER_VERSION,
+                      provisionedAt: new Date(),
+                      provisionedBy: 'nuc-bootstrap-version-reconcile',
+                      appVersion: APP_VERSION,
+                    })
+                    await markRepair(neonClient, 'stale-schema-version-reconciled', `${neonState.schemaVersion} → ${EXPECTED_SCHEMA_VERSION}`)
+
+                    log.info({
+                      from: neonState.schemaVersion,
+                      to: EXPECTED_SCHEMA_VERSION,
+                      migrations: neonMigCount,
+                    }, 'Reconciled _venue_schema_state — sync can proceed')
+
+                    const reconciledState = { ...neonState, schemaVersion: EXPECTED_SCHEMA_VERSION }
+                    result.neonSchemaReady = await buildReadiness(neonClient, reconciledState)
+                    result.degradedReasons.push('schema-version-reconciled')
+                    autoReconciled = true
+                  }
+                } catch (auditErr) {
+                  log.warn({ err: auditErr instanceof Error ? auditErr.message : auditErr },
+                    'Migration audit failed — falling back to strict version check')
+                }
+
+                if (!autoReconciled) {
+                  // Actual migrations don't match either — truly behind, block sync.
+                  log.error({
+                    worker: 'venue-bootstrap',
+                    expected: EXPECTED_SCHEMA_VERSION,
+                    actual: neonState.schemaVersion,
+                  }, 'Neon schema version behind and migrations not applied — sync blocked. MC must push schema update.')
+                  result.neonSchemaReady = await buildReadiness(neonClient, neonState)
+                  result.degradedReasons.push('neon-schema-behind')
+                }
               } else if (compareSchemaVersion(neonState.schemaVersion, EXPECTED_SCHEMA_VERSION) > 0) {
                 log.warn(
                   { expected: EXPECTED_SCHEMA_VERSION, actual: neonState.schemaVersion },
