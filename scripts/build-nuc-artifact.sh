@@ -143,10 +143,16 @@ cp "$REPO_DIR/scripts/launcher.sh" "$STAGING/launcher.sh"
 chmod +x "$STAGING/launcher.sh"
 
 # Prisma config (Prisma 7 requires prisma.config.ts for datasource resolution)
-if [ -f "$REPO_DIR/prisma.config.ts" ]; then
-    cp "$REPO_DIR/prisma.config.ts" "$STAGING/prisma.config.ts"
-    echo "    prisma.config.ts"
-fi
+# Write a minimal config that reads DATABASE_URL from env — no dotenv dependency.
+# The full repo config imports dotenv which isn't in the standalone node_modules.
+cat > "$STAGING/prisma.config.ts" << 'PRISMACONFIG'
+import { defineConfig } from 'prisma/config'
+export default defineConfig({
+  schema: './prisma/schema.prisma',
+  datasource: { url: process.env.DATABASE_URL },
+})
+PRISMACONFIG
+echo "    prisma.config.ts (minimal, no dotenv dep)"
 
 # Prisma schema + optional schema.sql
 echo "    prisma schema..."
