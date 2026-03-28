@@ -316,7 +316,16 @@ cat > "$STAGING/artifact-metadata.json" << METAJSON
   "healthCheckPath": "/api/health/ready",
   "rollbackSupported": true,
   "compatibleFromReleases": [],
-  "compatibleSchemaVersions": ["${SCHEMA_VERSION}"],
+  "compatibleSchemaVersions": [$(
+    # Include current schema version AND N-1 for expand-safe upgrades
+    prev=$((10#$SCHEMA_VERSION - 1))
+    prev_padded=$(printf "%03d" "$prev")
+    if [ "$prev" -ge 0 ]; then
+        echo "\"${prev_padded}\", \"${SCHEMA_VERSION}\""
+    else
+        echo "\"${SCHEMA_VERSION}\""
+    fi
+  )],
   "schemaExpansionOnly": true,
   "requiredEnvKeys": ["DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "LOCATION_ID"]
 }

@@ -1880,7 +1880,7 @@ do_deploy() {
         RESTART_RESULT="skipped"
         READINESS_RESULT="skipped"
         FINAL_STATUS="installed_pending_service"
-        set_state "activated"
+        set_state "installed_pending_service"
         log "=========================================="
         log "Deploy STAGED (first install): $RELEASE_ID"
         log "Service creation + first boot handled by installer Stage 07"
