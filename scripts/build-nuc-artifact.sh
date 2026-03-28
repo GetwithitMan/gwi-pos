@@ -189,25 +189,38 @@ else
     exit 1
 fi
 
-# Copy Prisma engines (query + schema engines for the CLI)
+# Copy Prisma CLI's full dependency tree as proper node_modules.
+# The CLI does require('@prisma/engines') — it needs the module at node_modules/@prisma/engines/.
+# Also copies the Prisma CLI's own package dir (which has its own node_modules).
+echo "    Copying Prisma CLI dependency tree..."
+
+# Resolve the actual prisma package directory (not just the bin symlink)
+PRISMA_PKG_DIR="$(dirname "$(dirname "$PRISMA_BIN")")"
+if [ -d "$PRISMA_PKG_DIR" ] && [ -f "$PRISMA_PKG_DIR/package.json" ]; then
+    # Copy the entire prisma package to prisma/cli/ (preserves internal node_modules)
+    cp -r "$PRISMA_PKG_DIR/." "$STAGING/prisma/cli/"
+    echo "    Prisma package copied from: $PRISMA_PKG_DIR"
+fi
+
+# Ensure @prisma/engines is available as a resolvable module
+mkdir -p "$STAGING/prisma/cli/node_modules/@prisma"
 if [ -d "$REPO_DIR/node_modules/@prisma/engines" ]; then
-    cp -r "$REPO_DIR/node_modules/@prisma/engines/"* "$STAGING/prisma/cli/" 2>/dev/null || true
-    echo "    @prisma/engines copied."
+    cp -r "$REPO_DIR/node_modules/@prisma/engines" "$STAGING/prisma/cli/node_modules/@prisma/engines"
+    echo "    @prisma/engines module copied."
+else
+    echo "FATAL: @prisma/engines not found in node_modules" >&2
+    exit 1
 fi
 
-# Schema engine binary
-SCHEMA_ENGINE=$(find "$REPO_DIR/node_modules" -name "schema-engine-*" -type f 2>/dev/null | head -1)
-if [ -n "$SCHEMA_ENGINE" ]; then
-    cp "$SCHEMA_ENGINE" "$STAGING/prisma/cli/"
-    echo "    Schema engine: $(basename "$SCHEMA_ENGINE")"
+# Copy schema engine binary (needed for db push)
+SCHEMA_ENGINE=$(find "$STAGING/prisma/cli" -name "schema-engine-*" -type f 2>/dev/null | head -1)
+if [ -z "$SCHEMA_ENGINE" ]; then
+    SCHEMA_ENGINE=$(find "$REPO_DIR/node_modules" -name "schema-engine-*" -type f 2>/dev/null | head -1)
+    if [ -n "$SCHEMA_ENGINE" ]; then
+        cp "$SCHEMA_ENGINE" "$STAGING/prisma/cli/"
+    fi
 fi
-
-# Prisma schema WASM
-SCHEMA_WASM=$(find "$REPO_DIR/node_modules" -name "prisma-schema-wasm*" -type f 2>/dev/null | head -1)
-if [ -n "$SCHEMA_WASM" ]; then
-    cp "$SCHEMA_WASM" "$STAGING/prisma/cli/"
-    echo "    Schema WASM: $(basename "$SCHEMA_WASM")"
-fi
+[ -n "$SCHEMA_ENGINE" ] && echo "    Schema engine: $(basename "$SCHEMA_ENGINE")" || echo "    WARNING: No schema engine found"
 
 # Prisma CLI version for metadata
 PRISMA_CLI_VERSION=$(cd "$REPO_DIR" && npx prisma --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
