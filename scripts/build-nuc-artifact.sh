@@ -189,37 +189,32 @@ else
     exit 1
 fi
 
-# Copy Prisma CLI's full dependency tree as proper node_modules.
-# The CLI does require('@prisma/engines') — it needs the module at node_modules/@prisma/engines/.
-# Also copies the Prisma CLI's own package dir (which has its own node_modules).
-echo "    Copying Prisma CLI dependency tree..."
+# Copy the ENTIRE prisma package + all @prisma/* dependencies.
+# Prisma CLI has a deep dependency tree (@prisma/engines → @prisma/debug → etc).
+# Copying individual packages will never work. Copy everything.
+echo "    Copying full Prisma dependency tree..."
 
-# Resolve the actual prisma package directory (not just the bin symlink)
-PRISMA_PKG_DIR="$(dirname "$(dirname "$PRISMA_BIN")")"
-if [ -d "$PRISMA_PKG_DIR" ] && [ -f "$PRISMA_PKG_DIR/package.json" ]; then
-    # Copy the entire prisma package to prisma/cli/ (preserves internal node_modules)
+# 1. Copy the prisma package itself (the CLI entry point + its bundled node_modules)
+PRISMA_PKG_DIR="$REPO_DIR/node_modules/prisma"
+if [ -d "$PRISMA_PKG_DIR" ]; then
     cp -r "$PRISMA_PKG_DIR/." "$STAGING/prisma/cli/"
-    echo "    Prisma package copied from: $PRISMA_PKG_DIR"
+    echo "    prisma package copied"
 fi
 
-# Ensure @prisma/engines is available as a resolvable module
+# 2. Copy ALL @prisma/* packages into prisma/cli/node_modules/@prisma/
+# This ensures every require('@prisma/...') resolves correctly.
 mkdir -p "$STAGING/prisma/cli/node_modules/@prisma"
-if [ -d "$REPO_DIR/node_modules/@prisma/engines" ]; then
-    cp -r "$REPO_DIR/node_modules/@prisma/engines" "$STAGING/prisma/cli/node_modules/@prisma/engines"
-    echo "    @prisma/engines module copied."
-else
-    echo "FATAL: @prisma/engines not found in node_modules" >&2
-    exit 1
-fi
+for pkg_dir in "$REPO_DIR/node_modules/@prisma/"*/; do
+    [ -d "$pkg_dir" ] || continue
+    pkg_name="$(basename "$pkg_dir")"
+    # Skip the huge generated client (already at src/generated/prisma/)
+    if [ "$pkg_name" = "client" ]; then continue; fi
+    cp -r "$pkg_dir" "$STAGING/prisma/cli/node_modules/@prisma/$pkg_name"
+done
+echo "    @prisma/* packages: $(ls "$STAGING/prisma/cli/node_modules/@prisma/" | tr '\n' ' ')"
 
-# Copy schema engine binary (needed for db push)
+# 3. Verify schema engine binary exists somewhere in the bundle
 SCHEMA_ENGINE=$(find "$STAGING/prisma/cli" -name "schema-engine-*" -type f 2>/dev/null | head -1)
-if [ -z "$SCHEMA_ENGINE" ]; then
-    SCHEMA_ENGINE=$(find "$REPO_DIR/node_modules" -name "schema-engine-*" -type f 2>/dev/null | head -1)
-    if [ -n "$SCHEMA_ENGINE" ]; then
-        cp "$SCHEMA_ENGINE" "$STAGING/prisma/cli/"
-    fi
-fi
 [ -n "$SCHEMA_ENGINE" ] && echo "    Schema engine: $(basename "$SCHEMA_ENGINE")" || echo "    WARNING: No schema engine found"
 
 # Prisma CLI version for metadata
