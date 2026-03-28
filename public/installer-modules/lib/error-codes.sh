@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GWI POS Installer — Error Code Library
+# GWI POS Installer -- Error Code Library
 # Usage: source this file, then use err_code() instead of bare echo/err for failures
 
 declare -A GWI_ERROR_CODES
@@ -44,7 +44,7 @@ GWI_ERROR_CODES[ERR-INST-151]="Git pull/fetch failed"
 GWI_ERROR_CODES[ERR-INST-152]="Git credential validation failed"
 GWI_ERROR_CODES[ERR-INST-153]="npm ci failed"
 GWI_ERROR_CODES[ERR-INST-154]="Prisma generate failed"
-GWI_ERROR_CODES[ERR-INST-155]="Git repair failed — nuclear recovery needed"
+GWI_ERROR_CODES[ERR-INST-155]="Git repair failed -- nuclear recovery needed"
 GWI_ERROR_CODES[ERR-INST-156]="Git lock file stuck after repair attempts"
 
 # Schema errors (180-209)
@@ -53,9 +53,9 @@ GWI_ERROR_CODES[ERR-INST-181]="Tables dropped during schema push"
 GWI_ERROR_CODES[ERR-INST-182]="Critical tables missing after schema push"
 GWI_ERROR_CODES[ERR-INST-183]="Seed script failed"
 GWI_ERROR_CODES[ERR-INST-184]="Migration runner failed"
-GWI_ERROR_CODES[ERR-INST-185]="Schema version mismatch — too many versions ahead"
+GWI_ERROR_CODES[ERR-INST-185]="Schema version mismatch -- too many versions ahead"
 GWI_ERROR_CODES[ERR-INST-186]="Build failed (next build)"
-GWI_ERROR_CODES[ERR-INST-187]="Build OOM — insufficient memory"
+GWI_ERROR_CODES[ERR-INST-187]="Build OOM -- insufficient memory"
 
 # Services errors (210-239)
 GWI_ERROR_CODES[ERR-INST-210]="systemd service creation failed"
@@ -96,7 +96,7 @@ GWI_ERROR_CODES[ERR-UPD-402]="Code snapshot failed"
 GWI_ERROR_CODES[ERR-UPD-403]="Rollback failed"
 GWI_ERROR_CODES[ERR-UPD-404]="Version compatibility check failed"
 GWI_ERROR_CODES[ERR-UPD-405]="Insufficient disk for update"
-GWI_ERROR_CODES[ERR-UPD-406]="Active payments detected — update blocked"
+GWI_ERROR_CODES[ERR-UPD-406]="Active payments detected -- update blocked"
 GWI_ERROR_CODES[ERR-UPD-407]="Health check failed after update"
 GWI_ERROR_CODES[ERR-UPD-408]="Rolling restart failed"
 

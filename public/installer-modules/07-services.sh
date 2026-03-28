@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 07-services.sh — systemd units (thepasspos, sync-agent), sudoers,
+# 07-services.sh -- systemd units (thepasspos, sync-agent), sudoers,
 #                  backups, pre-start, terminal kiosk (kiosk removed from server)
 # =============================================================================
 # Entry: run_services
@@ -12,7 +12,7 @@
 
 run_services() {
   local _start=$(date +%s)
-  log "Stage: services — starting"
+  log "Stage: services -- starting"
 
   # Load error codes library
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
@@ -33,7 +33,7 @@ run_services() {
 # Root-owned, called via sudo from pre-start.sh. No user input accepted.
 set -euo pipefail
 DB="${1:-thepasspos}"
-# Validate DB name (alphanumeric + underscore only — no injection)
+# Validate DB name (alphanumeric + underscore only -- no injection)
 if [[ ! "$DB" =~ ^[a-zA-Z0-9_]+$ ]]; then
   echo "ERROR: invalid database name" >&2
   exit 1
@@ -53,7 +53,7 @@ RLSEOF
     PRE_START="$APP_BASE/pre-start.sh"
     cat > "$PRE_START" <<'PSEOF'
 #!/usr/bin/env bash
-# GWI POS Pre-Start — runs before thepasspos.service on every boot/restart.
+# GWI POS Pre-Start -- runs before thepasspos.service on every boot/restart.
 # Ensures the database schema matches the deployed Prisma schema.
 set -euo pipefail
 _APP_DIR="/opt/gwi-pos/app"
@@ -63,12 +63,12 @@ cd "$_APP_DIR"
 # (repairs broken symlinks or copies left by older installers)
 _CANONICAL_ENV="/opt/gwi-pos/.env"
 
-# ── Per-boot reconciliation gate — prevents infinite restart loops ──
+# ── Per-boot reconciliation gate -- prevents infinite restart loops ──
 BOOT_ID=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null | tr -d '-')
 RECONCILE_MARKER="/opt/gwi-pos/state/.reconciled-${BOOT_ID}"
 
 if [[ -f "$RECONCILE_MARKER" ]]; then
-  echo "[pre-start] Reconciliation already completed this boot — skipping full cycle"
+  echo "[pre-start] Reconciliation already completed this boot -- skipping full cycle"
   # Still do minimal checks (symlinks only)
   if [[ -f "$_CANONICAL_ENV" ]]; then
     for _ef in "$_APP_DIR/.env" "$_APP_DIR/.env.local"; do
@@ -97,7 +97,7 @@ fi
 echo "[pre-start] Cleaning stale Prisma cache..."
 rm -rf node_modules/.prisma 2>/dev/null || true
 
-# Clean stale .next.backup from inside project dir (Turbopack crash — scans 17k+ files)
+# Clean stale .next.backup from inside project dir (Turbopack crash -- scans 17k+ files)
 rm -rf "$_APP_DIR/.next.backup" 2>/dev/null || true
 # Also clean the outside-project backup if it exists from a previously failed build
 rm -rf /opt/gwi-pos/.next.backup 2>/dev/null || true
@@ -116,15 +116,15 @@ if timeout --kill-after=10 60 npx --yes prisma generate 2>&1; then
 else
   EXIT_CODE=$?
   if [[ $EXIT_CODE -eq 124 ]]; then
-    echo "[pre-start] WARNING: prisma generate timed out after 60s — continuing with existing client."
+    echo "[pre-start] WARNING: prisma generate timed out after 60s -- continuing with existing client."
   else
-    echo "[pre-start] WARNING: prisma generate failed — continuing with existing client."
+    echo "[pre-start] WARNING: prisma generate failed -- continuing with existing client."
   fi
 fi
 
 # Timeout check
 if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
-  echo "[pre-start] CRITICAL: Pre-start exceeded 5-minute timeout — continuing with current state"
+  echo "[pre-start] CRITICAL: Pre-start exceeded 5-minute timeout -- continuing with current state"
   mkdir -p /opt/gwi-pos/state
   touch "$RECONCILE_MARKER"
   exit 0
@@ -133,7 +133,7 @@ fi
 # Clean stale .schema-stage-done marker from older installers
 rm -f /opt/gwi-pos/.schema-stage-done 2>/dev/null || true
 
-# NOTE: prisma db push removed — deploy-tools migrate.js is the SOLE schema
+# NOTE: prisma db push removed -- deploy-tools migrate.js is the SOLE schema
 # migration path on NUCs. prisma generate (above) builds the client; schema
 # changes come exclusively from deploy-tools migrations.
 
@@ -155,11 +155,11 @@ sudo /opt/gwi-pos/disable-rls.sh "$_DB_NAME" && {
   else
     echo "[pre-start] RLS disabled."
   fi
-} || echo "[pre-start] WARNING: RLS disable had issues — continuing."
+} || echo "[pre-start] WARNING: RLS disable had issues -- continuing."
 
 # Timeout check
 if [[ $(date +%s) -gt $PRE_START_DEADLINE ]]; then
-  echo "[pre-start] CRITICAL: Pre-start exceeded 5-minute timeout — continuing with current state"
+  echo "[pre-start] CRITICAL: Pre-start exceeded 5-minute timeout -- continuing with current state"
   mkdir -p /opt/gwi-pos/state
   touch "$RECONCILE_MARKER"
   exit 0
@@ -177,23 +177,23 @@ if [[ -f "$_DT_DIR/src/migrate.js" ]]; then
   DATABASE_URL="$DATABASE_URL" timeout --kill-after=10 300 node "$_DT_DIR/src/migrate.js" 2>&1 || {
     EXIT_CODE=$?
     if [[ $EXIT_CODE -eq 124 ]]; then
-      echo "[pre-start] WARNING: deploy-tools migrations timed out after 300s — continuing."
+      echo "[pre-start] WARNING: deploy-tools migrations timed out after 300s -- continuing."
     else
       if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
-        echo "[pre-start] CRITICAL: deploy-tools migrate.js failed on first boot (exit $EXIT_CODE) — aborting."
+        echo "[pre-start] CRITICAL: deploy-tools migrate.js failed on first boot (exit $EXIT_CODE) -- aborting."
         exit 1
       else
-        echo "[pre-start] WARNING: deploy-tools migrations had issues (exit $EXIT_CODE) — continuing (not first boot)."
+        echo "[pre-start] WARNING: deploy-tools migrations had issues (exit $EXIT_CODE) -- continuing (not first boot)."
       fi
     fi
   }
 
   echo "ready" > /opt/gwi-pos/shared/state/schema-state 2>/dev/null || true
 else
-  echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR — skipping migrations."
+  echo "[pre-start] WARNING: deploy-tools not found at $_DT_DIR -- skipping migrations."
 fi
 
-# ── Neon schema VALIDATION (read-only — NUC never mutates venue Neon) ──
+# ── Neon schema VALIDATION (read-only -- NUC never mutates venue Neon) ──
 # MC owns venue Neon schema via /api/internal/provision and /api/internal/sync-schema.
 # NUC only validates that Neon migration count matches local, and warns if not.
 if [[ -n "$NEON_DATABASE_URL" ]]; then
@@ -214,7 +214,7 @@ if [[ -n "$NEON_DATABASE_URL" ]]; then
   fi
 fi
 
-# Check seed completion status — hard stop on first boot if incomplete
+# Check seed completion status -- hard stop on first boot if incomplete
 _SEED_STATUS="/opt/gwi-pos/.seed-status"
 if [[ -f "$_SEED_STATUS" ]]; then
   _SEED_STATE=$(head -c 10 "$_SEED_STATUS")
@@ -223,27 +223,27 @@ if [[ -f "$_SEED_STATUS" ]]; then
     echo "[pre-start] The venue may be missing critical data (Organization, Location, Employees, etc.)"
     echo "[pre-start] Re-run the installer or manually run: bash scripts/seed-from-neon.sh"
     if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
-      echo "[pre-start] FATAL: Incomplete seed on first boot — refusing to start. Fix seed and retry."
+      echo "[pre-start] FATAL: Incomplete seed on first boot -- refusing to start. Fix seed and retry."
       exit 1
     fi
     # Subsequent boots: warn but allow start so operators can diagnose via the UI/API.
-    echo "[pre-start] WARNING: Allowing start on incomplete seed (not first boot) — sync/orders may fail."
+    echo "[pre-start] WARNING: Allowing start on incomplete seed (not first boot) -- sync/orders may fail."
   fi
 fi
 
 # Mark first boot as complete (all critical checks passed)
 if [[ ! -f /opt/gwi-pos/.first-boot-done ]]; then
   touch /opt/gwi-pos/.first-boot-done
-  echo "[pre-start] First boot completed successfully — future boots will be more lenient."
+  echo "[pre-start] First boot completed successfully -- future boots will be more lenient."
 fi
 
-# ── Service health checks — ensure critical services are running ──
+# ── Service health checks -- ensure critical services are running ──
 echo "[pre-start] Verifying critical services..."
 
 # Sync service
 if systemctl is-enabled thepasspos-sync >/dev/null 2>&1; then
   if ! systemctl is-active thepasspos-sync >/dev/null 2>&1; then
-    echo "[pre-start] Sync service not running — starting..."
+    echo "[pre-start] Sync service not running -- starting..."
     systemctl start thepasspos-sync 2>/dev/null || echo "[pre-start] WARNING: Failed to start sync service"
   fi
 fi
@@ -251,15 +251,15 @@ fi
 # Watchdog timer
 if [[ -f /opt/gwi-pos/watchdog.sh ]]; then
   if ! systemctl is-active gwi-watchdog.timer >/dev/null 2>&1; then
-    echo "[pre-start] Watchdog timer not active — enabling..."
+    echo "[pre-start] Watchdog timer not active -- enabling..."
     systemctl enable --now gwi-watchdog.timer 2>/dev/null || echo "[pre-start] WARNING: Failed to enable watchdog"
   fi
 fi
 
-# Dashboard (user service — check via process list)
+# Dashboard (user service -- check via process list)
 if command -v gwi-dashboard >/dev/null 2>&1 || command -v gwi-nuc-dashboard >/dev/null 2>&1; then
   if ! pgrep -f gwi-dashboard >/dev/null 2>&1; then
-    echo "[pre-start] Dashboard not running — will start via user service on login"
+    echo "[pre-start] Dashboard not running -- will start via user service on login"
   fi
 fi
 
@@ -298,7 +298,7 @@ if grep -q "systemctl restart thepasspos" "\$SUDOERS_FILE" 2>/dev/null; then
 fi
 echo "[sudoers] Repairing: writing enumerated NOPASSWD rules for $POSUSER"
 cat > "\$SUDOERS_FILE" <<'SUDOFIX'
-# GWI POS — enumerated passwordless sudo for POS service user
+# GWI POS -- enumerated passwordless sudo for POS service user
 # --- systemctl: service lifecycle ---
 $POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos, /bin/systemctl stop thepasspos, /bin/systemctl start thepasspos, /bin/systemctl enable thepasspos
 $POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos-sync, /bin/systemctl start thepasspos-sync
@@ -328,7 +328,7 @@ FIXEOF
     chmod 755 "$FIX_SUDOERS"
     log "Self-healing sudoers script created: $FIX_SUDOERS"
 
-    # thepasspos.service — POS backend/UI
+    # thepasspos.service -- POS backend/UI
     PG_AFTER=""
     PG_WANTS=""
     if [[ "$USE_LOCAL_PG" == "true" ]]; then
@@ -377,18 +377,18 @@ SVCEOF
     else
       systemctl enable thepasspos
 
-      # Ensure POSUSER owns the entire app directory — root-created dirs/files
+      # Ensure POSUSER owns the entire app directory -- root-created dirs/files
       # from installer stages (mkdir, cp) cause "Permission denied" at runtime
       chown -R "$POSUSER":"$POSUSER" "$APP_BASE" 2>/dev/null || true
       # Keys stay root-owned (secrets)
       [[ -d "$KEY_DIR" ]] && chown -R root:root "$KEY_DIR" && chmod 700 "$KEY_DIR"
 
       log "Starting POS server..."
-      timeout --kill-after=10 180 systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; warn "POS service failed to start — will retry on reboot"; track_warn "POS service restart failed — will retry on reboot"; }
+      timeout --kill-after=10 180 systemctl restart thepasspos || { err_code "ERR-INST-211" "systemctl restart thepasspos failed"; warn "POS service failed to start -- will retry on reboot"; track_warn "POS service restart failed -- will retry on reboot"; }
 
       # Wait for POS to be order-ready, not just alive
       # Check /api/health AND verify response contains "status":"healthy"
-      # (HTTP 200 alone is insufficient — POS may be booting but not ready for orders)
+      # (HTTP 200 alone is insufficient -- POS may be booting but not ready for orders)
       # 90 iterations x 2s = 180s (3 min). First boots with cold npm cache need extra time.
       log "Waiting for POS to be order-ready (up to 180s)..."
       POS_READY=false
@@ -409,7 +409,7 @@ SVCEOF
           local readiness
           readiness=$(echo "$sync_health" | grep -o '"level":"[^"]*"' | head -1 | cut -d'"' -f4 || echo "UNKNOWN")
           if [[ "$readiness" == "FAILED" ]]; then
-            warn "Sync readiness is FAILED — venue may not be fully operational"
+            warn "Sync readiness is FAILED -- venue may not be fully operational"
             track_warn "Sync readiness FAILED after install"
           elif [[ "$readiness" != "" ]] && [[ "$readiness" != "ORDERS" ]]; then
             log "Sync readiness: $readiness (may still be warming up)"
@@ -418,8 +418,8 @@ SVCEOF
       fi
 
       if [[ "$POS_READY" != "true" ]]; then
-        err_code "ERR-INST-212" "Health check failed after 180s — /api/health did not return healthy"
-        track_warn "POS not ready after 180s — will retry on reboot"
+        err_code "ERR-INST-212" "Health check failed after 180s -- /api/health did not return healthy"
+        track_warn "POS not ready after 180s -- will retry on reboot"
         track_warn "Check: sudo journalctl -u thepasspos -f"
         # Capture diagnostics for troubleshooting
         err "POS failed to start within timeout. Diagnostics:"
@@ -431,7 +431,7 @@ SVCEOF
         echo "--- PostgreSQL ---"
         pg_isready 2>/dev/null || echo "PostgreSQL not reachable"
       fi
-      log "Services configured and started (no kiosk — web UI for settings/admin only)."
+      log "Services configured and started (no kiosk -- web UI for settings/admin only)."
     fi
 
     # ───────────────────────────────────────────────────────────────────────────
@@ -476,7 +476,7 @@ if [[ -f "$BACKUP_KEY" ]]; then
   backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz.enc"
   echo "[Backup] Starting encrypted PostgreSQL backup of '$DB_NAME'..."
   set -o pipefail
-  if pg_dump -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip | openssl enc -aes-256-cbc -pbkdf2 -pass file:"$BACKUP_KEY" -out "$backup_file"; then
+  if pg_dump -h localhost -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip | openssl enc -aes-256-cbc -pbkdf2 -pass file:"$BACKUP_KEY" -out "$backup_file"; then
     size=$(du -h "$backup_file" | cut -f1)
     echo "[Backup] Success (encrypted): $backup_file ($size)"
   else
@@ -489,7 +489,7 @@ else
   backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz"
   echo "[Backup] Starting PostgreSQL backup of '$DB_NAME' (no encryption key found)..."
   set -o pipefail
-  if pg_dump -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip > "$backup_file"; then
+  if pg_dump -h localhost -U "$DB_USER" "$DB_NAME" 2>/tmp/pgdump_err | gzip > "$backup_file"; then
     size=$(du -h "$backup_file" | cut -f1)
     echo "[Backup] Success: $backup_file ($size)"
   else
@@ -528,10 +528,10 @@ BKEOF
 
         log "Cloud backup upload configured (4:15 AM daily -> S3)."
       else
-        track_warn "nuc-backup-upload.sh not found at $APP_DIR/public/nuc-backup-upload.sh — cloud backup upload not configured."
+        track_warn "nuc-backup-upload.sh not found at $APP_DIR/public/nuc-backup-upload.sh -- cloud backup upload not configured."
       fi
     else
-      log "Cloud database (Neon) — backups managed by provider. Skipping local backup."
+      log "Cloud database (Neon) -- backups managed by provider. Skipping local backup."
     fi
 
     # ── Restore Script ──
@@ -543,7 +543,7 @@ BKEOF
       chown root:root "$RESTORE_SCRIPT"
       log "Restore script installed: $RESTORE_SCRIPT"
     else
-      track_warn "nuc-restore.sh not found at $APP_DIR/public/nuc-restore.sh — restore script not installed."
+      track_warn "nuc-restore.sh not found at $APP_DIR/public/nuc-restore.sh -- restore script not installed."
     fi
 
     # ── Deploy full ha-check.sh (replaces bootstrap version written before git clone) ──
@@ -554,7 +554,7 @@ BKEOF
       chown root:root "$APP_BASE/scripts/ha-check.sh"
       log "Full ha-check.sh deployed (pg_is_in_recovery, replication lag, MC alerting)."
     elif [[ -n "${VIRTUAL_IP:-}" ]]; then
-      track_warn "ha-check.sh not found at $APP_DIR/public/ha-check.sh — using bootstrap version (no replication lag monitoring)."
+      track_warn "ha-check.sh not found at $APP_DIR/public/ha-check.sh -- using bootstrap version (no replication lag monitoring)."
     fi
 
     # ───────────────────────────────────────────────────────────────────────────
@@ -567,9 +567,9 @@ BKEOF
     # Server role has no kiosk service.
 
     cat > /etc/sudoers.d/gwi-pos <<SUDEOF
-# GWI POS — enumerated passwordless sudo for POS service user
+# GWI POS -- enumerated passwordless sudo for POS service user
 # Principle of least privilege: only commands the POS service actually needs.
-# If a new command is required, add it here — do NOT revert to NOPASSWD: ALL.
+# If a new command is required, add it here -- do NOT revert to NOPASSWD: ALL.
 #
 # --- systemctl: service lifecycle (restart, stop, start, enable, daemon-reload) ---
 $POSUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart thepasspos, /bin/systemctl stop thepasspos, /bin/systemctl start thepasspos, /bin/systemctl enable thepasspos
@@ -612,12 +612,12 @@ SUDEOF
     header "Setting Up Sync Agent"
 
     SYNC_SCRIPT="$APP_BASE/sync-agent.js"
-    # Copy sync agent from repo (self-updating — updated by FORCE_UPDATE deployments)
+    # Copy sync agent from repo (self-updating -- updated by FORCE_UPDATE deployments)
     if [[ -f "$APP_DIR/public/sync-agent.js" ]]; then
       cp "$APP_DIR/public/sync-agent.js" "$SYNC_SCRIPT"
       chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
 
-      # thepasspos-sync.service — Sync Agent (only created when script exists)
+      # thepasspos-sync.service -- Sync Agent (only created when script exists)
       cat > /etc/systemd/system/thepasspos-sync.service <<SVCEOF
 [Unit]
 Description=ThePassPOS Sync Agent
@@ -640,10 +640,10 @@ SVCEOF
 
       systemctl daemon-reload
       systemctl enable thepasspos-sync
-      systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start — check journalctl -u thepasspos-sync"; }
+      systemctl restart thepasspos-sync || { err_code "ERR-INST-213" "systemctl restart thepasspos-sync failed"; track_warn "Sync agent failed to start -- check journalctl -u thepasspos-sync"; }
       log "Sync agent configured and started."
     else
-      track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js — sync agent will not start."
+      track_warn "sync-agent.js not found at $APP_DIR/public/sync-agent.js -- sync agent will not start."
       systemctl disable thepasspos-sync 2>/dev/null || true
     fi
 
@@ -656,7 +656,7 @@ SVCEOF
     BOOT_DIAG_SCRIPT="$APP_BASE/boot-diagnostic.sh"
     cat > "$BOOT_DIAG_SCRIPT" <<'DIAGEOF'
 #!/usr/bin/env bash
-# GWI POS Boot Diagnostic — runs once after boot to capture system state.
+# GWI POS Boot Diagnostic -- runs once after boot to capture system state.
 # Output: /opt/gwi-pos/.last-boot-diagnostic.json
 set -euo pipefail
 
@@ -791,7 +791,7 @@ DIAGEOF
     chmod +x "$BOOT_DIAG_SCRIPT"
     chown "$POSUSER":"$POSUSER" "$BOOT_DIAG_SCRIPT"
 
-    # gwi-boot-diagnostic.service — oneshot, runs 30s after POS starts
+    # gwi-boot-diagnostic.service -- oneshot, runs 30s after POS starts
     cat > /etc/systemd/system/gwi-boot-diagnostic.service <<SVCEOF
 [Unit]
 Description=GWI POS Boot Diagnostic
@@ -839,7 +839,7 @@ SVCEOF
       elif command -v chromium >/dev/null 2>&1; then
         TERM_CHROMIUM="chromium"
       else
-        track_warn "Chromium not found — terminal kiosk will not work."
+        track_warn "Chromium not found -- terminal kiosk will not work."
         TERM_KIOSK_OK=false
       fi
     fi
@@ -871,10 +871,10 @@ SVCEOF
             fi
           fi
         fi
-        warn "Wayland detected on terminal — kiosk requires X11. Reboot after install."
+        warn "Wayland detected on terminal -- kiosk requires X11. Reboot after install."
         TERM_KIOSK_OK=false
       elif [[ "$TERM_SESSION" == "unknown" ]]; then
-        warn "No graphical session detected on terminal — kiosk may not start until login."
+        warn "No graphical session detected on terminal -- kiosk may not start until login."
         TERM_KIOSK_OK=false
       fi
     fi
@@ -883,7 +883,7 @@ SVCEOF
     pkill -u "$POSUSER" -f "${TERM_CHROMIUM}.*kiosk" 2>/dev/null || true
     sleep 1
 
-    # thepasspos-kiosk.service — Chromium pointing at server (SERVER_URL via Environment for safety)
+    # thepasspos-kiosk.service -- Chromium pointing at server (SERVER_URL via Environment for safety)
     # Resolve full path to Chromium binary (may be /usr/bin, /usr/local/bin, or /snap/bin)
     TERM_CHROMIUM_PATH=$(command -v "${TERM_CHROMIUM:-chromium-browser}" 2>/dev/null || echo "/usr/bin/${TERM_CHROMIUM:-chromium-browser}")
     cat > /etc/systemd/system/thepasspos-kiosk.service <<SVCEOF
@@ -916,20 +916,20 @@ SVCEOF
     systemctl daemon-reload
     if [[ "$TERM_KIOSK_OK" == "true" ]]; then
       systemctl enable thepasspos-kiosk
-      systemctl restart thepasspos-kiosk || { err_code "ERR-INST-214" "systemctl restart thepasspos-kiosk failed"; track_warn "Terminal kiosk service restart failed — will retry on reboot"; }
+      systemctl restart thepasspos-kiosk || { err_code "ERR-INST-214" "systemctl restart thepasspos-kiosk failed"; track_warn "Terminal kiosk service restart failed -- will retry on reboot"; }
       # Verify kiosk process actually launched
       sleep 5
       if ! pgrep -u "$POSUSER" -f "${TERM_CHROMIUM:-chromium}" >/dev/null 2>&1; then
-        track_warn "Terminal kiosk process not detected — check display, graphics drivers, or X11 session"
+        track_warn "Terminal kiosk process not detected -- check display, graphics drivers, or X11 session"
       fi
     else
-      track_warn "Skipping terminal kiosk service — preflight failed."
+      track_warn "Skipping terminal kiosk service -- preflight failed."
       systemctl disable thepasspos-kiosk 2>/dev/null || true
     fi
 
     log "Terminal kiosk configured -> $SERVER_URL"
 
-    # Kiosk control script (also needed on terminals — exit-kiosk-server.py calls it)
+    # Kiosk control script (also needed on terminals -- exit-kiosk-server.py calls it)
     cat > /opt/gwi-pos/kiosk-control.sh <<'KIOSKCTL'
 #!/bin/bash
 set -euo pipefail
@@ -944,7 +944,7 @@ KIOSKCTL
     chown root:root /opt/gwi-pos/kiosk-control.sh
     chmod 755 /opt/gwi-pos/kiosk-control.sh
 
-    # Sudoers for terminal — allow service user to manage kiosk + shutdown
+    # Sudoers for terminal -- allow service user to manage kiosk + shutdown
     cat > /etc/sudoers.d/gwi-pos << SUDEOF
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop thepasspos-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start thepasspos-kiosk
@@ -956,7 +956,7 @@ SUDEOF
     chmod 440 /etc/sudoers.d/gwi-pos
 
     # ── Terminal kiosk exit micro-service ────────────────────────────────────
-    # On terminals, the POS app runs on the server — so POST /api/system/exit-kiosk
+    # On terminals, the POS app runs on the server -- so POST /api/system/exit-kiosk
     # kills the server's kiosk, not the terminal's. This tiny Python HTTP server
     # listens on localhost:3006 and handles the exit command locally.
 
@@ -1034,7 +1034,7 @@ SVCEOF
       cp "$_WD_SRC/watchdog.service" /etc/systemd/system/gwi-watchdog.service
       cp "$_WD_SRC/watchdog.timer" /etc/systemd/system/gwi-watchdog.timer
     else
-      track_warn "watchdog.service or watchdog.timer not found — watchdog timer not installed"
+      track_warn "watchdog.service or watchdog.timer not found -- watchdog timer not installed"
     fi
 
     # Copy monitoring scripts
@@ -1057,7 +1057,7 @@ SVCEOF
       log "Watchdog timer enabled (health check every 30s)"
     fi
   else
-    track_warn "watchdog.sh not found — watchdog not installed"
+    track_warn "watchdog.sh not found -- watchdog not installed"
   fi
 
   # ─────────────────────────────────────────────────────────────────────────────
@@ -1072,6 +1072,6 @@ SVCEOF
     log "Shared installer libraries copied to /opt/gwi-pos/installer-modules/lib/"
   fi
 
-  log "Stage: services — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: services -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }

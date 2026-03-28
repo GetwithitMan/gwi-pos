@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 10-finalize.sh — Summary, warnings, first-boot marker
+# 10-finalize.sh -- Summary, warnings, first-boot marker
 # =============================================================================
 # Entry: run_finalize
 # Expects: STATION_ROLE, POSUSER, POSUSER_HOME, APP_BASE, ENV_FILE,
@@ -11,7 +11,7 @@
 
 run_finalize() {
   local _start=$(date +%s)
-  log "Stage: finalize — starting"
+  log "Stage: finalize -- starting"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Summary
@@ -64,18 +64,18 @@ run_finalize() {
     fi
     echo ""
     echo -e "  ${CYAN}Services:${NC}"
-    echo "    thepasspos        — $(systemctl is-active thepasspos 2>/dev/null || echo 'unknown')"
+    echo "    thepasspos        -- $(systemctl is-active thepasspos 2>/dev/null || echo 'unknown')"
     # Only show kiosk if it was enabled (not skipped by preflight)
     KIOSK_STATUS=$(systemctl is-enabled thepasspos-kiosk 2>/dev/null || echo "disabled")
     if [[ "$KIOSK_STATUS" != "disabled" ]]; then
-      echo "    thepasspos-kiosk  — $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
+      echo "    thepasspos-kiosk  -- $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
     else
-      echo "    thepasspos-kiosk  — skipped (preflight failed)"
+      echo "    thepasspos-kiosk  -- skipped (preflight failed)"
     fi
-    echo "    thepasspos-sync   — $SYNC_STATUS"
-    echo "    postgresql        — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
+    echo "    thepasspos-sync   -- $SYNC_STATUS"
+    echo "    postgresql        -- $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
     if [[ -n "${VIRTUAL_IP:-}" ]]; then
-      echo "    keepalived        — $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
+      echo "    keepalived        -- $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
     fi
   elif [[ "$STATION_ROLE" == "backup" ]]; then
     echo -e "  ${GREEN}HA Mode:${NC}  Backup standby (VIP: ${VIRTUAL_IP:-none})"
@@ -85,49 +85,49 @@ run_finalize() {
     SYNC_STATUS=$(systemctl is-active thepasspos-sync 2>/dev/null || echo "not installed")
     echo ""
     echo -e "  ${CYAN}Services:${NC}"
-    echo "    thepasspos        — $(systemctl is-active thepasspos 2>/dev/null || echo 'standby (not started)')"
-    echo "    thepasspos-sync   — $SYNC_STATUS"
-    echo "    postgresql        — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown') (standby)"
-    echo "    keepalived        — $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
+    echo "    thepasspos        -- $(systemctl is-active thepasspos 2>/dev/null || echo 'standby (not started)')"
+    echo "    thepasspos-sync   -- $SYNC_STATUS"
+    echo "    postgresql        -- $(systemctl is-active postgresql 2>/dev/null || echo 'unknown') (standby)"
+    echo "    keepalived        -- $(systemctl is-active keepalived 2>/dev/null || echo 'unknown')"
   else
     echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
     echo ""
     echo -e "  ${CYAN}Services:${NC}"
-    echo "    thepasspos-kiosk      — $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
-    echo "    thepasspos-exit-kiosk — $(systemctl is-active thepasspos-exit-kiosk 2>/dev/null || echo 'unknown')"
+    echo "    thepasspos-kiosk      -- $(systemctl is-active thepasspos-kiosk 2>/dev/null || echo 'unknown')"
+    echo "    thepasspos-exit-kiosk -- $(systemctl is-active thepasspos-exit-kiosk 2>/dev/null || echo 'unknown')"
   fi
 
   echo ""
   echo -e "  ${CYAN}Useful commands:${NC}"
   if [[ "$STATION_ROLE" == "server" ]]; then
-    echo "    sudo systemctl status thepasspos        — Check POS status"
-    echo "    sudo systemctl status thepasspos-sync   — Check sync agent"
-    echo "    sudo journalctl -u thepasspos -f        — View POS logs"
-    echo "    sudo journalctl -u thepasspos-sync -f   — View sync agent logs"
-    echo "    sudo systemctl restart thepasspos       — Restart POS"
+    echo "    sudo systemctl status thepasspos        -- Check POS status"
+    echo "    sudo systemctl status thepasspos-sync   -- Check sync agent"
+    echo "    sudo journalctl -u thepasspos -f        -- View POS logs"
+    echo "    sudo journalctl -u thepasspos-sync -f   -- View sync agent logs"
+    echo "    sudo systemctl restart thepasspos       -- Restart POS"
     if [[ "$USE_LOCAL_PG" == "true" ]]; then
-      echo "    sudo bash $BACKUP_SCRIPT               — Run manual backup"
-      echo "    sudo /opt/gwi-pos/scripts/nuc-backup-upload.sh — Upload backup to S3"
-      echo "    sudo /opt/gwi-pos/scripts/nuc-restore.sh       — Restore from backup"
+      echo "    sudo bash $BACKUP_SCRIPT               -- Run manual backup"
+      echo "    sudo /opt/gwi-pos/scripts/nuc-backup-upload.sh -- Upload backup to S3"
+      echo "    sudo /opt/gwi-pos/scripts/nuc-restore.sh       -- Restore from backup"
     fi
     if [[ -n "${VIRTUAL_IP:-}" ]]; then
-      echo "    sudo systemctl status keepalived        — Check HA status"
-      echo "    ip addr show | grep $VIRTUAL_IP         — Check if VIP is on this node"
+      echo "    sudo systemctl status keepalived        -- Check HA status"
+      echo "    ip addr show | grep $VIRTUAL_IP         -- Check if VIP is on this node"
     fi
-    echo "    cat /opt/gwi-pos/heartbeat.log          — View heartbeat log"
+    echo "    cat /opt/gwi-pos/heartbeat.log          -- View heartbeat log"
   elif [[ "$STATION_ROLE" == "backup" ]]; then
-    echo "    sudo systemctl status postgresql         — Check PG standby"
-    echo "    sudo systemctl status keepalived         — Check HA status"
-    echo "    sudo -u postgres psql -c 'SELECT pg_is_in_recovery();'  — Verify standby mode"
-    echo "    ip addr show | grep ${VIRTUAL_IP:-VIP}   — Check if VIP is on this node"
-    echo "    sudo /opt/gwi-pos/scripts/promote.sh     — Promote to primary (failover)"
-    echo "    sudo /opt/gwi-pos/scripts/nuc-restore.sh — Restore from backup"
-    echo "    cat /opt/gwi-pos/heartbeat.log           — View heartbeat log"
+    echo "    sudo systemctl status postgresql         -- Check PG standby"
+    echo "    sudo systemctl status keepalived         -- Check HA status"
+    echo "    sudo -u postgres psql -c 'SELECT pg_is_in_recovery();'  -- Verify standby mode"
+    echo "    ip addr show | grep ${VIRTUAL_IP:-VIP}   -- Check if VIP is on this node"
+    echo "    sudo /opt/gwi-pos/scripts/promote.sh     -- Promote to primary (failover)"
+    echo "    sudo /opt/gwi-pos/scripts/nuc-restore.sh -- Restore from backup"
+    echo "    cat /opt/gwi-pos/heartbeat.log           -- View heartbeat log"
   else
-    echo "    sudo systemctl status thepasspos-kiosk  — Check kiosk status"
-    echo "    sudo journalctl -u thepasspos-kiosk -f  — View kiosk logs"
-    echo "    sudo systemctl restart thepasspos-kiosk — Restart kiosk"
-    echo "    sudo /opt/gwi-pos/kiosk-control.sh stop — Exit kiosk mode"
+    echo "    sudo systemctl status thepasspos-kiosk  -- Check kiosk status"
+    echo "    sudo journalctl -u thepasspos-kiosk -f  -- View kiosk logs"
+    echo "    sudo systemctl restart thepasspos-kiosk -- Restart kiosk"
+    echo "    sudo /opt/gwi-pos/kiosk-control.sh stop -- Exit kiosk mode"
   fi
   echo ""
   echo -e "  ${CYAN}Re-run this installer to update:${NC}"
@@ -173,7 +173,7 @@ run_finalize() {
   local _hw_inventory="{}"
   if [[ -x /opt/gwi-pos/scripts/hardware-inventory.sh ]]; then
     _hw_inventory=$(/opt/gwi-pos/scripts/hardware-inventory.sh 2>/dev/null || echo "{}")
-    # Validate JSON — fall back to empty object if invalid
+    # Validate JSON -- fall back to empty object if invalid
     echo "$_hw_inventory" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null || _hw_inventory="{}"
   fi
 
@@ -250,12 +250,12 @@ REPORT
   # ── Post-Install Verification ──────────────────────────────────────────────
   _run_verification
 
-  log "Stage: finalize — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: finalize -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }
 
 # =============================================================================
-# _run_verification — Comprehensive post-install verification
+# _run_verification -- Comprehensive post-install verification
 # =============================================================================
 # Checks EVERY installed component: expected version vs installed version.
 # Status codes: PASS, FAIL, MISSING, OUTDATED, WARN, SKIPPED
@@ -293,7 +293,7 @@ _run_verification() {
       MISSING)  icon="✗"; ((fail++)) ;;
       OUTDATED) icon="✗"; ((fail++)) ;;
       WARN)     icon="⚠"; ((warn_count++)) ;;
-      SKIPPED)  icon="—"; ((warn_count++)) ;;
+      SKIPPED)  icon="--"; ((warn_count++)) ;;
       *)        icon="?"; ((warn_count++)) ;;
     esac
     local color
@@ -302,7 +302,7 @@ _run_verification() {
       WARN|SKIPPED) color="$YELLOW" ;;
       *)        color="$RED" ;;
     esac
-    printf "  %b%s%b %-22s Expected: %-12s Installed: %-12s — %b%s%b\n" \
+    printf "  %b%s%b %-22s Expected: %-12s Installed: %-12s -- %b%s%b\n" \
       "$color" "$icon" "$NC" "$name" "$expected" "$installed" "$color" "$status" "$NC"
     # Build JSON result entry
     local json="{\"component\":\"$name\",\"expected\":\"$expected\",\"installed\":\"$installed\",\"status\":\"$status\""
@@ -575,7 +575,7 @@ _run_verification() {
 
   # ── 20. App Deployment (artifact or git) ──────────────────────────────────
   if [[ -L "/opt/gwi-pos/current" ]]; then
-    # Artifact-based deployment — no git repo needed
+    # Artifact-based deployment -- no git repo needed
     local release_id
     release_id=$(basename "$(readlink -f /opt/gwi-pos/current 2>/dev/null)" 2>/dev/null || echo "UNKNOWN")
     _record "App Deploy" "artifact" "$release_id" "PASS" "artifact-based"
@@ -668,7 +668,7 @@ _run_verification() {
 
   if [[ $fail -gt 0 ]]; then
     echo ""
-    echo -e "  ${RED}!!!  $fail CRITICAL FAILURE(S) DETECTED — review verification table above  !!!${NC}"
+    echo -e "  ${RED}!!!  $fail CRITICAL FAILURE(S) DETECTED -- review verification table above  !!!${NC}"
     echo ""
   fi
 

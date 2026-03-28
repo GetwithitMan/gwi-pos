@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 06-schema.sh — prisma db push, nuc-pre-migrate.js, seed, build
+# 06-schema.sh -- prisma db push, nuc-pre-migrate.js, seed, build
 # =============================================================================
 # Entry: run_schema
 # Expects: STATION_ROLE, APP_DIR, APP_BASE, ENV_FILE, POSUSER, NEON_PSQL,
@@ -10,12 +10,12 @@
 
 run_schema() {
   local _start=$(date +%s)
-  log "Stage: schema — starting"
+  log "Stage: schema -- starting"
 
   # Load error codes library
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
 
-  # Stop AND disable POS service — prevents Restart=always from bringing it back
+  # Stop AND disable POS service -- prevents Restart=always from bringing it back
   # during schema operations. Re-enabled in 07-services.sh.
   if systemctl is-active --quiet thepasspos 2>/dev/null || systemctl is-enabled --quiet thepasspos 2>/dev/null; then
     log "Stopping POS service for schema operations..."
@@ -25,7 +25,7 @@ run_schema() {
 
   # Only server + backup roles need schema work
   if [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
-    log "Stage: schema — skipped (terminal role)"
+    log "Stage: schema -- skipped (terminal role)"
     return 0
   fi
 
@@ -44,7 +44,7 @@ run_schema() {
       if [[ -n "$NEON_SCHEMA_VERSION" ]]; then
         log "Neon schema version: $NEON_SCHEMA_VERSION"
       else
-        warn "Could not read schema version from Neon — Neon may not be provisioned yet"
+        warn "Could not read schema version from Neon -- Neon may not be provisioned yet"
       fi
     fi
 
@@ -52,7 +52,7 @@ run_schema() {
     # prisma db push creates tables/columns from schema.prisma.
     # nuc-pre-migrate.js runs numbered migrations for data backfills + DDL patches.
     # Timeout 120s: Prisma schema engine can hang when diffing large schemas already in sync.
-    # --accept-data-loss is BANNED — schema must only move forward. See ARCHITECTURE-RULES.md.
+    # --accept-data-loss is BANNED -- schema must only move forward. See ARCHITECTURE-RULES.md.
 
     # Capture pre-push table list for drift detection
     local PRE_PUSH_TABLES
@@ -69,7 +69,7 @@ run_schema() {
     if [[ -f "$deploy_tools_dir/src/apply-schema.js" ]]; then
       log "Applying schema via deploy-tools (pg-only)..."
       if ! timeout --kill-after=10 120 sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/apply-schema.js" 2>&1 | tail -5; then
-        warn "apply-schema.js timed out or had warnings — continuing..."
+        warn "apply-schema.js timed out or had warnings -- continuing..."
       else
         log "Schema applied successfully (deploy-tools)"
         touch /opt/gwi-pos/.schema-stage-done
@@ -78,7 +78,7 @@ run_schema() {
       log "Running local migrations via deploy-tools..."
       if ! sudo -u "$POSUSER" bash -c "cd '$deploy_tools_dir' && DATABASE_URL='$DATABASE_URL' node src/migrate.js" 2>&1; then
         err_code "ERR-INST-184" "Migration runner (deploy-tools/migrate.js) failed"
-        warn "Migrations failed — continuing but venue may have issues"
+        warn "Migrations failed -- continuing but venue may have issues"
         track_warn "deploy-tools migrate.js failed"
       fi
     else
@@ -103,7 +103,7 @@ run_schema() {
     # ── Step 2.5: Warn if _venue_schema_state missing in Neon ──
     # AUTHORITY MODEL: _venue_schema_state is MC-owned. The installer must NOT
     # create or write to it in Neon. MC provisions that table during venue setup.
-    # If it's missing, the readiness gate will block sync — that's the correct
+    # If it's missing, the readiness gate will block sync -- that's the correct
     # behavior until MC completes provisioning. Log a clear warning so the tech
     # knows to check MC provisioning status.
     if [[ -n "$NEON_DIRECT_URL" ]] && [[ -z "$NEON_SCHEMA_VERSION" ]]; then
@@ -116,7 +116,7 @@ run_schema() {
         warn "This means MC provisioning did not complete for this venue."
         warn "Sync readiness gate will block until MC provisions this table."
         warn "Fix: Go to Mission Control -> this venue -> re-run provisioning."
-        track_warn "Neon _venue_schema_state missing — MC provisioning incomplete"
+        track_warn "Neon _venue_schema_state missing -- MC provisioning incomplete"
       fi
     fi
 
@@ -133,7 +133,7 @@ run_schema() {
           err "Seed status file: $APP_BASE/.seed-status"
           return 1
         else
-          warn "Neon seed had warnings — check $APP_BASE/.seed-status"
+          warn "Neon seed had warnings -- check $APP_BASE/.seed-status"
         fi
       fi
       # Verify seed completed successfully
@@ -147,7 +147,7 @@ run_schema() {
           return 1
         fi
       else
-        warn "No seed status file found — seed may not have run the hardened version"
+        warn "No seed status file found -- seed may not have run the hardened version"
       fi
     fi
 
@@ -167,13 +167,13 @@ run_schema() {
           log "  $tbl: $count rows"
         fi
       else
-        err "$tbl table MISSING — schema push may have failed"
+        err "$tbl table MISSING -- schema push may have failed"
         validation_failed=true
       fi
     done
     if [[ "$validation_failed" == "true" ]]; then
       err_code "ERR-INST-182" "One or more critical tables missing after schema push"
-      err "Critical tables missing — cannot proceed"
+      err "Critical tables missing -- cannot proceed"
       return 1
     fi
 
@@ -227,24 +227,24 @@ run_schema() {
       INSERT INTO \"_local_install_state\" (pos_version, installer_version) VALUES ('$_esc_version', 'installer.run');
     " >/dev/null 2>&1
     log "Local install state recorded (pos_version=$SCHEMA_VERSION, source=$SCHEMA_SOURCE)"
-    log "NOTE: _venue_schema_state is MC-owned — installer does not write to it"
+    log "NOTE: _venue_schema_state is MC-owned -- installer does not write to it"
   else
-    log "Skipping database migrations (backup standby — data replicated from primary)."
+    log "Skipping database migrations (backup standby -- data replicated from primary)."
   fi
 
   # ── Build step ──
-  # Artifact deploys are pre-built on Vercel — skip npm run build.
+  # Artifact deploys are pre-built on Vercel -- skip npm run build.
   # Legacy deploys (git clone) need a local build.
   if [[ -d "$APP_DIR/.next" ]] && [[ "${LEGACY_DEPLOY:-}" != "1" ]]; then
-    log "Artifact deploy detected (.next exists) — skipping build (already pre-built on Vercel)"
+    log "Artifact deploy detected (.next exists) -- skipping build (already pre-built on Vercel)"
   else
     # NUC builds skip TypeScript type-checking (tsc --noEmit) because:
     # 1. Types are already verified in CI/Vercel before code reaches the NUC
-    # 2. tsc needs 4-16GB heap and takes 2-3 minutes — wasteful on every install
+    # 2. tsc needs 4-16GB heap and takes 2-3 minutes -- wasteful on every install
     # 3. Type errors don't affect runtime behavior (Next.js builds fine without tsc)
     local BUILD_NODE_OPTS="--max-old-space-size=4096"
 
-    # Clear stale tsc incremental cache — prevents false type errors after schema changes
+    # Clear stale tsc incremental cache -- prevents false type errors after schema changes
     rm -f "$APP_DIR/tsconfig.tsbuildinfo" 2>/dev/null || true
 
     log "Building POS application (this takes a few minutes)..."
@@ -259,7 +259,7 @@ run_schema() {
 
   # ── Post-build: update _local_install_state with freshly generated version ──
   # The build step generates version-contract.json with the real schema version.
-  # This is purely informational — _venue_schema_state is MC-owned, not touched here.
+  # This is purely informational -- _venue_schema_state is MC-owned, not touched here.
   if [[ "$STATION_ROLE" == "server" ]]; then
     BUILT_VERSION=$(sudo -u "$POSUSER" node -e "try{console.log(require('$APP_DIR/src/generated/version-contract.json').schemaVersion)}catch(e){}" 2>/dev/null || echo "")
     if [[ -z "$BUILT_VERSION" ]]; then
@@ -275,6 +275,6 @@ run_schema() {
     fi
   fi
 
-  log "Stage: schema — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: schema -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }

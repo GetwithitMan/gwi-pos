@@ -18,13 +18,27 @@ mark_incomplete() {
   echo "INCOMPLETE:$(date -u +%Y-%m-%dT%H:%M:%SZ):$1" > "$SEED_STATUS_FILE"
 }
 
-# ── Load env ───────────────────────────────────────────────────────────────
+# ── Load env (line-by-line parsing -- safe for UTF-8 comments) ─────────────
+_load_env_file() {
+  local file="$1"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    line="${line#"${line%%[![:space:]]*}"}"
+    [[ -z "$line" ]] && continue
+    key="${line%%=*}"; val="${line#*=}"
+    # Strip surrounding double-quotes if present
+    val="${val#\"}"; val="${val%\"}"
+    export "$key=$val" 2>/dev/null || true
+  done < "$file"
+}
+
 if [ -f /opt/gwi-pos/.env ]; then
-  set -a; source /opt/gwi-pos/.env; set +a
+  _load_env_file /opt/gwi-pos/.env
 elif [ -f .env.local ]; then
-  set -a; source .env.local; set +a
+  _load_env_file .env.local
 elif [ -f .env ]; then
-  set -a; source .env; set +a
+  _load_env_file .env
 fi
 
 if [ -z "${NEON_DATABASE_URL:-}" ]; then

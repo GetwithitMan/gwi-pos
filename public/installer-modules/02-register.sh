@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 02-register.sh — Station configuration prompts, MC registration, identity
+# 02-register.sh -- Station configuration prompts, MC registration, identity
 # =============================================================================
 # Entry: run_register
 # Expects: POSUSER, POSUSER_HOME, APP_BASE, ENV_FILE, MC_URL, MC_REGISTER_URL,
@@ -42,7 +42,7 @@ handle_duplicate_primary_rejection() {
   local response_body="$2"
 
   if [[ "$http_code" != "409" ]]; then
-    return 0  # Not a 409 — continue normal flow
+    return 0  # Not a 409 -- continue normal flow
   fi
 
   echo ""
@@ -87,7 +87,7 @@ handle_duplicate_primary_rejection() {
       return 2  # Signal: retry same role
       ;;
     3|*)
-      err_code "ERR-INST-050" "Installation aborted — duplicate primary server"
+      err_code "ERR-INST-050" "Installation aborted -- duplicate primary server"
       return 3  # Signal: abort
       ;;
   esac
@@ -96,7 +96,7 @@ handle_duplicate_primary_rejection() {
 attempt_quick_code_registration() {
   echo ""
   echo "╔══════════════════════════════════════════════════╗"
-  echo "║      GWI POS — One-Click Venue Deployment       ║"
+  echo "║      GWI POS -- One-Click Venue Deployment       ║"
   echo "╠══════════════════════════════════════════════════╣"
   echo "║                                                  ║"
   echo "║  Enter the 6-digit registration code from        ║"
@@ -136,7 +136,7 @@ attempt_quick_code_registration() {
   # DESIGN NOTE: Keypair MUST be generated BEFORE the MC validation call because
   # the public key is sent in the validation payload. MC uses it to encrypt the
   # secrets (API key, DB URLs, deploy token) it returns. The hardware fingerprint
-  # is validated by MC as part of the same call — both are sent together.
+  # is validated by MC as part of the same call -- both are sent together.
   mkdir -p "$APP_BASE" "$KEY_DIR"
   chmod 700 "$KEY_DIR"
   if [[ ! -f "$KEY_DIR/private.pem" ]]; then
@@ -190,11 +190,11 @@ attempt_quick_code_registration() {
       handle_duplicate_primary_rejection "$http_code" "$response"
       local _dup_rc=$?
       if [[ $_dup_rc -eq 1 ]]; then
-        # User chose backup role — retry with updated STATION_ROLE
+        # User chose backup role -- retry with updated STATION_ROLE
         _qc_retry=true
         continue
       elif [[ $_dup_rc -eq 2 ]]; then
-        # User did Replace Server in MC — retry same role
+        # User did Replace Server in MC -- retry same role
         _qc_retry=true
         continue
       elif [[ $_dup_rc -eq 3 ]]; then
@@ -202,7 +202,7 @@ attempt_quick_code_registration() {
         return 1
       fi
 
-      # ── Not a 409 — handle other error codes ──
+      # ── Not a 409 -- handle other error codes ──
       local err_msg
       err_msg=$(echo "$response" | jq -r '.error // .message // empty' 2>/dev/null || echo "")
 
@@ -213,7 +213,7 @@ attempt_quick_code_registration() {
       elif [[ "$http_code" == "410" ]]; then
         warn "Code has expired. Generate a new one in Mission Control."
       elif [[ "$http_code" == "429" ]]; then
-        warn "Too many attempts — wait 1 minute and try again."
+        warn "Too many attempts -- wait 1 minute and try again."
       else
         warn "Quick-code validation failed (HTTP $http_code): ${err_msg:-unknown}"
       fi
@@ -334,7 +334,7 @@ attempt_quick_code_registration() {
     NEON_DATABASE_URL="$DATABASE_URL"
     NEON_DIRECT_URL="$DIRECT_URL"
     SYNC_ENABLED="true"
-    log "Cloud database URL provided — storing as NEON_DATABASE_URL for sync."
+    log "Cloud database URL provided -- storing as NEON_DATABASE_URL for sync."
     DATABASE_URL=""
     DIRECT_URL=""
   fi
@@ -359,7 +359,7 @@ attempt_quick_code_registration() {
 
 run_register() {
   local _start=$(date +%s)
-  log "Stage: register — starting"
+  log "Stage: register -- starting"
 
   # Load error codes library
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
@@ -369,14 +369,14 @@ run_register() {
   # ─────────────────────────────────────────────────────────────────────────────
 
   if attempt_quick_code_registration; then
-    log "Quick-code provisioning complete — skipping manual registration prompts."
-    # Skip all manual prompts and MC registration — jump to end
-    log "Stage: register — completed in $(( $(date +%s) - _start ))s"
+    log "Quick-code provisioning complete -- skipping manual registration prompts."
+    # Skip all manual prompts and MC registration -- jump to end
+    log "Stage: register -- completed in $(( $(date +%s) - _start ))s"
     return 0
   fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Manual Flow — Prompts — Station Configuration
+  # Manual Flow -- Prompts -- Station Configuration
   # ─────────────────────────────────────────────────────────────────────────────
 
   header "Station Configuration"
@@ -398,9 +398,9 @@ run_register() {
 
   # 1. Role
   echo "What role is this station?"
-  echo "  1) Server  — Runs POS app + database + web UI (no kiosk)"
-  echo "  2) Terminal — Chromium kiosk (connects to a server)"
-  echo "  3) Backup  — Hot standby (PG replication + VIP failover)"
+  echo "  1) Server  -- Runs POS app + database + web UI (no kiosk)"
+  echo "  2) Terminal -- Chromium kiosk (connects to a server)"
+  echo "  3) Backup  -- Hot standby (PG replication + VIP failover)"
   echo ""
   while true; do
     read -rp "Select (1, 2, or 3): " role_choice < /dev/tty
@@ -440,7 +440,7 @@ run_register() {
              source "${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/lib/pre-update-safety.sh" 2>/dev/null || true
              if type create_pre_update_backup >/dev/null 2>&1; then
                log "Creating pre-update backup (keep existing path)..."
-               create_pre_update_backup >/dev/null 2>&1 || warn "Pre-update backup failed — continuing with update"
+               create_pre_update_backup >/dev/null 2>&1 || warn "Pre-update backup failed -- continuing with update"
              fi
              if type record_pre_update_state >/dev/null 2>&1; then
                record_pre_update_state 2>/dev/null || true
@@ -451,20 +451,20 @@ run_register() {
              source "${MODULES_DIR:-$SCRIPT_DIR/installer-modules}/lib/pre-update-safety.sh" 2>/dev/null || true
              if type ensure_data_synced_to_neon >/dev/null 2>&1; then
                log "Ensuring data is synced to Neon before re-registration..."
-               ensure_data_synced_to_neon 2>/dev/null || warn "Sync check failed — some data may not be in Neon yet. Proceeding anyway."
+               ensure_data_synced_to_neon 2>/dev/null || warn "Sync check failed -- some data may not be in Neon yet. Proceeding anyway."
              fi
              if type create_pre_update_backup >/dev/null 2>&1; then
                log "Creating pre-register backup..."
                local _backup_json
                _backup_json=$(create_pre_update_backup 2>/dev/null) || {
-                 err "Backup failed — refusing to proceed without safety net"
+                 err "Backup failed -- refusing to proceed without safety net"
                  return 1
                }
                local _backup_path
                _backup_path=$(echo "$_backup_json" | grep -o '"path":"[^"]*"' | cut -d'"' -f4 || echo "")
                if [[ -n "$_backup_path" ]] && type verify_backup_integrity >/dev/null 2>&1; then
                  verify_backup_integrity "$_backup_path" || {
-                   err "Backup integrity check failed — refusing to proceed without safety net"
+                   err "Backup integrity check failed -- refusing to proceed without safety net"
                    return 1
                  }
                  local _backup_size
@@ -477,10 +477,10 @@ run_register() {
                sed -i '/^SERVER_NODE_ID=/d; /^SERVER_API_KEY=/d; /^HARDWARE_FINGERPRINT=/d; /^POS_LOCATION_ID=/d; /^LOCATION_ID=/d; /^CLOUD_LOCATION_ID=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
                log "Cleared old registration credentials + venue identity from .env"
              fi
-             # Rotate RSA keys — MC will issue new identity
+             # Rotate RSA keys -- MC will issue new identity
              rm -f "$KEY_DIR/private.pem" "$KEY_DIR/public.pem" 2>/dev/null || true
              log "Removed old RSA keypair (new keys will be generated)"
-             # Wipe local database for clean venue — old venue data must not leak
+             # Wipe local database for clean venue -- old venue data must not leak
              # into the new venue. The new venue's data will come via provisioning + sync.
              # DB_NAME/DB_USER are hardcoded here because they aren't set yet at this
              # point in the installer (they're set later in the .env canonicalization).
@@ -494,7 +494,7 @@ run_register() {
                  return 1
                fi
                log "Wiping local database for clean re-registration..."
-               # DROP may fail if DB doesn't exist or has active connections — that's OK
+               # DROP may fail if DB doesn't exist or has active connections -- that's OK
                sudo -u postgres psql -c "DROP DATABASE IF EXISTS thepasspos;" 2>/dev/null || {
                  warn "DROP DATABASE failed (may have active connections). Attempting with force..."
                  sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='thepasspos' AND pid <> pg_backend_pid();" 2>/dev/null || true
@@ -599,7 +599,7 @@ run_register() {
     echo ""
     echo "High Availability setup (optional)"
     echo "  If this server will be paired with a backup NUC, enter the Virtual IP."
-    echo "  Press Enter to skip (solo NUC — no HA)."
+    echo "  Press Enter to skip (solo NUC -- no HA)."
     echo ""
     read -rp "Virtual IP (or press Enter to skip): " VIRTUAL_IP < /dev/tty
     if [[ -n "$VIRTUAL_IP" ]]; then
@@ -629,7 +629,7 @@ run_register() {
 
     if [[ "$STATION_ROLE" == "server" ]] && [[ -f "$BACKUP_SCRIPT" ]]; then
       log "Running pre-update backup..."
-      bash "$BACKUP_SCRIPT" || warn "Backup failed — continuing anyway."
+      bash "$BACKUP_SCRIPT" || warn "Backup failed -- continuing anyway."
     fi
 
     # Role change: disable services from old role
@@ -640,7 +640,7 @@ run_register() {
         systemctl disable --now thepasspos 2>/dev/null || true
         systemctl disable --now thepasspos-sync 2>/dev/null || true
         systemctl disable --now keepalived 2>/dev/null || true
-        # Fully remove PostgreSQL — terminal doesn't need it
+        # Fully remove PostgreSQL -- terminal doesn't need it
         systemctl disable --now postgresql 2>/dev/null || true
         systemctl mask postgresql 2>/dev/null || true
         apt-get purge -y --auto-remove postgresql* postgresql-contrib* 2>/dev/null || true
@@ -650,14 +650,14 @@ run_register() {
         # Remove server-only cron entries
         crontab -u "$POSUSER" -l 2>/dev/null | grep -vF -e "/opt/gwi-pos/heartbeat.sh" -e "/opt/gwi-pos/backup-pos.sh" | crontab -u "$POSUSER" - 2>/dev/null || true
         log "Removed heartbeat and backup cron entries from previous server role"
-        # Scrub server-only identity keys from .env — terminal must not carry stale server metadata
+        # Scrub server-only identity keys from .env -- terminal must not carry stale server metadata
         sed -i '/^SERVER_NODE_ID=/d; /^SERVER_API_KEY=/d; /^HARDWARE_FINGERPRINT=/d' "$ENV_FILE" 2>/dev/null || true
         sed -i '/^MISSION_CONTROL_URL=/d; /^LOCATION_ID=/d; /^CLOUD_LOCATION_ID=/d' "$ENV_FILE" 2>/dev/null || true
         sed -i '/^CLOUD_ORGANIZATION_ID=/d; /^CLOUD_ENTERPRISE_ID=/d' "$ENV_FILE" 2>/dev/null || true
         sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
         sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
         sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d; /^VIRTUAL_IP=/d; /^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
-        # Scrub ALL secrets — stale secrets from old role must not persist into terminal
+        # Scrub ALL secrets -- stale secrets from old role must not persist into terminal
         sed -i '/^DB_PASSWORD=/d; /^REPL_PASSWORD=/d; /^VRRP_AUTH_PASS=/d; /^CELLULAR_TOKEN_SECRET=/d; /^SESSION_SECRET=/d; /^TENANT_SIGNING_KEY=/d; /^POS_VENUE_SLUG=/d' "$ENV_FILE" 2>/dev/null || true
         log "Scrubbed server-only identity, database keys, and secrets from .env"
       elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "server" ]]; then
@@ -693,7 +693,7 @@ run_register() {
         sed -i '/^DATABASE_URL=/d; /^DIRECT_URL=/d; /^NEON_DATABASE_URL=/d; /^NEON_DIRECT_URL=/d' "$ENV_FILE" 2>/dev/null || true
         sed -i '/^SYNC_ENABLED=/d; /^BACKOFFICE_API_URL=/d; /^INTERNAL_API_SECRET=/d' "$ENV_FILE" 2>/dev/null || true
         sed -i '/^NEXT_PUBLIC_EVENT_PROVIDER=/d; /^VIRTUAL_IP=/d; /^PRIMARY_NUC_IP=/d' "$ENV_FILE" 2>/dev/null || true
-        # Scrub ALL secrets — stale secrets from old role must not persist into terminal
+        # Scrub ALL secrets -- stale secrets from old role must not persist into terminal
         sed -i '/^DB_PASSWORD=/d; /^REPL_PASSWORD=/d; /^VRRP_AUTH_PASS=/d; /^CELLULAR_TOKEN_SECRET=/d; /^SESSION_SECRET=/d; /^TENANT_SIGNING_KEY=/d; /^POS_VENUE_SLUG=/d' "$ENV_FILE" 2>/dev/null || true
         log "Scrubbed backup identity, database keys, and secrets from .env"
       elif [[ "$PREV_ROLE" == "terminal" ]] && [[ "$STATION_ROLE" == "backup" ]]; then
@@ -798,11 +798,11 @@ run_register() {
         handle_duplicate_primary_rejection "$HTTP_CODE" "$REG_RESPONSE"
         local _dup_rc=$?
         if [[ $_dup_rc -eq 1 ]]; then
-          # User chose backup role — retry with updated STATION_ROLE
+          # User chose backup role -- retry with updated STATION_ROLE
           _reg_retry=true
           continue
         elif [[ $_dup_rc -eq 2 ]]; then
-          # User did Replace Server in MC — retry same role
+          # User did Replace Server in MC -- retry same role
           _reg_retry=true
           continue
         elif [[ $_dup_rc -eq 3 ]]; then
@@ -810,7 +810,7 @@ run_register() {
           return 1
         fi
 
-        # ── Not a 409 — handle other error codes ──
+        # ── Not a 409 -- handle other error codes ──
         if [[ "$HTTP_CODE" == "000" ]]; then
           err_code "ERR-INST-052" "MC unreachable at $MC_REGISTER_URL (HTTP $HTTP_CODE)"
         else
@@ -896,7 +896,7 @@ run_register() {
     DIRECT_URL=$(decrypt_rsa "$ENCRYPTED_DIRECT_URL" "directUrl")
     DEPLOY_TOKEN=$(decrypt_rsa "$ENCRYPTED_DEPLOY_TOKEN" "deployToken")
 
-    # Decrypt repo URL (if provided by Mission Control — avoids hardcoding in public script)
+    # Decrypt repo URL (if provided by Mission Control -- avoids hardcoding in public script)
     if [[ -n "$ENCRYPTED_REPO_URL" ]]; then
       DECRYPTED_REPO_URL=$(decrypt_rsa "$ENCRYPTED_REPO_URL" "repoUrl")
       if [[ -n "$DECRYPTED_REPO_URL" ]]; then
@@ -918,7 +918,7 @@ run_register() {
         BACKOFFICE_API_URL="$DECRYPTED_BO_URL"
         log "Backoffice URL from registration: $BACKOFFICE_API_URL"
       else
-        log "Backoffice URL decryption failed — using default: $BACKOFFICE_API_URL"
+        log "Backoffice URL decryption failed -- using default: $BACKOFFICE_API_URL"
       fi
     fi
 
@@ -930,7 +930,7 @@ run_register() {
         CELLULAR_CLAIM_KEY="$DECRYPTED_CLAIM_KEY"
         log "Cellular claim key from registration."
       else
-        log "Cellular claim key decryption failed — cellular pairing will not work until manually configured."
+        log "Cellular claim key decryption failed -- cellular pairing will not work until manually configured."
       fi
     fi
 
@@ -939,9 +939,9 @@ run_register() {
       err "Failed to decrypt server API key."
       err ""
       err "Possible causes:"
-      err "  1. RSA padding mismatch — MC must use OAEP with SHA-256 (oaepHash: 'sha256')"
-      err "  2. Key rotation — MC encrypted with a different public key than this NUC's"
-      err "  3. Corrupted response — base64 data was truncated or malformed"
+      err "  1. RSA padding mismatch -- MC must use OAEP with SHA-256 (oaepHash: 'sha256')"
+      err "  2. Key rotation -- MC encrypted with a different public key than this NUC's"
+      err "  3. Corrupted response -- base64 data was truncated or malformed"
       err ""
       err "Fix: delete $KEY_DIR and re-run the installer to generate a new keypair."
       return 1
@@ -958,22 +958,22 @@ run_register() {
       NEON_DATABASE_URL="$DATABASE_URL"
       NEON_DIRECT_URL="$DIRECT_URL"
       SYNC_ENABLED="true"
-      log "Cloud database URL provided — storing as NEON_DATABASE_URL for sync + cellular ingress."
+      log "Cloud database URL provided -- storing as NEON_DATABASE_URL for sync + cellular ingress."
       log "Local PostgreSQL will be primary (offline-first mode)."
-      # Clear cloud URLs — local PG will be set up in the PostgreSQL section
+      # Clear cloud URLs -- local PG will be set up in the PostgreSQL section
       DATABASE_URL=""
       DIRECT_URL=""
     fi
     USE_LOCAL_PG=true
 
   elif [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "terminal" ]]; then
-    # Fresh terminal install — handled by secrets module
+    # Fresh terminal install -- handled by secrets module
     :
   else
-    # Already registered — handled by secrets module
+    # Already registered -- handled by secrets module
     :
   fi
 
-  log "Stage: register — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: register -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }

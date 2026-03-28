@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 04-database.sh — PostgreSQL setup, DB create, user, grants, replication
+# 04-database.sh -- PostgreSQL setup, DB create, user, grants, replication
 # =============================================================================
 # Entry: run_database
 # Expects: STATION_ROLE, USE_LOCAL_PG, POSUSER, POSUSER_HOME, APP_BASE,
@@ -11,10 +11,10 @@
 
 run_database() {
   local _start=$(date +%s)
-  log "Stage: database — starting"
+  log "Stage: database -- starting"
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Common Setup (Both Roles) — Dependencies
+  # Common Setup (Both Roles) -- Dependencies
   # ─────────────────────────────────────────────────────────────────────────────
 
   header "Installing Dependencies"
@@ -25,7 +25,7 @@ run_database() {
   systemctl start cron 2>/dev/null || true
 
   # ── Kiosk helper scripts (both server + terminal roles need these) ──
-  # Health-check gate script — kiosk waits for POS server to be ready
+  # Health-check gate script -- kiosk waits for POS server to be ready
   mkdir -p /opt/gwi-pos
   cat > /opt/gwi-pos/wait-for-pos.sh <<'WAITEOF'
 #!/bin/bash
@@ -41,12 +41,12 @@ while [ $ELAPSED -lt $TIMEOUT ]; do
   sleep 5
   ELAPSED=$((ELAPSED + 5))
 done
-echo "[wait-for-pos] POS server not ready after ${TIMEOUT}s — kiosk will retry via systemd Restart=always" >&2
+echo "[wait-for-pos] POS server not ready after ${TIMEOUT}s -- kiosk will retry via systemd Restart=always" >&2
 exit 1
 WAITEOF
   chmod +x /opt/gwi-pos/wait-for-pos.sh
 
-  # Clear Chromium session data — prevents stale "site can't be reached" restore
+  # Clear Chromium session data -- prevents stale "site can't be reached" restore
   cat > /opt/gwi-pos/clear-kiosk-session.sh <<'CLEAREOF'
 #!/bin/bash
 # Chromium restores previous sessions on launch. If the POS was down when
@@ -74,7 +74,7 @@ CLEAREOF
   chmod +x /opt/gwi-pos/clear-kiosk-session.sh
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Server Role: Heartbeat Script + Cron (runs early — before app build)
+  # Server Role: Heartbeat Script + Cron (runs early -- before app build)
   # ─────────────────────────────────────────────────────────────────────────────
   # IMPORTANT: Heartbeat is set up immediately after cron + .env exist so that
   # Mission Control sees the NUC even if a later step (npm build, service start)
@@ -87,17 +87,17 @@ CLEAREOF
     chown "$POSUSER":"$POSUSER" "$APP_BASE"
 
     HB_SCRIPT="$APP_BASE/heartbeat.sh"
-    # NOTE: Single-quoted heredoc (<<'HBEOF') is intentional — prevents premature
+    # NOTE: Single-quoted heredoc (<<'HBEOF') is intentional -- prevents premature
     # expansion of $() subshells. Paths like /opt/gwi-pos are hardcoded because
     # APP_BASE is always /opt/gwi-pos. If APP_BASE ever changes, update these literals.
     cat > "$HB_SCRIPT" <<'HBEOF'
 #!/usr/bin/env bash
-# GWI POS Heartbeat — sends system metrics to Mission Control
+# GWI POS Heartbeat -- sends system metrics to Mission Control
 set -eo pipefail
 
 LOG="/opt/gwi-pos/heartbeat.log"
 
-# Guard: node is required for batch info parsing — skip silently if not yet installed
+# Guard: node is required for batch info parsing -- skip silently if not yet installed
 command -v node >/dev/null 2>&1 || exit 0
 
 ENV_FILE="/opt/gwi-pos/.env"
@@ -145,9 +145,9 @@ BATCH_STATUS="null"
 BATCH_ITEM_COUNT="null"
 BATCH_NO="null"
 if [ -f /opt/gwi-pos/last-batch.json ]; then
-  # Validate JSON before parsing — corrupt file should not produce wrong metrics
+  # Validate JSON before parsing -- corrupt file should not produce wrong metrics
   if ! node -e "JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'))" 2>/dev/null; then
-    echo "[heartbeat] WARNING: last-batch.json is corrupt — using defaults" >&2
+    echo "[heartbeat] WARNING: last-batch.json is corrupt -- using defaults" >&2
   else
     BATCH_CLOSED_AT=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.closedAt||'')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
     BATCH_STATUS=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('/opt/gwi-pos/last-batch.json','utf-8'));process.stdout.write('\"'+(d.status||'unknown')+'\"')}catch(e){process.stdout.write('null')}" 2>/dev/null)
@@ -248,7 +248,7 @@ COMPONENT_VERSIONS_JSON=$(jq -nc \
   --arg installer "$INSTALLER_VERSION" \
   '{pos:$pos,dashboard:$dashboard,syncAgent:$syncAgent,watchdog:$watchdog,installer:$installer}')
 
-# ── NUC Readiness — schema version data for MC schema drift dashboard ──
+# ── NUC Readiness -- schema version data for MC schema drift dashboard ──
 NUC_READINESS_JSON='null'
 # Try live endpoint first (most accurate when POS is running)
 # nuc-readiness requires x-api-key auth (PROVISION_API_KEY)
@@ -264,14 +264,14 @@ elif [ -f /opt/gwi-pos/state/sync-status.json ] && jq empty /opt/gwi-pos/state/s
   NUC_READINESS_JSON=$(jq -c '{
     localDb: true,
     neonReachable: .neonReachable,
-    neonSchemaVersion: .observedVersion,
+    neonSchemaVersion: (.observedVersion // "unknown"),
     seedVersion: null,
     baseSeedPresent: .syncReady,
     schemaBehind: false,
     schemaAhead: false,
     syncWorkers: .syncReady,
-    expectedSchemaVersion: .expectedVersion,
-    observedNeonSchemaVersion: .observedVersion,
+    expectedSchemaVersion: (.expectedVersion // "unknown"),
+    observedNeonSchemaVersion: (.observedVersion // "unknown"),
     schemaRecheckCount: .retryCount,
     readinessLevel: (if .syncReady then "ORDERS" else "BOOT" end)
   }' /opt/gwi-pos/state/sync-status.json 2>/dev/null || echo 'null')
@@ -315,7 +315,7 @@ HTTP_CODE=$(curl -sS --max-time 15 -o "$RESP_FILE" -w "%{http_code}" -X POST \
   -H "X-Request-Signature: $SIG" \
   -d "$BODY" 2>&1) || HTTP_CODE="err"
 
-# Log result — include response body on failures for debugging
+# Log result -- include response body on failures for debugging
 if [[ "$HTTP_CODE" == "200" ]] || [[ "$HTTP_CODE" == "201" ]]; then
   echo "OK $HTTP_CODE $(date -u +%H:%M:%S)" >> "$LOG"
 else
@@ -354,7 +354,7 @@ HBEOF
     log "Heartbeat configured (every 60 seconds)."
   fi
 
-  # ── Install Chromium (only needed for terminal kiosk — servers use web browser) ──
+  # ── Install Chromium (only needed for terminal kiosk -- servers use web browser) ──
   # On Ubuntu 24.04, `apt-get install chromium` installs the SNAP version, which
   # cannot run inside a systemd service due to AppArmor sandboxing. We try multiple
   # methods to get a native .deb Chromium that works as a kiosk service.
@@ -413,7 +413,7 @@ APTPIN
           log "Chromium installed (native chromium-browser via apt pinning)"
         else
           # Last resort: install snap but create a wrapper that works in systemd
-          log "No native Chromium available — installing snap with systemd wrapper..."
+          log "No native Chromium available -- installing snap with systemd wrapper..."
           snap install chromium 2>/dev/null || apt-get install -y chromium 2>/dev/null || true
 
           if snap list chromium >/dev/null 2>&1 || command -v chromium >/dev/null 2>&1; then
@@ -440,12 +440,12 @@ WRAPPER
     fi
 
     if [[ -z "$CHROMIUM_BIN" ]]; then
-      track_warn "Chromium install failed — terminal kiosk mode may not work."
+      track_warn "Chromium install failed -- terminal kiosk mode may not work."
     else
       log "Browser ready: $CHROMIUM_BIN"
     fi
   else
-    log "Skipping Chromium install (server role — no kiosk needed)."
+    log "Skipping Chromium install (server role -- no kiosk needed)."
   fi
 
   # Install Node.js 20 via pinned apt repo (no shell script execution)
@@ -489,7 +489,7 @@ WRAPPER
       | gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg 2>/dev/null
     apt-get update -qq
   fi
-  apt-get install -y postgresql-client-17 || warn "Could not install postgresql-client-17 — pg_dump may fail against Neon PG17"
+  apt-get install -y postgresql-client-17 || warn "Could not install postgresql-client-17 -- pg_dump may fail against Neon PG17"
 
   # Set up PG17 binary aliases for Neon connections
   # (Neon runs PG17; version mismatch causes pg_dump to abort)
@@ -499,13 +499,13 @@ WRAPPER
   fi
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # Server Role: Local PostgreSQL (always — offline-first architecture)
+  # Server Role: Local PostgreSQL (always -- offline-first architecture)
   # ─────────────────────────────────────────────────────────────────────────────
 
   if [[ "$STATION_ROLE" == "server" ]] && [[ "$USE_LOCAL_PG" == "true" ]]; then
     header "Setting Up Local PostgreSQL"
 
-    # Unmask first — may have been masked by a prior server->terminal switch
+    # Unmask first -- may have been masked by a prior server->terminal switch
     systemctl unmask postgresql 2>/dev/null || true
 
     apt-get install -y postgresql-17 postgresql-contrib-17 || apt-get install -y postgresql postgresql-contrib
@@ -541,7 +541,7 @@ WRAPPER
       # If PG role already exists, warn that password is being reset
       if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER//\'/\'\'}'" 2>/dev/null | grep -q 1; then
         warn "Database user '$DB_USER' exists but password not found in .env or .pgpass."
-        warn "Generating new password — ALTER ROLE will update PostgreSQL to match."
+        warn "Generating new password -- ALTER ROLE will update PostgreSQL to match."
       fi
       log "Generated new random database password."
     fi
@@ -569,7 +569,7 @@ EOSQL
     # Allow local connections with password
     PG_HBA=$(sudo -u postgres psql -t -c "SHOW hba_file;" | tr -d '[:space:]')
     # Check for exact managed lines (not just username anywhere in file)
-    GWI_HBA_MARKER="# GWI POS — added by installer.run"
+    GWI_HBA_MARKER="# GWI POS -- added by installer.run"
     if ! grep -qF "$GWI_HBA_MARKER" "$PG_HBA" 2>/dev/null; then
       log "Adding $DB_USER to pg_hba.conf..."
       cat >> "$PG_HBA" <<HBAEOF
@@ -603,7 +603,7 @@ HBAEOF
       ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${_qi_user};
       ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${_qi_user};
     " >/dev/null 2>&1
-    # Disable RLS on all tables — prisma db push enables it as part of the schema,
+    # Disable RLS on all tables -- prisma db push enables it as part of the schema,
     # but the POS app user doesn't have the right RLS policies configured.
     # RLS blocks downstream sync, menu queries, and login. Must be disabled.
     sudo -u postgres psql -d "$DB_NAME" -c "
@@ -624,7 +624,7 @@ HBAEOF
     local _qi_dbname="\"${DB_NAME//\"/\"\"}\""
     sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" \
       -c "ALTER DATABASE ${_qi_dbname} SET timezone = 'UTC';" >/dev/null 2>&1 || {
-      warn "Failed to set database timezone to UTC — data sync may have timestamp inconsistencies."
+      warn "Failed to set database timezone to UTC -- data sync may have timestamp inconsistencies."
     }
 
     # Create .pgpass for passwordless pg_dump in backups/cron
@@ -653,7 +653,7 @@ HBAEOF
       echo "DB_USER=$DB_USER" >> "$ENV_FILE"
       echo "DB_NAME=$DB_NAME" >> "$ENV_FILE"
     fi
-    # Persist DB_PASSWORD separately — avoids fragile DATABASE_URL regex parsing on re-runs
+    # Persist DB_PASSWORD separately -- avoids fragile DATABASE_URL regex parsing on re-runs
     if grep -q "^DB_PASSWORD=" "$ENV_FILE" 2>/dev/null; then
       sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$DB_PASSWORD|" "$ENV_FILE"
     else
@@ -673,7 +673,7 @@ HBAEOF
       PG_HBA=${PG_HBA:-$(sudo -u postgres psql -t -c "SHOW hba_file;" | tr -d '[:space:]')}
 
       # Configure WAL settings for streaming replication
-      REPL_MARKER="# GWI POS HA — streaming replication"
+      REPL_MARKER="# GWI POS HA -- streaming replication"
       if ! grep -qF "$REPL_MARKER" "$PG_CONF" 2>/dev/null; then
         log "Configuring postgresql.conf for replication..."
         cat >> "$PG_CONF" <<REPLEOF
@@ -685,7 +685,7 @@ wal_keep_size = '1GB'
 # Allow per-transaction synchronous_commit = 'remote_apply' for payment durability.
 # 'ANY 1 (*)' means: wait for ANY one standby to confirm. If no standby is
 # connected, PG falls back to async (no blocking). Only payment transactions
-# opt in via SET LOCAL — all other writes remain async by default.
+# opt in via SET LOCAL -- all other writes remain async by default.
 synchronous_standby_names = 'ANY 1 (*)'
 REPLEOF
       fi
@@ -731,7 +731,7 @@ REPLSQL
       sudo -u postgres psql -c "SELECT pg_create_physical_replication_slot('standby_slot', true);" 2>/dev/null || true
 
       # Add pg_hba entry allowing replication connections from the local subnet only
-      REPL_HBA_MARKER="# GWI POS HA — replication access"
+      REPL_HBA_MARKER="# GWI POS HA -- replication access"
       # Detect actual subnet mask from the interface instead of hardcoding /24
       LOCAL_IP=$(hostname -I | awk '{print $1}')
       LOCAL_CIDR=$(ip -o -4 addr show 2>/dev/null | awk -v ip="$LOCAL_IP" '$4 ~ ip {print $4; exit}')
@@ -741,7 +741,7 @@ REPLSQL
       else
         # Fallback: assume /24 if ip addr detection fails
         LOCAL_SUBNET=$(echo "$LOCAL_IP" | sed 's/\.[0-9]*$/\.0\/24/')
-        warn "Could not detect subnet mask — defaulting to ${LOCAL_SUBNET}"
+        warn "Could not detect subnet mask -- defaulting to ${LOCAL_SUBNET}"
       fi
       if ! grep -qF "$REPL_HBA_MARKER" "$PG_HBA" 2>/dev/null; then
         log "Adding replication access to pg_hba.conf (subnet: ${LOCAL_SUBNET})..."
@@ -767,7 +767,7 @@ REPHBA
     # Ensure NTP is running (clock sync critical for replication)
     timedatectl set-ntp true 2>/dev/null || true
 
-    # Unmask first — may have been masked by a prior role switch
+    # Unmask first -- may have been masked by a prior role switch
     systemctl unmask postgresql 2>/dev/null || true
 
     apt-get install -y postgresql-17 postgresql-contrib-17 || apt-get install -y postgresql postgresql-contrib
@@ -808,7 +808,7 @@ REPHBA
     log "Verifying replication connectivity to primary ($PRIMARY_NUC_IP)..."
     if ! PGPASSWORD="$REPL_PASSWORD" psql -h "$PRIMARY_NUC_IP" -U replicator -d postgres -c "SELECT 1" >/dev/null 2>&1; then
       err "Cannot connect to primary NUC at $PRIMARY_NUC_IP as replicator."
-      err "Fix the connection before proceeding — NOT deleting local data."
+      err "Fix the connection before proceeding -- NOT deleting local data."
       err "Check: IP reachable, REPL_PASSWORD correct, pg_hba.conf allows this IP."
       return 1
     fi
@@ -817,7 +817,7 @@ REPHBA
     # Stop PostgreSQL before pg_basebackup
     systemctl stop postgresql
 
-    # Clear existing data directory for fresh base backup (safe — we verified primary first)
+    # Clear existing data directory for fresh base backup (safe -- we verified primary first)
     if [[ -d "$PG_DATA" ]]; then
       log "Clearing existing PostgreSQL data directory..."
       rm -rf "$PG_DATA"
@@ -877,7 +877,7 @@ REPHBA
       sed -i "s|^DIRECT_URL=.*|DIRECT_URL=$DIRECT_URL|" "$ENV_FILE"
     else
       echo "" >> "$ENV_FILE"
-      echo "# Local PostgreSQL (standby — read-only until promoted)" >> "$ENV_FILE"
+      echo "# Local PostgreSQL (standby -- read-only until promoted)" >> "$ENV_FILE"
       echo "DATABASE_URL=$DATABASE_URL" >> "$ENV_FILE"
       echo "DIRECT_URL=$DIRECT_URL" >> "$ENV_FILE"
     fi
@@ -896,6 +896,6 @@ REPHBA
     log "PostgreSQL standby ready: replicating from $PRIMARY_NUC_IP"
   fi
 
-  log "Stage: database — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: database -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }

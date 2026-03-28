@@ -1321,14 +1321,14 @@ if [ "\$NUC_READINESS_JSON" = "null" ] && [ -f /opt/gwi-pos/state/sync-status.js
   NUC_READINESS_JSON=\$(jq -c '{
     localDb: true,
     neonReachable: .neonReachable,
-    neonSchemaVersion: .observedVersion,
+    neonSchemaVersion: (.observedVersion // "unknown"),
     seedVersion: null,
     baseSeedPresent: .syncReady,
     schemaBehind: false,
     schemaAhead: false,
     syncWorkers: .syncReady,
-    expectedSchemaVersion: .expectedVersion,
-    observedNeonSchemaVersion: .observedVersion,
+    expectedSchemaVersion: (.expectedVersion // "unknown"),
+    observedNeonSchemaVersion: (.observedVersion // "unknown"),
     schemaRecheckCount: .retryCount,
     readinessLevel: (if .syncReady then "ORDERS" else "BOOT" end)
   }' /opt/gwi-pos/state/sync-status.json 2>/dev/null || echo 'null')

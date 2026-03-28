@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 05-deploy-app.sh — Artifact-based deployment (replaces git clone + npm ci)
+# 05-deploy-app.sh -- Artifact-based deployment (replaces git clone + npm ci)
 # =============================================================================
 # Entry: run_deploy_app
 # Expects: STATION_ROLE, APP_BASE, APP_DIR, ENV_FILE, KEY_DIR, POSUSER,
@@ -13,8 +13,10 @@
 # =============================================================================
 
 # ── Minisign public key (embedded) ─────────────────────────────────────────
-readonly _GWI_MINISIGN_PUB='untrusted comment: minisign public key 6A8006EFB1B4BF0A
+if ! declare -p _GWI_MINISIGN_PUB &>/dev/null 2>&1; then
+  readonly _GWI_MINISIGN_PUB='untrusted comment: minisign public key 6A8006EFB1B4BF0A
 RWQKv7Sx7waAahboOQ+1oTmS1uU5fHebSLBqOoOBHpFa6MsLyFMqZdVl'
+fi
 
 # ── Legacy helpers (only loaded when LEGACY_DEPLOY=1) ──────────────────────
 if [[ "${LEGACY_DEPLOY:-}" == "1" ]]; then
@@ -89,7 +91,7 @@ _refresh_modules_from_checkout() {
   if [[ ! -d "$checkout_modules" ]]; then
     warn "IMPORTANT: No installer modules found in checkout at $checkout_modules"
     warn "Stages 06-12 will use embedded (potentially stale) modules"
-    track_warn "Module refresh skipped — checkout modules not found"
+    track_warn "Module refresh skipped -- checkout modules not found"
     return 0
   fi
 
@@ -123,7 +125,7 @@ _refresh_modules_from_checkout() {
       [[ ! -f "$MODULES_DIR/${_expected_mod}.sh" ]] && warn "Module $_expected_mod missing after refresh" && _refresh_ok=false
     done
     [[ "$_refresh_ok" == "true" ]] && log "  Module integrity validated (all stages 06-12 present)" \
-      || { warn "  Module refresh incomplete — some stages may use embedded (stale) code"; track_warn "Module refresh incomplete"; }
+      || { warn "  Module refresh incomplete -- some stages may use embedded (stale) code"; track_warn "Module refresh incomplete"; }
   fi
 
   # Deploy operational scripts
@@ -150,25 +152,25 @@ _refresh_modules_from_checkout() {
 
   [[ -f "${APP_DIR}/public/sync-agent.js" ]] && cp "${APP_DIR}/public/sync-agent.js" /opt/gwi-pos/sync-agent.js && log "  Deployed sync-agent.js"
 
-  log "Module refresh complete — remaining stages will use latest code"
+  log "Module refresh complete -- remaining stages will use latest code"
 }
 
 # ── Main entry ──────────────────────────────────────────────────────────────
 run_deploy_app() {
   local _start=$(date +%s)
-  log "Stage: deploy_app — starting"
+  log "Stage: deploy_app -- starting"
 
   source "$(dirname "${BASH_SOURCE[0]}")/lib/error-codes.sh" 2>/dev/null || true
 
   # Only server + backup roles need the app
   if [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
-    log "Stage: deploy_app — skipped (terminal role)"
+    log "Stage: deploy_app -- skipped (terminal role)"
     return 0
   fi
 
   header "Installing POS Application"
 
-  # ── Offline install mode — app already deployed ──
+  # ── Offline install mode -- app already deployed ──
   if [[ "${SKIP_GIT_CLONE:-}" == "1" ]]; then
     log "Offline mode: Skipping deploy (app pre-deployed)"
     [[ "${SKIP_NPM_INSTALL:-}" == "1" ]] && log "Offline mode: Skipping npm install (dependencies pre-bundled)"
@@ -177,12 +179,12 @@ run_deploy_app() {
     ln -sf "$ENV_FILE" "$APP_DIR/.env.local" 2>/dev/null || true
     if [[ "${SKIP_NPM_INSTALL:-}" == "1" ]] && [[ "${SKIP_BUILD:-}" == "1" ]]; then
       log "Offline deploy stage complete"
-      log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
+      log "Stage: deploy_app -- completed in $(( $(date +%s) - _start ))s"
       return 0
     fi
   fi
 
-  # Disk space check — artifact deploy needs ~2 GB
+  # Disk space check -- artifact deploy needs ~2 GB
   local _disk_path="$APP_BASE"
   [[ ! -d "$_disk_path" ]] && _disk_path=$(dirname "$APP_BASE")
   AVAIL_KB=$(df -k "$_disk_path" 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
@@ -194,12 +196,12 @@ run_deploy_app() {
 
   # ── LEGACY PATH ────────────────────────────────────────────────────────────
   if [[ "${LEGACY_DEPLOY:-}" == "1" ]]; then
-    log "LEGACY_DEPLOY=1 — using git clone + npm ci flow"
+    log "LEGACY_DEPLOY=1 -- using git clone + npm ci flow"
     if ! _run_legacy_deploy; then
       return 1
     fi
     _refresh_modules_from_checkout
-    log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
+    log "Stage: deploy_app -- completed in $(( $(date +%s) - _start ))s"
     return 0
   fi
 
@@ -213,7 +215,7 @@ run_deploy_app() {
 
   # Step 3: Sync .env to shared/.env for deploy-release.sh
   # deploy-release.sh validates against /opt/gwi-pos/shared/.env.
-  # ALWAYS copy — stale shared/.env from failed installs causes validation failures.
+  # ALWAYS copy -- stale shared/.env from failed installs causes validation failures.
   if [[ -f "$ENV_FILE" ]]; then
     mkdir -p "$APP_BASE/shared"
     cp "$ENV_FILE" "$APP_BASE/shared/.env"
@@ -260,7 +262,7 @@ run_deploy_app() {
         _debug_file="${APP_BASE}/shared/logs/deploys/$(basename "$_latest_log" .json | sed 's/\.json$//')"
         warn "Debug bundle: ${APP_BASE}/shared/logs/deploys/ (check *-readiness-debug.txt)"
       fi
-      # Treat as success — old release is healthy, installer can continue
+      # Treat as success -- old release is healthy, installer can continue
       log "Continuing installation with previous release (rolled_back is acceptable)"
     elif [[ "$_final_status" == "rollback_failed" ]]; then
       err_code "ERR-INST-150" "Release ${_release_id:-unknown} failed readiness AND rollback failed"
@@ -332,7 +334,7 @@ run_deploy_app() {
     log "Updated deploy-release.sh from deployed release"
   fi
 
-  log "Stage: deploy_app — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: deploy_app -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }
 
@@ -410,11 +412,11 @@ _run_legacy_deploy() {
     chown root:"$POSUSER" "$CRED_FILE" && chmod 640 "$CRED_FILE"
   elif [[ ! -f "$CRED_FILE" ]]; then
     err "WARNING: No deploy token and no credentials file."
-    track_warn "No git credentials available — legacy deploy may fail"
+    track_warn "No git credentials available -- legacy deploy may fail"
   fi
 
   [[ -f "$CRED_FILE" ]] && ! _git_validate_credentials "$CRED_FILE" "$GIT_REPO" && \
-    track_warn "Git credentials invalid — token may be expired"
+    track_warn "Git credentials invalid -- token may be expired"
 
   # Clone or update
   if [[ -d "$APP_DIR/.git" ]]; then

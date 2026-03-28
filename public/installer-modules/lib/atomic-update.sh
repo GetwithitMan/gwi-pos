@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # =============================================================================
-# lib/atomic-update.sh — Atomic update transaction support
+# lib/atomic-update.sh -- Atomic update transaction support
 # =============================================================================
 #
 # Sourced by other scripts (installer stages, sync agent, etc.) to provide
 # safe, rollback-capable update transactions for the POS application directory.
 #
 # Functions:
-#   start_update_transaction  — Safety checks + backup + code snapshot
-#   commit_update             — Clean up artifacts, restart dashboard
-#   rollback_transaction      — Restore code from snapshot, restart dashboard
+#   start_update_transaction  -- Safety checks + backup + code snapshot
+#   commit_update             -- Clean up artifacts, restart dashboard
+#   rollback_transaction      -- Restore code from snapshot, restart dashboard
 #
 # Expected variables (set by caller or defaulted):
-#   APP_DIR   — Path to the application directory (default: /opt/gwi-pos/app)
-#   APP_BASE  — Path to the base install directory (default: /opt/gwi-pos)
+#   APP_DIR   -- Path to the application directory (default: /opt/gwi-pos/app)
+#   APP_BASE  -- Path to the base install directory (default: /opt/gwi-pos)
 #
 # Uses log() if available, falls back to timestamped echo.
 # =============================================================================
@@ -113,13 +113,13 @@ start_update_transaction() {
     return 1
   fi
 
-  log "Disk space: ${free_mb}MB free (need ${_MIN_FREE_MB}MB) — OK"
+  log "Disk space: ${free_mb}MB free (need ${_MIN_FREE_MB}MB) -- OK"
 
   # ── 3. Write lock file ──
   mkdir -p "$_STATE_DIR"
 
   if [[ -f "$_LOCK_FILE" ]]; then
-    warn "Lock file already exists — a previous update may have failed or is still running."
+    warn "Lock file already exists -- a previous update may have failed or is still running."
     warn "Lock contents:"
     cat "$_LOCK_FILE" >&2 || true
     warn "Overwriting stale lock and proceeding."
@@ -159,7 +159,7 @@ EOF
       warn "pre-update-safety.sh sourced but create_pre_update_backup() not found."
     fi
   else
-    log "pre-update-safety.sh not found — skipping DB/config backup (not yet created)."
+    log "pre-update-safety.sh not found -- skipping DB/config backup (not yet created)."
   fi
 
   # ── 5. Code snapshot ──
@@ -181,7 +181,7 @@ EOF
       return 1
     fi
   else
-    warn "APP_DIR '$APP_DIR' does not exist yet — no snapshot to create (fresh install?)."
+    warn "APP_DIR '$APP_DIR' does not exist yet -- no snapshot to create (fresh install?)."
   fi
 
   # Echo backup result JSON for callers to capture
@@ -196,7 +196,7 @@ EOF
 # =============================================================================
 # Finalizes a successful update:
 #   1. Remove lock file
-#   2. Remove code snapshot (no longer needed — update succeeded)
+#   2. Remove code snapshot (no longer needed -- update succeeded)
 #   3. Restart NUC Dashboard service
 #
 # Returns 0 on success.
@@ -218,7 +218,7 @@ commit_update() {
   fi
 
   # ── 3. Restart Dashboard ──
-  # The dashboard displays update status — restart it so it picks up the new state.
+  # The dashboard displays update status -- restart it so it picks up the new state.
   # Uses --user because gwi-dashboard runs as a user service, not root.
   # Failure is non-fatal (dashboard may not be installed yet).
   systemctl --user restart gwi-dashboard.service 2>/dev/null || true
@@ -276,7 +276,7 @@ rollback_transaction() {
   if [[ -d "$APP_DIR" ]]; then
     log "Code restored successfully."
   else
-    err "Restore failed — APP_DIR '$APP_DIR' does not exist after mv."
+    err "Restore failed -- APP_DIR '$APP_DIR' does not exist after mv."
     return 1
   fi
 

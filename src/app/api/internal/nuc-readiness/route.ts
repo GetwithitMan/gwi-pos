@@ -44,7 +44,7 @@ export async function GET(request: Request) {
     syncBlocked,
     syncBlockReason,
     expectedSchemaVersion: EXPECTED_SCHEMA_VERSION,
-    observedNeonSchemaVersion: nr?.schemaVersion ?? null,
+    observedNeonSchemaVersion: nr?.schemaVersion ?? 'unknown',
     schemaRecheckCount: getSchemaRecheckCount(),
     degradedReasons: bootstrap?.degradedReasons ?? [],
     // Existing fields (kept for backward compat with heartbeat consumers)

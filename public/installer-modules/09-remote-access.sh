@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 09-remote-access.sh — SSH hardening, TeamViewer, desktop launchers
+# 09-remote-access.sh -- SSH hardening, TeamViewer, desktop launchers
 # =============================================================================
 # Entry: run_remote_access
 # Expects: STATION_ROLE, POSUSER, POSUSER_HOME, APP_BASE,
@@ -10,7 +10,7 @@
 
 run_remote_access() {
   local _start=$(date +%s)
-  log "Stage: remote_access — starting"
+  log "Stage: remote_access -- starting"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # Desktop Launcher
@@ -27,7 +27,7 @@ run_remote_access() {
   # Server/backup: dashboard is the desktop app, NOT a web UI shortcut.
   # Only terminals need the Chromium POS launcher on the desktop.
   if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
-    log "Server role — skipping web UI desktop shortcut (dashboard handles this)"
+    log "Server role -- skipping web UI desktop shortcut (dashboard handles this)"
   else
 
   POS_URL="http://localhost:3005"
@@ -75,7 +75,7 @@ run_remote_access() {
   LAUNCHER_SCRIPT="$APP_BASE/launch-pos.sh"
   cat > "$LAUNCHER_SCRIPT" <<LSEOF
 #!/usr/bin/env bash
-# GWI POS Launcher — opens the POS in fullscreen Chromium
+# GWI POS Launcher -- opens the POS in fullscreen Chromium
 $LAUNCHER_EXEC &
 LSEOF
   chmod +x "$LAUNCHER_SCRIPT"
@@ -86,7 +86,7 @@ LSEOF
 [Desktop Entry]
 Type=Application
 Name=GWI POS
-Comment=Launch GWI POS — $LOCATION_NAME
+Comment=Launch GWI POS -- $LOCATION_NAME
 Exec=$LAUNCHER_SCRIPT
 Icon=$POS_ICON
 Terminal=false
@@ -94,7 +94,7 @@ Categories=Office;Utility;
 StartupNotify=true
 DTEOF
 
-  # Copy to user desktop (create Desktop dir if it doesn't exist — fresh Ubuntu installs)
+  # Copy to user desktop (create Desktop dir if it doesn't exist -- fresh Ubuntu installs)
   DESKTOP_DIR="$POSUSER_HOME/Desktop"
   mkdir -p "$DESKTOP_DIR"
   chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR"
@@ -102,14 +102,14 @@ DTEOF
   chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR/gwi-pos.desktop"
   chmod +x "$DESKTOP_DIR/gwi-pos.desktop"
 
-  # Mark as trusted — different desktops need different approaches
+  # Mark as trusted -- different desktops need different approaches
   # GNOME (Ubuntu): gio metadata::trusted
   if command -v gio >/dev/null 2>&1; then
     sudo -u "$POSUSER" gio set "$DESKTOP_DIR/gwi-pos.desktop" metadata::trusted true 2>/dev/null || true
   fi
-  # KDE Plasma (Kubuntu): writes TryExec and marks executable — that's enough for KDE
+  # KDE Plasma (Kubuntu): writes TryExec and marks executable -- that's enough for KDE
   # KDE trusts .desktop files if they are executable + have valid Exec= line
-  # No extra metadata needed — chmod +x (done above) is sufficient
+  # No extra metadata needed -- chmod +x (done above) is sufficient
 
   log "Desktop launcher created: $DESKTOP_DIR/gwi-pos.desktop"
   log "  Quick launch: $LAUNCHER_SCRIPT"
@@ -117,7 +117,7 @@ DTEOF
   fi # end terminal-only desktop shortcut block
 
   # ─────────────────────────────────────────────────────────────────────────────
-  # TeamViewer (backup remote access — server/backup roles only)
+  # TeamViewer (backup remote access -- server/backup roles only)
   # ─────────────────────────────────────────────────────────────────────────────
 
   if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
@@ -142,6 +142,6 @@ DTEOF
     fi
   fi
 
-  log "Stage: remote_access — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: remote_access -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }

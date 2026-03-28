@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-# legacy-cleanup.sh — Force convergence to current supported state
+# legacy-cleanup.sh -- Force convergence to current supported state
 # =============================================================================
 # Sourced by installer stages and sync-agent after updates.
-# Every re-install/upgrade MUST converge the machine — not just deploy new code.
+# Every re-install/upgrade MUST converge the machine -- not just deploy new code.
 # Old services, launchers, configs, and kiosk behavior are explicitly removed.
 #
 # Rule: A good installer does not just "install new stuff."
@@ -26,7 +26,7 @@ if ! type warn >/dev/null 2>&1; then
 fi
 
 # =============================================================================
-# converge_server_role — Remove legacy kiosk, ensure Dashboard, verify services
+# converge_server_role -- Remove legacy kiosk, ensure Dashboard, verify services
 # =============================================================================
 converge_server_role() {
   log "Converging server role to current baseline..."
@@ -103,7 +103,7 @@ DESK
     chown "$POSUSER":"$POSUSER" "$dash_desktop"
     log "    Desktop icon: GWI POS - ${LOCATION_NAME}"
   else
-    warn "  Dashboard binary not found — skipping desktop icon (Stage 12 will handle)"
+    warn "  Dashboard binary not found -- skipping desktop icon (Stage 12 will handle)"
   fi
 
   # Ensure Dashboard user service is enabled (Phase 5 Ansible creates it)
@@ -142,7 +142,7 @@ DESK
   local expected_absent=(thepasspos-kiosk thepasspos-exit-kiosk pulse-kiosk)
   for svc in "${expected_absent[@]}"; do
     if systemctl is-enabled "$svc" >/dev/null 2>&1; then
-      warn "  Legacy $svc still enabled — force-disabling"
+      warn "  Legacy $svc still enabled -- force-disabling"
       systemctl disable "$svc" 2>/dev/null || true
     else
       log "    $svc: absent/disabled (correct)"
@@ -153,7 +153,7 @@ DESK
 }
 
 # =============================================================================
-# converge_terminal_role — Ensure kiosk is set up, Dashboard NOT running
+# converge_terminal_role -- Ensure kiosk is set up, Dashboard NOT running
 # =============================================================================
 converge_terminal_role() {
   log "Converging terminal role to current baseline..."
@@ -177,7 +177,7 @@ converge_terminal_role() {
   # Server-only services should be disabled
   for svc in thepasspos thepasspos-sync; do
     if systemctl is-enabled "$svc" >/dev/null 2>&1; then
-      warn "  $svc enabled on terminal — disabling"
+      warn "  $svc enabled on terminal -- disabling"
       systemctl disable "$svc" 2>/dev/null || true
     fi
   done
@@ -186,12 +186,12 @@ converge_terminal_role() {
 }
 
 # =============================================================================
-# converge_backup_role — POS disabled, sync enabled, Dashboard standby
+# converge_backup_role -- POS disabled, sync enabled, Dashboard standby
 # =============================================================================
 converge_backup_role() {
   log "Converging backup role to current baseline..."
 
-  # POS service disabled (standby — promote.sh starts it on takeover)
+  # POS service disabled (standby -- promote.sh starts it on takeover)
   if systemctl is-enabled thepasspos >/dev/null 2>&1; then
     systemctl disable thepasspos 2>/dev/null || true
     log "    thepasspos: disabled (correct for backup/standby)"
@@ -203,7 +203,7 @@ converge_backup_role() {
     log "    thepasspos-sync: enabled (correct for backup)"
   fi
 
-  # Remove legacy kiosk (same as server — backup doesn't need kiosk)
+  # Remove legacy kiosk (same as server -- backup doesn't need kiosk)
   local legacy_services=(thepasspos-kiosk.service thepasspos-exit-kiosk.service)
   for svc in "${legacy_services[@]}"; do
     systemctl disable --now "$svc" 2>/dev/null || true
@@ -215,7 +215,7 @@ converge_backup_role() {
 }
 
 # =============================================================================
-# converge_role — Dispatch to the correct role convergence function
+# converge_role -- Dispatch to the correct role convergence function
 # =============================================================================
 converge_role() {
   local role="${1:-$STATION_ROLE}"
@@ -224,7 +224,7 @@ converge_role() {
     terminal) converge_terminal_role ;;
     backup)   converge_backup_role ;;
     *)
-      warn "Unknown role '$role' — skipping convergence"
+      warn "Unknown role '$role' -- skipping convergence"
       return 1
       ;;
   esac

@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 11-system-hardening.sh — Stage 11: System Hardening
+# 11-system-hardening.sh -- Stage 11: System Hardening
 # =============================================================================
 # Entry: run_system_hardening
 # Expects: APP_BASE, APP_DIR, ENV_FILE, POSUSER, STATION_ROLE, SERVER_NODE_ID
 # Uses:    header(), log(), warn(), err(), track_warn(), start_timer(), end_timer()
 #
 # Two-layer approach:
-#   1. _apply_critical_hardening_direct() — ALWAYS runs. Disables screen sleep,
+#   1. _apply_critical_hardening_direct() -- ALWAYS runs. Disables screen sleep,
 #      DPMS, screensavers, and notification nags via direct systemd/xset/Xorg.
-#   2. Ansible baseline (optional) — if installer/site.yml exists, bootstraps a
+#   2. Ansible baseline (optional) -- if installer/site.yml exists, bootstraps a
 #      pinned Ansible venv and runs the versioned playbook for full enforcement.
 #
 # Environment overrides (Ansible path only):
-#   HARDENING_TAGS       — Ansible --tags filter (e.g. "firewall,sshd_hardening")
-#   SKIP_HARDENING_TAGS  — Ansible --skip-tags filter (e.g. "branding,optional")
-#   HARDENING_DRY_RUN    — Set to "true" for check mode (--check)
+#   HARDENING_TAGS       -- Ansible --tags filter (e.g. "firewall,sshd_hardening")
+#   SKIP_HARDENING_TAGS  -- Ansible --skip-tags filter (e.g. "branding,optional")
+#   HARDENING_DRY_RUN    -- Set to "true" for check mode (--check)
 # =============================================================================
 
 run_system_hardening() {
@@ -186,7 +186,7 @@ except Exception:
 
     # Validate JSON before parsing
     if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$result_file" 2>/dev/null; then
-      warn "ansible-result.json is not valid JSON — classifying as failed"
+      warn "ansible-result.json is not valid JSON -- classifying as failed"
       echo "failed_required"
       return
     fi
@@ -233,13 +233,13 @@ except Exception as e:
   chmod 755 "$STATE_DIR"
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Direct hardening fallback — defined early so early-return paths can call it.
+  # Direct hardening fallback -- defined early so early-return paths can call it.
   # These are the critical settings that must be applied on every NUC.
   # ─────────────────────────────────────────────────────────────────────────
   _apply_critical_hardening_direct() {
     log "Applying critical hardening (direct, no Ansible dependency)..."
 
-    # Screen sleep prevention — mask all sleep/suspend targets
+    # Screen sleep prevention -- mask all sleep/suspend targets
     systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target 2>/dev/null || true
 
     # logind: no idle action, ignore lid/power keys
@@ -315,7 +315,7 @@ PowerButtonAction=0
 PDEOF
         chown "$POSUSER:$POSUSER" "/home/$POSUSER/.config/powerdevilrc"
     fi
-    # Also try service masking (may fail if no session — that's OK, config file is the primary)
+    # Also try service masking (may fail if no session -- that's OK, config file is the primary)
     if sudo -u "$POSUSER" systemctl --user status plasma-powerdevil.service &>/dev/null 2>&1; then
         sudo -u "$POSUSER" systemctl --user mask --now plasma-powerdevil.service 2>/dev/null || true
         log "PowerDevil service masked"
@@ -344,7 +344,7 @@ XSRC
         log "  xset DPMS-off applied to live X11 session"
       fi
 
-      # GNOME settings — requires both gsettings binary and a live DBUS session bus
+      # GNOME settings -- requires both gsettings binary and a live DBUS session bus
       local _uid_posuser
       _uid_posuser=$(id -u "$POSUSER" 2>/dev/null || echo "")
       local _dbus_path="/run/user/${_uid_posuser}/bus"
@@ -386,7 +386,7 @@ XSRC
       kde_set_if_different kscreenlockerrc Daemon LockOnResume false
       kde_set_if_different ksmserverrc General loginMode emptySession
 
-      # Kill the running lock screen — config only takes effect on next session start
+      # Kill the running lock screen -- config only takes effect on next session start
       loginctl unlock-sessions 2>/dev/null || true
       pkill -9 kscreenlocker_greet 2>/dev/null || true
 
@@ -408,7 +408,7 @@ EndSection
 XORGCONF
       log "  Xorg DPMS disabled at server level"
 
-      # Keep-awake timer — runs xset every 60s as ultimate safety net
+      # Keep-awake timer -- runs xset every 60s as ultimate safety net
       cat > /etc/systemd/user/gwi-keep-awake.service <<'KASVC'
 [Unit]
 Description=GWI POS Keep Screen Awake
@@ -445,7 +445,7 @@ KATMR
     }
 
     if detect_touchscreen; then
-        log "Touchscreen detected — configuring..."
+        log "Touchscreen detected -- configuring..."
         # Install on-screen keyboard
         DEBIAN_FRONTEND=noninteractive apt-get install -y onboard 2>/dev/null || warn "Onboard keyboard install failed (non-fatal)"
         # Disable right-click emulation on touchscreen
@@ -458,10 +458,10 @@ TOUCHEOF
         udevadm control --reload-rules 2>/dev/null || true
         log "Touchscreen: on-screen keyboard installed, right-click disabled"
     else
-        log "No touchscreen detected — skipping touch configuration"
+        log "No touchscreen detected -- skipping touch configuration"
     fi
 
-    # ── SDDM auto-login (server/backup only — no login screen on POS NUCs) ──
+    # ── SDDM auto-login (server/backup only -- no login screen on POS NUCs) ──
     if [[ "$STATION_ROLE" == "server" || "$STATION_ROLE" == "backup" ]]; then
       if command -v sddm &>/dev/null || systemctl is-active sddm &>/dev/null 2>&1; then
         mkdir -p /etc/sddm.conf.d
@@ -497,27 +497,27 @@ GDMEOF
   }
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Check for site.yml existence — graceful skip if baseline not yet shipped
+  # Check for site.yml existence -- graceful skip if baseline not yet shipped
   # ─────────────────────────────────────────────────────────────────────────
   if [[ ! -f "$SITE_YML" ]]; then
     log "Ansible baseline not found at $SITE_YML"
 
     # Determine if this is expected (pre-baseline node) or an error
     if [[ -f "$VERSION_FILE" ]]; then
-      # VERSION exists but site.yml missing — something is broken
-      warn "installer/VERSION exists but site.yml is missing — baseline incomplete"
+      # VERSION exists but site.yml missing -- something is broken
+      warn "installer/VERSION exists but site.yml is missing -- baseline incomplete"
       _write_run_state "degraded"
       _write_result "failed_required" 1 0
       _write_event "baseline_run" "failed_required" 1 0
       track_warn "System hardening: baseline files incomplete (site.yml missing)"
     else
-      # No baseline files at all — pre-baseline node, clean skip
-      log "No baseline files present — skipping system hardening (pre-baseline node)"
+      # No baseline files at all -- pre-baseline node, clean skip
+      log "No baseline files present -- skipping system hardening (pre-baseline node)"
       _write_result "skipped_unavailable" 0 0
       _write_event "baseline_run" "skipped_unavailable" 0 0
     fi
 
-    # Direct hardening ALWAYS runs — screen/sleep prevention is too critical
+    # Direct hardening ALWAYS runs -- screen/sleep prevention is too critical
     _apply_critical_hardening_direct
 
     end_timer "Stage 11: System Hardening"
@@ -539,7 +539,7 @@ GDMEOF
       # Try version-specific package first, then generic fallback
       if ! apt-get install -y -qq "python${PY_VERSION}-venv" >/dev/null 2>&1; then
         if ! apt-get install -y -qq python3-venv >/dev/null 2>&1; then
-          warn "Failed to install python3-venv — cannot bootstrap Ansible"
+          warn "Failed to install python3-venv -- cannot bootstrap Ansible"
           _apply_critical_hardening_direct
           _write_run_state "degraded"
           _write_result "failed_required" 1 0
@@ -576,7 +576,7 @@ GDMEOF
     fi
 
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip >/dev/null 2>&1
-    # Install full ansible (not just ansible-core) — includes json callback plugin
+    # Install full ansible (not just ansible-core) -- includes json callback plugin
     if ! { "$VENV_DIR/bin/pip" install --quiet "ansible==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1 \
       || "$VENV_DIR/bin/pip" install --quiet "ansible" >/dev/null 2>&1; }; then
       warn "Failed to install ansible==$PINNED_ANSIBLE_VERSION"
@@ -595,19 +595,19 @@ GDMEOF
     local installed_version
     installed_version=$("$VENV_DIR/bin/ansible" --version 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "unknown")
     if [[ "$installed_version" != "$PINNED_ANSIBLE_VERSION" ]]; then
-      log "Ansible version mismatch (have $installed_version, want $PINNED_ANSIBLE_VERSION) — upgrading..."
+      log "Ansible version mismatch (have $installed_version, want $PINNED_ANSIBLE_VERSION) -- upgrading..."
       "$VENV_DIR/bin/pip" install --quiet "ansible==$PINNED_ANSIBLE_VERSION" >/dev/null 2>&1
     fi
   fi
 
   # Final check that ansible-playbook binary works
   if [[ ! -x "$ANSIBLE_BIN" ]]; then
-    warn "Ansible installation failed — ansible-playbook not found at $ANSIBLE_BIN"
+    warn "Ansible installation failed -- ansible-playbook not found at $ANSIBLE_BIN"
     warn "Falling back to direct hardening only (critical settings will still be applied)"
     _write_run_state "degraded"
     _write_result "failed_required" 1 0
     _write_event "baseline_run" "failed_required" 1 0
-    track_warn "System hardening: ansible-playbook binary not executable — direct fallback only"
+    track_warn "System hardening: ansible-playbook binary not executable -- direct fallback only"
     # Still apply critical hardening directly (screen sleep, notifications, etc.)
     _apply_critical_hardening_direct
     end_timer "Stage 11: System Hardening"
@@ -632,7 +632,7 @@ GDMEOF
   exec 9>"$LOCK_FILE"
 
   if ! flock -w 300 9; then
-    warn "Could not acquire baseline lock within 300 seconds — another baseline run may be in progress"
+    warn "Could not acquire baseline lock within 300 seconds -- another baseline run may be in progress"
     _apply_critical_hardening_direct
     _write_run_state "idle" "\"lock_wait_timeout\": true"
     _write_result "failed_required" 1 0
@@ -779,7 +779,7 @@ GDMEOF
 }
 
 # =============================================================================
-# Self-execution support — when run directly (not sourced by installer orchestrator)
+# Self-execution support -- when run directly (not sourced by installer orchestrator)
 # Provides stub helpers so the script works standalone from update-agent/sync-agent.
 # =============================================================================
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
-# pre-update-safety.sh — Shared safety library for pre-update backups & checks
+# pre-update-safety.sh -- Shared safety library for pre-update backups & checks
 # =============================================================================
 # Sourced by: installer, sync-agent wrapper, update-agent wrapper,
 #             public/scripts/pre-update-backup.sh
 #
 # Functions:
-#   create_pre_update_backup   — pg_dump + optional encrypt + manifest + rotation
-#   verify_backup_integrity    — file + pg_restore --list + checksum verification
-#   ensure_data_synced_to_neon — trigger sync + poll until unsynced rows = 0
-#   record_pre_update_state    — snapshot current app/schema/git state to JSON
+#   create_pre_update_backup   -- pg_dump + optional encrypt + manifest + rotation
+#   verify_backup_integrity    -- file + pg_restore --list + checksum verification
+#   ensure_data_synced_to_neon -- trigger sync + poll until unsynced rows = 0
+#   record_pre_update_state    -- snapshot current app/schema/git state to JSON
 #
 # Expects (with defaults):
 #   DB_USER   (default: thepasspos)
@@ -17,12 +17,12 @@
 #   APP_DIR   (default: /opt/gwi-pos/app)
 #   APP_BASE  (default: /opt/gwi-pos)
 # =============================================================================
-# NOTE: Do NOT set -euo pipefail here — this file is sourced into callers
+# NOTE: Do NOT set -euo pipefail here -- this file is sourced into callers
 # and would change their error handling behavior unexpectedly.
 # Callers are responsible for their own error handling mode.
 
 # ---------------------------------------------------------------------------
-# Defaults — callers may override before sourcing or via env
+# Defaults -- callers may override before sourcing or via env
 # ---------------------------------------------------------------------------
 : "${DB_USER:=thepasspos}"
 : "${DB_NAME:=thepasspos}"
@@ -51,7 +51,7 @@ _pus_file_size() {
 }
 
 _pus_read_json_field() {
-  # Minimal JSON field reader — no jq dependency
+  # Minimal JSON field reader -- no jq dependency
   # Usage: _pus_read_json_field file.json fieldName
   local file="$1" field="$2"
   if [ -f "$file" ]; then
@@ -84,7 +84,7 @@ create_pre_update_backup() {
 
   # Require pg_dump
   if ! command -v pg_dump >/dev/null 2>&1; then
-    _pus_log "ERROR: pg_dump not found — cannot create backup"
+    _pus_log "ERROR: pg_dump not found -- cannot create backup"
     return 1
   fi
 
@@ -97,7 +97,7 @@ create_pre_update_backup() {
 
   # ── pg_dump with 120s timeout ──
   _pus_log "Starting pg_dump → ${backup_path}"
-  if ! timeout --kill-after=10 120 pg_dump -Fc -U "$DB_USER" -d "$DB_NAME" -f "$backup_path" 2>&1; then
+  if ! timeout --kill-after=10 120 pg_dump -Fc -h localhost -U "$DB_USER" -d "$DB_NAME" -f "$backup_path" 2>&1; then
     _pus_log "ERROR: pg_dump failed"
     rm -f "$backup_path"
     return 1
@@ -123,7 +123,7 @@ create_pre_update_backup() {
       encrypted=true
       _pus_log "Encryption complete → ${final_path}"
     else
-      _pus_log "WARNING: Encryption failed — keeping unencrypted backup"
+      _pus_log "WARNING: Encryption failed -- keeping unencrypted backup"
       # final_path stays as the unencrypted dump
     fi
   fi
@@ -255,12 +255,12 @@ verify_backup_integrity() {
   if [[ "$backup_path" == *.dump ]] && [[ "$backup_path" != *.enc ]]; then
     if command -v pg_restore >/dev/null 2>&1; then
       if ! pg_restore --list "$backup_path" >/dev/null 2>&1; then
-        _pus_log "ERROR: pg_restore --list failed — backup may be corrupt: ${backup_path}"
+        _pus_log "ERROR: pg_restore --list failed -- backup may be corrupt: ${backup_path}"
         return 1
       fi
       _pus_log "pg_restore --list: OK"
     else
-      _pus_log "WARNING: pg_restore not found — skipping archive validation"
+      _pus_log "WARNING: pg_restore not found -- skipping archive validation"
     fi
   fi
 
@@ -281,7 +281,7 @@ verify_backup_integrity() {
       elif command -v shasum >/dev/null 2>&1; then
         actual_checksum="$(shasum -a 256 "$backup_path" | awk '{print $1}')"
       else
-        _pus_log "WARNING: No sha256sum or shasum available — skipping checksum verification"
+        _pus_log "WARNING: No sha256sum or shasum available -- skipping checksum verification"
         actual_checksum=""
       fi
 
@@ -297,7 +297,7 @@ verify_backup_integrity() {
       fi
     fi
   else
-    _pus_log "WARNING: No manifest found at ${manifest_path} — skipping checksum verification"
+    _pus_log "WARNING: No manifest found at ${manifest_path} -- skipping checksum verification"
   fi
 
   _pus_log "Backup integrity: PASS (${backup_path})"
@@ -326,12 +326,12 @@ ensure_data_synced_to_neon() {
       -H "Content-Type: application/json" \
       -d '{}' 2>/dev/null || true
   else
-    _pus_log "WARNING: INTERNAL_API_SECRET not set — skipping sync trigger"
+    _pus_log "WARNING: INTERNAL_API_SECRET not set -- skipping sync trigger"
   fi
 
   # ── Require psql for polling ──
   if ! command -v psql >/dev/null 2>&1; then
-    _pus_log "WARNING: psql not found — cannot verify sync status"
+    _pus_log "WARNING: psql not found -- cannot verify sync status"
     return 1
   fi
 
@@ -371,7 +371,7 @@ ensure_data_synced_to_neon() {
     fi
   done
 
-  # ── Timeout — log which tables have pending rows ──
+  # ── Timeout -- log which tables have pending rows ──
   _pus_log "WARNING: Sync poll timed out after ${max_wait}s"
 
   local table

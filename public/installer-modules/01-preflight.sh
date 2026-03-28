@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 01-preflight.sh — OS checks, disk space, network, essential package install
+# 01-preflight.sh -- OS checks, disk space, network, essential package install
 # =============================================================================
 # Entry: run_preflight
 # Expects: APP_BASE, MC_URL set by orchestrator
 # Sets: POSUSER, POSUSER_HOME, FREE_MB
 # =============================================================================
 
-# APT cache TTL — skip apt-get update if cache is fresh (< 1 hour)
+# APT cache TTL -- skip apt-get update if cache is fresh (< 1 hour)
 apt_update_if_stale() {
     local stamp="/var/lib/apt/periodic/update-success-stamp"
     if [ -f "$stamp" ] && [ $(( $(date +%s) - $(stat -c %Y "$stamp" 2>/dev/null || echo 0) )) -lt 3600 ]; then
-        log "APT cache is fresh — skipping apt-get update"
+        log "APT cache is fresh -- skipping apt-get update"
         return 0
     fi
     apt-get update -y
@@ -19,7 +19,7 @@ apt_update_if_stale() {
 
 run_preflight() {
   local _start=$(date +%s)
-  log "Stage: preflight — starting"
+  log "Stage: preflight -- starting"
 
   # Ensure all apt operations are non-interactive (prevents dpkg dialog hangs)
   export DEBIAN_FRONTEND=noninteractive
@@ -86,7 +86,7 @@ run_preflight() {
   fi
   log "Service user: $POSUSER (home: $POSUSER_HOME)"
 
-  # ── Install Essential Tools (BEFORE registration — jq and openssl required) ──
+  # ── Install Essential Tools (BEFORE registration -- jq and openssl required) ──
   header "Installing Essential Tools"
 
   apt_update_if_stale
@@ -98,7 +98,7 @@ run_preflight() {
 
   # ── Phase 5A: Security updates (fresh install only) ───────────────────────
   # Apply security-only patches. SmartTab does this; we now do too.
-  # Only on fresh install — routine deploys skip this.
+  # Only on fresh install -- routine deploys skip this.
   if [[ ! -f "$APP_BASE/shared/state/.security-updates-applied" ]]; then
     log "Applying security updates (first-time only)..."
     apt_update_if_stale
@@ -108,10 +108,10 @@ run_preflight() {
       log "Security updates applied"
       if [ -f /var/run/reboot-required ]; then
         warn "Kernel security patches require reboot"
-        track_warn "Security patches applied — reboot required after install"
+        track_warn "Security patches applied -- reboot required after install"
       fi
     else
-      warn "Security updates failed (non-fatal) — continuing installation"
+      warn "Security updates failed (non-fatal) -- continuing installation"
     fi
   fi
 
@@ -130,7 +130,7 @@ run_preflight() {
       log "Wayland disabled. X11 will be used on next login."
       track_warn "Wayland was disabled for X11 kiosk support. A reboot may be needed after install."
     else
-      log "Wayland already disabled in GDM3 — OK."
+      log "Wayland already disabled in GDM3 -- OK."
     fi
   fi
 
@@ -152,13 +152,13 @@ run_preflight() {
   for host in github.com registry.npmjs.org; do
     if ! host "$host" >/dev/null 2>&1 && ! nslookup "$host" >/dev/null 2>&1; then
       err_code "ERR-INST-004" "DNS resolution failed for $host"
-      err "DNS resolution failed for $host — check network/DNS configuration"
+      err "DNS resolution failed for $host -- check network/DNS configuration"
       return 1
     fi
   done
   log "DNS: OK"
 
-  # ── Disk space — 8GB minimum (hard fail) ──
+  # ── Disk space -- 8GB minimum (hard fail) ──
   # If APP_BASE doesn't exist yet (fresh install), check parent mount point
   local DISK_CHECK_PATH="$APP_BASE"
   if [[ ! -d "$DISK_CHECK_PATH" ]]; then
@@ -172,9 +172,9 @@ run_preflight() {
     err "Insufficient disk: $(( AVAIL_KB / 1024 )) MB free (need 8 GB)"
     return 1
   fi
-  log "Disk space: $(( AVAIL_KB / 1024 )) MB free — OK (8 GB minimum)"
+  log "Disk space: $(( AVAIL_KB / 1024 )) MB free -- OK (8 GB minimum)"
 
-  # ── System clock sanity — TLS and token validation fail with bad clocks (hard fail) ──
+  # ── System clock sanity -- TLS and token validation fail with bad clocks (hard fail) ──
   if command -v timedatectl >/dev/null 2>&1; then
     local clock_synced
     clock_synced=$(timedatectl show --property=NTPSynchronized --value 2>/dev/null || echo "no")
@@ -190,7 +190,7 @@ run_preflight() {
         local drift=$(( local_epoch - remote_epoch ))
         if [[ ${drift#-} -gt 300 ]]; then
           err_code "ERR-INST-005" "Clock drift ${drift}s, NTP not synced"
-          err "System clock off by ${drift}s — NTP not synced. TLS/tokens will fail."
+          err "System clock off by ${drift}s -- NTP not synced. TLS/tokens will fail."
           err "Run: sudo timedatectl set-ntp true"
           return 1
         fi
@@ -207,9 +207,9 @@ run_preflight() {
     err "Insufficient memory: ${mem_mb}MB (need 2048MB minimum for build)"
     return 1
   fi
-  log "Memory: ${mem_mb}MB — OK"
+  log "Memory: ${mem_mb}MB -- OK"
 
-  # ── Role validation — early fail-fast ──
+  # ── Role validation -- early fail-fast ──
   if [[ -f "$APP_BASE/config/role.conf" ]]; then
     local _role
     _role=$(cat "$APP_BASE/config/role.conf" 2>/dev/null || echo "")
@@ -225,16 +225,16 @@ run_preflight() {
   local latency
   latency=$(ping -c 1 -W 3 github.com 2>/dev/null | grep "time=" | sed 's/.*time=\([0-9.]*\).*/\1/' || echo "999")
   if (( $(echo "$latency > 500" | bc -l 2>/dev/null || echo 1) )); then
-    warn "High latency to GitHub (${latency}ms) — install may be slow"
+    warn "High latency to GitHub (${latency}ms) -- install may be slow"
   fi
 
   # Port availability
   for port in 3005 5432; do
     if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
-      warn "Port $port already in use — may conflict"
+      warn "Port $port already in use -- may conflict"
     fi
   done
 
-  log "Stage: preflight — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: preflight -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }

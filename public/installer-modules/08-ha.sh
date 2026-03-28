@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 08-ha.sh — HA/keepalived setup (only if backup/HA role)
+# 08-ha.sh -- HA/keepalived setup (only if backup/HA role)
 # =============================================================================
 # Entry: run_ha
 # Expects: STATION_ROLE, VIRTUAL_IP, PRIMARY_NUC_IP, APP_BASE, ENV_FILE,
@@ -9,19 +9,19 @@
 
 run_ha() {
   local _start=$(date +%s)
-  log "Stage: ha — starting"
+  log "Stage: ha -- starting"
 
   # Only run if VIRTUAL_IP is set and role is server or backup
   if [[ -z "${VIRTUAL_IP:-}" ]] || [[ "$STATION_ROLE" != "server" && "$STATION_ROLE" != "backup" ]]; then
-    log "Stage: ha — skipped (no HA configuration needed)"
+    log "Stage: ha -- skipped (no HA configuration needed)"
     return 0
   fi
 
   header "Setting Up keepalived (VIP Failover)"
 
   if ! apt-get install -y keepalived; then
-    track_warn "Failed to install keepalived — HA failover will not be available"
-    log "Stage: ha — completed in $(( $(date +%s) - _start ))s (degraded)"
+    track_warn "Failed to install keepalived -- HA failover will not be available"
+    log "Stage: ha -- completed in $(( $(date +%s) - _start ))s (degraded)"
     return 0
   fi
 
@@ -29,7 +29,7 @@ run_ha() {
   HA_IFACE=$(ip route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1); exit}')
   if [[ -z "$HA_IFACE" ]]; then
     HA_IFACE="eth0"
-    warn "Could not auto-detect network interface — defaulting to eth0"
+    warn "Could not auto-detect network interface -- defaulting to eth0"
   fi
   log "Network interface: $HA_IFACE"
 
@@ -42,7 +42,7 @@ run_ha() {
     KA_PRIORITY=100
   fi
 
-  # Create HA health check script — prefer full version from repo if available
+  # Create HA health check script -- prefer full version from repo if available
   # (07-services.sh already deployed it from $APP_DIR/public/ha-check.sh),
   # fall back to bootstrap version if repo hasn't been cloned yet.
   mkdir -p /opt/gwi-pos/scripts
@@ -54,7 +54,7 @@ run_ha() {
   elif [[ ! -f /opt/gwi-pos/scripts/ha-check.sh ]]; then
   cat > /opt/gwi-pos/scripts/ha-check.sh <<'HACHKEOF'
 #!/usr/bin/env bash
-# Bootstrap HA health check — minimal version so keepalived can start before
+# Bootstrap HA health check -- minimal version so keepalived can start before
 # the git clone completes. The full version (public/ha-check.sh) with
 # pg_is_in_recovery(), replication lag monitoring, and MC alerting is deployed
 # after the repo is cloned.
@@ -64,7 +64,7 @@ if ! systemctl is-active --quiet postgresql; then
   exit 1
 fi
 
-# Check 2: POS app is responding (only on server role — backup may not run app)
+# Check 2: POS app is responding (only on server role -- backup may not run app)
 if [[ -f /opt/gwi-pos/.env ]]; then
   ROLE=$(grep -oP '(?<=^STATION_ROLE=).*' /opt/gwi-pos/.env 2>/dev/null || echo "")
   if [[ "$ROLE" == "server" ]]; then
@@ -80,7 +80,7 @@ HACHKEOF
     log "Bootstrap ha-check.sh created (no full version available yet)."
   fi
 
-  # VRRP auth password — must match between primary and backup for HA to work.
+  # VRRP auth password -- must match between primary and backup for HA to work.
   # Primary generates it; backup must be given the same value.
   VRRP_AUTH_PASS=$(grep "^VRRP_AUTH_PASS=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
   if [[ -z "$VRRP_AUTH_PASS" ]]; then
@@ -92,9 +92,9 @@ HACHKEOF
       echo ""
       read -rp "VRRP auth password: " VRRP_AUTH_PASS < /dev/tty
       if [[ -z "$VRRP_AUTH_PASS" ]]; then
-        # Generate one but warn — HA may not authenticate
+        # Generate one but warn -- HA may not authenticate
         VRRP_AUTH_PASS=$(head -c 6 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 8)
-        warn "No VRRP password entered — generated random. HA may fail if primary uses a different password."
+        warn "No VRRP password entered -- generated random. HA may fail if primary uses a different password."
       fi
     else
       # Primary: generate fresh password
@@ -106,7 +106,7 @@ HACHKEOF
     sed -i "s/^VRRP_AUTH_PASS=.*/VRRP_AUTH_PASS=$VRRP_AUTH_PASS/" "$ENV_FILE" || \
     echo "VRRP_AUTH_PASS=$VRRP_AUTH_PASS" >> "$ENV_FILE"
 
-  # Virtual router ID — must match between primary and backup.
+  # Virtual router ID -- must match between primary and backup.
   # Configurable to avoid conflicts when multiple HA pairs share the same L2 segment.
   VRRP_ROUTER_ID=$(grep "^VRRP_ROUTER_ID=" "$ENV_FILE" 2>/dev/null | cut -d= -f2 || true)
   if [[ -z "$VRRP_ROUTER_ID" ]]; then
@@ -121,7 +121,7 @@ HACHKEOF
     VIP_PREFIX="${_VIP_IFACE_CIDR#*/}"
   fi
 
-  # Create promote.sh stub — called by keepalived notify_master on failover
+  # Create promote.sh stub -- called by keepalived notify_master on failover
   cat > "$APP_BASE/scripts/promote.sh" <<'PROMOTE'
 #!/usr/bin/env bash
 # Promote this standby to primary
@@ -140,7 +140,7 @@ echo "[HA] Promotion complete"
 PROMOTE
   chmod +x "$APP_BASE/scripts/promote.sh"
 
-  # Create rejoin-as-standby.sh stub — called by keepalived notify_backup on demotion
+  # Create rejoin-as-standby.sh stub -- called by keepalived notify_backup on demotion
   cat > "$APP_BASE/scripts/rejoin-as-standby.sh" <<'REJOIN'
 #!/usr/bin/env bash
 # Rejoin as standby after primary reclaims VIP
@@ -157,8 +157,8 @@ REJOIN
 
   # Generate keepalived.conf
   cat > /etc/keepalived/keepalived.conf <<KAEOF
-# GWI POS HA — keepalived configuration
-# Generated by installer.run — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+# GWI POS HA -- keepalived configuration
+# Generated by installer.run -- $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 vrrp_script chk_gwi_pos {
     script "/opt/gwi-pos/scripts/ha-check.sh"
@@ -194,7 +194,7 @@ vrrp_instance GWI_POS {
 }
 KAEOF
 
-  # Firewall rules for VRRP (protocol 112) — only if firewalld is active
+  # Firewall rules for VRRP (protocol 112) -- only if firewalld is active
   if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld 2>/dev/null; then
     log "Adding VRRP firewall rule..."
     firewall-cmd --add-rich-rule='rule protocol value="vrrp" accept' --permanent 2>/dev/null || true
@@ -211,11 +211,11 @@ KAEOF
   # Verify keepalived is running
   sleep 2
   if systemctl is-active --quiet keepalived; then
-    log "keepalived running — state=$KA_STATE, priority=$KA_PRIORITY, VIP=$VIRTUAL_IP"
+    log "keepalived running -- state=$KA_STATE, priority=$KA_PRIORITY, VIP=$VIRTUAL_IP"
   else
-    track_warn "keepalived failed to start — check: journalctl -u keepalived"
+    track_warn "keepalived failed to start -- check: journalctl -u keepalived"
   fi
 
-  log "Stage: ha — completed in $(( $(date +%s) - _start ))s"
+  log "Stage: ha -- completed in $(( $(date +%s) - _start ))s"
   return 0
 }

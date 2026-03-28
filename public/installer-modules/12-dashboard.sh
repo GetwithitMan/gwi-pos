@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# 12-dashboard.sh — Stage 12: GWI NUC Dashboard Installation
+# 12-dashboard.sh -- Stage 12: GWI NUC Dashboard Installation
 # =============================================================================
 # Entry: run_dashboard
 # Expects: APP_BASE, APP_DIR, POSUSER, STATION_ROLE
 # Uses:    header(), log(), warn(), err(), track_warn(), start_timer(), end_timer()
 #
 # Installs the GWI NUC Dashboard .deb package and configures autostart.
-# The dashboard is optional — if the .deb is not found, the stage succeeds
+# The dashboard is optional -- if the .deb is not found, the stage succeeds
 # with a warning. Only installed on server and backup roles (terminals don't
 # need a dashboard).
 # =============================================================================
@@ -17,16 +17,16 @@ run_dashboard() {
   header "Stage 12: GWI NUC Dashboard"
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Skip on terminal role — dashboard is only for server/backup NUCs
+  # Skip on terminal role -- dashboard is only for server/backup NUCs
   # ─────────────────────────────────────────────────────────────────────────
   if [[ "$STATION_ROLE" == "terminal" ]]; then
-    log "Skipping dashboard install — not needed for terminal role"
+    log "Skipping dashboard install -- not needed for terminal role"
     end_timer "Stage 12 (dashboard)"
     return 0
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Version check — skip install if already at the correct version
+  # Version check -- skip install if already at the correct version
   # ─────────────────────────────────────────────────────────────────────────
   local _installed_version=""
   local _available_version=""
@@ -50,7 +50,7 @@ run_dashboard() {
       log "Dashboard update available: v${_installed_version} -> v${_available_version}"
     fi
   elif [[ "$_installed_version" == "0.0.0" ]]; then
-    log "Dashboard not yet installed — proceeding with fresh install"
+    log "Dashboard not yet installed -- proceeding with fresh install"
   fi
 
   if [[ "$_needs_update" != true ]]; then
@@ -87,7 +87,7 @@ run_dashboard() {
 
   # If not found locally, download from POS deployment (Vercel) or GitHub releases
   if [[ -z "$DASHBOARD_DEB" ]]; then
-    log "Dashboard .deb not found locally — downloading..."
+    log "Dashboard .deb not found locally -- downloading..."
     local DOWNLOAD_DIR="$APP_BASE/dashboard"
     mkdir -p "$DOWNLOAD_DIR"
 
@@ -99,7 +99,7 @@ run_dashboard() {
     # Method 2: If Vercel download failed, try GitHub releases with deploy token
     if [[ ! -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" ]] || [[ $(stat -c%s "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null || echo 0) -lt 100000 ]]; then
       rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
-      log "Vercel download failed — trying GitHub releases..."
+      log "Vercel download failed -- trying GitHub releases..."
       local GIT_TOKEN=""
       if [[ -f "$APP_BASE/.git-credentials" ]]; then
         GIT_TOKEN=$(grep 'github.com' "$APP_BASE/.git-credentials" 2>/dev/null | sed 's|https://||;s|:x-oauth-basic@github.com||' | head -1)
@@ -120,7 +120,7 @@ run_dashboard() {
       log "Downloaded dashboard: $(ls -lh "$DASHBOARD_DEB" | awk '{print $5}')"
     else
       rm -f "$DOWNLOAD_DIR/gwi-nuc-dashboard.deb" 2>/dev/null
-      track_warn "Dashboard download failed — skipping (can be installed later)"
+      track_warn "Dashboard download failed -- skipping (can be installed later)"
       end_timer "Stage 12 (dashboard)"
       return 0
     fi
@@ -134,7 +134,7 @@ run_dashboard() {
   log "Installing dashboard dependencies..."
   apt-get update -qq 2>/dev/null || true
   apt-get install -y -qq libwebkit2gtk-4.1-0 libappindicator3-1 libgtk-3-0 2>/dev/null || {
-    track_warn "Some dashboard dependencies failed to install — dashboard may not start"
+    track_warn "Some dashboard dependencies failed to install -- dashboard may not start"
   }
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ run_dashboard() {
     warn "dpkg install failed, attempting dependency fix..."
     apt-get install -f -y -qq 2>/dev/null || true
     if ! dpkg -i "$DASHBOARD_DEB" 2>/dev/null; then
-      track_warn "Dashboard .deb installation failed — can be retried manually"
+      track_warn "Dashboard .deb installation failed -- can be retried manually"
       end_timer "Stage 12 (dashboard)"
       return 0  # Non-fatal: dashboard is optional
     fi
@@ -157,7 +157,7 @@ run_dashboard() {
   local DASHBOARD_EXEC=""
   DASHBOARD_EXEC=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
   if [[ -z "$DASHBOARD_EXEC" ]]; then
-    track_warn "Dashboard binary not found in PATH — skipping systemd service creation (install may be broken)"
+    track_warn "Dashboard binary not found in PATH -- skipping systemd service creation (install may be broken)"
     # Still continue to desktop shortcut + sudoers below
   fi
 
@@ -228,7 +228,7 @@ DESKTOP
     sudo -u "${POSUSER}" gio set "${DESKTOP_DIR}/gwi-nuc-dashboard.desktop" metadata::trusted true 2>/dev/null || true
     log "Desktop shortcut created at ${DESKTOP_DIR}/gwi-nuc-dashboard.desktop"
   else
-    log "Desktop directory not found at ${DESKTOP_DIR} — skipping shortcut"
+    log "Desktop directory not found at ${DESKTOP_DIR} -- skipping shortcut"
   fi
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ DESKTOP
   local SUDOERS_FILE="/etc/sudoers.d/gwi-dashboard"
   if [[ ! -f "$SUDOERS_FILE" ]]; then
     cat > "$SUDOERS_FILE" << SUDOERS
-# GWI NUC Dashboard — allow service restarts without password
+# GWI NUC Dashboard -- allow service restarts without password
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
@@ -265,12 +265,12 @@ SUDOERS
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# _ensure_dashboard_autostart — idempotent autostart + sudoers setup
+# _ensure_dashboard_autostart -- idempotent autostart + sudoers setup
 # Called when dashboard is already at the correct version (skip install)
 # but we still want to make sure systemd service + sudoers are configured.
 # ─────────────────────────────────────────────────────────────────────────────
 _ensure_dashboard_autostart() {
-  # Resolve dashboard binary — skip service creation if missing
+  # Resolve dashboard binary -- skip service creation if missing
   local DASHBOARD_EXEC=""
   DASHBOARD_EXEC=$(command -v gwi-dashboard 2>/dev/null || command -v gwi-nuc-dashboard 2>/dev/null || true)
 
@@ -299,7 +299,7 @@ WantedBy=default.target
 SVCEOF
     chown "${POSUSER}:${POSUSER}" "${SYSTEMD_USER_DIR}/gwi-dashboard.service"
     loginctl enable-linger "${POSUSER}" 2>/dev/null || true
-    # Always enable (idempotent) — ensures service starts on boot even after fresh OS install
+    # Always enable (idempotent) -- ensures service starts on boot even after fresh OS install
     sudo -u "${POSUSER}" bash -c "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload && systemctl --user enable gwi-dashboard.service && systemctl --user start gwi-dashboard.service" 2>/dev/null || true
     log "Dashboard autostart configured and started"
   fi
@@ -311,7 +311,7 @@ SVCEOF
   local SUDOERS_FILE="/etc/sudoers.d/gwi-dashboard"
   if [[ ! -f "$SUDOERS_FILE" ]]; then
     cat > "$SUDOERS_FILE" << SUDOERS
-# GWI NUC Dashboard — allow service restarts without password
+# GWI NUC Dashboard -- allow service restarts without password
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-kiosk
 ${POSUSER} ALL=(root) NOPASSWD: /usr/bin/systemctl restart thepasspos-sync
